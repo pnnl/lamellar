@@ -1,0 +1,11 @@
+#!/bin/bash
+
+#SBATCH -J ROFI_PP               # Job Name
+#SBATCH --ntasks-per-node=1      # Run 1 task per node
+#SBATCH -n 8                     # Numer of VICs
+#SBATCH -p compute               # Partition / Queue
+#SBATCH -t 01:30:00              # Run time (hh:mm:ss) - 1.5 hours
+
+module purge
+module load gcc/4.8.5 mvapich2/2.3a cuda/9.2.148
+mpiexec -n 2 -ppn 1 $HOME/projects/lamellar/src/rofi/tests/rofi_pp
