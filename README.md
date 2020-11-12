@@ -18,7 +18,7 @@ The second method only works on nightly, but allows users to write serializable 
 It also exposes the concept of remote memory regions, i.e. allocations of memory that can read/written into by remote nodes.
 
 Lamellar relies on network providers called Lamellae to perform the transfer of data throughout the system.
-Currently two such Lamellae exist, one used for single node development purposed ("local"), and another based on the Rust OpenFabrics Interface Transport Layer (ROFI) (https://github.com/pnnl/rofi)
+Currently two such Lamellae exist, one used for single node development ("local"), and another based on the Rust OpenFabrics Interface Transport Layer (ROFI) (https://github.com/pnnl/rofi)
 
 REPOS
 ------
