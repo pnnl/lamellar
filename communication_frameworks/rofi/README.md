@@ -23,7 +23,7 @@ ROFI requires the following dependencies:
 * [GNU Autotools](https://www.gnu.org/software/automake/manual/html_node/Autotools-Introduction.html): To build and install ROFI package
 * [libfabric](https://github.com/ofiwg/libfabric): OFI library
 * [libibverbs](https://github.com/linux-rdma/rdma-core/tree/master/libibverbs): Infiniband VERBS support
-* [UTHash](https://github.com/troydhanson/uthash): Rutnime hashtable
+* [UTHash](https://github.com/troydhanson/uthash): Runtime hashtable
 * [libatomic](https://github.com/gcc-mirror/gcc/tree/master/libatomic): Atomic operations, generally installed on Linux development clusters
 * librt: Extended realtime library, generally installed on Linux development clusters
 * libpthread: POSIX thread library, generally installed on Linux development clusters
@@ -35,6 +35,9 @@ At the time of release, ROFI has been tested with the following external package
 | 4.8.5   | 1.7.1     | 1.13          | mvapich2/2.3a | 17.02.7   |
 |         | 1.8.0     |               |               |           |
 |         | 1.9.0     |               |               |           |
+| 7.1.0.  | 1.10.0    |               |               |           |
+|         | 1.11.0    |               |               |           |
+|         | 1.12.0    |               |               |           |
 
 BUILDING PACKAGE
 ----------------
@@ -48,13 +51,13 @@ In the following, assume that ROFI source code has been downloaded in $(SRCDIR)
 
 `./configure --prefix=/Users/gioi152/workspace CPPFLAGS=-I$USER_INC CFLAGS=-O3 LDFLAGS=-L$USER_LIBS`
 
-where `$USER_INC` and `$USER_LIBS` point to custom directories including header files (e.g., uthash.h) and libraries (e.g., libfabrics.so). Passing `--enable-debug` during configuration will enable ROFI to emit debugging information during execution (this is a verbose output). Other useful options 
+where `$USER_INC` and `$USER_LIBS` point to the installation directories for header files (e.g., uthash.h) and libraries (e.g., libfabrics.so) of dependencies. Passing `--enable-debug` during configuration will enable ROFI to emit debugging information during execution (NOTE: debug logs, if enabled, will be verbose). Other useful options include:
 
 * `--prefix`: installation path
 * `--enable-debug`: emit debugging information at runtime, enabling this option add `-O0` to `CFLAGS`
 * `--enable-stats`: emit statistics during execution
 
-Compiler and linking options can be expressed using the following enviromentatl variables:
+Compiler and linking options can be expressed using the following enviromental variables:
 
 * `CC`:       C compiler command
 * `CFLAGS`:   C compiler flags
@@ -184,7 +187,7 @@ Report bugs to <roberto.gioiosa@pnnl.gov>.
 
 `make`
 
-3. Compile and run unit tests (optional but recommended). the ROFI package comes with a set of unit tests that can be used to assess whether the compilation and linking process have been successful and that all external dependencies have been found.
+3. Compile and run unit tests (optional but recommended). the ROFI package comes with a set of unit tests that can be used to assess whether the compilation and linking process have been successful and that all external dependencies have been met.
 
 `make check`
 
@@ -210,7 +213,7 @@ Testsuite summary for Rust OFI Library 0.1
 # ERROR: 0
 ============================================================================
 ```
-These tests are only meant to check that the ROFI library has been successfull built and it is operational. Obviously, users may want to verify that ROFI works in a distributed environment (see TEST section below.)
+These tests are only meant to check that the ROFI library has been successfull built and it is operational.  We assume users will want also to verify that ROFI works in a particular distributed environment.  Please see the TESTING section below.
 
 4. Install ROFI
 
@@ -220,7 +223,7 @@ This command will install ROFI in standard location or in the location specified
 
 DOCUMENTATION
 -------------
-To build the documentation, move to `$(SRCDIR)/docs` and type:
+To build the documentation, go to `$(SRCDIR)/docs` and type:
 
 `make`
 
@@ -232,19 +235,41 @@ For example, issuing the command in the `latex` directory will generate document
 
 TESTING
 -------
-Most of the unit tests requires two compute nodes to be executed. Here is a simple proceedure to run the tests that assume a compute cluster and [SLURM](https://slurm.schedmd.com) job manager. Please, refer to the job manager documentaiton for details on how to run command on different clusters. ROFI grabs job information (size, distribution, etc.) from the jbo manager and runtime launcher (e.g., MPI, please refer to the BUILING REQUIREMENTS section for a list of tested software versions).
+Most of the tests below require two compute nodes to be executed. Here is a simple proceedure to run the tests on a compute cluster with the [SLURM](https://slurm.schedmd.com) job manager. Please, refer to the job manager documentaiton for details on how to run command on different clusters. ROFI obtains job information (size, distribution, etc.) from the job manager and runtime launcher (e.g., MPI, please refer to the BUILING REQUIREMENTS section for a list of tested software library versions known to work with ROFI).
 
 1. Allocates two compute nodes on the cluster:
 
 `salloc -N 2 -p compute`
 
-2. Run ROFI test using `mpiexec` launcher.
+2. Run ROFI test using `mpiexec` launcher:
 
 `mpiexec -n 2 ./tests/rofi_<test>`
 
 where `<test>` in {`alloc, get, init, pp, put, put_bw`}. For example, to run a simple init test (check libraries, providers, etc.), run:
 
 `mpiexec -n 2 ./tests/rofi_init`
+
+SUPPORTED PROVIDERS
+-------------------
+ROFI is currently actively tested with libfabric `verbs` provider. Other providers, including `sockets` and `shm` are currently under development and not guaranteed to work.
+
+To select a provider, add the provider name to the `rofi_init()` function. For example, to select the `shm` provider, call:
+
+`rofi_init("shm")`
+
+then a test on a single node can be started in the same way as for distributed systems. For example,
+
+`mpiexec -n 2 -ppn 2 ./tests/rofi_put`
+
+launches two ROFI processes on the same compute node, while the command:
+
+`mpiexec -n 2 -ppn 1 ./tests/rofi_put`
+
+launches two ROFI processes on different nodes (note that `shm` does not work on multiple compute nodes).
+
+Note that libfabric `shm` uses Linux Cross Memory Attach (CMA) for shared memory communication. Any recent Linux kernel should support CMA, but for example OSX/Darwin does not. On old Linux kernels that do not support CMA, libfabrics will leverage the traditional POSIX shared memory Inter-Process Communication primitives (IPC). One could also use `sockets` (under development) or `verbs` to emulate `shm`.  On single-node OSX, `sockets` would be the best experimental provider option. From perfromance prospective, `shm` should perform better than `sockets`, thus we recommend Linux environments for single-node, production development.
+
+In the case no option is specified with `rofi_init()`, ROFI selects the first provider that satisfies its requirements. This is usually the best one, though libfabric does not _guarantee_ that. If a **specific** provider is requested that is not available in the system, ROFI initialization fails, to provide expected performance.
 
 HISTORY
 -------
@@ -271,7 +296,7 @@ Mark Raugas     - mark.raugas@pnnl.gov
 
 ## License
 
-This project is licensed under the BSD License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD License - see the [LICENSE.md](LICENSE.md) file for details.
 
 ## Acknowledgments
 

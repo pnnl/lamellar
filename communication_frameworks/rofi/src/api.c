@@ -28,7 +28,7 @@
  * \b thread-safe: no
  *
  */
-int rofi_init(void)
+int rofi_init(char* prov)
 {
 	int ret = 0;
 
@@ -36,13 +36,15 @@ int rofi_init(void)
 
 	DEBUG_MSG("Initilizing ROFI runtime...");
 
-	ret = rofi_init_internal();
+	ret = rofi_init_internal(prov);
 	
 	if(ret){
 		ERR_MSG("Error initializing ROFI library");
 		return ret;
 	}
-	
+
+	rt_barrier();
+
 	DEBUG_MSG("Initialization succesfully completed!");
 	rdesc.status = ROFI_STATUS_ACTIVE;	
 	
@@ -131,7 +133,7 @@ int rofi_finit(void)
  * \b thread-safe: yes
  *
  */
-int rofi_put(void* dst, const void* src, size_t size, unsigned int id, unsigned long flags)
+int rofi_put(void* dst, void* src, size_t size, unsigned int id, unsigned long flags)
 {
 	assert(rdesc.status == ROFI_STATUS_ACTIVE);
 
@@ -163,7 +165,7 @@ int rofi_put(void* dst, const void* src, size_t size, unsigned int id, unsigned 
  * \b thread-safe: yes
  *
  */
-int rofi_iput(void* dst, const void* src, size_t size, unsigned int id, unsigned long flags)
+int rofi_iput(void* dst, void* src, size_t size, unsigned int id, unsigned long flags)
 {
 	assert(rdesc.status == ROFI_STATUS_ACTIVE);
 
@@ -172,10 +174,10 @@ int rofi_iput(void* dst, const void* src, size_t size, unsigned int id, unsigned
 		return -1;
 	}
 
-	DEBUG_MSG("PUT SYNC src %p dst %p size %lu flags 0x%lx",
-		  src, dst, size, flags);
+	DEBUG_MSG("PUT SYNC src %p dst %p size %lu node %u flags 0x%lx",
+		  src, dst, size, id, flags);
 	
-	return rofi_put_internal(dst,src,size,id, flags | ROFI_SYNC);
+	return rofi_put_internal(dst, src, size, id, flags | ROFI_SYNC);
 }
 
 /**
@@ -199,7 +201,7 @@ int rofi_iput(void* dst, const void* src, size_t size, unsigned int id, unsigned
  * \b thread-safe: yes
  *
  */
-int rofi_get(void* dst, const void* src, size_t size, unsigned int id, unsigned long flags)
+int rofi_get(void* dst, void* src, size_t size, unsigned int id, unsigned long flags)
 {
 	assert(rdesc.status == ROFI_STATUS_ACTIVE);
 
@@ -231,7 +233,7 @@ int rofi_get(void* dst, const void* src, size_t size, unsigned int id, unsigned 
  * \b thread-safe: yes
  *
  */
-int rofi_iget(void* dst, const void* src, size_t size, unsigned int id, unsigned long flags)
+int rofi_iget(void* dst, void* src, size_t size, unsigned int id, unsigned long flags)
 {
 	assert(rdesc.status == ROFI_STATUS_ACTIVE);
 
@@ -244,6 +246,68 @@ int rofi_iget(void* dst, const void* src, size_t size, unsigned int id, unsigned
 		  src, dst, size, flags);
 	
 	return rofi_get_internal(dst,src,size,id,flags | ROFI_SYNC);
+}
+
+/**
+ * @brief ROFI Synchronous Send
+ *
+ * Transfer \p size bytes from the current node starting at address \p addr to node \p id.
+ * The parameter \p flags is currently not used and reserved for future needs. 
+ *
+ * @param[in] id the ID of the remote node
+ * @param[in] addr address of the local buffer containing data to transfer
+ * @param[in] size size of data buffer (in bytes, no padding) to transfer
+ * @param[in] flags (not used at this time).
+ * @return 0 on success
+ *
+ * \b blocking: yes
+ * \b thread-safe: yes
+ *
+ */
+int rofi_isend(unsigned int id, void* addr, size_t size, unsigned long flags)
+{
+	assert(rdesc.status == ROFI_STATUS_ACTIVE);
+
+	if(addr == NULL || size == 0 || id >= rdesc.nodes){
+		ERR_MSG("Invalide argument.");
+		return -1;
+	}
+
+	DEBUG_MSG("SEND SYNC id %u addr %p size %lu flags 0x%lx",
+		  id, addr, size, flags);
+	
+	return rofi_send_internal(id, addr, size, flags | ROFI_SYNC);
+}
+
+/**
+ * @brief ROFI Synchronous Recv
+ *
+ * Block until \p size bytes from node \p id have been transferred to the current node at address \p addr.
+ * The parameter \p flags is currently not used and reserved for future needs. 
+ *
+ * @param[in] id the ID of the remote node
+ * @param[out] addr address of the local buffer to copy incoming date
+ * @param[in] size size of data buffer (in bytes, no padding)
+ * @param[in] flags (not used at this time).
+ * @return 0 on success
+ *
+ * \b blocking: yes
+ * \b thread-safe: yes
+ *
+ */
+int rofi_irecv(unsigned int id, void* addr, size_t size, unsigned long flags)
+{
+	assert(rdesc.status == ROFI_STATUS_ACTIVE);
+
+	if(addr == NULL || size == 0 || id >= rdesc.nodes){
+		ERR_MSG("Invalide argument.");
+		return -1;
+	}
+
+	DEBUG_MSG("RECV SYNC id %u addr %p size %lu flags 0x%lx",
+		  id, addr, size, flags);
+	
+	return rofi_recv_internal(id, addr, size, flags | ROFI_SYNC);
 }
 
 /**
@@ -292,7 +356,7 @@ int rofi_alloc(size_t size, unsigned long flags, void** addr)
 		ERR_MSG("Invalid size (%lu)",size);
 		goto err;
 	}
-	
+
 	*addr = rofi_alloc_internal(size, flags);
 	if(*addr == NULL)
 		goto err;
@@ -316,10 +380,9 @@ int rofi_alloc(size_t size, unsigned long flags, void** addr)
  * \b thread-safe: yes
  *
  */
-int rofi_release(void)
+int rofi_release(void* addr)
 {
-	DEBUG_MSG("Releaseing symmetric heap...");
-	return rofi_release_internal();
+	return rofi_release_internal(addr);
 }
 
 /**
@@ -338,4 +401,44 @@ int rofi_wait(void)
 {
 	DEBUG_MSG("Waiting for asynchronous messages...");
 	return rofi_wait_internal();	
+}
+
+/**
+ * @brief Compute the virtual address corresponding to /p addr on node /p id.
+ *
+ * When allocating a symmetric memory region, ROFI does not require that the virutal
+ * addresses be aligned. In a sense, the virtual addresses are not symmetric, only the
+ * offsets are. This function maps a certain address /p addr on the current node to the
+ * corresponding virtual address on the remote node /p  id.
+ *
+ * @return A valide virtual address on success, NULL on failure
+ *
+ * \b blocking: yes
+ * \b thread-safe: no
+ *
+ */
+void* rofi_get_remote_addr(void* addr, unsigned int id)
+{
+	DEBUG_MSG("Translating address %p on node %u...", addr, id);
+	return rofi_get_remote_addr_internal(addr, id);
+}
+
+/**
+ * @brief Compute the local virtual address corresponding to /p addr on node /p id.
+ *
+ * When allocating a symmetric memory region, ROFI does not require that the virutal
+ * addresses be aligned. In a sense, the virtual addresses are not symmetric, only the
+ * offsets are. This function maps a certain address /p addr on the remote node /p id to the
+ * corresponding virtual address on the local node .
+ *
+ * @return A valid virtual address on success, NULL on failure
+ *
+ * \b blocking: yes
+ * \b thread-safe: no
+ *
+ */
+void* rofi_get_local_addr_from_remote_addr(void* addr, unsigned int id)
+{
+        DEBUG_MSG("Translating address %p on node %lu...", addr, id);
+        return rofi_get_local_addr_from_remote_addr_internal(addr, id);
 }

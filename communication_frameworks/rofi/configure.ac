@@ -18,6 +18,14 @@ AC_ARG_ENABLE([stats],
     [AC_HELP_STRING([--enable-stats],
 		    [Enable statistics (default: disabled)])])
 
+AC_ARG_WITH([ofi-provider],
+    [AC_HELP_STRING([--with-ofi-provider],
+                    [Manually select the underlying OFI provider (e.g., verbs, default: none)])],
+		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, true)
+		     AC_DEFINE(ROFI_OFI_PROVIDER,[$with_ofi_provider],[OFI Provider])],
+		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, false)])
+
+
 AC_CHECK_HEADERS([stdio.h],       [],[AC_MSG_ERROR[stdio.h  not found!]])
 AC_CHECK_HEADERS([sys/socket.h], [],[AC_MSG_ERROR[sys/socket.h  not found!]])
 AC_CHECK_HEADERS([rdma/fabric.h], [],[AC_MSG_ERROR[fabric.h not found!]])
@@ -103,6 +111,7 @@ echo ""
 echo "Options:   "
 echo "		 Debug:		$enable_debug"
 echo "		 Stats:		$enable_stats"
+echo "		 OFI Provider:  $ROFI_OFI_PROVIDER"
 echo ""
 echo "Compilers: "
 echo "		 C:		$CC"

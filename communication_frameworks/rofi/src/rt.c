@@ -45,7 +45,6 @@ int rt_init(void)
 {
 	int initialized;
 
-	DEBUG_MSG("Initializing ROFI RT...");
 	if (PMI_SUCCESS != PMI_Initialized(&initialized)) {
 		return 1;
 	}
@@ -66,7 +65,8 @@ int rt_init(void)
 	if (PMI_SUCCESS != PMI_Get_size(&size)) {
 		return 4;
 	}
-	
+
+	DEBUG_MSG("Initializing ROFI RT...");	
 	if (size > 1) {
 		if (PMI_SUCCESS != PMI_KVS_Get_name_length_max(&max_name_len)) {
 			return 5;

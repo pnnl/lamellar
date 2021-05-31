@@ -4,64 +4,84 @@
 #include <rofi.h>
 #include "utils.h"
 
-#define N 128*1024*1024UL
+#define N 1
+#define SIZE 128
 //#define VERBOSE
 
 int main(void)
 {
 	unsigned int me, np;
-	unsigned long long i;
+	unsigned int i;
 	int ret = 0;
-	unsigned long* src;
-	unsigned long* target;
+	char* addr1;
+	char* addr2;
+	char* addr3;
 	
-	rofi_banner("Heap Alloc Test");
-	rofi_init();
+	rofi_init("verbs");
 	
 	np = rofi_get_size();
 	me = rofi_get_id();
-	if(np != 2){
-		printf("Required 2 processes, provided %d. Aborting.", np);
-		ret = 1;
-		goto out;
+
+	if(!me)
+		rofi_banner("Heap Alloc Test");
+
+	printf("Process %d/%d allocating memory region of size %d\n", 
+	       me, np, SIZE);
+	
+	ret = rofi_alloc(SIZE, 0x0, (void**) &addr1);
+	if(ret){
+		printf("Error allocating memory region! Aborting.");
+	  goto out;
+	}
+	rofi_barrier();
+	printf("Added memory region at %p size %d\n", addr1, SIZE);
+
+	if(!me){
+		printf("Address Mappig on all nodes:\n");
+		for(i=0; i<np; i++)
+			printf("\t Node %u: %d\n", i, rofi_get_remote_addr((void*) addr1, i));
 	}
 
-	printf("Process %d/%d allocating memory region of size %lu\n", 
-	       me, np, 2*N*sizeof(unsigned long));
-
-	ret = rofi_alloc(2*N*sizeof(unsigned long), 0x0, (void**) &src);
+	ret = rofi_alloc(2 * SIZE, 0x0, (void**) &addr2);
 	if(ret){
 		printf("Error allocating memory region! Aborting.");
 		goto out;
 	}
 
-	for(i=0; i<N; i++)
-		src[i] = 10*i;
+	rofi_barrier();
+	printf("Added memory region at %p size %d\n", addr2, SIZE);
 
-	target = &(src[N]);
+	ret = rofi_release((void*) addr2);
+	if(ret){
+		printf("Error removing region %p!", addr2);
+		goto out;
+	}
+	rofi_barrier();
+	printf("Removed memory region at %p\n", addr2);
+
+	ret = rofi_alloc(3 * SIZE, 0x0, (void**) &addr3);
+	if(ret){
+		printf("Error allocating memory region! Aborting.");
+	  goto out;
+	}
 
 	rofi_barrier();
-	
-	if(me){
-		if(rofi_iget(target, src, sizeof(unsigned long) * N, 0, 0x0)){
-			printf("Error while getting data from node 0. Aborting!");
-			ret = 1;
-			goto out;
-		}
+	printf("Added memory region at %p size %d\n", addr3, SIZE);
 
-		for(i=0; i<N; i++){
-			if(src[i] != target[i]){
-				printf("%llu: %lu != %lu\n", i, src[i], target[i]);
-				ret = 1;
-				goto out;
-			}
-		}
-	}			
-	
+	ret = rofi_release((void*) addr1);
+	if(ret){
+		printf("Error removing region %p!", addr1);
+		goto out;
+	}
+	rofi_barrier();
+	printf("Removed memory region at %p\n", addr1);
+
+
+	//Leave addr3 to be removed by ROFI
+
  out:	
-	rofi_barrier();
-	//	rofi_release();
-	rofi_verify(ret);
+	if(!me)
+		rofi_verify(ret);
 	rofi_finit();
 	
 	return 0;
