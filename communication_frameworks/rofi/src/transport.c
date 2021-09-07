@@ -1077,6 +1077,77 @@ int ft_gather(void* sendbuf, size_t size, void* recvbuf, unsigned int n, unsigne
 	return 0;
 }
 
+
+int ft_gather_sub(void* sendbuf, size_t size, void* recvbuf, uint64_t* pes, uint64_t n, unsigned int id)
+{
+	int i, ret;
+	void* buf;
+	unsigned int* src_id;
+	unsigned int* ready;
+
+	if(rdesc.nid == pes[id]){
+		memcpy(recvbuf + pes[id] * size, sendbuf, size);
+		DEBUG_MSG("\t Gathering node %d, key: 0x%lx, addr: 0x%lx", 
+			  pes[id], ((struct fi_rma_iov*) sendbuf)->key, 
+			  ((struct fi_rma_iov*) sendbuf)->addr);
+		// printf("\t Gathering node %d, key: 0x%lx, addr: 0x%lx\n", 
+		//	  pes[id], ((struct fi_rma_iov*) sendbuf)->key, 
+		//	  ((struct fi_rma_iov*) sendbuf)->addr);
+		
+		for(i=0; i<n; i++){
+			if(i == id)
+				continue;
+			ready = (unsigned int*)(tx_buf + ft_tx_prefix_size()); 
+			ready[0]=123456789;
+			ready[1]=987654321;
+			DEBUG_MSG("\t Sending ready to node %d: %u %u",pes[i], ready[0],ready[1]);
+			// printf("\t Sending ready to node %d: %u %u\n",pes[i], ready[0],ready[1]);
+
+			ret = ft_tx(ep, remote_fi_addrs[pes[i]], sizeof(unsigned int)*2, &tx_ctx);
+			if(ret)
+				return ret;
+			ret = ft_rx(ep, size + sizeof(unsigned int));
+			if (ret)
+				return ret;
+
+			src_id = (unsigned int*) (rx_buf + ft_rx_prefix_size());
+			buf = recvbuf + *src_id * size;
+			memcpy(buf, (void*) src_id + sizeof(unsigned int), size);
+
+			DEBUG_MSG("\t %d - Recevied IOV from node %d, key: 0x%lx, addr: 0x%lx", 
+				  pes[i], *src_id, ((struct fi_rma_iov*) buf)->key, 
+				  ((struct fi_rma_iov*) buf)->addr);
+			// printf("\t %d - Recevied IOV from node %d, key: 0x%lx, addr: 0x%lx\n", 
+			// 	  pes[i], *src_id, ((struct fi_rma_iov*) buf)->key, 
+			// 	  ((struct fi_rma_iov*) buf)->addr);
+				
+		}
+	}else{
+		ret = ft_rx(ep, sizeof(unsigned int)*2);
+		if (ret)
+			return ret;
+		ready = (unsigned int*) (rx_buf + ft_rx_prefix_size());
+		DEBUG_MSG("\t Recieved ready from node %d: %u %u",pes[id] , ready[0],ready[1]);
+		// printf("\t Recieved ready from node %d: %u %u\n",pes[id] , ready[0],ready[1]);
+		if(ready[0] != 123456789 || ready[1] !=987654321 ){
+			return -1; //TODO return a better error code...
+		}
+		DEBUG_MSG("\t Sending IOV to node %d, key: 0x%lx, addr: 0x%lx...", pes[id], 
+			  ((struct fi_rma_iov*) sendbuf)->key, 
+			  ((struct fi_rma_iov*) sendbuf)->addr);
+		// printf("\t Sending IOV to node %d, key: 0x%lx, addr: 0x%lx...\n", pes[id], 
+		//	  ((struct fi_rma_iov*) sendbuf)->key, 
+		//	  ((struct fi_rma_iov*) sendbuf)->addr);
+		src_id = (unsigned int*)(tx_buf + ft_tx_prefix_size()); 
+		*src_id = rdesc.nid;
+		memcpy((void*)src_id + sizeof(unsigned int), sendbuf, size);
+		ret = ft_tx(ep, remote_fi_addrs[pes[id]], size + sizeof(unsigned int), &tx_ctx);
+		if (ret)
+			return ret;	
+	}
+	return 0;
+}
+
 int ft_scatter(void* sendbuf, size_t size, void* recvbuf, unsigned int n, unsigned int id)
 {
 	unsigned int i;
@@ -1101,6 +1172,34 @@ int ft_scatter(void* sendbuf, size_t size, void* recvbuf, unsigned int n, unsign
 		ret = ft_post_rx(ep, rx_size, &rx_ctx);
 		memcpy(recvbuf, rx_buf + ft_rx_prefix_size(), size);
 		DEBUG_MSG("\t Received IOV from node %d", id);
+	}
+	return 0;
+}
+
+int ft_scatter_sub(void* sendbuf, size_t size, void* recvbuf, uint64_t* pes, uint64_t n, unsigned int id)
+{
+	unsigned int i;
+	int ret;
+
+	if(rdesc.nid == pes[id]){
+		memcpy(tx_buf + ft_tx_prefix_size(), sendbuf, size);
+		for(i=1; i< n; i++){
+			if(i == id)
+				continue;
+
+			ret = ft_tx(ep, pes[i], size, &tx_ctx);
+			if(ret)
+				return ret;
+			DEBUG_MSG("\t Sent IOVs to node %d", pes[i]);
+		}		
+	}else{
+		ret = ft_get_rx_comp(rx_seq);
+		if (ret)
+			return ret;
+
+		ret = ft_post_rx(ep, rx_size, &rx_ctx);
+		memcpy(recvbuf, rx_buf + ft_rx_prefix_size(), size);
+		DEBUG_MSG("\t Received IOV from node %d", pes[id]);
 	}
 	return 0;
 }
@@ -1135,6 +1234,47 @@ int ft_exchange_keys(struct fi_rma_iov *peer_iov, struct fid_mr* mr, void* addr)
 #endif
 	
 	ret = ft_scatter(peer_iov, sizeof(struct fi_rma_iov) * rdesc.nodes, peer_iov, rdesc.nodes, 0);
+	if(ret)
+		return ret;
+
+#ifdef _DEBUG
+	if(rdesc.nid)
+		for(int i=0; i<rdesc.nodes; i++)
+			DEBUG_MSG("IOV[%d]: \t\t key 0x%lx addr 0x%lx", i, peer_iov[i].key, peer_iov[i].addr);
+#endif
+
+	return ret;
+}
+
+int ft_exchange_keys_sub(struct fi_rma_iov *peer_iov, struct fid_mr* mr, void* addr,uint64_t* pes, uint64_t num_pes)
+{
+	struct fi_rma_iov rma_iov;
+	int ret;
+	unsigned int id = rdesc.nid;
+
+	if(rt_get_size() == 1)
+		return 0;
+
+	if ((fi->domain_attr->mr_mode == FI_MR_BASIC) ||
+	    (fi->domain_attr->mr_mode & FI_MR_VIRT_ADDR)) {
+		rma_iov.addr = (uintptr_t) addr;
+	} else {
+		rma_iov.addr = 0;
+	}
+	rma_iov.key = fi_mr_key(mr);
+
+	DEBUG_MSG("Exchanging Keys (key: 0x%lx, addr: 0x%lx)....",  rma_iov.key, rma_iov.addr);
+	ret = ft_gather_sub(&rma_iov, sizeof(struct fi_rma_iov), peer_iov, pes, num_pes, 0);
+	if(ret)
+		return ret;
+
+#ifdef _DEBUG
+	if(rdesc.nid == 0)
+		for(int i=0; i<rdesc.nodes; i++)
+			DEBUG_MSG("IOV[%d]: \t\t key 0x%lx addr 0x%lx", i, peer_iov[i].key, peer_iov[i].addr);
+#endif
+	
+	ret = ft_scatter_sub(peer_iov, sizeof(struct fi_rma_iov) * rdesc.nodes, peer_iov, pes, num_pes, 0);
 	if(ret)
 		return ret;
 

@@ -62,11 +62,15 @@ rofi_mr_desc*  mr_add(size_t size, unsigned long mode)
 		goto err;
 	}
 
-	el->iov = (struct fi_rma_iov*) malloc(rdesc.nodes * sizeof(struct fi_rma_iov));
+	el->iov = (struct fi_rma_iov*) calloc(1,rdesc.nodes * sizeof(struct fi_rma_iov));
 	if(!(el->iov)){
 		ERR_MSG("Error allocating memory for remote memory region keys. Aborting!");
 		goto err_el;
 	}
+#ifdef _DEBUG
+	for(int i=0; i< rdesc.nodes; i++)
+		DEBUG_MSG("\t Node: %o Key: 0x%lx Addr: 0x%lx", i, el->iov[i].key, el->iov[i].addr);
+#endif
 
 	pthread_rwlock_wrlock(&mr_lock);
 	HASH_FIND_PTR(mr_tab, &addr, tmp);
@@ -143,23 +147,23 @@ rofi_mr_desc* mr_get(const void* addr)
 
 rofi_mr_desc* mr_get_from_remote(const void* remote_addr, unsigned long remote_id)
 {
-        rofi_mr_desc* el  = NULL;
-        rofi_mr_desc* tmp = NULL;
+	rofi_mr_desc* el  = NULL;
+	rofi_mr_desc* tmp = NULL;
 
-        pthread_rwlock_rdlock(&mr_lock);
-        HASH_ITER(hh, mr_tab, el, tmp){
-                DEBUG_MSG("\t MR %p - %p size=%ld mode=0x%x",
-                          el->start, el->start + el->size, el->size, el->mode);
-                void* start = (void*)el->iov[remote_id].addr;
-                void* end = start + el->size;
-                if (start <= remote_addr && remote_addr <= end)
-                        goto out;
-        }
-        el == NULL;
+	pthread_rwlock_rdlock(&mr_lock);
+	HASH_ITER(hh, mr_tab, el, tmp){
+		DEBUG_MSG("\t MR %p - %p size=%ld mode=0x%x",
+				el->start, el->start + el->size, el->size, el->mode);
+		void* start = (void*)el->iov[remote_id].addr;
+		void* end = start + el->size;
+		if (start <= remote_addr && remote_addr < end)
+			goto out;
+	}
+	el == NULL;
 
- out:
-        pthread_rwlock_unlock(&mr_lock);
-        return el;
+out:
+	pthread_rwlock_unlock(&mr_lock);
+	return el;
 }
 
 int mr_rm(void* addr)

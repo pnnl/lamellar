@@ -53,22 +53,25 @@ void* rofi_get_remote_addr_internal(void* addr, unsigned int id)
 	if(!el)
 		return NULL;
 	
-	DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
-
-	return (void*) (addr - el->start + el->iov[id].addr);	
+	DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
+	// printf("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx iov: 0x%lx 0x%lx %p \n", el->start, el->start + el->size, el->mr_key, el->iov[id].addr,(void*) (addr - el->iov[id].addr +  (uintptr_t)el->start),(void*) (addr - (uintptr_t)el->start + el->iov[id].addr));
+        //return (void*) (addr - el->iov[id].addr +  (uintptr_t)el->start);
+        return (void*) (addr - (uintptr_t)el->start + el->iov[id].addr);
 }
 
 void* rofi_get_local_addr_from_remote_addr_internal(void* addr, unsigned int id)
 {
-        rofi_mr_desc* el = mr_get_from_remote(addr,id);
-        int ret = 0;
+	rofi_mr_desc* el = mr_get_from_remote(addr,id);
+	int ret = 0;
 
-        if(!el)
-            return NULL;
-
-        DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
-
-        return (void*) (addr - el->iov[id].addr +  (uintptr_t)el->start);
+	if(!el)
+		return NULL;
+	
+	DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
+	// if (el->size <= 4096) {
+	// 	printf("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx remote_start 0x%lx offset 0x%lx len %lx local %lx\n", el->start, el->start + el->size, el->mr_key,el->iov[id].addr,addr - el->iov[id].addr, el->size,(addr - el->iov[id].addr +  (uintptr_t)el->start));
+	// }
+	return (void*) (addr - el->iov[id].addr +  (uintptr_t)el->start);	
 }
 
 int rofi_wait_internal(void)
@@ -115,10 +118,43 @@ void* rofi_alloc_internal(size_t size, unsigned long flags)
 	for(int i=0; i< rdesc.nodes; i++)
 		DEBUG_MSG("\t Node: %o Key: 0x%lx Addr: 0x%lx", i, el->iov[i].key, el->iov[i].addr);
 #endif
+	// for(int i=0; i< rdesc.nodes; i++)
+	// 	printf("\t Node: %o Key: 0x%lx Addr: 0x%lx size: %lu\n", i, el->iov[i].key, el->iov[i].addr,size);
+	// printf("\n");
+
+	return el->start;
+}
+
+void* rofi_sub_alloc_internal(size_t size, unsigned long flags,uint64_t* pes, uint64_t num_pes)
+{
+	rofi_mr_desc* el;
+	int ret = 0;
+
+	el = mr_add(size, flags);
+	if(!el)
+		return NULL;
+#ifdef _DEBUG
+	for(int i=0; i< rdesc.nodes; i++)
+		DEBUG_MSG("\t Node: %o Key: 0x%lx Addr: 0x%lx", i, el->iov[i].key, el->iov[i].addr);
+#endif
+
+	ret = ft_exchange_keys_sub(el->iov, el->fid, el->start,pes,num_pes);
+	if(ret)
+		return NULL;
+
+#ifdef _DEBUG
+	for(int i=0; i< rdesc.nodes; i++)
+		DEBUG_MSG("\t Node: %o Key: 0x%lx Addr: 0x%lx", i, el->iov[i].key, el->iov[i].addr);
+#endif
 	return el->start;
 }
 
 int rofi_release_internal(void* addr)
+{
+	return mr_rm(addr);;
+}
+
+int rofi_sub_release_internal(void* addr,uint64_t* pes, uint64_t num_pes)
 {
 	return mr_rm(addr);;
 }
@@ -163,6 +199,9 @@ int rofi_put_internal(void* dst, void* src, size_t size, unsigned int id, unsign
 	DEBUG_MSG("\t Writing %lu bytes from %p to address 0x%lx at node %u with key 0x%lx (threshold %lu, in-flight msgs: %lu)",
 		  size, src, rma_iov.addr, id, rma_iov.key, fi->tx_attr->inject_size, 
 		  rdesc.tx_cntr);
+	// printf("\t Writing %lu bytes from %p to address 0x%lx at node %u with key 0x%lx (threshold %lu, in-flight msgs: %lu\n)",
+    //               size, src, rma_iov.addr, id, rma_iov.key, fi->tx_attr->inject_size,
+    //               rdesc.tx_cntr);
 	
 	if (size < fi->tx_attr->inject_size) {
 		DEBUG_MSG("\t Using RMA Inject");

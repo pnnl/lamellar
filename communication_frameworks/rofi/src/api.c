@@ -368,6 +368,27 @@ int rofi_alloc(size_t size, unsigned long flags, void** addr)
 	return -1;
 }
 
+int rofi_sub_alloc(size_t size, unsigned long flags, void** addr, uint64_t* pes, uint64_t num_pes)
+{
+	DEBUG_MSG("ALLOC size %lu flags 0x%lx",
+		  size, flags);
+
+	if(!size){
+		ERR_MSG("Invalid size (%lu)",size);
+		goto err;
+	}
+
+	*addr = rofi_sub_alloc_internal(size, flags,pes,num_pes);
+	if(*addr == NULL)
+		goto err;
+
+	DEBUG_MSG("\tAllocated symmetric heap of size %lu at %p", size, *addr);
+	return 0;
+
+ err:
+	return -1;
+}
+
 /**
  * @brief ROFI Memory Region release
  *
@@ -383,6 +404,11 @@ int rofi_alloc(size_t size, unsigned long flags, void** addr)
 int rofi_release(void* addr)
 {
 	return rofi_release_internal(addr);
+}
+
+int rofi_sub_release(void* addr,uint64_t* pes, uint64_t num_pes)
+{
+	return rofi_sub_release_internal(addr,pes,num_pes);
 }
 
 /**
@@ -439,6 +465,6 @@ void* rofi_get_remote_addr(void* addr, unsigned int id)
  */
 void* rofi_get_local_addr_from_remote_addr(void* addr, unsigned int id)
 {
-        DEBUG_MSG("Translating address %p on node %lu...", addr, id);
-        return rofi_get_local_addr_from_remote_addr_internal(addr, id);
+	DEBUG_MSG("Translating address %p on node %lu...", addr, id);
+	return rofi_get_local_addr_from_remote_addr_internal(addr, id);
 }

@@ -97,7 +97,9 @@ int          rofi_get_internal(void*, void*, size_t, unsigned int, unsigned long
 int          rofi_send_internal(unsigned long, void*, size_t, unsigned long);
 int          rofi_recv_internal(unsigned long, void*, size_t, unsigned long);
 void*        rofi_alloc_internal(size_t, unsigned long);
+void*        rofi_sub_alloc_internal(size_t, unsigned long,uint64_t*, uint64_t);
 int          rofi_release_internal(void*);
+int          rofi_sub_release_internal(void*,uint64_t*, uint64_t);
 int          rofi_wait_internal(void);
 void*        rofi_get_remote_addr_internal(void*, unsigned int);
 void*        rofi_get_local_addr_from_remote_addr_internal(void*, unsigned int);
@@ -114,7 +116,7 @@ void rt_barrier(void);
 int            mr_init(void);
 rofi_mr_desc*  mr_add(size_t, unsigned long);
 rofi_mr_desc*  mr_get(const void*);
-rofi_mr_desc*  mr_get_from_remote(const void* remote_addr, unsigned long remote_id);
+rofi_mr_desc*  mr_get_from_remote(const void*,unsigned long);
 int            mr_free(void);
 int            mr_rm(void*);
 

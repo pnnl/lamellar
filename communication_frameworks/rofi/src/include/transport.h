@@ -377,7 +377,8 @@ int ft_init_av_dst_addr(struct fid_av *av_ptr, struct fid_ep *ep_ptr,
 		fi_addr_t *remote_addr);
 int ft_init_av_addr(struct fid_av *av, struct fid_ep *ep,
 		fi_addr_t *addr);
-	int ft_exchange_keys(struct fi_rma_iov*, struct fid_mr*, void*);
+int ft_exchange_keys(struct fi_rma_iov*, struct fid_mr*, void*);
+int ft_exchange_keys_sub(struct fi_rma_iov*, struct fid_mr*, void*,uint64_t*, uint64_t);
 void ft_free_res();
 void init_test(struct ft_opts *opts, char *test_name, size_t test_name_len);
 
