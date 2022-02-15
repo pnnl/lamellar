@@ -43,13 +43,15 @@ BUILDING PACKAGE
 ----------------
 In the following, assume that ROFI source code has been downloaded in $(SRCDIR)
 
-0. If ROFI has been cloned from the GIT repository, generate the configure script:
+0. If ROFI has been cloned from the GIT repository, generate the configure script and populate uthash submodule:
 
 `autoreconf --install`
+`git submodule update --init`
 
-1. Configure ROFI for your system:  
 
-`./configure --prefix=/Users/gioi152/workspace CPPFLAGS=-I$USER_INC CFLAGS=-O3 LDFLAGS=-L$USER_LIBS`
+1. Configure ROFI for your system:  (can be buildt in source or out of source)
+
+`./configure --prefix=/${HOME}/workspace CPPFLAGS=-I$USER_INC CFLAGS=-O3 LDFLAGS=-L$USER_LIBS`
 
 where `$USER_INC` and `$USER_LIBS` point to the installation directories for header files (e.g., uthash.h) and libraries (e.g., libfabrics.so) of dependencies. Passing `--enable-debug` during configuration will enable ROFI to emit debugging information during execution (NOTE: debug logs, if enabled, will be verbose). Other useful options include:
 
