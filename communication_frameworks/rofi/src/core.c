@@ -141,7 +141,7 @@ void* rofi_sub_alloc_internal(size_t size, unsigned long flags,uint64_t* pes, ui
 	ret = ft_exchange_keys_sub(el->iov, el->fid, el->start,pes,num_pes);
 	if(ret)
 		return NULL;
-
+		
 #ifdef _DEBUG
 	for(int i=0; i< rdesc.nodes; i++)
 		DEBUG_MSG("\t Node: %o Key: 0x%lx Addr: 0x%lx", i, el->iov[i].key, el->iov[i].addr);
@@ -453,8 +453,10 @@ int rofi_init_internal(char* prov)
 int rofi_finit_internal(void)
 {
 	rdesc.status = ROFI_STATUS_TERM;
-	mr_free();
+	ft_sync();
 	ft_finalize();
+	mr_free();
+	
 	ft_free_res();
 	
 	return 0;
