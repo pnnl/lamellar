@@ -1,6 +1,6 @@
 SUBDIRS = pmi-simple
 
-AM_CFLAGS=-I$(abs_srcdir)/include -I$(abs_srcdir)/pmi-simple
+AM_CFLAGS=-I$(abs_srcdir)/include -I$(abs_srcdir)/pmi-simple -I$(abs_srcdir)/../uthash/include
 
 lib_LTLIBRARIES    = librofi.la 
 librofi_la_SOURCES = api.c core.c rt.c transport.c mr.c context.c
