@@ -1,0 +1,4 @@
+[submodule "rofi"]
+	path = rofi
+	url = git@github.com:pnnl/rofi.git
+
