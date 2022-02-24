@@ -32,7 +32,7 @@ fn build_bindings() {
             println!("cargo:rustc-link-lib=static=rofi");
            
             autotools::Config::new("rofi")
-            .reconf("--install")
+            .reconf("-ivfWnone")
             .ldflag(format!{"-L{}",ofi_lib_dir.display()})
             .cflag(format!{"-I{}",ofi_inc_dir.display()})
             .build()
