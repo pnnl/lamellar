@@ -5,6 +5,7 @@ use autotools;
 use std::env;
 use std::path::PathBuf;
 use glob::glob;
+use std::process::Command;
 
 fn build_bindings() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -30,8 +31,12 @@ fn build_bindings() {
         Err(_) => {
             println!("cargo:rustc-link-lib=static=pmi_simple");
             println!("cargo:rustc-link-lib=static=rofi");
-           
-            autotools::Config::new("rofi")
+
+            let dest = out_path.clone().join("roif_src");
+            Command::new("cp").args(&["-r", "rofi", &dest.to_string_lossy()])
+            .status().unwrap();
+
+            autotools::Config::new( dest)
             .reconf("-ivfWnone")
             .ldflag(format!{"-L{}",ofi_lib_dir.display()})
             .cflag(format!{"-I{}",ofi_inc_dir.display()})
