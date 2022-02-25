@@ -24,8 +24,8 @@ fn build_bindings() {
     
     let rofi_env = match env::var("ROFI_DIR"){
         Ok(val) => {
-            println!("cargo:rustc-link-lib=static=rofi");
-            println!("cargo:rustc-link-lib=static=pmi_simple");
+            println!("cargo:rustc-link-lib=dylib=rofi");
+            println!("cargo:rustc-link-lib=dylib=pmi_simple");
             std::path::PathBuf::from(val)
         },
         Err(_) => {
