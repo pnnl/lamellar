@@ -78,8 +78,6 @@ int main(void) {
 
 dnl final output
 
-# AC_CHECK_HEADERS([uthash.h],[],[AC_MSG_ERROR[uthash.h not found!]])
-
 AC_CHECK_PROGS([DOXYGEN], [doxygen])
 if test -z "$DOXYGEN";
    then AC_MSG_WARN([Doxygen not found - continuing without Doxygen support])

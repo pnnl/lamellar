@@ -46,12 +46,13 @@ In the following, assume that ROFI source code has been downloaded in $(SRCDIR)
 0. If ROFI has been cloned from the GIT repository, generate the configure script and populate uthash submodule:
 
 `autoreconf --install`
-`git submodule update --init`
 
+1. make sure Uthash is present
+`git submodule update --init --recursive`
 
-1. Configure ROFI for your system:  (can be buildt in source or out of source)
+2. Configure ROFI for your system:  
 
-`./configure --prefix=/${HOME}/workspace CPPFLAGS=-I$USER_INC CFLAGS=-O3 LDFLAGS=-L$USER_LIBS`
+`./configure --prefix=${HOME}/workspace CPPFLAGS=-I$USER_INC CFLAGS=-O3 LDFLAGS=-L$USER_LIBS`
 
 where `$USER_INC` and `$USER_LIBS` point to the installation directories for header files (e.g., uthash.h) and libraries (e.g., libfabrics.so) of dependencies. Passing `--enable-debug` during configuration will enable ROFI to emit debugging information during execution (NOTE: debug logs, if enabled, will be verbose). Other useful options include:
 
@@ -185,11 +186,11 @@ it to find libraries and programs with nonstandard names/locations.
 Report bugs to <roberto.gioiosa@pnnl.gov>.
 ```
 
-2. Compile ROFI
+3. Compile ROFI
 
 `make`
 
-3. Compile and run unit tests (optional but recommended). the ROFI package comes with a set of unit tests that can be used to assess whether the compilation and linking process have been successful and that all external dependencies have been met.
+4. Compile and run unit tests (optional but recommended). the ROFI package comes with a set of unit tests that can be used to assess whether the compilation and linking process have been successful and that all external dependencies have been met.
 
 `make check`
 
@@ -217,7 +218,7 @@ Testsuite summary for Rust OFI Library 0.1
 ```
 These tests are only meant to check that the ROFI library has been successfull built and it is operational.  We assume users will want also to verify that ROFI works in a particular distributed environment.  Please see the TESTING section below.
 
-4. Install ROFI
+5. Install ROFI
 
 `make install`
 
