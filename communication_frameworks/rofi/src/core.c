@@ -453,7 +453,9 @@ int rofi_init_internal(char* prov)
 int rofi_finit_internal(void)
 {
 	rdesc.status = ROFI_STATUS_TERM;
-	ft_sync();
+	if (rdesc.nodes > 1){
+		ft_sync();
+	}
 	ft_finalize();
 	mr_free();
 	
