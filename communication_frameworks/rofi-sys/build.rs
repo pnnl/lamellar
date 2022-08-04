@@ -32,7 +32,7 @@ fn build_bindings() {
             println!("cargo:rustc-link-lib=static=pmi_simple");
             println!("cargo:rustc-link-lib=static=rofi");
 
-            let dest = out_path.clone().join("roif_src");
+            let dest = out_path.clone().join("rofi_src");
             Command::new("cp").args(&["-r", "rofi", &dest.to_string_lossy()])
             .status().unwrap();
 
