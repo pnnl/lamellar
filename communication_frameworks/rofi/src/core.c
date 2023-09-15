@@ -52,8 +52,8 @@ void *rofi_get_remote_addr_internal(void *addr, unsigned int id) {
     if (!el)
         return NULL;
 
-    DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
-    // printf("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx iov: 0x%lx 0x%lx %p \n", el->start, el->start + el->size, el->mr_key, el->iov[id].addr,(void*) (addr - el->iov[id].addr +  (uintptr_t)el->start),(void*) (addr - (uintptr_t)el->start + el->iov[id].addr));
+    DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx %p", el->start, el->start + el->size, el->mr_key, (void *)(addr - (uintptr_t)el->start + el->iov[id].addr));
+    // printf("\t Found MR [0x%lx - 0x%lx] Key: 0x%lx iov: 0x%lx %p 0x%lx %p \n", el->start, el->start + el->size, el->mr_key, el->iov[id].addr,addr,(void*) (addr - el->iov[id].addr +  (uintptr_t)el->start),(void*) (addr - (uintptr_t)el->start + el->iov[id].addr));
     // return (void*) (addr - el->iov[id].addr +  (uintptr_t)el->start);
     return (void *)(addr - (uintptr_t)el->start + el->iov[id].addr);
 }
@@ -439,16 +439,16 @@ err:
  */
 int rofi_finit_internal(void) {
     rdesc.status = ROFI_STATUS_TERM;
-    if (rdesc.nodes > 1) {
-        rt_barrier();
-    }
+    // if (rdesc.nodes > 1) {
+    //     rt_barrier();
+    // }
     ft_finalize();
     mr_free();
 
     ft_free_res();
-    if (rdesc.nodes > 1) {
-        rt_barrier();
-    }
+    // if (rdesc.nodes > 1) {
+    //     rt_barrier();
+    // }
 
     return 0;
 }

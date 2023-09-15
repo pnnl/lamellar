@@ -18,6 +18,7 @@
 #define TEST_FAILED   "\x1B[31mFAILED \x1B[0m"
 
 #define BILLION 1000000000ULL
+#define MILLION 1000000ULL
 #define tdiff(end,start) BILLION * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec
 
 void rofi_banner(char*);
