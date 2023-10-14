@@ -1,3 +1,5 @@
+use std::io::Write;
+
 extern crate bindgen;
 
 fn main(){
@@ -39,18 +41,26 @@ fn main(){
         libfabrics_path = custom_path;
     }
     
-    
-    println!("cargo::rustc-link-search={}", libfabrics_path);
-    println!("cargo::rustc-link-lib=fabric");
-
+    let headers = std::fs::read_dir(libfabrics_path.clone()+"/include/rdma/").unwrap();
+    let header_file = std::fs::File::create(libfabrics_path.clone()+"/include/fabric_sys.h").unwrap();
+    let mut writer = std::io::BufWriter::new(header_file);
+    for header in headers {
+        if header.as_ref().unwrap().file_type().unwrap().is_file() {
+            let _ = writer.write_all(("#include<rdma/".to_owned()+&header.as_ref().unwrap().file_name().into_string().unwrap()+">\n").as_bytes());
+        }
+    }
+    let _ = writer.flush();
     let bindings = bindgen::Builder::default()
         .clang_arg(format!("-I{}",libfabrics_path.clone()+"/include/"))
-        .header(libfabrics_path+"/include/rdma/fabric.h")
+        .header(libfabrics_path.clone()+"/include/fabric_sys.h")
         .generate()
         .expect("Unable to generate bindings");
 
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+    
+    println!("cargo:rustc-link-search={}", libfabrics_path.clone() +"/lib/");
+    println!("cargo:rustc-link-lib=fabric");
 
 }
