@@ -1,0 +1,8 @@
+[package]
+name = "libfabric"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+libfabric-sys = { path = "../libfabric-sys" }
