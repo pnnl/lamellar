@@ -1,10 +1,13 @@
 use core::panic;
 
+use enums::AvType;
+
 // use libfabric_sys;
-mod ep;
-mod domain;
-mod eq;
-mod fabric;
+pub mod ep;
+pub mod domain;
+pub mod eq;
+pub mod fabric;
+pub mod enums;
 #[derive(Clone)]
 pub struct InfoCaps {
     bitfield: u64,
@@ -112,14 +115,6 @@ impl Info {
     }
 }
 
-// impl Iterator for Info {
-//     type Item = InfoEntry;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         self.curr.next()
-//     }
-// }
-
 impl Drop for Info {
     
     fn drop(&mut self) {
@@ -154,6 +149,7 @@ impl FabricAttr {
 #[derive(Clone)]
 pub struct DomainAttr {
     pub name: String,
+    #[allow(dead_code)]
     c_attr : *const libfabric_sys::fi_domain_attr,
 }
 
@@ -163,6 +159,10 @@ impl DomainAttr {
         let name = unsafe {std::ffi::CStr::from_ptr(c_str_name)}.to_str().unwrap().to_owned();
 
         DomainAttr { name, c_attr }
+    }
+
+    pub fn get_av_type(&self) ->  enums::AvType {
+        crate::enums::AvType::from_value(unsafe { (*self.c_attr).av_type })
     }
 }
 
@@ -225,7 +225,7 @@ impl FabricAttr {
 
 pub type Address = libfabric_sys::fi_addr_t; 
 pub type DataType = libfabric_sys::fi_datatype;
-pub type Op = libfabric_sys::fi_op;
+// pub type Op = libfabric_sys::fi_op;
 pub struct Msg {
     c_msg: *mut libfabric_sys::fi_msg,
 }
@@ -249,6 +249,7 @@ pub struct TxAttr {
 }
 
 impl TxAttr {
+    #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_tx_attr {
         &self.c_attr
     }
@@ -263,6 +264,7 @@ pub struct AtomicAttr {
 }
 
 impl AtomicAttr {
+    #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_atomic_attr {
         &self.c_attr
     }
@@ -283,6 +285,8 @@ impl AtomicAttr {
 //     }
 // }
 pub struct Stx {
+
+    #[allow(dead_code)]
     c_stx: *mut libfabric_sys::fid_stx,
 }
 
@@ -488,8 +492,6 @@ impl MemoryRegion {
         Self { c_mr }        
     }
 
-    //pub(crate) fn from_iovec
-
     pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: u64) -> Self {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
@@ -558,12 +560,53 @@ impl MemoryRegion {
     }
 
 }
-
+#[derive(Debug)]
 pub struct AvAttr {
     pub(crate) c_attr: libfabric_sys::fi_av_attr, 
 }
 
+// pub struct fi_av_attr {
+//     pub type_: fi_av_type,
+//     pub rx_ctx_bits: ::std::os::raw::c_int,
+//     pub count: usize,
+//     pub ep_per_node: usize,
+//     pub name: *const ::std::os::raw::c_char,
+//     pub map_addr: *mut ::std::os::raw::c_void,
+//     pub flags: u64,
+// }
+
 impl AvAttr {
+    pub fn new() -> Self {
+        let c_attr = libfabric_sys::fi_av_attr{
+            type_: AvType::UNSPEC.get_value(), 
+            rx_ctx_bits: 0,
+            count: 0,
+            ep_per_node: 0,
+            name: std::ptr::null(),
+            map_addr: std::ptr::null_mut(),
+            flags: 0
+        };
+
+        Self { c_attr }
+    }
+
+    pub fn avtype(&mut self, av_type: crate::enums::AvType) -> &mut Self{
+        self.c_attr.type_ = av_type.get_value();
+
+        self
+    }
+
+    pub fn count(&mut self, count: usize) -> &mut Self {
+        self.c_attr.count = count;
+
+        self
+    }
+
+    pub fn flags(&mut self, flags: u64) -> &mut Self {
+        self.c_attr.flags = flags;
+
+        self
+    }
 
     #[allow(dead_code)]
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_av_attr {
@@ -655,6 +698,17 @@ impl Av {
         let str_addr = unsafe {std::ffi::CStr::from_ptr(straddr)};
         str_addr.to_str().unwrap()
     }
+
+    pub fn avset<T0>(&self, attr:AvSetAttr , context: &mut T0) -> AvSet {
+        AvSet::new(self, attr, context)
+    }
+
+}
+
+impl FID for Av {
+    fn fid(&self) -> *mut libfabric_sys::fid {
+        unsafe { &mut (*self.c_av).fid }
+    }
 }
 
 pub fn rx_addr(addr: Address, rx_index: i32, rx_ctx_bits: i32) -> Address {
@@ -670,6 +724,7 @@ impl IoVec {
         &self.c_attr
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::iovec {
         &mut self.c_attr
     }
@@ -698,6 +753,7 @@ impl MemoryRegionAttr {
         &self.c_attr
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_mr_attr {
         &mut self.c_attr
     }
@@ -720,35 +776,22 @@ impl Mc {
         Self { c_mc }
     }
 
+    pub(crate) fn new_collective<T0>(ep: &crate::ep::Endpoint, addr: Address, set: &AvSet, flags: u64, ctx: &mut T0) -> Self {
+        let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
+        let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
+        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.c_ep, addr, set.c_set, flags, c_mc_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
+
+        if err != 0 {
+            panic!("fi_join_collective failed {}", err);
+        }
+
+        Self { c_mc }
+    }
+
     pub fn addr(&self) -> Address {
         unsafe { libfabric_sys::inlined_fi_mc_addr(self.c_mc) }
     }
 }
-
-
-// pub struct Attr<T0> {
-//     c_attr: T0,
-// }
-
-// impl<T0> Attr<T0> {
-//     pub(crate) fn get(&self) -> *const T0 {
-//         let c_attr_ptr: *const T0 = &self.c_attr;
-
-//         c_attr_ptr
-//     }
-// }
-
-
-// pub struct SrxAttr {
-//     c_srx_attr: *mut libfabric_sys::fid_srx_attr,
-// }
-
-
-// impl SrxAttr {
-//     pub(crate) fn new(c_srx_attr: *mut libfabric_sys::fid_srx_attr) -> Self {
-//         Self { c_srx_attr }
-//     }
-// }
 
 pub trait FID{
     fn fid(&self) -> *mut libfabric_sys::fid;
@@ -791,23 +834,209 @@ pub trait FID{
         len
     }
 
+    fn close(&mut self) {
+        let err = unsafe { libfabric_sys::inlined_fi_close(self.fid()) };
+
+        if err != 0 {
+            panic!("fi_close failed {}", err);
+        }
+    }
+
     fn cancel(&self) {
         let _ = unsafe { libfabric_sys::inlined_fi_cancel(self.fid(), std::ptr::null_mut()) };
+    }
+
+
+    fn control<T0>(&self, opt: crate::enums::ControlOpt, arg: &mut T0) {
+        let err = unsafe { libfabric_sys::inlined_fi_control(self.fid(), opt.get_value() as i32, arg as *mut T0 as *mut std::ffi::c_void) };
+    
+        if err != 0 {
+            panic!("fi_control failed {}", err);
+        }
     }
 }
 
 
+pub type CollectiveOp = libfabric_sys::fi_collective_op;
+pub struct CollectiveAttr {
+    pub(crate) c_attr: libfabric_sys::fi_collective_attr,
+}
 
+impl CollectiveAttr {
+
+    #[allow(dead_code)]
+    pub(crate) fn get(&self) ->  *const libfabric_sys::fi_collective_attr {
+        &self.c_attr
+    }
+
+    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_collective_attr {
+        &mut self.c_attr
+    }
+}
+
+
+pub struct AvSetAttr {
+    c_attr: libfabric_sys::fi_av_set_attr,
+}
+
+impl AvSetAttr {
+
+    #[allow(dead_code)]
+    pub(crate) fn get(&self) ->  *const libfabric_sys::fi_av_set_attr {
+        &self.c_attr
+    }
+
+    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_av_set_attr {
+        &mut self.c_attr
+    }    
+}
+
+pub struct AvSet {
+    c_set : *mut libfabric_sys::fid_av_set,
+}
+
+impl AvSet {
+    pub(crate) fn new<T0>(av: &Av, mut attr: AvSetAttr, context: &mut T0) -> Self {
+        let mut c_set: *mut libfabric_sys::fid_av_set = std::ptr::null_mut();
+        let c_set_ptr: *mut *mut libfabric_sys::fid_av_set = &mut c_set;
+
+        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.c_av, attr.get_mut(), c_set_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+        if err != 0 {
+            panic!("fi_av_set failed {}", err);
+        }
+
+        Self { c_set }
+    }
+    
+    pub fn union(&mut self, other: &AvSet) {
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_union(self.c_set, other.c_set) };
+
+        if err != 0 {
+            panic!("fi_av_set_union failed {}", err);
+        }
+    }
+    pub fn intersect(&mut self, other: &AvSet) {
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_intersect(self.c_set, other.c_set) };
+
+        if err != 0 {
+            panic!("fi_av_set_intersect failed {}", err);
+        }
+    }
+    pub fn diff(&mut self, other: &AvSet) {
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_diff(self.c_set, other.c_set) };
+
+        if err != 0 {
+            panic!("fi_av_set_diff failed {}", err);
+        }
+    }
+    
+    pub fn insert(&mut self, addr: Address) {
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_insert(self.c_set, addr) };
+
+        if err != 0 {
+            panic!("fi_av_set_insert failed {}", err);
+        }
+    }
+
+    pub fn remove(&mut self, addr: Address) {
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_remove(self.c_set, addr) };
+
+        if err != 0 {
+            panic!("fi_av_set_remove failed {}", err);
+        }
+    }
+
+    pub fn addr(&mut self) -> Address {
+        let mut addr: Address = 0;
+        let addr_ptr: *mut Address = &mut addr;
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_addr(self.c_set, addr_ptr) };
+
+        if err != 0 {
+            panic!("fi_av_set_addr failed {}", err);
+        }
+
+        addr
+    }
+
+}
+
+
+pub struct PollFd {
+    c_poll: libfabric_sys::pollfd,
+}
+
+impl PollFd {
+    pub fn new() -> Self {
+        let c_poll = libfabric_sys::pollfd{ fd: 0, events: 0, revents: 0 };
+        Self { c_poll }
+    }
+
+    pub fn fd(&mut self, fd: i32) -> &mut Self {
+        
+        self.c_poll.fd = fd;
+        self
+    }
+
+    pub fn events(&mut self, events: i16) -> &mut Self {
+        
+        self.c_poll.events = events;
+        self
+    }
+
+    pub fn revents(&mut self, revents: i16) -> &mut Self {
+        
+        self.c_poll.revents = revents;
+        self
+    }
+}
+
+
+// pub fn get_params() -> Vec<Param> {
+//     let mut len = 0 as i32;
+//     let len_ptr : *mut i32 = &mut len;
+//     let mut c_params: *mut libfabric_sys::fi_param = std::ptr::null_mut();
+//     let mut c_params_ptr: *mut *mut libfabric_sys::fi_param = &mut c_params;
+    
+//     let err = libfabric_sys::fi_getparams(c_params_ptr, len_ptr);
+//     if err != 0 {
+//         panic!("fi_getparams failed {}", err);
+//     }
+
+//     let mut params = Vec::<Param>::new();
+//     for i  in 0..len {
+//         params.push(Param { c_param: unsafe{ c_params.add(i as usize) } });
+//     }
+
+//     params
+// }
+
+
+// pub struct Param {
+//     c_param: libfabric_sys::fi_param,
+// }
 
 #[test]
 fn get_info(){
     let info = Info::all();
-    let entries = info.get();
-    for e in entries.iter() {
-        println!("provider: {}", e.fabric_attr.prov_name);
-        println!("  fabric: {}", e.fabric_attr.name);
-        println!("  domain: {}", e.domain_attr.name);
-        println!("  version: {}.{}", e.fabric_attr.prov_version.0, e.fabric_attr.prov_version.1 );
-    }
+    let _entries = info.get();
+    // for e in entries.iter() {
+    //     println!("provider: {}", e.fabric_attr.prov_name);
+    //     println!("  fabric: {}", e.fabric_attr.name);
+    //     println!("  domain: {}", e.domain_attr.name);
+    //     println!("  version: {}.{}", e.fabric_attr.prov_version.0, e.fabric_attr.prov_version.1 );
+    // }
 
+}
+
+#[test]
+fn ft_open_fabric_res() {
+    let info = Info::all();
+    let entries = info.get();
+    
+    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let mut eq = fab.eq_open(crate::eq::EqAttr::new());
+    let mut domain = fab.domain(&entries[0]);
+    domain.close();
+    eq.close();
+    fab.close();
 }

@@ -10,7 +10,7 @@ impl Fabric {
         let c_fabric_ptr: *mut *mut libfabric_sys::fid_fabric = &mut c_fabric;
 
         let err = unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, std::ptr::null_mut())};
-        if err != 0 {
+        if err != 0 || c_fabric == std::ptr::null_mut() {
             panic!("fi_fabric failed {}", err);
         }
 
@@ -29,8 +29,8 @@ impl Fabric {
         crate::ep::PassiveEndPoint::new(self, info)
     }
 
-    pub fn eq_open(&self, attr: crate::eq::EqAttr) -> crate::eq::Eq {
-        crate::eq::Eq::new(self, attr)
+    pub fn eq_open(&self, attr: crate::eq::EqAttr) -> crate::eq::EventQueue {
+        crate::eq::EventQueue::new(self, attr)
     }
 
     pub fn wait_open(&self, wait_attr: crate::eq::WaitAttr) -> crate::eq::Wait {
@@ -43,5 +43,12 @@ impl Fabric {
         if err != 0 {
             panic!("fi_trywait failed {}", err);
         }
+    }
+}
+
+
+impl crate::FID for Fabric {
+    fn fid(&self) -> *mut libfabric_sys::fid {
+        unsafe { &mut (*self.c_fabric).fid }
     }
 }
