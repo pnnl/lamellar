@@ -1,5 +1,8 @@
 use core::panic;
+#[allow(unused_imports)]
 use crate::FID;
+
+//================== Domain (fi_domain) ==================//
 
 pub struct Domain {
     pub(crate) c_domain: *mut libfabric_sys::fid_domain,
@@ -13,7 +16,7 @@ impl Domain {
         let err = unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) };
 
         if err != 0 {
-            panic!("fi_domain failed {}", err);
+            panic!("fi_domain failed {}: {}", err, crate::error_to_string(err.into()));
         }
 
         Self { c_domain }
@@ -39,9 +42,6 @@ impl Domain {
         }
     } 
 
-    //     static inline int
-    // fi_srx_context(struct fid_domain *domain, struct fi_rx_attr *attr,
-    // 	       struct fid_ep **rx_ep, void *context)  [TODO]
     pub fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> crate::ep::Endpoint {
         crate::ep::Endpoint::from_attr(self, rx_attr)
     }
@@ -66,24 +66,24 @@ impl Domain {
     }
 
 
-    pub fn poll_open(&self, attr: crate::PollAttr) -> crate::Poll {
-        crate::Poll::new(self, attr)
+    pub fn poll_open(&self, attr: crate::sync::PollAttr) -> crate::sync::Poll {
+        crate::sync::Poll::new(self, attr)
     }
 
-    pub fn av_open(&self, attr: crate::AvAttr) -> crate::Av {
-        crate::Av::new(self, attr)
+    pub fn av_open(&self, attr: crate::av::AddressVectorAttr) -> crate::av::AddressVector {
+        crate::av::AddressVector::new(self, attr)
     }
 
-    pub fn mr_reg<T0>(&self, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> crate::MemoryRegion {
-        crate::MemoryRegion::from_buffer(self, buf, acs, offset, requested_key, flags)
+    pub fn mr_reg<T0>(&self, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> crate::mr::MemoryRegion {
+        crate::mr::MemoryRegion::from_buffer(self, buf, acs, offset, requested_key, flags)
     }
 
-    pub fn mr_regv<T0>(&self,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> crate::MemoryRegion {
-        crate::MemoryRegion::from_iovec(self, iov, count, acs, offset, requested_key, flags)
+    pub fn mr_regv<T0>(&self,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> crate::mr::MemoryRegion {
+        crate::mr::MemoryRegion::from_iovec(self, iov, count, acs, offset, requested_key, flags)
     }
 
-    pub fn mr_regattr<T0>(&self, attr: crate::MemoryRegionAttr ,  flags: u64) -> crate::MemoryRegion {
-        crate::MemoryRegion::from_attr(self, attr,  flags)
+    pub fn mr_regattr<T0>(&self, attr: crate::mr::MemoryRegionAttr ,  flags: u64) -> crate::mr::MemoryRegion {
+        crate::mr::MemoryRegion::from_attr(self, attr,  flags)
     }
 
     pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) {
@@ -122,13 +122,77 @@ impl crate::FID for Domain {
     }
 }
 
+//================== Domain attribute ==================//
+
+#[derive(Clone)]
+pub struct DomainAttr {
+    pub(crate) c_attr : libfabric_sys::fi_domain_attr,
+}
+
+impl DomainAttr {
+
+    pub fn new() -> Self {
+        let c_attr = libfabric_sys::fi_domain_attr {
+            domain: std::ptr::null_mut(),
+            name: std::ptr::null_mut(),
+            threading: crate::enums::Threading::UNSPEC.get_value(),
+            control_progress: crate::enums::Progress::UNSPEC.get_value(),
+            data_progress: crate::enums::Progress::UNSPEC.get_value(),
+            resource_mgmt: crate::enums::ResourceMgmt::UNSPEC.get_value(),
+            av_type: crate::enums::AddressVectorType::UNSPEC.get_value(),
+            mr_mode: 0,
+            mr_key_size: 0,
+            cq_data_size: 0,
+            cq_cnt: 0,
+            ep_cnt: 0,
+            tx_ctx_cnt: 0,
+            rx_ctx_cnt: 0,
+            max_ep_tx_ctx: 0,
+            max_ep_rx_ctx: 0,
+            max_ep_stx_ctx: 0,
+            max_ep_srx_ctx: 0,
+            cntr_cnt: 0,
+            mr_iov_limit: 0,
+            caps: 0,
+            mode: 0,
+            auth_key: std::ptr::null_mut(),
+            auth_key_size: 0,
+            max_err_data: 0,
+            mr_cnt: 0,
+            tclass: 0,         
+        };
+        Self { c_attr }
+    }
+
+    pub fn mode(&mut self, mode: u64) -> &mut Self {
+        self.c_attr.mode = mode;
+        
+        self
+    }
+
+    pub fn get_av_type(&self) ->  crate::enums::AddressVectorType {
+        crate::enums::AddressVectorType::from_value( self.c_attr.av_type)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get(&self) -> *const libfabric_sys::fi_domain_attr {
+        &self.c_attr
+    }
+
+    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_domain_attr {
+        &mut self.c_attr
+    }
+}
+
+//================== Domain tests ==================//
+
 #[test]
 fn domain_test() {
     let info = crate::Info::all();
     let entries = info.get();
     
     let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EqAttr::new());
+    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
     let count = 10;
     let mut doms = Vec::new();
     for _ in 0..count {

@@ -1,7 +1,5 @@
 use core::panic;
-use std::ffi::c_void;
-
-use crate::{FID, Address, DataType};
+//================== Passive Endpoint (fi_passive_ep) ==================//
 
 pub struct PassiveEndPoint {
     pub(crate) c_pep: *mut libfabric_sys::fid_pep,
@@ -32,7 +30,7 @@ impl PassiveEndPoint {
         Self { c_pep }
     }
     
-    pub fn bind(&self, fid: &impl FID, flags: u64) {
+    pub fn bind(&self, fid: &impl crate::FID, flags: u64) {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.c_pep,fid.fid(), flags) };
         
         if err != 0 {
@@ -48,7 +46,7 @@ impl PassiveEndPoint {
         }
     }
 
-    pub fn reject<T0>(&self, fid: &impl FID, params: &[T0]) {
+    pub fn reject<T0>(&self, fid: &impl crate::FID, params: &[T0]) {
         let err = unsafe {libfabric_sys::inlined_fi_reject(self.c_pep, fid.fid(), params.as_ptr() as *const std::ffi::c_void, params.len())};
 
         if err != 0 {
@@ -56,6 +54,12 @@ impl PassiveEndPoint {
         }
 
     }
+}
+
+//================== Endpoint (fi_endpoint) ==================//
+
+pub struct Endpoint {
+    pub(crate) c_ep: *mut libfabric_sys::fid_ep,
 }
 
 impl Endpoint {
@@ -132,7 +136,7 @@ impl Endpoint {
         Self { c_ep }        
     }
 
-    pub fn bind(&self, fid: &impl FID, flags: u64) {
+    pub fn bind(&self, fid: &impl crate::FID, flags: u64) {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.c_ep,fid.fid(), flags) };
         
         if err != 0 {
@@ -411,12 +415,12 @@ impl Endpoint {
         }
     }
 
-    pub fn atomic<T0,T1>(&self, buf: &mut [T0], count : usize, desc: &mut T1, dest_addr: Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+    pub fn atomic<T0,T1>(&self, buf: &mut [T0], count : usize, desc: &mut T1, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
         let ret = unsafe{ libfabric_sys::inlined_fi_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, desc as *mut T1  as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         ret
     }
 
-    pub fn atomicv<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [T1], count : usize, dest_addr: Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+    pub fn atomicv<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [T1], count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
         let ret = unsafe{ libfabric_sys::inlined_fi_atomicv(self.c_ep, iov.get(), desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, count, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         ret
     }
@@ -426,18 +430,18 @@ impl Endpoint {
         ret
     }
 
-    pub fn inject_atomic<T0,T1>(&self, buf: &mut [T0], count : usize, dest_addr: Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+    pub fn inject_atomic<T0,T1>(&self, buf: &mut [T0], count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
         let ret = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, dest_addr, addr, key, datatype, op.get_value())};
         ret
     }
 
-    pub fn fetch_atomic<T0,T1>(&self, buf: &mut [T0], count : usize, desc: &mut [T1], res: &mut [T0], res_desc: &mut [T1], dest_addr: Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+    pub fn fetch_atomic<T0,T1>(&self, buf: &mut [T0], count : usize, desc: &mut [T1], res: &mut [T0], res_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
         let ret = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, res.as_mut_ptr()  as *mut std::ffi::c_void, res_desc.as_mut_ptr() as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         ret
     }
 
 
-    pub fn fetch_atomicv<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [T1], count : usize, resultv: &mut crate::Ioc,  res_desc: &mut [T1], res_count : usize, dest_addr: Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+    pub fn fetch_atomicv<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [T1], count : usize, resultv: &mut crate::Ioc,  res_desc: &mut [T1], res_count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
         let ret = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.c_ep, iov.get(), desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, count, resultv.get_mut(), res_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, res_count, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         ret
     }
@@ -448,7 +452,7 @@ impl Endpoint {
     }
 
     pub fn compare_atomic<T0, T1>(&self, buf: &mut [T0], count : usize, desc: &mut [T1], compare: &mut [T0], compare_desc: &mut [T1], 
-            result: &mut [T0], result_desc: &mut [T1], dest_addr: Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize {
+            result: &mut [T0], result_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize {
         let ret = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, compare.as_mut_ptr()  as *mut std::ffi::c_void, 
             compare_desc.as_mut_ptr()  as *mut std::ffi::c_void, result.as_mut_ptr()  as *mut std::ffi::c_void, result_desc.as_mut_ptr()  as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         
@@ -456,7 +460,7 @@ impl Endpoint {
     }
 
     pub fn compare_atomicv<T0>(&self, iov: &crate::Ioc, desc: &mut [T0], count : usize, comparetv: &mut crate::Ioc,  compare_desc: &mut [T0], compare_count : usize, 
-        resultv: &mut crate::Ioc,  res_desc: &mut [T0], res_count : usize, dest_addr: Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize {
+        resultv: &mut crate::Ioc,  res_desc: &mut [T0], res_count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize {
         let ret = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.c_ep, iov.get(), desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, count, comparetv.get_mut(), compare_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, compare_count, resultv.get_mut(), res_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, res_count, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         
         ret
@@ -505,59 +509,99 @@ impl Endpoint {
         crate::Mc::new(self, addr, flags, context)
     }
 
-    pub fn join_collective<T0>(&self, coll_addr: Address, set: &crate::AvSet, flags: u64, context : &mut T0) -> crate::Mc {
+    pub fn join_collective<T0>(&self, coll_addr: crate::Address, set: &crate::av::AddressVectorSet, flags: u64, context : &mut T0) -> crate::Mc {
         crate::Mc::new_collective(self, coll_addr, set, flags, context)
     }
 
-    pub fn barrier<T0>(&self, addr: Address, context: &mut T0) -> isize {
+    pub fn barrier<T0>(&self, addr: crate::Address, context: &mut T0) -> isize {
         unsafe { libfabric_sys::inlined_fi_barrier(self.c_ep, addr, context as *mut T0 as *mut std::ffi::c_void) }
     }
 
-    pub fn barrier2<T0>(&self, addr: Address, flags: u64, context: &mut T0) -> isize {
+    pub fn barrier2<T0>(&self, addr: crate::Address, flags: u64, context: &mut T0) -> isize {
         unsafe { libfabric_sys::inlined_fi_barrier2(self.c_ep, addr, flags, context as *mut T0 as *mut std::ffi::c_void) }
     }
 
-    pub fn broadcast<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, coll_addr: Address, root_addr: Address, datatype: DataType, flags: u64, context: &mut T2) -> isize {
+    pub fn broadcast<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut T2) -> isize {
         unsafe { libfabric_sys::inlined_fi_broadcast(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
 
-    pub fn alltoall<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: Address, datatype: DataType, flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_alltoall(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut c_void, result_desc as *mut T1 as *mut c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+    pub fn alltoall<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut T2) -> isize {
+        unsafe { libfabric_sys::inlined_fi_alltoall(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
 
-    pub fn allreduce<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: Address, datatype: DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_allreduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut c_void, result_desc as *mut T1 as *mut c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
+    pub fn allreduce<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
+        unsafe { libfabric_sys::inlined_fi_allreduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
-    pub fn allgather<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: Address, datatype: DataType, flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_allgather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut c_void, result_desc as *mut T1 as *mut c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+    pub fn allgather<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut T2) -> isize {
+        unsafe { libfabric_sys::inlined_fi_allgather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
-    pub fn reduce_scatter<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: Address, datatype: DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut c_void, result_desc as *mut T1 as *mut c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
+    pub fn reduce_scatter<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
+        unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
-    pub fn reduce<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: Address, root_addr: Address, datatype: DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_reduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut c_void, result_desc as *mut T1 as *mut c_void, coll_addr, root_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
+    pub fn reduce<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
+        unsafe { libfabric_sys::inlined_fi_reduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
-    pub fn scatter<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: Address, root_addr: Address, datatype: DataType,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut c_void, result_desc as *mut T1 as *mut c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+    pub fn scatter<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64, context: &mut T2) -> isize {
+        unsafe { libfabric_sys::inlined_fi_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
-    pub fn gather<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: Address, root_addr: Address, datatype: DataType,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_gather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut c_void, result_desc as *mut T1 as *mut c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+    pub fn gather<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64, context: &mut T2) -> isize {
+        unsafe { libfabric_sys::inlined_fi_gather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
 }
 
-impl FID for Endpoint {
+impl crate::FID for Endpoint {
     fn fid(&self) -> *mut libfabric_sys::fid {
         unsafe { &mut (*self.c_ep).fid }
     }
 }
 
 
-pub struct Endpoint {
-    pub(crate) c_ep: *mut libfabric_sys::fid_ep,
+
+
+//================== Endpoint attribute ==================//
+
+pub struct EndpointAttr {
+    c_attr: libfabric_sys::fi_ep_attr,
 }
 
+impl EndpointAttr {
+    pub fn new() -> Self {
+        let c_attr = libfabric_sys::fi_ep_attr{
+            type_: libfabric_sys::fi_ep_type_FI_EP_UNSPEC,
+            protocol: libfabric_sys::FI_PROTO_UNSPEC,
+            protocol_version: 0,
+            max_msg_size: 0,
+            msg_prefix_size: 0,
+            max_order_raw_size: 0,
+            max_order_war_size: 0,
+            max_order_waw_size: 0,
+            mem_tag_format: 0,
+            tx_ctx_cnt: 0,
+            rx_ctx_cnt: 0,
+            auth_key_size: 0,
+            auth_key: std::ptr::null_mut(),
+        };
+
+        Self { c_attr }
+    }
+
+    pub fn ep_type(&mut self, type_: crate::enums::EndpointType) -> &mut Self {
+
+        self.c_attr.type_ = type_.get_value();
+        self
+    }
+
+    pub(crate) fn get(&self) ->  *const libfabric_sys::fi_ep_attr {
+        &self.c_attr
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_ep_attr {
+        &mut self.c_attr
+    }
+}

@@ -1,11 +1,13 @@
 use core::panic;
+#[allow(unused_imports)]
+use crate::FID;
 
 pub struct EventQueue {
     c_eq: *mut libfabric_sys::fid_eq,
 }
 
 impl EventQueue {
-    pub fn new(fabric: &crate::fabric::Fabric, mut attr: EqAttr) -> Self {
+    pub fn new(fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr) -> Self {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
@@ -135,7 +137,7 @@ impl CommandQueueAttr {
         self
     }
 
-    pub fn wait_set(&mut self, wait_set: &Wait) -> &mut Self {
+    pub fn wait_set(&mut self, wait_set: &crate::sync::Wait) -> &mut Self {
         self.c_attr.wait_set = wait_set.c_wait;
         self
     }
@@ -219,11 +221,11 @@ impl CommandQueue {
 }
 
 
-pub struct EqAttr {
+pub struct EventQueueAttr {
     c_attr: libfabric_sys::fi_eq_attr,
 }
 
-impl EqAttr {
+impl EventQueueAttr {
 
     pub fn new() -> Self {
         let c_attr = libfabric_sys::fi_eq_attr{ 
@@ -257,7 +259,7 @@ impl EqAttr {
         self
     }
 
-    pub fn wait_set(&mut self, wait_set: &Wait) -> &mut Self {
+    pub fn wait_set(&mut self, wait_set: &crate::sync::Wait) -> &mut Self {
         self.c_attr.wait_set = wait_set.c_wait;
         self
     }
@@ -270,45 +272,6 @@ impl EqAttr {
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_eq_attr {
         &mut self.c_attr
     }    
-}
-
-pub struct Wait {
-    pub(crate) c_wait: *mut libfabric_sys::fid_wait,
-}
-
-impl Wait {
-    pub(crate) fn new(fabric: &crate::fabric::Fabric, mut attr: WaitAttr) -> Self {
-        let mut c_wait: *mut libfabric_sys::fid_wait  = std::ptr::null_mut();
-        let c_wait_ptr: *mut *mut libfabric_sys::fid_wait = &mut c_wait;
-
-        let err = unsafe {libfabric_sys::inlined_fi_wait_open(fabric.c_fabric, attr.get_mut(), c_wait_ptr)};
-        if err != 0 {
-            panic!("fi_eq_open failed {}", err);
-        }
-
-        Self { c_wait }        
-    }
-
-    pub fn wait(&self, timeout: i32) -> i32 { // [TODO] Probably returns error when timeout occurs, 0 if done, or error
-        unsafe { libfabric_sys::inlined_fi_wait(self.c_wait, timeout) } 
-    }
-}
-
-pub struct WaitAttr {
-    pub(crate) c_attr: libfabric_sys::fi_wait_attr,
-}
-
-
-impl WaitAttr {
-    
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_wait_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_wait_attr {
-        &mut self.c_attr
-    }   
 }
 
 pub struct EqErrEntry {
@@ -364,14 +327,13 @@ impl CqErrEntry {
     }       
 }
 
-use crate::{FID, enums::AvType, AvAttr};
 #[test]
 fn cq_open_close_sizes() {
     let info = crate::Info::all();
     let entries = info.get();
     
     let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EqAttr::new());
+    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
     let mut domain = fab.domain(&entries[0]);
     for i in -1..17 {
         let size ;
@@ -398,7 +360,7 @@ fn cq_open_close_simultaneous() {
     
     let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
     let count = 10;
-    let mut eq = fab.eq_open(crate::eq::EqAttr::new());
+    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
     let mut domain = fab.domain(&entries[0]);
     let mut cqs = Vec::new();
     for _ in 0..count {
@@ -422,7 +384,7 @@ fn cq_signal() {
     let mut buf = vec![0,0,0];
     
     let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EqAttr::new());
+    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
     let mut domain = fab.domain(&entries[0]);
     let mut cq_attr = CommandQueueAttr::new();
     cq_attr.size(1);
@@ -432,7 +394,6 @@ fn cq_signal() {
     if ret != -(libfabric_sys::FI_EAGAIN as isize)  && ret != -(libfabric_sys::FI_ECANCELED as isize) {
         panic!("sread {}", ret);
     }
-    println!("ret = {}", ret);
     cq.close();
 
     domain.close();
@@ -454,7 +415,7 @@ fn eq_open_close_sizes() {
         else {
             size = 1 << i;
         }
-        let mut eq_attr = crate::eq::EqAttr::new();
+        let mut eq_attr = crate::eq::EventQueueAttr::new();
         eq_attr.size(size);
         let mut eq = fab.eq_open(eq_attr);
         eq.close();
@@ -462,11 +423,6 @@ fn eq_open_close_sizes() {
     fab.close();
 }
 
-// pub struct fi_eq_entry {
-//     pub fid: fid_t,
-//     pub context: *mut ::std::os::raw::c_void,
-//     pub data: u64,
-// }
 #[repr(C)]
 pub struct EventQueueEntry<T> {
     c_entry: libfabric_sys::fi_eq_entry,
@@ -521,7 +477,7 @@ impl<T> EventQueueEntry<T> {
 fn eq_write_read_self() {
     let info = crate::Info::all();
     let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EqAttr::new();
+    let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::NONE);
@@ -561,7 +517,7 @@ fn eq_write_read_self() {
             panic!("Unexpected fid {:?}", entry[0].get_fid());
         }
     }
-    let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
+    let entry: EventQueueEntry<usize> = EventQueueEntry::new();
     let mut event = 0;
     let ret = eq.read(&mut event, &mut [entry], 0);
     if ret != - (libfabric_sys::FI_EAGAIN as isize) {
@@ -575,7 +531,7 @@ fn eq_write_read_self() {
 fn eq_size_verify() {
     let info = crate::Info::all();
     let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EqAttr::new();
+    let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::NONE);
@@ -601,7 +557,7 @@ fn eq_size_verify() {
 fn eq_write_sread_self() {
     let info = crate::Info::all();
     let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EqAttr::new();
+    let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::FD);
@@ -641,7 +597,7 @@ fn eq_write_sread_self() {
             panic!("Unexpected fid {:?}", entry[0].get_fid());
         }
     }
-    let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
+    let entry: EventQueueEntry<usize> = EventQueueEntry::new();
     let mut event = 0;
     let ret = eq.read(&mut event, &mut [entry], 0);
     if ret != - (libfabric_sys::FI_EAGAIN as isize) {
@@ -655,7 +611,7 @@ fn eq_write_sread_self() {
 fn eq_readerr() {
     let info = crate::Info::all();
     let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EqAttr::new();
+    let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::FD);
@@ -699,33 +655,3 @@ fn eq_readerr() {
     fab.close();
 }
 
-
-#[test]
-fn av_open_close() {
-    let info = crate::Info::all();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EqAttr::new();
-    eq_attr.size(32)
-        .flags(libfabric_sys::FI_WRITE.into())
-        .wait_obj(crate::enums::WaitObj::FD);
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(eq_attr);
-    let mut domain = fab.domain(&entries[0]);
-
-    for i in 0..17 {
-        let count = 1 << i;
-        let mut attr = AvAttr::new();
-        attr
-            .avtype(AvType::MAP)
-            .count(count)
-            .flags(0);
-        println!("{:?}", attr);
-        let mut av = domain.av_open(attr);
-        av.close();
-    }
-
-
-    domain.close();
-    eq.close();
-    fab.close();
-}

@@ -198,6 +198,7 @@ impl EndpointOptName {
     }
 }
 
+#[allow(non_camel_case_types)]
 pub enum EndpointOptLevel {
     ENDPOINT,
 }
@@ -207,6 +208,29 @@ impl EndpointOptLevel {
     pub fn get_value(&self) -> libfabric_sys::_bindgen_ty_19 {
         match self {
             EndpointOptLevel::ENDPOINT => libfabric_sys::FI_OPT_ENDPOINT,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+pub enum EndpointType {
+    UNSPEC,
+    MSG,
+    DGRAM,
+    RDM,
+    SOCK_STREAM,
+    SOCK_DGRAM,    
+}
+
+impl EndpointType {
+    pub fn get_value(&self) -> libfabric_sys::fi_ep_type {
+        match self {
+            EndpointType::UNSPEC => libfabric_sys::fi_ep_type_FI_EP_UNSPEC, 
+            EndpointType::MSG => libfabric_sys::fi_ep_type_FI_EP_MSG, 
+            EndpointType::DGRAM => libfabric_sys::fi_ep_type_FI_EP_DGRAM, 
+            EndpointType::RDM => libfabric_sys::fi_ep_type_FI_EP_RDM, 
+            EndpointType::SOCK_STREAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM, 
+            EndpointType::SOCK_DGRAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM,        
         }
     }
 }
@@ -282,13 +306,13 @@ impl ControlOpt {
     }
 }
 
-pub enum AvType {
+pub enum AddressVectorType {
     UNSPEC,
     MAP,
     TABLE,    
 }
 
-impl AvType {
+impl AddressVectorType {
     pub(crate) fn from_value(value: libfabric_sys::fi_av_type) -> Self {
         if value == Self::UNSPEC.get_value() {
             Self::UNSPEC
@@ -300,16 +324,16 @@ impl AvType {
             Self::TABLE
         }
         else {
-            panic!("Unexpected value for AvType");
+            panic!("Unexpected value for AddressVectorType");
         }
     }
 
     pub fn get_value(&self) -> libfabric_sys::fi_av_type {
         
         match self {
-            AvType::UNSPEC => libfabric_sys::fi_av_type_FI_AV_UNSPEC, 
-            AvType::MAP => libfabric_sys::fi_av_type_FI_AV_MAP, 
-            AvType::TABLE => libfabric_sys::fi_av_type_FI_AV_TABLE, 
+            AddressVectorType::UNSPEC => libfabric_sys::fi_av_type_FI_AV_UNSPEC, 
+            AddressVectorType::MAP => libfabric_sys::fi_av_type_FI_AV_MAP, 
+            AddressVectorType::TABLE => libfabric_sys::fi_av_type_FI_AV_TABLE, 
         }
     }
 }
