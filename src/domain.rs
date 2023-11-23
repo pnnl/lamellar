@@ -42,6 +42,10 @@ impl Domain {
         }
     } 
 
+    pub fn ep(&self, info: &crate::InfoEntry) -> crate::ep::Endpoint {
+        crate::ep::Endpoint::new(self, info)
+    }
+
     pub fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> crate::ep::Endpoint {
         crate::ep::Endpoint::from_attr(self, rx_attr)
     }
@@ -57,12 +61,16 @@ impl Domain {
             panic!("fi_query_atomic failed {}", err);
         }
     }
-    pub fn cq_open(&self, attr: crate::eq::CommandQueueAttr) -> crate::eq::CommandQueue {
-        crate::eq::CommandQueue::new(self, attr)
+    pub fn cq_open(&self, attr: crate::cq::CompletionQueueAttr) -> crate::cq::CompletionQueue {
+        crate::cq::CompletionQueue::new(self, attr)
     }
 
-    pub fn cntr_open(&self, attr: crate::CounterAttr) -> crate::Counter {
-        crate::Counter::new(self, attr)
+    pub fn cq_open_with_context<T0>(&self, attr: crate::cq::CompletionQueueAttr, context: &mut T0) -> crate::cq::CompletionQueue {
+        crate::cq::CompletionQueue::new_with_context(self, attr, context)
+    }
+
+    pub fn cntr_open(&self, attr: crate::cntr::CounterAttr) -> crate::cntr::Counter {
+        crate::cntr::Counter::new(self, attr)
     }
 
 
@@ -124,7 +132,7 @@ impl crate::FID for Domain {
 
 //================== Domain attribute ==================//
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DomainAttr {
     pub(crate) c_attr : libfabric_sys::fi_domain_attr,
 }
@@ -164,14 +172,46 @@ impl DomainAttr {
         Self { c_attr }
     }
 
-    pub fn mode(&mut self, mode: u64) -> &mut Self {
-        self.c_attr.mode = mode;
+    pub fn mode(self, mode: u64) -> Self {
+        let mut c_attr = self.c_attr;
+        c_attr.mode = mode;
         
-        self
+        Self { c_attr }
+    }
+    
+    pub fn mr_mode(self, mr_mode: i32) -> Self {
+        let mut c_attr = self.c_attr;
+        c_attr.mr_mode = mr_mode;
+        
+        Self { c_attr }
+    }
+
+    pub fn threading(self, threading: crate::enums::Threading) -> Self {
+        let mut c_attr = self.c_attr;
+        c_attr.threading = threading.get_value();
+        
+        Self { c_attr }
+    }
+
+
+    pub fn get_mode(&self) -> u64 {
+        self.c_attr.mode 
+    }
+
+    pub fn get_mr_mode(&self) -> i32 {
+        self.c_attr.mr_mode
     }
 
     pub fn get_av_type(&self) ->  crate::enums::AddressVectorType {
         crate::enums::AddressVectorType::from_value( self.c_attr.av_type)
+    }
+
+    pub fn get_mr_iov_limit(&self) -> usize {
+        self.c_attr.mr_iov_limit
+    }
+
+    pub fn get_cntr_cnt(&self) -> usize {
+        self.c_attr.cntr_cnt
     }
 
     #[allow(dead_code)]
@@ -188,7 +228,7 @@ impl DomainAttr {
 
 #[test]
 fn domain_test() {
-    let info = crate::Info::all();
+    let info = crate::Info::new().request();
     let entries = info.get();
     
     let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());

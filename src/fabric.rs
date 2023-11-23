@@ -27,6 +27,7 @@ impl Fabric {
         crate::domain::Domain::new2(self, info, flags)
     }
 
+
     pub fn passive_ep(&self, info: &crate::InfoEntry) -> crate::ep::PassiveEndPoint {
         crate::ep::PassiveEndPoint::new(self, info)
     }
@@ -57,7 +58,7 @@ impl crate::FID for Fabric {
 
 //================== Fabric attribute ==================//
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FabricAttr {
     c_attr : libfabric_sys::fi_fabric_attr,
 }
@@ -83,5 +84,13 @@ impl FabricAttr {
 
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_fabric_attr {
         &mut self.c_attr
+    }
+
+    pub fn get_prov_name(&self) -> String {
+        unsafe{ std::ffi::CStr::from_ptr(self.c_attr.prov_name).to_str().unwrap().to_string() }
+    }    
+
+    pub fn get_name(&self) -> String {
+        unsafe{ std::ffi::CStr::from_ptr(self.c_attr.name).to_str().unwrap().to_string() }
     }    
 }

@@ -237,27 +237,22 @@ impl AddressVectorSetAttr {
 
 #[test]
 fn av_open_close() {
-    let mut ep_attr = crate::ep::EndpointAttr::new();
-        ep_attr
+    let ep_attr = crate::ep::EndpointAttr::new()
         .ep_type(crate::enums::EndpointType::RDM);
-    let mut dom_attr = crate::domain::DomainAttr::new();
-        dom_attr
-        .mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as u64 );
-    let mut hints = crate::InfoHints::new();
-        hints
+
+    let dom_attr = crate::domain::DomainAttr::new()
+        .mode(!0)
+        .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as i32 );
+
+    let hints = crate::InfoHints::new()
         .ep_attr(ep_attr)
         .domain_attr(dom_attr);
-    let info = crate::Info::with_hints(hints);
+
+    let info = crate::Info::new().hints(hints).request();
     let entries: Vec<crate::InfoEntry> = info.get();
     if entries.len() > 0 {
 
-        let mut eq_attr = crate::eq::EventQueueAttr::new();
-            eq_attr
-            .size(32)
-            .flags(libfabric_sys::FI_WRITE.into())
-            .wait_obj(crate::enums::WaitObj::FD);
         let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let mut eq = fab.eq_open(eq_attr);
         let mut domain = fab.domain(&entries[0]);
         
         for i in 0..17 {
@@ -271,8 +266,45 @@ fn av_open_close() {
             av.close();
         }
         domain.close();
-        eq.close();
         fab.close();
+    }
+    else {
+        panic!("No capable fabric found!");
     }
 
 }
+
+// #[test]
+// fn av_good_sync() {
+//     let mut ep_attr = crate::ep::EndpointAttr::new();
+//         ep_attr
+//         .ep_type(crate::enums::EndpointType::RDM);
+//     let mut dom_attr = crate::domain::DomainAttr::new();
+//         dom_attr
+//         .mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as u64 );
+//     let mut hints = crate::InfoHints::new();
+//         hints
+//         .ep_attr(ep_attr)
+//         .domain_attr(dom_attr);
+//     let info = crate::Info::with_hints(hints);
+//     let entries: Vec<crate::InfoEntry> = info.get();
+//     if entries.len() > 0 {
+//         let mut attr = crate::av::AddressVectorAttr::new();
+//         attr
+//         .avtype(crate::enums::AddressVectorType::MAP)
+//         .count(32);
+//         let mut av = domain.av_open(attr);
+
+        
+//         domain.close();
+//         eq.close();
+//         fab.close();
+//     }
+//     else {
+//         domain.close();
+//         eq.close();
+//         fab.close();
+//         panic!("No capable fabric found!");
+//     }
+
+// }

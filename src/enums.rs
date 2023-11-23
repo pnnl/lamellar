@@ -356,6 +356,37 @@ impl MrMode {
 }
 
 #[allow(non_camel_case_types)]
+pub enum MrType {
+    LOCAL,
+    RAW,
+    VIRT_ADDR,
+    ALLOCATED,
+    PROV_KEY,
+    MMU_NOTIFY,
+    RMA_EVENT,
+    ENDPOINT,
+    HMEM,
+    COLLECTIVE,
+}
+
+impl MrType {
+    pub fn get_value(&self) -> libfabric_sys::fi_progress {
+        match self {
+            MrType::LOCAL => libfabric_sys::FI_MR_LOCAL,
+            MrType::RAW => libfabric_sys::FI_MR_RAW,
+            MrType::VIRT_ADDR => libfabric_sys::FI_MR_VIRT_ADDR,
+            MrType::ALLOCATED => libfabric_sys::FI_MR_ALLOCATED,
+            MrType::PROV_KEY => libfabric_sys::FI_MR_PROV_KEY,
+            MrType::MMU_NOTIFY => libfabric_sys::FI_MR_MMU_NOTIFY,
+            MrType::RMA_EVENT => libfabric_sys::FI_MR_RMA_EVENT,
+            MrType::ENDPOINT => libfabric_sys::FI_MR_ENDPOINT,
+            MrType::HMEM => libfabric_sys::FI_MR_HMEM,
+            MrType::COLLECTIVE => libfabric_sys::FI_MR_COLLECTIVE,
+        }
+    }    
+}
+
+#[allow(non_camel_case_types)]
 pub enum Progress {
     UNSPEC,
     AUTO,
@@ -434,4 +465,146 @@ impl EpType {
             EpType::SOCK_DGRAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM,
         }
     }
+}
+
+pub enum CounterEvents {
+    COMP,
+}
+
+impl CounterEvents {
+    pub fn get_value(&self) -> libfabric_sys::fi_cntr_events {
+        match self {
+            CounterEvents::COMP => libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+pub enum TClass {
+    UNSPEC,
+    DSCP,
+    LABEL,
+    BEST_EFFORT,
+    LOW_LATENCY,
+    DEDICATED_ACCESS,
+    BULK_DATA,
+    SCAVENGER,
+    NETWORK_CTRL,
+}
+
+impl TClass {
+    pub fn get_value(&self) -> libfabric_sys::_bindgen_ty_5 {
+        
+        match self {
+            TClass::UNSPEC => libfabric_sys::FI_TC_UNSPEC,
+            TClass::DSCP => libfabric_sys::FI_TC_DSCP,
+            TClass::LABEL => libfabric_sys::FI_TC_LABEL,
+            TClass::BEST_EFFORT => libfabric_sys::FI_TC_BEST_EFFORT,
+            TClass::LOW_LATENCY => libfabric_sys::FI_TC_LOW_LATENCY,
+            TClass::DEDICATED_ACCESS => libfabric_sys::FI_TC_DEDICATED_ACCESS,
+            TClass::BULK_DATA => libfabric_sys::FI_TC_BULK_DATA,
+            TClass::SCAVENGER => libfabric_sys::FI_TC_SCAVENGER,
+            TClass::NETWORK_CTRL => libfabric_sys::FI_TC_NETWORK_CTRL,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+pub enum AddressFormat {
+    UNSPEC,
+    SOCKADDR,
+    SOCKADDR_IN,
+    SOCKADDR_IN6,
+    SOCKADDR_IB,
+    PSMX,
+    GNI,
+    BGQ,
+    MLX,
+    STR,
+    PSMX2,
+    IB_UD,
+    EFA,
+    PSMX3,
+    OPX,
+    CXI,
+    UCX,
+}
+
+impl AddressFormat {
+    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_3
+    {
+        match self {
+            AddressFormat::UNSPEC => libfabric_sys::FI_FORMAT_UNSPEC,
+            AddressFormat::SOCKADDR => libfabric_sys::FI_SOCKADDR,
+            AddressFormat::SOCKADDR_IN => libfabric_sys::FI_SOCKADDR_IN,
+            AddressFormat::SOCKADDR_IN6 => libfabric_sys::FI_SOCKADDR_IN6,
+            AddressFormat::SOCKADDR_IB => libfabric_sys::FI_SOCKADDR_IB,
+            AddressFormat::PSMX => libfabric_sys::FI_ADDR_PSMX,
+            AddressFormat::GNI => libfabric_sys::FI_ADDR_GNI,
+            AddressFormat::BGQ => libfabric_sys::FI_ADDR_BGQ,
+            AddressFormat::MLX => libfabric_sys::FI_ADDR_MLX,
+            AddressFormat::STR => libfabric_sys::FI_ADDR_STR,
+            AddressFormat::PSMX2 => libfabric_sys::FI_ADDR_PSMX2,
+            AddressFormat::IB_UD => libfabric_sys::FI_ADDR_IB_UD,
+            AddressFormat::EFA => libfabric_sys::FI_ADDR_EFA,
+            AddressFormat::PSMX3 => libfabric_sys::FI_ADDR_PSMX3,
+            AddressFormat::OPX => libfabric_sys::FI_ADDR_OPX,
+            AddressFormat::CXI => libfabric_sys::FI_ADDR_CXI,
+            AddressFormat::UCX => libfabric_sys::FI_ADDR_UCX,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+pub enum TransferOptions {
+    COMMIT_COMPLETE,
+    COMPLETION,
+    DELIVERY_COMPLETE,
+    INJECT,
+    INJECT_COMPLETE,
+    MULTICAST,
+    MULTI_RECV,
+    TRANSMIT_COMPLETE,
+}
+
+impl TransferOptions {
+    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_3
+    {
+        match self {
+            TransferOptions::COMMIT_COMPLETE => libfabric_sys::FI_COMMIT_COMPLETE,
+            TransferOptions::COMPLETION => libfabric_sys::FI_COMPLETION,
+            TransferOptions::DELIVERY_COMPLETE => libfabric_sys::FI_DELIVERY_COMPLETE,
+            TransferOptions::INJECT => libfabric_sys::FI_INJECT,
+            TransferOptions::INJECT_COMPLETE => libfabric_sys::FI_INJECT_COMPLETE,
+            TransferOptions::MULTICAST => libfabric_sys::FI_MULTICAST,
+            TransferOptions::MULTI_RECV => libfabric_sys::FI_MULTI_RECV,
+            TransferOptions::TRANSMIT_COMPLETE => libfabric_sys::FI_TRANSMIT_COMPLETE,
+        }
+    }    
+}
+
+#[allow(non_camel_case_types)]
+pub enum ConnectEvents {
+    NOTIFY,
+    CONNREQ,
+    CONNECTED,
+    SHUTDOWN,
+    MR_COMPLETE,
+    AV_COMPLETE,
+    JOIN_COMPLETE,
+}
+
+impl ConnectEvents{
+    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18
+    {
+        match self {
+            ConnectEvents::NOTIFY => libfabric_sys::FI_NOTIFY,
+            ConnectEvents::CONNREQ => libfabric_sys::FI_CONNREQ,
+            ConnectEvents::CONNECTED => libfabric_sys::FI_CONNECTED,
+            ConnectEvents::SHUTDOWN => libfabric_sys::FI_SHUTDOWN,
+            ConnectEvents::MR_COMPLETE => libfabric_sys::FI_MR_COMPLETE,
+            ConnectEvents::AV_COMPLETE => libfabric_sys::FI_AV_COMPLETE,
+            ConnectEvents::JOIN_COMPLETE => libfabric_sys::FI_JOIN_COMPLETE,
+        }
+    } 
 }

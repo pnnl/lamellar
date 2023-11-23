@@ -1,6 +1,10 @@
 use core::panic;
 #[allow(unused_imports)]
 use crate::FID;
+use crate::InfoEntry;
+
+
+//================== EventQueue (fi_eq) ==================//
 
 pub struct EventQueue {
     c_eq: *mut libfabric_sys::fid_eq,
@@ -38,10 +42,16 @@ impl EventQueue {
         err
     }
 
+    pub fn sread<T0>(&self, event: &mut u32, buf: &mut T0, timeout: i32, flags: u64) -> isize { // [TODO] Check return
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.c_eq, event as *mut u32, buf as *mut T0 as *mut std::ffi::c_void, std::mem::size_of::<T0>(), timeout, flags) };
+        if ret < 0 {
+            let mut err_entry = EqErrEntry::new();
+            let ret2 = self.readerr(&mut err_entry, 0);
 
-    pub fn sread<T0>(&self, event: &mut u32, buf: &mut [T0], timeout: i32, flags: u64) -> isize { // [TODO] Check return
-        unsafe { libfabric_sys::inlined_fi_eq_sread(self.c_eq, event as *mut u32, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), timeout, flags) }
 
+            println!("sread error: {} {}", ret2, self.strerror(&err_entry));
+        }
+        ret
         // if err != 0 {
         //     panic!("fi_eq_sread failed {}", err);
         // }
@@ -51,11 +61,8 @@ impl EventQueue {
         unsafe { libfabric_sys::inlined_fi_eq_readerr(self.c_eq, err.get_mut(), flags) }
     }
 
-    pub fn strerror<T0>(&self, prov_errno: i32, err_data: &T0, buf: String) -> &str {
-        let len = buf.len();
-        let c_str = std::ffi::CString::new(buf).unwrap();
-        let raw = c_str.into_raw();
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.c_eq, prov_errno, err_data as *const T0 as *const std::ffi::c_void, raw, len) };
+    pub fn strerror(&self, entry: &EqErrEntry) -> &str {
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.c_eq, entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
     
             unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     }
@@ -68,158 +75,8 @@ impl crate::FID for EventQueue {
     }
 }
 
-pub struct CommandQueue {
-    pub(crate) c_cq: *mut libfabric_sys::fid_cq,
-}
 
-impl crate::FID for CommandQueue {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_cq).fid }
-    }
-}
-
-pub struct CommandQueueAttr {
-    pub(crate) c_attr: libfabric_sys::fi_cq_attr,
-}
-
-impl CommandQueueAttr {
-    // pub size: usize,
-    // pub flags: u64,
-    // pub format: fi_cq_format,
-    // pub wait_obj: fi_wait_obj,
-    // pub signaling_vector: ::std::os::raw::c_int,
-    // pub wait_cond: fi_cq_wait_cond,
-    // pub wait_set: *mut fid_wait,
-    // pub fn new() -> Self {
-    //     let c_attr = libfabric_sys::fi_cq_attr{};
-    // }
-    pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_cq_attr{
-            size: 0, 
-            flags: 0, 
-            format: crate::enums::CqFormat::UNSPEC.get_value(), 
-            wait_obj: crate::enums::WaitObj::UNSPEC.get_value(),
-            signaling_vector: 0,
-            wait_cond: crate::enums::WaitCond::NONE.get_value(),
-            wait_set: std::ptr::null_mut()
-        };
-
-        Self {c_attr}
-    }
-
-    pub fn size(&mut self, size: usize) -> &mut Self {
-        self.c_attr.size = size;
-        self
-    }
-
-    pub fn flags(&mut self, flags: u64) -> &mut Self {
-        self.c_attr.flags = flags;
-        self
-    }
-
-    pub fn format(&mut self, format: crate::enums::CqFormat) -> &mut Self {
-        self.c_attr.format = format.get_value();
-        self
-    }
-
-    pub fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
-        self.c_attr.wait_obj = wait_obj.get_value();
-        self
-    }
-    
-    pub fn signaling_vector(&mut self, signaling_vector: i32) -> &mut Self {
-        self.c_attr.signaling_vector = signaling_vector;
-        self
-    }
-
-    pub fn wait_cond(&mut self, wait_cond: crate::enums::WaitCond) -> &mut Self {
-        self.c_attr.wait_cond = wait_cond.get_value();
-        self
-    }
-
-    pub fn wait_set(&mut self, wait_set: &crate::sync::Wait) -> &mut Self {
-        self.c_attr.wait_set = wait_set.c_wait;
-        self
-    }
-
-
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_cq_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_cq_attr {
-        &mut self.c_attr
-    }
-}
-
-impl CommandQueue {
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CommandQueueAttr) -> Self {
-        let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
-        let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
-
-        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.c_domain, attr.get_mut(), c_cq_ptr, std::ptr::null_mut())};
-        if err != 0 {
-            panic!("fi_cq_open failed {}", err);
-        }
-
-        Self { c_cq } 
-    }
-
-    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: CommandQueueAttr, context: &mut T0) -> Self {
-        let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
-        let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
-
-        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.c_domain, attr.get_mut(), c_cq_ptr, context as *mut T0 as *mut std::ffi::c_void)};
-        if err != 0 {
-            panic!("fi_cq_open failed {}", err);
-        }
-
-        Self { c_cq } 
-    }
-
-    pub fn read<T0>(&self, buf: &mut [T0], count: usize) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_read(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count) }
-    }
-
-    pub fn readfrom<T0>(&self, buf: &mut [T0], count: usize, address: &mut crate::Address) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_readfrom(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, address as *mut crate::Address) }
-    }
-
-    pub fn sread_with_cond<T0, T1>(&self, buf: &mut [T0], count: usize, cond: &T1, timeout: i32) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_sread(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, cond as *const T1 as *const std::ffi::c_void, timeout) }
-    }
-
-    pub fn sread<T0>(&self, buf: &mut [T0], count: usize, timeout: i32) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_sread(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, std::ptr::null_mut(), timeout) }
-    }
-
-    pub fn sreadfrom<T0, T1>(&self, buf: &mut [T0], count: usize, address: &mut crate::Address, cond: &T1, timeout: i32) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_sreadfrom(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, address as *mut crate::Address, cond as *const T1 as *const std::ffi::c_void, timeout) }
-    }
-
-    pub fn signal(&self) {
-        let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.c_cq) };
-
-        if err != 0 {
-            panic!("fi_cq_signal failed {}", err);
-        }
-    }
-
-    pub fn readerr(&self, err: &mut CqErrEntry, flags: u64) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_readerr(self.c_cq, err.get_mut(), flags) }
-    }
-
-    pub fn strerror<T0, T1>(&self, prov_errno: i32, err_data: &T0, buf: String) -> &str {
-        let len = buf.len();
-        let c_str = std::ffi::CString::new(buf).unwrap();
-        let raw = c_str.into_raw();
-        let ret = unsafe { libfabric_sys::inlined_fi_cq_strerror(self.c_cq, prov_errno, err_data as *const T0 as *const std::ffi::c_void, raw , len) };
-    
-            unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
-    }
-}
-
+//================== EventQueue Attribute(fi_eq_attr) ==================//
 
 pub struct EventQueueAttr {
     c_attr: libfabric_sys::fi_eq_attr,
@@ -274,16 +131,11 @@ impl EventQueueAttr {
     }    
 }
 
+//================== EqErrEntry (fi_eq_err_entry) ==================//
+
 pub struct EqErrEntry {
     pub(crate) c_err: libfabric_sys::fi_eq_err_entry,
 }
-// pub fid: fid_t,
-// pub context: *mut ::std::os::raw::c_void,
-// pub data: u64,
-// pub err: ::std::os::raw::c_int,
-// pub prov_errno: ::std::os::raw::c_int,
-// pub err_data: *mut ::std::os::raw::c_void,
-// pub err_data_size: usize,
 
 impl EqErrEntry {
     pub fn new() -> Self {
@@ -310,127 +162,16 @@ impl EqErrEntry {
     }       
 }
 
-pub struct CqErrEntry {
-    pub(crate) c_err: libfabric_sys::fi_cq_err_entry,
-}
+//================== EventQueueEntry (fi_eq_entry) ==================//
 
-
-impl CqErrEntry {
-    
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_cq_err_entry {
-        &self.c_err
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_cq_err_entry {
-        &mut self.c_err
-    }       
-}
-
-#[test]
-fn cq_open_close_sizes() {
-    let info = crate::Info::all();
-    let entries = info.get();
-    
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let mut domain = fab.domain(&entries[0]);
-    for i in -1..17 {
-        let size ;
-        if i == -1 {
-            size = 0;
-        }
-        else {
-            size = 1 << i;
-        }
-        let mut cq_attr = CommandQueueAttr::new();
-        cq_attr.size(size); 
-        let mut cq = domain.cq_open(cq_attr);
-        cq.close();
-    }
-    domain.close();
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn cq_open_close_simultaneous() {
-    let info = crate::Info::all();
-    let entries = info.get();
-    
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let count = 10;
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let mut domain = fab.domain(&entries[0]);
-    let mut cqs = Vec::new();
-    for _ in 0..count {
-        let cq_attr = CommandQueueAttr::new();
-        let cq = domain.cq_open(cq_attr);
-        cqs.push(cq);
-    }
-
-    for mut cq in cqs {
-        cq.close();
-    }
-    domain.close();
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn cq_signal() {
-    let info = crate::Info::all();
-    let entries = info.get();
-    let mut buf = vec![0,0,0];
-    
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let mut domain = fab.domain(&entries[0]);
-    let mut cq_attr = CommandQueueAttr::new();
-    cq_attr.size(1);
-    let mut cq = domain.cq_open(cq_attr);
-    cq.signal();
-    let ret = cq.sread(&mut buf[..], 1, 2000);
-    if ret != -(libfabric_sys::FI_EAGAIN as isize)  && ret != -(libfabric_sys::FI_ECANCELED as isize) {
-        panic!("sread {}", ret);
-    }
-    cq.close();
-
-    domain.close();
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn eq_open_close_sizes() {
-    let info = crate::Info::all();
-    let entries = info.get();
-    
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    for i in -1..17 {
-        let size ;
-        if i == -1 {
-            size = 0;
-        }
-        else {
-            size = 1 << i;
-        }
-        let mut eq_attr = crate::eq::EventQueueAttr::new();
-        eq_attr.size(size);
-        let mut eq = fab.eq_open(eq_attr);
-        eq.close();
-    }
-    fab.close();
-}
-
-#[repr(C)]
 pub struct EventQueueEntry<T> {
     c_entry: libfabric_sys::fi_eq_entry,
     phantom: std::marker::PhantomData<T>,
 }
 
 impl<T> EventQueueEntry<T> {
-    const SIZE_OK: () = assert!(std::mem::size_of::<T>() == std::mem::size_of::<usize>(), "The context of an EventQueueEntry must always be of size equal to usize datatype.");
+    const SIZE_OK: () = assert!(std::mem::size_of::<T>() == std::mem::size_of::<usize>(), 
+    "The context of an EventQueueEntry must always be of size equal to usize datatype.");
 
     pub fn new() -> Self {
         let _ = Self::SIZE_OK;
@@ -473,9 +214,37 @@ impl<T> EventQueueEntry<T> {
 
 }
 
+//================== EventQueueCmEntry (fi_eq_cm_entry) ==================//
+
+pub struct EventQueueCmEntry {
+    c_entry: libfabric_sys::fi_eq_cm_entry,
+}
+
+impl EventQueueCmEntry {
+    pub fn new() -> EventQueueCmEntry {
+
+
+        let c_entry = libfabric_sys::fi_eq_cm_entry {
+            fid: std::ptr::null_mut(),
+            info: std::ptr::null_mut(),
+            data: libfabric_sys::__IncompleteArrayField::<u8>::new(),
+        };
+
+        Self { c_entry }
+    }
+
+    pub fn get_info(&self) -> InfoEntry {
+        InfoEntry::new(self.c_entry.info)
+    }
+
+}
+
+//================== EventQueue related tests ==================//
+
+
 #[test]
 fn eq_write_read_self() {
-    let info = crate::Info::all();
+    let info = crate::Info::new().request();
     let entries: Vec<crate::InfoEntry> = info.get();
     let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
@@ -529,7 +298,7 @@ fn eq_write_read_self() {
 
 #[test]
 fn eq_size_verify() {
-    let info = crate::Info::all();
+    let info = crate::Info::new().request();
     let entries: Vec<crate::InfoEntry> = info.get();
     let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
@@ -555,7 +324,7 @@ fn eq_size_verify() {
 
 #[test]
 fn eq_write_sread_self() {
-    let info = crate::Info::all();
+    let info = crate::Info::new().request();
     let entries: Vec<crate::InfoEntry> = info.get();
     let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
@@ -609,7 +378,7 @@ fn eq_write_sread_self() {
 
 #[test]
 fn eq_readerr() {
-    let info = crate::Info::all();
+    let info = crate::Info::new().request();
     let entries: Vec<crate::InfoEntry> = info.get();
     let mut eq_attr = EventQueueAttr::new();
     eq_attr.size(32)
@@ -655,3 +424,25 @@ fn eq_readerr() {
     fab.close();
 }
 
+
+#[test]
+fn eq_open_close_sizes() {
+    let info = crate::Info::new().request();
+    let entries = info.get();
+    
+    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    for i in -1..17 {
+        let size ;
+        if i == -1 {
+            size = 0;
+        }
+        else {
+            size = 1 << i;
+        }
+        let mut eq_attr = crate::eq::EventQueueAttr::new();
+        eq_attr.size(size);
+        let mut eq = fab.eq_open(eq_attr);
+        eq.close();
+    }
+    fab.close();
+}

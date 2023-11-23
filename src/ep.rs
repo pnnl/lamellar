@@ -1,4 +1,6 @@
 use core::panic;
+
+use crate::error_to_string;
 //================== Passive Endpoint (fi_passive_ep) ==================//
 
 pub struct PassiveEndPoint {
@@ -12,7 +14,7 @@ impl PassiveEndPoint {
         let err = unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.c_fabric, info.c_info, c_pep_ptr, std::ptr::null_mut()) };
         
         if err != 0 {
-            panic!("fi_passive_ep failed {}", err);
+            panic!("fi_passive_ep failed {}: {} ", err, error_to_string(err.into()));
         }
         
         Self { c_pep }
@@ -56,6 +58,12 @@ impl PassiveEndPoint {
     }
 }
 
+impl crate::FID for PassiveEndPoint {
+    fn fid(&self) -> *mut libfabric_sys::fid {
+        unsafe { &mut (*self.c_pep).fid }
+    }    
+}
+
 //================== Endpoint (fi_endpoint) ==================//
 
 pub struct Endpoint {
@@ -64,17 +72,27 @@ pub struct Endpoint {
 
 impl Endpoint {
 
-    pub fn new<T0>(domain: &crate::domain::Domain, info: &crate::InfoEntry, context: &mut T0) -> Self {
+    pub fn new(domain: &crate::domain::Domain, info: &crate::InfoEntry) -> Self {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
-        let err = unsafe { libfabric_sys::inlined_fi_endpoint(domain.c_domain, info.c_info, c_ep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
-
+        let err = unsafe { libfabric_sys::inlined_fi_endpoint(domain.c_domain, info.c_info, c_ep_ptr, std::ptr::null_mut()) };
         if err != 0 {
-            panic!("fi_endpoint failed {}", err);
+            panic!("fi_endpoint failed {}: {}", err, crate::error_to_string(err as i64));
         }
 
         Self { c_ep }
     }
+    // pub fn new<T0>(domain: &crate::domain::Domain, info: &crate::InfoEntry, context: &mut T0) -> Self {
+    //     let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
+    //     let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
+    //     let err = unsafe { libfabric_sys::inlined_fi_endpoint(domain.c_domain, info.c_info, c_ep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+
+    //     if err != 0 {
+    //         panic!("fi_endpoint failed {}", err);
+    //     }
+
+    //     Self { c_ep }
+    // }
 
     pub fn new2<T0>(domain: &crate::domain::Domain, info: &crate::InfoEntry, flags: u64, context: &mut T0) -> Self {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
@@ -140,7 +158,7 @@ impl Endpoint {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.c_ep,fid.fid(), flags) };
         
         if err != 0 {
-            panic!("fi_ep_bind failed {}", err);
+            panic!("fi_ep_bind failed {}: {}", err, error_to_string(err.into()));
         }
     } 
 
@@ -148,7 +166,7 @@ impl Endpoint {
         let err = unsafe { libfabric_sys::inlined_fi_enable(self.c_ep) };
         
         if err != 0 {
-            panic!("fi_enable failed {}", err);
+            panic!("fi_enable failed {}: {}", err, error_to_string(err.into()));
         }
     }
 
@@ -279,17 +297,17 @@ impl Endpoint {
     }
 
     pub fn recvmsg(&self, msg: &crate::Msg, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.c_ep, msg.c_msg, flags) };
+        let ret = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.c_ep, &msg.c_msg as *const libfabric_sys::fi_msg, flags) };
         ret
     }
 
     pub fn trecvmsg(&self, msg: &crate::MsgTagged, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.c_ep, msg.c_msg_tagged, flags) };
+        let ret = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) };
         ret
     }
 
     pub fn readmsg(&self, msg: &crate::MsgRma, flags: u64) -> isize{
-        let ret = unsafe{ libfabric_sys::inlined_fi_readmsg(self.c_ep, msg.c_msg_rma, flags) };
+        let ret = unsafe{ libfabric_sys::inlined_fi_readmsg(self.c_ep, &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, flags) };
         ret
     }
 
@@ -323,18 +341,18 @@ impl Endpoint {
         ret
     }
 
-    pub fn sendmsg(&self, msg: &crate::Msg, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.c_ep, msg.c_msg, flags) };
+    pub fn sendmsg(&self, msg: &crate::Msg, flags: crate::enums::TransferOptions) -> isize {
+        let ret = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.c_ep, &msg.c_msg as *const libfabric_sys::fi_msg, flags.get_value().into()) };
         ret
     }
 
     pub fn tsendmsg(&self, msg: &crate::MsgTagged, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.c_ep, msg.c_msg_tagged, flags) };
+        let ret = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) };
         ret
     }
 
     pub fn writemsg(&self, msg: &crate::MsgRma, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_writemsg(self.c_ep, msg.c_msg_rma, flags) };
+        let ret = unsafe{ libfabric_sys::inlined_fi_writemsg(self.c_ep, &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, flags) };
         ret
     }
 
@@ -391,16 +409,32 @@ impl Endpoint {
         len
     }
 
-    pub fn connect<T0,T1>(&self, addr: & [T0], param: &[T1]) {
-        let ret = unsafe { libfabric_sys::inlined_fi_connect(self.c_ep, addr.as_ptr() as *const std::ffi::c_void, param.as_ptr() as *const std::ffi::c_void, param.len()) };
+    pub fn connect_with<T0,T1>(&self, addr: &T0, param: &[T1]) {
+        let ret = unsafe { libfabric_sys::inlined_fi_connect(self.c_ep, addr as *const T0 as *const std::ffi::c_void, param.as_ptr() as *const std::ffi::c_void, param.len()) };
         
         if ret != 0 {
             panic!("fi_connect failed {}", ret);
         }
     }
 
-    pub fn accept<T0>(&self, param: &[T0]) {
+    pub fn connect<T0>(&self, addr: &T0) {
+        let ret = unsafe { libfabric_sys::inlined_fi_connect(self.c_ep, addr as *const T0 as *const std::ffi::c_void, std::ptr::null_mut(), 0) };
+        
+        if ret != 0 {
+            panic!("fi_connect failed {}", ret);
+        }
+    }
+
+    pub fn accept_with<T0>(&self, param: &[T0]) {
         let ret = unsafe { libfabric_sys::inlined_fi_accept(self.c_ep, param.as_ptr() as *const std::ffi::c_void, param.len()) };
+        
+        if ret != 0 {
+            panic!("fi_connect failed {}", ret);
+        }
+    }
+
+    pub fn accept(&self) {
+        let ret = unsafe { libfabric_sys::inlined_fi_accept(self.c_ep, std::ptr::null_mut(), 0) };
         
         if ret != 0 {
             panic!("fi_connect failed {}", ret);
@@ -590,10 +624,12 @@ impl EndpointAttr {
         Self { c_attr }
     }
 
-    pub fn ep_type(&mut self, type_: crate::enums::EndpointType) -> &mut Self {
+    pub fn ep_type(self, type_: crate::enums::EndpointType) -> Self {
 
-        self.c_attr.type_ = type_.get_value();
-        self
+        let mut c_attr = self.c_attr;
+        c_attr.type_ = type_.get_value();
+
+        Self { c_attr }
     }
 
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_ep_attr {
