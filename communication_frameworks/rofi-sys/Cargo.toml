@@ -1,6 +1,6 @@
 [package]
 name = "rofisys"
-version = "0.2.5"
+version = "0.2.6"
 authors = [" Mark V Raugas <mark.raugas@pnnl.gov>", "Ryan D. Friese <ryan.friese@pnnl.gov>", "Roberto Gioiosa <roberto.gioiosa@pnnl.gov>"]
 edition = "2021"
 description = "This system crate provides Rust language bindings (via the use of Bindgen) to the Rust-OFI library."
