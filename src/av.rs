@@ -115,22 +115,25 @@ impl AddressVectorAttr {
         Self { c_attr }
     }
 
-    pub fn avtype(&mut self, av_type: crate::enums::AddressVectorType) -> &mut Self{
-        self.c_attr.type_ = av_type.get_value();
-
-        self
+    pub fn avtype(self, av_type: crate::enums::AddressVectorType) -> Self{
+        let mut c_attr = self.c_attr;
+        c_attr.type_ = av_type.get_value();;
+        
+        Self { c_attr }
     }
 
-    pub fn count(&mut self, count: usize) -> &mut Self {
-        self.c_attr.count = count;
+    pub fn count(self, count: usize) -> Self {
+        let mut c_attr = self.c_attr;
+        c_attr.count = count;
 
-        self
+        Self { c_attr }
     }
 
-    pub fn flags(&mut self, flags: u64) -> &mut Self {
-        self.c_attr.flags = flags;
+    pub fn flags(self, flags: u64) -> Self {
+        let mut c_attr = self.c_attr;
+        c_attr.flags = flags;
 
-        self
+        Self { c_attr }
     }
 
     #[allow(dead_code)]
@@ -252,17 +255,16 @@ fn av_open_close() {
     let entries: Vec<crate::InfoEntry> = info.get();
     if entries.len() > 0 {
 
-        let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let mut domain = fab.domain(&entries[0]);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let domain = fab.domain(&entries[0]);
         
         for i in 0..17 {
             let count = 1 << i;
-            let mut attr = crate::av::AddressVectorAttr::new();
-                attr
+            let attr = crate::av::AddressVectorAttr::new()
                 .avtype(crate::enums::AddressVectorType::MAP)
                 .count(count)
                 .flags(0);
-            let mut av = domain.av_open(attr);
+            let av = domain.av_open(attr);
             av.close();
         }
         domain.close();
@@ -274,37 +276,37 @@ fn av_open_close() {
 
 }
 
-// #[test]
-// fn av_good_sync() {
-//     let mut ep_attr = crate::ep::EndpointAttr::new();
-//         ep_attr
-//         .ep_type(crate::enums::EndpointType::RDM);
-//     let mut dom_attr = crate::domain::DomainAttr::new();
-//         dom_attr
-//         .mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as u64 );
-//     let mut hints = crate::InfoHints::new();
-//         hints
-//         .ep_attr(ep_attr)
-//         .domain_attr(dom_attr);
-//     let info = crate::Info::with_hints(hints);
-//     let entries: Vec<crate::InfoEntry> = info.get();
-//     if entries.len() > 0 {
-//         let mut attr = crate::av::AddressVectorAttr::new();
-//         attr
-//         .avtype(crate::enums::AddressVectorType::MAP)
-//         .count(32);
-//         let mut av = domain.av_open(attr);
+#[test]
+fn av_good_sync() {
+    
+    let ep_attr = crate::ep::EndpointAttr::new()
+        .ep_type(crate::enums::EndpointType::RDM);
+    
+    let dom_attr = crate::domain::DomainAttr::new()
+        .mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as u64 );
+    
+    let hints = crate::InfoHints::new()
+        .ep_attr(ep_attr)
+        .domain_attr(dom_attr);
 
-        
-//         domain.close();
-//         eq.close();
-//         fab.close();
-//     }
-//     else {
-//         domain.close();
-//         eq.close();
-//         fab.close();
-//         panic!("No capable fabric found!");
-//     }
+    let info = crate::Info::new()
+        .hints(hints).request();
+    
+    let entries: Vec<crate::InfoEntry> = info.get();
+    if entries.len() > 0 {
+        let attr = crate::av::AddressVectorAttr::new()
+            .avtype(crate::enums::AddressVectorType::MAP)
+            .count(32);
+        let fab: crate::fabric::Fabric = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let domain = fab.domain(&entries[0]);
+        let av = domain.av_open(attr);
 
-// }
+        av.close();
+        domain.close();
+        fab.close();
+    }
+    else {
+        panic!("No capable fabric found!");
+    }
+
+}

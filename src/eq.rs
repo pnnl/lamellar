@@ -250,8 +250,8 @@ fn eq_write_read_self() {
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::NONE);
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(eq_attr);
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let eq = fab.eq_open(eq_attr);
     for mut i in 0 as usize ..5 {
         let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
         if i & 1 == 1 {
@@ -304,8 +304,8 @@ fn eq_size_verify() {
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::NONE);
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(eq_attr);
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let eq = fab.eq_open(eq_attr);
 
     for mut i in 0 as usize .. 32 {
         let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
@@ -330,8 +330,8 @@ fn eq_write_sread_self() {
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::FD);
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(eq_attr);
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let eq = fab.eq_open(eq_attr);
     for mut i in 0 as usize ..5 {
         let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
         if i & 1 == 1 {
@@ -384,8 +384,8 @@ fn eq_readerr() {
     eq_attr.size(32)
         .flags(libfabric_sys::FI_WRITE.into())
         .wait_obj(crate::enums::WaitObj::FD);
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(eq_attr);
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let eq = fab.eq_open(eq_attr);
     for mut i in 0 as usize ..5 {
         let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
         entry.fid(&fab);
@@ -430,7 +430,7 @@ fn eq_open_close_sizes() {
     let info = crate::Info::new().request();
     let entries = info.get();
     
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
     for i in -1..17 {
         let size ;
         if i == -1 {
@@ -441,7 +441,7 @@ fn eq_open_close_sizes() {
         }
         let mut eq_attr = crate::eq::EventQueueAttr::new();
         eq_attr.size(size);
-        let mut eq = fab.eq_open(eq_attr);
+        let eq = fab.eq_open(eq_attr);
         eq.close();
     }
     fab.close();

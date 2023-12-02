@@ -157,8 +157,8 @@ fn mr_reg() {
     
     if entries.len() > 0 {
 
-        let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let mut domain = fab.domain(&entries[0]);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let domain = fab.domain(&entries[0]);
 
         let mut mr_access: u64 = 0;
         if entries[0].get_mode() & libfabric_sys::FI_LOCAL_MR == libfabric_sys::FI_LOCAL_MR || entries[0].get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_LOCAL == libfabric_sys::FI_MR_LOCAL {
@@ -195,7 +195,7 @@ fn mr_reg() {
             let buff_size = DEF_TEST_SIZES[i].0;
             let buf = vec![0 as u64; buff_size as usize ];
             for j in 0..combos.len() {
-                let mut mr = domain.mr_reg(&buf, combos[j], 0, 0xC0DE, 0);
+                let mr = domain.mr_reg(&buf, combos[j], 0, 0xC0DE, 0);
                 mr.close();
             }
         }

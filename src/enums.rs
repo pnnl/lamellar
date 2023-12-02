@@ -233,6 +233,19 @@ impl EndpointType {
             EndpointType::SOCK_DGRAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM,        
         }
     }
+
+    pub fn from(val: libfabric_sys::fi_ep_type ) -> Self { // [TODO] Handle errors
+        
+        match val {
+            libfabric_sys::fi_ep_type_FI_EP_UNSPEC => EndpointType::UNSPEC,
+            libfabric_sys::fi_ep_type_FI_EP_MSG => EndpointType::MSG,
+            libfabric_sys::fi_ep_type_FI_EP_DGRAM => EndpointType::DGRAM,
+            libfabric_sys::fi_ep_type_FI_EP_RDM => EndpointType::RDM,
+            libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM => EndpointType::SOCK_STREAM,
+            libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM => EndpointType::SOCK_DGRAM,
+            _ => panic!("Endpoint type flag not valid {}", val)
+        }
+    }
 }
 
 pub enum HmemP2p {
@@ -531,8 +544,8 @@ pub enum AddressFormat {
 }
 
 impl AddressFormat {
-    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_3
-    {
+    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_3 {
+
         match self {
             AddressFormat::UNSPEC => libfabric_sys::FI_FORMAT_UNSPEC,
             AddressFormat::SOCKADDR => libfabric_sys::FI_SOCKADDR,
@@ -568,8 +581,8 @@ pub enum TransferOptions {
 }
 
 impl TransferOptions {
-    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_3
-    {
+    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_3 {
+
         match self {
             TransferOptions::COMMIT_COMPLETE => libfabric_sys::FI_COMMIT_COMPLETE,
             TransferOptions::COMPLETION => libfabric_sys::FI_COMPLETION,
@@ -595,8 +608,8 @@ pub enum ConnectEvents {
 }
 
 impl ConnectEvents{
-    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18
-    {
+    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18 {
+
         match self {
             ConnectEvents::NOTIFY => libfabric_sys::FI_NOTIFY,
             ConnectEvents::CONNREQ => libfabric_sys::FI_CONNREQ,
@@ -607,4 +620,24 @@ impl ConnectEvents{
             ConnectEvents::JOIN_COMPLETE => libfabric_sys::FI_JOIN_COMPLETE,
         }
     } 
+}
+
+#[allow(non_camel_case_types)]
+pub enum ParamType {
+    STRING,
+    INT,
+    BOOL,
+    SIZE_T, 
+}
+
+impl ParamType {
+    pub(crate) fn get_value(&self) -> libfabric_sys::fi_param_type {
+
+        match self {
+            ParamType::STRING => libfabric_sys::fi_param_type_FI_PARAM_STRING,
+            ParamType::INT => libfabric_sys::fi_param_type_FI_PARAM_INT,
+            ParamType::BOOL => libfabric_sys::fi_param_type_FI_PARAM_BOOL,
+            ParamType::SIZE_T => libfabric_sys::fi_param_type_FI_PARAM_SIZE_T,
+        }
+    }
 }

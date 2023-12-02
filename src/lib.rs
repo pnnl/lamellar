@@ -1,5 +1,12 @@
 use core::panic;
 
+use cq::CompletionQueue;
+use domain::Domain;
+use enums::EndpointType;
+use ep::{Endpoint, PassiveEndPoint, EndpointAttr};
+use eq::EventQueue;
+use fabric::Fabric;
+
 // use libfabric_sys;
 pub mod ep;
 pub mod domain;
@@ -29,13 +36,14 @@ impl InfoCaps {
     pub fn tagged(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_TAGGED as u64 } }
     pub fn rma(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_RMA as u64 } }
     pub fn atomic(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_ATOMIC as u64 } }
+    pub fn multicast(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_MULTICAST as u64 } }
     pub fn collective(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_COLLECTIVE as u64 } }
-
 
     pub fn is_msg(&self) -> bool {self.bitfield & libfabric_sys::FI_MSG as u64 == libfabric_sys::FI_MSG as u64 }
     pub fn is_tagged(&self) -> bool {self.bitfield & libfabric_sys::FI_TAGGED as u64 == libfabric_sys::FI_TAGGED as u64 }
     pub fn is_rma(&self) -> bool {self.bitfield & libfabric_sys::FI_TAGGED as u64 == libfabric_sys::FI_RMA as u64 }
     pub fn is_atomic(&self) -> bool {self.bitfield & libfabric_sys::FI_TAGGED as u64 == libfabric_sys::FI_ATOMIC as u64 }
+    pub fn is_multicast(&self) -> bool {self.bitfield & libfabric_sys::FI_COLLECTIVE as u64 == libfabric_sys::FI_COLLECTIVE as u64 }
     pub fn is_collective(&self) -> bool {self.bitfield & libfabric_sys::FI_COLLECTIVE as u64 == libfabric_sys::FI_COLLECTIVE as u64 }
 
     pub fn is_read(&self) -> bool {self.bitfield & libfabric_sys::FI_READ as u64 == libfabric_sys::FI_READ as u64 }
@@ -119,13 +127,14 @@ impl InfoBuilder {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct InfoEntry {
+#[derive(Clone)]
+pub struct InfoEntry { // [TODO] Make fields private
     pub caps: InfoCaps,
     pub fabric_attr: crate::fabric::FabricAttr,
     pub domain_attr: crate::domain::DomainAttr,
     pub tx_attr: TxAttr,
     pub rx_attr: RxAttr,
+    pub ep_attr: EndpointAttr,
     c_info: *mut  libfabric_sys::fi_info,
 }
 
@@ -138,8 +147,9 @@ impl InfoEntry {
             unsafe { *domain_attr.get_mut() = *(*c_info).domain_attr}
         let tx_attr = TxAttr::from( unsafe {(*c_info).tx_attr } );
         let rx_attr = RxAttr::from( unsafe {(*c_info).rx_attr } );
+        let ep_attr = EndpointAttr::from(unsafe {(*c_info).ep_attr});
         let caps: u64 = unsafe {(*c_info).caps};
-        Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, c_info }
+        Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, c_info }
     }
 
     pub fn get_dest_addr<T0>(&self) -> & T0 {
@@ -168,6 +178,14 @@ impl InfoEntry {
 
     pub fn get_rx_attr(&self) -> &RxAttr {
         &self.rx_attr
+    }
+
+    pub fn get_ep_attr(&self) -> &EndpointAttr {
+        &self.ep_attr
+    }
+
+    pub fn get_caps(&self) -> &InfoCaps {
+        &self.caps
     }
 
 }
@@ -204,8 +222,15 @@ pub  struct InfoHints {
 impl InfoHints {
     pub fn new() -> Self {
         let c_info = unsafe { libfabric_sys::inlined_fi_allocinfo() };
-        unsafe { (*c_info).mode = !0 };
+        // unsafe { (*c_info).mode = !0 };
         Self {  c_info }
+    }
+
+    pub fn mode(self, mode: u64) -> Self {
+        let c_info = self.c_info;
+        unsafe { (*c_info).mode = mode };
+
+        Self { c_info }
     }
 
     pub fn addr_format(self, format: crate::enums::AddressFormat) -> Self {
@@ -254,6 +279,10 @@ impl InfoHints {
 
     pub fn get_caps(&self) -> InfoCaps {
         InfoCaps::from(unsafe{ (*self.c_info).caps })
+    }
+
+    pub fn get_ep_attr(&self) -> EndpointAttr {
+        EndpointAttr::from(unsafe{ (*self.c_info).ep_attr })
     }
 }
 
@@ -738,6 +767,20 @@ impl CollectiveAttr {
 
 
 
+// struct fi_param {
+// 	const char *name;
+// 	enum fi_param_type type;
+// 	const char *help_string;
+// 	const char *value;
+// };
+
+// int fi_getparams(struct fi_param **params, int *count);
+// void fi_freeparams(struct fi_param *params);
+
+
+// pub struct Param {
+//     c_param : libfabric_sys::fi_param,
+// }
 
 // pub fn get_params() -> Vec<Param> {
 //     let mut len = 0 as i32;
@@ -769,18 +812,18 @@ fn get_info(){
     let _entries: Vec<InfoEntry> = info.get();
 }
 
-#[test]
-fn ft_open_fabric_res() {
-    let info = Info::new().request();
-    let entries = info.get();
+// #[test]
+// fn ft_open_fabric_res() {
+//     let info = Info::new().request();
+//     let entries = info.get();
     
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let mut domain = fab.domain(&entries[0]);
-    domain.close();
-    eq.close();
-    fab.close();
-}
+//     let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+//     let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+//     let domain = fab.domain(&entries[0]);
+//     domain.close();
+//     eq.close();
+//     fab.close();
+// }
 
 pub fn error_to_string(errnum: i64) -> String {
     let ret = unsafe { libfabric_sys::fi_strerror(errnum as i32) };
@@ -788,95 +831,59 @@ pub fn error_to_string(errnum: i64) -> String {
     str.to_str().unwrap().to_string()
 }
 
-// To run the following tests do:
-// 1. export FI_LOG="info" . 
-// 2. Run the server (cargo test start_server -- --ignored --nocapture) 
-//    There will be a large number of info printed. What we need is the last line with: listening on: fi_sockaddr_in:// <ip:port>
-// 3. Copy the ip, port of the previous step
-// 4. On the client_connect change  crate::Info::new().node("172.17.110.21").service("39426").hints(hints).request(). 
-//    node() to the copied ip e.g. node(<ip>) and service() to port e.g. service(port)
-// 5. Run client_connect
-#[ignore]
-#[test]
-fn start_server() {
 
-    let ep_attr = crate::ep::EndpointAttr::new()
-        .ep_type(crate::enums::EndpointType::MSG);
-
-    let dom_attr = crate::domain::DomainAttr::new()
-        .threading(enums::Threading::DOMAIN)
-        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
+fn ft_open_fabric_res(info: &InfoEntry) -> (Fabric, EventQueue, Domain) {
     
-    let caps = InfoCaps::new()
-        .msg();
-    
+    let fab = crate::fabric::Fabric::new(info.fabric_attr.clone());
+    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+    let domain = fab.domain(&info);
 
-    let tx_attr = TxAttr::new()
-        .tclass(crate::enums::TClass::LOW_LATENCY);
+    (fab, eq, domain)
+}
 
-    let hints = crate::InfoHints::new()
-        .ep_attr(ep_attr)
-        .caps(caps)
-        .domain_attr(dom_attr)
-        .tx_attr(tx_attr)
-        .addr_format(crate::enums::AddressFormat::UNSPEC);
-
-    let info = crate::Info::new().node("127.0.0.1").service("42206").flags(libfabric_sys::FI_SOURCE).hints(hints).request();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    
-    if entries.len() == 0 {
-        panic!("No entires in fi_info");
-    }
-
-    let fattr = entries[0].get_fabric_attr();
-    
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    
-    let mut pep = fab.passive_ep(&entries[0]);
-        pep.bind(&eq, 0);
-        pep.listen();
-    let mut event = 0;
-
-    let mut eq_cm_entry = crate::eq::EventQueueCmEntry::new();
-    let ret = eq.sread(&mut event, &mut eq_cm_entry, -1, 0);
-    if ret != std::mem::size_of::<crate::eq::EventQueueCmEntry>().try_into().unwrap() {
-        pep.close();
-        eq.close();
-        fab.close();
-        panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::eq::EventQueueCmEntry>());
-    }
-
-    if event != libfabric_sys::FI_CONNREQ {
-        panic!("Unexpected event value returned: {} vs {}", event, libfabric_sys::FI_CONNREQ);
-    }
-
-    let new_info = eq_cm_entry.get_info();
-    let mut domain = fab.domain(&new_info);
+fn ft_alloc_active_res(info: &InfoEntry, domain: &Domain) -> (CompletionQueue, CompletionQueue, Endpoint) {
     
     let mut txcq_attr =  crate::cq::CompletionQueueAttr::new();
-        txcq_attr
-        .format(enums::CqFormat::CONTEXT)
-        // .wait_obj(crate::enums::WaitObj::NONE)
-        .size(new_info.get_tx_attr().get_size() );
-    
-    let mut tx_cq = domain.cq_open(txcq_attr);
-    
     let mut rxcq_attr =  crate::cq::CompletionQueueAttr::new();
-        rxcq_attr
-        .format(enums::CqFormat::CONTEXT)
+
+    if info.get_caps().is_tagged() {
+
+        txcq_attr.format(enums::CqFormat::TAGGED);
+        rxcq_attr.format(enums::CqFormat::TAGGED);
+    }
+    else {
+        txcq_attr.format(enums::CqFormat::CONTEXT);
+        rxcq_attr.format(enums::CqFormat::CONTEXT);
+    }
         // .wait_obj(crate::enums::WaitObj::NONE)
-        .size(new_info.get_rx_attr().get_size() );
+    txcq_attr.size(info.get_tx_attr().get_size() );
+    rxcq_attr.size(info.get_tx_attr().get_size() );
+    
+    let tx_cq = domain.cq_open(txcq_attr);
+    let rx_cq = domain.cq_open(rxcq_attr);
 
-    let mut rx_cq = domain.cq_open(rxcq_attr);
-    let address2 = new_info.get_src_addr::<Address>();
 
-    let mut ep = domain.ep(&new_info);
-        ep.bind(&eq, 0);
-        ep.bind(&tx_cq, libfabric_sys::FI_TRANSMIT.into());
-        ep.bind(&rx_cq, libfabric_sys::FI_RECV.into());
-        ep.enable();
-        ep.accept();
+    let ep = domain.ep(&info);
+
+
+    (tx_cq, rx_cq, ep)
+}
+
+fn ft_enable_ep(info: &InfoEntry, ep: &Endpoint, tx_cq: &CompletionQueue, rx_cq: &CompletionQueue, eq: &EventQueue) {
+    
+    match info.get_ep_attr().get_type() {
+        EndpointType::MSG => ep.bind(eq, 0),
+        _ => if info.get_caps().is_collective() || info.get_caps().is_multicast() {
+            ep.bind(eq, 0);
+        }
+    }
+    
+    ep.bind(tx_cq, libfabric_sys::FI_TRANSMIT.into());
+    ep.bind(rx_cq, libfabric_sys::FI_RECV.into());
+    ep.enable();
+}
+
+fn ft_complete_connect(ep: &Endpoint, eq: &EventQueue) { // [TODO] Do not panic, return errors
     
     let mut event = 0;
     let mut eq_cm_entry = [crate::eq::EventQueueCmEntry::new()];
@@ -884,51 +891,112 @@ fn start_server() {
     let ret = eq.sread(&mut event, &mut eq_cm_entry, -1, 0);
 
     if ret != std::mem::size_of::<crate::eq::EventQueueCmEntry>().try_into().unwrap() {
-        pep.close();
-        ep.close();
-        eq.close();
-        fab.close();
         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::eq::EventQueueCmEntry>());
     }
     
     if event != libfabric_sys::FI_CONNECTED {
-        pep.close();
-        ep.close();
-        eq.close();
-        fab.close();
+        panic!("Unexpected event value returned: {} vs {}", event, libfabric_sys::FI_CONNREQ);
+    }
+}
+
+fn ft_accept_connection(ep: &Endpoint, eq: &EventQueue) {
+    
+    ep.accept();
+    
+    ft_complete_connect(ep, eq);
+}
+
+fn ft_retrieve_conn_req(eq: &EventQueue) -> InfoEntry { // [TODO] Do not panic, return errors
+    
+    let mut event = 0;
+
+    let mut eq_cm_entry = crate::eq::EventQueueCmEntry::new();
+    let ret = eq.sread(&mut event, &mut eq_cm_entry, -1, 0);
+    if ret != std::mem::size_of::<crate::eq::EventQueueCmEntry>().try_into().unwrap() {
+        panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::eq::EventQueueCmEntry>());
+    }
+
+    if event != libfabric_sys::FI_CONNREQ {
         panic!("Unexpected event value returned: {} vs {}", event, libfabric_sys::FI_CONNREQ);
     }
 
-    let mut buff: [usize; 4] = [0; 4];
-    let mut buff2: [usize; 4] = [0; 4];
+    eq_cm_entry.get_info()
+}
 
-    let addr: u64 = (0 as u64).wrapping_sub(1);
-    let mut buffer: [usize; 4] = [0; 4];
-    let len = buff.len();
-    ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
 
-    let flag: u64 = (0 as u64).wrapping_sub(1);
-    let iov = IoVec::new(&mut buffer);
-    let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, flag);
-    ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
-    let mut cq_err_entry = crate::cq::CqErrEntry::new();
+
+fn ft_server_connect(eq: &EventQueue, domain: &Domain) -> (CompletionQueue, CompletionQueue, Endpoint) {
+
+    let new_info = ft_retrieve_conn_req(&eq);
+
+    let (tx_cq, rx_cq, ep) = ft_alloc_active_res(&new_info, &domain);
     
-    let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
-    if ret < 0  {
-        pep.close();
-        eq.close();
-        fab.close();
-        panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+    ft_enable_ep(&new_info, &ep, &tx_cq, &rx_cq, &eq);
+
+    ft_accept_connection(&ep, &eq);
+
+    (tx_cq, rx_cq, ep)
+}
+
+fn ft_getinfo(hints: InfoHints, node: String, service: String, flags: u64) -> Info {
+    let ep_attr = hints.get_ep_attr();
+
+    let hints = match ep_attr.get_type() {
+        EndpointType::UNSPEC => hints.ep_attr(ep_attr.ep_type(EndpointType::RDM)),
+        _ => hints ,
+    };
+
+    crate::Info::new().node(node.as_str()).service(service.as_str()).flags(flags).hints(hints).request()
+}
+
+fn ft_connect_ep(ep: &Endpoint, eq: &EventQueue, addr: &Address) {
+    
+    ep.connect(addr);
+    ft_complete_connect(ep, eq);
+}
+
+fn start_server(hints: InfoHints) -> (Info, fabric::Fabric,  domain::Domain, EventQueue, PassiveEndPoint) {
+   
+   let info = ft_getinfo(hints, "127.0.0.1".to_owned(), "42206".to_owned(), libfabric_sys::FI_SOURCE);
+   let entries: Vec<crate::InfoEntry> = info.get();
+    
+    if entries.len() == 0 {
+        panic!("No entires in fi_info");
     }
 
-    let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
-    if ret < 0  {
-        ep.close();
-        eq.close();
-        fab.close();
-        panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+    let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
+
+
+    let pep = fab.passive_ep(&entries[0]);
+        pep.bind(&eq, 0);
+        pep.listen();
+
+
+    (info, fab, domain, eq, pep)
+}
+
+
+
+fn client_connect(hints: InfoHints, node: String, service: String) -> (Info, fabric::Fabric,  domain::Domain, EventQueue, CompletionQueue, CompletionQueue, Endpoint) {
+    let info = ft_getinfo(hints, node, service, 0);
+
+    let entries: Vec<crate::InfoEntry> = info.get();
+
+    if entries.len() == 0 {
+        panic!("No entires in fi_info");
     }
 
+    let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
+    let (tx_cq, rx_cq, ep) = ft_alloc_active_res(&entries[0], &domain);
+    ft_enable_ep(&entries[0], &ep, &tx_cq, &rx_cq, &eq);
+    ft_connect_ep(&ep, &eq, entries[0].get_dest_addr::<Address>());
+
+    
+    (info, fab, domain, eq, rx_cq, tx_cq, ep)
+}
+
+
+fn close_all_pep(fab: Fabric, domain: Domain, eq :EventQueue, rx_cq: CompletionQueue, tx_cq: CompletionQueue, ep: Endpoint, pep: PassiveEndPoint) {
     ep.shutdown(0);
     ep.close();
     pep.close();
@@ -936,13 +1004,91 @@ fn start_server() {
     tx_cq.close();
     rx_cq.close();
     domain.close();
-    fab.close();
+    fab.close();        
+}
+
+fn close_all(fab: Fabric, domain: Domain, eq :EventQueue, rx_cq: CompletionQueue, tx_cq: CompletionQueue, ep: Endpoint) {
+    ep.shutdown(0);
+    ep.close();
+    eq.close();
+    tx_cq.close();
+    rx_cq.close();
+    domain.close();
+    fab.close();    
+}
+
+// To run the following tests do:
+// 1. export FI_LOG_LEVEL="info" . 
+// 2. Run the server (e.g. cargo test pp_server_msg -- --ignored --nocapture) 
+//    There will be a large number of info printed. What we need is the last line with: listening on: fi_sockaddr_in:// <ip:port>
+// 3. Copy the ip, port of the previous step
+// 4. On the client (e.g. pp_client_msg) change  client_connect node(<ip>) and service(<port>) to service and port of the copied ones
+// 5. Run client (e.g. cargo test pp_client_msg -- --ignored --nocapture) 
+
+#[ignore]
+#[test]
+fn pp_server_msg() {
+
+    let ep_attr = crate::ep::EndpointAttr::new()
+        .ep_type(crate::enums::EndpointType::MSG);
+
+    let dom_attr = crate::domain::DomainAttr::new()
+        .threading(enums::Threading::DOMAIN)
+        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
     
+    let caps = InfoCaps::new()
+        .msg();
+    
+
+    let tx_attr = TxAttr::new()
+        .tclass(crate::enums::TClass::LOW_LATENCY);
+
+    let hints = crate::InfoHints::new()
+        .ep_attr(ep_attr)
+        .caps(caps)
+        .domain_attr(dom_attr)
+        .tx_attr(tx_attr)
+        .addr_format(crate::enums::AddressFormat::UNSPEC);
+
+
+    let (info, fab, domain, eq, pep)    = start_server(hints);
+    let (tx_cq, rx_cq, ep) = ft_server_connect(&eq, &domain);
+
+    let mut buff: [usize; 4] = [0; 4];
+    let mut buff2: [usize; 4] = [0; 4];
+
+    let addr: u64 = (0 as u64).wrapping_sub(1);
+    let mut buffer: [usize; 4] = [255; 4];
+    let len = buff.len();
+    ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
+
+    let addr: u64 = (0 as u64).wrapping_sub(1);
+    // let iov = IoVec::new(&mut buffer);
+    // let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, addr);
+    // ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
+    ep.senddata(&mut buffer, std::mem::size_of::<usize>() * 4, &mut buff2, 0, addr);
+    let mut cq_err_entry = crate::cq::CqErrEntry::new();
+    
+    let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+    if ret < 0  {
+        close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+        panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+    }
+
+    let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+    if ret < 0  {
+        close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+        panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+    }
+
+    println!("Server Received {:?}", buff);
+
+    close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
 }
 
 #[ignore]
 #[test]
-fn client_connect() {
+fn pp_client_msg() {
 
     let ep_attr = crate::ep::EndpointAttr::new()
         .ep_type(crate::enums::EndpointType::MSG);
@@ -964,71 +1110,16 @@ fn client_connect() {
         .caps(caps)
         .addr_format(crate::enums::AddressFormat::UNSPEC);
 
-    let info: Info = crate::Info::new().node("172.17.110.21").service("35696").hints(hints).request();
-
-    let entries: Vec<crate::InfoEntry> = info.get();
-
-    if entries.len() == 0 {
-        panic!("No entires in fi_info");
-    }
-
-    let fattr = entries[0].get_fabric_attr();
-
-    let mut fab: fabric::Fabric = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq_attr = crate::eq::EventQueueAttr::new();
-    let mut eq = fab.eq_open(eq_attr);
-
-    let mut domain = fab.domain(&entries[0]);
-    let mut txcq_attr =  crate::cq::CompletionQueueAttr::new();
-        txcq_attr
-        .format(enums::CqFormat::CONTEXT)
-        .size(entries[0].get_tx_attr().get_size() );
-    
-    let mut tx_cq = domain.cq_open(txcq_attr);
-    
-    let mut rxcq_attr =  crate::cq::CompletionQueueAttr::new();
-        rxcq_attr
-        .format(enums::CqFormat::CONTEXT)
-        .size(entries[0].get_rx_attr().get_size() );
-
-    let mut rx_cq = domain.cq_open(rxcq_attr);
-    let mut ep = domain.ep(&entries[0]);
-        ep.bind(&eq, 0);
-        ep.bind(&tx_cq, libfabric_sys::FI_TRANSMIT.into());
-        ep.bind(&rx_cq, libfabric_sys::FI_RECV.into());
-        ep.enable();
-
-    let address2 = entries[0].get_dest_addr::<Address>();
-    ep.connect(address2);
-    
-    
-    let mut event = 0;
-    let mut eq_cm_entry = eq::EventQueueCmEntry::new();
-    
-    let ret = eq.sread(&mut event, &mut eq_cm_entry, -1, 0);
-
-    if ret != std::mem::size_of::<eq::EventQueueCmEntry>().try_into().unwrap() {
-        ep.close();
-        eq.close();
-        fab.close();
-        panic!("Size different {} vs {} {}", ret, std::mem::size_of::<eq::EventQueueCmEntry>(), error_to_string(ret as i64));
-    }
-
-    if event != libfabric_sys::FI_CONNECTED {
-        ep.close();
-        eq.close();
-        fab.close();
-        panic!("Unexpected event value returned: {} vs {}", event, libfabric_sys::FI_CONNREQ);
-    }
+    let (info, fab, domain, eq, rx_cq, tx_cq, ep) = client_connect(hints, "172.17.110.19".to_owned(), "32917".to_owned());
     let mut buff: [usize; 4] = [0; 4];
     let mut buff2: [usize; 4] = [0; 4];
 
-    let addr: u64 = (0 as u64).wrapping_sub(1);
+    let addr: u64 = (0 as u64).wrapping_sub(1); // Address Unspecified
     let len = buff.len();
     ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
     let flag: u64 = (0 as u64).wrapping_sub(1);
 
-    let mut buffer: [usize; 4] = [0; 4];
+    let mut buffer: [usize; 4] = [166; 4];
     let iov = IoVec::new(&mut buffer);
     let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, flag);
     ep.sendmsg(&msg, crate::enums::TransferOptions::TRANSMIT_COMPLETE);
@@ -1036,25 +1127,72 @@ fn client_connect() {
     
     let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
     if ret < 0 && -ret as u32 != libfabric_sys::FI_EAGAIN {
-        ep.close();
-        eq.close();
-        fab.close();
+        close_all(fab, domain, eq, rx_cq, tx_cq, ep);
+
         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
     }
     
     let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
     if ret < 0 && -ret as u32 != libfabric_sys::FI_EAGAIN {
-        ep.close();
-        eq.close();
-        fab.close();
+        close_all(fab, domain, eq, rx_cq, tx_cq, ep);
+
         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
     }
+    println!("Client Received {:?}", buff);
 
-    ep.shutdown(0);
-    ep.close();
-    eq.close();
-    tx_cq.close();
-    rx_cq.close();
-    domain.close();
-    fab.close();
+    close_all(fab, domain, eq, rx_cq, tx_cq, ep);
+
 }
+
+// #[test]
+// fn pp_server_rma() {
+
+//     let dom_attr = crate::domain::DomainAttr::new()
+//         .threading(enums::Threading::DOMAIN)
+//         .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 )
+//         .resource_mgmt(enums::ResourceMgmt::ENABLED);
+    
+//     let caps = InfoCaps::new().msg().rma();
+    
+
+//     let tx_attr = TxAttr::new().tclass(crate::enums::TClass::BULK_DATA);
+
+//     let hints = crate::InfoHints::new()
+//         .caps(caps)
+//         .tx_attr(tx_attr)
+//         .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+//         .domain_attr(dom_attr)
+//         .addr_format(crate::enums::AddressFormat::UNSPEC);
+
+
+//     let mut buff: [usize; 4] = [0; 4];
+//     let mut buff2: [usize; 4] = [0; 4];
+
+//     let addr: u64 = (0 as u64).wrapping_sub(1);
+//     let mut buffer: [usize; 4] = [255; 4];
+//     let len = buff.len();
+//     ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
+
+//     let addr: u64 = (0 as u64).wrapping_sub(1);
+//     // let iov = IoVec::new(&mut buffer);
+//     // let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, addr);
+//     // ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
+//     ep.senddata(&mut buffer, std::mem::size_of::<usize>() * 4, &mut buff2, 0, addr);
+//     let mut cq_err_entry = crate::cq::CqErrEntry::new();
+    
+//     let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+//     if ret < 0  {
+//         close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+//         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+//     }
+
+//     let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+//     if ret < 0  {
+//         close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+//         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+//     }
+
+//     println!("Server Received {:?}", buff);
+
+//     close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+// }

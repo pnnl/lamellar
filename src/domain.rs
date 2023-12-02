@@ -193,6 +193,13 @@ impl DomainAttr {
         Self { c_attr }
     }
 
+    pub fn resource_mgmt(self, res_mgmt: crate::enums::ResourceMgmt) -> Self {
+        let mut c_attr = self.c_attr;
+        c_attr.resource_mgmt = res_mgmt.get_value();
+        
+        Self { c_attr }
+    }
+
 
     pub fn get_mode(&self) -> u64 {
         self.c_attr.mode 
@@ -231,8 +238,8 @@ fn domain_test() {
     let info = crate::Info::new().request();
     let entries = info.get();
     
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
     let count = 10;
     let mut doms = Vec::new();
     for _ in 0..count {
@@ -240,7 +247,7 @@ fn domain_test() {
         doms.push(domain);
     }
 
-    for mut dom in doms {
+    for dom in doms {
         dom.close();
     }
 

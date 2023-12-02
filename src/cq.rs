@@ -214,10 +214,10 @@ fn cq_open_close_simultaneous() {
     let info = crate::Info::new().request();
     let entries = info.get();
     
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
     let count = 10;
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let mut domain = fab.domain(&entries[0]);
+    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+    let domain = fab.domain(&entries[0]);
     let mut cqs = Vec::new();
     for _ in 0..count {
         let cq_attr = CompletionQueueAttr::new();
@@ -225,7 +225,7 @@ fn cq_open_close_simultaneous() {
         cqs.push(cq);
     }
 
-    for mut cq in cqs {
+    for cq in cqs {
         cq.close();
     }
     domain.close();
@@ -239,12 +239,12 @@ fn cq_signal() {
     let entries = info.get();
     let mut buf = vec![0,0,0];
     
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let mut domain = fab.domain(&entries[0]);
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+    let domain = fab.domain(&entries[0]);
     let mut cq_attr = CompletionQueueAttr::new();
     cq_attr.size(1);
-    let mut cq = domain.cq_open(cq_attr);
+    let cq = domain.cq_open(cq_attr);
     cq.signal();
     let ret = cq.sread(&mut buf, 1, 2000);
     if ret != -(libfabric_sys::FI_EAGAIN as isize)  && ret != -(libfabric_sys::FI_ECANCELED as isize) {
@@ -262,9 +262,9 @@ fn cq_open_close_sizes() {
     let info = crate::Info::new().request();
     let entries = info.get();
     
-    let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let mut eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let mut domain = fab.domain(&entries[0]);
+    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+    let domain = fab.domain(&entries[0]);
     for i in -1..17 {
         let size ;
         if i == -1 {
@@ -275,7 +275,7 @@ fn cq_open_close_sizes() {
         }
         let mut cq_attr = CompletionQueueAttr::new();
         cq_attr.size(size); 
-        let mut cq = domain.cq_open(cq_attr);
+        let cq = domain.cq_open(cq_attr);
         cq.close();
     }
     domain.close();

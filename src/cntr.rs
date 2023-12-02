@@ -137,7 +137,9 @@ fn cntr_loop() {
         .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as i32 );
     
     let hints = crate::InfoHints::new()
-        .domain_attr(dom_attr);
+        .domain_attr(dom_attr)
+        .mode(!0);
+    
 
     let info = crate::Info::new().hints(hints).request();
     let entries: Vec<crate::InfoEntry> = info.get();
@@ -146,8 +148,8 @@ fn cntr_loop() {
         if entries[0].get_domain_attr().get_cntr_cnt() == 0 {
             panic!("cntr_cnt == 0");
         }
-        let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let mut domain = fab.domain(&entries[0]);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let domain = fab.domain(&entries[0]);
         let cntr_attr = CounterAttr::new();
         let cntr = domain.cntr_open(cntr_attr);
 
