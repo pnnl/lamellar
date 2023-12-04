@@ -66,6 +66,12 @@ impl Counter {
 }
 
 
+impl crate::FID for Counter {
+    fn fid(&self) -> *mut libfabric_sys::fid {
+        unsafe { &mut (*self.c_cntr).fid }
+    }
+}
+
 //================== Counter attribute ==================//
 
 
@@ -145,16 +151,46 @@ fn cntr_loop() {
     let entries: Vec<crate::InfoEntry> = info.get();
     
     if entries.len() > 0 {
-        if entries[0].get_domain_attr().get_cntr_cnt() == 0 {
-            panic!("cntr_cnt == 0");
-        }
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let domain = fab.domain(&entries[0]);
-        let cntr_attr = CounterAttr::new();
-        let cntr = domain.cntr_open(cntr_attr);
+        for e in entries {
+            if e.get_domain_attr().get_cntr_cnt() != 0 {
+                let fab = crate::fabric::Fabric::new(e.fabric_attr.clone());
+                let domain = fab.domain(&e);
+                let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
+                let cntrs: Vec<Counter> = (0..cntr_cnt).map(|_| domain.cntr_open(CounterAttr::new())).collect();
 
-        domain.close();
-        fab.close();
+                for (i,cntr) in cntrs.iter().enumerate() {
+                    cntr.set(i as u64);
+                    cntr.seterr((i << 1) as u64);
+                }
+                
+                for (i,cntr) in cntrs.iter().enumerate() {
+                    cntr.add(i as u64);
+                    cntr.adderr(i as u64);
+                }
+
+                for (i,cntr) in cntrs.iter().enumerate() {
+                    let expected = i + i;
+                    let value = cntr.read() as usize;
+                    assert_eq!(expected, value);
+                }
+                
+                for (i,cntr) in cntrs.iter().enumerate() {
+                    let expected = (i << 1) + i;
+                    let value = cntr.readerr() as usize;
+                    assert_eq!(expected, value);
+                }
+                
+                for cntr in cntrs {
+                    cntr.close();
+                }
+
+                domain.close();
+                fab.close();
+                break;
+            }
+
+        }
+
     }
     else {
         panic!("Could not find suitable fabric");
