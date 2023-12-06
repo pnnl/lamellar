@@ -1,18 +1,4 @@
 use core::panic;
-// use std::{net::AddrParseError, mem::size_of, ffi::CString};
-
-// use av::AddressVector;
-// use cq::{CompletionQueue, CqErrEntry};
-// use domain::Domain;
-// use enums::{EndpointType, MrMode, HmemIface};
-// use ep::{Endpoint, PassiveEndPoint, EndpointAttr};
-// use eq::EventQueue;
-// use fabric::Fabric;
-// use mr::{MemoryRegion, MemoryRegionDesc, MemoryRegionAttr};
-
-// use crate::av::AddressVectorAttr;
-
-// use libfabric_sys;
 pub mod ep;
 pub mod domain;
 pub mod eq;
@@ -857,12 +843,13 @@ struct TestsGlobalCtx {
     rx_buf_index: usize,
     max_msg_size: usize,
     remote_address: Address,
+    ft_tag: u64, 
 }
 
 impl TestsGlobalCtx {
     fn new( ) -> Self {
         let mem = Vec::new();
-        TestsGlobalCtx { tx_size: 0, rx_size: 0, tx_mr_size: 0, rx_mr_size: 0, tx_seq: 0, rx_seq: 0, tx_cq_cntr: 0, rx_cq_cntr: 0, tx_buf_size: 0, rx_buf_size: 0, buf_size: 0, buf: mem, tx_buf_index: 0, rx_buf_index: 0, max_msg_size: 0, remote_address: FI_ADDR_UNSPEC }
+        TestsGlobalCtx { tx_size: 0, rx_size: 0, tx_mr_size: 0, rx_mr_size: 0, tx_seq: 0, rx_seq: 0, tx_cq_cntr: 0, rx_cq_cntr: 0, tx_buf_size: 0, rx_buf_size: 0, buf_size: 0, buf: mem, tx_buf_index: 0, rx_buf_index: 0, max_msg_size: 0, remote_address: FI_ADDR_UNSPEC, ft_tag: 0 }
     }
 }
 
@@ -1126,6 +1113,91 @@ fn ft_av_insert<T>(av: &crate::av::AddressVector, addr: &T, fi_addr: &mut Addres
     let ret = av.insert(std::slice::from_ref(addr), fi_addr, flags);
 }
 
+const NO_CQ_DATA: u64 = 0;
+
+
+macro_rules!  ft_post{
+    ($post_fn:ident, $prog_fn:ident, $cq:ident, $seq:expr, $cq_cntr:expr, $op_str:literal, $ep:ident, $( $x:ident),* ) => {
+        loop {
+            let ret = $ep.$post_fn($($x,)*);
+            if ret == 0 {
+                break;
+            }
+            else if -ret as u32 != libfabric_sys::FI_EAGAIN {
+                panic!("{} returned error", stringify!(post_fn));
+            }
+            let rc = $prog_fn($cq, $seq, $cq_cntr);
+            if rc != 0 && -rc as u32 != libfabric_sys::FI_EAGAIN {
+                panic!("{} returned error", stringify!(prog_fn));
+            }
+        }
+        $seq+=1;
+    };
+}
+
+fn ft_post_tx(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &crate::ep::Endpoint, fi_addr: Address, mut size: usize, data: u64, data_desc: &mut impl crate::DataDescriptor, tx_cq: &crate::cq::CompletionQueue) {
+    
+    size += ft_tx_prefix_size(info);
+    let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+size];
+    if info.get_caps().is_tagged() {
+        let op_tag = if gl_ctx.ft_tag != 0 {gl_ctx.ft_tag} else {gl_ctx.tx_seq};
+
+        if data != NO_CQ_DATA {
+            ft_post!(tsenddata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, data_desc, data, fi_addr, op_tag);
+        }
+        else {
+            ft_post!(tsend, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, data_desc, fi_addr, op_tag);
+        }
+    }
+    else {
+        if data != NO_CQ_DATA {
+            ft_post!(senddata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, data_desc, data, fi_addr);
+        }
+        else {
+            ft_post!(send, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, data_desc, fi_addr);
+        }
+    }
+}
+
+fn ft_tx(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &crate::ep::Endpoint, fi_addr: Address, mut size: usize, data: u64, data_desc: &mut impl crate::DataDescriptor, tx_cq: &crate::cq::CompletionQueue) {
+
+    ft_post_tx(info, gl_ctx, ep, fi_addr, size, data, data_desc, tx_cq);
+    ft_get_tx_comp(&mut gl_ctx.tx_cq_cntr, tx_cq, gl_ctx.tx_seq);
+}
+
+fn ft_post_rx(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &crate::ep::Endpoint, fi_addr: Address, mut size: usize, data: u64, data_desc: &mut impl crate::DataDescriptor, rx_cq: &crate::cq::CompletionQueue) {
+    size = std::cmp::max(size, FT_MAX_CTRL_MSG) +  ft_tx_prefix_size(info);
+    let buf = &mut gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+size];
+    if info.get_caps().is_tagged() {
+        let op_tag = if gl_ctx.ft_tag != 0 {gl_ctx.ft_tag} else {gl_ctx.rx_seq};
+        let zero = 0;
+        ft_post!(trecv, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, data_desc, fi_addr, op_tag, zero);
+    }
+    else {
+        ft_post!(recv, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, data_desc, fi_addr);
+    }
+}
+
+fn ft_rx(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &crate::ep::Endpoint, fi_addr: Address, mut size: usize, data: u64, data_desc: &mut impl crate::DataDescriptor, rx_cq: &crate::cq::CompletionQueue) {
+
+    ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
+    ft_post_rx(info, gl_ctx, ep, fi_addr, gl_ctx.rx_size, data, data_desc, rx_cq);
+}
+
+fn ft_progress(cq: &crate::cq::CompletionQueue, total: u64, cq_cntr: &mut u64) -> isize {
+    let mut cq_err_entry = crate::cq::CqErrEntry::new();
+    let ret = cq.read(std::slice::from_mut(&mut cq_err_entry), 1);
+    if ret < 0 && -ret as u32 != libfabric_sys::FI_EAGAIN {
+        panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+    }
+
+    if ret > 0 {
+        *cq_cntr += 1;
+    }
+
+    0
+}
+
 fn ft_init_av_dst_addr(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx,  av: &crate::av::AddressVector, ep: &crate::ep::Endpoint, tx_cq: &crate::cq::CompletionQueue, rx_cq: &crate::cq::CompletionQueue, mr_desc: &mut crate::mr::MemoryRegionDesc, server: bool) {
     let mut v = [0 as u8; FT_MAX_CTRL_MSG];
     if !server {
@@ -1138,38 +1210,9 @@ fn ft_init_av_dst_addr(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx,  av: &crat
         
         gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(&v[0..len]);
 
-        // let ret = ep.send(&mut v, len, std::slice::from_mut(mr_desc), gl_ctx.remote_address);
-        // let ret = ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len], len, std::slice::from_mut(mr_desc), gl_ctx.remote_address);
-        loop {
-            println!("{:?} vs {:?}", std::slice::from_mut(mr_desc).as_ptr(), mr_desc.get());
-            let ret = ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len], mr_desc, gl_ctx.remote_address);
-            // println!("Done Sending my address {}", ret);
-            if ret == 0 {
-                break;
-            }
-            else if -ret as u32 != libfabric_sys::FI_EAGAIN {
-                panic!("Got {}", ret);
-            }
 
-            let mut cq_err_entry = crate::cq::CqErrEntry::new();
-            let ret = tx_cq.read(std::slice::from_mut(&mut cq_err_entry), 1);
-            if ret < 0 && -ret as u32 != libfabric_sys::FI_EAGAIN {
-                panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
-            }
-        }
-            // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
-        println!("Receiving stuff");
-        // ep.recv2(&mut v2[..1], std::slice::from_mut(mr_desc), gl_ctx.remote_address);
-        ep.recv(&mut v2[..1], mr_desc, gl_ctx.remote_address);
-        println!("Done receiving stuff");
-
-        let mut cq_err_entry = crate::cq::CqErrEntry::new();
-        
-        let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
-        if ret < 0  {
-            // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
-            panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
-        }
+        ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, len, NO_CQ_DATA, mr_desc, tx_cq);
+        ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, 1, NO_CQ_DATA, mr_desc, rx_cq);
     }
     else {
         ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
@@ -1183,29 +1226,13 @@ fn ft_init_av_dst_addr(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx,  av: &crat
         else {
             ft_av_insert(av, &v, &mut gl_ctx.remote_address, 0);
         }
-        println!("Inserted succesfully");
 
-        println!("Receiving my stuff");
-        // ep.recv(&mut gl_ctx.buf[gl_ctx.rx_buf_index.. gl_ctx.rx_buf_index+ gl_ctx.rx_size], std::slice::from_mut(mr_desc), gl_ctx.remote_address);
-        ep.recv(&mut gl_ctx.buf[gl_ctx.rx_buf_index.. gl_ctx.rx_buf_index+ gl_ctx.rx_size], mr_desc, gl_ctx.remote_address);
-        println!("Done receiving my stuff");
+        ft_post_rx(info, gl_ctx, ep, gl_ctx.remote_address, 1, NO_CQ_DATA, mr_desc, rx_cq);
         
         if matches!(info.get_domain_attr().get_av_type(), crate::enums::AddressVectorType::TABLE) {
             gl_ctx.remote_address = 0;
         }
-        
-        println!("Sending my stuff");
-        // ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index.. gl_ctx.tx_buf_index + 1],std::slice::from_mut(mr_desc), gl_ctx.remote_address);
-        ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index.. gl_ctx.tx_buf_index + 1], mr_desc, gl_ctx.remote_address);
-        println!("Done sending my stuff");
-        
-        let mut cq_err_entry = crate::cq::CqErrEntry::new();
-        
-        let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
-        if ret < 0  {
-            // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
-            panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
-        }
+        ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, 1, NO_CQ_DATA, mr_desc, tx_cq);
     }
 }
 
@@ -1294,6 +1321,15 @@ fn ft_reg_mr(info: &InfoEntry, domain: &crate::domain::Domain, ep: &crate::ep::E
 
 }
 
+
+fn ft_exchange_keys(info: &InfoEntry, mr: &crate::mr::MemoryRegion) {
+    let mut addr = 0; 
+    let mut key_size = 0;
+    if info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_RAW  == libfabric_sys::FI_MR_RAW { // [TODO] Use enums
+        mr.raw_attr(&mut addr, &mut key_size, 0); // [TODO] Change this to return base_addr, key_size
+    }
+
+}
 
 #[allow(dead_code)]
 fn start_server(hints: InfoHints) -> (Info, fabric::Fabric,  crate::domain::Domain, crate::eq::EventQueue, crate::ep::PassiveEndpoint) {
@@ -1582,7 +1618,7 @@ fn pp_client_rma() {
     
     
     let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av) = 
-        ft_init_fabric(hints, &mut gl_ctx, "172.17.110.19".to_owned(), "47386".to_owned(), 0);
+        ft_init_fabric(hints, &mut gl_ctx, "172.17.110.19".to_owned(), "44300".to_owned(), 0);
 
     // let mut buff: [usize; 4] = [0; 4];
     // let mut buff2: [usize; 4] = [0; 4];
