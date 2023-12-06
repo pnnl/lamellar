@@ -68,7 +68,15 @@ impl MemoryRegion {
         }
     }
 
-    pub fn raw_attr(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) {
+    pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) {
+        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.c_mr, base_addr as *mut u64, std::ptr::null_mut(), key_size as *mut usize, flags) };
+
+        if err != 0 {
+            panic!("fi_mr_raw_attr failed {}", err);
+        }        
+    }
+
+    pub fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) {
         let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.c_mr, base_addr as *mut u64, raw_key as *mut u8, key_size as *mut usize, flags) };
 
         if err != 0 {
