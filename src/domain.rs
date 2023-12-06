@@ -90,7 +90,7 @@ impl Domain {
         crate::mr::MemoryRegion::from_iovec(self, iov, count, acs, offset, requested_key, flags)
     }
 
-    pub fn mr_regattr<T0>(&self, attr: crate::mr::MemoryRegionAttr ,  flags: u64) -> crate::mr::MemoryRegion {
+    pub fn mr_regattr(&self, attr: crate::mr::MemoryRegionAttr ,  flags: u64) -> crate::mr::MemoryRegion {
         crate::mr::MemoryRegion::from_attr(self, attr,  flags)
     }
 

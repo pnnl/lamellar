@@ -32,8 +32,13 @@ impl AddressVector {
     pub fn insert<T0>(&self, buf: &[T0], addr: &mut crate::Address, flags: u64) {
         let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.c_av, buf.as_ptr() as *const std::ffi::c_void, buf.len(), addr as *mut crate::Address, flags, std::ptr::null_mut())  };
 
-        if err != 0 {
-            panic!("fi_av_insert failed {}", err);
+        if err < 0 {
+            panic!("fi_av_insert failed {} : {}", err, crate::error_to_string(err.into()));
+        }
+
+        if (err as usize) != buf.len() {
+            panic!("fi_av_insert failed. Inserted {} vs {}", err, buf.len());
+
         }
     }
 
@@ -117,7 +122,7 @@ impl AddressVectorAttr {
 
     pub fn avtype(self, av_type: crate::enums::AddressVectorType) -> Self{
         let mut c_attr = self.c_attr;
-        c_attr.type_ = av_type.get_value();;
+        c_attr.type_ = av_type.get_value();
         
         Self { c_attr }
     }

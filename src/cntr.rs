@@ -32,7 +32,7 @@ impl Counter {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_add(self.c_cntr, val) };
     
         if err != 0 {
-            panic!("fi_cntr_add failed {}", err);
+            panic!("fi_cntr_add failed {}: {}", err, crate::error_to_string(err.into()));
         }
     }
 
@@ -40,7 +40,7 @@ impl Counter {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_adderr(self.c_cntr, val) };
             
         if err != 0 {
-            panic!("fi_cntr_adderr failed {}", err);
+            panic!("fi_cntr_adderr failed {}: {}", err, crate::error_to_string(err.into()));
         }
     }
 
@@ -48,7 +48,7 @@ impl Counter {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_set(self.c_cntr, val) };
             
         if err != 0 {
-            panic!("fi_cntr_set failed {}", err);
+            panic!("fi_cntr_set failed {}: {}", err, crate::error_to_string(err.into()));
         }
     }
 
@@ -56,7 +56,7 @@ impl Counter {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_seterr(self.c_cntr, val) };
             
         if err != 0 {
-            panic!("fi_cntr_seterr failed {}", err);
+            panic!("fi_cntr_seterr failed {}: {}", err, crate::error_to_string(err.into()));
         }
     }
 

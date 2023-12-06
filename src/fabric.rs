@@ -28,8 +28,8 @@ impl Fabric {
     }
 
 
-    pub fn passive_ep(&self, info: &crate::InfoEntry) -> crate::ep::PassiveEndPoint {
-        crate::ep::PassiveEndPoint::new(self, info)
+    pub fn passive_ep(&self, info: &crate::InfoEntry) -> crate::ep::PassiveEndpoint {
+        crate::ep::PassiveEndpoint::new(self, info)
     }
 
     pub fn eq_open(&self, attr: crate::eq::EventQueueAttr) -> crate::eq::EventQueue {

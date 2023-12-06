@@ -1,11 +1,16 @@
 use core::panic;
+// use std::{net::AddrParseError, mem::size_of, ffi::CString};
 
-use cq::CompletionQueue;
-use domain::Domain;
-use enums::EndpointType;
-use ep::{Endpoint, PassiveEndPoint, EndpointAttr};
-use eq::EventQueue;
-use fabric::Fabric;
+// use av::AddressVector;
+// use cq::{CompletionQueue, CqErrEntry};
+// use domain::Domain;
+// use enums::{EndpointType, MrMode, HmemIface};
+// use ep::{Endpoint, PassiveEndPoint, EndpointAttr};
+// use eq::EventQueue;
+// use fabric::Fabric;
+// use mr::{MemoryRegion, MemoryRegionDesc, MemoryRegionAttr};
+
+// use crate::av::AddressVectorAttr;
 
 // use libfabric_sys;
 pub mod ep;
@@ -134,7 +139,7 @@ pub struct InfoEntry { // [TODO] Make fields private
     pub domain_attr: crate::domain::DomainAttr,
     pub tx_attr: TxAttr,
     pub rx_attr: RxAttr,
-    pub ep_attr: EndpointAttr,
+    pub ep_attr: crate::ep::EndpointAttr,
     c_info: *mut  libfabric_sys::fi_info,
 }
 
@@ -147,7 +152,7 @@ impl InfoEntry {
             unsafe { *domain_attr.get_mut() = *(*c_info).domain_attr}
         let tx_attr = TxAttr::from( unsafe {(*c_info).tx_attr } );
         let rx_attr = RxAttr::from( unsafe {(*c_info).rx_attr } );
-        let ep_attr = EndpointAttr::from(unsafe {(*c_info).ep_attr});
+        let ep_attr = crate::ep::EndpointAttr::from(unsafe {(*c_info).ep_attr});
         let caps: u64 = unsafe {(*c_info).caps};
         Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, c_info }
     }
@@ -180,7 +185,7 @@ impl InfoEntry {
         &self.rx_attr
     }
 
-    pub fn get_ep_attr(&self) -> &EndpointAttr {
+    pub fn get_ep_attr(&self) -> &crate::ep::EndpointAttr {
         &self.ep_attr
     }
 
@@ -281,8 +286,8 @@ impl InfoHints {
         InfoCaps::from(unsafe{ (*self.c_info).caps })
     }
 
-    pub fn get_ep_attr(&self) -> EndpointAttr {
-        EndpointAttr::from(unsafe{ (*self.c_info).ep_attr })
+    pub fn get_ep_attr(&self) -> crate::ep::EndpointAttr {
+        crate::ep::EndpointAttr::from(unsafe{ (*self.c_info).ep_attr })
     }
 }
 
@@ -393,6 +398,13 @@ impl TxAttr {
         c_attr.tclass = class.get_value();
 
         Self { c_attr }
+    }
+
+    pub fn op_flags(self, tfer: crate::enums::TransferOptions) -> Self {
+        let mut c_attr = self.c_attr;
+        c_attr.op_flags = tfer.get_value().into();
+
+        Self { c_attr }   
     }
 
     pub fn get_caps(&self) -> u64 {
@@ -684,6 +696,10 @@ impl Mc {
     }
 }
 
+pub trait DataDescriptor {
+    fn get_desc(&mut self) -> *mut std::ffi::c_void;
+}
+
 pub trait FID{
     fn fid(&self) -> *mut libfabric_sys::fid;
     
@@ -695,19 +711,20 @@ pub trait FID{
         }
     }
 
-    fn getname<T0>(&mut self, addr: &mut[T0]) -> usize {
-        let mut len: usize = 0;
+    fn getname<T0>(&self, addr: &mut[T0]) -> usize {
+        let mut len: usize = std::mem::size_of::<T0>() * addr.len();
+        println!("Passing len = {} {} {}", len, addr.len(), std::mem::size_of::<T0>());
         let len_ptr: *mut usize = &mut len;
         let err = unsafe { libfabric_sys::inlined_fi_getname(self.fid(), addr.as_mut_ptr() as *mut std::ffi::c_void, len_ptr) };
-        
-        if err != 0 {
-            panic!("fi_setname failed {}", err);
+        println!("Ret = {}", err);
+        if err < 0 {
+            panic!("fi_setname failed {}: {}", err, error_to_string(err.into()));
         }
 
         len
     }
     
-    fn setopt<T0>(&self, level: i32, optname: i32, opt: &[T0]) {
+    fn setopt<T0>(&mut self, level: i32, optname: i32, opt: &[T0]) {
         let err = unsafe { libfabric_sys::inlined_fi_setopt(self.fid(), level, optname, opt.as_ptr() as *const std::ffi::c_void, opt.len())};
         if err != 0 {
             panic!("fi_setopt failed {}", err);
@@ -806,24 +823,6 @@ impl CollectiveAttr {
 //     c_param: libfabric_sys::fi_param,
 // }
 
-#[test]
-fn get_info(){
-    let info = Info::new().request();
-    let _entries: Vec<InfoEntry> = info.get();
-}
-
-// #[test]
-// fn ft_open_fabric_res() {
-//     let info = Info::new().request();
-//     let entries = info.get();
-    
-//     let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-//     let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-//     let domain = fab.domain(&entries[0]);
-//     domain.close();
-//     eq.close();
-//     fab.close();
-// }
 
 pub fn error_to_string(errnum: i64) -> String {
     let ret = unsafe { libfabric_sys::fi_strerror(errnum as i32) };
@@ -831,8 +830,44 @@ pub fn error_to_string(errnum: i64) -> String {
     str.to_str().unwrap().to_string()
 }
 
+pub struct DefaultMemDesc {}
 
-fn ft_open_fabric_res(info: &InfoEntry) -> (Fabric, EventQueue, Domain) {
+pub fn default_desc() -> DefaultMemDesc { DefaultMemDesc {  }}
+
+impl DataDescriptor for DefaultMemDesc {
+    fn get_desc(&mut self) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+}
+
+struct TestsGlobalCtx {
+    tx_size: usize,
+    rx_size: usize,
+    tx_mr_size: usize,
+    rx_mr_size: usize,
+    tx_seq: u64,
+    rx_seq: u64,
+    tx_cq_cntr: u64,
+    rx_cq_cntr: u64,
+    tx_buf_size: usize,
+    rx_buf_size: usize,
+    buf_size: usize,
+    buf: Vec<u8>,
+    tx_buf_index: usize,
+    rx_buf_index: usize,
+    max_msg_size: usize,
+    remote_address: Address,
+}
+
+impl TestsGlobalCtx {
+    fn new( ) -> Self {
+        let mem = Vec::new();
+        TestsGlobalCtx { tx_size: 0, rx_size: 0, tx_mr_size: 0, rx_mr_size: 0, tx_seq: 0, rx_seq: 0, tx_cq_cntr: 0, rx_cq_cntr: 0, tx_buf_size: 0, rx_buf_size: 0, buf_size: 0, buf: mem, tx_buf_index: 0, rx_buf_index: 0, max_msg_size: 0, remote_address: FI_ADDR_UNSPEC }
+    }
+}
+
+#[allow(dead_code)]
+fn ft_open_fabric_res(info: &InfoEntry) -> (crate::fabric::Fabric, crate::eq::EventQueue, crate::domain::Domain) {
     
     let fab = crate::fabric::Fabric::new(info.fabric_attr.clone());
     let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
@@ -841,7 +876,8 @@ fn ft_open_fabric_res(info: &InfoEntry) -> (Fabric, EventQueue, Domain) {
     (fab, eq, domain)
 }
 
-fn ft_alloc_active_res(info: &InfoEntry, domain: &Domain) -> (CompletionQueue, CompletionQueue, Endpoint) {
+#[allow(dead_code)]
+fn ft_alloc_active_res(info: &InfoEntry, domain: &crate::domain::Domain) -> (crate::cq::CompletionQueue, crate::cq::CompletionQueue, crate::ep::Endpoint, Option<crate::av::AddressVector>) {
     
     let mut txcq_attr =  crate::cq::CompletionQueueAttr::new();
     let mut rxcq_attr =  crate::cq::CompletionQueueAttr::new();
@@ -856,8 +892,8 @@ fn ft_alloc_active_res(info: &InfoEntry, domain: &Domain) -> (CompletionQueue, C
         rxcq_attr.format(enums::CqFormat::CONTEXT);
     }
         // .wait_obj(crate::enums::WaitObj::NONE)
-    txcq_attr.size(info.get_tx_attr().get_size() );
-    rxcq_attr.size(info.get_tx_attr().get_size() );
+    txcq_attr.size(info.get_tx_attr().get_size() );//.wait_obj(crate::enums::WaitObj::NONE);
+    rxcq_attr.size(info.get_tx_attr().get_size() );//.wait_obj(crate::enums::WaitObj::NONE);
     
     let tx_cq = domain.cq_open(txcq_attr);
     let rx_cq = domain.cq_open(rxcq_attr);
@@ -865,25 +901,44 @@ fn ft_alloc_active_res(info: &InfoEntry, domain: &Domain) -> (CompletionQueue, C
 
     let ep = domain.ep(&info);
 
+    println!("{}", info.get_ep_attr().get_type().get_value());
 
-    (tx_cq, rx_cq, ep)
+    let av = match info.get_ep_attr().get_type() {
+        crate::enums::EndpointType::RDM | crate::enums::EndpointType::DGRAM  => {
+                let av_attr = match info.get_domain_attr().get_av_type() {
+                    enums::AddressVectorType::UNSPEC => crate::av::AddressVectorAttr::new(),
+                    _ => crate::av::AddressVectorAttr::new().avtype(info.get_domain_attr().get_av_type()),
+                }.count(1);
+                Option::Some(domain.av_open(av_attr))
+            }
+        _ => None,
+    };
+
+    (tx_cq, rx_cq, ep, av)
 }
 
-fn ft_enable_ep(info: &InfoEntry, ep: &Endpoint, tx_cq: &CompletionQueue, rx_cq: &CompletionQueue, eq: &EventQueue) {
+#[allow(dead_code)]
+fn ft_enable_ep(info: &InfoEntry, ep: &crate::ep::Endpoint, tx_cq: &crate::cq::CompletionQueue, rx_cq: &crate::cq::CompletionQueue, eq: &crate::eq::EventQueue, av: &Option<crate::av::AddressVector>) {
     
     match info.get_ep_attr().get_type() {
-        EndpointType::MSG => ep.bind(eq, 0),
+        crate::enums::EndpointType::MSG => ep.bind(eq, 0),
         _ => if info.get_caps().is_collective() || info.get_caps().is_multicast() {
             ep.bind(eq, 0);
         }
     }
-    
+
+    match av {
+        Some(av_val) => ep.bind(av_val, 0),
+        _ => {}
+    }
+
     ep.bind(tx_cq, libfabric_sys::FI_TRANSMIT.into());
     ep.bind(rx_cq, libfabric_sys::FI_RECV.into());
     ep.enable();
 }
 
-fn ft_complete_connect(ep: &Endpoint, eq: &EventQueue) { // [TODO] Do not panic, return errors
+#[allow(dead_code)]
+fn ft_complete_connect(eq: &crate::eq::EventQueue) { // [TODO] Do not panic, return errors
     
     let mut event = 0;
     let mut eq_cm_entry = [crate::eq::EventQueueCmEntry::new()];
@@ -899,14 +954,16 @@ fn ft_complete_connect(ep: &Endpoint, eq: &EventQueue) { // [TODO] Do not panic,
     }
 }
 
-fn ft_accept_connection(ep: &Endpoint, eq: &EventQueue) {
+#[allow(dead_code)]
+fn ft_accept_connection(ep: &crate::ep::Endpoint, eq: &crate::eq::EventQueue) {
     
     ep.accept();
     
-    ft_complete_connect(ep, eq);
+    ft_complete_connect(eq);
 }
 
-fn ft_retrieve_conn_req(eq: &EventQueue) -> InfoEntry { // [TODO] Do not panic, return errors
+#[allow(dead_code)]
+fn ft_retrieve_conn_req(eq: &crate::eq::EventQueue) -> InfoEntry { // [TODO] Do not panic, return errors
     
     let mut event = 0;
 
@@ -923,39 +980,323 @@ fn ft_retrieve_conn_req(eq: &EventQueue) -> InfoEntry { // [TODO] Do not panic, 
     eq_cm_entry.get_info()
 }
 
-
-
-fn ft_server_connect(eq: &EventQueue, domain: &Domain) -> (CompletionQueue, CompletionQueue, Endpoint) {
+#[allow(dead_code)]
+fn ft_server_connect(eq: &crate::eq::EventQueue, domain: &crate::domain::Domain) -> (crate::cq::CompletionQueue, crate::cq::CompletionQueue, crate::ep::Endpoint) {
 
     let new_info = ft_retrieve_conn_req(&eq);
 
-    let (tx_cq, rx_cq, ep) = ft_alloc_active_res(&new_info, &domain);
+    let (tx_cq, rx_cq, ep, _) = ft_alloc_active_res(&new_info, &domain);
     
-    ft_enable_ep(&new_info, &ep, &tx_cq, &rx_cq, &eq);
+    ft_enable_ep(&new_info, &ep, &tx_cq, &rx_cq, &eq, &None);
 
     ft_accept_connection(&ep, &eq);
 
     (tx_cq, rx_cq, ep)
 }
 
+#[allow(dead_code)]
 fn ft_getinfo(hints: InfoHints, node: String, service: String, flags: u64) -> Info {
     let ep_attr = hints.get_ep_attr();
 
     let hints = match ep_attr.get_type() {
-        EndpointType::UNSPEC => hints.ep_attr(ep_attr.ep_type(EndpointType::RDM)),
+        crate::enums::EndpointType::UNSPEC => hints.ep_attr(ep_attr.ep_type(crate::enums::EndpointType::RDM)),
         _ => hints ,
     };
 
     crate::Info::new().node(node.as_str()).service(service.as_str()).flags(flags).hints(hints).request()
 }
 
-fn ft_connect_ep(ep: &Endpoint, eq: &EventQueue, addr: &Address) {
+#[allow(dead_code)]
+fn ft_connect_ep(ep: &crate::ep::Endpoint, eq: &crate::eq::EventQueue, addr: &Address) {
     
     ep.connect(addr);
-    ft_complete_connect(ep, eq);
+    ft_complete_connect(eq);
 }
 
-fn start_server(hints: InfoHints) -> (Info, fabric::Fabric,  domain::Domain, EventQueue, PassiveEndPoint) {
+// fn ft_av_insert<T0>(addr: T0, count: size, fi_addr: Address, flags: u64) {
+//     a
+// }
+
+
+fn ft_rx_prefix_size(info: &InfoEntry) -> usize {
+
+    if info.get_rx_attr().get_mode() & libfabric_sys::FI_MSG_PREFIX == libfabric_sys::FI_MSG_PREFIX{ // [TODO]
+        info.get_ep_attr().get_max_msg_size()
+    }
+    else {
+        0
+    }
+}
+
+fn ft_tx_prefix_size(info: &InfoEntry) -> usize {
+
+    if info.get_tx_attr().get_mode() & libfabric_sys::FI_MSG_PREFIX == libfabric_sys::FI_MSG_PREFIX{ // [TODO]
+        info.get_ep_attr().get_max_msg_size()
+    }
+    else {
+        0
+    }
+}
+const WINDOW_SIZE : usize = 64;
+const FT_MAX_CTRL_MSG : usize = 1024;
+const FT_RMA_SYNC_MSG_BYTES : usize = 4;
+const FI_ADDR_UNSPEC : Address = u64::MAX;
+
+fn ft_set_tx_rx_sizes(info: &InfoEntry, tx_size: &mut usize, rx_size: &mut usize) {
+    *tx_size = FT_MAX_CTRL_MSG * FT_MAX_CTRL_MSG;
+    if *tx_size > info.get_ep_attr().get_max_msg_size() {
+        *tx_size = info.get_ep_attr().get_max_msg_size();
+    }
+    println!("FT PREFIX = {}", ft_rx_prefix_size(&info));
+    *rx_size = *tx_size + ft_rx_prefix_size(&info);
+    *tx_size +=  ft_tx_prefix_size(&info);
+}
+
+fn ft_alloc_msgs(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, domain: &crate::domain::Domain, ep: &crate::ep::Endpoint) -> (crate::mr::MemoryRegion, crate::mr::MemoryRegionDesc) {
+
+    let alignment: usize = 64;
+    ft_set_tx_rx_sizes(info, &mut gl_ctx.tx_size, &mut gl_ctx.rx_size);
+    gl_ctx.rx_buf_size = std::cmp::max(gl_ctx.rx_size, FT_MAX_CTRL_MSG) * WINDOW_SIZE;
+
+
+    let rma_resv_bytes = FT_RMA_SYNC_MSG_BYTES + std::cmp::max(ft_tx_prefix_size(info), ft_rx_prefix_size(info));
+    gl_ctx.tx_buf_size += rma_resv_bytes;
+    gl_ctx.rx_buf_size += rma_resv_bytes;
+
+    gl_ctx.buf_size = gl_ctx.rx_buf_size + gl_ctx.tx_buf_size;
+
+    gl_ctx.buf_size += alignment;
+    gl_ctx.buf.resize(gl_ctx.buf_size, 0);
+    gl_ctx.max_msg_size = gl_ctx.tx_size;
+
+    gl_ctx.rx_buf_index = 0;
+    gl_ctx.tx_buf_index = gl_ctx.rx_buf_size;
+
+    ft_reg_mr(info, domain, ep, &mut gl_ctx.buf, 0xC0DE)
+}
+
+
+fn ft_enable_ep_recv(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &crate::ep::Endpoint, domain: &crate::domain::Domain, tx_cq: &crate::cq::CompletionQueue, rx_cq: &crate::cq::CompletionQueue, eq: &crate::eq::EventQueue, av: &Option<crate::av::AddressVector>) -> (crate::mr::MemoryRegion, crate::mr::MemoryRegionDesc) {
+    
+    ft_enable_ep(info, ep, tx_cq, rx_cq, eq, av);
+
+    let (mr, mut mr_desc) =  ft_alloc_msgs(info, gl_ctx, domain, ep);
+
+    if info.get_caps().is_msg() || info.get_caps().is_tagged() {
+        if info.get_caps().is_tagged() {
+            ep.trecv(&mut gl_ctx.buf[gl_ctx.rx_buf_index.. gl_ctx.rx_buf_index + FT_MAX_CTRL_MSG], &mut mr_desc, gl_ctx.remote_address, gl_ctx.rx_seq, 0);
+        }
+        else {
+            println!("Posting receive");
+            let addr: u64 = (0 as u64).wrapping_sub(1);
+            let ret = ep.recv(&mut gl_ctx.buf[gl_ctx.rx_buf_index.. gl_ctx.rx_buf_index + FT_MAX_CTRL_MSG], &mut mr_desc, gl_ctx.remote_address);
+            // let  ret = ep.recv2(&mut gl_ctx.buf[gl_ctx.rx_buf_index.. gl_ctx.rx_buf_index + FT_MAX_CTRL_MSG], mr_desc, addr);
+            println!("Returned {}", ret);
+        }
+
+        gl_ctx.rx_seq += 1;
+    }
+
+    (mr, mr_desc)
+}
+
+fn ft_init_fabric(hints: InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, flags: u64) -> (Info, crate::fabric::Fabric, crate::ep::Endpoint, crate::domain::Domain, crate::cq::CompletionQueue, crate::cq::CompletionQueue, crate::eq::EventQueue, crate::mr::MemoryRegion, crate::av::AddressVector) {
+    
+    let info = ft_getinfo(hints, node, service.clone(), flags);
+    let entries: Vec<crate::InfoEntry> = info.get();
+    
+    if entries.len() == 0 {
+        panic!("No entires in fi_info");
+    }
+        
+    let (fabric, eq, domain) = ft_open_fabric_res(&entries[0]);
+
+    let (tx_cq, rx_cq, ep, av) =  ft_alloc_active_res(&entries[0], &domain);
+
+    let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &av);
+    println!("Passed enable_ep_recv");
+    let av = av.unwrap();
+    ft_init_av(&entries[0], gl_ctx, &av , &ep, &tx_cq, &rx_cq, &mut mr_desc, service.is_empty());
+
+    (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av)
+}
+
+fn ft_av_insert<T>(av: &crate::av::AddressVector, addr: &T, fi_addr: &mut Address, flags: u64) {
+
+    let ret = av.insert(std::slice::from_ref(addr), fi_addr, flags);
+}
+
+fn ft_init_av_dst_addr(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx,  av: &crate::av::AddressVector, ep: &crate::ep::Endpoint, tx_cq: &crate::cq::CompletionQueue, rx_cq: &crate::cq::CompletionQueue, mr_desc: &mut crate::mr::MemoryRegionDesc, server: bool) {
+    let mut v = [0 as u8; FT_MAX_CTRL_MSG];
+    if !server {
+        ft_av_insert(av, info.get_dest_addr::<Address>(), &mut gl_ctx.remote_address, 0);
+        let mut v2 = vec![0 as u8; 4];
+        let len = ep.getname(&mut v);
+        for el in v[0..len].iter() {
+            print!("{}", el);
+        }
+        
+        gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(&v[0..len]);
+
+        // let ret = ep.send(&mut v, len, std::slice::from_mut(mr_desc), gl_ctx.remote_address);
+        // let ret = ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len], len, std::slice::from_mut(mr_desc), gl_ctx.remote_address);
+        loop {
+            println!("{:?} vs {:?}", std::slice::from_mut(mr_desc).as_ptr(), mr_desc.get());
+            let ret = ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len], mr_desc, gl_ctx.remote_address);
+            // println!("Done Sending my address {}", ret);
+            if ret == 0 {
+                break;
+            }
+            else if -ret as u32 != libfabric_sys::FI_EAGAIN {
+                panic!("Got {}", ret);
+            }
+
+            let mut cq_err_entry = crate::cq::CqErrEntry::new();
+            let ret = tx_cq.read(std::slice::from_mut(&mut cq_err_entry), 1);
+            if ret < 0 && -ret as u32 != libfabric_sys::FI_EAGAIN {
+                panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+            }
+        }
+            // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+        println!("Receiving stuff");
+        // ep.recv2(&mut v2[..1], std::slice::from_mut(mr_desc), gl_ctx.remote_address);
+        ep.recv(&mut v2[..1], mr_desc, gl_ctx.remote_address);
+        println!("Done receiving stuff");
+
+        let mut cq_err_entry = crate::cq::CqErrEntry::new();
+        
+        let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+        if ret < 0  {
+            // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+            panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+        }
+    }
+    else {
+        ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
+        v.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+FT_MAX_CTRL_MSG]);
+
+
+        if matches!(info.get_domain_attr().get_av_type(), crate::enums::AddressVectorType::TABLE ) {
+            let mut zero = 0;
+            ft_av_insert(av, &v, &mut zero, 0);
+        }
+        else {
+            ft_av_insert(av, &v, &mut gl_ctx.remote_address, 0);
+        }
+        println!("Inserted succesfully");
+
+        println!("Receiving my stuff");
+        // ep.recv(&mut gl_ctx.buf[gl_ctx.rx_buf_index.. gl_ctx.rx_buf_index+ gl_ctx.rx_size], std::slice::from_mut(mr_desc), gl_ctx.remote_address);
+        ep.recv(&mut gl_ctx.buf[gl_ctx.rx_buf_index.. gl_ctx.rx_buf_index+ gl_ctx.rx_size], mr_desc, gl_ctx.remote_address);
+        println!("Done receiving my stuff");
+        
+        if matches!(info.get_domain_attr().get_av_type(), crate::enums::AddressVectorType::TABLE) {
+            gl_ctx.remote_address = 0;
+        }
+        
+        println!("Sending my stuff");
+        // ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index.. gl_ctx.tx_buf_index + 1],std::slice::from_mut(mr_desc), gl_ctx.remote_address);
+        ep.send(&mut gl_ctx.buf[gl_ctx.tx_buf_index.. gl_ctx.tx_buf_index + 1], mr_desc, gl_ctx.remote_address);
+        println!("Done sending my stuff");
+        
+        let mut cq_err_entry = crate::cq::CqErrEntry::new();
+        
+        let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+        if ret < 0  {
+            // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+            panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+        }
+    }
+}
+
+fn ft_init_av(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, av: &crate::av::AddressVector, ep: &crate::ep::Endpoint, tx_cq: &crate::cq::CompletionQueue, rx_cq: &crate::cq::CompletionQueue, mr_desc: &mut crate::mr::MemoryRegionDesc, server: bool) {
+
+    ft_init_av_dst_addr(info, gl_ctx, av, ep,  tx_cq, rx_cq, mr_desc, server);
+}
+
+fn ft_read_cq(cq: &crate::cq::CompletionQueue, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
+
+    let mut comp = crate::cq::CqErrEntry::new();
+
+    while total - *curr > 0 {
+        loop {
+
+            let err = cq.read(std::slice::from_mut(&mut comp), 1);
+            if err >= 0 {
+                break;
+            }
+            else if -err as u32 != libfabric_sys::FI_EAGAIN { 
+                panic!("ERRRO IN CQ_READ");
+            }
+        }
+        *curr += 1;
+    }
+}
+
+fn ft_get_rx_comp(rx_curr: &mut u64, rx_cq: &crate::cq::CompletionQueue, total: u64) {
+
+    ft_read_cq(rx_cq, rx_curr, total, -1, 0);
+}
+
+fn ft_get_tx_comp(tx_curr: &mut u64, tx_cq: &crate::cq::CompletionQueue, total: u64) {
+
+    ft_read_cq(tx_cq, tx_curr, total, -1, 0);
+}
+
+fn ft_need_mr_reg(info: &InfoEntry) -> bool {
+
+    let res = if info.get_caps().is_rma() || info.get_caps().is_atomic() {
+        true
+    }
+    else {
+        if info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_LOCAL == libfabric_sys::FI_MR_LOCAL.try_into().unwrap() { // [TODO] Make this return enum
+            true
+        }
+        else {
+            false
+        }
+    };
+
+    res
+}
+
+fn ft_reg_mr(info: &InfoEntry, domain: &crate::domain::Domain, ep: &crate::ep::Endpoint, buf: &mut [u8], key: u64) -> (crate::mr::MemoryRegion, crate::mr::MemoryRegionDesc) {
+
+    let iov = IoVec::new(buf);
+    let mut mr_attr = crate::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(crate::enums::HmemIface::SYSTEM);
+    if (info.get_mode() & libfabric_sys::FI_LOCAL_MR)  == libfabric_sys::FI_LOCAL_MR  ||  
+        (info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_LOCAL == libfabric_sys::FI_MR_LOCAL) { //[TODO]
+
+        if info.get_caps().is_msg() || info.get_caps().is_tagged() {
+            let mut temp = info.get_caps().is_send();
+            if temp {
+                mr_attr = mr_attr.access_send();
+            }
+            temp |= info.get_caps().is_recv();
+            if temp {
+                mr_attr = mr_attr.access_recv();
+            }
+            if !temp {
+                mr_attr = mr_attr.access_send().access_recv();
+            }
+        }
+    } 
+
+    let mr = domain.mr_regattr(mr_attr, 0);
+    let desc = mr.description();
+
+    if info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_ENDPOINT == libfabric_sys::FI_MR_ENDPOINT {
+        println!("MR ENDPOINT");
+        mr.bind(ep, 0);
+    }
+
+    (mr,desc)
+
+}
+
+
+#[allow(dead_code)]
+fn start_server(hints: InfoHints) -> (Info, fabric::Fabric,  crate::domain::Domain, crate::eq::EventQueue, crate::ep::PassiveEndpoint) {
    
    let info = ft_getinfo(hints, "127.0.0.1".to_owned(), "42206".to_owned(), libfabric_sys::FI_SOURCE);
    let entries: Vec<crate::InfoEntry> = info.get();
@@ -975,9 +1316,8 @@ fn start_server(hints: InfoHints) -> (Info, fabric::Fabric,  domain::Domain, Eve
     (info, fab, domain, eq, pep)
 }
 
-
-
-fn client_connect(hints: InfoHints, node: String, service: String) -> (Info, fabric::Fabric,  domain::Domain, EventQueue, CompletionQueue, CompletionQueue, Endpoint) {
+#[allow(dead_code)]
+fn client_connect(hints: InfoHints, node: String, service: String) -> (Info, fabric::Fabric,  domain::Domain, crate::eq::EventQueue, crate::cq::CompletionQueue, crate::cq::CompletionQueue, crate::ep::Endpoint) {
     let info = ft_getinfo(hints, node, service, 0);
 
     let entries: Vec<crate::InfoEntry> = info.get();
@@ -987,16 +1327,16 @@ fn client_connect(hints: InfoHints, node: String, service: String) -> (Info, fab
     }
 
     let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
-    let (tx_cq, rx_cq, ep) = ft_alloc_active_res(&entries[0], &domain);
-    ft_enable_ep(&entries[0], &ep, &tx_cq, &rx_cq, &eq);
+    let (tx_cq, rx_cq, ep, _) = ft_alloc_active_res(&entries[0], &domain);
+    ft_enable_ep(&entries[0], &ep, &tx_cq, &rx_cq, &eq, &None);
     ft_connect_ep(&ep, &eq, entries[0].get_dest_addr::<Address>());
 
     
     (info, fab, domain, eq, rx_cq, tx_cq, ep)
 }
 
-
-fn close_all_pep(fab: Fabric, domain: Domain, eq :EventQueue, rx_cq: CompletionQueue, tx_cq: CompletionQueue, ep: Endpoint, pep: PassiveEndPoint) {
+#[allow(dead_code)]
+fn close_all_pep(fab: crate::fabric::Fabric, domain: crate::domain::Domain, eq :crate::eq::EventQueue, rx_cq: crate::cq::CompletionQueue, tx_cq: crate::cq::CompletionQueue, ep: crate::ep::Endpoint, pep: crate::ep::PassiveEndpoint) {
     ep.shutdown(0);
     ep.close();
     pep.close();
@@ -1007,13 +1347,28 @@ fn close_all_pep(fab: Fabric, domain: Domain, eq :EventQueue, rx_cq: CompletionQ
     fab.close();        
 }
 
-fn close_all(fab: Fabric, domain: Domain, eq :EventQueue, rx_cq: CompletionQueue, tx_cq: CompletionQueue, ep: Endpoint) {
-    ep.shutdown(0);
+#[allow(dead_code)]
+fn close_all(fab: crate::fabric::Fabric, domain: crate::domain::Domain, eq :crate::eq::EventQueue, rx_cq: crate::cq::CompletionQueue, tx_cq: crate::cq::CompletionQueue, ep: crate::ep::Endpoint, mr: Option<crate::mr::MemoryRegion>, av: Option<crate::av::AddressVector>) {
+    
+    println!("Closing Ep");
     ep.close();
+    println!("Closing Eq");
     eq.close();
+    println!("Closing tx_cq");
     tx_cq.close();
+    println!("Closing rx_cq");
     rx_cq.close();
+    match mr {
+        Some(mr_val) => mr_val.close(),
+        _ => {}
+    }
+    match av {
+        Some(av_val) => av_val.close(),
+        _ => {}
+    }
+    println!("Closing domain");
     domain.close();
+    println!("Closing fabric");
     fab.close();    
 }
 
@@ -1051,7 +1406,7 @@ fn pp_server_msg() {
         .addr_format(crate::enums::AddressFormat::UNSPEC);
 
 
-    let (info, fab, domain, eq, pep)    = start_server(hints);
+    let (_info, fab, domain, eq, pep)    = start_server(hints);
     let (tx_cq, rx_cq, ep) = ft_server_connect(&eq, &domain);
 
     let mut buff: [usize; 4] = [0; 4];
@@ -1060,21 +1415,20 @@ fn pp_server_msg() {
     let addr: u64 = (0 as u64).wrapping_sub(1);
     let mut buffer: [usize; 4] = [255; 4];
     let len = buff.len();
-    ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
+    ep.recv(&mut buff, &mut default_desc(), addr);
 
     let addr: u64 = (0 as u64).wrapping_sub(1);
-    // let iov = IoVec::new(&mut buffer);
-    // let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, addr);
-    // ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
-    ep.senddata(&mut buffer, std::mem::size_of::<usize>() * 4, &mut buff2, 0, addr);
+    let iov = IoVec::new(&mut buffer);
+    let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, addr);
+    ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
     let mut cq_err_entry = crate::cq::CqErrEntry::new();
-    
+
     let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
     if ret < 0  {
         close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
     }
-
+    
     let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
     if ret < 0  {
         close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
@@ -1082,13 +1436,18 @@ fn pp_server_msg() {
     }
 
     println!("Server Received {:?}", buff);
+    
+    ep.shutdown(0);
 
     close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
 }
 
+
+
 #[ignore]
 #[test]
 fn pp_client_msg() {
+    let mut gl_ctx = TestsGlobalCtx::new();
 
     let ep_attr = crate::ep::EndpointAttr::new()
         .ep_type(crate::enums::EndpointType::MSG);
@@ -1110,13 +1469,13 @@ fn pp_client_msg() {
         .caps(caps)
         .addr_format(crate::enums::AddressFormat::UNSPEC);
 
-    let (info, fab, domain, eq, rx_cq, tx_cq, ep) = client_connect(hints, "172.17.110.19".to_owned(), "32917".to_owned());
+    let (_info, fab, domain, eq, rx_cq, tx_cq, ep) = client_connect(hints, "172.17.110.19".to_owned(), "44836".to_owned());
     let mut buff: [usize; 4] = [0; 4];
     let mut buff2: [usize; 4] = [0; 4];
 
     let addr: u64 = (0 as u64).wrapping_sub(1); // Address Unspecified
     let len = buff.len();
-    ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
+    ep.recv(&mut buff, &mut default_desc(), addr);
     let flag: u64 = (0 as u64).wrapping_sub(1);
 
     let mut buffer: [usize; 4] = [166; 4];
@@ -1124,75 +1483,136 @@ fn pp_client_msg() {
     let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, flag);
     ep.sendmsg(&msg, crate::enums::TransferOptions::TRANSMIT_COMPLETE);
     let mut cq_err_entry = crate::cq::CqErrEntry::new();
-    
+
     let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
     if ret < 0 && -ret as u32 != libfabric_sys::FI_EAGAIN {
-        close_all(fab, domain, eq, rx_cq, tx_cq, ep);
-
+        close_all(fab, domain, eq, rx_cq, tx_cq, ep, None, None);
+        
         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
     }
     
     let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
     if ret < 0 && -ret as u32 != libfabric_sys::FI_EAGAIN {
-        close_all(fab, domain, eq, rx_cq, tx_cq, ep);
-
+        close_all(fab, domain, eq, rx_cq, tx_cq, ep, None, None);
+        
         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
     }
     println!("Client Received {:?}", buff);
 
-    close_all(fab, domain, eq, rx_cq, tx_cq, ep);
+    close_all(fab, domain, eq, rx_cq, tx_cq, ep, None, None);
 
 }
 
-// #[test]
-// fn pp_server_rma() {
+#[test]
+fn pp_server_rma() {
+    let mut gl_ctx = TestsGlobalCtx::new();
 
-//     let dom_attr = crate::domain::DomainAttr::new()
-//         .threading(enums::Threading::DOMAIN)
-//         .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 )
-//         .resource_mgmt(enums::ResourceMgmt::ENABLED);
+    let dom_attr = crate::domain::DomainAttr::new()
+        .threading(enums::Threading::DOMAIN)
+        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 )
+        .resource_mgmt(enums::ResourceMgmt::ENABLED);
     
-//     let caps = InfoCaps::new().msg().rma();
+    let caps = InfoCaps::new().msg().rma();
     
 
-//     let tx_attr = TxAttr::new().tclass(crate::enums::TClass::BULK_DATA);
+    let tx_attr = TxAttr::new().tclass(crate::enums::TClass::BULK_DATA); //.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
 
-//     let hints = crate::InfoHints::new()
-//         .caps(caps)
-//         .tx_attr(tx_attr)
-//         .mode(libfabric_sys::FI_CONTEXT) // [TODO]
-//         .domain_attr(dom_attr)
-//         .addr_format(crate::enums::AddressFormat::UNSPEC);
-
-
-//     let mut buff: [usize; 4] = [0; 4];
-//     let mut buff2: [usize; 4] = [0; 4];
-
-//     let addr: u64 = (0 as u64).wrapping_sub(1);
-//     let mut buffer: [usize; 4] = [255; 4];
-//     let len = buff.len();
-//     ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
-
-//     let addr: u64 = (0 as u64).wrapping_sub(1);
-//     // let iov = IoVec::new(&mut buffer);
-//     // let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, addr);
-//     // ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
-//     ep.senddata(&mut buffer, std::mem::size_of::<usize>() * 4, &mut buff2, 0, addr);
-//     let mut cq_err_entry = crate::cq::CqErrEntry::new();
+    let hints = crate::InfoHints::new()
+        .caps(caps)
+        .tx_attr(tx_attr)
+        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .domain_attr(dom_attr)
+        .addr_format(crate::enums::AddressFormat::UNSPEC);
     
-//     let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
-//     if ret < 0  {
-//         close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
-//         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
-//     }
+    
+    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av) = ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
 
-//     let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
-//     if ret < 0  {
-//         close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
-//         panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
-//     }
+    // let mut buff: [usize; 4] = [0; 4];
+    // let mut buff2: [usize; 4] = [0; 4];
+    
+    // let addr: u64 = (0 as u64).wrapping_sub(1);
+    // let mut buffer: [usize; 4] = [255; 4];
+    // let len = buff.len();
+    // ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
+    
+    // let addr: u64 = (0 as u64).wrapping_sub(1);
+    // // let iov = IoVec::new(&mut buffer);
+    // // let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, addr);
+    // // ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
+    // ep.senddata(&mut buffer, std::mem::size_of::<usize>() * 4, &mut buff2, 0, addr);
+    // let mut cq_err_entry = crate::cq::CqErrEntry::new();
+    
+    // let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+    // if ret < 0  {
+        //     close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+        //     panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+        // }
+        
+        // let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+        // if ret < 0  {
+            //     close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+            //     panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+            // }
+            
+            // println!("Server Received {:?}", buff);
+            
+    close_all(fabric, domain, eq, rx_cq, tx_cq, ep, mr.into(),av.into());
+    // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+}
 
-//     println!("Server Received {:?}", buff);
+#[test]
+fn pp_client_rma() {
+    let mut gl_ctx = TestsGlobalCtx::new();
+    let dom_attr = crate::domain::DomainAttr::new()
+        .threading(enums::Threading::DOMAIN)
+        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 )
+        .resource_mgmt(enums::ResourceMgmt::ENABLED);
+    
+    let caps = InfoCaps::new().msg().rma();
+    
 
-//     close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
-// }
+    let tx_attr = TxAttr::new().tclass(crate::enums::TClass::BULK_DATA);//.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
+
+    let hints = crate::InfoHints::new()
+        .caps(caps)
+        .tx_attr(tx_attr)
+        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .domain_attr(dom_attr)
+        .addr_format(crate::enums::AddressFormat::UNSPEC);
+    
+    
+    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av) = 
+        ft_init_fabric(hints, &mut gl_ctx, "172.17.110.19".to_owned(), "47386".to_owned(), 0);
+
+    // let mut buff: [usize; 4] = [0; 4];
+    // let mut buff2: [usize; 4] = [0; 4];
+    
+    // let addr: u64 = (0 as u64).wrapping_sub(1);
+    // let mut buffer: [usize; 4] = [255; 4];
+    // let len = buff.len();
+    // ep.recv(std::slice::from_mut(&mut buff), len * std::mem::size_of::<usize>(), std::slice::from_mut(&mut buff2), addr);
+    
+    // let addr: u64 = (0 as u64).wrapping_sub(1);
+    // // let iov = IoVec::new(&mut buffer);
+    // // let msg = Msg::new(std::slice::from_ref(&iov), &mut buffer, addr);
+    // // ep.sendmsg(&msg, enums::TransferOptions::TRANSMIT_COMPLETE);
+    // ep.senddata(&mut buffer, std::mem::size_of::<usize>() * 4, &mut buff2, 0, addr);
+    // let mut cq_err_entry = crate::cq::CqErrEntry::new();
+    
+    // let ret = tx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+    // if ret < 0  {
+        //     close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+        //     panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+        // }
+        
+        // let ret = rx_cq.sread(std::slice::from_mut(&mut cq_err_entry), 1, -1);
+        // if ret < 0  {
+            //     close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+            //     panic!("Size different {} vs {}", ret, std::mem::size_of::<crate::cq::CqErrEntry>());
+            // }
+            
+            // println!("Server Received {:?}", buff);
+            
+    close_all(fabric, domain, eq, rx_cq, tx_cq, ep, mr.into(), av.into());
+    // close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep);
+}

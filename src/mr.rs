@@ -40,13 +40,6 @@ impl MemoryRegion {
         Self { c_mr }    
     }
 
-
-    pub fn desc<T0>(&mut self) -> &mut T0 {
-        let ret: *mut T0 = (unsafe { libfabric_sys::inlined_fi_mr_desc(self.c_mr) }) as *mut T0;
-        unsafe { &mut *ret }
-    }
-
-
     pub fn key(&mut self) -> u64 {
         unsafe { libfabric_sys::inlined_fi_mr_key(self.c_mr) }
     }
@@ -82,6 +75,33 @@ impl MemoryRegion {
             panic!("fi_mr_raw_attr failed {}", err);
         }        
     }
+
+    pub fn description(&self) -> MemoryRegionDesc {
+        let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.c_mr)};
+        if c_desc == std::ptr::null_mut() {
+            panic!("fi_mr_desc returned NULL");
+        }
+
+        MemoryRegionDesc { c_desc }
+    }
+}
+
+pub struct MemoryRegionDesc {
+    c_desc: *mut std::ffi::c_void,
+}
+
+
+impl crate::DataDescriptor for MemoryRegionDesc {
+    
+    fn get_desc(&mut self) -> *mut std::ffi::c_void {
+        self.c_desc
+    }
+}
+
+impl MemoryRegionDesc {
+    pub(crate) fn get(&self) -> *mut std::ffi::c_void {
+        self.c_desc
+    }
 }
 
 impl crate::FID for MemoryRegion{
@@ -97,6 +117,96 @@ pub struct MemoryRegionAttr {
 }
 
 impl MemoryRegionAttr {
+
+    pub fn new() -> Self {
+        Self {
+            c_attr: libfabric_sys::fi_mr_attr {
+                mr_iov: std::ptr::null(),
+                iov_count: 0,
+                access: 0,
+                offset: 0,
+                requested_key: 0,
+                context: std::ptr::null_mut(),
+                auth_key_size: 0,
+                auth_key: std::ptr::null_mut(),
+                iface: libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM,
+                device: libfabric_sys::fi_mr_attr__bindgen_ty_1 {reserved: 0},
+                hmem_data: std::ptr::null_mut(),
+            }
+        }
+    }
+
+    pub fn iov(mut self, iov: &[crate::IoVec] ) -> Self {
+        let mut c_attr = self.c_attr;
+        self.c_attr.mr_iov = iov.as_ptr() as *const libfabric_sys::iovec;
+        self.c_attr.iov_count = iov.len();
+        
+        self
+    }
+
+    pub fn access_send(mut self) -> Self { 
+        let mut c_attr = self.c_attr;
+        self.c_attr.access |= libfabric_sys::FI_SEND as u64;
+
+        self
+    }
+
+    pub fn access_recv(mut self) -> Self { 
+        let mut c_attr = self.c_attr;
+        self.c_attr.access |= libfabric_sys::FI_RECV as u64;
+
+        self
+    }
+
+    pub fn access_read(mut self) -> Self { 
+        let mut c_attr = self.c_attr;
+        self.c_attr.access |= libfabric_sys::FI_READ as u64;
+
+        self
+    }
+
+    pub fn access_write(mut self) -> Self { 
+        let mut c_attr = self.c_attr;
+        self.c_attr.access |= libfabric_sys::FI_WRITE as u64;
+
+        self
+    }
+
+    pub fn access_remote_write(mut self) -> Self { 
+        let mut c_attr = self.c_attr;
+        self.c_attr.access |= libfabric_sys::FI_REMOTE_WRITE as u64;
+
+        self
+    }
+
+    pub fn access_remote_read(mut self) -> Self { 
+        let mut c_attr = self.c_attr;
+        self.c_attr.access |= libfabric_sys::FI_REMOTE_READ as u64;
+
+        self
+    }
+
+    pub fn offset(mut self, offset: u64) -> Self {
+        let mut c_attr = self.c_attr;
+        self.c_attr.offset = offset;
+
+        self
+    }
+
+    pub fn requested_key(mut self, key: u64) -> Self {
+        let mut c_attr = self.c_attr;
+        self.c_attr.requested_key = key;
+
+        self
+    }
+
+    pub fn iface(mut self, iface: crate::enums::HmemIface) -> Self {
+        let mut c_attr = self.c_attr;
+        self.c_attr.iface = iface.get_value();
+
+        self
+    }
+
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_mr_attr {
         &self.c_attr
     }
