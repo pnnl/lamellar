@@ -318,8 +318,8 @@ impl Endpoint {
     }
 
 
-    pub fn write<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key:u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_write(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), dest_addr, addr, key, std::ptr::null_mut()) };
+    pub fn write<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key:u64) -> isize {
+        let ret = unsafe{ libfabric_sys::inlined_fi_write(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), dest_addr, addr, key, std::ptr::null_mut()) };
         ret   
     }
 
@@ -392,8 +392,8 @@ impl Endpoint {
         ret
     }
 
-    pub fn inject_write<T0>(&self, buf: &mut [T0], dest_addr: crate::Address, addr: u64, key:u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_inject_write(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), dest_addr, addr, key) };
+    pub fn inject_write<T0>(&self, buf: &[T0], dest_addr: crate::Address, addr: u64, key:u64) -> isize {
+        let ret = unsafe{ libfabric_sys::inlined_fi_inject_write(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), dest_addr, addr, key) };
         ret
     }     
 

@@ -366,6 +366,21 @@ impl MrMode {
             MrMode::SCALABLE => libfabric_sys::fi_mr_mode_FI_MR_SCALABLE,
         }
     }
+
+    pub fn from_value(value: libfabric_sys::fi_mr_mode) -> MrMode {
+        if value == Self::UNSPEC.get_value() {
+            Self::UNSPEC
+        }
+        else if value == Self::BASIC.get_value() {
+            Self::BASIC
+        }
+        else if value == Self::SCALABLE.get_value() {
+            Self::SCALABLE
+        }
+        else {
+            panic!("Unexpected value for MrMode");
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]

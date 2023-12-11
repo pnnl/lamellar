@@ -72,7 +72,7 @@ impl CompletionQueue {
         unsafe { libfabric_sys::inlined_fi_cq_readerr(self.c_cq, err.get_mut(), flags) }
     }
 
-    fn strerror(&self, prov_errno: i32, err_data: *const std::ffi::c_void, err_data_size: usize) -> &str {
+    pub fn strerror(&self, prov_errno: i32, err_data: *const std::ffi::c_void, err_data_size: usize) -> &str {
         // let len = buf.len();
         // let c_str = std::ffi::CString::new(buf).unwrap();
         // let raw = c_str.into_raw();

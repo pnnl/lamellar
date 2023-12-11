@@ -40,7 +40,7 @@ impl MemoryRegion {
         Self { c_mr }    
     }
 
-    pub fn key(&mut self) -> u64 {
+    pub fn get_key(&mut self) -> u64 {
         unsafe { libfabric_sys::inlined_fi_mr_key(self.c_mr) }
     }
 

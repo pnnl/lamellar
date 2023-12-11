@@ -617,20 +617,49 @@ impl IoVec {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct RmaIoVec {
     c_rma_iovec: libfabric_sys::fi_rma_iov,
 }
 
 impl RmaIoVec {
-    pub fn new(addr: u64, len: usize, key: u64) -> Self {
+    pub fn new() -> Self {
         Self {
             c_rma_iovec: libfabric_sys::fi_rma_iov {
-                addr,
-                len,
-                key,
+                addr: 0,
+                len: 0,
+                key: 0,
             }
         }
     }
+
+    pub fn address(mut self, addr: u64) -> Self {
+        self.c_rma_iovec.addr = addr;
+        self
+    }
+
+    pub fn len(mut self, len: usize) -> Self {
+        self.c_rma_iovec.len = len;
+        self
+    }
+
+    pub fn key(mut self, key: u64) -> Self {
+        self.c_rma_iovec.key = key;
+        self
+    }
+
+    pub fn get_address(&self) -> u64 {
+        self.c_rma_iovec.addr
+    }
+    
+    pub fn get_len(&self) -> usize {
+        self.c_rma_iovec.len
+    }
+
+    pub fn get_key(&self) -> u64 {
+        self.c_rma_iovec.key
+    }
+
 }
 
 pub struct Ioc {
@@ -1044,6 +1073,7 @@ fn ft_alloc_msgs(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, domain: &crate::
     let alignment: usize = 64;
     ft_set_tx_rx_sizes(info, &mut gl_ctx.tx_size, &mut gl_ctx.rx_size);
     gl_ctx.rx_buf_size = std::cmp::max(gl_ctx.rx_size, FT_MAX_CTRL_MSG) * WINDOW_SIZE;
+    gl_ctx.tx_buf_size = std::cmp::max(gl_ctx.tx_size, FT_MAX_CTRL_MSG) * WINDOW_SIZE;
 
 
     let rma_resv_bytes = FT_RMA_SYNC_MSG_BYTES + std::cmp::max(ft_tx_prefix_size(info), ft_rx_prefix_size(info));
@@ -1054,10 +1084,13 @@ fn ft_alloc_msgs(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, domain: &crate::
 
     gl_ctx.buf_size += alignment;
     gl_ctx.buf.resize(gl_ctx.buf_size, 0);
+    println!("Buf size: {}", gl_ctx.buf_size);
     gl_ctx.max_msg_size = gl_ctx.tx_size;
-
+    
     gl_ctx.rx_buf_index = 0;
+    println!("rx_buf_index: {}", gl_ctx.rx_buf_index);
     gl_ctx.tx_buf_index = gl_ctx.rx_buf_size;
+    println!("tx_buf_index: {}", gl_ctx.tx_buf_index);
 
     ft_reg_mr(info, domain, ep, &mut gl_ctx.buf, 0xC0DE)
 }
@@ -1087,7 +1120,7 @@ fn ft_enable_ep_recv(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &crate::
     (mr, mr_desc)
 }
 
-fn ft_init_fabric(hints: InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, flags: u64) -> (Info, crate::fabric::Fabric, crate::ep::Endpoint, crate::domain::Domain, crate::cq::CompletionQueue, crate::cq::CompletionQueue, crate::eq::EventQueue, crate::mr::MemoryRegion, crate::av::AddressVector) {
+fn ft_init_fabric(hints: InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, flags: u64) -> (Info, crate::fabric::Fabric, crate::ep::Endpoint, crate::domain::Domain, crate::cq::CompletionQueue, crate::cq::CompletionQueue, crate::eq::EventQueue, crate::mr::MemoryRegion, crate::av::AddressVector, crate::mr::MemoryRegionDesc) {
     
     let info = ft_getinfo(hints, node, service.clone(), flags);
     let entries: Vec<crate::InfoEntry> = info.get();
@@ -1105,7 +1138,7 @@ fn ft_init_fabric(hints: InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, s
     let av = av.unwrap();
     ft_init_av(&entries[0], gl_ctx, &av , &ep, &tx_cq, &rx_cq, &mut mr_desc, service.is_empty());
 
-    (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av)
+    (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av, mr_desc)
 }
 
 fn ft_av_insert<T>(av: &crate::av::AddressVector, addr: &T, fi_addr: &mut Address, flags: u64) {
@@ -1133,6 +1166,53 @@ macro_rules!  ft_post{
         }
         $seq+=1;
     };
+}
+enum RmaOp {
+    RMA_WRITE,
+    RMA_WRITEDATA,
+    RMA_READ,
+}
+
+
+fn ft_post_rma(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, rma_op: RmaOp, offset: usize, size: usize, remote: &RmaIoVec, ep: &crate::ep::Endpoint, fi_addr: Address, data: u64, data_desc: &mut impl crate::DataDescriptor, tx_cq: &crate::cq::CompletionQueue) {
+    match rma_op {
+        
+        RmaOp::RMA_WRITE => {
+            let addr = remote.get_address() + offset as u64;
+            let key = remote.get_key();
+            let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
+            ft_post!(write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key);
+        }
+
+        RmaOp::RMA_WRITEDATA => {
+            todo!()
+        }
+        
+        RmaOp::RMA_READ => {
+            todo!()
+        }
+    }
+}
+
+
+fn ft_post_rma_inject(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, rma_op: RmaOp, offset: usize, size: usize, remote: &RmaIoVec, ep: &crate::ep::Endpoint, fi_addr: Address, data: u64, data_desc: &mut impl crate::DataDescriptor, tx_cq: &crate::cq::CompletionQueue) {
+    match rma_op {
+        
+        RmaOp::RMA_WRITE => {
+            let addr = remote.get_address() + offset as u64;
+            let key = remote.get_key();
+            let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
+            ft_post!(inject_write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_inject_write", ep, buf, fi_addr, addr, key);
+        }
+
+        RmaOp::RMA_WRITEDATA => {
+            todo!()
+        }
+        
+        RmaOp::RMA_READ => {
+            todo!()
+        }
+    }
 }
 
 fn ft_post_tx(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &crate::ep::Endpoint, fi_addr: Address, mut size: usize, data: u64, data_desc: &mut impl crate::DataDescriptor, tx_cq: &crate::cq::CompletionQueue) {
@@ -1253,7 +1333,12 @@ fn ft_read_cq(cq: &crate::cq::CompletionQueue, curr: &mut u64, total: u64, timeo
                 break;
             }
             else if -err as u32 != libfabric_sys::FI_EAGAIN { 
-                panic!("ERRRO IN CQ_READ");
+                let mut err_entry = crate::cq::CqErrEntry::new();
+                let ret2 = cq.readerr(&mut err_entry, 0);
+    
+    
+                println!("sread error: {} {}", ret2, cq.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size()));
+                panic!("ERROR IN CQ_READ {}", err);
             }
         }
         *curr += 1;
@@ -1321,14 +1406,80 @@ fn ft_reg_mr(info: &InfoEntry, domain: &crate::domain::Domain, ep: &crate::ep::E
 
 }
 
+fn ft_sync(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, mr: &mut crate::mr::MemoryRegion, tx_cq: &crate::cq::CompletionQueue, rx_cq: &crate::cq::CompletionQueue, ep: &crate::ep::Endpoint, mr_desc: &mut crate::mr::MemoryRegionDesc) {
+    ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, 1, NO_CQ_DATA, mr_desc, tx_cq);
+    ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, 1, NO_CQ_DATA, mr_desc, rx_cq);
+}
 
-fn ft_exchange_keys(info: &InfoEntry, mr: &crate::mr::MemoryRegion) {
+fn ft_exchange_keys(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, mr: &mut crate::mr::MemoryRegion, tx_cq: &crate::cq::CompletionQueue, rx_cq: &crate::cq::CompletionQueue, domain: &crate::domain::Domain, ep: &crate::ep::Endpoint, mr_desc: &mut crate::mr::MemoryRegionDesc) -> RmaIoVec {
+    println!("Exchangin keys");
     let mut addr = 0; 
     let mut key_size = 0;
+    let mut len = 0;
+    let mut rma_iov = RmaIoVec::new();
+    
     if info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_RAW  == libfabric_sys::FI_MR_RAW { // [TODO] Use enums
         mr.raw_attr(&mut addr, &mut key_size, 0); // [TODO] Change this to return base_addr, key_size
+        println!(" ======== Using RAW ===============");
     }
+    len = std::mem::size_of::<RmaIoVec>();
+    if key_size >= len - std::mem::size_of_val(&rma_iov.get_key()) {
+        panic!("Key size does not fit");
+    }
+    // let mut addr;
+    if info.get_domain_attr().get_mr_mode() as u32 == libfabric_sys::fi_mr_mode_FI_MR_BASIC  || info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_VIRT_ADDR == libfabric_sys::FI_MR_VIRT_ADDR { // [TODO]
+        addr = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)].as_mut_ptr() as u64;
+        let addr_usize = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)].as_mut_ptr() as usize;
+        println!("ADDRESS = {:?}, {:x}, {:x}", gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)].as_mut_ptr(), addr, addr_usize);
+        rma_iov = rma_iov.address(addr);
+        println!("USING MR_BASIC || MR_VIRT_ADDR");
+    }
+    
+    if info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_RAW == libfabric_sys::FI_MR_RAW {
+        mr.raw_attr_with_key(&mut addr, &mut (rma_iov.get_key() as u8), &mut key_size, 0);
+        println!("USING RAW ATTR");
+    }
+    else {
+        rma_iov = rma_iov.key(mr.get_key());
+        println!("USING KEY");
+    }
+    
+    gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(unsafe{ std::slice::from_raw_parts(&rma_iov as *const RmaIoVec as *const u8, std::mem::size_of::<RmaIoVec>())});
+    
+    println!("TX IOV");
+    println!("addr: {}", rma_iov.get_address());
+    println!("len: {}", rma_iov.get_len());
+    println!("key: {}", rma_iov.get_key());
+    ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, len + ft_tx_prefix_size(info), NO_CQ_DATA, mr_desc, tx_cq);
+    println!("DONE TX");
+    
+    println!("DONE RX");
+    ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
+    
+    unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut RmaIoVec as *mut u8,std::mem::size_of::<RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
+    let mut peer_iov = RmaIoVec::new();
+    if info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_RAW == libfabric_sys::FI_MR_RAW {
+        peer_iov = peer_iov.address(rma_iov.get_address());
+        peer_iov = peer_iov.len(rma_iov.get_len());
+        let mut key = 0;
+        domain.map_raw(rma_iov.get_address(), &mut (rma_iov.get_key() as u8), key_size, &mut key, 0);
+        peer_iov = peer_iov.key(key);
+    }
+    else {
+        peer_iov = rma_iov.clone();
+    }
+    println!("POST RX");
+    
+    ft_post_rx(info, gl_ctx, ep, gl_ctx.remote_address, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq);
+    
+    ft_sync(info, gl_ctx, mr, tx_cq, rx_cq, ep, mr_desc);
+    println!("DONE SYNC");
 
+    println!("PEER IOV: ");
+    println!("addr: {}", peer_iov.get_address());
+    println!("len: {}", peer_iov.get_len());
+    println!("key: {}", peer_iov.get_key());
+    peer_iov
 }
 
 #[allow(dead_code)]
@@ -1561,7 +1712,22 @@ fn pp_server_rma() {
         .addr_format(crate::enums::AddressFormat::UNSPEC);
     
     
-    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av) = ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
+    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mut mr, av, mut mr_desc) = ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
+
+    let entries: Vec<crate::InfoEntry> = info.get();
+    
+    if entries.len() == 0 {
+        panic!("No entires in fi_info");
+    }
+    let remote = ft_exchange_keys(&entries[0], &mut gl_ctx, &mut mr, &tx_cq, &rx_cq, &domain, &ep, &mut mr_desc);
+    let offset = FT_RMA_SYNC_MSG_BYTES + std::cmp::max(ft_tx_prefix_size(&entries[0]), ft_rx_prefix_size(&entries[0]));
+    let to_send = [1 as u8; 512];
+    gl_ctx.buf[gl_ctx.tx_buf_index+ offset..gl_ctx.tx_buf_index+ offset+to_send.len()].copy_from_slice(&to_send);
+    let buff = & gl_ctx.buf[gl_ctx.tx_buf_index+ offset..];
+    let fi_remote_address = gl_ctx.remote_address;
+    ft_post_rma(&entries[0], &mut gl_ctx, RmaOp::RMA_WRITE, offset, to_send.len(), &remote, &ep, fi_remote_address, NO_CQ_DATA, &mut mr_desc, &tx_cq);
+    ft_get_tx_comp(&mut gl_ctx.rx_cq_cntr, &tx_cq, gl_ctx.tx_seq);
+    println!("{:?}", &gl_ctx.buf[gl_ctx.rx_buf_index+offset..gl_ctx.rx_buf_index+offset+to_send.len()]);
 
     // let mut buff: [usize; 4] = [0; 4];
     // let mut buff2: [usize; 4] = [0; 4];
@@ -1617,9 +1783,23 @@ fn pp_client_rma() {
         .addr_format(crate::enums::AddressFormat::UNSPEC);
     
     
-    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av) = 
-        ft_init_fabric(hints, &mut gl_ctx, "172.17.110.19".to_owned(), "44300".to_owned(), 0);
+    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mut mr, av, mut mr_desc) = 
+        ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "39822".to_owned(), 0);
+    let entries: Vec<crate::InfoEntry> = info.get();
+    
+    if entries.len() == 0 {
+        panic!("No entires in fi_info");
+    }
+    let remote = ft_exchange_keys(&entries[0], &mut gl_ctx, &mut mr, &tx_cq, &rx_cq, &domain, &ep, &mut mr_desc);
+    let offset = FT_RMA_SYNC_MSG_BYTES + std::cmp::max(ft_tx_prefix_size(&entries[0]), ft_rx_prefix_size(&entries[0]));
+    let to_send = [2 as u8; 512];
 
+    gl_ctx.buf[gl_ctx.tx_buf_index+ offset..gl_ctx.tx_buf_index+ offset+to_send.len()].copy_from_slice(&to_send);
+    let buff = & gl_ctx.buf[gl_ctx.tx_buf_index+ offset..];
+    let fi_remote_address = gl_ctx.remote_address;
+    ft_post_rma(&entries[0], &mut gl_ctx, RmaOp::RMA_WRITE, offset, to_send.len(), &remote, &ep, fi_remote_address, NO_CQ_DATA, &mut mr_desc, &tx_cq);
+    ft_get_tx_comp(&mut gl_ctx.rx_cq_cntr, &tx_cq, gl_ctx.tx_seq);
+    println!("{:?}", &gl_ctx.buf[gl_ctx.rx_buf_index+offset..gl_ctx.rx_buf_index+offset+to_send.len()]);
     // let mut buff: [usize; 4] = [0; 4];
     // let mut buff2: [usize; 4] = [0; 4];
     
