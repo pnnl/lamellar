@@ -24,7 +24,7 @@ impl EventQueue {
     }
 
     pub fn read<T0>(&self, event: &mut u32, buf: &mut [T0], flags: u64) -> isize{
-        let err = unsafe { libfabric_sys::inlined_fi_eq_read(self.c_eq, event as *mut u32, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_eq_read(self.c_eq, event as *mut u32, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), flags) };
 
         // if err < 0 {
         //     panic!("fi_eq_read failed {}", err);
@@ -34,7 +34,7 @@ impl EventQueue {
 
     pub fn write<T0>(&self, event: u32, buf: & [T0], flags: u64) -> isize{
         // println!("{:?}", buf);
-        let err = unsafe { libfabric_sys::inlined_fi_eq_write(self.c_eq, event, buf.as_ptr() as *const std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_eq_write(self.c_eq, event, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), flags) };
 
         // if err < 0 {
         //     panic!("fi_eq_read write {}", err);
@@ -42,8 +42,8 @@ impl EventQueue {
         err
     }
 
-    pub fn sread<T0>(&self, event: &mut u32, buf: &mut T0, timeout: i32, flags: u64) -> isize { // [TODO] Check return
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.c_eq, event as *mut u32, buf as *mut T0 as *mut std::ffi::c_void, std::mem::size_of::<T0>(), timeout, flags) };
+    pub fn sread<T0>(&self, event: &mut u32, buf: &mut [T0], timeout: i32, flags: u64) -> isize { // [TODO] Check return
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.c_eq, event as *mut u32,  buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), timeout, flags) };
         if ret < 0 {
             let mut err_entry = EqErrEntry::new();
             let ret2 = self.readerr(&mut err_entry, 0);
@@ -207,9 +207,7 @@ impl<T> EventQueueEntry<T> {
 
     pub fn get_context(&self) -> T {
         let context_ptr:*mut *mut T = &mut (self.c_entry.context as *mut T);
-        let res = unsafe { std::mem::transmute_copy::<T,T>(&*(context_ptr as *const T)) } ;
-
-        res
+        unsafe { std::mem::transmute_copy::<T,T>(&*(context_ptr as *const T)) }
     }
 
 }
@@ -241,208 +239,212 @@ impl EventQueueCmEntry {
 
 //================== EventQueue related tests ==================//
 
+#[cfg(test)]
+mod tests {
+    use crate::FID;
 
-#[test]
-fn eq_write_read_self() {
-    let info = crate::Info::new().request();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EventQueueAttr::new();
-    eq_attr.size(32)
-        .flags(libfabric_sys::FI_WRITE.into())
-        .wait_obj(crate::enums::WaitObj::NONE);
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq = fab.eq_open(eq_attr);
-    for mut i in 0 as usize ..5 {
-        let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
-        if i & 1 == 1 {
-            entry.fid(&fab);
-        }
-        else {
-            entry.fid(&eq);
-        }
-
-        entry.context(&mut i);
-        let ret = eq.write(libfabric_sys::FI_NOTIFY, &[entry], 0);
-        if ret != std::mem::size_of::<EventQueueEntry<usize>>().try_into().unwrap() {
-            panic!("eq.write failed {}", ret);
-        }
-    }
-    for i in 0..10 {
-        let mut event = 0;
-        let mut entry: [EventQueueEntry<usize>; 1] = [EventQueueEntry::new()];
-        let ret = eq.read(&mut event, &mut entry, if (i & 1) == 1 { 0 } else { libfabric_sys::FI_PEEK.into()});
-        if ret != std::mem::size_of::<EventQueueEntry<usize>>().try_into().unwrap() {
-            panic!("eq.read failed {}", ret);
-        }
-        if event != libfabric_sys::FI_NOTIFY {
-            panic!("Unexpected event {}", event);
-        }
-
-        if entry[0].get_context() != i /2 {
-            panic!("Unexpected context {} vs {}", entry[0].get_context(), i/2);
-        }
-
-        if entry[0].get_fid() != if i & 2 == 2 {fab.fid()} else {eq.fid()} {
-            panic!("Unexpected fid {:?}", entry[0].get_fid());
-        }
-    }
-    let entry: EventQueueEntry<usize> = EventQueueEntry::new();
-    let mut event = 0;
-    let ret = eq.read(&mut event, &mut [entry], 0);
-    if ret != - (libfabric_sys::FI_EAGAIN as isize) {
-        panic!("fi_eq_read of empty EQ returned {}", ret);
-    }
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn eq_size_verify() {
-    let info = crate::Info::new().request();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EventQueueAttr::new();
-    eq_attr.size(32)
-        .flags(libfabric_sys::FI_WRITE.into())
-        .wait_obj(crate::enums::WaitObj::NONE);
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq = fab.eq_open(eq_attr);
-
-    for mut i in 0 as usize .. 32 {
-        let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
-        entry
-            .fid(&fab)
-            .context(&mut i);
-        let ret = eq.write(libfabric_sys::FI_NOTIFY, &mut [entry], 0);
-        if ret != std::mem::size_of::<EventQueueEntry<usize>>().try_into().unwrap() {
-            panic!("eq.write write size != eventqueueentry {}", ret);
-        }
-    }
-
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn eq_write_sread_self() {
-    let info = crate::Info::new().request();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EventQueueAttr::new();
-    eq_attr.size(32)
-        .flags(libfabric_sys::FI_WRITE.into())
-        .wait_obj(crate::enums::WaitObj::FD);
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq = fab.eq_open(eq_attr);
-    for mut i in 0 as usize ..5 {
-        let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
-        if i & 1 == 1 {
-            entry.fid(&fab);
-        }
-        else {
-            entry.fid(&eq);
-        }
-
-        entry.context(&mut i);
-        let ret = eq.write(libfabric_sys::FI_NOTIFY, &[entry], 0);
-        if ret != std::mem::size_of::<EventQueueEntry<usize>>().try_into().unwrap() {
-            panic!("eq.write failed {}", ret);
-        }
-    }
-    for i in 0..10 {
-        let mut event = 0;
-        let mut entry: [EventQueueEntry<usize>; 1] = [EventQueueEntry::new()];
-        let ret = eq.sread(&mut event, &mut entry, 2000 ,if (i & 1) == 1 { 0 } else { libfabric_sys::FI_PEEK.into()});
-        if ret != std::mem::size_of::<EventQueueEntry<usize>>().try_into().unwrap() {
-            panic!("sread failed {}", ret);
-        }
-        if event != libfabric_sys::FI_NOTIFY {
-            panic!("Unexpected event {}", event);
-        }
-
-        if entry[0].get_context() != i /2 {
-            panic!("Unexpected context {} vs {}", entry[0].get_context(), i/2);
-        }
-
-        if entry[0].get_fid() != if i & 2 == 2 {fab.fid()} else {eq.fid()} {
-            panic!("Unexpected fid {:?}", entry[0].get_fid());
-        }
-    }
-    let entry: EventQueueEntry<usize> = EventQueueEntry::new();
-    let mut event = 0;
-    let ret = eq.read(&mut event, &mut [entry], 0);
-    if ret != - (libfabric_sys::FI_EAGAIN as isize) {
-        panic!("fi_eq_read of empty EQ returned {}", ret);
-    }
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn eq_readerr() {
-    let info = crate::Info::new().request();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    let mut eq_attr = EventQueueAttr::new();
-    eq_attr.size(32)
-        .flags(libfabric_sys::FI_WRITE.into())
-        .wait_obj(crate::enums::WaitObj::FD);
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq = fab.eq_open(eq_attr);
-    for mut i in 0 as usize ..5 {
-        let mut entry: EventQueueEntry<usize> = EventQueueEntry::new();
-        entry.fid(&fab);
-
-        entry.context(&mut i);
-        let ret = eq.write(libfabric_sys::FI_NOTIFY, &[entry], 0);
-        if ret != std::mem::size_of::<EventQueueEntry<usize>>().try_into().unwrap() {
-            panic!("eq.write failed {}", ret);
-        }
-    }
-    for i in 0..5 {
-        let mut event = 0;
-        let mut entry: [EventQueueEntry<usize>; 1] = [EventQueueEntry::new()];
-        let ret = eq.read(&mut event, &mut entry , 0);
-        if ret != std::mem::size_of::<EventQueueEntry<usize>>().try_into().unwrap() {
-            panic!("Eq.read failed {}", ret);
-        }
-        if event != libfabric_sys::FI_NOTIFY {
-            panic!("Unexpected event {}", event);
-        }
-
-        if entry[0].get_context() != i  {
-            panic!("Unexpected context {} vs {}", entry[0].get_context(), i/2);
-        }
-
-        if entry[0].get_fid() != fab.fid() {
-            panic!("Unexpected fid {:?}", entry[0].get_fid());
-        }
-    }
-    let mut err_entry = EqErrEntry::new();
-    let err = eq.readerr(&mut err_entry, 0);
-    if err != - (libfabric_sys::FI_EAGAIN as isize) {
-        panic!("eq.readerr failed {}", err);
-    }
-    eq.close();
-    fab.close();
-}
-
-
-#[test]
-fn eq_open_close_sizes() {
-    let info = crate::Info::new().request();
-    let entries = info.get();
-    
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    for i in -1..17 {
-        let size ;
-        if i == -1 {
-            size = 0;
-        }
-        else {
-            size = 1 << i;
-        }
+    #[test]
+    fn eq_write_read_self() {
+        let info = crate::Info::new().request();
+        let entries: Vec<crate::InfoEntry> = info.get();
         let mut eq_attr = crate::eq::EventQueueAttr::new();
-        eq_attr.size(size);
+        eq_attr.size(32)
+            .flags(libfabric_sys::FI_WRITE.into())
+            .wait_obj(crate::enums::WaitObj::NONE);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
         let eq = fab.eq_open(eq_attr);
+        for mut i in 0 as usize ..5 {
+            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+            if i & 1 == 1 {
+                entry.fid(&fab);
+            }
+            else {
+                entry.fid(&eq);
+            }
+
+            entry.context(&mut i);
+            let ret = eq.write(libfabric_sys::FI_NOTIFY, &[entry], 0);
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+                panic!("eq.write failed {}", ret);
+            }
+        }
+        for i in 0..10 {
+            let mut event = 0;
+            let mut entry = crate::eq::EventQueueEntry::<usize>::new();
+            let ret = eq.read(&mut event, std::slice::from_mut(&mut entry), if (i & 1) == 1 { 0 } else { libfabric_sys::FI_PEEK.into()});
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+                panic!("eq.read failed {}", ret);
+            }
+            if event != libfabric_sys::FI_NOTIFY {
+                panic!("Unexpected event {}", event);
+            }
+
+            if entry.get_context() != i /2 {
+                panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
+            }
+
+            if entry.get_fid() != if i & 2 == 2 {fab.fid()} else {eq.fid()} {
+                panic!("Unexpected fid {:?}", entry.get_fid());
+            }
+        }
+        let entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+        let mut event = 0;
+        let ret = eq.read(&mut event, &mut [entry], 0);
+        if ret != - (libfabric_sys::FI_EAGAIN as isize) {
+            panic!("fi_eq_read of empty EQ returned {}", ret);
+        }
         eq.close();
+        fab.close();
     }
-    fab.close();
+
+    #[test]
+    fn eq_size_verify() {
+        let info = crate::Info::new().request();
+        let entries: Vec<crate::InfoEntry> = info.get();
+        let mut eq_attr = crate::eq::EventQueueAttr::new();
+        eq_attr.size(32)
+            .flags(libfabric_sys::FI_WRITE.into())
+            .wait_obj(crate::enums::WaitObj::NONE);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let eq = fab.eq_open(eq_attr);
+
+        for mut i in 0 as usize .. 32 {
+            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+            entry
+                .fid(&fab)
+                .context(&mut i);
+            let ret = eq.write(libfabric_sys::FI_NOTIFY, std::slice::from_mut(&mut entry), 0);
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+                panic!("eq.write write size != eventqueueentry {}", ret);
+            }
+        }
+
+        eq.close();
+        fab.close();
+    }
+
+    #[test]
+    fn eq_write_sread_self() {
+        let info = crate::Info::new().request();
+        let entries: Vec<crate::InfoEntry> = info.get();
+        let mut eq_attr = crate::eq::EventQueueAttr::new();
+        eq_attr.size(32)
+            .flags(libfabric_sys::FI_WRITE.into())
+            .wait_obj(crate::enums::WaitObj::FD);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let eq = fab.eq_open(eq_attr);
+        for mut i in 0 as usize ..5 {
+            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+            if i & 1 == 1 {
+                entry.fid(&fab);
+            }
+            else {
+                entry.fid(&eq);
+            }
+
+            entry.context(&mut i);
+            let ret = eq.write(libfabric_sys::FI_NOTIFY, &[entry], 0);
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+                panic!("eq.write failed {}", ret);
+            }
+        }
+        for i in 0..10 {
+            let mut event = 0;
+            let mut entry = crate::eq::EventQueueEntry::<usize>::new();
+            let ret = eq.sread(&mut event, std::slice::from_mut(&mut entry), 2000 ,if (i & 1) == 1 { 0 } else { libfabric_sys::FI_PEEK.into()});
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+                panic!("sread failed {}", ret);
+            }
+            if event != libfabric_sys::FI_NOTIFY {
+                panic!("Unexpected event {}", event);
+            }
+
+            if entry.get_context() != i /2 {
+                panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
+            }
+
+            if entry.get_fid() != if i & 2 == 2 {fab.fid()} else {eq.fid()} {
+                panic!("Unexpected fid {:?}", entry.get_fid());
+            }
+        }
+        let entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+        let mut event = 0;
+        let ret = eq.read(&mut event, &mut [entry], 0);
+        if ret != - (libfabric_sys::FI_EAGAIN as isize) {
+            panic!("fi_eq_read of empty EQ returned {}", ret);
+        }
+        eq.close();
+        fab.close();
+    }
+
+    #[test]
+    fn eq_readerr() {
+        let info = crate::Info::new().request();
+        let entries: Vec<crate::InfoEntry> = info.get();
+        let mut eq_attr = crate::eq::EventQueueAttr::new();
+        eq_attr.size(32)
+            .flags(libfabric_sys::FI_WRITE.into())
+            .wait_obj(crate::enums::WaitObj::FD);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let eq = fab.eq_open(eq_attr);
+        for mut i in 0 as usize ..5 {
+            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+            entry.fid(&fab);
+
+            entry.context(&mut i);
+            let ret = eq.write(libfabric_sys::FI_NOTIFY, std::slice::from_ref(&entry), 0);
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+                panic!("eq.write failed {}", ret);
+            }
+        }
+        for i in 0..5 {
+            let mut event = 0;
+            let mut entry = crate::eq::EventQueueEntry::<usize>::new();
+            let ret = eq.read(&mut event, std::slice::from_mut(&mut entry) , 0);
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+                panic!("Eq.read failed {}", ret);
+            }
+            if event != libfabric_sys::FI_NOTIFY {
+                panic!("Unexpected event {}", event);
+            }
+
+            if entry.get_context() != i  {
+                panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
+            }
+
+            if entry.get_fid() != fab.fid() {
+                panic!("Unexpected fid {:?}", entry.get_fid());
+            }
+        }
+        let mut err_entry = crate::eq::EqErrEntry::new();
+        let err = eq.readerr(&mut err_entry, 0);
+        if err != - (libfabric_sys::FI_EAGAIN as isize) {
+            panic!("eq.readerr failed {}", err);
+        }
+        eq.close();
+        fab.close();
+    }
+
+
+    #[test]
+    fn eq_open_close_sizes() {
+        let info = crate::Info::new().request();
+        let entries = info.get();
+        
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        for i in -1..17 {
+            let size ;
+            if i == -1 {
+                size = 0;
+            }
+            else {
+                size = 1 << i;
+            }
+            let mut eq_attr = crate::eq::EventQueueAttr::new();
+            eq_attr.size(size);
+            let eq = fab.eq_open(eq_attr);
+            eq.close();
+        }
+        fab.close();
+    }
 }

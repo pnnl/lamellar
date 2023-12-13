@@ -243,75 +243,78 @@ impl AddressVectorSetAttr {
 
 //================== Address Vector tests ==================//
 
-#[test]
-fn av_open_close() {
-    let ep_attr = crate::ep::EndpointAttr::new()
+#[cfg(test)]
+mod tests {
+    use crate::FID;
+    
+    #[test]
+    fn av_open_close() {
+        let ep_attr = crate::ep::EndpointAttr::new()
         .ep_type(crate::enums::EndpointType::RDM);
-
-    let dom_attr = crate::domain::DomainAttr::new()
+    
+        let dom_attr = crate::domain::DomainAttr::new()
         .mode(!0)
         .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as i32 );
 
-    let hints = crate::InfoHints::new()
-        .ep_attr(ep_attr)
-        .domain_attr(dom_attr);
+        let hints = crate::InfoHints::new()
+            .ep_attr(ep_attr)
+            .domain_attr(dom_attr);
 
-    let info = crate::Info::new().hints(hints).request();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    if entries.len() > 0 {
-
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let domain = fab.domain(&entries[0]);
+        let info = crate::Info::new().hints(hints).request();
+        let entries: Vec<crate::InfoEntry> = info.get();
+        if entries.len() > 0 {
         
-        for i in 0..17 {
-            let count = 1 << i;
+            let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+            let domain = fab.domain(&entries[0]);
+        
+            for i in 0..17 {
+                let count = 1 << i;
+                let attr = crate::av::AddressVectorAttr::new()
+                    .avtype(crate::enums::AddressVectorType::MAP)
+                    .count(count)
+                    .flags(0);
+                let av = domain.av_open(attr);
+                    av.close();
+            }
+
+            domain.close();
+            fab.close();
+        }
+        else {
+            panic!("No capable fabric found!");
+        }
+    }
+
+    #[test]
+    fn av_good_sync() {
+        
+        let ep_attr = crate::ep::EndpointAttr::new().ep_type(crate::enums::EndpointType::RDM);
+
+        let dom_attr = crate::domain::DomainAttr::new()
+            .mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as u64 );
+
+        let hints = crate::InfoHints::new()
+            .ep_attr(ep_attr)
+            .domain_attr(dom_attr);
+
+        let info = crate::Info::new()
+            .hints(hints).request();
+
+        let entries: Vec<crate::InfoEntry> = info.get();
+        if entries.len() > 0 {
             let attr = crate::av::AddressVectorAttr::new()
                 .avtype(crate::enums::AddressVectorType::MAP)
-                .count(count)
-                .flags(0);
+                .count(32);
+            let fab: crate::fabric::Fabric = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+            let domain = fab.domain(&entries[0]);
             let av = domain.av_open(attr);
+
             av.close();
+            domain.close();
+            fab.close();
         }
-        domain.close();
-        fab.close();
+        else {
+            panic!("No capable fabric found!");
+        }
     }
-    else {
-        panic!("No capable fabric found!");
-    }
-
-}
-
-#[test]
-fn av_good_sync() {
-    
-    let ep_attr = crate::ep::EndpointAttr::new()
-        .ep_type(crate::enums::EndpointType::RDM);
-    
-    let dom_attr = crate::domain::DomainAttr::new()
-        .mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as u64 );
-    
-    let hints = crate::InfoHints::new()
-        .ep_attr(ep_attr)
-        .domain_attr(dom_attr);
-
-    let info = crate::Info::new()
-        .hints(hints).request();
-    
-    let entries: Vec<crate::InfoEntry> = info.get();
-    if entries.len() > 0 {
-        let attr = crate::av::AddressVectorAttr::new()
-            .avtype(crate::enums::AddressVectorType::MAP)
-            .count(32);
-        let fab: crate::fabric::Fabric = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let domain = fab.domain(&entries[0]);
-        let av = domain.av_open(attr);
-
-        av.close();
-        domain.close();
-        fab.close();
-    }
-    else {
-        panic!("No capable fabric found!");
-    }
-
 }

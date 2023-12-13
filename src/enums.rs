@@ -352,6 +352,69 @@ impl AddressVectorType {
 }
 
 #[allow(non_camel_case_types)]
+pub enum Mode {
+    CONTEXT,
+    MSG_PREFIX,
+    ASYNC_IOV,
+    RX_CQ_DATA,
+    LOCAL_MR,
+    NOTIFY_FLAGS_ONLY,
+    RESTRICTED_COMP,
+    CONTEXT2,
+    BUFFERED_RECV,
+}
+
+impl Mode {
+    pub fn get_value(&self) -> u64 {
+        match self {
+            Mode::CONTEXT => libfabric_sys::FI_CONTEXT,
+            Mode::MSG_PREFIX => libfabric_sys::FI_MSG_PREFIX,
+            Mode::ASYNC_IOV => libfabric_sys::FI_ASYNC_IOV,
+            Mode::RX_CQ_DATA => libfabric_sys::FI_RX_CQ_DATA,
+            Mode::LOCAL_MR => libfabric_sys::FI_LOCAL_MR,
+            Mode::NOTIFY_FLAGS_ONLY => libfabric_sys::FI_NOTIFY_FLAGS_ONLY,
+            Mode::RESTRICTED_COMP => libfabric_sys::FI_RESTRICTED_COMP,
+            Mode::CONTEXT2 => libfabric_sys::FI_CONTEXT2,
+            Mode::BUFFERED_RECV => libfabric_sys::FI_BUFFERED_RECV,
+        }
+    }
+
+    pub fn from_value(value: u64) -> Mode {
+        if value == libfabric_sys::FI_CONTEXT {
+            Self::CONTEXT
+        }
+        else if value == libfabric_sys::FI_MSG_PREFIX {
+            Self::MSG_PREFIX
+        }
+        else if value == libfabric_sys::FI_ASYNC_IOV {
+            Self::ASYNC_IOV
+        }
+        else if value == libfabric_sys::FI_RX_CQ_DATA {
+            Self::RX_CQ_DATA
+        }
+        else if value == libfabric_sys::FI_LOCAL_MR {
+            Self::LOCAL_MR
+        }
+        else if value == libfabric_sys::FI_NOTIFY_FLAGS_ONLY {
+            Self::NOTIFY_FLAGS_ONLY
+        }
+        else if value == libfabric_sys::FI_RESTRICTED_COMP {
+            Self::RESTRICTED_COMP
+        }
+        else if value == libfabric_sys::FI_CONTEXT2 {
+            Self::CONTEXT2
+        }
+        else if value == libfabric_sys::FI_BUFFERED_RECV {
+            Self::BUFFERED_RECV
+        }
+        else {
+            panic!("Unexpected value for Mode");
+        }
+    }
+}
+
+
+#[allow(non_camel_case_types)]
 pub enum MrMode {
     UNSPEC,
     BASIC,
@@ -584,6 +647,7 @@ impl AddressFormat {
 }
 
 #[allow(non_camel_case_types)]
+#[derive(Clone,Copy)]
 pub enum TransferOptions {
     COMMIT_COMPLETE,
     COMPLETION,

@@ -241,175 +241,157 @@ impl Endpoint {
     }
     
     pub fn recv<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_recv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), addr, std::ptr::null_mut()) };
-        ret
+        unsafe{ libfabric_sys::inlined_fi_recv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, std::ptr::null_mut()) }
     }
 
     pub fn recv_with_context<T0,T1>(&self, buf: &mut [T0], len: usize, desc: &mut impl crate::DataDescriptor, addr: crate::Address, context: &mut T1) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_recv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, len, desc.get_desc(), addr, context as *mut T1 as *mut std::ffi::c_void) };
-        ret
+        unsafe{ libfabric_sys::inlined_fi_recv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, len, desc.get_desc(), addr, context as *mut T1 as *mut std::ffi::c_void) }
     }
 
     pub fn trecv<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address, tag: u64, ignore:u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_trecv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), addr, tag, ignore, std::ptr::null_mut()) };
-        ret  
+        unsafe{ libfabric_sys::inlined_fi_trecv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, tag, ignore, std::ptr::null_mut()) }
     }
 
     pub fn trecv_with_context<T0,T1>(&self, buf: &mut [T0], len: usize, desc: &mut impl crate::DataDescriptor, addr: crate::Address, tag: u64, ignore:u64, context: &mut T1) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_trecv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, len, desc.get_desc(), addr, tag, ignore, context as *mut T1 as *mut std::ffi::c_void) };
-        ret  
+        unsafe{ libfabric_sys::inlined_fi_trecv(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, len, desc.get_desc(), addr, tag, ignore, context as *mut T1 as *mut std::ffi::c_void) }
     }
 
-    pub fn recvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address) -> isize { //[TODO]
+    #[allow(dead_code)]
+	pub fn recvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address) -> isize { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_recvv(self.c_ep, iov.get(), desc.get_desc(), count, addr, std::ptr::null_mut()) };
         // ret
     }
     
-    pub fn recvv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context: &mut T0) -> isize { //[TODO]
+    #[allow(dead_code)]
+	pub fn recvv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context: &mut T0) -> isize { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_recvv(self.c_ep, iov.get(), desc.get_desc(), count, addr, context as *mut T1 as *mut std::ffi::c_void) };
         // ret
     }
     
     
-    pub fn trecvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, tag: u64, ignore:u64, context : &mut T0) -> isize { //[TODO]
+    #[allow(dead_code)]
+	pub fn trecvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, tag: u64, ignore:u64, context : &mut T0) -> isize { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_trecvv(self.c_ep, iov.get(), desc.get_desc(), count, src_addr, tag, ignore, context as *mut T1 as *mut std::ffi::c_void) };
         // ret   
     }
 
     pub fn recvmsg(&self, msg: &crate::Msg, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.c_ep, &msg.c_msg as *const libfabric_sys::fi_msg, flags) };
-        ret
+        unsafe{ libfabric_sys::inlined_fi_recvmsg(self.c_ep, &msg.c_msg as *const libfabric_sys::fi_msg, flags) }
     }
 
     pub fn trecvmsg(&self, msg: &crate::MsgTagged, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) };
-        ret
+        unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) }
     }
 
-    pub fn read<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, src_addr: crate::Address, addr: u64,  key: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_read(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), src_addr, addr, key, std::ptr::null_mut()) };
-        ret
+    pub unsafe fn read<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, src_addr: crate::Address, addr: u64,  key: u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_read(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), src_addr, addr, key, std::ptr::null_mut()) }
     }
 
-    pub fn read_with_context<T0,T1>(&self, buf: &mut [T0], len: usize, desc: &mut impl crate::DataDescriptor, src_addr: crate::Address, addr: u64,  key: u64, context: &mut T1) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_read(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, len, desc.get_desc(), src_addr, addr, key, context as *mut T1 as *mut std::ffi::c_void) };
-        ret
+    pub unsafe fn read_with_context<T0,T1>(&self, buf: &mut [T0], len: usize, desc: &mut impl crate::DataDescriptor, src_addr: crate::Address, addr: u64,  key: u64, context: &mut T1) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_read(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, len, desc.get_desc(), src_addr, addr, key, context as *mut T1 as *mut std::ffi::c_void) }
     }
 
-    pub fn readv(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64) -> isize { //[TODO]
+    #[allow(dead_code)]
+	pub unsafe fn readv(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64) -> isize { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_readv(self.c_ep, iov.get(), desc.get_desc(), count, src_addr, addr, key, std::ptr::null_mut()) };
         // ret 
     }
     
-    pub fn readv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64, context : &mut T0) -> isize { //[TODO]
+    #[allow(dead_code)]
+	pub unsafe  fn readv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64, context : &mut T0) -> isize { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_readv(self.c_ep, iov.get(), desc.get_desc(), count, src_addr, addr, key, context as *mut T1 as *mut std::ffi::c_void) };
         // ret 
     }
 
 
-    pub fn readmsg(&self, msg: &crate::MsgRma, flags: u64) -> isize{
-        let ret = unsafe{ libfabric_sys::inlined_fi_readmsg(self.c_ep, &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, flags) };
-        ret
+    pub unsafe fn readmsg(&self, msg: &crate::MsgRma, flags: u64) -> isize{
+        unsafe{ libfabric_sys::inlined_fi_readmsg(self.c_ep, &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, flags) }
     }
 
 
-    pub fn write<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key:u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_write(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), dest_addr, addr, key, std::ptr::null_mut()) };
-        ret   
+    pub unsafe fn write<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key:u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_write(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), dest_addr, addr, key, std::ptr::null_mut()) }
     }
 
-    pub fn writev<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize,  dest_addr: crate::Address, addr: u64, key:u64, context : &mut T0) -> isize { //[TODO]
+    #[allow(dead_code)]
+	pub unsafe fn writev<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize,  dest_addr: crate::Address, addr: u64, key:u64, context : &mut T0) -> isize { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_writev(self.c_ep, iov.get(), desc.get_desc(), count, dest_addr, addr, key, context as *mut T1 as *mut std::ffi::c_void) };
         // ret   
     }
     
-    pub fn writemsg(&self, msg: &crate::MsgRma, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_writemsg(self.c_ep, &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, flags) };
-        ret
+    pub unsafe fn writemsg(&self, msg: &crate::MsgRma, flags: u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_writemsg(self.c_ep, &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, flags) }
     }
     
-    pub fn writedata<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, data: u64, addr: crate::Address, other_addr: u64, key: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_writedata(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), data, addr, other_addr, key, std::ptr::null_mut()) };
-        ret
+    pub unsafe fn writedata<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, data: u64, addr: crate::Address, other_addr: u64, key: u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_writedata(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, addr, other_addr, key, std::ptr::null_mut()) }
     }
 
-    pub fn sendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context: &mut T0) -> isize { // [TODO]
+    #[allow(dead_code)]
+	pub fn sendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context: &mut T0) -> isize { // [TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_sendv(self.c_ep, iov.get(), desc.get_desc(), count, addr, context as *mut T1 as *mut std::ffi::c_void) };
         // ret
     }
 
-    pub fn send<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_send(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), addr, std::ptr::null_mut()) };
-        ret
+    pub fn send<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_send(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, std::ptr::null_mut()) }
     }
 
-    pub fn tsend<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address, tag:u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_tsend(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), addr, tag, std::ptr::null_mut()) };
-        ret
+    pub fn tsend<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address, tag:u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_tsend(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, tag, std::ptr::null_mut()) }
     }
 
-    pub fn tsendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, dest_addr: crate::Address, tag:u64, context : &mut T0) -> isize { // [TODO]
+	pub fn tsendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, dest_addr: crate::Address, tag:u64, context : &mut T0) -> isize { // [TODO]
         todo!()
-        // let ret = unsafe{ libfabric_sys::inlined_fi_tsendv(self.c_ep, iov.get(), desc.get_desc(), count, dest_addr, tag, context as *mut T1 as *mut std::ffi::c_void) };
-        // ret   
+        // unsafe{ libfabric_sys::inlined_fi_tsendv(self.c_ep, iov.get(), desc.get_desc(), count, dest_addr, tag, context as *mut T1 as *mut std::ffi::c_void) }
     }
 
     pub fn sendmsg(&self, msg: &crate::Msg, flags: crate::enums::TransferOptions) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.c_ep, &msg.c_msg as *const libfabric_sys::fi_msg, flags.get_value().into()) };
-        ret
+        unsafe{ libfabric_sys::inlined_fi_sendmsg(self.c_ep, &msg.c_msg as *const libfabric_sys::fi_msg, flags.get_value().into()) }
     }
 
     pub fn tsendmsg(&self, msg: &crate::MsgTagged, flags: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) };
-        ret
+        unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) }
     }
 
-    pub fn senddata<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, data: u64, addr: crate::Address) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_senddata(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), data, addr, std::ptr::null_mut()) };
-        ret
+    pub fn senddata<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, data: u64, addr: crate::Address) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_senddata(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, addr, std::ptr::null_mut()) }
     }
 
-    pub fn tsenddata<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, data: u64, addr: crate::Address, tag: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_tsenddata(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc.get_desc(), data, addr, tag, std::ptr::null_mut()) };
-        ret
+    pub fn tsenddata<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, data: u64, addr: crate::Address, tag: u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_tsenddata(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, addr, tag, std::ptr::null_mut()) }
     }
 
 
-    pub fn inject<T0>(&self, buf: &mut [T0], addr: crate::Address) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_inject(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), addr) };
-        ret
+    pub fn inject<T0>(&self, buf: &[T0], addr: crate::Address) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_inject(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), addr) }
     }
 
-    pub fn tinject<T0>(&self, buf: &mut [T0], addr: crate::Address, tag:u64 ) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_tinject(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), addr, tag) };
-        ret
+    pub fn tinject<T0>(&self, buf: &[T0], addr: crate::Address, tag:u64 ) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_tinject(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), addr, tag) }
     }
 
-    pub fn inject_write<T0>(&self, buf: &[T0], dest_addr: crate::Address, addr: u64, key:u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_inject_write(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), dest_addr, addr, key) };
-        ret
+    pub unsafe fn inject_write<T0>(&self, buf: &[T0], dest_addr: crate::Address, addr: u64, key:u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_inject_write(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), dest_addr, addr, key) }
     }     
 
-    pub fn injectdata<T0>(&self, buf: &mut [T0], data: u64, addr: crate::Address) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_injectdata(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), data, addr) };
-        ret
+    pub fn injectdata<T0>(&self, buf: &[T0], data: u64, addr: crate::Address) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_injectdata(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, addr) }
     }
 
-    pub fn tinjectdata<T0>(&self, buf: &mut [T0], data: u64, addr: crate::Address, tag: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), data, addr, tag) };
-        ret
+    pub fn tinjectdata<T0>(&self, buf: &[T0], data: u64, addr: crate::Address, tag: u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, addr, tag) }
     }
 
-    pub fn inject_writedata<T0>(&self, buf: &mut [T0], data: u64, dest_addr: crate::Address, addr: u64, key: u64) -> isize {
-        let ret = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), data, dest_addr, addr, key) };
-        ret
+    pub unsafe fn inject_writedata<T0>(&self, buf: &[T0], data: u64, dest_addr: crate::Address, addr: u64, key: u64) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.c_ep, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, dest_addr, addr, key) }
     }
 
     pub fn getpeer<T0>(&self, addr: &mut [T0]) -> usize { //[TODO] Return result
@@ -460,8 +442,8 @@ impl Endpoint {
         }
     }
 
-    pub fn atomic<T0,T1>(&self, buf: &mut [T0], count : usize, desc: &mut T1, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
-        let ret = unsafe{ libfabric_sys::inlined_fi_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, desc as *mut T1  as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
+    pub fn atomic<T0,T1>(&self, buf: &[T0], count : usize, desc: &mut T1, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+        let ret = unsafe{ libfabric_sys::inlined_fi_atomic(self.c_ep, buf.as_ptr()  as *const std::ffi::c_void, count, desc as *mut T1  as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         ret
     }
 
@@ -475,13 +457,13 @@ impl Endpoint {
         ret
     }
 
-    pub fn inject_atomic<T0,T1>(&self, buf: &mut [T0], count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
-        let ret = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, dest_addr, addr, key, datatype, op.get_value())};
+    pub fn inject_atomic<T0,T1>(&self, buf: &[T0], count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+        let ret = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.c_ep, buf.as_ptr()  as *const std::ffi::c_void, count, dest_addr, addr, key, datatype, op.get_value())};
         ret
     }
 
-    pub fn fetch_atomic<T0,T1>(&self, buf: &mut [T0], count : usize, desc: &mut [T1], res: &mut [T0], res_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
-        let ret = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, res.as_mut_ptr()  as *mut std::ffi::c_void, res_desc.as_mut_ptr() as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
+    pub fn fetch_atomic<T0,T1>(&self, buf: &[T0], count : usize, desc: &mut [T1], res: &mut [T0], res_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize{
+        let ret = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.c_ep, buf.as_ptr()  as *const std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, res.as_mut_ptr()  as *mut std::ffi::c_void, res_desc.as_mut_ptr() as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         ret
     }
 
@@ -496,9 +478,9 @@ impl Endpoint {
         ret
     }
 
-    pub fn compare_atomic<T0, T1>(&self, buf: &mut [T0], count : usize, desc: &mut [T1], compare: &mut [T0], compare_desc: &mut [T1], 
+    pub fn compare_atomic<T0, T1>(&self, buf: &[T0], count : usize, desc: &mut [T1], compare: &mut [T0], compare_desc: &mut [T1], 
             result: &mut [T0], result_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> isize {
-        let ret = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.c_ep, buf.as_mut_ptr()  as *mut std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, compare.as_mut_ptr()  as *mut std::ffi::c_void, 
+        let ret = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.c_ep, buf.as_ptr()  as *const std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, compare.as_mut_ptr()  as *mut std::ffi::c_void, 
             compare_desc.as_mut_ptr()  as *mut std::ffi::c_void, result.as_mut_ptr()  as *mut std::ffi::c_void, result_desc.as_mut_ptr()  as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         
         ret
@@ -567,35 +549,35 @@ impl Endpoint {
     }
 
     pub fn broadcast<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_broadcast(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_broadcast(self.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
 
     pub fn alltoall<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_alltoall(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_alltoall(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
 
     pub fn allreduce<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_allreduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_allreduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
     pub fn allgather<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_allgather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_allgather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
     pub fn reduce_scatter<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
     pub fn reduce<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_reduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_reduce(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, op.get_value(), flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
     pub fn scatter<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_scatter(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
     
     pub fn gather<T0,T1,T2>(&self, buf: &mut [T0], desc: &mut T1, result: &mut T0, result_desc: &mut T1, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64, context: &mut T2) -> isize {
-        unsafe { libfabric_sys::inlined_fi_gather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, buf.len() * std::mem::size_of::<T0>(), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
+        unsafe { libfabric_sys::inlined_fi_gather(self.c_ep, buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc as *mut T1 as *mut std::ffi::c_void, result as *mut T0 as *mut std::ffi::c_void, result_desc as *mut T1 as *mut std::ffi::c_void, coll_addr, root_addr, datatype, flags, context as *mut T2 as *mut std::ffi::c_void) }
     }
 }
 

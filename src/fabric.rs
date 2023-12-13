@@ -12,7 +12,7 @@ impl Fabric {
         let c_fabric_ptr: *mut *mut libfabric_sys::fid_fabric = &mut c_fabric;
 
         let err = unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, std::ptr::null_mut())};
-        if err != 0 || c_fabric == std::ptr::null_mut() {
+        if err != 0 || c_fabric.is_null() {
             panic!("fi_fabric failed {}", err);
         }
 
@@ -40,7 +40,7 @@ impl Fabric {
         crate::sync::Wait::new(self, wait_attr)
     }
 
-    pub fn trywait(&self, fids: &Vec<&impl crate::FID>) {
+    pub fn trywait(&self, fids: &[&impl crate::FID]) {
         let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.fid()).collect();
         let err = unsafe { libfabric_sys::inlined_fi_trywait(self.c_fabric, raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
         if err != 0 {

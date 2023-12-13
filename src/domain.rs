@@ -111,7 +111,7 @@ impl Domain {
     }
 
     pub fn stx_context<T0>(&self, attr:crate::TxAttr , context: &mut T0) -> crate::Stx {
-        crate::Stx::new(&self, attr, context)
+        crate::Stx::new(self, attr, context)
     }
 
     pub fn query_collective(&self, coll: crate::enums::CollectiveOp, mut attr: crate::CollectiveAttr, flags: u64) {
@@ -172,32 +172,28 @@ impl DomainAttr {
         Self { c_attr }
     }
 
-    pub fn mode(self, mode: u64) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.mode = mode;
+    pub fn mode(mut self, mode: u64) -> Self {
+        self.c_attr.mode = mode;
         
-        Self { c_attr }
+        self
     }
     
-    pub fn mr_mode(self, mr_mode: i32) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.mr_mode = mr_mode;
+    pub fn mr_mode(mut self, mr_mode: i32) -> Self {
+        self.c_attr.mr_mode = mr_mode;
         
-        Self { c_attr }
+        self
     }
 
-    pub fn threading(self, threading: crate::enums::Threading) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.threading = threading.get_value();
-        
-        Self { c_attr }
+    pub fn threading(mut self, threading: crate::enums::Threading) -> Self {
+        self.c_attr.threading = threading.get_value();
+
+        self
     }
 
-    pub fn resource_mgmt(self, res_mgmt: crate::enums::ResourceMgmt) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.resource_mgmt = res_mgmt.get_value();
+    pub fn resource_mgmt(mut self, res_mgmt: crate::enums::ResourceMgmt) -> Self {
+        self.c_attr.resource_mgmt = res_mgmt.get_value();
         
-        Self { c_attr }
+        self
     }
 
 
@@ -221,7 +217,10 @@ impl DomainAttr {
         self.c_attr.cntr_cnt
     }
 
-    #[allow(dead_code)]
+    pub fn get_cq_data_size(&self) -> u64 {
+        self.c_attr.cq_data_size as u64
+    }
+
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_domain_attr {
         &self.c_attr
     }
@@ -233,24 +232,29 @@ impl DomainAttr {
 
 //================== Domain tests ==================//
 
-#[test]
-fn domain_test() {
-    let info = crate::Info::new().request();
-    let entries = info.get();
-    
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let count = 10;
-    let mut doms = Vec::new();
-    for _ in 0..count {
-        let domain = fab.domain(&entries[0]);
-        doms.push(domain);
-    }
+#[cfg(test)]
+mod tests {
+    use crate::FID;
 
-    for dom in doms {
-        dom.close();
+    #[test]
+    fn domain_test() {
+        let info = crate::Info::new().request();
+        let entries = info.get();
+        
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+        let count = 10;
+        let mut doms = Vec::new();
+        for _ in 0..count {
+            let domain = fab.domain(&entries[0]);
+            doms.push(domain);
+        }
+        
+        for dom in doms {
+            dom.close();
+        }
+        
+        eq.close();
+        fab.close();
     }
-
-    eq.close();
-    fab.close();
 }

@@ -133,66 +133,69 @@ impl CounterAttr {
 
 //================== Counter tests ==================//
 
-#[test]
+#[cfg(test)]
+mod tests {
+    use crate::FID;
 
-fn cntr_loop() {
-    let counter_check = 10;
+    #[test]
+    fn cntr_loop() {
 
-    let dom_attr = crate::domain::DomainAttr::new()
-        .mode(!0)
-        .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as i32 );
-    
-    let hints = crate::InfoHints::new()
-        .domain_attr(dom_attr)
-        .mode(!0);
-    
+        let dom_attr = crate::domain::DomainAttr::new()
+            .mode(!0)
+            .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as i32 );
+        
+        let hints = crate::InfoHints::new()
+            .domain_attr(dom_attr)
+            .mode(!0);
+        
 
-    let info = crate::Info::new().hints(hints).request();
-    let entries: Vec<crate::InfoEntry> = info.get();
-    
-    if entries.len() > 0 {
-        for e in entries {
-            if e.get_domain_attr().get_cntr_cnt() != 0 {
-                let fab = crate::fabric::Fabric::new(e.fabric_attr.clone());
-                let domain = fab.domain(&e);
-                let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
-                let cntrs: Vec<Counter> = (0..cntr_cnt).map(|_| domain.cntr_open(CounterAttr::new())).collect();
+        let info = crate::Info::new().hints(hints).request();
+        let entries: Vec<crate::InfoEntry> = info.get();
+        
+        if entries.len() > 0 {
+            for e in entries {
+                if e.get_domain_attr().get_cntr_cnt() != 0 {
+                    let fab = crate::fabric::Fabric::new(e.fabric_attr.clone());
+                    let domain = fab.domain(&e);
+                    let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
+                    let cntrs: Vec<crate::cntr::Counter> = (0..cntr_cnt).map(|_| domain.cntr_open(crate::cntr::CounterAttr::new())).collect();
 
-                for (i,cntr) in cntrs.iter().enumerate() {
-                    cntr.set(i as u64);
-                    cntr.seterr((i << 1) as u64);
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        cntr.set(i as u64);
+                        cntr.seterr((i << 1) as u64);
+                    }
+                    
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        cntr.add(i as u64);
+                        cntr.adderr(i as u64);
+                    }
+
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        let expected = i + i;
+                        let value = cntr.read() as usize;
+                        assert_eq!(expected, value);
+                    }
+                    
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        let expected = (i << 1) + i;
+                        let value = cntr.readerr() as usize;
+                        assert_eq!(expected, value);
+                    }
+                    
+                    for cntr in cntrs {
+                        cntr.close();
+                    }
+
+                    domain.close();
+                    fab.close();
+                    break;
                 }
-                
-                for (i,cntr) in cntrs.iter().enumerate() {
-                    cntr.add(i as u64);
-                    cntr.adderr(i as u64);
-                }
 
-                for (i,cntr) in cntrs.iter().enumerate() {
-                    let expected = i + i;
-                    let value = cntr.read() as usize;
-                    assert_eq!(expected, value);
-                }
-                
-                for (i,cntr) in cntrs.iter().enumerate() {
-                    let expected = (i << 1) + i;
-                    let value = cntr.readerr() as usize;
-                    assert_eq!(expected, value);
-                }
-                
-                for cntr in cntrs {
-                    cntr.close();
-                }
-
-                domain.close();
-                fab.close();
-                break;
             }
 
         }
-
-    }
-    else {
-        panic!("Could not find suitable fabric");
+        else {
+            panic!("Could not find suitable fabric");
+        }
     }
 }

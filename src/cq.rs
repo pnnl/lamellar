@@ -51,7 +51,7 @@ impl CompletionQueue {
             let ret2 = self.readerr(&mut err_entry, 0);
 
 
-            println!("sread error: {} {}", ret2, self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size()));
+            println!("sread error: {} {}", ret2, unsafe{ self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size()) } );
         }
         ret
     }
@@ -71,8 +71,11 @@ impl CompletionQueue {
     pub fn readerr(&self, err: &mut CqErrEntry, flags: u64) -> isize {
         unsafe { libfabric_sys::inlined_fi_cq_readerr(self.c_cq, err.get_mut(), flags) }
     }
+    pub fn print_error(&self, err_entry: &crate::cq::CqErrEntry) {
+        println!("{}", unsafe{self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size())} );
+    }
 
-    pub fn strerror(&self, prov_errno: i32, err_data: *const std::ffi::c_void, err_data_size: usize) -> &str {
+    unsafe fn strerror(&self, prov_errno: i32, err_data: *const std::ffi::c_void, err_data_size: usize) -> &str {
         // let len = buf.len();
         // let c_str = std::ffi::CString::new(buf).unwrap();
         // let raw = c_str.into_raw();
@@ -207,78 +210,82 @@ impl CqErrEntry {
 }
 //================== CompletionQueue Tests ==================//
 
-use crate::FID;
+#[cfg(test)]
+mod tests {
+    use crate::FID;
+    use crate::cq::*;
 
-#[test]
-fn cq_open_close_simultaneous() {
-    let info = crate::Info::new().request();
-    let entries = info.get();
-    
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let count = 10;
-    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let domain = fab.domain(&entries[0]);
-    let mut cqs = Vec::new();
-    for _ in 0..count {
-        let cq_attr = CompletionQueueAttr::new();
-        let cq = domain.cq_open(cq_attr);
-        cqs.push(cq);
-    }
-
-    for cq in cqs {
-        cq.close();
-    }
-    domain.close();
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn cq_signal() {
-    let info = crate::Info::new().request();
-    let entries = info.get();
-    let mut buf = vec![0,0,0];
-    
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let domain = fab.domain(&entries[0]);
-    let mut cq_attr = CompletionQueueAttr::new();
-    cq_attr.size(1);
-    let cq = domain.cq_open(cq_attr);
-    cq.signal();
-    let ret = cq.sread(&mut buf, 1, 2000);
-    if ret != -(libfabric_sys::FI_EAGAIN as isize)  && ret != -(libfabric_sys::FI_ECANCELED as isize) {
-        panic!("sread {}", ret);
-    }
-    cq.close();
-
-    domain.close();
-    eq.close();
-    fab.close();
-}
-
-#[test]
-fn cq_open_close_sizes() {
-    let info = crate::Info::new().request();
-    let entries = info.get();
-    
-    let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-    let domain = fab.domain(&entries[0]);
-    for i in -1..17 {
-        let size ;
-        if i == -1 {
-            size = 0;
+    #[test]
+    fn cq_open_close_simultaneous() {
+        let info = crate::Info::new().request();
+        let entries = info.get();
+        
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let count = 10;
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+        let domain = fab.domain(&entries[0]);
+        let mut cqs = Vec::new();
+        for _ in 0..count {
+            let cq_attr = crate::cq::CompletionQueueAttr::new();
+            let cq = domain.cq_open(cq_attr);
+            cqs.push(cq);
         }
-        else {
-            size = 1 << i;
+
+        for cq in cqs {
+            cq.close();
         }
+        domain.close();
+        eq.close();
+        fab.close();
+    }
+
+    #[test]
+    fn cq_signal() {
+        let info = crate::Info::new().request();
+        let entries = info.get();
+        let mut buf = vec![0,0,0];
+        
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+        let domain = fab.domain(&entries[0]);
         let mut cq_attr = CompletionQueueAttr::new();
-        cq_attr.size(size); 
+        cq_attr.size(1);
         let cq = domain.cq_open(cq_attr);
+        cq.signal();
+        let ret = cq.sread(&mut buf, 1, 2000);
+        if ret != -(libfabric_sys::FI_EAGAIN as isize)  && ret != -(libfabric_sys::FI_ECANCELED as isize) {
+            panic!("sread {}", ret);
+        }
         cq.close();
+
+        domain.close();
+        eq.close();
+        fab.close();
     }
-    domain.close();
-    eq.close();
-    fab.close();
+
+    #[test]
+    fn cq_open_close_sizes() {
+        let info = crate::Info::new().request();
+        let entries = info.get();
+        
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+        let domain = fab.domain(&entries[0]);
+        for i in -1..17 {
+            let size ;
+            if i == -1 {
+                size = 0;
+            }
+            else {
+                size = 1 << i;
+            }
+            let mut cq_attr = CompletionQueueAttr::new();
+            cq_attr.size(size); 
+            let cq = domain.cq_open(cq_attr);
+            cq.close();
+        }
+        domain.close();
+        eq.close();
+        fab.close();
+    }
 }
