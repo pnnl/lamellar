@@ -24,7 +24,7 @@ fn pp_server_rma() {
         .addr_format(libfabric::enums::AddressFormat::UNSPEC);
     
     
-    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mut mr, av, mut mr_desc) = 
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
 
     let entries: Vec<libfabric::InfoEntry> = info.get();
@@ -32,15 +32,15 @@ fn pp_server_rma() {
     if entries.is_empty() {
         panic!("No entires in fi_info");
     }
-    let remote: libfabric::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, &mut mr.as_mut().unwrap(), &tx_cq, &rx_cq, &domain, &ep, &mut mr_desc);
+    let remote: libfabric::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, &mut mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
     let test_sizes = gl_ctx.test_sizes.clone();
     for msg_size in test_sizes {
-        common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
+        common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
     }
 
-    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &mut mr_desc);
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, ep, mr.into(),av.into());
+    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr.into(),av.into());
 }
 
 #[ignore]
@@ -65,21 +65,21 @@ fn pp_client_rma() {
         .addr_format(libfabric::enums::AddressFormat::UNSPEC);
     
     
-    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mut mr, av, mut mr_desc) = 
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "45992".to_owned(), 0);
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
     if entries.is_empty() {
         panic!("No entires in fi_info");
     }
-    let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, &mut mr.as_mut().unwrap(), &tx_cq, &rx_cq, &domain, &ep, &mut mr_desc);
+    let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, &mut mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &domain, &ep, &mut mr_desc);
     
 
     let test_sizes = gl_ctx.test_sizes.clone();
     for msg_size in test_sizes {
-        common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
+        common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
     }
 
-    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &mut mr_desc);
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, ep, mr.into(), av.into());
+    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr.into(), av.into());
 }

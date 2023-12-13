@@ -357,8 +357,8 @@ impl Endpoint {
         unsafe{ libfabric_sys::inlined_fi_sendmsg(self.c_ep, &msg.c_msg as *const libfabric_sys::fi_msg, flags.get_value().into()) }
     }
 
-    pub fn tsendmsg(&self, msg: &crate::MsgTagged, flags: u64) -> isize {
-        unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) }
+    pub fn tsendmsg(&self, msg: &crate::MsgTagged, flags: crate::enums::TransferOptions) -> isize {
+        unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.c_ep, &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags.get_value().into()) }
     }
 
     pub fn senddata<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, data: u64, addr: crate::Address) -> isize {

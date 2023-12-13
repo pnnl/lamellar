@@ -44,6 +44,8 @@ impl InfoCaps {
     pub fn is_transmit(&self) -> bool {self.bitfield & libfabric_sys::FI_TRANSMIT as u64 == libfabric_sys::FI_TRANSMIT as u64 }
     pub fn is_remote_read(&self) -> bool {self.bitfield & libfabric_sys::FI_REMOTE_READ as u64 == libfabric_sys::FI_REMOTE_READ as u64 }
     pub fn is_remote_write(&self) -> bool {self.bitfield & libfabric_sys::FI_REMOTE_WRITE as u64 == libfabric_sys::FI_REMOTE_WRITE as u64 }
+
+    pub fn is_rma_event(&self) -> bool {self.bitfield & libfabric_sys::FI_RMA_EVENT as u64 == libfabric_sys::FI_RMA_EVENT as u64 }
 }
 
 pub struct Info {
@@ -291,7 +293,7 @@ impl Msg {
                 desc: desc.get_desc_ptr(),
                 iov_count: iov.len(),
                 addr,
-                context: std::ptr::null_mut(),
+                context: std::ptr::null_mut(), // [TODO]
                 data: 0,
             }
         }
@@ -324,15 +326,15 @@ pub struct MsgTagged {
 }
 
 impl MsgTagged {
-    pub fn new<T0,T1>(iov: &[IoVec], desc: &mut T0, addr: Address, context: &mut T1, data: u64, tag: u64, ignore: u64) -> Self {
+    pub fn new(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address, data: u64, tag: u64, ignore: u64) -> Self {
     
         Self {
             c_msg_tagged: libfabric_sys::fi_msg_tagged {
                 msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
-                desc: desc as *mut T0 as *mut *mut std::ffi::c_void,
+                desc: desc.get_desc_ptr(),
                 iov_count: iov.len(),
                 addr,
-                context: context as *mut T1 as *mut std::ffi::c_void,
+                context: std::ptr::null_mut(), // [TODO]
                 data,
                 tag,
                 ignore,
@@ -440,17 +442,7 @@ impl TxAttr {
     }
 }
 
-// pub struct fi_rx_attr {
-//     pub caps: u64,
-//     pub mode: u64,
-//     pub op_flags: u64,
-//     pub msg_order: u64,
-//     pub comp_order: u64,
-//     pub total_buffered_recv: usize,
-//     pub size: usize,
-//     pub iov_limit: usize,
-// }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RxAttr {
     c_attr: libfabric_sys::fi_rx_attr,
 }

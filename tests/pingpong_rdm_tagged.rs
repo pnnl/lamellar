@@ -1,6 +1,8 @@
 use common::{ft_sync, ft_tx, NO_CQ_DATA, ft_rx, ft_finalize};
 use libfabric::{cq, enums, Msg, domain, ep, mr};
 
+use crate::common::ft_init_fabric;
+
 
 pub mod common; // Public to supress lint warnings (unused function)
 
@@ -14,83 +16,96 @@ pub mod common; // Public to supress lint warnings (unused function)
 
 #[ignore]
 #[test]
-fn pp_server_msg() {
+fn pp_server_rdm_tagged() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
     let ep_attr = ep::EndpointAttr::new()
-        .ep_type(enums::EndpointType::MSG);
+        .ep_type(enums::EndpointType::RDM);
 
     let dom_attr = domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
         .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
     
     let caps = libfabric::InfoCaps::new()
-        .msg();
+        .tagged();
     
 
     let tx_attr = libfabric::TxAttr::new()
         .tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
+        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)
         .tx_attr(tx_attr)
         .addr_format(enums::AddressFormat::UNSPEC);
 
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
+        common::ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
+    
+    let entries: Vec<libfabric::InfoEntry> = info.get();
 
-    let (info, fab, domain, eq, pep) = common::start_server(hints);
-    let (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, mr, mut mr_desc) = common::ft_server_connect(&mut gl_ctx, &eq, &domain);
-    let entries = info.get();
+    if entries.is_empty() {
+        panic!("No entires in fi_info");
+    }
+
     let test_sizes = gl_ctx.test_sizes.clone();
+    
     for msg_size in test_sizes {
-        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
+        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
     }
 
     ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
     
-    ep.shutdown(0);
-
-    common::close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep, mr);
+    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
 }
 
 
 
 #[ignore]
 #[test]
-fn pp_client_msg() {
+fn pp_client_rdm_tagged() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
+
     let ep_attr = ep::EndpointAttr::new()
-        .ep_type(enums::EndpointType::MSG);
+        .ep_type(enums::EndpointType::RDM);
 
     let dom_attr = domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
         .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
+    
+    let caps = libfabric::InfoCaps::new()
+        .tagged();
+    
 
     let tx_attr = libfabric::TxAttr::new()
         .tclass(enums::TClass::LOW_LATENCY);
 
-    let caps = libfabric::InfoCaps::new()
-        .msg();
-
     let hints = libfabric::InfoHints::new()
+        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
         .ep_attr(ep_attr)
+        .caps(caps)
         .domain_attr(dom_attr)
         .tx_attr(tx_attr)
-        .caps(caps)
         .addr_format(enums::AddressFormat::UNSPEC);
 
-    let (info, fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, mut mr_desc) = 
-        common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "59275".to_owned());
-    let entries = info.get();
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "55814".to_owned(), 0);
+
+    let entries: Vec<libfabric::InfoEntry> = info.get();
+    
+    if entries.is_empty() {
+        panic!("No entires in fi_info");
+    }
     let test_sizes = gl_ctx.test_sizes.clone();
+    
     for msg_size in test_sizes {
         common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
     }
 
     ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
-    ep.shutdown(0);
 
-    common::close_all(fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, None);
+    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
 
 }

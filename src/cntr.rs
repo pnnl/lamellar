@@ -74,7 +74,7 @@ impl crate::FID for Counter {
 
 //================== Counter attribute ==================//
 
-
+#[derive(Clone, Copy)]
 pub struct CounterAttr {
     pub(crate) c_attr: libfabric_sys::fi_cntr_attr,
 }

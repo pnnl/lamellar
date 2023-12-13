@@ -1,6 +1,43 @@
 use std::time::Instant;
 
-use libfabric::{enums, domain, fabric, FID, InfoEntry, default_desc, mr, Info};
+use libfabric::{enums::{self, Op}, domain, fabric, FID, InfoEntry, default_desc, mr, Info, cq::{CompletionQueue, CompletionQueueAttr}, cntr::{Counter, CounterAttr}};
+pub enum CompMeth {
+    Spin,
+    Sread,
+    WaitSet,
+    WaitFd,
+    Yield,
+}
+
+
+pub const FT_OPT_ACTIVE: u64			= 1 << 0;
+pub const FT_OPT_ITER: u64			= 1 << 1;
+pub const FT_OPT_SIZE: u64			= 1 << 2;
+pub const FT_OPT_RX_CQ: u64			= 1 << 3;
+pub const FT_OPT_TX_CQ: u64			= 1 << 4;
+pub const FT_OPT_RX_CNTR: u64			= 1 << 5;
+pub const FT_OPT_TX_CNTR: u64			= 1 << 6;
+pub const FT_OPT_VERIFY_DATA: u64		= 1 << 7;
+pub const FT_OPT_ALIGN: u64			= 1 << 8;
+pub const FT_OPT_BW: u64			= 1 << 9;
+pub const FT_OPT_CQ_SHARED: u64		= 1 << 10;
+pub const FT_OPT_OOB_SYNC: u64			= 1 << 11;
+pub const FT_OPT_SKIP_MSG_ALLOC: u64		= 1 << 12;
+pub const FT_OPT_SKIP_REG_MR: u64		= 1 << 13;
+pub const FT_OPT_OOB_ADDR_EXCH: u64		= 1 << 14;
+pub const FT_OPT_ALLOC_MULT_MR: u64		= 1 << 15;
+pub const FT_OPT_SERVER_PERSIST: u64		= 1 << 16;
+pub const FT_OPT_ENABLE_HMEM: u64		= 1 << 17;
+pub const FT_OPT_USE_DEVICE: u64		= 1 << 18;
+pub const FT_OPT_DOMAIN_EQ: u64		= 1 << 19;
+pub const FT_OPT_FORK_CHILD: u64		= 1 << 20;
+pub const FT_OPT_SRX: u64			= 1 << 21;
+pub const FT_OPT_STX: u64			= 1 << 22;
+pub const FT_OPT_SKIP_ADDR_EXCH: u64		= 1 << 23;
+pub const FT_OPT_PERF: u64			= 1 << 24;
+pub const FT_OPT_DISABLE_TAG_VALIDATION: u64	= 1 << 25;
+pub const FT_OPT_ADDR_IS_OOB: u64		= 1 << 26;
+pub const FT_OPT_OOB_CTRL: u64			= FT_OPT_OOB_SYNC | FT_OPT_OOB_ADDR_EXCH;
 
 pub struct TestsGlobalCtx {
     pub tx_size: usize,
@@ -23,6 +60,8 @@ pub struct TestsGlobalCtx {
     pub remote_cq_data: u64, 
     pub test_sizes: Vec<usize>,
     pub window_size: usize,
+    pub comp_method: CompMeth,
+    pub options: u64,
 }
 
 impl TestsGlobalCtx {
@@ -77,7 +116,9 @@ impl TestsGlobalCtx {
             (1 << 22) + (1 << 21),
             1 << 23,
         ],
-        window_size: 64 }
+        window_size: 64,
+        comp_method: CompMeth::Spin, 
+        options: FT_OPT_RX_CQ | FT_OPT_TX_CQ}
     }
 }
 
@@ -90,11 +131,33 @@ pub fn ft_open_fabric_res(info: &libfabric::InfoEntry) -> (libfabric::fabric::Fa
     (fab, eq, domain)
 }
 
-pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain) -> (libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, libfabric::ep::Endpoint, Option<libfabric::av::AddressVector>) {
-    
+pub fn ft_cq_set_wait_attr(gl_ctx: &mut TestsGlobalCtx, cq_attr: &mut CompletionQueueAttr) {
+    match gl_ctx.comp_method {
+        CompMeth::Spin => {
+            cq_attr.wait_obj(enums::WaitObj::NONE);
+        },
+        CompMeth::Sread => {
+            cq_attr.wait_obj(enums::WaitObj::UNSPEC);
+            cq_attr.wait_cond(enums::WaitCond::NONE);
+        },
+        CompMeth::WaitSet => todo!(),
+        CompMeth::WaitFd => {
+            cq_attr.wait_obj(enums::WaitObj::YIELD);
+            cq_attr.wait_cond(enums::WaitCond::NONE);
+        },
+        CompMeth::Yield => {
+            cq_attr.wait_obj(enums::WaitObj::YIELD);
+            cq_attr.wait_cond(enums::WaitCond::NONE);
+        },
+    }
+}
+
+pub fn ft_alloc_ep_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::Domain) -> (libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, Option<libfabric::av::AddressVector>){
+
     let mut txcq_attr =  libfabric::cq::CompletionQueueAttr::new();
     let mut rxcq_attr =  libfabric::cq::CompletionQueueAttr::new();
 
+    // [TODO] if cq_attr.form == UNSPEC
     if info.get_caps().is_tagged() {
 
         txcq_attr.format(enums::CqFormat::TAGGED);
@@ -104,17 +167,61 @@ pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, domain: &libfabric::doma
         txcq_attr.format(enums::CqFormat::CONTEXT);
         rxcq_attr.format(enums::CqFormat::CONTEXT);
     }
-        // .wait_obj(libfabric::enums::WaitObj::NONE)
-    txcq_attr.size(info.get_tx_attr().get_size() );//.wait_obj(libfabric::enums::WaitObj::NONE);
-    rxcq_attr.size(info.get_tx_attr().get_size() );//.wait_obj(libfabric::enums::WaitObj::NONE);
+
+    let tx_cq;
+    let rx_cq;
+
+    if gl_ctx.options & FT_OPT_CQ_SHARED == 0{
+        ft_cq_set_wait_attr(gl_ctx, &mut txcq_attr);
+        ft_cq_set_wait_attr(gl_ctx, &mut rxcq_attr);
+
+        txcq_attr.size(info.get_tx_attr().get_size() + info.get_rx_attr().get_size());
+        rxcq_attr.size(info.get_tx_attr().get_size() + info.get_rx_attr().get_size());
+
+        tx_cq = domain.cq_open(txcq_attr);
+        rx_cq = domain.cq_open(rxcq_attr);
+    }
+    else {
+        todo!();
+    }
+
+    let mut cntr_attr = CounterAttr::new();
+    match gl_ctx.comp_method {
+        CompMeth::Spin => {
+            cntr_attr.wait_obj(enums::WaitObj::NONE);
+        }
+        CompMeth::Sread => {
+            cntr_attr.wait_obj(enums::WaitObj::UNSPEC);
+        }
+        CompMeth::WaitSet => todo!(),
+        CompMeth::WaitFd => {
+            cntr_attr.wait_obj(enums::WaitObj::FD);
+        }
+        CompMeth::Yield => {
+            cntr_attr.wait_obj(enums::WaitObj::YIELD);
+        }
+    }
     
-    let tx_cq = domain.cq_open(txcq_attr);
-    let rx_cq = domain.cq_open(rxcq_attr);
+    let tx_cntr = if gl_ctx.options & FT_OPT_TX_CNTR != 0{
+        Some(domain.cntr_open(cntr_attr))
+    }
+    else{
+        None
+    };
 
+    let rx_cntr = if gl_ctx.options & FT_OPT_RX_CNTR != 0{
+        Some(domain.cntr_open(cntr_attr.clone()))
+    }
+    else {
+        None
+    };
 
-    let ep = domain.ep(info);
-
-    println!("{}", info.get_ep_attr().get_type().get_value());
+    let rma_cntr = if gl_ctx.options & FT_OPT_RX_CNTR != 0 && info.get_caps().is_rma() {
+        Some(domain.cntr_open(cntr_attr.clone()))
+    }
+    else {
+        None
+    };
 
     let av = match info.get_ep_attr().get_type() {
         libfabric::enums::EndpointType::RDM | libfabric::enums::EndpointType::DGRAM  => {
@@ -127,10 +234,23 @@ pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, domain: &libfabric::doma
         _ => None,
     };
 
-    (tx_cq, rx_cq, ep, av)
+    (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av)
+    
 }
 
-pub fn ft_enable_ep(info: &libfabric::InfoEntry, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, eq: &libfabric::eq::EventQueue, av: &Option<libfabric::av::AddressVector>) {
+pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::Domain) -> (libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, libfabric::ep::Endpoint, Option<libfabric::av::AddressVector>) {
+    
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain);
+
+
+    let ep = domain.ep(info);
+
+    println!("{}", info.get_ep_attr().get_type().get_value());
+
+    (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av)
+}
+
+pub fn ft_enable_ep(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, eq: &libfabric::eq::EventQueue, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, rma_cntr: &Option<Counter>) {
     
     match info.get_ep_attr().get_type() {
         libfabric::enums::EndpointType::MSG => ep.bind(eq, 0),
@@ -141,8 +261,58 @@ pub fn ft_enable_ep(info: &libfabric::InfoEntry, ep: &libfabric::ep::Endpoint, t
 
     if let Some(av_val) = av { ep.bind(av_val, 0) }
 
-    ep.bind(tx_cq, libfabric_sys::FI_TRANSMIT.into());
-    ep.bind(rx_cq, libfabric_sys::FI_RECV.into());
+    let mut flags: u64 = libfabric_sys::FI_TRANSMIT as u64; // [TODO]
+    if gl_ctx.options & FT_OPT_TX_CQ == 0 {
+        flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+    }
+    ep.bind(tx_cq, flags);
+
+    let mut flags: u64 = libfabric_sys::FI_RECV as u64; // [TODO]
+    if gl_ctx.options & FT_OPT_TX_CQ == 0 {
+        flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+    }
+    ep.bind(rx_cq, flags);
+
+    let mut flags: u64 = if gl_ctx.options & FT_OPT_TX_CQ != 0 {
+        0_u64
+    }
+    else {
+        libfabric_sys::FI_SEND as u64
+    };
+
+    if info.get_caps().is_rma() || info.get_caps().is_atomic() {
+        flags |= libfabric_sys::FI_WRITE as u64| libfabric_sys::FI_READ as u64 ; // [TODO]
+    }
+
+    if let Some(cntr) = tx_cntr {
+        ep.bind(cntr, flags);
+    }
+
+    let flags: u64 = if gl_ctx.options & FT_OPT_RX_CQ != 0 {
+        0
+    }
+    else {
+        libfabric_sys::FI_RECV as u64
+    };
+
+
+    if let Some(cntr) = rx_cntr {
+        ep.bind(cntr, flags);
+    }
+
+    if info.get_caps().is_rma() || info.get_caps().is_atomic() && info.get_caps().is_rma_event() {
+        let mut flags = 0_u64;
+        if info.get_caps().is_remote_write() {
+            flags |= libfabric_sys::FI_REMOTE_WRITE as u64;
+        }
+        if info.get_caps().is_remote_read() {
+            flags |= libfabric_sys::FI_REMOTE_READ as u64;
+        }
+        if let Some(cntr) = rma_cntr {
+            ep.bind(cntr, flags);
+        }
+    }
+
     ep.enable();
 }
 
@@ -186,17 +356,17 @@ pub fn ft_retrieve_conn_req(eq: &libfabric::eq::EventQueue) -> libfabric::InfoEn
     eq_cm_entry.get_info()
 }
 
-pub fn ft_server_connect(gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue, domain: &libfabric::domain::Domain) -> (libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, libfabric::ep::Endpoint, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_server_connect(gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue, domain: &libfabric::domain::Domain) -> (libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, libfabric::ep::Endpoint, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     let new_info = ft_retrieve_conn_req(eq);
 
-    let (tx_cq, rx_cq, ep, _) = ft_alloc_active_res(&new_info, domain);
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av) = ft_alloc_active_res(&new_info, gl_ctx, domain);
     
-    let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx,&ep, domain, &tx_cq, &rx_cq, eq, &None);
+    let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx,&ep, domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
 
     ft_accept_connection(&ep, eq);
 
-    (tx_cq, rx_cq, ep, mr, mr_desc)
+    (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, mr, mr_desc)
 }
 
 pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, flags: u64) -> libfabric::Info {
@@ -285,9 +455,9 @@ pub fn ft_alloc_msgs(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, d
 }
 
 
-pub fn ft_enable_ep_recv(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, domain: &libfabric::domain::Domain, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, eq: &libfabric::eq::EventQueue, av: &Option<libfabric::av::AddressVector>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_enable_ep_recv(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, domain: &libfabric::domain::Domain, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, eq: &libfabric::eq::EventQueue, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, rma_cntr: &Option<Counter>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     
-    ft_enable_ep(info, ep, tx_cq, rx_cq, eq, av);
+    ft_enable_ep(info, gl_ctx, ep, tx_cq, rx_cq, eq, av, tx_cntr, rx_cntr, rma_cntr);
 
     let (mr, mut data_desc) =  ft_alloc_msgs(info, gl_ctx, domain, ep);
 
@@ -296,7 +466,7 @@ pub fn ft_enable_ep_recv(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCt
     (mr, data_desc)
 }
 
-pub fn ft_init_fabric(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, flags: u64) -> (libfabric::Info, libfabric::fabric::Fabric, libfabric::ep::Endpoint, libfabric::domain::Domain, libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, libfabric::eq::EventQueue, Option<libfabric::mr::MemoryRegion>, libfabric::av::AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_init_fabric(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, flags: u64) -> (libfabric::Info, libfabric::fabric::Fabric, libfabric::ep::Endpoint, libfabric::domain::Domain, libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, Option<Counter>, Option<Counter>, libfabric::eq::EventQueue, Option<libfabric::mr::MemoryRegion>, libfabric::av::AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
     
     let info = ft_getinfo(hints, node, service.clone(), flags);
     let entries: Vec<libfabric::InfoEntry> = info.get();
@@ -307,14 +477,14 @@ pub fn ft_init_fabric(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, 
         
     let (fabric, eq, domain) = ft_open_fabric_res(&entries[0]);
 
-    let (tx_cq, rx_cq, ep, av) =  ft_alloc_active_res(&entries[0], &domain);
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain);
 
-    let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &av);
+    let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
     println!("Passed enable_ep_recv");
     let av = av.unwrap();
-    ft_init_av(&entries[0], gl_ctx, &av , &ep, &tx_cq, &rx_cq, &mut mr_desc, service.is_empty());
+    ft_init_av(&entries[0], gl_ctx, &av , &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&mut mr_desc, service.is_empty());
 
-    (info, fabric, ep, domain, tx_cq, rx_cq, eq, mr, av, mr_desc)
+    (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mr_desc)
 }
 
 pub fn ft_av_insert<T>(av: &libfabric::av::AddressVector, addr: &T, fi_addr: &mut libfabric::Address, flags: u64) {
@@ -463,10 +633,10 @@ pub fn ft_post_tx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: 
     }
 }
 
-pub fn ft_tx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, fi_addr: libfabric::Address, size: usize, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &libfabric::cq::CompletionQueue) {
+pub fn ft_tx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, fi_addr: libfabric::Address, size: usize, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>) {
 
     ft_post_tx(info, gl_ctx, ep, fi_addr, size, NO_CQ_DATA, data_desc, tx_cq);
-    ft_get_tx_comp(&mut gl_ctx.tx_cq_cntr, tx_cq, gl_ctx.tx_seq);
+    ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
 }
 
 pub fn ft_post_rx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, fi_addr: libfabric::Address, mut size: usize, data: u64, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, rx_cq: &libfabric::cq::CompletionQueue) {
@@ -495,9 +665,9 @@ pub fn ft_post_rx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: 
     }
 }
 
-pub fn ft_rx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, fi_addr: libfabric::Address, size: usize, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, rx_cq: &libfabric::cq::CompletionQueue) {
+pub fn ft_rx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, fi_addr: libfabric::Address, size: usize, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, rx_cq: &libfabric::cq::CompletionQueue, rx_cntr: &Option<libfabric::cntr::Counter>) {
 
-    ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
+    ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
     ft_post_rx(info, gl_ctx, ep, fi_addr, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq);
 }
 
@@ -535,7 +705,7 @@ pub fn ft_progress(cq: &libfabric::cq::CompletionQueue, total: u64, cq_cntr: &mu
     0
 }
 
-pub fn ft_init_av_dst_addr(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx,  av: &libfabric::av::AddressVector, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
+pub fn ft_init_av_dst_addr(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx,  av: &libfabric::av::AddressVector, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
     let mut v = [0_u8; FT_MAX_CTRL_MSG];
     if !server {
         ft_av_insert(av, info.get_dest_addr::<libfabric::Address>(), &mut gl_ctx.remote_address, 0);
@@ -543,12 +713,12 @@ pub fn ft_init_av_dst_addr(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobal
         
         gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(&v[0..len]);
 
-        ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, len, data_desc, tx_cq);
-        ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, 1, data_desc, rx_cq);
+        ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, len, data_desc, tx_cq, tx_cntr);
+        ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, 1, data_desc, rx_cq, rx_cntr);
 
     }
     else {
-        ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
+        ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
         v.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+FT_MAX_CTRL_MSG]);
 
 
@@ -566,17 +736,17 @@ pub fn ft_init_av_dst_addr(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobal
             gl_ctx.remote_address = 0;
         }
         
-        ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, 1, data_desc, tx_cq);
+        ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, 1, data_desc, tx_cq, tx_cntr);
     }
 }
 
-pub fn ft_init_av(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, av: &libfabric::av::AddressVector, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
+pub fn ft_init_av(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, av: &libfabric::av::AddressVector, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
 
-    ft_init_av_dst_addr(info, gl_ctx, av, ep,  tx_cq, rx_cq, mr_desc, server);
+    ft_init_av_dst_addr(info, gl_ctx, av, ep,  tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc, server);
 }
 
-pub fn ft_read_cq(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
-
+pub fn ft_spin_for_comp(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
+    
     let mut comp = libfabric::cq::CqErrEntry::new();
 
     while total - *curr > 0 {
@@ -598,14 +768,93 @@ pub fn ft_read_cq(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u6
     }
 }
 
-pub fn ft_get_rx_comp(rx_curr: &mut u64, rx_cq: &libfabric::cq::CompletionQueue, total: u64) {
+pub fn ft_wait_for_comp(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
+    
+    let mut comp = libfabric::cq::CqErrEntry::new();
 
-    ft_read_cq(rx_cq, rx_curr, total, -1, 0);
+    while total - *curr > 0 {
+        let err = cq.sread(std::slice::from_mut(&mut comp), 1, -1);
+        if err > 0 {
+            *curr += 1;
+        }
+    }
 }
 
-pub fn ft_get_tx_comp(tx_curr: &mut u64, tx_cq: &libfabric::cq::CompletionQueue, total: u64) {
+pub fn ft_read_cq(comp: &CompMeth, cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
 
-    ft_read_cq(tx_cq, tx_curr, total, -1, 0);
+    match comp {
+        CompMeth::Spin => {
+            ft_spin_for_comp(cq, curr, total, timeout, tag);
+        },
+        CompMeth::WaitSet => todo!(),
+        CompMeth::WaitFd => todo!(),
+        CompMeth::Sread | CompMeth::Yield => {
+            ft_wait_for_comp(cq, curr, total, timeout, tag);
+        }
+    }
+
+}
+
+pub fn ft_spin_for_cntr(cntr: &Option<Counter>, total: u64) {
+
+    if let Some(cntr_v) = cntr {
+        loop {
+            let cur = cntr_v.read();
+            if cur >= total {
+                break;
+            }
+        }
+    }
+    else {
+        panic!("Trying to wait on cntr without setting it up");
+    }
+}
+
+pub fn ft_wait_for_cntr(cntr: &Option<Counter>, total: u64) {
+
+    if let Some(cntr_v) = cntr {
+        while total > cntr_v.read() {
+            let ret = cntr_v.wait(total, -1);
+            if ret == 0 {
+                break;
+            }
+        }
+    }
+    else {
+        panic!("Trying to wait on cntr without setting it up");
+    }
+}
+
+pub fn ft_get_cq_comp(comp: &CompMeth, rx_curr: &mut u64, rx_cq: &libfabric::cq::CompletionQueue, total: u64) {
+    ft_read_cq(comp, rx_cq, rx_curr, total, -1, 0);
+}
+
+pub fn ft_get_cntr_comp(comp: &CompMeth, cntr: &Option<Counter>, total: u64) {
+    
+    match comp {
+        CompMeth::Spin => ft_spin_for_cntr(cntr, total),
+        _ => ft_wait_for_cntr(cntr, total),
+    }
+}
+
+pub fn ft_get_rx_comp(gl_ctx: &mut TestsGlobalCtx, rx_cntr: &Option<Counter>, rx_cq: &libfabric::cq::CompletionQueue, total: u64) {
+
+    if gl_ctx.options & FT_OPT_RX_CQ != 0{
+        ft_get_cq_comp(&gl_ctx.comp_method,&mut gl_ctx.rx_cq_cntr, rx_cq, total);
+    }
+    else {
+        ft_get_cntr_comp(&gl_ctx.comp_method, rx_cntr, total);
+    }
+}
+
+pub fn ft_get_tx_comp(gl_ctx: &mut TestsGlobalCtx, tx_cntr: &Option<Counter>, tx_cq: &libfabric::cq::CompletionQueue, total: u64) {
+
+    if gl_ctx.options & FT_OPT_RX_CQ != 0{
+        ft_get_cq_comp(&gl_ctx.comp_method, &mut gl_ctx.tx_cq_cntr, tx_cq, total);
+    }
+    else {
+        ft_get_cntr_comp(&gl_ctx.comp_method, tx_cntr, total);
+    }
 }
 
 pub fn ft_need_mr_reg(info: &libfabric::InfoEntry) -> bool {
@@ -661,15 +910,15 @@ pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain
 
 }
 
-pub fn ft_sync(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_sync(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
     
     // println!("TX SEQ: {},  TX_CTR: {}", gl_ctx.tx_seq, gl_ctx.tx_cq_cntr);
     // println!("RX SEQ: {},  RX_CTR: {}", gl_ctx.rx_seq, gl_ctx.rx_cq_cntr);
-    ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, 1, mr_desc, tx_cq);
-    ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, 1, mr_desc, rx_cq);
+    ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, 1, mr_desc, tx_cq, tx_cntr);
+    ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, 1, mr_desc, rx_cq, rx_cntr);
 }
 
-pub fn ft_exchange_keys(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, mr: &mut libfabric::mr::MemoryRegion, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, domain: &libfabric::domain::Domain, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) -> libfabric::RmaIoVec{
+pub fn ft_exchange_keys(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, mr: &mut libfabric::mr::MemoryRegion, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, domain: &libfabric::domain::Domain, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) -> libfabric::RmaIoVec{
     let mut addr = 0; 
     let mut key_size = 0;
     let len ;
@@ -698,8 +947,8 @@ pub fn ft_exchange_keys(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx
     
     gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(unsafe{ std::slice::from_raw_parts(&rma_iov as *const libfabric::RmaIoVec as *const u8, std::mem::size_of::<libfabric::RmaIoVec>())});
     
-    ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, len + ft_tx_prefix_size(info), mr_desc, tx_cq);
-    ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
+    ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, len + ft_tx_prefix_size(info), mr_desc, tx_cq, tx_cntr);
+    ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
     
     unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut libfabric::RmaIoVec as *mut u8,std::mem::size_of::<libfabric::RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
     let mut peer_iov = libfabric::RmaIoVec::new();
@@ -715,7 +964,7 @@ pub fn ft_exchange_keys(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx
     }
     
     ft_post_rx(info, gl_ctx, ep, gl_ctx.remote_address, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq);
-    ft_sync(info, gl_ctx,  tx_cq, rx_cq, ep, mr_desc);
+    ft_sync(info, gl_ctx,  tx_cq, rx_cq, tx_cntr, rx_cntr, ep, mr_desc);
 
     peer_iov
 }
@@ -740,7 +989,7 @@ pub fn start_server(hints: libfabric::InfoHints) -> (libfabric::Info, fabric::Fa
     (info, fab, domain, eq, pep)
 }
 
-pub fn ft_client_connect(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (libfabric::Info, fabric::Fabric,  domain::Domain, libfabric::eq::EventQueue, libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, libfabric::ep::Endpoint, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_client_connect(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (libfabric::Info, fabric::Fabric,  domain::Domain, libfabric::eq::EventQueue, libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, libfabric::ep::Endpoint, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     let info = ft_getinfo(hints, node, service, 0);
 
     let entries: Vec<libfabric::InfoEntry> = info.get();
@@ -750,30 +999,31 @@ pub fn ft_client_connect(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCt
     }
 
     let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
-    let (tx_cq, rx_cq, ep, _) = ft_alloc_active_res(&entries[0], &domain);
-    let (mr, mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &None);
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av) = ft_alloc_active_res(&entries[0], gl_ctx,&domain);
+    let (mr, mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
     ft_connect_ep(&ep, &eq, entries[0].get_dest_addr::<libfabric::Address>());
 
     
-    (info, fab, domain, eq, rx_cq, tx_cq, ep, mr, mr_desc)
+    (info, fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, mr_desc)
 }
 
-pub fn ft_finalize_ep(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue) {
+pub fn ft_finalize_ep(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>) {
 
     let base = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
     let iov = libfabric::IoVec::new(base);
 
     if info.get_caps().is_tagged() {
-        todo!();
-        // let msg = if let Some(mr_desc) = data_desc.as_mut() {
-        //     libfabric::MsgTagged::new(std::slice::from_ref(&iov), mr_desc, gl_ctx.remote_address)
-        // }
-        // else {
-        //     libfabric::MsgTagged::new(std::slice::from_ref(&iov), &mut default_desc(), gl_ctx.remote_address)
-        // };
+        let msg = if let Some(mr_desc) = data_desc.as_mut() {
+            libfabric::MsgTagged::new(std::slice::from_ref(&iov), mr_desc, gl_ctx.remote_address, 0, gl_ctx.tx_seq, 0)
+        }
+        else {
+            libfabric::MsgTagged::new(std::slice::from_ref(&iov), &mut default_desc(), gl_ctx.remote_address, 0, gl_ctx.tx_seq, 0)
+        };
+        let msg_ref = &msg;
+        let tx_seq = gl_ctx.tx_seq;
+        let flag = libfabric::enums::TransferOptions::TRANSMIT_COMPLETE;
 
-        // let tx_seq = gl_ctx.tx_seq;
-        // ft_post!(sendmsg, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "sendmsg", ep, &msg, libfabric_sys::FI_TRANSMIT_COMPLETE);
+        ft_post!(tsendmsg, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
     }
     else {
         let msg = if let Some(mr_desc) = data_desc.as_mut() {
@@ -788,18 +1038,18 @@ pub fn ft_finalize_ep(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, 
         ft_post!(sendmsg, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
     }
 
-    ft_get_tx_comp(&mut gl_ctx.tx_cq_cntr, tx_cq, gl_ctx.tx_seq);
-    ft_get_rx_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, gl_ctx.rx_seq);
+    ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
+    ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
 
 }
 
-pub fn ft_finalize(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, domain: &libfabric::domain::Domain, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_finalize(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, domain: &libfabric::domain::Domain, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
 
     if info.get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_RAW == libfabric_sys::FI_MR_RAW { // [TOOD]
         domain.unmap_key(0xC0DE);
     }
 
-    ft_finalize_ep(info, gl_ctx, ep, data_desc, tx_cq, rx_cq);
+    ft_finalize_ep(info, gl_ctx, ep, data_desc, tx_cq, rx_cq, tx_cntr, rx_cntr);
 }
 
 pub fn close_all_pep(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, ep: libfabric::ep::Endpoint, pep: libfabric::ep::PassiveEndpoint, mr: Option<libfabric::mr::MemoryRegion>) {
@@ -813,7 +1063,7 @@ pub fn close_all_pep(fab: libfabric::fabric::Fabric, domain: libfabric::domain::
     fab.close();        
 }
 
-pub fn close_all(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, ep: libfabric::ep::Endpoint, mr: Option<libfabric::mr::MemoryRegion>, av: Option<libfabric::av::AddressVector>) {
+pub fn close_all(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, tx_cntr: Option<Counter>, rx_cntr: Option<Counter>, ep: libfabric::ep::Endpoint, mr: Option<libfabric::mr::MemoryRegion>, av: Option<libfabric::av::AddressVector>) {
     
     ep.close();
     eq.close();
@@ -821,14 +1071,16 @@ pub fn close_all(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Doma
     rx_cq.close();
     if let Some(mr_val) = mr { mr_val.close() }
     if let Some(av_val) = av { av_val.close() }
+    if let Some(rxcntr_val) = rx_cntr { rxcntr_val.close() }
+    if let Some(txcnr_val) = tx_cntr { txcnr_val.close() }
     domain.close();
     fab.close();    
 }
 
-pub fn pingpong(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, iters: usize, warmup: usize, size: usize, server: bool) {
+pub fn pingpong(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, iters: usize, warmup: usize, size: usize, server: bool) {
     let inject_size = info.get_tx_attr().get_inject_size();
 
-    ft_sync(info, gl_ctx, tx_cq, rx_cq, ep, mr_desc);
+    ft_sync(info, gl_ctx, tx_cq, rx_cq, tx_cntr, rx_cntr, ep, mr_desc);
     let mut now = Instant::now();
     if ! server {
         for i in 0..warmup+iters {
@@ -840,10 +1092,10 @@ pub fn pingpong(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric
                 ft_inject(info, gl_ctx, ep, gl_ctx.remote_address, size, tx_cq);
             }
             else {
-                ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, tx_cq);
+                ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, tx_cq, tx_cntr);
             }
 
-            ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, rx_cq);
+            ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, rx_cq, rx_cntr);
         }
     }
     else {
@@ -852,14 +1104,14 @@ pub fn pingpong(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric
                 // Start timer
             }
 
-            ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, rx_cq);
+            ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, rx_cq, rx_cntr);
 
 
             if size < inject_size {
                 ft_inject(info, gl_ctx, ep, gl_ctx.remote_address, size, tx_cq);
             }
             else {
-                ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, tx_cq);
+                ft_tx(info, gl_ctx, ep, gl_ctx.remote_address, size, mr_desc, tx_cq, tx_cntr);
             }
         }
     }
@@ -875,27 +1127,27 @@ pub fn pingpong(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric
     // print perf data
 }
 
-pub fn bw_tx_comp(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn bw_tx_comp(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
 
-    ft_get_tx_comp(&mut gl_ctx.tx_cq_cntr, tx_cq, gl_ctx.tx_seq);
-    ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, FT_RMA_SYNC_MSG_BYTES, mr_desc, rx_cq);
+    ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
+    ft_rx(info, gl_ctx, ep, gl_ctx.remote_address, FT_RMA_SYNC_MSG_BYTES, mr_desc, rx_cq, rx_cntr);
 }
 
-pub fn bw_rma_comp(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, op: &RmaOp, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
+pub fn bw_rma_comp(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, op: &RmaOp, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
     if matches!(op, RmaOp::RMA_WRITEDATA) {
         if ! server {
-            bw_tx_comp(info, gl_ctx, ep, tx_cq, rx_cq, mr_desc);
+            bw_tx_comp(info, gl_ctx, ep, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc);
         }
     }
     else {
-        ft_get_tx_comp(&mut gl_ctx.tx_cq_cntr, tx_cq, gl_ctx.tx_seq);
+        ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
     }
 }
 
-pub fn pingpong_rma(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, op: RmaOp, remote: &libfabric::RmaIoVec, iters: usize, warmup: usize, size: usize, server: bool) {
+pub fn pingpong_rma(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, op: RmaOp, remote: &libfabric::RmaIoVec, iters: usize, warmup: usize, size: usize, server: bool) {
     let inject_size = info.get_tx_attr().get_inject_size();
 
-    ft_sync(info, gl_ctx, tx_cq, rx_cq, ep, mr_desc);
+    ft_sync(info, gl_ctx, tx_cq, rx_cq, tx_cntr, rx_cntr, ep, mr_desc);
     let offest_rma_start = FT_RMA_SYNC_MSG_BYTES + std::cmp::max(ft_tx_prefix_size(info), ft_rx_prefix_size(info));
 
 
@@ -924,14 +1176,14 @@ pub fn pingpong_rma(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfa
         j+=1;
 
         if j == gl_ctx.window_size {
-            bw_rma_comp(info, gl_ctx, &op, ep, tx_cq, rx_cq, mr_desc, server);
+            bw_rma_comp(info, gl_ctx, &op, ep, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc, server);
             j = 0;
         }
 
         offset += size;
     }
 
-    bw_rma_comp(info, gl_ctx, &op, ep, tx_cq, rx_cq, mr_desc, server);
+    bw_rma_comp(info, gl_ctx, &op, ep, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc, server);
     
 
     if size == 1 {

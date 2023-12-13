@@ -16,7 +16,7 @@ pub mod common; // Public to supress lint warnings (unused function)
 
 #[ignore]
 #[test]
-fn pp_server_rdm() {
+fn pp_server_rdm_msg() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
     let ep_attr = ep::EndpointAttr::new()
@@ -41,7 +41,7 @@ fn pp_server_rdm() {
         .tx_attr(tx_attr)
         .addr_format(enums::AddressFormat::UNSPEC);
 
-    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mut mr, av, mut mr_desc) = 
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
     
     let entries: Vec<libfabric::InfoEntry> = info.get();
@@ -53,19 +53,19 @@ fn pp_server_rdm() {
     let test_sizes = gl_ctx.test_sizes.clone();
     
     for msg_size in test_sizes {
-        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &ep, &mut mr_desc, 100, 10, msg_size, false);
+        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
     }
 
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &mut mr_desc);
+    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
     
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, ep, mr, av.into());
+    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
 }
 
 
 
 #[ignore]
 #[test]
-fn pp_client_rdm() {
+fn pp_client_rdm_msg() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
     let ep_attr = ep::EndpointAttr::new()
@@ -90,8 +90,8 @@ fn pp_client_rdm() {
         .tx_attr(tx_attr)
         .addr_format(enums::AddressFormat::UNSPEC);
 
-    let (info, fabric, ep, domain, tx_cq, rx_cq, eq, mut mr, av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "45911".to_owned(), 0);
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "49707".to_owned(), 0);
 
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
@@ -101,11 +101,11 @@ fn pp_client_rdm() {
     let test_sizes = gl_ctx.test_sizes.clone();
     
     for msg_size in test_sizes {
-        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &ep, &mut mr_desc, 100, 10, msg_size, false);
+        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
     }
 
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &mut mr_desc);
+    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&mut mr_desc);
 
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, ep, mr, av.into());
+    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
 
 }
