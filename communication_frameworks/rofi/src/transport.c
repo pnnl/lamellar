@@ -770,7 +770,7 @@ int ft_init_fabric(void) {
         return -1;
     }
 
-    DEBUG_MSG("\tSelected Provider: %s (%d) Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu stx: %s MR_RMA_EVENT: %s src_addr %s src_addrlen %lu dest_addr %s dest_addrlen %lu",
+    DEBUG_MSG("\tSelected Provider: %s (%d) Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu stx: %s MR_RMA_EVENT: %s msg: %s rma: %s read: %s write: %s remote_read: %s remote_write: %s rma_event: %s src_addr %s src_addrlen %lu dest_addr %s dest_addrlen %lu",
               fi->fabric_attr->prov_name, rdesc.prov,
               FI_MAJOR(fi->fabric_attr->prov_version),
               FI_MINOR(fi->fabric_attr->prov_version),
@@ -780,6 +780,13 @@ int ft_init_fabric(void) {
               fi->ep_attr->max_msg_size,
               fi->domain_attr->max_ep_stx_ctx == 0 ? "no" : "yes",
               fi->domain_attr->mr_mode & FI_MR_RMA_EVENT ? "yes" : " no",
+              fi->caps & FI_MSG ? "yes" : "no",
+              fi->caps & FI_RMA ? "yes" : "no",
+              fi->caps & FI_READ ? "yes" : "no",
+              fi->caps & FI_WRITE ? "yes" : "no",
+              fi->caps & FI_REMOTE_READ ? "yes" : "no",
+              fi->caps & FI_REMOTE_WRITE ? "yes" : "no",
+              fi->caps & FI_RMA_EVENT ? "yes" : "no",
               fi->src_addr, fi->src_addrlen,
               fi->dest_addr, fi->dest_addrlen);
 

@@ -89,9 +89,11 @@ typedef struct{
 extern rofi_desc_t rdesc;
 
 int          rofi_init_internal(char*);
+
 int          rofi_finit_internal(void);
 unsigned int rofi_get_size_internal(void);
 unsigned int rofi_get_id_internal(void);
+int 		 rofi_flush_internal(void);
 int          rofi_put_internal(void*, void*, size_t, unsigned int, unsigned long);
 int          rofi_get_internal(void*, void*, size_t, unsigned int, unsigned long);
 int          rofi_send_internal(unsigned long, void*, size_t, unsigned long);

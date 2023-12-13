@@ -162,6 +162,13 @@ unsigned int rofi_get_id_internal(void) {
     return rdesc.nid;
 }
 
+
+// NOTE this is needed to ensure progress for something like n-way dissemination barriers
+// as recipients of RDMA Put still need to proress their completion queues for others to continue
+int rofi_flush_internal(void) {
+    return ft_get_rx_comp(0);
+}
+
 int rofi_put_internal(void *dst, void *src, size_t size, unsigned int id, unsigned long flags) {
     rofi_mr_desc *el = mr_get(dst);
     struct fi_rma_iov rma_iov;
