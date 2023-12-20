@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use crate::FID;
 
 //================== Memory Region (fi_mr) ==================//
 pub struct MemoryRegion {
@@ -110,17 +112,20 @@ impl crate::DataDescriptor for MemoryRegionDesc {
     }
 }
 
-impl MemoryRegionDesc {
-    pub(crate) fn get(&self) -> *mut std::ffi::c_void {
-        self.c_desc
-    }
-}
-
 impl crate::FID for MemoryRegion{
     fn fid(&self) -> *mut libfabric_sys::fid {
         unsafe { &mut (*self.c_mr).fid }
     }
 }
+
+
+// impl Drop for MemoryRegion {
+//     fn drop(&mut self) {
+//         println!("Dropping mr");
+
+//         self.close();
+//     }
+// }
 
 //================== Memory Region attribute ==================//
 
@@ -259,7 +264,7 @@ mod tests {
         let ep_attr = crate::ep::EndpointAttr::new();
         let dom_attr = crate::domain::DomainAttr::new()
             .mode(!0)
-            .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value() | crate::enums::MrType::LOCAL.get_value() ) as i32 );
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
         
         let hints = crate::InfoHints::new()
             .caps(crate::InfoCaps::new().msg().rma())
@@ -327,7 +332,7 @@ mod tests {
     //     let mut dom_attr = crate::domain::DomainAttr::new();
     //         dom_attr
     //         .mode(!0)
-    //         .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value() | crate::enums::MrType::LOCAL.get_value() ) as i32 );
+    //         .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value() | crate::enums::MrMode::LOCAL.get_value() ) as i32 );
     //     let mut hints = crate::InfoHints::new();
     //         hints
     //         .caps(crate::InfoCaps::new().msg().rma())

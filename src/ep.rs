@@ -1,4 +1,6 @@
 use core::panic;
+#[allow(unused_imports)]
+use crate::FID;
 
 //================== Passive Endpoint (fi_passive_ep) ==================//
 
@@ -586,6 +588,20 @@ impl crate::FID for Endpoint {
         unsafe { &mut (*self.c_ep).fid }
     }
 }
+
+// impl Drop for Endpoint {
+    
+//     fn drop(&mut self) {
+//         println!("Dropping ep");
+//         self.close();
+//     }
+// }
+
+// impl Drop for PassiveEndpoint {
+//     fn drop(&mut self) {
+//         self.close();
+//     }
+// }
 
 //================== Endpoint attribute ==================//
 #[derive(Clone)]

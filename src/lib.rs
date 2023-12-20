@@ -121,7 +121,7 @@ impl InfoBuilder {
 }
 
 #[derive(Clone)]
-pub struct InfoEntry { // [TODO] Make fields private
+pub struct InfoEntry { 
     caps: InfoCaps,
     fabric_attr: crate::fabric::FabricAttr,
     domain_attr: crate::domain::DomainAttr,
@@ -260,7 +260,7 @@ impl InfoHints {
         self
     }
 
-    pub fn no_src_address(mut self) -> Self {
+    pub fn no_src_address(mut self) -> Self { // [TODO]
         unsafe { (*self.c_info).src_addr = std::ptr::null_mut() };
         unsafe { (*self.c_info).src_addrlen = 0 };
         

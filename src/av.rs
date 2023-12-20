@@ -99,6 +99,14 @@ impl crate::FID for AddressVector {
     }
 }
 
+// impl Drop for AddressVector {
+//     fn drop(&mut self) {
+//         println!("Dropping av");
+
+//         self.close()
+//     }
+// }
+
 //================== Address Vector attribute ==================//
 
 pub struct AddressVectorAttr {
@@ -120,7 +128,7 @@ impl AddressVectorAttr {
         Self { c_attr }
     }
 
-    pub fn avtype(self, av_type: crate::enums::AddressVectorType) -> Self{
+    pub fn type_(self, av_type: crate::enums::AddressVectorType) -> Self{
         let mut c_attr = self.c_attr;
         c_attr.type_ = av_type.get_value();
         
@@ -253,8 +261,8 @@ mod tests {
         .ep_type(crate::enums::EndpointType::RDM);
     
         let dom_attr = crate::domain::DomainAttr::new()
-        .mode(!0)
-        .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as i32 );
+            .mode(!0)
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
 
         let hints = crate::InfoHints::new()
             .ep_attr(ep_attr)
@@ -270,7 +278,7 @@ mod tests {
             for i in 0..17 {
                 let count = 1 << i;
                 let attr = crate::av::AddressVectorAttr::new()
-                    .avtype(crate::enums::AddressVectorType::MAP)
+                    .type_(crate::enums::AddressVectorType::MAP)
                     .count(count)
                     .flags(0);
                 let av = domain.av_open(attr);
@@ -291,7 +299,8 @@ mod tests {
         let ep_attr = crate::ep::EndpointAttr::new().ep_type(crate::enums::EndpointType::RDM);
 
         let dom_attr = crate::domain::DomainAttr::new()
-            .mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as u64 );
+            .mode(!0)
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
 
         let hints = crate::InfoHints::new()
             .ep_attr(ep_attr)
@@ -303,7 +312,7 @@ mod tests {
         let entries: Vec<crate::InfoEntry> = info.get();
         if entries.len() > 0 {
             let attr = crate::av::AddressVectorAttr::new()
-                .avtype(crate::enums::AddressVectorType::MAP)
+                .type_(crate::enums::AddressVectorType::MAP)
                 .count(32);
             let fab: crate::fabric::Fabric = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
             let domain = fab.domain(&entries[0]);

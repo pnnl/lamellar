@@ -414,68 +414,98 @@ impl Mode {
 }
 
 
-#[allow(non_camel_case_types)]
-pub enum MrMode {
-    UNSPEC,
-    BASIC,
-    SCALABLE,   
+
+// #[allow(non_camel_case_types)]
+// pub enum MrMode {
+//     UNSPEC,
+//     BASIC,
+//     SCALABLE,
+//     LOCAL,
+//     RAW,
+//     VIRT_ADDR,
+//     ALLOCATED,
+//     PROV_KEY,
+//     MMU_NOTIFY,
+//     RMA_EVENT,
+//     ENDPOINT,
+//     HMEM,
+//     COLLECTIVE,
+// }
+
+
+pub struct MrMode {
+    c_flags: u32
+}
+macro_rules! gen_set_get_flag {
+    ($set_method_name:ident, $get_method_name:ident, $flag:expr) => {
+
+        pub fn $set_method_name(mut self) -> Self {
+            self.c_flags |= $flag;
+            
+            self
+        }
+
+        pub fn $get_method_name(&self) -> bool {
+            self.c_flags & $flag != 0
+        } 
+    };
 }
 
+// pub fn msg(self) -> Self  { Self { bitfield: self.bitfield | libfabric_sys::FI_MSG as u64 } }
 impl MrMode {
-    pub fn get_value(&self) -> libfabric_sys::fi_mr_mode {
-        match self {
-            MrMode::UNSPEC => libfabric_sys::fi_mr_mode_FI_MR_UNSPEC,
-            MrMode::BASIC => libfabric_sys::fi_mr_mode_FI_MR_BASIC,
-            MrMode::SCALABLE => libfabric_sys::fi_mr_mode_FI_MR_SCALABLE,
-        }
+    
+    pub fn new() -> Self {
+        Self {c_flags: 0}
     }
 
-    pub fn from_value(value: libfabric_sys::fi_mr_mode) -> MrMode {
-        if value == Self::UNSPEC.get_value() {
-            Self::UNSPEC
-        }
-        else if value == Self::BASIC.get_value() {
-            Self::BASIC
-        }
-        else if value == Self::SCALABLE.get_value() {
-            Self::SCALABLE
-        }
-        else {
-            panic!("Unexpected value for MrMode");
-        }
+    pub fn is_unspec(&self) -> bool {
+        self.c_flags == libfabric_sys::fi_mr_mode_FI_MR_UNSPEC
     }
+    
+    pub fn inverse(mut self) -> Self {
+        self.c_flags = ! self.c_flags;
+
+        self
+    }
+
+    gen_set_get_flag!(basic, is_basic, libfabric_sys::fi_mr_mode_FI_MR_BASIC);
+    gen_set_get_flag!(scalable, is_scalable, libfabric_sys::fi_mr_mode_FI_MR_SCALABLE);
+    gen_set_get_flag!(local, is_local, libfabric_sys::FI_MR_LOCAL);
+    gen_set_get_flag!(raw, is_raw, libfabric_sys::FI_MR_RAW);
+    gen_set_get_flag!(virt_addr, is_virt_addr, libfabric_sys::FI_MR_VIRT_ADDR);
+    gen_set_get_flag!(allocated, is_allocated, libfabric_sys::FI_MR_ALLOCATED);
+    gen_set_get_flag!(prov_key, is_prov_key, libfabric_sys::FI_MR_PROV_KEY);
+    gen_set_get_flag!(mmu_notify, is_mmu_notify, libfabric_sys::FI_MR_MMU_NOTIFY);
+    gen_set_get_flag!(rma_event, is_rma_event, libfabric_sys::FI_MR_RMA_EVENT);
+    gen_set_get_flag!(endpoint, is_endpoint, libfabric_sys::FI_MR_ENDPOINT);
+    gen_set_get_flag!(hmem, is_hmem, libfabric_sys::FI_MR_HMEM);
+    gen_set_get_flag!(collective, is_collective, libfabric_sys::FI_MR_COLLECTIVE);
+
+    pub fn get_value(&self) -> u32 {
+        self.c_flags
+    }
+
 }
 
-#[allow(non_camel_case_types)]
-pub enum MrType {
-    LOCAL,
-    RAW,
-    VIRT_ADDR,
-    ALLOCATED,
-    PROV_KEY,
-    MMU_NOTIFY,
-    RMA_EVENT,
-    ENDPOINT,
-    HMEM,
-    COLLECTIVE,
-}
-
-impl MrType {
-    pub fn get_value(&self) -> libfabric_sys::fi_progress {
-        match self {
-            MrType::LOCAL => libfabric_sys::FI_MR_LOCAL,
-            MrType::RAW => libfabric_sys::FI_MR_RAW,
-            MrType::VIRT_ADDR => libfabric_sys::FI_MR_VIRT_ADDR,
-            MrType::ALLOCATED => libfabric_sys::FI_MR_ALLOCATED,
-            MrType::PROV_KEY => libfabric_sys::FI_MR_PROV_KEY,
-            MrType::MMU_NOTIFY => libfabric_sys::FI_MR_MMU_NOTIFY,
-            MrType::RMA_EVENT => libfabric_sys::FI_MR_RMA_EVENT,
-            MrType::ENDPOINT => libfabric_sys::FI_MR_ENDPOINT,
-            MrType::HMEM => libfabric_sys::FI_MR_HMEM,
-            MrType::COLLECTIVE => libfabric_sys::FI_MR_COLLECTIVE,
-        }
-    }    
-}
+// impl MrMode {
+//     pub fn get_value(&self) -> libfabric_sys::fi_progress {
+//         match self {
+//             MrMode::UNSPEC => libfabric_sys::fi_mr_mode_FI_MR_UNSPEC,
+//             MrMode::BASIC => libfabric_sys::fi_mr_mode_FI_MR_BASIC,
+//             MrMode::SCALABLE => libfabric_sys::fi_mr_mode_FI_MR_SCALABLE,
+//             MrMode::LOCAL => libfabric_sys::FI_MR_LOCAL,
+//             MrMode::RAW => libfabric_sys::FI_MR_RAW,
+//             MrMode::VIRT_ADDR => libfabric_sys::FI_MR_VIRT_ADDR,
+//             MrMode::ALLOCATED => libfabric_sys::FI_MR_ALLOCATED,
+//             MrMode::PROV_KEY => libfabric_sys::FI_MR_PROV_KEY,
+//             MrMode::MMU_NOTIFY => libfabric_sys::FI_MR_MMU_NOTIFY,
+//             MrMode::RMA_EVENT => libfabric_sys::FI_MR_RMA_EVENT,
+//             MrMode::ENDPOINT => libfabric_sys::FI_MR_ENDPOINT,
+//             MrMode::HMEM => libfabric_sys::FI_MR_HMEM,
+//             MrMode::COLLECTIVE => libfabric_sys::FI_MR_COLLECTIVE,
+//         }
+//     }    
+// }
 
 #[allow(non_camel_case_types)]
 pub enum Progress {
@@ -687,6 +717,8 @@ pub enum ConnectEvents {
 }
 
 impl ConnectEvents{
+
+    #[allow(dead_code)]
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18 {
 
         match self {
@@ -710,6 +742,7 @@ pub enum ParamType {
 }
 
 impl ParamType {
+    #[allow(dead_code)]
     pub(crate) fn get_value(&self) -> libfabric_sys::fi_param_type {
 
         match self {

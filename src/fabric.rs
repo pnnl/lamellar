@@ -1,5 +1,7 @@
 
 //================== Fabric (fi_fabric) ==================//
+#[allow(unused_imports)]
+use crate::FID;
 
 pub struct Fabric {
     pub(crate) c_fabric: *mut libfabric_sys::fid_fabric,
@@ -55,6 +57,14 @@ impl crate::FID for Fabric {
         unsafe { &mut (*self.c_fabric).fid }
     }
 }
+
+// impl Drop for Fabric {
+//     fn drop(&mut self) {
+//         println!("Dropping fabric");
+
+//         self.close();
+//     }
+// }
 
 //================== Fabric attribute ==================//
 

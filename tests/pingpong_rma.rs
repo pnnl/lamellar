@@ -8,7 +8,7 @@ fn pp_server_rma() {
 
     let dom_attr = libfabric::domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
-        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 )
+        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
         .resource_mgmt(enums::ResourceMgmt::ENABLED);
     
     let caps = libfabric::InfoCaps::new().msg().rma();
@@ -49,7 +49,7 @@ fn pp_client_rma() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
     let dom_attr = libfabric::domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
-        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 )
+        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
         .resource_mgmt(enums::ResourceMgmt::ENABLED);
     
     let caps = libfabric::InfoCaps::new().msg().rma();
@@ -66,7 +66,7 @@ fn pp_client_rma() {
     
     
     let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "45992".to_owned(), 0);
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.48".to_owned(), "40823".to_owned(), 0);
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
     if entries.is_empty() {

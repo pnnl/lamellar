@@ -130,6 +130,13 @@ impl crate::FID for Domain {
     }
 }
 
+// impl Drop for Domain {
+//     fn drop(&mut self) {
+//         println!("Dropping domain");
+//         self.close();
+//     }
+// }
+
 //================== Domain attribute ==================//
 
 #[derive(Clone, Debug)]
@@ -178,8 +185,8 @@ impl DomainAttr {
         self
     }
     
-    pub fn mr_mode(mut self, mr_mode: i32) -> Self {
-        self.c_attr.mr_mode = mr_mode;
+    pub fn mr_mode(mut self, mr_mode: crate::enums::MrMode) -> Self {
+        self.c_attr.mr_mode = mr_mode.get_value() as i32;
         
         self
     }

@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use crate::FID;
 
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -90,6 +92,15 @@ impl crate::FID for CompletionQueue {
         unsafe { &mut (*self.c_cq).fid }
     }
 }
+
+
+// impl Drop for CompletionQueue {
+//     fn drop(&mut self) {
+//         println!("Dropping cq");
+
+//         self.close();
+//     }
+// }
 
 //================== CompletionQueue Attribute (fi_cq_attr) ==================//
 

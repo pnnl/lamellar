@@ -22,7 +22,7 @@ fn pp_server_msg() {
 
     let dom_attr = domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
-        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
+        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
     let caps = libfabric::InfoCaps::new()
         .msg();
@@ -65,7 +65,7 @@ fn pp_client_msg() {
 
     let dom_attr = domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
-        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
+        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
 
     let tx_attr = libfabric::TxAttr::new()
         .tclass(enums::TClass::LOW_LATENCY);
@@ -81,7 +81,7 @@ fn pp_client_msg() {
         .addr_format(enums::AddressFormat::UNSPEC);
 
     let (info, fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, mut mr_desc) = 
-        common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "59275".to_owned());
+        common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.48".to_owned(), "58988".to_owned());
     let entries = info.get();
     let test_sizes = gl_ctx.test_sizes.clone();
     for msg_size in test_sizes {

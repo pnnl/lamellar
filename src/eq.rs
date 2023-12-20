@@ -75,6 +75,13 @@ impl crate::FID for EventQueue {
     }
 }
 
+// impl Drop for EventQueue {
+//     fn drop(&mut self) {
+//         println!("Dropping eq");
+
+//         self.close();
+//     }
+// }
 
 //================== EventQueue Attribute(fi_eq_attr) ==================//
 
@@ -184,11 +191,12 @@ impl<T> EventQueueEntry<T> {
         Self { c_entry, phantom: std::marker::PhantomData }
     }
 
-    pub fn fid(&mut self, fid: &impl crate::FID) -> &mut Self {
+    pub fn fid(&mut self, fid: &impl crate::FID) -> &mut Self { //[TODO] Should this be pub(crate)?
         self.c_entry.fid = fid.fid();
         self
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_fid(&self) -> *mut libfabric_sys::fid {
         self.c_entry.fid
     }

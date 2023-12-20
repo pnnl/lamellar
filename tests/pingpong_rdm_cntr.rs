@@ -26,7 +26,7 @@ fn pp_server_rdm_cntr() {
 
     let dom_attr = domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
-        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
+        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
     let caps = libfabric::InfoCaps::new()
         .msg();
@@ -43,7 +43,7 @@ fn pp_server_rdm_cntr() {
         .tx_attr(tx_attr)
         .addr_format(enums::AddressFormat::UNSPEC);
 
-    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
     
     let entries: Vec<libfabric::InfoEntry> = info.get();
@@ -77,7 +77,7 @@ fn pp_client_rdm_cntr() {
 
     let dom_attr = domain::DomainAttr::new()
         .threading(enums::Threading::DOMAIN)
-        .mr_mode((enums::MrType::PROV_KEY.get_value() | enums::MrType::ALLOCATED.get_value() | enums::MrType::VIRT_ADDR.get_value()  | enums::MrType::LOCAL.get_value() | enums::MrType::ENDPOINT.get_value()| enums::MrType::RAW.get_value()) as i32 );
+        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
     let caps = libfabric::InfoCaps::new()
         .msg();
@@ -94,8 +94,8 @@ fn pp_client_rdm_cntr() {
         .tx_attr(tx_attr)
         .addr_format(enums::AddressFormat::UNSPEC);
 
-    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "36564".to_owned(), 0);
+    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mut mr_desc) = 
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.6".to_owned(), "36465".to_owned(), 0);
 
     let entries: Vec<libfabric::InfoEntry> = info.get();
     

@@ -72,6 +72,14 @@ impl crate::FID for Counter {
     }
 }
 
+// impl Drop for Counter {
+//     fn drop(&mut self) {
+//         println!("Dropping cntr");
+
+//         self.close();
+//     }
+// }
+
 //================== Counter attribute ==================//
 
 #[derive(Clone, Copy)]
@@ -142,7 +150,7 @@ mod tests {
 
         let dom_attr = crate::domain::DomainAttr::new()
             .mode(!0)
-            .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value()) as i32 );
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
         
         let hints = crate::InfoHints::new()
             .domain_attr(dom_attr)
