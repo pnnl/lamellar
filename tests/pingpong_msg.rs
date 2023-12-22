@@ -81,7 +81,7 @@ fn pp_client_msg() {
         .addr_format(enums::AddressFormat::UNSPEC);
 
     let (info, fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, mut mr_desc) = 
-        common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.48".to_owned(), "58988".to_owned());
+        common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.21".to_owned(), "9222".to_owned());
     let entries = info.get();
     let test_sizes = gl_ctx.test_sizes.clone();
     for msg_size in test_sizes {

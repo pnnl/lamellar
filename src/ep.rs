@@ -83,6 +83,8 @@ impl Endpoint {
 
         Self { c_ep }
     }
+    
+
     // pub fn new<T0>(domain: &crate::domain::Domain, info: &crate::InfoEntry, context: &mut T0) -> Self {
     //     let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
     //     let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;

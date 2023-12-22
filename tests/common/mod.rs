@@ -227,7 +227,7 @@ pub fn ft_alloc_ep_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx,
         libfabric::enums::EndpointType::RDM | libfabric::enums::EndpointType::DGRAM  => {
                 let av_attr = match info.get_domain_attr().get_av_type() {
                     enums::AddressVectorType::UNSPEC => libfabric::av::AddressVectorAttr::new(),
-                    _ => libfabric::av::AddressVectorAttr::new().avtype(info.get_domain_attr().get_av_type()),
+                    _ => libfabric::av::AddressVectorAttr::new().type_(info.get_domain_attr().get_av_type()),
                 }.count(1);
                 Option::Some(domain.av_open(av_attr))
             }
@@ -372,12 +372,20 @@ pub fn ft_server_connect(gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQ
 pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, flags: u64) -> libfabric::Info {
     let ep_attr = hints.get_ep_attr();
 
+
     let hints = match ep_attr.get_type() {
         libfabric::enums::EndpointType::UNSPEC => hints.ep_attr(ep_attr.ep_type(libfabric::enums::EndpointType::RDM)),
         _ => hints ,
     };
 
-    libfabric::Info::new().node(node.as_str()).service(service.as_str()).flags(flags).hints(hints).request()
+    let info = libfabric::Info::new().service(service.as_str()).flags(flags).hints(&hints);
+    if node.is_empty() {
+        info.request()
+    }
+    else {
+        info.node(node.as_str()).request()
+    }
+
 }
 
 pub fn ft_connect_ep(ep: &libfabric::ep::Endpoint, eq: &libfabric::eq::EventQueue, addr: &libfabric::Address) {
@@ -468,7 +476,7 @@ pub fn ft_enable_ep_recv(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCt
 
 pub fn ft_init_fabric(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, flags: u64) -> (libfabric::Info, libfabric::fabric::Fabric, libfabric::ep::Endpoint, libfabric::domain::Domain, libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, Option<Counter>, Option<Counter>, libfabric::eq::EventQueue, Option<libfabric::mr::MemoryRegion>, libfabric::av::AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
     
-    let info = ft_getinfo(hints, node, service.clone(), flags);
+    let info = ft_getinfo(hints, node.clone(), service.clone(), flags);
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
     if entries.is_empty() {
@@ -482,7 +490,7 @@ pub fn ft_init_fabric(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, 
     let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
     println!("Passed enable_ep_recv");
     let av = av.unwrap();
-    ft_init_av(&entries[0], gl_ctx, &av , &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&mut mr_desc, service.is_empty());
+    ft_init_av(&entries[0], gl_ctx, &av , &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&mut mr_desc, node.is_empty());
 
     (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mr_desc)
 }
@@ -971,7 +979,7 @@ pub fn ft_exchange_keys(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx
 
 pub fn start_server(hints: libfabric::InfoHints) -> (libfabric::Info, fabric::Fabric,  libfabric::domain::Domain, libfabric::eq::EventQueue, libfabric::ep::PassiveEndpoint) {
    
-   let info = ft_getinfo(hints, "127.0.0.1".to_owned(), "42206".to_owned(), libfabric_sys::FI_SOURCE);
+   let info = ft_getinfo(hints, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
    let entries: Vec<libfabric::InfoEntry> = info.get();
     
     if entries.is_empty() {

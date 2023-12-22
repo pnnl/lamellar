@@ -25,7 +25,7 @@ fn pp_server_rma() {
     
     
     let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "127.0.0.1".to_owned(), "".to_owned(), libfabric_sys::FI_SOURCE);
+        common::ft_init_fabric(hints, &mut gl_ctx, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
 
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
@@ -66,7 +66,7 @@ fn pp_client_rma() {
     
     
     let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.48".to_owned(), "40823".to_owned(), 0);
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.21".to_owned(), "9222".to_owned(), 0);
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
     if entries.is_empty() {

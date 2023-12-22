@@ -157,7 +157,7 @@ mod tests {
             .mode(!0);
         
 
-        let info = crate::Info::new().hints(hints).request();
+        let info = crate::Info::new().hints(&hints).request();
         let entries: Vec<crate::InfoEntry> = info.get();
         
         if entries.len() > 0 {

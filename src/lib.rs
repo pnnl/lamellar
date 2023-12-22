@@ -9,6 +9,7 @@ pub mod mr;
 pub mod sync;
 pub mod cntr;
 pub mod cq;
+pub mod error;
 #[derive(Clone, Debug)]
 pub struct InfoCaps {
     bitfield: u64,
@@ -83,7 +84,7 @@ impl InfoBuilder {
         }
     }
 
-    pub fn hints(self, hints: InfoHints) -> Self {
+    pub fn hints(self, hints: &InfoHints) -> Self {
         InfoBuilder {
             c_info_hints: hints.c_info,
             ..self

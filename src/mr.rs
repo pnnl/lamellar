@@ -271,7 +271,7 @@ mod tests {
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = crate::Info::new().hints(hints).request();
+        let info = crate::Info::new().hints(&hints).request();
         let entries: Vec<crate::InfoEntry> = info.get();
         
         if entries.len() > 0 {
