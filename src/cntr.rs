@@ -8,16 +8,21 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CounterAttr) -> Self {
+    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CounterAttr) -> Result<Counter, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
         let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.c_domain, attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) };
 
+
         if err != 0 {
-            panic!("fi_cntr_open failed {}: {}", err,  crate::error_to_string(err.into()));
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok (
+                Self { c_cntr }
+            )
         }
 
-        Self { c_cntr }
     }
 
     pub fn read(&self) -> u64 {
@@ -28,40 +33,59 @@ impl Counter {
         unsafe { libfabric_sys::inlined_fi_cntr_readerr(self.c_cntr) }
     }
 
-    pub fn add(&self, val: u64) {
+    pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_add(self.c_cntr, val) };
     
         if err != 0 {
-            panic!("fi_cntr_add failed {}: {}", err, crate::error_to_string(err.into()));
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn adderr(&self, val: u64) {
+    pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_adderr(self.c_cntr, val) };
             
         if err != 0 {
-            panic!("fi_cntr_adderr failed {}: {}", err, crate::error_to_string(err.into()));
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn set(&self, val: u64) {
+    pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_set(self.c_cntr, val) };
             
         if err != 0 {
-            panic!("fi_cntr_set failed {}: {}", err, crate::error_to_string(err.into()));
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn seterr(&self, val: u64) {
+    pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_seterr(self.c_cntr, val) };
             
         if err != 0 {
-            panic!("fi_cntr_seterr failed {}: {}", err, crate::error_to_string(err.into()));
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn wait(&self, threshold: u64, timeout: i32) -> i32 { // [TODO]
-        unsafe { libfabric_sys::inlined_fi_cntr_wait(self.c_cntr, threshold, timeout) }
+    pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.c_cntr, threshold, timeout) };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(())
+        }
     }
 }
 
@@ -76,7 +100,7 @@ impl crate::FID for Counter {
 //     fn drop(&mut self) {
 //         println!("Dropping cntr");
 
-//         self.close();
+//         self.close().unwrap();
 //     }
 // }
 
@@ -149,33 +173,33 @@ mod tests {
     fn cntr_loop() {
 
         let dom_attr = crate::domain::DomainAttr::new()
-            .mode(!0)
+            .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
         
         let hints = crate::InfoHints::new()
             .domain_attr(dom_attr)
-            .mode(!0);
+            .mode(crate::enums::Mode::all());
         
 
-        let info = crate::Info::new().hints(&hints).request();
+        let info = crate::Info::new().hints(&hints).request().unwrap();
         let entries: Vec<crate::InfoEntry> = info.get();
         
         if entries.len() > 0 {
             for e in entries {
                 if e.get_domain_attr().get_cntr_cnt() != 0 {
-                    let fab = crate::fabric::Fabric::new(e.fabric_attr.clone());
-                    let domain = fab.domain(&e);
+                    let fab = crate::fabric::Fabric::new(e.fabric_attr.clone()).unwrap();
+                    let domain = fab.domain(&e).unwrap();
                     let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
-                    let cntrs: Vec<crate::cntr::Counter> = (0..cntr_cnt).map(|_| domain.cntr_open(crate::cntr::CounterAttr::new())).collect();
+                    let cntrs: Vec<crate::cntr::Counter> = (0..cntr_cnt).map(|_| domain.cntr_open(crate::cntr::CounterAttr::new()).unwrap()).collect();
 
                     for (i,cntr) in cntrs.iter().enumerate() {
-                        cntr.set(i as u64);
-                        cntr.seterr((i << 1) as u64);
+                        cntr.set(i as u64).unwrap();
+                        cntr.seterr((i << 1) as u64).unwrap();
                     }
                     
                     for (i,cntr) in cntrs.iter().enumerate() {
-                        cntr.add(i as u64);
-                        cntr.adderr(i as u64);
+                        cntr.add(i as u64).unwrap();
+                        cntr.adderr(i as u64).unwrap();
                     }
 
                     for (i,cntr) in cntrs.iter().enumerate() {
@@ -191,11 +215,11 @@ mod tests {
                     }
                     
                     for cntr in cntrs {
-                        cntr.close();
+                        cntr.close().unwrap();
                     }
 
-                    domain.close();
-                    fab.close();
+                    domain.close().unwrap();
+                    fab.close().unwrap();
                     break;
                 }
 

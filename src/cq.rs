@@ -9,69 +9,120 @@ pub struct CompletionQueue {
 }
 
 impl CompletionQueue {
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CompletionQueueAttr) -> Self {
+    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CompletionQueueAttr) -> Result<CompletionQueue, crate::error::Error> {
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
 
         let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.c_domain, attr.get_mut(), c_cq_ptr, std::ptr::null_mut())};
         if err != 0 {
-            panic!("fi_cq_open failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
-
-        Self { c_cq } 
+        else {
+            Ok(
+                Self { c_cq } 
+            )
+        }
     }
 
-    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: CompletionQueueAttr, context: &mut T0) -> Self {
+    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: CompletionQueueAttr, context: &mut T0) -> Result<CompletionQueue, crate::error::Error> {
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
 
         let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.c_domain, attr.get_mut(), c_cq_ptr, context as *mut T0 as *mut std::ffi::c_void)};
         if err != 0 {
-            panic!("fi_cq_open failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
-
-        Self { c_cq } 
+        else {
+            Ok(
+                Self { c_cq } 
+            )
+        }
     }
 
-    pub fn read<T0>(&self, buf: &mut [T0], count: usize) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_read(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count) }
-    }
-
-    pub fn readfrom<T0>(&self, buf: &mut [T0], count: usize, address: &mut crate::Address) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_readfrom(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, address as *mut crate::Address) }
-    }
-
-    pub fn sread_with_cond<T0, T1>(&self, buf: &mut [T0], count: usize, cond: &T1, timeout: i32) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_sread(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, cond as *const T1 as *const std::ffi::c_void, timeout) }
-    }
-
-    pub fn sread<T0>(&self, buf: &mut [T0], count: usize, timeout: i32) -> isize {
-        let ret = unsafe { libfabric_sys::inlined_fi_cq_sread(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, std::ptr::null_mut(), timeout) };
+    pub fn read<T0>(&self, buf: &mut [T0], count: usize) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_cq_read(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count) };
 
         if ret < 0 {
-            let mut err_entry = CqErrEntry::new();
-            let ret2 = self.readerr(&mut err_entry, 0);
-
-
-            println!("sread error: {} {}", ret2, unsafe{ self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size()) } );
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
-        ret
+        else {
+            Ok(ret as usize)
+        }
     }
 
-    pub fn sreadfrom<T0, T1>(&self, buf: &mut [T0], count: usize, address: &mut crate::Address, cond: &T1, timeout: i32) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_sreadfrom(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, address as *mut crate::Address, cond as *const T1 as *const std::ffi::c_void, timeout) }
+    pub fn readfrom<T0>(&self, buf: &mut [T0], count: usize, address: &mut crate::Address) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_cq_readfrom(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, address as *mut crate::Address) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            Ok(ret as usize)
+        }
     }
 
-    pub fn signal(&self) {
+    // [TODO]  Condition is not taken into account
+    pub fn sread_with_cond<T0, T1>(&self, buf: &mut [T0], count: usize, cond: &T1, timeout: i32) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_cq_sread(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, cond as *const T1 as *const std::ffi::c_void, timeout) };
+    
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            Ok(ret as usize)
+        }
+    }
+
+    pub fn sread<T0>(&self, buf: &mut [T0], count: usize, timeout: i32) -> Result<usize, crate::error::Error> {
+        let ret  = unsafe { libfabric_sys::inlined_fi_cq_sread(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, std::ptr::null_mut(), timeout) };
+
+        if ret < 0 {
+            println!("Ret: {}", ret);
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()))
+        }
+        else {
+            Ok(ret as usize)
+        }
+        // if ret < 0 {
+        //     let mut err_entry = CqErrEntry::new();
+        //     let ret2 = self.readerr(&mut err_entry, 0);
+
+
+        //     println!("sread error: {} {}", ret2, unsafe{ self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size()) } );
+        // }
+    }
+
+    pub fn sreadfrom<T0, T1>(&self, buf: &mut [T0], count: usize, address: &mut crate::Address, cond: &T1, timeout: i32) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_cq_sreadfrom(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, address as *mut crate::Address, cond as *const T1 as *const std::ffi::c_void, timeout) };
+    
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()))
+        }
+        else {
+            Ok(ret as usize)
+        }
+    }
+
+    pub fn signal(&self) -> Result<(), crate::error::Error>{
         let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.c_cq) };
 
         if err != 0 {
-            panic!("fi_cq_signal failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn readerr(&self, err: &mut CqErrEntry, flags: u64) -> isize {
-        unsafe { libfabric_sys::inlined_fi_cq_readerr(self.c_cq, err.get_mut(), flags) }
+    pub fn readerr(&self, err: &mut CqErrEntry, flags: u64) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_cq_readerr(self.c_cq, err.get_mut(), flags) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()))
+        }
+        else {
+            Ok(ret as usize)
+        }
     }
     pub fn print_error(&self, err_entry: &crate::cq::CqErrEntry) {
         println!("{}", unsafe{self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size())} );
@@ -228,60 +279,63 @@ mod tests {
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = crate::Info::new().request();
+        let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         let count = 10;
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-        let domain = fab.domain(&entries[0]);
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
+        let domain = fab.domain(&entries[0]).unwrap();
         let mut cqs = Vec::new();
         for _ in 0..count {
             let cq_attr = crate::cq::CompletionQueueAttr::new();
-            let cq = domain.cq_open(cq_attr);
+            let cq = domain.cq_open(cq_attr).unwrap();
             cqs.push(cq);
         }
 
         for cq in cqs {
-            cq.close();
+            cq.close().unwrap();
         }
-        domain.close();
-        eq.close();
-        fab.close();
+        domain.close().unwrap();
+        eq.close().unwrap();
+        fab.close().unwrap();
     }
 
     #[test]
     fn cq_signal() {
-        let info = crate::Info::new().request();
+        let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         let mut buf = vec![0,0,0];
         
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-        let domain = fab.domain(&entries[0]);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
+        let domain = fab.domain(&entries[0]).unwrap();
         let mut cq_attr = CompletionQueueAttr::new();
         cq_attr.size(1);
-        let cq = domain.cq_open(cq_attr);
-        cq.signal();
+        let cq = domain.cq_open(cq_attr).unwrap();
+        cq.signal().unwrap();
         let ret = cq.sread(&mut buf, 1, 2000);
-        if ret != -(libfabric_sys::FI_EAGAIN as isize)  && ret != -(libfabric_sys::FI_ECANCELED as isize) {
-            panic!("sread {}", ret);
+        if let Err(ref err) = ret {
+            if ! (matches!(err.kind, crate::error::ErrorKind::TryAgain) || matches!(err.kind, crate::error::ErrorKind::Canceled)) {
+                ret.unwrap();
+            }
         }
-        cq.close();
 
-        domain.close();
-        eq.close();
-        fab.close();
+        cq.close().unwrap();
+
+        domain.close().unwrap();
+        eq.close().unwrap();
+        fab.close().unwrap();
     }
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = crate::Info::new().request();
+        let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
-        let domain = fab.domain(&entries[0]);
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
+        let domain = fab.domain(&entries[0]).unwrap();
         for i in -1..17 {
             let size ;
             if i == -1 {
@@ -292,11 +346,11 @@ mod tests {
             }
             let mut cq_attr = CompletionQueueAttr::new();
             cq_attr.size(size); 
-            let cq = domain.cq_open(cq_attr);
-            cq.close();
+            let cq = domain.cq_open(cq_attr).unwrap();
+            cq.close().unwrap();
         }
-        domain.close();
-        eq.close();
-        fab.close();
+        domain.close().unwrap();
+        eq.close().unwrap();
+        fab.close().unwrap();
     }
 }

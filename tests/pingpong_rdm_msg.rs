@@ -1,8 +1,5 @@
-use common::{ft_sync, ft_tx, NO_CQ_DATA, ft_rx, ft_finalize};
-use libfabric::{cq, enums, Msg, domain, ep, mr};
-
-use crate::common::ft_init_fabric;
-
+use common::ft_finalize;
+use libfabric::{enums, domain, ep};
 
 pub mod common; // Public to supress lint warnings (unused function)
 
@@ -34,7 +31,7 @@ fn pp_server_rdm_msg() {
         .tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
-        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .mode(libfabric::enums::Mode::new().context()) // [TODO]
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)
@@ -83,7 +80,7 @@ fn pp_client_rdm_msg() {
         .tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
-        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .mode(libfabric::enums::Mode::new().context()) // [TODO]
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)

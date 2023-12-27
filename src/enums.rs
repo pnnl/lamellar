@@ -351,91 +351,6 @@ impl AddressVectorType {
     }
 }
 
-#[allow(non_camel_case_types)]
-pub enum Mode {
-    CONTEXT,
-    MSG_PREFIX,
-    ASYNC_IOV,
-    RX_CQ_DATA,
-    LOCAL_MR,
-    NOTIFY_FLAGS_ONLY,
-    RESTRICTED_COMP,
-    CONTEXT2,
-    BUFFERED_RECV,
-}
-
-impl Mode {
-    pub fn get_value(&self) -> u64 {
-        match self {
-            Mode::CONTEXT => libfabric_sys::FI_CONTEXT,
-            Mode::MSG_PREFIX => libfabric_sys::FI_MSG_PREFIX,
-            Mode::ASYNC_IOV => libfabric_sys::FI_ASYNC_IOV,
-            Mode::RX_CQ_DATA => libfabric_sys::FI_RX_CQ_DATA,
-            Mode::LOCAL_MR => libfabric_sys::FI_LOCAL_MR,
-            Mode::NOTIFY_FLAGS_ONLY => libfabric_sys::FI_NOTIFY_FLAGS_ONLY,
-            Mode::RESTRICTED_COMP => libfabric_sys::FI_RESTRICTED_COMP,
-            Mode::CONTEXT2 => libfabric_sys::FI_CONTEXT2,
-            Mode::BUFFERED_RECV => libfabric_sys::FI_BUFFERED_RECV,
-        }
-    }
-
-    pub fn from_value(value: u64) -> Mode {
-        if value == libfabric_sys::FI_CONTEXT {
-            Self::CONTEXT
-        }
-        else if value == libfabric_sys::FI_MSG_PREFIX {
-            Self::MSG_PREFIX
-        }
-        else if value == libfabric_sys::FI_ASYNC_IOV {
-            Self::ASYNC_IOV
-        }
-        else if value == libfabric_sys::FI_RX_CQ_DATA {
-            Self::RX_CQ_DATA
-        }
-        else if value == libfabric_sys::FI_LOCAL_MR {
-            Self::LOCAL_MR
-        }
-        else if value == libfabric_sys::FI_NOTIFY_FLAGS_ONLY {
-            Self::NOTIFY_FLAGS_ONLY
-        }
-        else if value == libfabric_sys::FI_RESTRICTED_COMP {
-            Self::RESTRICTED_COMP
-        }
-        else if value == libfabric_sys::FI_CONTEXT2 {
-            Self::CONTEXT2
-        }
-        else if value == libfabric_sys::FI_BUFFERED_RECV {
-            Self::BUFFERED_RECV
-        }
-        else {
-            panic!("Unexpected value for Mode");
-        }
-    }
-}
-
-
-
-// #[allow(non_camel_case_types)]
-// pub enum MrMode {
-//     UNSPEC,
-//     BASIC,
-//     SCALABLE,
-//     LOCAL,
-//     RAW,
-//     VIRT_ADDR,
-//     ALLOCATED,
-//     PROV_KEY,
-//     MMU_NOTIFY,
-//     RMA_EVENT,
-//     ENDPOINT,
-//     HMEM,
-//     COLLECTIVE,
-// }
-
-
-pub struct MrMode {
-    c_flags: u32
-}
 macro_rules! gen_set_get_flag {
     ($set_method_name:ident, $get_method_name:ident, $flag:expr) => {
 
@@ -451,11 +366,99 @@ macro_rules! gen_set_get_flag {
     };
 }
 
+pub struct ModeBuilder;
+
+
+impl ModeBuilder {
+
+    pub fn context(self) -> Mode {
+        Mode {c_flags: libfabric_sys::FI_CONTEXT}
+    }
+    
+    pub fn msg_prefix(self) -> Mode {
+        Mode {c_flags: libfabric_sys::FI_MSG_PREFIX}
+    }
+
+
+    pub fn async_iov(self) -> Mode {
+
+        Mode{c_flags: libfabric_sys::FI_ASYNC_IOV}
+    }
+    pub fn rx_cq_data(self) -> Mode {
+
+        Mode{c_flags: libfabric_sys::FI_RX_CQ_DATA}
+    }
+    pub fn local_mr(self) -> Mode {
+
+        Mode{c_flags: libfabric_sys::FI_LOCAL_MR}
+    }
+    pub fn notify_flags_only(self) -> Mode {
+
+        Mode{c_flags: libfabric_sys::FI_NOTIFY_FLAGS_ONLY}
+    }
+    pub fn restricted_comp(self) -> Mode {
+
+        Mode{c_flags: libfabric_sys::FI_RESTRICTED_COMP}
+    }
+    pub fn context2(self) -> Mode {
+
+        Mode{c_flags: libfabric_sys::FI_CONTEXT2}
+    }
+    pub fn buffered_recv(self) -> Mode {
+
+        Mode{c_flags: libfabric_sys::FI_BUFFERED_RECV}
+    }
+    
+}
+
+
+pub struct Mode {
+    c_flags: u64
+}
+
+impl Mode {
+    pub fn new() -> ModeBuilder {
+        ModeBuilder
+    }
+
+    pub fn all() -> Self {
+        Self {c_flags: !0}
+    }
+
+    pub(crate) fn from_value(value: u64) -> Self {
+        Self {c_flags: value}
+    }
+
+    gen_set_get_flag!(context, is_context, libfabric_sys::FI_CONTEXT);
+    gen_set_get_flag!(msg_prefix, is_msg_prefix, libfabric_sys::FI_MSG_PREFIX);
+    gen_set_get_flag!(async_iov, is_async_iov, libfabric_sys::FI_ASYNC_IOV);
+    gen_set_get_flag!(rx_cq_data, is_rx_cq_data, libfabric_sys::FI_RX_CQ_DATA);
+    gen_set_get_flag!(local_mr, is_local_mr, libfabric_sys::FI_LOCAL_MR);
+    gen_set_get_flag!(notify_flags_only, is_notify_flags_only, libfabric_sys::FI_NOTIFY_FLAGS_ONLY);
+    gen_set_get_flag!(restricted_comp, is_restricted_comp, libfabric_sys::FI_RESTRICTED_COMP);
+    gen_set_get_flag!(context2, is_context2, libfabric_sys::FI_CONTEXT2);
+    gen_set_get_flag!(buffered_recv, is_buffered_recv, libfabric_sys::FI_BUFFERED_RECV);
+
+
+    pub fn get_value(&self) -> u64 {
+        self.c_flags
+    }
+}
+
+pub struct MrMode {
+    c_flags: u32
+}
+
+
 // pub fn msg(self) -> Self  { Self { bitfield: self.bitfield | libfabric_sys::FI_MSG as u64 } }
 impl MrMode {
     
     pub fn new() -> Self {
         Self {c_flags: 0}
+    }
+
+    pub(crate) fn from_value(value: u32) -> Self {
+        Self {c_flags: value}
     }
 
     pub fn is_unspec(&self) -> bool {
@@ -486,26 +489,6 @@ impl MrMode {
     }
 
 }
-
-// impl MrMode {
-//     pub fn get_value(&self) -> libfabric_sys::fi_progress {
-//         match self {
-//             MrMode::UNSPEC => libfabric_sys::fi_mr_mode_FI_MR_UNSPEC,
-//             MrMode::BASIC => libfabric_sys::fi_mr_mode_FI_MR_BASIC,
-//             MrMode::SCALABLE => libfabric_sys::fi_mr_mode_FI_MR_SCALABLE,
-//             MrMode::LOCAL => libfabric_sys::FI_MR_LOCAL,
-//             MrMode::RAW => libfabric_sys::FI_MR_RAW,
-//             MrMode::VIRT_ADDR => libfabric_sys::FI_MR_VIRT_ADDR,
-//             MrMode::ALLOCATED => libfabric_sys::FI_MR_ALLOCATED,
-//             MrMode::PROV_KEY => libfabric_sys::FI_MR_PROV_KEY,
-//             MrMode::MMU_NOTIFY => libfabric_sys::FI_MR_MMU_NOTIFY,
-//             MrMode::RMA_EVENT => libfabric_sys::FI_MR_RMA_EVENT,
-//             MrMode::ENDPOINT => libfabric_sys::FI_MR_ENDPOINT,
-//             MrMode::HMEM => libfabric_sys::FI_MR_HMEM,
-//             MrMode::COLLECTIVE => libfabric_sys::FI_MR_COLLECTIVE,
-//         }
-//     }    
-// }
 
 #[allow(non_camel_case_types)]
 pub enum Progress {

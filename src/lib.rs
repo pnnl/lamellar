@@ -91,18 +91,20 @@ impl InfoBuilder {
         }
     }
 
-    pub fn request(self) -> Info {
+    pub fn request(self) -> Result<Info, crate::error::Error> {
         let mut c_info: *mut libfabric_sys::fi_info = std::ptr::null_mut();
         let c_info_ptr: *mut *mut libfabric_sys::fi_info = &mut c_info;
         let node = if self.c_node.is_empty() { std::ptr::null_mut() } else { self.c_node.as_ptr() };
         let service = if self.c_service.is_empty() { std::ptr::null_mut() } else { self.c_service.as_ptr() };
         
-        unsafe{
-            let err = libfabric_sys::fi_getinfo(libfabric_sys::fi_version(), node, service, self.flags, self.c_info_hints, c_info_ptr);
-            if err != 0 {
-                panic!("fi_getinfo failed {} : {} \n", err, error_to_string(err.into()) ); // [TODO] Use Error()
-            }
+        let err = unsafe{
+            libfabric_sys::fi_getinfo(libfabric_sys::fi_version(), node, service, self.flags, self.c_info_hints, c_info_ptr)
+        };
+
+        if err != 0 {
+            return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) );
         }
+
 
         let mut entries = std::vec::Vec::new();
         entries.push(InfoEntry::new(c_info));
@@ -114,10 +116,10 @@ impl InfoBuilder {
             }
         }
         
-        Info {
+        Ok(Info {
             entries,
             c_info,
-        } 
+        })
     }
 }
 
@@ -154,8 +156,8 @@ impl InfoEntry {
         unsafe { &*((*self.c_info).src_addr as *const  usize as *const T0) as &T0}
     }
 
-    pub fn get_mode(&self) -> u64 {
-        unsafe { (*self.c_info).mode }
+    pub fn get_mode(&self) -> crate::enums::Mode {
+        crate::enums::Mode::from_value(unsafe { (*self.c_info).mode })
     }
 
     pub fn get_domain_attr(&self) -> &crate::domain::DomainAttr {
@@ -216,8 +218,10 @@ pub  struct InfoHints {
 impl InfoHints {
     pub fn new() -> Self {
         let c_info = unsafe { libfabric_sys::inlined_fi_allocinfo() };
-        // unsafe { (*c_info).mode = !0 };
-        Self {  c_info }
+        if c_info.is_null() {
+            panic!("Failed to allocate memory");
+        }
+        Self { c_info }
     }
 
     // pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
@@ -225,8 +229,8 @@ impl InfoHints {
 
     //     self
     // }
-    pub fn mode(mut self, mode: u64) -> Self {
-        unsafe { (*self.c_info).mode = mode} ;
+    pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
+        unsafe { (*self.c_info).mode = mode.get_value()} ;
 
         self
     }
@@ -254,7 +258,8 @@ impl InfoHints {
         
         self
     }
-    
+
+    #[allow(unused_mut)]
     pub fn caps(mut self, caps: InfoCaps)  -> Self {
         unsafe { (*self.c_info).caps = caps.bitfield };
         
@@ -397,8 +402,8 @@ impl TxAttr {
         self.c_attr.caps
     }
 
-    pub fn get_mode(&self) -> u64 {
-        self.c_attr.mode
+    pub fn get_mode(&self) -> crate::enums::Mode {
+        crate::enums::Mode::from_value(self.c_attr.mode)
     }
 
     pub fn get_op_flags(&self) -> u64 {
@@ -475,8 +480,8 @@ impl RxAttr {
         self.c_attr.caps
     }
 
-    pub fn get_mode(&self) -> u64 {
-        self.c_attr.mode
+    pub fn get_mode(&self) -> crate::enums::Mode {
+        crate::enums::Mode::from_value(self.c_attr.mode)
     }
 
     pub fn get_op_flags(&self) -> u64 {
@@ -709,62 +714,89 @@ pub trait DataDescriptor {
 pub trait FID{
     fn fid(&self) -> *mut libfabric_sys::fid;
     
-    fn setname<T>(&mut self, addr:&[T]) {
+    fn setname<T>(&mut self, addr:&[T]) -> Result<(), error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_setname(self.fid(), addr.as_ptr() as *mut std::ffi::c_void, addr.len()) };
         
         if err != 0 {
-            panic!("fi_setname failed {}", err);
+            return Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    fn getname<T0>(&self, addr: &mut[T0]) -> usize {
+    fn getname<T0>(&self, addr: &mut[T0]) -> Result<usize, error::Error> {
         let mut len: usize = std::mem::size_of_val(addr);
         let len_ptr: *mut usize = &mut len;
-        let err = unsafe { libfabric_sys::inlined_fi_getname(self.fid(), addr.as_mut_ptr() as *mut std::ffi::c_void, len_ptr) };
-        if err < 0 {
-            panic!("fi_setname failed {}: {}", err, error_to_string(err.into()));
-        }
+        let err: i32 = unsafe { libfabric_sys::inlined_fi_getname(self.fid(), addr.as_mut_ptr() as *mut std::ffi::c_void, len_ptr) };
 
-        len
+        if -err as u32  == libfabric_sys::FI_ETOOSMALL {
+            Err(error::Error{ c_err: -err  as u32, kind: error::ErrorKind::TooSmall(len)} )
+        }
+        else if err < 0 {
+            Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(len)
+        }
     }
     
-    fn setopt<T0>(&mut self, level: i32, optname: i32, opt: &[T0]) {
+    fn setopt<T0>(&mut self, level: i32, optname: i32, opt: &[T0]) -> Result<(), error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_setopt(self.fid(), level, optname, opt.as_ptr() as *const std::ffi::c_void, opt.len())};
+
         if err != 0 {
-            panic!("fi_setopt failed {}", err);
+            return Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    fn getopt<T0>(&self, level: i32, optname: i32, opt: &mut [T0]) -> usize{
+    fn getopt<T0>(&self, level: i32, optname: i32, opt: &mut [T0]) -> Result<usize, error::Error> {
         let mut len = 0_usize;
         let len_ptr : *mut usize = &mut len;
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.fid(), level, optname, opt.as_mut_ptr() as *mut std::ffi::c_void, len_ptr)};
-        if err != 0 {
-            panic!("fi_getopt failed {}", err);
+        
+        if -err as u32  == libfabric_sys::FI_ETOOSMALL {
+            Err(error::Error{ c_err: -err  as u32, kind: error::ErrorKind::TooSmall(len)} )
         }
-
-        len
+        else if err < 0 {
+            Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(len)
+        }
     }
 
-    fn close(self) where Self: Sized {
+    fn close(self) -> Result<(), crate::error::Error> where Self: Sized {
         let err = unsafe { libfabric_sys::inlined_fi_close(self.fid()) };
 
         if err != 0 {
-            panic!("fi_close failed {} : {}", err, error_to_string(err.into()));
+            return Err(error::Error::from_err_code((-err).try_into().unwrap()));
         }
+
+        Ok(())
     }
 
-    fn cancel(&self) {
-        let _ = unsafe { libfabric_sys::inlined_fi_cancel(self.fid(), std::ptr::null_mut()) };
+    fn cancel(&self) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_cancel(self.fid(), std::ptr::null_mut()) };
+
+        if err != 0 {
+            return Err(error::Error::from_err_code((-err).try_into().unwrap()));
+        }
+
+        Ok(())
     }
 
 
-    fn control<T0>(&self, opt: crate::enums::ControlOpt, arg: &mut T0) {
+    fn control<T0>(&self, opt: crate::enums::ControlOpt, arg: &mut T0) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_control(self.fid(), opt.get_value() as i32, arg as *mut T0 as *mut std::ffi::c_void) };
     
         if err != 0 {
-            panic!("fi_control failed {}", err);
+            return Err(error::Error::from_err_code((-err).try_into().unwrap()));
         }
+
+        Ok(())
     }
 }
 

@@ -1,27 +1,21 @@
  
  
 pub struct Error {
-    c_err: u32,
+    pub(crate) c_err: u32,
     pub kind : ErrorKind,
 }
 
 impl std::fmt::Display for Error {
     // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        // Write strictly the first element into the supplied output
-        // stream: `f`. Returns `fmt::Result` which indicates whether the
-        // operation succeeded or failed. Note that `write!` uses syntax which
-        // is very similar to `println!`.
+
         write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
     }
 }
 impl std::fmt::Debug for Error {
     // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        // Write strictly the first element into the supplied output
-        // stream: `f`. Returns `fmt::Result` which indicates whether the
-        // operation succeeded or failed. Note that `write!` uses syntax which
-        // is very similar to `println!`.
+
         write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
     }
 }
@@ -47,7 +41,6 @@ impl Error {
             libfabric_sys::FI_EMFILE => ErrorKind::TooManyFiles,
             libfabric_sys::FI_ENOSPC => ErrorKind::NoSpace,
             libfabric_sys::FI_ENOSYS => ErrorKind::NotImplemented,
-            libfabric_sys::FI_EWOULDBLOCK => ErrorKind::WouldBlock,
             libfabric_sys::FI_ENOMSG => ErrorKind::NoMessage,
             libfabric_sys::FI_ENODATA => ErrorKind::NoData,
             libfabric_sys::FI_EOVERFLOW => ErrorKind::ValueTooLarge,
@@ -75,7 +68,7 @@ impl Error {
             libfabric_sys::FI_EREMOTEIO => ErrorKind::RemoteIoError,
             libfabric_sys::FI_ECANCELED => ErrorKind::Canceled,
             libfabric_sys::FI_EKEYREJECTED => ErrorKind::KeyRejected,
-            libfabric_sys::FI_ETOOSMALL => ErrorKind::TooSmall,
+            libfabric_sys::FI_ETOOSMALL => panic!("TooSmall error to be created but no length is supplied"),
             libfabric_sys::FI_EOPBADSTATE => ErrorKind::BadState, 
 
             libfabric_sys::FI_EAVAIL => ErrorKind::ErrorAvailable, 
@@ -141,7 +134,7 @@ pub enum ErrorKind {
     RemoteIoError,
     Canceled,
     KeyRejected,
-    TooSmall,
+    TooSmall(usize),
     BadState,
 
     ErrorAvailable,
@@ -159,11 +152,12 @@ pub enum ErrorKind {
     Other,
 }
 
+#[allow(dead_code)]
 fn throw_error() -> Result<u32, Error> {
     std::result::Result::Err(Error::from_err_code(libfabric_sys::FI_EPERM))
 }
 
 #[test]
 fn test_error() {
-    let res = throw_error().unwrap();
+    let _res = throw_error().unwrap();
 }

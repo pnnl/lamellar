@@ -7,83 +7,111 @@ pub struct MemoryRegion {
 }
 
 impl MemoryRegion {
-    pub(crate) fn from_buffer<T0>(domain: &crate::domain::Domain, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> Self {
+    pub(crate) fn from_buffer<T0>(domain: &crate::domain::Domain, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.c_domain, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), acs, offset, requested_key, flags, c_mr_ptr, std::ptr::null_mut()) };
+        
+        
         if err != 0 {
-            panic!("fi_mr_reg failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
-    
-        Self { c_mr }        
+        else {
+            Ok(
+                Self { c_mr }        
+            )
+        }
     }
 
-    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: u64) -> Self {
+    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: u64) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.c_domain, attr.get(), flags, c_mr_ptr) };
     
         if err != 0 {
-            panic!("fi_mr_regattr failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_mr }           
+            )
         }
     
-        Self { c_mr }           
     }
     
-    pub(crate) fn from_iovec(domain: &crate::domain::Domain,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> Self {
+    pub(crate) fn from_iovec(domain: &crate::domain::Domain,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.c_domain, iov.get(), count, acs, offset, requested_key, flags, c_mr_ptr, std::ptr::null_mut()) };
     
         if err != 0 {
-            panic!("fi_mr_regv failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_mr }    
+            )
         }
     
-        Self { c_mr }    
     }
 
     pub fn get_key(&mut self) -> u64 {
         unsafe { libfabric_sys::inlined_fi_mr_key(self.c_mr) }
     }
 
-    pub fn bind(&self, fid: &impl crate::FID, flags: u64) {
+    pub fn bind(&self, fid: &impl crate::FID, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, fid.fid(), flags) } ;
         
         if err != 0 {
-            panic!("fi_mr_bind failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn refresh(&self, iov: &crate::IoVec, count: usize, flags: u64) {
+    pub fn refresh(&self, iov: &crate::IoVec, count: usize, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.c_mr, iov.get(), count, flags) };
 
         if err != 0 {
-            panic!("fi_mr_refresh failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn enable(&self) {
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.c_mr) };
 
         if err != 0 {
-            panic!("fi_mr_enable failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) {
+    pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.c_mr, base_addr as *mut u64, std::ptr::null_mut(), key_size as *mut usize, flags) };
 
         if err != 0 {
-            panic!("fi_mr_raw_attr failed {}", err);
-        }        
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        } 
+        else {
+            Ok(())
+        }       
     }
 
-    pub fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) {
+    pub fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.c_mr, base_addr as *mut u64, raw_key as *mut u8, key_size as *mut usize, flags) };
 
         if err != 0 {
-            panic!("fi_mr_raw_attr failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }        
+        else {
+            Ok(())
+        }
     }
 
     pub fn description(&self) -> MemoryRegionDesc {
@@ -123,7 +151,7 @@ impl crate::FID for MemoryRegion{
 //     fn drop(&mut self) {
 //         println!("Dropping mr");
 
-//         self.close();
+//         self.close().unwrap();
 //     }
 // }
 
@@ -263,7 +291,7 @@ mod tests {
     fn mr_reg() {
         let ep_attr = crate::ep::EndpointAttr::new();
         let dom_attr = crate::domain::DomainAttr::new()
-            .mode(!0)
+            .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
         
         let hints = crate::InfoHints::new()
@@ -271,16 +299,16 @@ mod tests {
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = crate::Info::new().hints(&hints).request();
+        let info = crate::Info::new().hints(&hints).request().unwrap();
         let entries: Vec<crate::InfoEntry> = info.get();
         
         if entries.len() > 0 {
 
-            let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-            let domain = fab.domain(&entries[0]);
+            let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
+            let domain = fab.domain(&entries[0]).unwrap();
 
             let mut mr_access: u64 = 0;
-            if entries[0].get_mode() & libfabric_sys::FI_LOCAL_MR == libfabric_sys::FI_LOCAL_MR || entries[0].get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_LOCAL == libfabric_sys::FI_MR_LOCAL {
+            if entries[0].get_mode().is_local_mr() || entries[0].get_domain_attr().get_mr_mode().is_local() {
 
                 if entries[0].caps.is_msg() || entries[0].caps.is_tagged() {
                     let mut on = false;
@@ -314,13 +342,13 @@ mod tests {
                 let buff_size = DEF_TEST_SIZES[i].0;
                 let buf = vec![0_u64; buff_size as usize ];
                 for j in 0..combos.len() {
-                    let mr = domain.mr_reg(&buf, combos[j], 0, 0xC0DE, 0);
-                    mr.close();
+                    let mr = domain.mr_reg(&buf, combos[j], 0, 0xC0DE, 0).unwrap();
+                    mr.close().unwrap();
                 }
             }
             
-            domain.close();
-            fab.close();
+            domain.close().unwrap();
+            fab.close().unwrap();
         }
         else {
             panic!("No capable fabric found!");
@@ -391,15 +419,15 @@ mod tests {
     //             }
     //         }
     //         else {
-    //             domain.close();
-    //             eq.close();
-    //             fab.close();
+    //             domain.close().unwrap();
+    //             eq.close().unwrap();
+    //             fab.close().unwrap();
     //             panic!("mr access == 0");            
     //         }
 
-    //         domain.close();
-    //         eq.close();
-    //         fab.close();
+    //         domain.close().unwrap();
+    //         eq.close().unwrap();
+    //         fab.close().unwrap();
     //     }
     //     else {
     //         panic!("No capable fabric found!");

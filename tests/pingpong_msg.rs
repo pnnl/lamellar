@@ -1,5 +1,5 @@
-use common::{ft_sync, ft_tx, NO_CQ_DATA, ft_rx, ft_finalize};
-use libfabric::{cq, enums, Msg, domain, ep, mr};
+use common::{ft_finalize};
+use libfabric::{enums, domain, ep};
 
 
 pub mod common; // Public to supress lint warnings (unused function)
@@ -49,7 +49,7 @@ fn pp_server_msg() {
 
     ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
     
-    ep.shutdown(0);
+    ep.shutdown(0).unwrap();
 
     common::close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep, mr);
 }
@@ -89,7 +89,7 @@ fn pp_client_msg() {
     }
 
     ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
-    ep.shutdown(0);
+    ep.shutdown(0).unwrap();
 
     common::close_all(fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, None);
 

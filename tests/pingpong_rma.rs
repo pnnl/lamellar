@@ -19,7 +19,7 @@ fn pp_server_rma() {
     let hints = libfabric::InfoHints::new()
         .caps(caps)
         .tx_attr(tx_attr)
-        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .mode(libfabric::enums::Mode::new().context())
         .domain_attr(dom_attr)
         .addr_format(libfabric::enums::AddressFormat::UNSPEC);
     
@@ -60,13 +60,13 @@ fn pp_client_rma() {
     let hints = libfabric::InfoHints::new()
         .caps(caps)
         .tx_attr(tx_attr)
-        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .mode(libfabric::enums::Mode::new().context())
         .domain_attr(dom_attr)
         .addr_format(libfabric::enums::AddressFormat::UNSPEC);
     
     
     let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mut mr, av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.21".to_owned(), "9222".to_owned(), 0);
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.12".to_owned(), "9222".to_owned(), 0);
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
     if entries.is_empty() {

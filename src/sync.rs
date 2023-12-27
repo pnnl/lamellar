@@ -5,20 +5,31 @@ pub struct Wait {
 }
 
 impl Wait {
-    pub(crate) fn new(fabric: &crate::fabric::Fabric, mut attr: WaitAttr) -> Self {
+    pub(crate) fn new(fabric: &crate::fabric::Fabric, mut attr: WaitAttr) -> Result<Self, crate::error::Error> {
         let mut c_wait: *mut libfabric_sys::fid_wait  = std::ptr::null_mut();
         let c_wait_ptr: *mut *mut libfabric_sys::fid_wait = &mut c_wait;
 
         let err = unsafe {libfabric_sys::inlined_fi_wait_open(fabric.c_fabric, attr.get_mut(), c_wait_ptr)};
         if err != 0 {
-            panic!("fi_eq_open failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_wait }        
+            )
         }
 
-        Self { c_wait }        
     }
 
-    pub fn wait(&self, timeout: i32) -> i32 { // [TODO] Probably returns error when timeout occurs, 0 if done, or error
-        unsafe { libfabric_sys::inlined_fi_wait(self.c_wait, timeout) } 
+    pub fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> { 
+        let err = unsafe { libfabric_sys::inlined_fi_wait(self.c_wait, timeout) };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
+        }
     }
 }
 
@@ -48,39 +59,51 @@ pub struct Poll {
 }
 
 impl Poll {
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: crate::sync::PollAttr) -> Self {
+    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: crate::sync::PollAttr) -> Result<Poll, crate::error::Error> {
         let mut c_poll: *mut libfabric_sys::fid_poll = std::ptr::null_mut();
         let c_poll_ptr: *mut *mut libfabric_sys::fid_poll = &mut c_poll;
         let err = unsafe { libfabric_sys::inlined_fi_poll_open(domain.c_domain, attr.get_mut(), c_poll_ptr) };
     
         if err != 0 {
-            panic!("fi_poll_open failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
-    
-        Self { c_poll }
+        else {
+            Ok(
+                Self { c_poll }
+            )
+        }
     }
 
-    pub fn poll<T0>(&self, contexts: &mut [T0]) {
-        let err = unsafe { libfabric_sys::inlined_fi_poll(self.c_poll, contexts.as_mut_ptr() as *mut *mut std::ffi::c_void,  contexts.len() as i32) };
+    pub fn poll<T0>(&self, contexts: &mut [T0]) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_poll(self.c_poll, contexts.as_mut_ptr() as *mut *mut std::ffi::c_void,  contexts.len() as i32) };
         
-        if err != 0{
-            panic!("fi_poll failed {}", err);
+        if ret < 0{
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()))
+        }
+        else {
+            Ok(ret as usize)
         }
     }
 
-    pub fn add(&self, fid: &impl crate::FID, flags:u64) {
+    pub fn add(&self, fid: &impl crate::FID, flags:u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_poll_add(self.c_poll, fid.fid(), flags) };
 
         if err != 0 {
-            panic!("fi_poll_add failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn del(&self, fid: &impl crate::FID, flags:u64) {
+    pub fn del(&self, fid: &impl crate::FID, flags:u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_poll_del(self.c_poll, fid.fid(), flags) };
 
         if err != 0 {
-            panic!("fi_poll_del failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 

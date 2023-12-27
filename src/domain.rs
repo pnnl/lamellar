@@ -1,4 +1,3 @@
-use core::panic;
 #[allow(unused_imports)]
 use crate::FID;
 
@@ -10,103 +9,122 @@ pub struct Domain {
 
 impl Domain {
 
-    pub fn new(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry) -> Self {
+    pub fn new(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) };
 
         if err != 0 {
-            panic!("fi_domain failed {}: {}", err, crate::error_to_string(err.into()));
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
-
-        Self { c_domain }
+        else {
+            Ok(
+                Self { c_domain } 
+            )
+        }
     }
 
-    pub fn new2(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, flags: u64) -> Self {
+    pub fn new2(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, flags: u64) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) };
 
         if err != 0 {
-            panic!("fi_domain failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
-
-        Self { c_domain }
+        else {
+            Ok(
+                Self { c_domain } 
+            )
+        }
     }
 
-    pub fn bind(self, fid: &impl crate::FID, flags: u64)  /*[TODO] Change to Result*/ {
+    pub fn bind(self, fid: &impl crate::FID, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.c_domain, fid.fid(), flags)} ;
 
         if err != 0 {
-            panic!("fi_domain_bind failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(())
         }
     } 
 
-    pub fn ep(&self, info: &crate::InfoEntry) -> crate::ep::Endpoint {
+    pub fn ep(&self, info: &crate::InfoEntry) -> Result<crate::ep::Endpoint, crate::error::Error> {
         crate::ep::Endpoint::new(self, info)
     }
 
-    pub fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> crate::ep::Endpoint {
+    pub fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> {
         crate::ep::Endpoint::from_attr(self, rx_attr)
     }
     
-    pub fn srx_context_with_context<T0>(&self, rx_attr: crate::RxAttr, context: &mut T0) -> crate::ep::Endpoint {
+    pub fn srx_context_with_context<T0>(&self, rx_attr: crate::RxAttr, context: &mut T0) -> Result<crate::ep::Endpoint, crate::error::Error> {
         crate::ep::Endpoint::from_attr_with_context(self, rx_attr, context)
     }
 
-    pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::AtomicAttr, flags: u64) {
+    pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.c_domain, datatype, op.get_value(), attr.get_mut(), flags )};
 
         if err != 0 {
-            panic!("fi_query_atomic failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
-    pub fn cq_open(&self, attr: crate::cq::CompletionQueueAttr) -> crate::cq::CompletionQueue {
+    pub fn cq_open(&self, attr: crate::cq::CompletionQueueAttr) -> Result<crate::cq::CompletionQueue, crate::error::Error> {
         crate::cq::CompletionQueue::new(self, attr)
     }
 
-    pub fn cq_open_with_context<T0>(&self, attr: crate::cq::CompletionQueueAttr, context: &mut T0) -> crate::cq::CompletionQueue {
+    pub fn cq_open_with_context<T0>(&self, attr: crate::cq::CompletionQueueAttr, context: &mut T0) -> Result<crate::cq::CompletionQueue, crate::error::Error> {
         crate::cq::CompletionQueue::new_with_context(self, attr, context)
     }
 
-    pub fn cntr_open(&self, attr: crate::cntr::CounterAttr) -> crate::cntr::Counter {
+    pub fn cntr_open(&self, attr: crate::cntr::CounterAttr) -> Result<crate::cntr::Counter, crate::error::Error> {
         crate::cntr::Counter::new(self, attr)
     }
 
 
-    pub fn poll_open(&self, attr: crate::sync::PollAttr) -> crate::sync::Poll {
+    pub fn poll_open(&self, attr: crate::sync::PollAttr) -> Result<crate::sync::Poll, crate::error::Error> {
         crate::sync::Poll::new(self, attr)
     }
 
-    pub fn av_open(&self, attr: crate::av::AddressVectorAttr) -> crate::av::AddressVector {
+    pub fn av_open(&self, attr: crate::av::AddressVectorAttr) -> Result<crate::av::AddressVector, crate::error::Error> {
         crate::av::AddressVector::new(self, attr)
     }
 
-    pub fn mr_reg<T0>(&self, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> crate::mr::MemoryRegion {
+    pub fn mr_reg<T0>(&self, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<crate::mr::MemoryRegion, crate::error::Error> {
         crate::mr::MemoryRegion::from_buffer(self, buf, acs, offset, requested_key, flags)
     }
 
-    pub fn mr_regv<T0>(&self,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> crate::mr::MemoryRegion {
+    pub fn mr_regv<T0>(&self,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<crate::mr::MemoryRegion, crate::error::Error> {
         crate::mr::MemoryRegion::from_iovec(self, iov, count, acs, offset, requested_key, flags)
     }
 
-    pub fn mr_regattr(&self, attr: crate::mr::MemoryRegionAttr ,  flags: u64) -> crate::mr::MemoryRegion {
+    pub fn mr_regattr(&self, attr: crate::mr::MemoryRegionAttr ,  flags: u64) -> Result<crate::mr::MemoryRegion, crate::error::Error> {
         crate::mr::MemoryRegion::from_attr(self, attr,  flags)
     }
 
-    pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) {
+    pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.c_domain, base_addr, raw_key as *mut u8, key_size, key as *mut u64, flags) };
         
         if err != 0 {
-            panic!("fi_mr_map_raw failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
-    pub fn unmap_key(&self, key: u64) {
+    pub fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.c_domain, key) };
 
+
         if err != 0 {
-            panic!("fi_mr_unmap_key {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
@@ -114,11 +132,14 @@ impl Domain {
         crate::Stx::new(self, attr, context)
     }
 
-    pub fn query_collective(&self, coll: crate::enums::CollectiveOp, mut attr: crate::CollectiveAttr, flags: u64) {
+    pub fn query_collective(&self, coll: crate::enums::CollectiveOp, mut attr: crate::CollectiveAttr, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.c_domain, coll.get_value(), attr.get_mut(), flags) };
     
         if err != 0 {
-            panic!("query_collective failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
         }
     }
 
@@ -179,8 +200,8 @@ impl DomainAttr {
         Self { c_attr }
     }
 
-    pub fn mode(mut self, mode: u64) -> Self {
-        self.c_attr.mode = mode;
+    pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
+        self.c_attr.mode = mode.get_value();
         
         self
     }
@@ -208,8 +229,8 @@ impl DomainAttr {
         self.c_attr.mode 
     }
 
-    pub fn get_mr_mode(&self) -> i32 {
-        self.c_attr.mr_mode
+    pub fn get_mr_mode(&self) -> crate::enums::MrMode {
+        crate::enums::MrMode::from_value(self.c_attr.mr_mode.try_into().unwrap())
     }
 
     pub fn get_av_type(&self) ->  crate::enums::AddressVectorType {
@@ -245,23 +266,23 @@ mod tests {
 
     #[test]
     fn domain_test() {
-        let info = crate::Info::new().request();
+        let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new());
+        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
+        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
         let count = 10;
         let mut doms = Vec::new();
         for _ in 0..count {
-            let domain = fab.domain(&entries[0]);
+            let domain = fab.domain(&entries[0]).unwrap();
             doms.push(domain);
         }
         
         for dom in doms {
-            dom.close();
+            dom.close().unwrap();
         }
         
-        eq.close();
-        fab.close();
+        eq.close().unwrap();
+        fab.close().unwrap();
     }
 }

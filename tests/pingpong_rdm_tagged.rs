@@ -1,8 +1,4 @@
-use common::{ft_sync, ft_tx, NO_CQ_DATA, ft_rx, ft_finalize};
-use libfabric::{cq, enums, Msg, domain, ep, mr};
-
-use crate::common::ft_init_fabric;
-
+use libfabric::{enums, domain, ep};
 
 pub mod common; // Public to supress lint warnings (unused function)
 
@@ -34,7 +30,7 @@ fn pp_server_rdm_tagged() {
         .tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
-        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .mode(libfabric::enums::Mode::new().context())
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)
@@ -56,7 +52,7 @@ fn pp_server_rdm_tagged() {
         common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
     }
 
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
     
     common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
 }
@@ -83,7 +79,7 @@ fn pp_client_rdm_tagged() {
         .tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
-        .mode(libfabric_sys::FI_CONTEXT) // [TODO]
+        .mode(libfabric::enums::Mode::new().context())
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)
@@ -104,7 +100,7 @@ fn pp_client_rdm_tagged() {
         common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
     }
 
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
 
     common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
 
