@@ -130,9 +130,14 @@ pub fn ft_open_fabric_res(info: &libfabric::InfoEntry) -> (libfabric::fabric::Fa
     
     let fab = libfabric::fabric::Fabric::new(info.get_fabric_attr().clone()).unwrap();
     let eq = fab.eq_open(libfabric::eq::EventQueueAttr::new()).unwrap();
-    let domain = fab.domain(info).unwrap();
+    let domain = ft_open_domain_res(info, &fab);
 
     (fab, eq, domain)
+}
+
+pub fn ft_open_domain_res(info: &libfabric::InfoEntry, fab: &fabric::Fabric) -> libfabric::domain::Domain {
+
+    fab.domain(info).unwrap()
 }
 
 pub fn ft_cq_set_wait_attr(gl_ctx: &mut TestsGlobalCtx, cq_attr: &mut CompletionQueueAttr) {
@@ -358,17 +363,19 @@ pub fn ft_retrieve_conn_req(eq: &libfabric::eq::EventQueue) -> libfabric::InfoEn
     eq_cm_entry.get_info()
 }
 
-pub fn ft_server_connect(gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue, domain: &libfabric::domain::Domain) -> (libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, libfabric::ep::Endpoint, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_server_connect(gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue, fab: &fabric::Fabric) -> (libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, libfabric::ep::Endpoint, libfabric::domain::Domain, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     let new_info = ft_retrieve_conn_req(eq);
 
-    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, domain);
+    let domain = ft_open_domain_res(&new_info, fab);
+
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
     
-    let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx,&ep, domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
+    let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx,&ep, &domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
 
     ft_accept_connection(&ep, eq);
 
-    (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, mr, mr_desc)
+    (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, domain, mr, mr_desc)
 }
 
 pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, flags: u64) -> libfabric::Info {
@@ -382,9 +389,11 @@ pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, fl
 
     let info = libfabric::Info::new().service(service.as_str()).flags(flags).hints(&hints);
     if node.is_empty() {
+        println!("Empty node");
         info.request().unwrap()
     }
     else {
+        println!("Non-Empty node");
         info.node(node.as_str()).request().unwrap()
     }
 
@@ -1056,16 +1065,17 @@ pub fn ft_exchange_keys(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx
     peer_iov
 }
 
-pub fn start_server(hints: libfabric::InfoHints) -> (libfabric::Info, fabric::Fabric,  libfabric::domain::Domain, libfabric::eq::EventQueue, libfabric::ep::PassiveEndpoint) {
+pub fn start_server(hints: libfabric::InfoHints, node: String, service: String) -> (libfabric::Info, fabric::Fabric, libfabric::eq::EventQueue, libfabric::ep::PassiveEndpoint) {
    
-   let info = ft_getinfo(hints, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
+   let info = ft_getinfo(hints, node, service, libfabric_sys::FI_SOURCE);
    let entries = info.get();
     
     if entries.is_empty() {
         panic!("No entires in fi_info");
     }
+    let fab = libfabric::fabric::Fabric::new(entries[0].get_fabric_attr().clone()).unwrap();
 
-    let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
+    let eq = fab.eq_open(libfabric::eq::EventQueueAttr::new()).unwrap();
 
 
     let pep = fab.passive_ep(&entries[0]).unwrap();
@@ -1073,7 +1083,7 @@ pub fn start_server(hints: libfabric::InfoHints) -> (libfabric::Info, fabric::Fa
         pep.listen().unwrap();
 
 
-    (info, fab, domain, eq, pep)
+    (info, fab, eq, pep)
 }
 
 pub fn ft_client_connect(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (libfabric::Info, fabric::Fabric,  domain::Domain, libfabric::eq::EventQueue, libfabric::cq::CompletionQueue, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, libfabric::ep::Endpoint, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {

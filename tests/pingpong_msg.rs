@@ -39,8 +39,8 @@ fn pp_server_msg() {
         .addr_format(enums::AddressFormat::UNSPEC);
 
 
-    let (info, fab, domain, eq, pep) = common::start_server(hints);
-    let (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, mr, mut mr_desc) = common::ft_server_connect(&mut gl_ctx, &eq, &domain);
+    let (info, fab, eq, pep) = common::start_server(hints, "".to_owned(), "9222".to_owned());
+    let (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, domain, mr, mut mr_desc) = common::ft_server_connect(&mut gl_ctx, &eq, &fab);
     let entries = info.get();
     let test_sizes = gl_ctx.test_sizes.clone();
     for msg_size in test_sizes {
