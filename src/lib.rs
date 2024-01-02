@@ -550,16 +550,20 @@ pub struct Stx {
 }
 
 impl Stx {
-    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: crate::TxAttr, context: &mut T0) -> Self {
+    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: crate::TxAttr, context: &mut T0) -> Result<Stx, error::Error> {
         let mut c_stx: *mut libfabric_sys::fid_stx = std::ptr::null_mut();
         let c_stx_ptr: *mut *mut libfabric_sys::fid_stx = &mut c_stx;
         let err = unsafe { libfabric_sys::inlined_fi_stx_context(domain.c_domain, attr.get_mut(), c_stx_ptr, context as *mut T0 as *mut std::ffi::c_void) };
 
         if err != 0 {
-            panic!("fi_stx_context failed {}", err);
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_stx }
+            )
         }
 
-        Self { c_stx }
     }
 }
 
@@ -677,28 +681,66 @@ pub struct Mc {
 }
 
 impl Mc {
-    pub(crate) fn new<T0,T1>(ep: &crate::ep::Endpoint, addr: &T0, flags: u64, ctx: &mut T1) -> Self {
+    pub(crate) fn new<T0>(ep: &crate::ep::Endpoint, addr: &T0, flags: u64) -> Result<Mc, error::Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join(ep.c_ep, addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, ctx as *mut T1 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_join(ep.c_ep, addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, std::ptr::null_mut()) };
 
         if err != 0 {
-            panic!("fi_join failed {}", err);
+            Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_mc }
+            )
         }
 
-        Self { c_mc }
     }
 
-    pub(crate) fn new_collective<T0>(ep: &crate::ep::Endpoint, addr: Address, set: &crate::av::AddressVectorSet, flags: u64, ctx: &mut T0) -> Self {
+    pub(crate) fn new_with_context<T0>(ep: &crate::ep::Endpoint, addr: &T0, flags: u64, ctx: &mut crate::Context) -> Result<Mc, error::Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.c_ep, addr, set.c_set, flags, c_mc_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_join(ep.c_ep, addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
 
         if err != 0 {
-            panic!("fi_join_collective failed {}", err);
+            Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_mc }
+            )
         }
 
-        Self { c_mc }
+    }
+
+    pub(crate) fn new_collective(ep: &crate::ep::Endpoint, addr: Address, set: &crate::av::AddressVectorSet, flags: u64) -> Result<Mc, crate::error::Error> {
+        let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
+        let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
+        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.c_ep, addr, set.c_set, flags, c_mc_ptr, std::ptr::null_mut()) };
+
+        if err != 0 {
+            Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_mc }
+            )
+        }
+    }
+
+    pub(crate) fn new_collective_with_context(ep: &crate::ep::Endpoint, addr: Address, set: &crate::av::AddressVectorSet, flags: u64, ctx: &mut crate::Context) -> Result<Mc, crate::error::Error> {
+        let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
+        let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
+        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.c_ep, addr, set.c_set, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
+
+        if err != 0 {
+            Err(error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(
+                Self { c_mc }
+            )
+        }
     }
 
     pub fn addr(&self) -> Address {
@@ -877,5 +919,41 @@ impl DataDescriptor for DefaultMemDesc {
     
     fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void {
         std::ptr::null_mut()
+    }
+}
+
+pub struct Context {
+    c_val: libfabric_sys::fi_context,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            c_val : {
+                libfabric_sys::fi_context { internal: [std::ptr::null_mut(); 4] }
+            }
+        }
+    }
+
+    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context {
+        &mut self.c_val
+    }
+}
+
+pub struct Context2 {
+    c_val: libfabric_sys::fi_context2,
+}
+
+impl Context2 {
+    pub fn new() -> Self {
+        Self {
+            c_val : {
+                libfabric_sys::fi_context2 { internal: [std::ptr::null_mut(); 8] }
+            }
+        }
+    }
+
+    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context2 {
+        &mut self.c_val
     }
 }

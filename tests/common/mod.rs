@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{domain, fabric, FID, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}};
+use libfabric::{domain, fabric, FID, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}, InfoCaps, mr::MemoryRegionAttr, Context};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -9,7 +9,6 @@ pub enum CompMeth {
     WaitFd,
     Yield,
 }
-
 
 pub const FT_OPT_ACTIVE: u64			= 1 << 0;
 pub const FT_OPT_ITER: u64			= 1 << 1;
@@ -62,6 +61,8 @@ pub struct TestsGlobalCtx {
     pub test_sizes: Vec<usize>,
     pub window_size: usize,
     pub comp_method: CompMeth,
+    pub tx_ctx: Context,
+    pub rx_ctx: Context,
     pub options: u64,
 }
 
@@ -119,6 +120,8 @@ impl TestsGlobalCtx {
         ],
         window_size: 64,
         comp_method: CompMeth::Spin, 
+        tx_ctx: Context::new(),
+        rx_ctx: Context::new(),
         options: FT_OPT_RX_CQ | FT_OPT_TX_CQ}
     }
 }
@@ -245,8 +248,6 @@ pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobal
 
 
     let ep = domain.ep(info).unwrap();
-
-    println!("{}", info.get_ep_attr().get_type().get_value());
 
     (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av)
 }
@@ -461,6 +462,12 @@ pub fn ft_alloc_msgs(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, d
     gl_ctx.remote_cq_data = ft_init_cq_data(info);
 
     ft_reg_mr(info, domain, ep, &mut gl_ctx.buf, 0xC0DE)
+}
+
+pub fn ft_alloc_ctx_array(gl_ctx: &mut TestsGlobalCtx) {
+
+
+
 }
 
 
@@ -888,16 +895,41 @@ pub fn ft_need_mr_reg(info: &libfabric::InfoEntry) -> bool {
     }
 }
 
-pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain, ep: &libfabric::ep::Endpoint, buf: &mut [u8], key: u64) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_chek_mr_local_flag(info: &libfabric::InfoEntry) -> bool {
+    info.get_mode().is_local_mr() || info.get_domain_attr().get_mr_mode().is_local()
+}
 
-    if ! ft_need_mr_reg(info) {
-        println!("MR not needed");
-        return (None, None)
+pub fn ft_rma_read_target_allowed(caps: &InfoCaps) -> bool {
+    if caps.is_rma() || caps.is_atomic() {
+        if caps.is_remote_read() {
+            return true
+        }
+        else {
+            return ! (caps.is_read() || caps.is_write() || caps.is_remote_write());
+        }
     }
-    let iov = libfabric::IoVec::new(buf);
-    let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
-    if info.get_mode().is_local_mr() || info.get_domain_attr().get_mr_mode().is_local() {
 
+    false
+}
+
+pub fn ft_rma_write_target_allowed(caps: &InfoCaps) -> bool {
+    if caps.is_rma() || caps.is_atomic() {
+        if caps.is_remote_write() {
+            return true
+        }
+        else {
+            return ! (caps.is_read() || caps.is_write() || caps.is_remote_write());
+        }
+    }
+
+    false
+}
+
+pub fn ft_info_to_mr_attr(info: &InfoEntry) -> libfabric::mr::MemoryRegionAttr {
+
+    let mut mr_attr = libfabric::mr::MemoryRegionAttr::new();
+
+    if ft_chek_mr_local_flag(info) {
         if info.get_caps().is_msg() || info.get_caps().is_tagged() {
             let mut temp = info.get_caps().is_send();
             if temp {
@@ -911,7 +943,47 @@ pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain
                 mr_attr = mr_attr.access_send().access_recv();
             }
         }
-    } 
+    }
+    else {
+        if info.get_caps().is_rma() || info.get_caps().is_atomic() {
+            if ft_rma_read_target_allowed(info.get_caps()) {
+                mr_attr = mr_attr.access_remote_read();
+            }
+            if ft_rma_write_target_allowed(info.get_caps()) {
+                mr_attr = mr_attr.access_remote_write();
+            }
+        }
+    }
+
+    mr_attr
+}
+
+pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain, ep: &libfabric::ep::Endpoint, buf: &mut [u8], key: u64) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+
+    if ! ft_need_mr_reg(info) {
+        println!("MR not needed");
+        return (None, None)
+    }
+    let iov = libfabric::IoVec::new(buf);
+    // let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
+    
+    let mut mr_attr = ft_info_to_mr_attr(info).iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
+    // if ft_chek_mr_local_flag(info) {
+
+    //     if info.get_caps().is_msg() || info.get_caps().is_tagged() {
+    //         let mut temp = info.get_caps().is_send();
+    //         if temp {
+    //             mr_attr = mr_attr.access_send();
+    //         }
+    //         temp |= info.get_caps().is_recv();
+    //         if temp {
+    //             mr_attr = mr_attr.access_recv();
+    //         }
+    //         if !temp {
+    //             mr_attr = mr_attr.access_send().access_recv();
+    //         }
+    //     }
+    // } 
 
     let mr = domain.mr_regattr(mr_attr, 0).unwrap();
     let desc = mr.description();
@@ -987,7 +1059,7 @@ pub fn ft_exchange_keys(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx
 pub fn start_server(hints: libfabric::InfoHints) -> (libfabric::Info, fabric::Fabric,  libfabric::domain::Domain, libfabric::eq::EventQueue, libfabric::ep::PassiveEndpoint) {
    
    let info = ft_getinfo(hints, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
-   let entries: Vec<libfabric::InfoEntry> = info.get();
+   let entries = info.get();
     
     if entries.is_empty() {
         panic!("No entires in fi_info");

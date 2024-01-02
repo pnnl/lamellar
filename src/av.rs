@@ -23,8 +23,6 @@ impl AddressVector {
                 c_av,
             })
         }
-
-
     }
 
     pub fn bind(&self, fid: &impl crate::FID, flags: u64) -> Result<(), crate::error::Error> {

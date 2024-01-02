@@ -77,7 +77,6 @@ impl CompletionQueue {
         let ret  = unsafe { libfabric_sys::inlined_fi_cq_sread(self.c_cq, buf.as_mut_ptr() as *mut std::ffi::c_void, count, std::ptr::null_mut(), timeout) };
 
         if ret < 0 {
-            println!("Ret: {}", ret);
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()))
         }
         else {

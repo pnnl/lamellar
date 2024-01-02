@@ -13,7 +13,6 @@ impl Domain {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) };
-
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
@@ -128,7 +127,7 @@ impl Domain {
         }
     }
 
-    pub fn stx_context<T0>(&self, attr:crate::TxAttr , context: &mut T0) -> crate::Stx {
+    pub fn stx_context<T0>(&self, attr:crate::TxAttr , context: &mut T0) -> Result<crate::Stx, crate::error::Error> {
         crate::Stx::new(self, attr, context)
     }
 
@@ -208,7 +207,6 @@ impl DomainAttr {
     
     pub fn mr_mode(mut self, mr_mode: crate::enums::MrMode) -> Self {
         self.c_attr.mr_mode = mr_mode.get_value() as i32;
-        
         self
     }
 

@@ -35,7 +35,7 @@ fn pp_server_rdm_cntr() {
         .tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
-        .mode(libfabric::enums::Mode::new().context()) // [TODO]
+        .mode(libfabric::enums::Mode::new().context())
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)
@@ -86,7 +86,7 @@ fn pp_client_rdm_cntr() {
         .tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
-        .mode(libfabric::enums::Mode::new().context()) // [TODO]
+        .mode(libfabric::enums::Mode::new().context())
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)

@@ -124,6 +124,7 @@ impl MemoryRegion {
     }
 }
 
+#[repr(C)]
 pub struct MemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
 }
