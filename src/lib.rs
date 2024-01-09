@@ -782,46 +782,9 @@ pub trait FID{
             Ok(len)
         }
     }
-    
-    fn setopt<T0>(&mut self, level: i32, optname: i32, opt: &[T0]) -> Result<(), error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_setopt(self.fid(), level, optname, opt.as_ptr() as *const std::ffi::c_void, opt.len())};
-
-        if err != 0 {
-            return Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
-    }
-
-    fn getopt<T0>(&self, level: i32, optname: i32, opt: &mut [T0]) -> Result<usize, error::Error> {
-        let mut len = 0_usize;
-        let len_ptr : *mut usize = &mut len;
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.fid(), level, optname, opt.as_mut_ptr() as *mut std::ffi::c_void, len_ptr)};
-        
-        if -err as u32  == libfabric_sys::FI_ETOOSMALL {
-            Err(error::Error{ c_err: -err  as u32, kind: error::ErrorKind::TooSmall(len)} )
-        }
-        else if err < 0 {
-            Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(len)
-        }
-    }
 
     fn close(self) -> Result<(), crate::error::Error> where Self: Sized {
         let err = unsafe { libfabric_sys::inlined_fi_close(self.fid()) };
-
-        if err != 0 {
-            return Err(error::Error::from_err_code((-err).try_into().unwrap()));
-        }
-
-        Ok(())
-    }
-
-    fn cancel(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cancel(self.fid(), std::ptr::null_mut()) };
 
         if err != 0 {
             return Err(error::Error::from_err_code((-err).try_into().unwrap()));
@@ -956,4 +919,8 @@ impl Context2 {
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context2 {
         &mut self.c_val
     }
+}
+
+pub trait Bind {
+    
 }

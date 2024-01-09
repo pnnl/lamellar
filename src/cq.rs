@@ -143,6 +143,9 @@ impl crate::FID for CompletionQueue {
     }
 }
 
+impl crate::Bind for CompletionQueue {
+    
+}
 
 // impl Drop for CompletionQueue {
 //     fn drop(&mut self) {

@@ -96,6 +96,9 @@ impl crate::FID for Counter {
     }
 }
 
+impl crate::Bind for Counter {
+    
+}
 // impl Drop for Counter {
 //     fn drop(&mut self) {
 //         println!("Dropping cntr");

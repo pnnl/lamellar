@@ -85,6 +85,9 @@ impl crate::FID for EventQueue {
     }
 }
 
+impl crate::Bind for EventQueue {
+    
+}
 // impl Drop for EventQueue {
 //     fn drop(&mut self) {
 //         println!("Dropping eq");

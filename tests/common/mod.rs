@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use libfabric::{domain, fabric, FID, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}, InfoCaps, mr::MemoryRegionAttr, Context};
+use libfabric::ep::ActiveEndpoint;
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -389,11 +390,10 @@ pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, fl
 
     let info = libfabric::Info::new().service(service.as_str()).flags(flags).hints(&hints);
     if node.is_empty() {
-        println!("Empty node");
+        println!("Empty");
         info.request().unwrap()
     }
     else {
-        println!("Non-Empty node");
         info.node(node.as_str()).request().unwrap()
     }
 
@@ -620,45 +620,46 @@ pub fn ft_post_tx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: 
     
     size += ft_tx_prefix_size(info);
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+size];
+    let ctx = &mut gl_ctx.tx_ctx;
     if info.get_caps().is_tagged() {
         let op_tag = if gl_ctx.ft_tag != 0 {gl_ctx.ft_tag} else {gl_ctx.tx_seq};
 
         if data != NO_CQ_DATA {
             if let Some(mr_desc) = data_desc.as_mut() {
-                ft_post!(tsenddata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr, op_tag);
+                ft_post!(tsenddata_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr, op_tag, ctx);
             }
             else {
                 let mr_desc = &mut libfabric::default_desc();
-                ft_post!(tsenddata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr, op_tag);
+                ft_post!(tsenddata_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr, op_tag, ctx);
             }
         }
         else {
             if let Some(mr_desc) = data_desc.as_mut() {
-                ft_post!(tsend, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr, op_tag);
+                ft_post!(tsend_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr, op_tag, ctx);
             }
             else {
                 let mr_desc = &mut libfabric::default_desc();
-                ft_post!(tsend, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr, op_tag);
+                ft_post!(tsend_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr, op_tag, ctx);
             }
         }
     }
     else {
         if data != NO_CQ_DATA {
             if let Some(mr_desc) = data_desc.as_mut() {
-                ft_post!(senddata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr);
+                ft_post!(senddata_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr, ctx);
             }
             else {
                 let mr_desc = &mut libfabric::default_desc();
-                ft_post!(senddata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr);
+                ft_post!(senddata_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, data, fi_addr, ctx);
             }
         }
         else {
             if let Some(mr_desc) = data_desc.as_mut() {
-                ft_post!(send, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr);
+                ft_post!(send_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr, ctx);
             }
             else {
                 let mr_desc = &mut libfabric::default_desc();
-                ft_post!(send, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr);
+                ft_post!(send_with_context, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "transmit", ep, buf, mr_desc, fi_addr, ctx);
             }
         }
     }
@@ -673,25 +674,26 @@ pub fn ft_tx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libf
 pub fn ft_post_rx(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, fi_addr: libfabric::Address, mut size: usize, _data: u64, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, rx_cq: &libfabric::cq::CompletionQueue) {
     size = std::cmp::max(size, FT_MAX_CTRL_MSG) +  ft_tx_prefix_size(info);
     let buf = &mut gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+size];
+    let ctx = &mut gl_ctx.rx_ctx; 
     if info.get_caps().is_tagged() {
         let op_tag = if gl_ctx.ft_tag != 0 {gl_ctx.ft_tag} else {gl_ctx.rx_seq};
         let zero = 0;
         if let Some(mr_desc) = data_desc.as_mut() {
-            ft_post!(trecv, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr, op_tag, zero);
+            ft_post!(trecv_with_context, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr, op_tag, zero, ctx );
         }
         else {
             let mr_desc = &mut libfabric::default_desc();
-            ft_post!(trecv, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr, op_tag, zero);
+            ft_post!(trecv_with_context, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr, op_tag, zero, ctx);
         }
     }
     else {
         if let Some(mr_desc) = data_desc.as_mut() {
 
-            ft_post!(recv, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr);
+            ft_post!(recv_with_context, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr, ctx);
         }
         else {
             let mr_desc = &mut libfabric::default_desc();
-            ft_post!(recv, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr);
+            ft_post!(recv_with_context, ft_progress, rx_cq, gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, "receive", ep, buf, mr_desc, fi_addr, ctx);
         }
     }
 }
@@ -976,23 +978,7 @@ pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain
     let iov = libfabric::IoVec::new(buf);
     // let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
     
-    let mut mr_attr = ft_info_to_mr_attr(info).iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
-    // if ft_chek_mr_local_flag(info) {
-
-    //     if info.get_caps().is_msg() || info.get_caps().is_tagged() {
-    //         let mut temp = info.get_caps().is_send();
-    //         if temp {
-    //             mr_attr = mr_attr.access_send();
-    //         }
-    //         temp |= info.get_caps().is_recv();
-    //         if temp {
-    //             mr_attr = mr_attr.access_recv();
-    //         }
-    //         if !temp {
-    //             mr_attr = mr_attr.access_send().access_recv();
-    //         }
-    //     }
-    // } 
+    let mr_attr = ft_info_to_mr_attr(info).iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
 
     let mr = domain.mr_regattr(mr_attr, 0).unwrap();
     let desc = mr.description();

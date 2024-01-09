@@ -126,6 +126,10 @@ impl crate::FID for AddressVector {
     }
 }
 
+impl crate::Bind for AddressVector {
+    
+}
+
 // impl Drop for AddressVector {
 //     fn drop(&mut self) {
 //         println!("Dropping av");
