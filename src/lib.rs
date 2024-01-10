@@ -1,4 +1,6 @@
 use core::panic;
+
+// use ep::ActiveEndpoint;
 pub mod ep;
 pub mod domain;
 pub mod eq;
@@ -681,10 +683,10 @@ pub struct Mc {
 }
 
 impl Mc {
-    pub(crate) fn new<T0>(ep: &crate::ep::Endpoint, addr: &T0, flags: u64) -> Result<Mc, error::Error> {
+    pub(crate) fn new<T: crate::ep::ActiveEndpoint, T0>(ep: &T, addr: &T0, flags: u64) -> Result<Mc, error::Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join(ep.c_ep, addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_join(ep.handle(), addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, std::ptr::null_mut()) };
 
         if err != 0 {
             Err(error::Error::from_err_code((-err).try_into().unwrap()))
@@ -697,10 +699,10 @@ impl Mc {
 
     }
 
-    pub(crate) fn new_with_context<T0>(ep: &crate::ep::Endpoint, addr: &T0, flags: u64, ctx: &mut crate::Context) -> Result<Mc, error::Error> {
+    pub(crate) fn new_with_context<T: crate::ep::ActiveEndpoint, T0>(ep: &T, addr: &T0, flags: u64, ctx: &mut crate::Context) -> Result<Mc, error::Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join(ep.c_ep, addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_join(ep.handle(), addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
 
         if err != 0 {
             Err(error::Error::from_err_code((-err).try_into().unwrap()))
@@ -713,10 +715,10 @@ impl Mc {
 
     }
 
-    pub(crate) fn new_collective(ep: &crate::ep::Endpoint, addr: Address, set: &crate::av::AddressVectorSet, flags: u64) -> Result<Mc, crate::error::Error> {
+    pub(crate) fn new_collective<T: crate::ep::ActiveEndpoint>(ep: &T, addr: Address, set: &crate::av::AddressVectorSet, flags: u64) -> Result<Mc, crate::error::Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.c_ep, addr, set.c_set, flags, c_mc_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.handle(), addr, set.c_set, flags, c_mc_ptr, std::ptr::null_mut()) };
 
         if err != 0 {
             Err(error::Error::from_err_code((-err).try_into().unwrap()))
@@ -728,10 +730,10 @@ impl Mc {
         }
     }
 
-    pub(crate) fn new_collective_with_context(ep: &crate::ep::Endpoint, addr: Address, set: &crate::av::AddressVectorSet, flags: u64, ctx: &mut crate::Context) -> Result<Mc, crate::error::Error> {
+    pub(crate) fn new_collective_with_context<T: crate::ep::ActiveEndpoint>(ep: &T, addr: Address, set: &crate::av::AddressVectorSet, flags: u64, ctx: &mut crate::Context) -> Result<Mc, crate::error::Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.c_ep, addr, set.c_set, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.handle(), addr, set.c_set, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
 
         if err != 0 {
             Err(error::Error::from_err_code((-err).try_into().unwrap()))
@@ -760,7 +762,7 @@ pub trait FID{
         let err = unsafe { libfabric_sys::inlined_fi_setname(self.fid(), addr.as_ptr() as *mut std::ffi::c_void, addr.len()) };
         
         if err != 0 {
-            return Err(error::Error::from_err_code((-err).try_into().unwrap()))
+            Err(error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(())

@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{domain, fabric, FID, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}, InfoCaps, mr::MemoryRegionAttr, Context};
+use libfabric::{domain, fabric, FID, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}, InfoCaps,  Context};
 use libfabric::ep::ActiveEndpoint;
 use libfabric::enums;
 pub enum CompMeth {
@@ -261,63 +261,58 @@ pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobal
 pub fn ft_enable_ep(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, eq: &libfabric::eq::EventQueue, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, rma_cntr: &Option<Counter>) {
     
     match info.get_ep_attr().get_type() {
-        libfabric::enums::EndpointType::MSG => ep.bind(eq, 0).unwrap(),
+        libfabric::enums::EndpointType::MSG => ep.bind_eq(eq).unwrap(),
         _ => if info.get_caps().is_collective() || info.get_caps().is_multicast() {
-            ep.bind(eq, 0).unwrap();
+            ep.bind_eq(eq).unwrap();
         }
     }
 
-    if let Some(av_val) = av { ep.bind(av_val, 0).unwrap() }
+    if let Some(av_val) = av { ep.bind_av(av_val).unwrap() }
 
-    let mut flags: u64 = libfabric_sys::FI_TRANSMIT as u64; // [TODO]
+    ep.bind_cq()
+        .transmit(gl_ctx.options & FT_OPT_TX_CQ == 0)
+        .cq(tx_cq).unwrap();
+    
+    ep.bind_cq()
+        .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
+        .cq(rx_cq).unwrap();
+    
+    let mut bind_cntr = ep.bind_cntr();
+    
     if gl_ctx.options & FT_OPT_TX_CQ == 0 {
-        flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+        bind_cntr.send();
     }
-    ep.bind(tx_cq, flags).unwrap();
-
-    let mut flags: u64 = libfabric_sys::FI_RECV as u64; // [TODO]
-    if gl_ctx.options & FT_OPT_TX_CQ == 0 {
-        flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
-    }
-    ep.bind(rx_cq, flags).unwrap();
-
-    let mut flags: u64 = if gl_ctx.options & FT_OPT_TX_CQ != 0 {
-        0_u64
-    }
-    else {
-        libfabric_sys::FI_SEND as u64
-    };
 
     if info.get_caps().is_rma() || info.get_caps().is_atomic() {
-        flags |= libfabric_sys::FI_WRITE as u64| libfabric_sys::FI_READ as u64 ; // [TODO]
+        bind_cntr.write().read();
     }
+
 
     if let Some(cntr) = tx_cntr {
-        ep.bind(cntr, flags).unwrap();
+        bind_cntr.cntr(cntr).unwrap();
     }
 
-    let flags: u64 = if gl_ctx.options & FT_OPT_RX_CQ != 0 {
-        0
+    let mut bind_cntr = ep.bind_cntr();
+    
+    if gl_ctx.options & FT_OPT_RX_CQ == 0 {
+        bind_cntr.recv();
     }
-    else {
-        libfabric_sys::FI_RECV as u64
-    };
 
 
     if let Some(cntr) = rx_cntr {
-        ep.bind(cntr, flags).unwrap();
+        bind_cntr.cntr(cntr).unwrap();
     }
 
     if info.get_caps().is_rma() || info.get_caps().is_atomic() && info.get_caps().is_rma_event() {
-        let mut flags = 0_u64;
+        let mut bind_cntr = ep.bind_cntr();
         if info.get_caps().is_remote_write() {
-            flags |= libfabric_sys::FI_REMOTE_WRITE as u64;
+            bind_cntr.remote_write();
         }
         if info.get_caps().is_remote_read() {
-            flags |= libfabric_sys::FI_REMOTE_READ as u64;
+            bind_cntr.remote_read();
         }
         if let Some(cntr) = rma_cntr {
-            ep.bind(cntr, flags).unwrap();
+            bind_cntr.cntr(cntr).unwrap();
         }
     }
 
@@ -326,17 +321,16 @@ pub fn ft_enable_ep(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep
 
 pub fn ft_complete_connect(eq: &libfabric::eq::EventQueue) { // [TODO] Do not panic, return errors
     
-    let mut event = 0;
     let mut eq_cm_entry = [libfabric::eq::EventQueueCmEntry::new()];
     
-    let ret = eq.sread(&mut event, &mut eq_cm_entry, -1, 0).unwrap();
+    let (ret, event) = eq.sread(&mut eq_cm_entry, -1, 0).unwrap();
 
     if ret != std::mem::size_of::<libfabric::eq::EventQueueCmEntry>() {
         panic!("Size different {} vs {}", ret, std::mem::size_of::<libfabric::eq::EventQueueCmEntry>());
     }
     
-    if event != libfabric_sys::FI_CONNECTED {
-        panic!("Unexpected event value returned: {} vs {}", event, libfabric_sys::FI_CONNREQ);
+    if !matches!(event, crate::enums::Event::CONNECTED) {
+        panic!("Unexpected event value returned");
     }
 }
 
@@ -349,16 +343,15 @@ pub fn ft_accept_connection(ep: &libfabric::ep::Endpoint, eq: &libfabric::eq::Ev
 
 pub fn ft_retrieve_conn_req(eq: &libfabric::eq::EventQueue) -> libfabric::InfoEntry { // [TODO] Do not panic, return errors
     
-    let mut event = 0;
 
     let mut eq_cm_entry = libfabric::eq::EventQueueCmEntry::new();
-    let ret = eq.sread(&mut event, std::slice::from_mut(&mut eq_cm_entry), -1, 0).unwrap();
+    let (ret, event) = eq.sread( std::slice::from_mut(&mut eq_cm_entry), -1, 0).unwrap();
     if ret != std::mem::size_of::<libfabric::eq::EventQueueCmEntry>(){
         panic!("Size different {} vs {}", ret, std::mem::size_of::<libfabric::eq::EventQueueCmEntry>());
     }
 
-    if event != libfabric_sys::FI_CONNREQ {
-        panic!("Unexpected event value returned: {} vs {}", event, libfabric_sys::FI_CONNREQ);
+    if !matches!(event, crate::enums::Event::CONNREQ) {
+        panic!("Unexpected event value returned");
     }
 
     eq_cm_entry.get_info()
@@ -473,11 +466,9 @@ pub fn ft_alloc_msgs(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, d
     ft_reg_mr(info, domain, ep, &mut gl_ctx.buf, 0xC0DE)
 }
 
-pub fn ft_alloc_ctx_array(gl_ctx: &mut TestsGlobalCtx) {
+// pub fn ft_alloc_ctx_array(gl_ctx: &mut TestsGlobalCtx) {
 
-
-
-}
+// }
 
 
 pub fn ft_enable_ep_recv(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, domain: &libfabric::domain::Domain, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, eq: &libfabric::eq::EventQueue, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, rma_cntr: &Option<Counter>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
@@ -536,10 +527,7 @@ macro_rules!  ft_post{
                 }
 
             }
-            let rc = $prog_fn($cq, $seq, $cq_cntr);
-            if rc != 0 && -rc as u32 != libfabric_sys::FI_EAGAIN {
-                panic!("{} returned error", stringify!(prog_fn));
-            }
+            $prog_fn($cq, $seq, $cq_cntr);
         }
         $seq+=1;
     };
@@ -724,7 +712,7 @@ pub fn ft_inject(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::
     ft_post_inject(info, gl_ctx, ep, fi_addr, size, tx_cq);
 }
 
-pub fn ft_progress(cq: &libfabric::cq::CompletionQueue, _total: u64, cq_cntr: &mut u64) -> isize {
+pub fn ft_progress(cq: &libfabric::cq::CompletionQueue, _total: u64, cq_cntr: &mut u64) {
     let mut cq_err_entry = libfabric::cq::CqErrEntry::new();
     let ret = cq.read(std::slice::from_mut(&mut cq_err_entry), 1);
     match ret {
@@ -735,8 +723,6 @@ pub fn ft_progress(cq: &libfabric::cq::CompletionQueue, _total: u64, cq_cntr: &m
             }
         }
     }
-
-    0
 }
 
 pub fn ft_init_av_dst_addr(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx,  av: &libfabric::av::AddressVector, ep: &libfabric::ep::Endpoint, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
@@ -985,7 +971,7 @@ pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain
 
     if info.get_domain_attr().get_mr_mode().is_endpoint() {
         println!("MR ENDPOINT");
-        mr.bind(ep, 0).unwrap();
+        mr.bind_ep(ep).unwrap();
     }
 
     (mr.into(),desc.into())

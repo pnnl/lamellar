@@ -689,7 +689,7 @@ impl TransferOptions {
 }
 
 #[allow(non_camel_case_types)]
-pub enum ConnectEvents {
+pub enum Event {
     NOTIFY,
     CONNREQ,
     CONNECTED,
@@ -699,21 +699,49 @@ pub enum ConnectEvents {
     JOIN_COMPLETE,
 }
 
-impl ConnectEvents{
+impl Event{
 
     #[allow(dead_code)]
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18 {
 
         match self {
-            ConnectEvents::NOTIFY => libfabric_sys::FI_NOTIFY,
-            ConnectEvents::CONNREQ => libfabric_sys::FI_CONNREQ,
-            ConnectEvents::CONNECTED => libfabric_sys::FI_CONNECTED,
-            ConnectEvents::SHUTDOWN => libfabric_sys::FI_SHUTDOWN,
-            ConnectEvents::MR_COMPLETE => libfabric_sys::FI_MR_COMPLETE,
-            ConnectEvents::AV_COMPLETE => libfabric_sys::FI_AV_COMPLETE,
-            ConnectEvents::JOIN_COMPLETE => libfabric_sys::FI_JOIN_COMPLETE,
+            Event::NOTIFY => libfabric_sys::FI_NOTIFY,
+            Event::CONNREQ => libfabric_sys::FI_CONNREQ,
+            Event::CONNECTED => libfabric_sys::FI_CONNECTED,
+            Event::SHUTDOWN => libfabric_sys::FI_SHUTDOWN,
+            Event::MR_COMPLETE => libfabric_sys::FI_MR_COMPLETE,
+            Event::AV_COMPLETE => libfabric_sys::FI_AV_COMPLETE,
+            Event::JOIN_COMPLETE => libfabric_sys::FI_JOIN_COMPLETE,
         }
     } 
+
+    pub(crate) fn from_value(val: u32) -> Self {
+
+        if val == libfabric_sys::FI_NOTIFY {
+            Event::NOTIFY
+        }
+        else if  val == libfabric_sys::FI_CONNREQ {
+            Event::CONNREQ
+        }
+        else if val == libfabric_sys::FI_CONNECTED {
+            Event::CONNECTED
+        }
+        else if val == libfabric_sys::FI_SHUTDOWN {
+            Event::SHUTDOWN
+        }
+        else if val == libfabric_sys::FI_MR_COMPLETE {
+            Event::MR_COMPLETE
+        }
+        else if val == libfabric_sys::FI_AV_COMPLETE {
+            Event::AV_COMPLETE
+        }
+        else if val == libfabric_sys::FI_JOIN_COMPLETE {
+            Event::JOIN_COMPLETE
+        }
+        else {
+            panic!("Unexpected value for Event")
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]

@@ -59,8 +59,19 @@ impl MemoryRegion {
         unsafe { libfabric_sys::inlined_fi_mr_key(self.c_mr) }
     }
 
-    pub fn bind(&self, fid: &impl crate::FID, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, fid.fid(), flags) } ;
+    pub fn bind_cntr(&self, cntr: &crate::cntr::Counter, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, cntr.fid(), flags) } ;
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
+        }
+    }
+
+    pub fn bind_ep(&self, ep: &crate::ep::Endpoint) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, ep.fid(), 0) } ;
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))

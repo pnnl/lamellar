@@ -1,6 +1,5 @@
-use common::{ft_finalize};
 use libfabric::{enums, domain, ep};
-
+use libfabric::ep::ActiveEndpoint;
 
 pub mod common; // Public to supress lint warnings (unused function)
 
@@ -47,7 +46,7 @@ fn pp_server_msg() {
         common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
     }
 
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
     
     ep.shutdown(0).unwrap();
 
@@ -88,7 +87,7 @@ fn pp_client_msg() {
         common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
     }
 
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+    common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
     ep.shutdown(0).unwrap();
 
     common::close_all(fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, None);

@@ -25,8 +25,8 @@ impl AddressVector {
         }
     }
 
-    pub fn bind(&self, fid: &impl crate::FID, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.c_av, fid.fid(), flags) };
+    pub fn bind(&self, eq: &crate::eq::EventQueue) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.c_av, eq.fid(), 0) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
