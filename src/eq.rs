@@ -25,10 +25,23 @@ impl EventQueue {
         }
     }
 
-    pub fn read<T0>(&self, buf: &mut [T0], flags: u64) -> Result<(usize, Event), crate::error::Error>{
+    pub fn read<T0>(&self, buf: &mut [T0]) -> Result<(usize, Event), crate::error::Error>{
         let mut event = 0 ;
         
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.c_eq, &mut event as *mut u32, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), flags) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.c_eq, &mut event as *mut u32, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), 0) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            Ok((ret as usize, Event::from_value(event)))
+        }
+    }
+
+    pub fn peek<T0>(&self, buf: &mut [T0]) -> Result<(usize, Event), crate::error::Error>{
+        let mut event = 0 ;
+        
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.c_eq, &mut event as *mut u32, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -53,6 +66,18 @@ impl EventQueue {
     pub fn sread<T0>(&self, buf: &mut [T0], timeout: i32, flags: u64) -> Result<(usize, Event), crate::error::Error> { 
         let mut event = 0;
         let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.c_eq, &mut event as *mut u32,  buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), timeout, flags) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            Ok((ret as usize, Event::from_value(event)))
+        }
+    }
+
+    pub fn speek<T0>(&self, buf: &mut [T0], timeout: i32) -> Result<(usize, Event), crate::error::Error> { 
+        let mut event = 0;
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.c_eq, &mut event as *mut u32,  buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), timeout, libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -286,7 +311,7 @@ mod tests {
             }
 
             entry.context(&mut i);
-            let ret = eq.write(crate::enums::Event::NOTIFY, &[entry], 0).unwrap();
+            let ret = eq.write(crate::enums::Event::NOTIFY, std::slice::from_ref(&entry), 0).unwrap();
             if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>() {
                 panic!("eq.write failed {}", ret);
             }
@@ -294,7 +319,14 @@ mod tests {
         for i in 0..10 {
 
             let mut entry = crate::eq::EventQueueEntry::<usize>::new();
-            let (ret, event) = eq.read(std::slice::from_mut(&mut entry), if (i & 1) == 1 { 0 } else { libfabric_sys::FI_PEEK.into()}).unwrap(); // [TODO]
+            let (ret, event) = if i & 1 == 1 {
+                eq.read(std::slice::from_mut(&mut entry)).unwrap()
+            }
+            else {
+                eq.peek(std::slice::from_mut(&mut entry)).unwrap()
+
+            };
+
             if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
                 panic!("eq.read failed {}", ret);
             }
@@ -310,8 +342,8 @@ mod tests {
                 panic!("Unexpected fid {:?}", entry.get_fid());
             }
         }
-        let entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
-        let ret = eq.read( &mut [entry], 0);
+        let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+        let ret = eq.read( std::slice::from_mut(&mut entry));
         if let Err(ref err) = ret {
             if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
                 ret.unwrap();
@@ -368,7 +400,7 @@ mod tests {
             }
 
             entry.context(&mut i);
-            let ret = eq.write(crate::enums::Event::NOTIFY, &[entry], 0).unwrap();
+            let ret = eq.write(crate::enums::Event::NOTIFY, std::slice::from_ref(&entry), 0).unwrap();
             if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>() {
                 panic!("eq.write failed {}", ret);
             }
@@ -391,9 +423,9 @@ mod tests {
                 panic!("Unexpected fid {:?}", entry.get_fid());
             }
         }
-        let entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+        let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
 
-        let ret = eq.read(&mut [entry], 0);
+        let ret = eq.read(std::slice::from_mut(&mut entry));
         if let Err(ref err) = ret {
             if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
                 ret.unwrap();
@@ -426,7 +458,7 @@ mod tests {
         }
         for i in 0..5 {
             let mut entry = crate::eq::EventQueueEntry::<usize>::new();
-            let (ret,event) = eq.read(std::slice::from_mut(&mut entry) , 0).unwrap();
+            let (ret,event) = eq.read(std::slice::from_mut(&mut entry)).unwrap();
             if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>() {
                 panic!("Eq.read failed {}", ret);
             }
