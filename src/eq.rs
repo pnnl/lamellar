@@ -87,8 +87,19 @@ impl EventQueue {
         }
     }
 
-    pub fn readerr(&self, err: &mut EqErrEntry, flags: u64) -> Result<usize, crate::error::Error> {
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.c_eq, err.get_mut(), flags) };
+    pub fn readerr(&self, err: &mut EqErrEntry) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.c_eq, err.get_mut(), 0) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            Ok(ret as usize)
+        }
+    }
+
+    pub fn peekerr(&self, err: &mut EqErrEntry, flags: u64) -> Result<usize, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.c_eq, err.get_mut(), libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -475,7 +486,7 @@ mod tests {
             }
         }
         let mut err_entry = crate::eq::EqErrEntry::new();
-        let ret = eq.readerr(&mut err_entry, 0);
+        let ret = eq.readerr(&mut err_entry);
         if let Err(ref err) = ret {
             if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
                 ret.unwrap();
