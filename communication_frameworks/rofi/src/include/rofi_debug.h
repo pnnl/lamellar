@@ -9,6 +9,6 @@
 #define DEBUG_MSG(fmt, args...)
 #endif
 
-#define ERR_MSG(fmt, args...) fprintf(stderr,"[%d][ROFI ERR][%s:%d] " fmt "\n", rt_get_rank(), __FILE__, __LINE__, ##args)
+#define ERR_MSG(fmt, args...) fprintf(stderr,"[PE %d][ROFI ERR][%s:%d] " fmt "\n", rt_get_rank(), __FILE__, __LINE__, ##args)
 
 #endif
