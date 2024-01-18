@@ -273,6 +273,12 @@ In the case no option is specified with `rofi_init()`, ROFI selects the first pr
 
 HISTORY
 -------
+- version 0.3:
+  - cleaned up and simplified implementation
+  - use FI_COLLECTIVE to support memregion allocation on a sub set of pes
+- version 0.2:
+  - improved performance
+  - support for verbs provider
 - version 0.1:
   - Basic init/finit functionalities
   - Basic memory management (heap and data section)

@@ -14,8 +14,6 @@ int          rofi_put(void*, void*, size_t, unsigned int, unsigned long);
 int          rofi_iput(void*, void*, size_t, unsigned int, unsigned long);
 int          rofi_get(void*, void*, size_t, unsigned int, unsigned long);
 int          rofi_iget(void*, void*, size_t, unsigned int, unsigned long);
-int          rofi_isend(unsigned long, const void*, size_t, unsigned long);
-int          rofi_irecv(unsigned long, void*, size_t, unsigned long);
 int          rofi_alloc(size_t, unsigned long, void**);
 int          rofi_sub_alloc(size_t, unsigned long, void**,uint64_t*, uint64_t);
 int          rofi_release(void*);

@@ -113,13 +113,6 @@ int rofi_finit(void) {
  *
  * This function flushes any completion queue events (from previous communcation calls), ensuring progress can continue.
  *
- * @param[out] dst address at destiantion (output at destination, not used at source)
- * @param[in]  src address at source (input at source, not used at destination)
- * @param[in]  size size of the entire buffer in bytes (no padding)
- * @param[in]  id the ID of the remote node
- * @param[in]  flags (not used at this time)
- * @return 0 on success
- *
  * \b blocking: no
  * \b thread-safe: yes
  *
@@ -261,66 +254,6 @@ int rofi_iget(void *dst, void *src, size_t size, unsigned int id, unsigned long 
 }
 
 /**
- * @brief ROFI Synchronous Send
- *
- * Transfer \p size bytes from the current node starting at address \p addr to node \p id.
- * The parameter \p flags is currently not used and reserved for future needs.
- *
- * @param[in] id the ID of the remote node
- * @param[in] addr address of the local buffer containing data to transfer
- * @param[in] size size of data buffer (in bytes, no padding) to transfer
- * @param[in] flags (not used at this time).
- * @return 0 on success
- *
- * \b blocking: yes
- * \b thread-safe: yes
- *
- */
-int rofi_isend(unsigned int id, void *addr, size_t size, unsigned long flags) {
-    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
-
-    if (addr == NULL || size == 0 || id >= rofi.desc.nodes) {
-        ERR_MSG("Invalide argument.");
-        return -1;
-    }
-
-    DEBUG_MSG("SEND SYNC id %u addr %p size %lu flags 0x%lx",
-              id, addr, size, flags);
-
-    return rofi_send_internal(id, addr, size, flags | ROFI_SYNC);
-}
-
-/**
- * @brief ROFI Synchronous Recv
- *
- * Block until \p size bytes from node \p id have been transferred to the current node at address \p addr.
- * The parameter \p flags is currently not used and reserved for future needs.
- *
- * @param[in] id the ID of the remote node
- * @param[out] addr address of the local buffer to copy incoming date
- * @param[in] size size of data buffer (in bytes, no padding)
- * @param[in] flags (not used at this time).
- * @return 0 on success
- *
- * \b blocking: yes
- * \b thread-safe: yes
- *
- */
-int rofi_irecv(unsigned int id, void *addr, size_t size, unsigned long flags) {
-    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
-
-    if (addr == NULL || size == 0 || id >= rofi.desc.nodes) {
-        ERR_MSG("Invalide argument.");
-        return -1;
-    }
-
-    DEBUG_MSG("RECV SYNC id %u addr %p size %lu flags 0x%lx",
-              id, addr, size, flags);
-
-    return rofi_recv_internal(id, addr, size, flags | ROFI_SYNC);
-}
-
-/**
  * @brief ROFI Global Barrier
  *
  * This function blocks until all processes in the job have called `rofi_barrier()`. All
@@ -342,17 +275,16 @@ void rofi_barrier(void) {
  * @brief ROFI Memory Region allocation
  *
  * This function allocates a memory region of \p size bytes and registers it to be accessible
- * remotely from other compute nodes (RDMA). If all processes in the job call this function,
- * the application has effectively allocated a synmmetric heap that can be
- * accessed remotely. Currently, only one memory region can be allocated at any given time.
- * An allocated memory region can be deallocated using `rofi_release()`.
+ * remotely from other compute nodes (RDMA). This function will block until all processes in
+ * the job have also called it.
+ * Multiple Memory Regions can be allocated at any given time.
  *
  * @param[in] size size of the memory region
  * @param[in] flags (not used at this time)
  * @param[out] addr initial address of the allocated memory region
  * @return 0 on success, -1 on failure
  *
- * \b blocking: potentially (memory allocation)
+ * \b blocking: yes (collective accross all PEs)
  * \b thread-safe: yes
  *
  */
@@ -376,6 +308,25 @@ err:
     return -1;
 }
 
+/**
+ * @brief ROFI Memory Region subset allocation
+ *
+ * This function allocates a memory region of \p size bytes and registers it to be accessible
+ * remotely from a subset of compute nodes (RDMA). The calling PE must be in the subset, and
+ * all processes in the subset call this function collectively to proceed.
+ * Multiple Memory Regions can be allocated at any given time.
+ *
+ * @param[in] size size of the memory region
+ * @param[in] flags (not used at this time)
+ * @param[out] addr initial address of the allocated memory region
+ * @param[in] pes the sub set of pes it was allocated on
+ * @param[in] num_pes the number of pes in the sub set
+ * @return 0 on success, -1 on failure
+ *
+ * \b blocking: yes (collective accross the subset of PEs)
+ * \b thread-safe: yes
+ *
+ */
 int rofi_sub_alloc(size_t size, unsigned long flags, void **addr, uint64_t *pes, uint64_t num_pes) {
     DEBUG_MSG("ALLOC size %lu flags 0x%lx",
               size, flags);
@@ -402,6 +353,7 @@ err:
  * This function releases a remote-accessible memory region previously allocated through `rofi_alloc()`.
  * The function will fail if no memory region has been allocated yet.
  *
+ * @param[in] addr the memory region to release
  * @return 0 on success, -1 on failure
  *
  * \b blocking: no
@@ -412,6 +364,21 @@ int rofi_release(void *addr) {
     return rofi_release_internal(addr);
 }
 
+/**
+ * @brief ROFI Memory Region subset release
+ *
+ * This function releases a remote-accessible memory region previously allocated on a subset of pes through `rofi_sub_alloc()`.
+ * The function will fail if no memory region has been allocated yet. The calling pe must exist in the subset
+ *
+ * @param[in] addr the memory region to release
+ * @param[in] pes the sub set of pes it was allocated on
+ * @param[in] num_pes the number of pes in the sub set
+ * @return 0 on success, -1 on failure
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
 int rofi_sub_release(void *addr, uint64_t *pes, uint64_t num_pes) {
     return rofi_sub_release_internal(addr, pes, num_pes);
 }
