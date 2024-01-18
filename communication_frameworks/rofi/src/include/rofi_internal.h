@@ -1,6 +1,9 @@
 #ifndef ROFI_INTERNAL_H
 #define ROFI_INTERNAL_H
 
+#include <pthread.h>
+
+#include <pthread.h>
 #include <rdma/fabric.h>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_domain.h>
@@ -55,6 +58,7 @@ typedef struct {
     struct fi_rma_iov *iov_buf;
     uint64_t *hash_buf;
     uint64_t *barrier_buf;
+    uint64_t *reset_barrier_buf;
     uint64_t barrier_id;
 } rofi_alloc_exchange;
 
@@ -64,6 +68,7 @@ struct rofi_transport_s {
     struct fid_domain *domain;
     struct fid_av *av;
     struct fid_ep *ep;
+    struct fid_eq *eq;
     struct fid_cntr *put_cntr;
     struct fid_cntr *get_cntr;
     struct fid_cq *cq;
@@ -71,8 +76,12 @@ struct rofi_transport_s {
     uint64_t pending_put_cntr;
     uint64_t pending_get_cntr;
     rofi_desc_t desc;
-    rofi_mr_desc *alloc_mr;
+    rofi_mr_desc *mr;
     rofi_alloc_exchange alloc_bufs;
+    uint64_t global_barrier_id;
+    uint64_t *global_barrier_buf;
+    pthread_mutex_t lock;
+    pthread_rwlock_t mr_lock;
 };
 
 extern rofi_transport_t rofi;
@@ -82,6 +91,7 @@ int rofi_finit_internal(void);
 unsigned int rofi_get_size_internal(void);
 unsigned int rofi_get_id_internal(void);
 int rofi_flush_internal(void);
+void rofi_barrier_internal(void);
 int rofi_put_internal(void *, void *, size_t, unsigned int, unsigned long);
 int rofi_get_internal(void *, void *, size_t, unsigned int, unsigned long);
 int rofi_send_internal(unsigned long, void *, size_t, unsigned long);

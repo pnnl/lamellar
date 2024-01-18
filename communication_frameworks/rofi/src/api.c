@@ -334,7 +334,7 @@ int rofi_irecv(unsigned int id, void *addr, size_t size, unsigned long flags) {
 void rofi_barrier(void) {
     assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
     DEBUG_MSG("Process %u/%u entering barrier...", rofi.desc.nid, rofi.desc.nodes);
-    rt_barrier();
+    rofi_barrier_internal();
     DEBUG_MSG("Process %u/%u leaving barrier...", rofi.desc.nid, rofi.desc.nodes);
 }
 

@@ -68,9 +68,10 @@ rofi_mr_desc *mr_add(rofi_transport_t *rofi, size_t size, unsigned long mode) {
         DEBUG_MSG("\t Node: %o Key: 0x%lx Addr: 0x%lx", i, el->iov[i].key, el->iov[i].addr);
 #endif
 
+    pthread_rwlock_wrlock(&rofi->mr_lock);
     HASH_FIND_PTR(mr_tab, &addr, tmp);
     if (tmp)
-        goto err_iov;
+        goto err_lock;
 
     size = ((PageSize - 1) & size) ? ((size + PageSize) & ~(PageSize - 1)) : size;
 
@@ -79,7 +80,7 @@ rofi_mr_desc *mr_add(rofi_transport_t *rofi, size_t size, unsigned long mode) {
 
     if (addr == MAP_FAILED) {
         perror("mmap");
-        goto err_iov;
+        goto err_lock;
     }
 
     err = fi_mr_reg(rofi->domain, addr, size,
@@ -106,10 +107,13 @@ rofi_mr_desc *mr_add(rofi_transport_t *rofi, size_t size, unsigned long mode) {
     DEBUG_MSG("\t Added new memory region: ADDR=%p (%p) size=0x%lx mode=%u key=0x%lx desc=%p next=%p",
               el->start, mr_next_addr, el->size, el->mode, el->mr_key, el->mr_desc, mr_next_addr);
 
+    pthread_rwlock_unlock(&rofi->mr_lock);
     return el;
 
 err_mmap:
     munmap(addr, size);
+err_lock:
+    pthread_rwlock_unlock(&rofi->mr_lock);
 err_iov:
     free(el->iov);
 err_el:
@@ -119,46 +123,52 @@ err:
     ;
 }
 
-rofi_mr_desc *mr_get(const void *addr) {
+rofi_mr_desc *mr_get(rofi_transport_t *rofi, const void *addr) {
     rofi_mr_desc *el = NULL;
     rofi_mr_desc *tmp = NULL;
 
+    pthread_rwlock_rdlock(&rofi->mr_lock);
     HASH_ITER(hh, mr_tab, el, tmp) {
-        DEBUG_MSG("\t MR %p - %p size=%ld mode=0x%x",
-                  el->start, el->start + el->size, el->size, el->mode);
+        // DEBUG_MSG("\t MR %p - %p size=%ld mode=0x%x",
+        //           el->start, el->start + el->size, el->size, el->mode);
         if (el->start <= addr && addr < (el->start + el->size))
             goto out;
     }
     el = NULL;
 
 out:
+    pthread_rwlock_unlock(&rofi->mr_lock);
     return el;
 }
 
-rofi_mr_desc *mr_get_from_remote(const void *remote_addr, unsigned long remote_id) {
+rofi_mr_desc *mr_get_from_remote(rofi_transport_t *rofi, const void *remote_addr, unsigned long remote_id) {
     rofi_mr_desc *el = NULL;
     rofi_mr_desc *tmp = NULL;
 
+    pthread_rwlock_rdlock(&rofi->mr_lock);
     HASH_ITER(hh, mr_tab, el, tmp) {
 
         void *start = (void *)el->iov[remote_id].addr;
         void *end = start + el->size;
-        DEBUG_MSG("\t MR %p - %p size=%ld mode=0x%x remote address = %p",
-                  start, end, el->size, el->mode, remote_addr);
-        if (start <= remote_addr && remote_addr < end)
+        // DEBUG_MSG("\t MR %p - %p size=%ld mode=0x%x remote address = %p",
+        //   start, end, el->size, el->mode, remote_addr);
+        if (start <= remote_addr && remote_addr < end) {
+            // DEBUG_MSG("\t start <= remote_addr %d  remote_addr < end %d", start <= remote_addr, remote_addr < end);
             goto out;
-        DEBUG_MSG("\t start <= remote_addr %d  remote_addr < end %d", start <= remote_addr, remote_addr < end);
+        }
     }
     el == NULL;
 
 out:
+    pthread_rwlock_unlock(&rofi->mr_lock);
     return el;
 }
 
-int mr_rm(void *addr) {
+int mr_rm(rofi_transport_t *rofi, void *addr) {
     rofi_mr_desc *el, *tmp;
     int ret = 0;
 
+    pthread_rwlock_wrlock(&rofi->mr_lock);
     HASH_ITER(hh, mr_tab, el, tmp) {
         if (el->start == addr) {
             DEBUG_MSG("Removing memory region %p size 0x%lx", el->start, el->size);
@@ -174,12 +184,14 @@ int mr_rm(void *addr) {
     ret = -1;
 
 out:
+    pthread_rwlock_unlock(&rofi->mr_lock);
     return ret;
 }
 
-int mr_free(void) {
+int mr_free(rofi_transport_t *rofi) {
     rofi_mr_desc *el, *tmp;
 
+    pthread_rwlock_wrlock(&rofi->mr_lock);
     HASH_ITER(hh, mr_tab, el, tmp) {
         DEBUG_MSG("\t MR ADDR=%p size=%ld mode=0x%x",
                   el->start, el->size, el->mode);
@@ -189,5 +201,6 @@ int mr_free(void) {
         free(el->iov);
         free(el);
     }
+    pthread_rwlock_unlock(&rofi->mr_lock);
     return 0;
 }

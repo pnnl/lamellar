@@ -60,21 +60,27 @@ int rofi_transport_init_endpoint_resources( rofi_transport_t *rofi);
 int rofi_transport_init_av(rofi_transport_t *rofi);
 
 
-// void rofi_transport_progress(rofi_transport_t *rofi);
-void rofi_transport_ctx_check_err(rofi_transport_t *rofi, int err);
-void rofi_transport_check_rma_err(rofi_transport_t *rofi, int ret);
+int rofi_transport_progress(rofi_transport_t *rofi);
+int rofi_transport_ctx_check_err(rofi_transport_t *rofi, int err);
+int rofi_transport_check_rma_err(rofi_transport_t *rofi, int ret);
+int rofi_transport_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending_cntr, struct fid_cntr *cntr); 
 
-void rofi_transport_put_inject(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, const void *src_addr, size_t len);
-void rofi_transport_put_large(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, const void *src_addr, size_t len, void *desc, void *context);
-void rofi_transport_put(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, const void *src_addr, size_t len, void *desc, void *context);
-void rofi_transport_put_wait_all(rofi_transport_t *rofi);
+int rofi_transport_put_inject(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, const void *src_addr, size_t len);
+int rofi_transport_put_large(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, const void *src_addr, size_t len, void *desc, void *context);
+int rofi_transport_put(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, const void *src_addr, size_t len, void *desc, void *context);
+int rofi_transport_put_wait_all(rofi_transport_t *rofi);
 
-void rofi_transport_get_small(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, void *dst_addr, size_t len, void *desc, void *context);
-void rofi_transport_get_large(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, void *dst_addr, size_t len, void *desc, void *context);
-void rofi_transport_get(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, void *dst_addr, size_t len, void *desc, void *context);
-void rofi_transport_get_wait_all(rofi_transport_t *rofi);
+int rofi_transport_get_small(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, void *dst_addr, size_t len, void *desc, void *context);
+int rofi_transport_get_large(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, void *dst_addr, size_t len, void *desc, void *context);
+int rofi_transport_get(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, void *dst_addr, size_t len, void *desc, void *context);
+int rofi_transport_get_wait_all(rofi_transport_t *rofi);
 
 
 int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr);
+int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes);
+int rofi_transport_barrier(rofi_transport_t *rofi);
+int rofi_transport_sub_barrier(rofi_transport_t *rofi, uint64_t* pes, uint64_t me, uint64_t num_pes);
+int rofi_transport_sub_barrier_reset(rofi_transport_t *rofi, uint64_t *pes, uint64_t me, uint64_t num_pes);
+
 
 #endif /* _TRANSPORT_H_ */

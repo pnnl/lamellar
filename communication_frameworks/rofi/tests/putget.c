@@ -100,7 +100,7 @@ int main(void) {
             clock_gettime(CLOCK_MONOTONIC, &(data[i].start));
             for (j = 0; j < (int)pow(2, exp); j += num_bytes) {
 #ifdef ROFI_IPUT
-                if (rofi_put(target + j, src, num_bytes, 0, 0x0)) {
+                if (rofi_iput(target + j, src, num_bytes, 0, 0x0)) {
                     printf("[%u] Error writing to remote node. Aborting...\n", me);
                 }
 #elif ROFI_IGET
@@ -119,6 +119,7 @@ int main(void) {
         //     }
         //     // rofi_barrier();
         // }
+        rofi_wait();
         rofi_barrier();
         clock_gettime(CLOCK_MONOTONIC, &(data[i].end));
 
@@ -137,7 +138,7 @@ int main(void) {
     rofi_barrier();
 
     if (me) {
-        printf("\t %-10s \t %-11s \t %-19s\n", "Size (MBs)", "Time (sec)", "Throughput (bytes/sec)");
+        printf("\t %-10s \t %-11s \t %-19s\n", "Size (MBs)", "Time (sec)", "Throughput (MB/sec)");
         for (i = 0; i < ntests; i++)
             printf("\t %10lu \t %06.4f \t %16.2f\n",
                    data[i].size, data[i].time, data[i].tput);
