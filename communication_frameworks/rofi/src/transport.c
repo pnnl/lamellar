@@ -782,158 +782,6 @@ int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr
 
     pthread_mutex_unlock(&rofi->lock);
     return ret;
-
-    //     int me = rofi->desc.nid;
-
-    //     if (pes != NULL) { // doing sub barrier, figure out team pe id
-    //         for (int i = 0; i < num_pes; i++) {
-    //             if (pes[i] == me) {
-    //                 me = i;
-    //                 break;
-    //             }
-    //         }
-    //     }
-
-    //     struct fi_rma_iov rma_iov;
-    //     rma_iov.addr = (uint64_t)mr->start;
-    //     rma_iov.key = fi_mr_key(mr->fid);
-
-    //     rofi->alloc_bufs.iov_buf[rofi->desc.nid] = rma_iov; // we are only allowed to write into our own buffer slot
-    //     int ret = rofi_transport_sub_barrier(rofi, pes, me, num_pes);
-    //     if (ret) {
-    //         return ret;
-    //     }
-    //     // DEBUG_MSG("putting  Node: (%d) Key: 0x%lx Addr: 0x%lx", rofi->desc.nid, rma_iov.key, rma_iov.addr);
-    //     bool ready = false;
-    //     uint64_t prev_addr_hash = 0;
-    //     uint64_t prev_key_hash = 0;
-    //     uint64_t cnt = 0;
-
-    //     while (!ready) {
-    //         // start at next node to the "right" of me to try to avoid all nodes sending to the same nodes at the same time
-    //         for (int i = me + 1; i < num_pes; i++) {
-    //             rofi->alloc_bufs.iov_buf[i] = rofi->alloc_bufs.iov_buf[rofi->desc.nid];
-    //             ret = rofi_get_internal(&rofi->alloc_bufs.iov_buf[pes[i]], &rofi->alloc_bufs.iov_buf[pes[i]], sizeof(struct fi_rma_iov), pes[i], ROFI_ASYNC);
-    //             if (ret) {
-    //                 return ret;
-    //             }
-    //         }
-    //         for (int i = 0; i < me; i++) {
-    //             rofi->alloc_bufs.iov_buf[i] = rofi->alloc_bufs.iov_buf[rofi->desc.nid];
-    //             ret = rofi_get_internal(&rofi->alloc_bufs.iov_buf[pes[i]], &rofi->alloc_bufs.iov_buf[pes[i]], sizeof(struct fi_rma_iov), pes[i], ROFI_ASYNC);
-    //             if (ret) {
-    //                 return ret;
-    //             }
-    //         }
-    //         ret = rofi_wait_internal();
-    //         if (ret) {
-    //             return ret;
-    //         }
-    //         ret = rofi_transport_sub_barrier(rofi, pes, me, num_pes);
-    //         if (ret) {
-    //             return ret;
-    //         }
-
-    //         // calculate a simple hash, and then get the hash from every PE to ensure we received the same value
-
-    //         // DEBUG_MSG("in ready loop");
-    //         rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2] = 0;
-    //         rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1] = 0;
-    //         for (int i = 0; i < num_pes; i++) {
-    //             rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2] += rofi->alloc_bufs.iov_buf[pes[i]].addr;
-    //             rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1] += rofi->alloc_bufs.iov_buf[pes[i]].key;
-    //         }
-    //         ret = rofi_transport_sub_barrier(rofi, pes, me, num_pes);
-    //         if (ret) {
-    //             return ret;
-    //         }
-    //         // DEBUG_MSG("get hashes {0x%lx, 0x%lx}", rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2], rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1]);
-    //         for (int i = me + 1; i < num_pes; i++) {
-    //             ret = rofi_get_internal(&rofi->alloc_bufs.hash_buf[pes[i] * 2], &rofi->alloc_bufs.hash_buf[pes[i] * 2], 2 * sizeof(uint64_t), pes[i], ROFI_ASYNC);
-    //             if (ret) {
-    //                 return ret;
-    //             }
-    //             cnt = 0;
-    //         }
-    //         for (int i = 0; i < me; i++) {
-    //             ret = rofi_get_internal(&rofi->alloc_bufs.hash_buf[pes[i] * 2], &rofi->alloc_bufs.hash_buf[pes[i] * 2], 2 * sizeof(uint64_t), pes[i], ROFI_ASYNC);
-    //             if (ret) {
-    //                 return ret;
-    //             }
-    //         }
-    //         ret = rofi_wait_internal();
-    //         if (ret) {
-    //             return ret;
-    //         }
-
-    //         //         DEBUG_MSG("Hash check: prev addr hash 0x%lx, curr addr hash 0x%lx, prev key hash 0x%lx, curr key hash 0x%lx", prev_addr_hash, rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2], prev_key_hash, rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1]);
-    //         // #ifdef _DEBUG
-    //         //         for (int i = 0; i < num_pes; i++) {
-    //         //             printf("Hash check: i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", i, pes[i], rofi->alloc_bufs.hash_buf[pes[i] * 2], rofi->alloc_bufs.hash_buf[pes[i] * 2 + 1]);
-    //         //         }
-    //         //         printf("\n");
-    //         //         for (int i = 0; i < num_pes; i++) {
-    //         //             printf("Hash check: i: %d(pe: %x), addr: 0x%lx, key: 0x%lx  ", i, pes[i], rofi->alloc_bufs.iov_buf[pes[i]].addr, rofi->alloc_bufs.iov_buf[pes[i]].key);
-    //         //         }
-    //         //         printf("\n");
-    //         // #endif
-    //         ready = true;
-    //         ret = rofi_transport_sub_barrier(rofi, pes, me, num_pes);
-    //         if (ret) {
-    //             return ret;
-    //         }
-    //         for (int i = 0; i < num_pes; i++) {
-    //             ready &= rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2] == rofi->alloc_bufs.hash_buf[pes[i] * 2];
-    //             ready &= rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1] == rofi->alloc_bufs.hash_buf[pes[i] * 2 + 1];
-    //         }
-    // // if (cnt % 1000 == 0) {
-    // #ifdef _DEBUG
-    //         DEBUG_MSG("prev addr hash 0x%lx, curr addr hash 0x%lx, prev key hash 0x%lx, curr key hash 0x%lx", prev_addr_hash, rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2], prev_key_hash, rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1]);
-    //         for (int i = 0; i < num_pes; i++) {
-    //             printf("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", i, pes[i], rofi->alloc_bufs.hash_buf[pes[i] * 2], rofi->alloc_bufs.hash_buf[pes[i] * 2 + 1]);
-    //         }
-    //         printf("\n");
-    //         for (int i = 0; i < num_pes; i++) {
-    //             printf("i: %d(pe: %x), addr: 0x%lx, key: 0x%lx  ", i, pes[i], rofi->alloc_bufs.iov_buf[pes[i]].addr, rofi->alloc_bufs.iov_buf[pes[i]].key);
-    //         }
-    //         printf("\n");
-    // #endif
-    //         // }
-    //         if (prev_addr_hash == rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2] && prev_key_hash == rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1]) {
-    //             cnt += 1;
-    //         }
-    //         prev_addr_hash = rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2];
-    //         prev_key_hash = rofi->alloc_bufs.hash_buf[rofi->desc.nid * 2 + 1];
-    //         // cnt += 1;
-    //         ret = rofi_transport_sub_barrier(rofi, pes, me, num_pes);
-    //         if (ret) {
-    //             return ret;
-    //         }
-    //         if (cnt > 1000000) {
-    //             ERR_MSG("EXCHANGE failed, cnt: %d", cnt);
-    //             return -1;
-    //         }
-    //     }
-    //     for (int i = 0; i < num_pes; i++) {
-    //         mr->iov[pes[i]] = rofi->alloc_bufs.iov_buf[pes[i]];
-    //         DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", i, pes[i], rofi->alloc_bufs.iov_buf[pes[i]].addr, rofi->alloc_bufs.iov_buf[pes[i]].key);
-    //     }
-    //     for (int i = 0; i < rofi->desc.nid; i++) {
-    //         rofi->alloc_bufs.iov_buf[i].key = 0;
-    //         rofi->alloc_bufs.iov_buf[i].addr = 0;
-    //         rofi->alloc_bufs.hash_buf[i * 2] = 0;
-    //         rofi->alloc_bufs.hash_buf[i * 2 + 1] = 0;
-    //         rofi->alloc_bufs.barrier_buf[i] = 0;
-    //     }
-    //     ret = rofi_transport_sub_barrier_reset(rofi, pes, me, num_pes);
-    //     for (int i = 0; i < rofi->desc.nid; i++) {
-    //         rofi->alloc_bufs.reset_barrier_buf[i] = 0;
-    //     }
-    //     rofi->alloc_bufs.barrier_id = 0;
-    //     if (ret) {
-    //         return ret;
-    //     }
-    //     return 0;
 }
 
 int euclid_rem(int a, int b) {
@@ -941,6 +789,7 @@ int euclid_rem(int a, int b) {
     return r >= 0 ? r : r + abs(b);
 }
 
+// This can support sub barriers
 int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, uint64_t *barrier_buf, uint64_t *pes, uint64_t me, uint64_t num_pes) {
     int n = 2;
 
@@ -990,11 +839,4 @@ int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, u
 
 int rofi_transport_barrier(rofi_transport_t *rofi) {
     return rofi_transport_inner_barrier(rofi, &rofi->global_barrier_id, rofi->global_barrier_buf, NULL, rofi->desc.nid, rofi->desc.nodes);
-}
-
-int rofi_transport_sub_barrier(rofi_transport_t *rofi, uint64_t *pes, uint64_t me, uint64_t num_pes) {
-    return rofi_transport_inner_barrier(rofi, &rofi->alloc_bufs.barrier_id, rofi->alloc_bufs.barrier_buf, pes, me, num_pes);
-}
-int rofi_transport_sub_barrier_reset(rofi_transport_t *rofi, uint64_t *pes, uint64_t me, uint64_t num_pes) {
-    return rofi_transport_inner_barrier(rofi, &rofi->alloc_bufs.barrier_id, rofi->alloc_bufs.reset_barrier_buf, pes, me, num_pes);
 }

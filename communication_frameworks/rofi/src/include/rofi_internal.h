@@ -54,14 +54,6 @@ typedef struct {
     uint64_t inject_size;
 } rofi_desc_t;
 
-typedef struct {
-    struct fi_rma_iov *iov_buf;
-    uint64_t *hash_buf;
-    uint64_t *barrier_buf;
-    uint64_t *reset_barrier_buf;
-    uint64_t barrier_id;
-} rofi_alloc_exchange;
-
 struct rofi_transport_s {
     struct fi_info *info;
     struct fid_fabric *fabric;
@@ -77,7 +69,6 @@ struct rofi_transport_s {
     uint64_t pending_get_cntr;
     rofi_desc_t desc;
     rofi_mr_desc *mr;
-    rofi_alloc_exchange alloc_bufs;
     uint64_t global_barrier_id;
     uint64_t *global_barrier_buf;
     pthread_mutex_t lock;

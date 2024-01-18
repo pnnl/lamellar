@@ -79,8 +79,6 @@ int rofi_transport_get_wait_all(rofi_transport_t *rofi);
 int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr);
 int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes);
 int rofi_transport_barrier(rofi_transport_t *rofi);
-int rofi_transport_sub_barrier(rofi_transport_t *rofi, uint64_t* pes, uint64_t me, uint64_t num_pes);
-int rofi_transport_sub_barrier_reset(rofi_transport_t *rofi, uint64_t *pes, uint64_t me, uint64_t num_pes);
 
 
 #endif /* _TRANSPORT_H_ */

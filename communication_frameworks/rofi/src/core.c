@@ -268,11 +268,7 @@ int rofi_init_internal(char *prov) {
 
     mr_init();
     uint64_t global_barrier_size = rofi.desc.nodes * sizeof(uint64_t);
-    uint64_t alloc_iov_buf_size = rofi.desc.nodes * sizeof(struct fi_rma_iov);
-    uint64_t alloc_hash_buf_size = rofi.desc.nodes * sizeof(uint64_t) * 2;
-    uint64_t alloc_barrier_size = rofi.desc.nodes * sizeof(uint64_t);
-    uint64_t alloc_reset_barrier_size = rofi.desc.nodes * sizeof(uint64_t);
-    int rofi_mr_size = global_barrier_size + alloc_iov_buf_size + alloc_hash_buf_size + alloc_barrier_size + alloc_reset_barrier_size;
+    int rofi_mr_size = global_barrier_size;
 
     rofi.mr = mr_add(&rofi, rofi_mr_size, 0);
     if (!rofi.mr) {
@@ -288,24 +284,9 @@ int rofi_init_internal(char *prov) {
 
     rofi.global_barrier_id = 0;
     rofi.global_barrier_buf = (uint64_t *)rofi.mr->start;
-    rofi.alloc_bufs.iov_buf = (struct fi_rma_iov *)((uint8_t *)rofi.global_barrier_buf + global_barrier_size);
-    rofi.alloc_bufs.hash_buf = (uint64_t *)((uint8_t *)rofi.alloc_bufs.iov_buf + alloc_iov_buf_size);
-    rofi.alloc_bufs.barrier_buf = (uint64_t *)((uint8_t *)rofi.alloc_bufs.hash_buf + alloc_hash_buf_size);
-    rofi.alloc_bufs.reset_barrier_buf = (uint64_t *)((uint8_t *)rofi.alloc_bufs.barrier_buf + alloc_barrier_size);
-    rofi.alloc_bufs.barrier_id = 0;
-
-    DEBUG_MSG("Global Barrier Buf %p %lu, Alloc IOV Buf %p %lu, Alloc Hash Buf %p %lu, Alloc Barrier Buf %p %lu, Alloc Reset Barrier Buf %p %lu",
-              rofi.global_barrier_buf, global_barrier_size, rofi.alloc_bufs.iov_buf, alloc_iov_buf_size,
-              rofi.alloc_bufs.hash_buf, alloc_hash_buf_size, rofi.alloc_bufs.barrier_buf, alloc_barrier_size,
-              rofi.alloc_bufs.reset_barrier_buf, alloc_reset_barrier_size);
 
     for (int i = 0; i < rofi.desc.nid; i++) {
         rofi.global_barrier_buf[i] = 0;
-        rofi.alloc_bufs.iov_buf[i].key = 0;
-        rofi.alloc_bufs.iov_buf[i].addr = 0;
-        rofi.alloc_bufs.hash_buf[i * 2] = 0;
-        rofi.alloc_bufs.hash_buf[i * 2 + 1] = 0;
-        rofi.alloc_bufs.barrier_buf[i] = 0;
     }
     fi_freeinfo(hints);
     return 0;
