@@ -14,6 +14,8 @@ ROFI provide support for synchronous and asynchronous RDMA-based APIs (i.e., PUT
 
 NEWS
 ----
+Feb 2024: Third alpha release
+May 2021: Second alpha release
 Feb 2020: First alpha release
 
 BUILD REQUIREMENTS
@@ -32,12 +34,7 @@ At the time of release, ROFI has been tested with the following external package
 
 | **GCC** | **OFI**   | **IB VERBS**  | **MPI**       | **SLURM** |
 |--------:|----------:|--------------:|--------------:|----------:|
-| 4.8.5   | 1.7.1     | 1.13          | mvapich2/2.3a | 17.02.7   |
-|         | 1.8.0     |               |               |           |
-|         | 1.9.0     |               |               |           |
-| 7.1.0.  | 1.10.0    |               |               |           |
-|         | 1.11.0    |               |               |           |
-|         | 1.12.0    |               |               |           |
+| 8.5.0   | 1.20.0     | 1.14         | mvapich2/2.3.6| 17.02.7   |
 
 BUILDING PACKAGE
 ----------------
