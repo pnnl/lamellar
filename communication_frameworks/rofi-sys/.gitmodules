@@ -2,3 +2,6 @@
 	path = rofi
 	url = git@github.com:pnnl/rofi.git
 
+[submodule "libfabric"]
+	path = libfabric
+	url = git@github.com:ofiwg/libfabric.git
