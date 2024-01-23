@@ -50,7 +50,7 @@ fn pp_server_msg() {
     
     ep.shutdown(0).unwrap();
 
-    common::close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep, mr);
+    // common::close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep, mr);
 }
 
 
@@ -90,6 +90,6 @@ fn pp_client_msg() {
     common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
     ep.shutdown(0).unwrap();
 
-    common::close_all(fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, None);
+    // common::close_all(&mut fab, &mut domain, &mut eq, &mut rx_cq, &mut tx_cq, &mut tx_cntr, &mut rx_cntr, &mut ep, &mut mr, None);
 
 }

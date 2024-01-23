@@ -1,4 +1,6 @@
 
+use debug_print::debug_println;
+
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::FID;
@@ -66,13 +68,13 @@ impl crate::FID for Fabric {
     }
 }
 
-// impl Drop for Fabric {
-//     fn drop(&mut self) {
-//         println!("Dropping fabric");
+impl Drop for Fabric {
+    fn drop(&mut self) {
+        debug_println!("Dropping fabric");
 
-//         self.close();
-//     }
-// }
+        self.close().unwrap()
+    }
+}
 
 //================== Fabric attribute ==================//
 

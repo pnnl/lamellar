@@ -6,3 +6,4 @@ edition = "2021"
 
 [dependencies]
 libfabric-sys = { path = "../libfabric-sys" }
+debug_print = "1.0.0"

@@ -1,3 +1,5 @@
+use debug_print::debug_println;
+
 #[allow(unused_imports)]
 use crate::FID;
 
@@ -158,14 +160,13 @@ impl crate::FID for MemoryRegion{
     }
 }
 
+impl Drop for MemoryRegion {
+    fn drop(&mut self) {
+        debug_println!("Dropping mr");
 
-// impl Drop for MemoryRegion {
-//     fn drop(&mut self) {
-//         println!("Dropping mr");
-
-//         self.close().unwrap();
-//     }
-// }
+        self.close().unwrap();
+    }
+}
 
 //================== Memory Region attribute ==================//
 
@@ -269,8 +270,6 @@ impl MemoryRegionAttr {
 #[cfg(test)]
 mod tests {
 
-    use crate::FID;
-
     fn ft_alloc_bit_combo(fixed: u64, opt: u64) -> Vec<u64> {
         let bits_set = |mut val: u64 | -> u64 { let mut cnt = 0; while val > 0 {  cnt += 1 ; val &= val-1; } cnt };
         let num_flags = bits_set(opt) + 1;
@@ -354,13 +353,13 @@ mod tests {
                 let buff_size = DEF_TEST_SIZES[i].0;
                 let buf = vec![0_u64; buff_size as usize ];
                 for j in 0..combos.len() {
-                    let mr = domain.mr_reg(&buf, combos[j], 0, 0xC0DE, 0).unwrap();
-                    mr.close().unwrap();
+                    let _mr = domain.mr_reg(&buf, combos[j], 0, 0xC0DE, 0).unwrap();
+                    // mr.close().unwrap();
                 }
             }
             
-            domain.close().unwrap();
-            fab.close().unwrap();
+            // domain.close().unwrap();
+            // fab.close().unwrap();
         }
         else {
             panic!("No capable fabric found!");

@@ -1,5 +1,7 @@
 //================== Domain (fi_domain) ==================//
 
+use debug_print::debug_println;
+
 #[allow(unused_imports)]
 use crate::FID;
 
@@ -99,13 +101,14 @@ impl crate::FID for Counter {
 impl crate::Bind for Counter {
     
 }
-// impl Drop for Counter {
-//     fn drop(&mut self) {
-//         println!("Dropping cntr");
 
-//         self.close().unwrap();
-//     }
-// }
+impl Drop for Counter {
+    fn drop(&mut self) {
+        debug_println!("Dropping cntr");
+
+        self.close().unwrap();
+    }
+}
 
 //================== Counter attribute ==================//
 
@@ -170,8 +173,6 @@ impl CounterAttr {
 
 #[cfg(test)]
 mod tests {
-    use crate::FID;
-
     #[test]
     fn cntr_loop() {
 
@@ -216,13 +217,6 @@ mod tests {
                         let value = cntr.readerr() as usize;
                         assert_eq!(expected, value);
                     }
-                    
-                    for cntr in cntrs {
-                        cntr.close().unwrap();
-                    }
-
-                    domain.close().unwrap();
-                    fab.close().unwrap();
                     break;
                 }
 

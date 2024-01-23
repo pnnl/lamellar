@@ -40,7 +40,6 @@ fn pp_server_rma() {
     }
 
     common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr.into(),av.into());
 }
 
 #[ignore]
@@ -81,5 +80,4 @@ fn pp_client_rma() {
     }
 
     common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr.into(), av.into());
 }

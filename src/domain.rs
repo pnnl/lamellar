@@ -1,3 +1,5 @@
+use debug_print::debug_println;
+
 #[allow(unused_imports)]
 use crate::FID;
 
@@ -9,7 +11,7 @@ pub struct Domain {
 
 impl Domain {
 
-    pub fn new(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) };
@@ -23,7 +25,7 @@ impl Domain {
         }
     }
 
-    pub fn new2(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, flags: u64) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new2(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, flags: u64) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) };
@@ -150,12 +152,12 @@ impl crate::FID for Domain {
     }
 }
 
-// impl Drop for Domain {
-//     fn drop(&mut self) {
-//         println!("Dropping domain");
-//         self.close();
-//     }
-// }
+impl Drop for Domain {
+    fn drop(&mut self) {
+        debug_println!("Dropping domain");
+        self.close().unwrap()
+    }
+}
 
 //================== Domain attribute ==================//
 
@@ -222,6 +224,11 @@ impl DomainAttr {
         self
     }
 
+    pub fn data_progress(mut self, data_progress: crate::enums::Progress) -> Self {
+        self.c_attr.data_progress = data_progress.get_value();
+
+        self
+    }
 
     pub fn get_mode(&self) -> u64 {
         self.c_attr.mode 
@@ -233,6 +240,11 @@ impl DomainAttr {
 
     pub fn get_av_type(&self) ->  crate::enums::AddressVectorType {
         crate::enums::AddressVectorType::from_value( self.c_attr.av_type)
+    }
+
+    pub fn get_data_progress(&self) -> crate::enums::Progress {
+        
+        crate::enums::Progress::from_value(self.c_attr.data_progress)
     }
 
     pub fn get_mr_iov_limit(&self) -> usize {
@@ -260,27 +272,17 @@ impl DomainAttr {
 
 #[cfg(test)]
 mod tests {
-    use crate::FID;
-
     #[test]
     fn domain_test() {
         let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
         let count = 10;
         let mut doms = Vec::new();
         for _ in 0..count {
             let domain = fab.domain(&entries[0]).unwrap();
             doms.push(domain);
         }
-        
-        for dom in doms {
-            dom.close().unwrap();
-        }
-        
-        eq.close().unwrap();
-        fab.close().unwrap();
     }
 }

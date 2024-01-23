@@ -1,3 +1,5 @@
+use debug_print::debug_println;
+
 #[allow(unused_imports)]
 use crate::FID;
 use crate::{InfoEntry, enums::Event};
@@ -10,7 +12,7 @@ pub struct EventQueue {
 }
 
 impl EventQueue {
-    pub fn new(fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr) -> Result<Self, crate::error::Error> {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
@@ -126,13 +128,14 @@ impl crate::FID for EventQueue {
 impl crate::Bind for EventQueue {
     
 }
-// impl Drop for EventQueue {
-//     fn drop(&mut self) {
-//         println!("Dropping eq");
 
-//         self.close().unwrap();
-//     }
-// }
+impl Drop for EventQueue {
+    fn drop(&mut self) {
+        debug_println!("Dropping eq");
+
+        self.close().unwrap();
+    }
+}
 
 //================== EventQueue Attribute(fi_eq_attr) ==================//
 
@@ -361,8 +364,8 @@ mod tests {
             }
         }
 
-        eq.close().unwrap();
-        fab.close().unwrap();
+        // eq.close().unwrap();
+        // fab.close().unwrap();
     }
 
     #[test]
@@ -387,8 +390,8 @@ mod tests {
             }
         }
 
-        eq.close().unwrap();
-        fab.close().unwrap();
+        // eq.close().unwrap();
+        // fab.close().unwrap();
     }
 
     #[test]
@@ -443,8 +446,8 @@ mod tests {
             }
         }
 
-        eq.close().unwrap();
-        fab.close().unwrap();
+        // eq.close().unwrap();
+        // fab.close().unwrap();
     }
 
     #[test]
@@ -492,8 +495,8 @@ mod tests {
                 ret.unwrap();
             }
         }
-        eq.close().unwrap();
-        fab.close().unwrap();
+        // eq.close().unwrap();
+        // fab.close().unwrap();
     }
 
 
@@ -512,10 +515,8 @@ mod tests {
                 size = 1 << i;
             }
             let mut eq_attr = crate::eq::EventQueueAttr::new();
-            eq_attr.size(size);
-            let eq = fab.eq_open(eq_attr).unwrap();
-            eq.close().unwrap();
+                eq_attr.size(size);
+            let _eq = fab.eq_open(eq_attr).unwrap();
         }
-        fab.close().unwrap();
     }
 }

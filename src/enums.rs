@@ -505,6 +505,19 @@ impl Progress {
             Progress::MANUAL => libfabric_sys::fi_progress_FI_PROGRESS_MANUAL,
         }
     }
+
+    pub fn from_value(val: libfabric_sys::fi_progress) -> Self {
+
+        if val == libfabric_sys::fi_progress_FI_PROGRESS_AUTO {
+            Progress::AUTO
+        }
+        else if val == libfabric_sys::fi_progress_FI_PROGRESS_MANUAL {
+            Progress::MANUAL
+        }
+        else {
+            Progress::UNSPEC
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]

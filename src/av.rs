@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use debug_print::debug_println;
 
 #[allow(unused_imports)] 
 use crate::FID;
@@ -36,8 +37,8 @@ impl AddressVector {
         }
     }
 
-    pub fn insert<T0>(&self, buf: &[T0], addr: &mut crate::Address, flags: u64) -> Result<usize, crate::error::Error> { // [TODO] Handle case where operation partially failed
-        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.c_av, buf.as_ptr() as *const std::ffi::c_void, buf.len(), addr as *mut crate::Address, flags, std::ptr::null_mut()) };
+    pub fn insert<T0>(&self, buf: &[T0], addr: &mut [crate::Address], flags: u64) -> Result<usize, crate::error::Error> { // [TODO] Handle case where operation partially failed
+        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.c_av, buf.as_ptr() as *const std::ffi::c_void, addr.len(), addr.as_mut_ptr(), flags, std::ptr::null_mut()) };
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -130,13 +131,13 @@ impl crate::Bind for AddressVector {
     
 }
 
-// impl Drop for AddressVector {
-//     fn drop(&mut self) {
-//         println!("Dropping av");
+impl Drop for AddressVector {
+    fn drop(&mut self) {
+        debug_println!("Dropping av");
 
-//         self.close().unwrap()
-//     }
-// }
+        self.close().unwrap()
+    }
+}
 
 //================== Address Vector attribute ==================//
 
@@ -305,8 +306,6 @@ impl AddressVectorSetAttr {
 
 #[cfg(test)]
 mod tests {
-    use crate::FID;
-    
     #[test]
     fn av_open_close() {
         let ep_attr = crate::ep::EndpointAttr::new()
@@ -333,12 +332,8 @@ mod tests {
                     .type_(crate::enums::AddressVectorType::MAP)
                     .count(count)
                     .flags(0);
-                let av = domain.av_open(attr).unwrap();
-                    av.close().unwrap();
+                let _av = domain.av_open(attr).unwrap();
             }
-
-            domain.close().unwrap();
-            fab.close().unwrap();
         }
         else {
             panic!("No capable fabric found!");
@@ -368,11 +363,7 @@ mod tests {
                 .count(32);
             let fab: crate::fabric::Fabric = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
             let domain = fab.domain(&entries[0]).unwrap();
-            let av = domain.av_open(attr).unwrap();
-
-            av.close().unwrap();
-            domain.close().unwrap();
-            fab.close().unwrap();
+            let _av = domain.av_open(attr).unwrap();
         }
         else {
             panic!("No capable fabric found!");

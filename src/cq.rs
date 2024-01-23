@@ -1,3 +1,5 @@
+use debug_print::debug_println;
+
 #[allow(unused_imports)]
 use crate::FID;
 
@@ -147,13 +149,13 @@ impl crate::Bind for CompletionQueue {
     
 }
 
-// impl Drop for CompletionQueue {
-//     fn drop(&mut self) {
-//         println!("Dropping cq");
+impl Drop for CompletionQueue {
+    fn drop(&mut self) {
+        debug_println!("Dropping cq");
 
-//         self.close();
-//     }
-// }
+        self.close().unwrap()
+    }
+}
 
 //================== CompletionQueue Attribute (fi_cq_attr) ==================//
 
@@ -276,7 +278,6 @@ impl CqErrEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::FID;
     use crate::cq::*;
 
     #[test]
@@ -286,7 +287,7 @@ mod tests {
         
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         let count = 10;
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
+        let _eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
         let domain = fab.domain(&entries[0]).unwrap();
         let mut cqs = Vec::new();
         for _ in 0..count {
@@ -294,13 +295,6 @@ mod tests {
             let cq = domain.cq_open(cq_attr).unwrap();
             cqs.push(cq);
         }
-
-        for cq in cqs {
-            cq.close().unwrap();
-        }
-        domain.close().unwrap();
-        eq.close().unwrap();
-        fab.close().unwrap();
     }
 
     #[test]
@@ -310,7 +304,7 @@ mod tests {
         let mut buf = vec![0,0,0];
         
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
+        let _eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
         let domain = fab.domain(&entries[0]).unwrap();
         let mut cq_attr = CompletionQueueAttr::new();
         cq_attr.size(1);
@@ -322,12 +316,6 @@ mod tests {
                 ret.unwrap();
             }
         }
-
-        cq.close().unwrap();
-
-        domain.close().unwrap();
-        eq.close().unwrap();
-        fab.close().unwrap();
     }
 
     #[test]
@@ -336,7 +324,6 @@ mod tests {
         let entries = info.get();
         
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-        let eq = fab.eq_open(crate::eq::EventQueueAttr::new()).unwrap();
         let domain = fab.domain(&entries[0]).unwrap();
         for i in -1..17 {
             let size ;
@@ -348,11 +335,7 @@ mod tests {
             }
             let mut cq_attr = CompletionQueueAttr::new();
             cq_attr.size(size); 
-            let cq = domain.cq_open(cq_attr).unwrap();
-            cq.close().unwrap();
+            let _cq = domain.cq_open(cq_attr).unwrap();
         }
-        domain.close().unwrap();
-        eq.close().unwrap();
-        fab.close().unwrap();
     }
 }

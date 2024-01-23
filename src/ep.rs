@@ -1,3 +1,5 @@
+use debug_print::debug_println;
+
 #[allow(unused_imports)]
 use crate::FID;
 use crate::{eq::EventQueue, cq::CompletionQueue, cntr::Counter, av::AddressVector};
@@ -1543,19 +1545,27 @@ impl ActiveEndpoint for Endpoint {
     }
 }
 
-// impl Drop for Endpoint {
+impl Drop for Endpoint {
     
-//     fn drop(&mut self) {
-//         println!("Dropping ep");
-//         self.close();
-//     }
-// }
+    fn drop(&mut self) {
+        debug_println!("Dropping ep");
+        self.close().unwrap();
+    }
+}
 
-// impl Drop for PassiveEndpoint {
-//     fn drop(&mut self) {
-//         self.close();
-//     }
-// }
+impl Drop for ScalableEndpoint {
+    
+    fn drop(&mut self) {
+        debug_println!("Dropping scalable ep");
+        self.close().unwrap();
+    }
+}
+
+impl Drop for PassiveEndpoint {
+    fn drop(&mut self) {
+        self.close().unwrap();
+    }
+}
 
 //================== Endpoint attribute ==================//
 #[derive(Clone)]

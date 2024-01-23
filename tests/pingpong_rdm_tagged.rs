@@ -53,8 +53,6 @@ fn pp_server_rdm_tagged() {
     }
 
     common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
-    
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
 }
 
 
@@ -101,7 +99,4 @@ fn pp_client_rdm_tagged() {
     }
 
     common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
-
-    common::close_all(fabric, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, av.into());
-
 }

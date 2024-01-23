@@ -505,7 +505,7 @@ pub fn ft_init_fabric(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, 
 
 pub fn ft_av_insert<T>(av: &libfabric::av::AddressVector, addr: &T, fi_addr: &mut libfabric::Address, flags: u64) {
 
-    let len_added = av.insert(std::slice::from_ref(addr), fi_addr, flags).unwrap();
+    let len_added = av.insert(std::slice::from_ref(addr), std::slice::from_mut(fi_addr), flags).unwrap();
     if len_added != 1 {
         panic!("Could not add address to address vector");
     }
@@ -1120,30 +1120,30 @@ pub fn ft_finalize(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep:
     ft_finalize_ep(info, gl_ctx, ep, data_desc, tx_cq, rx_cq, tx_cntr, rx_cntr);
 }
 
-pub fn close_all_pep(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, ep: libfabric::ep::Endpoint, pep: libfabric::ep::PassiveEndpoint, mr: Option<libfabric::mr::MemoryRegion>) {
-    ep.close().unwrap();
-    pep.close().unwrap();
-    eq.close().unwrap();
-    tx_cq.close().unwrap();
-    rx_cq.close().unwrap();
-    if let Some(mr_val) = mr { mr_val.close().unwrap(); }
-    domain.close().unwrap();
-    fab.close().unwrap();        
-}
+// pub fn close_all_pep(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, ep: libfabric::ep::Endpoint, pep: libfabric::ep::PassiveEndpoint, mr: Option<libfabric::mr::MemoryRegion>) {
+//     ep.close().unwrap();
+//     pep.close().unwrap();
+//     eq.close().unwrap();
+//     tx_cq.close().unwrap();
+//     rx_cq.close().unwrap();
+//     if let Some(mr_val) = mr { mr_val.close().unwrap(); }
+//     domain.close().unwrap();
+//     fab.close().unwrap();        
+// }
 
-pub fn close_all(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, tx_cntr: Option<Counter>, rx_cntr: Option<Counter>, ep: libfabric::ep::Endpoint, mr: Option<libfabric::mr::MemoryRegion>, av: Option<libfabric::av::AddressVector>) {
+// pub fn close_all(fab: &mut libfabric::fabric::Fabric, domain: &mut libfabric::domain::Domain, eq :&mut libfabric::eq::EventQueue, rx_cq: &mut libfabric::cq::CompletionQueue, tx_cq: &mut libfabric::cq::CompletionQueue, tx_cntr: Option<Counter>, rx_cntr: Option<Counter>, ep: &mut libfabric::ep::Endpoint, mr: Option<&mut libfabric::mr::MemoryRegion>, av: Option<&mut libfabric::av::AddressVector>) {
     
-    ep.close().unwrap();
-    eq.close().unwrap();
-    tx_cq.close().unwrap();
-    rx_cq.close().unwrap();
-    if let Some(mr_val) = mr { mr_val.close().unwrap() }
-    if let Some(av_val) = av { av_val.close().unwrap() }
-    if let Some(rxcntr_val) = rx_cntr { rxcntr_val.close().unwrap() }
-    if let Some(txcnr_val) = tx_cntr { txcnr_val.close().unwrap() }
-    domain.close().unwrap();
-    fab.close().unwrap();    
-}
+//     ep.close().unwrap();
+//     eq.close().unwrap();
+//     tx_cq.close().unwrap();
+//     rx_cq.close().unwrap();
+//     if let Some(mr_val) = mr { mr_val.close().unwrap() }
+//     if let Some(av_val) = av { av_val.close().unwrap() }
+//     if let Some(rxcntr_val) = rx_cntr { rxcntr_val.close().unwrap() }
+//     if let Some(txcnr_val) = tx_cntr { txcnr_val.close().unwrap() }
+//     domain.close().unwrap();
+//     fab.close().unwrap();    
+// }
 
 pub fn pingpong(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, tx_cq: &libfabric::cq::CompletionQueue, rx_cq: &libfabric::cq::CompletionQueue, tx_cntr: &Option<Counter>, rx_cntr: &Option<Counter>, ep: &libfabric::ep::Endpoint, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, iters: usize, warmup: usize, size: usize, server: bool) {
     let inject_size = info.get_tx_attr().get_inject_size();
