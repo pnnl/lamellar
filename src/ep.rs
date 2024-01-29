@@ -768,8 +768,8 @@ impl Endpoint {
         }
     }
 
-    pub unsafe fn read_with_context<T0>(&self, buf: &mut [T0], len: usize, desc: &mut impl crate::DataDescriptor, src_addr: crate::Address, addr: u64,  key: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, len, desc.get_desc(), src_addr, addr, key, context.get_mut() as *mut  std::ffi::c_void) };
+    pub unsafe fn read_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, src_addr: crate::Address, addr: u64,  key: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), src_addr, addr, key, context.get_mut() as *mut  std::ffi::c_void) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -817,7 +817,7 @@ impl Endpoint {
         }
     }
 
-    pub unsafe fn write_with_context<T0,T1>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key:u64, context: &mut crate::Context) -> Result<(), crate::error::Error>  {
+    pub unsafe fn write_with_context<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key:u64, context: &mut crate::Context) -> Result<(), crate::error::Error>  {
         let err = unsafe{ libfabric_sys::inlined_fi_write(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), dest_addr, addr, key, context.get_mut() as *mut  std::ffi::c_void) };
 
         if err != 0 {
