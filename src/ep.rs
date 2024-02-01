@@ -1421,8 +1421,8 @@ impl Endpoint {
         }
     }
     
-    pub fn allgather<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, flags, std::ptr::null_mut()) };
+    pub fn allgather<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut [T0], result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr() as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, libfabric_sys::fi_datatype_FI_UINT8, flags, std::ptr::null_mut()) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -1432,8 +1432,8 @@ impl Endpoint {
         }
     }
     
-    pub fn allgather_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, flags, context.get_mut() as *mut std::ffi::c_void) };
+    pub fn allgather_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut [T0], result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr() as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, libfabric_sys::fi_datatype_FI_UINT8, flags, context.get_mut() as *mut std::ffi::c_void) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))

@@ -266,6 +266,10 @@ impl CqErrEntry {
         self.c_err.prov_errno
     }
 
+    pub fn is_op_context_equal(&self, ctx: &crate::Context) -> bool {
+        std::ptr::eq(self.c_err.op_context, ctx as *const crate::Context as *const std::ffi::c_void)
+    }
+
     pub(crate) fn get_err_data(&self) -> *const std::ffi::c_void {
         self.c_err.err_data
     }
@@ -326,13 +330,7 @@ mod tests {
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         let domain = fab.domain(&entries[0]).unwrap();
         for i in -1..17 {
-            let size ;
-            if i == -1 {
-                size = 0;
-            }
-            else {
-                size = 1 << i;
-            }
+            let size = if i == -1 { 0 } else { 1 << i };
             let mut cq_attr = CompletionQueueAttr::new();
             cq_attr.size(size); 
             let _cq = domain.cq_open(cq_attr).unwrap();

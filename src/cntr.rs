@@ -126,8 +126,8 @@ impl CounterAttr {
 
     pub fn new() -> Self {
         let c_attr = libfabric_sys::fi_cntr_attr {
-            events: 0,
-            wait_obj: 0,
+            events: libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP,
+            wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
             wait_set: std::ptr::null_mut(),
             flags: 0,
         };
@@ -188,7 +188,7 @@ mod tests {
         let info = crate::Info::new().hints(&hints).request().unwrap();
         let entries: Vec<crate::InfoEntry> = info.get();
         
-        if entries.len() > 0 {
+        if !entries.is_empty() {
             for e in entries {
                 if e.get_domain_attr().get_cntr_cnt() != 0 {
                     let fab = crate::fabric::Fabric::new(e.fabric_attr.clone()).unwrap();

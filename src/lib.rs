@@ -1,5 +1,7 @@
 use core::panic;
 
+use debug_print::debug_println;
+
 // use ep::ActiveEndpoint;
 pub mod ep;
 pub mod domain;
@@ -539,12 +541,14 @@ impl AtomicAttr {
 //     pub(crate) c_mc: *mut libfabric_sys::fid_mc,
 // }
 
-// impl FID for Mc {
-//     fn fid(&self) -> *mut libfabric_sys::fid {
-//         unsafe { &mut (*self.c_mc).fid as *mut libfabric_sys::fid }
+impl FID for Mc {
+    fn fid(&self) -> *mut libfabric_sys::fid {
+        unsafe { &mut (*self.c_mc).fid as *mut libfabric_sys::fid }
 
-//     }
-// }
+    }
+}
+
+
 pub struct Stx {
 
     #[allow(dead_code)]
@@ -745,8 +749,15 @@ impl Mc {
         }
     }
 
-    pub fn addr(&self) -> Address {
+    pub fn get_addr(&self) -> Address {
         unsafe { libfabric_sys::inlined_fi_mc_addr(self.c_mc) }
+    }
+}
+
+impl Drop for Mc {
+    fn drop(&mut self) {
+        debug_println!("Dropping mc");
+        self.close().unwrap();
     }
 }
 
@@ -814,6 +825,27 @@ pub struct CollectiveAttr {
 }
 
 impl CollectiveAttr {
+
+
+    //[TODO] CHECK INITIAL VALUES
+    pub fn new() -> Self {
+
+        Self {
+            c_attr: libfabric_sys::fi_collective_attr {
+                op: 0,
+                datatype: libfabric_sys::fi_datatype_FI_UINT64,
+                datatype_attr: libfabric_sys::fi_atomic_attr{count: 0, size: 0},
+                max_members: 0,
+                mode: 0,
+            }
+        }
+    }
+
+
+    pub fn op(mut self, op: &enums::Op) -> Self {
+        self.c_attr.op = op.get_value();
+        self
+    }
 
     #[allow(dead_code)]
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_collective_attr {

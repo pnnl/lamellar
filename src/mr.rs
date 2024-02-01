@@ -138,6 +138,7 @@ impl MemoryRegion {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct MemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
 }

@@ -2,7 +2,7 @@ use debug_print::debug_println;
 
 #[allow(unused_imports)]
 use crate::FID;
-use crate::{InfoEntry, enums::Event};
+use crate::{enums::Event, Context2, InfoEntry};
 
 
 //================== EventQueue (fi_eq) ==================//
@@ -231,11 +231,11 @@ pub struct EventQueueEntry<T> {
 }
 
 impl<T> EventQueueEntry<T> {
-    const SIZE_OK: () = assert!(std::mem::size_of::<T>() == std::mem::size_of::<usize>(), 
-    "The context of an EventQueueEntry must always be of size equal to usize datatype.");
+    // const SIZE_OK: () = assert!(std::mem::size_of::<T>() == std::mem::size_of::<usize>(), 
+    // "The context of an EventQueueEntry must always be of size equal to usize datatype.");
 
     pub fn new() -> Self {
-        let _ = Self::SIZE_OK;
+        // let _ = Self::SIZE_OK;
         let c_entry = libfabric_sys::fi_eq_entry { 
             fid: std::ptr::null_mut(), 
             context: std::ptr::null_mut(), 
@@ -270,6 +270,11 @@ impl<T> EventQueueEntry<T> {
     pub fn get_context(&self) -> T {
         let context_ptr:*mut *mut T = &mut (self.c_entry.context as *mut T);
         unsafe { std::mem::transmute_copy::<T,T>(&*(context_ptr as *const T)) }
+    }
+
+    pub fn is_context_equal(&self, ctx: &crate::Context) -> bool {
+
+        std::ptr::eq(self.c_entry.context, ctx as *const crate::Context as *const std::ffi::c_void)
     }
 
 }
@@ -315,7 +320,7 @@ mod tests {
             .wait_obj(crate::enums::WaitObj::NONE);
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         let eq = fab.eq_open(eq_attr).unwrap();
-        for mut i in 0 as usize ..5 {
+        for mut i in 0_usize ..5 {
             let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
             if i & 1 == 1 {
                 entry.fid(&fab);
@@ -379,7 +384,7 @@ mod tests {
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         let eq = fab.eq_open(eq_attr).unwrap();
 
-        for mut i in 0 as usize .. 32 {
+        for mut i in 0_usize .. 32 {
             let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
             entry
                 .fid(&fab)
@@ -404,7 +409,7 @@ mod tests {
             .wait_obj(crate::enums::WaitObj::FD);
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         let eq = fab.eq_open(eq_attr).unwrap();
-        for mut i in 0 as usize ..5 {
+        for mut i in 0_usize ..5 {
             let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
             if i & 1 == 1 {
                 entry.fid(&fab);
@@ -460,7 +465,7 @@ mod tests {
             .wait_obj(crate::enums::WaitObj::FD);
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         let eq = fab.eq_open(eq_attr).unwrap();
-        for mut i in 0 as usize ..5 {
+        for mut i in 0_usize ..5 {
             let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
             entry.fid(&fab);
 
@@ -507,13 +512,7 @@ mod tests {
         
         let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
         for i in -1..17 {
-            let size ;
-            if i == -1 {
-                size = 0;
-            }
-            else {
-                size = 1 << i;
-            }
+            let size = if i == -1 { 0 } else { 1 << i };
             let mut eq_attr = crate::eq::EventQueueAttr::new();
                 eq_attr.size(size);
             let _eq = fab.eq_open(eq_attr).unwrap();
