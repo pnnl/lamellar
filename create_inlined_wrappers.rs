@@ -12,45 +12,48 @@ pub fn read_file(filepath: &str) -> (Vec<String>, Vec<String>){
         let mut keep = false;
         let mut curr_func = String::new();
         for oline in lines {
-            if let Ok(line) = oline {
-                if line.starts_with("static inline") {
-                    keep = true;
-                    if let Some(idx) = line.find("{") {
-                        curr_func.push_str(&line[13..idx]);
-                        curr_func.push_str(";");
-                    }
-                    else {
-                        curr_func.push_str(&line[13..]);
-                    }
-                }
-                else if keep {
-                    if let Some(idx) = line.find("{") {
-                        if ! line.starts_with("{") {
-                            curr_func.push_str(" ");
+            match oline {
+                Ok(line) => {
+                    if line.starts_with("static inline") {
+                        keep = true;
+                        if let Some(idx) = line.find('{') {
+                            curr_func.push_str(&line[13..idx]);
+                            curr_func.push(';');
                         }
-                        curr_func.push_str(&line[0..idx].trim());
-                        curr_func.push_str(";");
-                        let res = generate_wrapper_proto_and_body(&curr_func);
-                        inlined_funcs_proto.push(res.0);
-                        inlined_funcs_impl.push(res.1);
-                        curr_func = String::new();
-                        keep = false;
+                        else {
+                            curr_func.push_str(&line[13..]);
+                        }
                     }
-                    else {
-                        curr_func.push_str(" ");
-                        curr_func.push_str(&line.trim());
+                    else if keep {
+                        if let Some(idx) = line.find('{') {
+                            if ! line.starts_with('{') {
+                                curr_func.push(' ');
+                            }
+                            curr_func.push_str(line[0..idx].trim());
+                            curr_func.push(';');
+                            let res = generate_wrapper_proto_and_body(&curr_func);
+                            inlined_funcs_proto.push(res.0);
+                            inlined_funcs_impl.push(res.1);
+                            curr_func = String::new();
+                            keep = false;
+                        }
+                        else {
+                            curr_func.push(' ');
+                            curr_func.push_str(line.trim());
+                        }
                     }
                 }
+                Err(_) => todo!(),
             }
         }
     }
 
-    return (inlined_funcs_proto, inlined_funcs_impl);
+    (inlined_funcs_proto, inlined_funcs_impl)
 }
 
 pub fn generate_wrapper_proto_and_body(func_proto: &str) -> (String, String){
-    let lpos = func_proto.find("(").unwrap() + 1;
-    let rpos = func_proto.find(")").unwrap();
+    let lpos = func_proto.find('(').unwrap() + 1;
+    let rpos = func_proto.find(')').unwrap();
     let mut wrapper_proto = func_proto[..func_proto.len()-1].trim().to_string();
     let mut wrapper_impl = String::new();
     if let Some(name_pos) =  wrapper_proto[0..lpos].rfind("fi_") {
@@ -59,14 +62,14 @@ pub fn generate_wrapper_proto_and_body(func_proto: &str) -> (String, String){
         wrapper_proto.push(';');
         wrapper_impl.push_str("\n{\n");
         wrapper_impl.push_str("\treturn ");
-        wrapper_impl.push_str(&func_proto[name_pos..lpos-1].replace("*", ""));
-        let args = func_proto[lpos..rpos].split(',').map(|x| x.split(" ").last().unwrap().replace("*", "").replace("void", "")).collect::<Vec::<String>>().join(",");
+        wrapper_impl.push_str(&func_proto[name_pos..lpos-1].replace('*', ""));
+        let args = func_proto[lpos..rpos].split(',').map(|x| x.split(' ').last().unwrap().replace('*', "").replace("void", "")).collect::<Vec::<String>>().join(",");
         wrapper_impl.push_str(&format!("({});", args));
         wrapper_impl.push_str("\n}\n");
     }
     
 
-    return (wrapper_proto, wrapper_impl);
+    (wrapper_proto, wrapper_impl)
 }
 
 // fn main() {
