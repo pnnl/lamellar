@@ -14,14 +14,14 @@ pub fn read_file(filepath: &str) -> (Vec<String>, Vec<String>){
         for oline in lines {
             match oline {
                 Ok(line) => {
-                    if line.starts_with("static inline") {
+                    if let Some(stripped_line) = line.strip_prefix("static inline") {
                         keep = true;
                         if let Some(idx) = line.find('{') {
-                            curr_func.push_str(&line[13..idx]);
+                            curr_func.push_str(&stripped_line[..idx]);
                             curr_func.push(';');
                         }
                         else {
-                            curr_func.push_str(&line[13..]);
+                            curr_func.push_str(stripped_line);
                         }
                     }
                     else if keep {

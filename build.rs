@@ -16,16 +16,6 @@ fn main(){
     if custom_path.is_empty(){
         
         libfabrics_path = build_path.to_str().unwrap().to_owned();
-        // println!("cargo:rerun-if-changed={}", libfabrics_path.clone()+"/include/fabric_sys.h");
-        
-        // If ./libfabric does not exist we need to fetch it first
-        // if !std::path::Path::new(&(out_path.to_str().unwrap().to_owned()+ "/libfabric")).exists(){
-    
-        //     std::process::Command::new("git").arg("clone").arg("https://github.com/ofiwg/libfabric.git").arg(src_path.to_str().unwrap()).status().unwrap();
-        //     std::process::Command::new("git").current_dir(src_path.to_str().unwrap()).arg("fetch").arg("--tags").status().unwrap();
-        //     std::process::Command::new("git").current_dir(src_path.to_str().unwrap()).arg("checkout").arg("tags/v1.19.0").status().unwrap();
-        // }
-    
     
         // If /libfabric/build does not exist we have not built libfabric yet
         if !build_path.exists(){
@@ -98,10 +88,10 @@ fn main(){
         // Create a new lib, libinlined.so that we expose the wrappers for rust to use
         println!("{}", out_path.to_str().unwrap());
         println!("{}", libfabrics_path);
-        std::process::Command::new("gcc").current_dir(out_path.to_str().unwrap()).arg("-Wno-everything").arg("-O3").arg("-I".to_owned()+&libfabrics_path+"/include/").arg("-I".to_owned()+out_path.to_str().unwrap()).arg("--shared").arg("-fPIC").arg("-o").arg("libinlined.so").arg(out_path.to_str().unwrap().to_owned()+"/inlined.c").status().unwrap();
+
+        std::process::Command::new("gcc").current_dir(out_path.to_str().unwrap()).arg("-Wno-everything").arg("-fPIC").arg("-O3").arg("-I".to_owned()+&libfabrics_path+"/include/").arg("-I".to_owned()+out_path.to_str().unwrap()).arg("-c").arg("-o").arg("inlined.o").arg(out_path.to_str().unwrap().to_owned()+"/inlined.c").status().unwrap();
+        std::process::Command::new("ar").current_dir(out_path.to_str().unwrap()).arg("-rc").arg("libinlined.a").arg("inlined.o").status().unwrap();
     }
-    // std::process::Command::new("gcc").current_dir(out_path.to_str().unwrap().to_owned()).arg("-Wno-everything").arg("-fPIC").arg("-O3").arg("-I".to_owned()+&libfabrics_path+"/include/").arg("-I".to_owned()+out_path.to_str().unwrap()).arg("-c").arg("-o").arg("inlined.o").arg(out_path.to_str().unwrap().to_owned()+"/inlined.c").status().unwrap();
-    // std::process::Command::new("ar").current_dir(out_path.to_str().unwrap().to_owned()).arg("-rc").arg("libinlined.a").arg("inlined.o").status().unwrap();
     // Generate the rust bindings
     let bindings = bindgen::Builder::default()
         .clang_arg(format!("-I{}",libfabrics_path.clone()+"/include/"))
@@ -116,10 +106,14 @@ fn main(){
     
     // Link with the libfabric and libinlined libraries to access their symbols. 
     println!("cargo:rustc-link-search={}", libfabrics_path.clone() +"/lib/");
-    println!("cargo:rustc-link-lib=fabric");
     println!("cargo:rustc-link-search={}", out_path.to_str().unwrap().to_owned());
-    println!("cargo:rustc-link-lib=inlined");
-    // println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libfabrics_path.clone() +"/lib/");
-
-
+    //-linlined -lfabric -lrt -lrdmacm -libverbs -latomic -lpthread -ldl required by libfabric
+    println!("cargo:rustc-link-lib=static=inlined");
+    println!("cargo:rustc-link-lib=static=fabric");
+    println!("cargo:rustc-link-lib=rt");
+    println!("cargo:rustc-link-lib=rdmacm");
+    println!("cargo:rustc-link-lib=ibverbs");
+    println!("cargo:rustc-link-lib=atomic");
+    println!("cargo:rustc-link-lib=pthread");
+    println!("cargo:rustc-link-lib=dl");
 }
