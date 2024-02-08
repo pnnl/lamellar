@@ -29,7 +29,7 @@ AC_ARG_WITH([ofi-provider],
 AC_CHECK_HEADERS([stdio.h],       [],[AC_MSG_ERROR[stdio.h  not found!]])
 AC_CHECK_HEADERS([sys/socket.h], [],[AC_MSG_ERROR[sys/socket.h  not found!]])
 AC_CHECK_HEADERS([rdma/fabric.h], [],[AC_MSG_ERROR[fabric.h not found!]])
-AC_CHECK_LIB([fabric],fi_getinfo, [],[AC_MSG_ERROR[libfabric not found!]])
+AC_CHECK_LIB([fabric],fi_getinfo, [],[AC_MSG_ERROR[libfabric not found!]],[-libverbs -pthread -ldl -lrdmacm -lrt])
 
 if test "$enable_debug" = "yes" ; then
   AS_VAR_APPEND(CFLAGS, " -O0 -D_DEBUG")
