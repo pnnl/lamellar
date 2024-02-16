@@ -2,7 +2,7 @@ use debug_print::debug_println;
 
 #[allow(unused_imports)]
 use crate::FID;
-use crate::{enums::Event, Context2, InfoEntry};
+use crate::{enums::Event, InfoEntry};
 
 
 //================== EventQueue (fi_eq) ==================//
@@ -100,7 +100,7 @@ impl EventQueue {
         }
     }
 
-    pub fn peekerr(&self, err: &mut EqErrEntry, flags: u64) -> Result<usize, crate::error::Error> {
+    pub fn peekerr(&self, err: &mut EqErrEntry) -> Result<usize, crate::error::Error> {
         let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.c_eq, err.get_mut(), libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {

@@ -233,6 +233,7 @@ impl InfoHints {
 
     //     self
     // }
+    #[allow(unused_mut)]
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
         unsafe { (*self.c_info).mode = mode.get_value()} ;
 
@@ -269,7 +270,9 @@ impl InfoHints {
         
         self
     }
-
+    
+    
+    #[allow(unused_mut)]
     pub fn no_src_address(mut self) -> Self { // [TODO]
         unsafe { (*self.c_info).src_addr = std::ptr::null_mut() };
         unsafe { (*self.c_info).src_addrlen = 0 };
@@ -622,7 +625,7 @@ impl IoVec {
 }
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RmaIoVec {
     c_rma_iovec: libfabric_sys::fi_rma_iov,
 }
@@ -950,6 +953,7 @@ impl Context2 {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context2 {
         &mut self.c_val
     }
