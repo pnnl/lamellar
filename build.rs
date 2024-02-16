@@ -1,9 +1,37 @@
+use std::os::unix::fs;
+
 
 extern crate bindgen;
 fn main(){
     let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let src_inc_path = std::path::PathBuf::from(std::env::var("PMI_INC_DIR").expect("PMI not found. Please provide path to PMI include dir in \"PMI_INC_DIR\" environmental variable"));
-    let src_lib_path = std::path::PathBuf::from(std::env::var("PMI_LIB_DIR").expect("PMI not found. Please provide path to PMI lib dir in \"PMI_LIB_DIR\" environmental variable"));
+    
+    let src_inc_path = if out_path.join("pmi.h").exists() {
+            out_path.clone().join("pmi.h")
+        } 
+        else { 
+            let path = std::path::PathBuf::from(std::env::var("PMI_INC_DIR").expect("PMI not found. Please provide path to PMI include dir in \"PMI_INC_DIR\" environmental variable"));
+            if path.join("pmi.h").exists() {
+                fs::symlink(path.join("pmi.h"), out_path.join("pmi.h")).unwrap();
+            }
+            else {
+                panic!("Path {} does not exist.", path.join("pmi.h").to_str().unwrap())
+            }
+            
+            out_path.clone().join("pmi.h")
+        };
+    let src_lib_path = if out_path.join("libpmi.so").exists() {
+            out_path.clone()
+        } else {
+            let path = std::path::PathBuf::from(std::env::var("PMI_LIB_DIR").expect("PMI not found. Please provide path to PMI lib dir in \"PMI_LIB_DIR\" environmental variable"));
+            if path.join("libpmi.so").exists() {
+                fs::symlink(path.join("libpmi.so"), out_path.join("libpmi.so")).unwrap();
+            }            
+            else {
+                panic!("Path {} does not exist.", path.join("libpmi.so").to_str().unwrap() )
+            }
+            
+            out_path.clone()
+        };
 
     // let header_path = src_inc_path.join("/pmi2.h");
     // let lib_path = src_lib_path.join("/lib/");
