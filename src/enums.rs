@@ -417,6 +417,7 @@ pub struct Mode {
 }
 
 impl Mode {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> ModeBuilder {
         ModeBuilder
     }
@@ -488,6 +489,12 @@ impl MrMode {
         self.c_flags
     }
 
+}
+
+impl Default for MrMode {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[allow(non_camel_case_types)]

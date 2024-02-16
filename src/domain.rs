@@ -268,6 +268,12 @@ impl DomainAttr {
     }
 }
 
+impl Default for DomainAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 //================== Domain tests ==================//
 
 #[cfg(test)]

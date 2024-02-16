@@ -50,7 +50,13 @@ impl InfoCaps {
     pub fn is_remote_read(&self) -> bool {self.bitfield & libfabric_sys::FI_REMOTE_READ as u64 == libfabric_sys::FI_REMOTE_READ as u64 }
     pub fn is_remote_write(&self) -> bool {self.bitfield & libfabric_sys::FI_REMOTE_WRITE as u64 == libfabric_sys::FI_REMOTE_WRITE as u64 }
 
-    pub fn is_rma_event(&self) -> bool {self.bitfield & libfabric_sys::FI_RMA_EVENT as u64 == libfabric_sys::FI_RMA_EVENT as u64 }
+    pub fn is_rma_event(&self) -> bool {self.bitfield & libfabric_sys::FI_RMA_EVENT == libfabric_sys::FI_RMA_EVENT }
+}
+
+impl Default for InfoCaps {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct Info {
@@ -191,7 +197,7 @@ impl InfoEntry {
 }
 
 impl Info {
-
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> InfoBuilder {
         InfoBuilder {
             c_info_hints: std::ptr::null_mut(),
@@ -286,6 +292,12 @@ impl InfoHints {
 
     pub fn get_ep_attr(&self) -> crate::ep::EndpointAttr {
         crate::ep::EndpointAttr::from(unsafe{ (*self.c_info).ep_attr })
+    }
+}
+
+impl Default for InfoHints {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -455,6 +467,12 @@ impl TxAttr {
     }
 }
 
+impl Default for TxAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone)]
 pub struct RxAttr {
     c_attr: libfabric_sys::fi_rx_attr,
@@ -522,6 +540,12 @@ impl RxAttr {
 
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_rx_attr {
         &mut self.c_attr
+    }
+}
+
+impl Default for RxAttr {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -668,6 +692,12 @@ impl RmaIoVec {
         self.c_rma_iovec.key
     }
 
+}
+
+impl Default for RmaIoVec {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct Ioc {
@@ -860,6 +890,12 @@ impl CollectiveAttr {
     }
 }
 
+impl Default for CollectiveAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 
 // struct fi_param {
@@ -940,6 +976,12 @@ impl Context {
     }
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct Context2 {
     c_val: libfabric_sys::fi_context2,
 }
@@ -956,6 +998,12 @@ impl Context2 {
     #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context2 {
         &mut self.c_val
+    }
+}
+
+impl Default for Context2 {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

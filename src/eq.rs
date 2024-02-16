@@ -192,6 +192,12 @@ impl EventQueueAttr {
     }    
 }
 
+impl Default for EventQueueAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 //================== EqErrEntry (fi_eq_err_entry) ==================//
 
 pub struct EqErrEntry {
@@ -221,6 +227,12 @@ impl EqErrEntry {
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_eq_err_entry {
         &mut self.c_err
     }       
+}
+
+impl Default for EqErrEntry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 //================== EventQueueEntry (fi_eq_entry) ==================//
@@ -279,6 +291,12 @@ impl<T> EventQueueEntry<T> {
 
 }
 
+impl<T> Default for EventQueueEntry<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 //================== EventQueueCmEntry (fi_eq_cm_entry) ==================//
 
 pub struct EventQueueCmEntry {
@@ -302,6 +320,12 @@ impl EventQueueCmEntry {
         InfoEntry::new(self.c_entry.info)
     }
 
+}
+
+impl Default for EventQueueCmEntry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 //================== EventQueue related tests ==================//
@@ -346,7 +370,7 @@ mod tests {
 
             };
 
-            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>() {
                 panic!("eq.read failed {}", ret);
             }
             if !matches!(event, crate::enums::Event::NOTIFY) {
@@ -471,7 +495,7 @@ mod tests {
 
             entry.context(&mut i);
             let ret = eq.write(crate::enums::Event::NOTIFY, std::slice::from_ref(&entry), 0).unwrap();
-            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>().try_into().unwrap() {
+            if ret != std::mem::size_of::<crate::eq::EventQueueEntry<usize>>() {
                 panic!("eq.write failed {}", ret);
             }
         }

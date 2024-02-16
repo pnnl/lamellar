@@ -37,7 +37,7 @@ fn pp_server_rdm_tagged() {
         .tx_attr(tx_attr)
         .addr_format(enums::AddressFormat::UNSPEC);
 
-    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mut mr_desc) = 
+    let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
     
     let entries: Vec<libfabric::InfoEntry> = info.get();
@@ -84,7 +84,7 @@ fn pp_client_rdm_tagged() {
         .tx_attr(tx_attr)
         .addr_format(enums::AddressFormat::UNSPEC);
 
-    let (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mut mr_desc) = 
+    let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.21".to_owned(), "9222".to_owned(), 0);
 
     let entries: Vec<libfabric::InfoEntry> = info.get();

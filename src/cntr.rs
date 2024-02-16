@@ -167,6 +167,12 @@ impl CounterAttr {
     pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_cntr_attr {
         &mut self.c_attr
     }   
+}
+
+impl Default for CounterAttr {
+    fn default() -> Self {
+        Self::new()
+    }
 }    
 
 //================== Counter tests ==================//

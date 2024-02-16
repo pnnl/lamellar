@@ -266,6 +266,12 @@ impl MemoryRegionAttr {
     }
 }
 
+impl Default for MemoryRegionAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 //================== Memory Region tests ==================//
 #[cfg(test)]
@@ -287,9 +293,9 @@ mod tests {
 
         for index in 0..len {
             combos.push(fixed);
-            for i in 0..8*std::mem::size_of::<u64>(){
+            for (i, val) in flags.iter().enumerate().take(8*std::mem::size_of::<u64>()){
                 if index >> i & 1 == 1 {
-                    combos[index] |= flags[i];
+                    combos[index] |= val;
                 }
             }
         }
@@ -314,7 +320,7 @@ mod tests {
         let info = crate::Info::new().hints(&hints).request().unwrap();
         let entries: Vec<crate::InfoEntry> = info.get();
         
-        if entries.len() > 0 {
+        if !entries.is_empty() {
 
             let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
             let domain = fab.domain(&entries[0]).unwrap();
@@ -337,24 +343,22 @@ mod tests {
                     }
                 }
             }
-            else {
-                if entries[0].caps.is_rma() || entries[0].caps.is_atomic() {
-                    if entries[0].caps.is_remote_read() || !(entries[0].caps.is_read() || entries[0].caps.is_write() || entries[0].caps.is_remote_write()) {
-                        mr_access |= libfabric_sys::FI_REMOTE_READ as u64 ;
-                    }
-                    else {
-                        mr_access |= libfabric_sys::FI_REMOTE_WRITE as u64 ;
-                    }
+            else if entries[0].caps.is_rma() || entries[0].caps.is_atomic() {
+                if entries[0].caps.is_remote_read() || !(entries[0].caps.is_read() || entries[0].caps.is_write() || entries[0].caps.is_remote_write()) {
+                    mr_access |= libfabric_sys::FI_REMOTE_READ as u64 ;
+                }
+                else {
+                    mr_access |= libfabric_sys::FI_REMOTE_WRITE as u64 ;
                 }
             }
 
             let combos = ft_alloc_bit_combo(0, mr_access);
             
-            for i in 0..DEF_TEST_SIZES.len() {
-                let buff_size = DEF_TEST_SIZES[i].0;
+            for test in &DEF_TEST_SIZES {
+                let buff_size = test.0;
                 let buf = vec![0_u64; buff_size as usize ];
-                for j in 0..combos.len() {
-                    let _mr = domain.mr_reg(&buf, combos[j], 0, 0xC0DE, 0).unwrap();
+                for combo in &combos {
+                    let _mr = domain.mr_reg(&buf, *combo, 0, 0xC0DE, 0).unwrap();
                     // mr.close().unwrap();
                 }
             }

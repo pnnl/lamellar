@@ -729,6 +729,7 @@ impl Endpoint {
     
     
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
 	pub fn trecvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, tag: u64, ignore:u64, context : &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.get(), desc.get_desc(), count, src_addr, tag, ignore, context as *mut T1 as *mut std::ffi::c_void) };
@@ -1072,6 +1073,7 @@ impl Endpoint {
     }
 
 
+    #[allow(clippy::too_many_arguments)]
     pub fn atomic<T0,T1>(&self, buf: &[T0], count : usize, desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr()  as *const std::ffi::c_void, count, desc.get_desc(), dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         
@@ -1083,6 +1085,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn atomic_with_context<T0,T1>(&self, buf: &[T0], count : usize, desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr()  as *const std::ffi::c_void, count, desc.get_desc(), dest_addr, addr, key, datatype, op.get_value(), context.get_mut() as *mut std::ffi::c_void)};
         
@@ -1094,6 +1097,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn atomicv<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [impl crate::DataDescriptor], count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> Result<(), crate::error::Error>{
         let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), iov.get(), desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, count, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         
@@ -1105,6 +1109,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn atomicv_with_context<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [impl crate::DataDescriptor], count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op, context : &mut crate::Context) -> Result<(), crate::error::Error>{
         let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), iov.get(), desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, count, dest_addr, addr, key, datatype, op.get_value(), context.get_mut() as *mut std::ffi::c_void)};
         
@@ -1127,6 +1132,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn inject_atomic<T0,T1>(&self, buf: &[T0], count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> Result<(), crate::error::Error>{
         let err = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.handle(), buf.as_ptr()  as *const std::ffi::c_void, count, dest_addr, addr, key, datatype, op.get_value())};
         
@@ -1138,6 +1144,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn fetch_atomic<T0,T1>(&self, buf: &[T0], count : usize, desc: &mut [T1], res: &mut [T0], res_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> Result<(), crate::error::Error>{
         let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr()  as *const std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, res.as_mut_ptr()  as *mut std::ffi::c_void, res_desc.as_mut_ptr() as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         
@@ -1149,6 +1156,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn fetch_atomic_with_context<T0,T1>(&self, buf: &[T0], count : usize, desc: &mut [T1], res: &mut [T0], res_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op, context : &mut crate::Context) -> Result<(), crate::error::Error>{
         let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr()  as *const std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, res.as_mut_ptr()  as *mut std::ffi::c_void, res_desc.as_mut_ptr() as *mut std::ffi::c_void, dest_addr, addr, key, datatype, op.get_value(), context.get_mut() as *mut std::ffi::c_void)};
         
@@ -1160,6 +1168,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn fetch_atomicv<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [T1], count : usize, resultv: &mut crate::Ioc,  res_desc: &mut [T1], res_count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> Result<(), crate::error::Error>{
         let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), iov.get(), desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, count, resultv.get_mut(), res_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, res_count, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
         
@@ -1171,6 +1180,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn fetch_atomicv_with_context<T0,T1>(&self, iov: &crate::Ioc, desc: &mut [T1], count : usize, resultv: &mut crate::Ioc,  res_desc: &mut [T1], res_count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op, context : &mut crate::Context) -> Result<(), crate::error::Error>{
         let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), iov.get(), desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, count, resultv.get_mut(), res_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, res_count, dest_addr, addr, key, datatype, op.get_value(), context.get_mut() as *mut std::ffi::c_void)};
         
@@ -1194,6 +1204,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic<T0, T1>(&self, buf: &[T0], count : usize, desc: &mut [T1], compare: &mut [T0], compare_desc: &mut [T1], 
             result: &mut [T0], result_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr()  as *const std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, compare.as_mut_ptr()  as *mut std::ffi::c_void, 
@@ -1208,6 +1219,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic_with_context<T0, T1>(&self, buf: &[T0], count : usize, desc: &mut [T1], compare: &mut [T0], compare_desc: &mut [T1], 
             result: &mut [T0], result_desc: &mut [T1], dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op, context : &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr()  as *const std::ffi::c_void, count, desc.as_mut_ptr()  as *mut std::ffi::c_void, compare.as_mut_ptr()  as *mut std::ffi::c_void, 
@@ -1222,6 +1234,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv(&self, iov: &crate::Ioc, desc: &mut [impl crate::DataDescriptor], count : usize, comparetv: &mut crate::Ioc,  compare_desc: &mut [impl crate::DataDescriptor], compare_count : usize, 
         resultv: &mut crate::Ioc,  res_desc: &mut [impl crate::DataDescriptor], res_count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), iov.get(), desc.as_mut_ptr() as *mut *mut std::ffi::c_void, count, comparetv.get_mut(), compare_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, compare_count, resultv.get_mut(), res_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, res_count, dest_addr, addr, key, datatype, op.get_value(), std::ptr::null_mut())};
@@ -1235,6 +1248,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv_with_context(&self, iov: &crate::Ioc, desc: &mut [impl crate::DataDescriptor], count : usize, comparetv: &mut crate::Ioc,  compare_desc: &mut [impl crate::DataDescriptor], compare_count : usize, 
         resultv: &mut crate::Ioc,  res_desc: &mut [impl crate::DataDescriptor], res_count : usize, dest_addr: crate::Address, addr: u64, key: u64, datatype: crate::DataType, op: crate::enums::Op, context : &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), iov.get(), desc.as_mut_ptr() as *mut *mut std::ffi::c_void, count, comparetv.get_mut(), compare_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, compare_count, resultv.get_mut(), res_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, res_count, dest_addr, addr, key, datatype, op.get_value(), context.get_mut() as *mut std::ffi::c_void)};
@@ -1248,6 +1262,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicmsg<T0>(&self, msg: &crate::MsgAtomic, comparev: &crate::Ioc, compare_desc: &mut [T0], compare_count : usize, resultv: &mut crate::Ioc,  res_desc: &mut [T0], res_count : usize, flags: u64) -> Result<(), crate::error::Error> {
         let err: isize = unsafe { libfabric_sys::inlined_fi_compare_atomicmsg(self.handle(), msg.c_msg_atomic, comparev.get(), compare_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, compare_count, resultv.get_mut(), res_desc.as_mut_ptr()  as *mut *mut std::ffi::c_void, res_count, flags) };
 
@@ -1366,6 +1381,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn broadcast_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType, flags: u64, context : &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_broadcast(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), coll_addr, root_addr, datatype, flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1377,6 +1393,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn alltoall<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, flags, std::ptr::null_mut()) };
 
@@ -1388,6 +1405,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn alltoall_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1399,6 +1417,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn allreduce<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, op.get_value(), flags, std::ptr::null_mut()) };
 
@@ -1410,6 +1429,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn allreduce_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, op.get_value(), flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1432,6 +1452,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn allgather_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut [T0], result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_allgather(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr() as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, libfabric_sys::fi_datatype_FI_UINT8, flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1443,6 +1464,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn reduce_scatter<T0,T2>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, op.get_value(), flags, std::ptr::null_mut()) };
 
@@ -1454,6 +1476,7 @@ impl Endpoint {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn reduce_scatter_with_context<T0,T1>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, datatype, op.get_value(), flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1465,6 +1488,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn reduce<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_reduce(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, root_addr, datatype, op.get_value(), flags, std::ptr::null_mut()) };
 
@@ -1476,6 +1500,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn reduce_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType, op: crate::enums::Op,  flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_reduce(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, root_addr, datatype, op.get_value(), flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1487,6 +1512,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn scatter<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_scatter(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, root_addr, datatype, flags, std::ptr::null_mut()) };
 
@@ -1498,6 +1524,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn scatter_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_scatter(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, root_addr, datatype, flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1509,6 +1536,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn gather<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_gather(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, root_addr, datatype, flags, std::ptr::null_mut()) };
 
@@ -1520,6 +1548,7 @@ impl Endpoint {
         }
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub fn gather_with_context<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, result: &mut T0, result_desc: &mut impl crate::DataDescriptor, coll_addr: crate::Address, root_addr: crate::Address, datatype: crate::DataType,  flags: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_gather(self.handle(), buf as *mut [T0] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T0 as *mut std::ffi::c_void, result_desc.get_desc(), coll_addr, root_addr, datatype, flags, context.get_mut() as *mut std::ffi::c_void) };
 
@@ -1627,5 +1656,11 @@ impl EndpointAttr {
     #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_ep_attr {
         &mut self.c_attr
+    }
+}
+
+impl Default for EndpointAttr {
+    fn default() -> Self {
+        Self::new()
     }
 }

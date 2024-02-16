@@ -158,3 +158,9 @@ impl PollFd {
         self
     }
 }
+
+impl Default for PollFd {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -195,6 +195,12 @@ impl AddressVectorAttr {
     }  
 }
 
+impl Default for AddressVectorAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 //================== Address Set (fi_av_set) ==================//
 
 pub struct AddressVectorSet {
@@ -372,6 +378,12 @@ impl AddressVectorSetAttr {
     pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_av_set_attr {
         &mut self.c_attr
     }    
+}
+
+impl Default for AddressVectorSetAttr {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 

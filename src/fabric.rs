@@ -114,3 +114,9 @@ impl FabricAttr {
         unsafe{ std::ffi::CStr::from_ptr(self.c_attr.name).to_str().unwrap().to_string() }
     }    
 }
+
+impl Default for FabricAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -226,6 +226,12 @@ impl CompletionQueueAttr {
     }
 }
 
+impl Default for CompletionQueueAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 //================== CompletionQueue Error Entry (fi_cq_err_entry) ==================//
 
 
@@ -276,6 +282,12 @@ impl CqErrEntry {
 
     pub(crate) fn get_err_data_size(&self) -> usize {
         self.c_err.err_data_size
+    }
+}
+
+impl Default for CqErrEntry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 //================== CompletionQueue Tests ==================//
