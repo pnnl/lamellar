@@ -17,7 +17,7 @@ int main(void)
 	char* addr2;
 	char* addr3;
 	
-	rofi_init("verbs");
+	rofi_init("verbs",NULL);
 	
 	np = rofi_get_size();
 	me = rofi_get_id();

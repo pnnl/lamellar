@@ -42,7 +42,7 @@ int main(void)
 	char* dst;
 	unsigned int i;
 
-	rofi_init("verbs");
+	rofi_init("verbs",NULL);
 	
         np = rofi_get_size();
 	if(np != 2){

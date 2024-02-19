@@ -17,7 +17,7 @@ int main(void) {
     int ret = 0;
 
     rofi_banner("PUT Test");
-    rofi_init("verbs");
+    rofi_init("verbs",NULL);
 
     np = rofi_get_size();
     // if(np != 2){

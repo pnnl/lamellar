@@ -14,7 +14,7 @@ int main(void) {
     int ret = 0;
     char *addr1;
 
-    rofi_init("verbs");
+    rofi_init("verbs", NULL);
 
     np = rofi_get_size();
     me = rofi_get_id();

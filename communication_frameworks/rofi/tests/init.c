@@ -1,15 +1,14 @@
 #include <unistd.h>
 
-#include <rofi.h>
 #include "utils.h"
+#include <rofi.h>
 
-int main(void)
-{
-  rofi_banner("Init Test");
-  rofi_init("verbs");
+int main(void) {
+    rofi_banner("Init Test");
+    rofi_init(NULL, NULL);
 
-  rofi_verify(0);
-  rofi_finit();
+    rofi_verify(0);
+    rofi_finit();
 
-  return 0;
+    return 0;
 }

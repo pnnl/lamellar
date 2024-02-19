@@ -21,6 +21,9 @@
  * state and to start the underlying OFI and runtime layer. Using any other APIs
  * without prior call to rofi_init() may result in failure and unexpected behavior.
  *
+ * @param provs A priority list of providers to try and be used.
+ * @param domains A priority list of domains to try and be used.
+ *
  *
  * @return 0 on success, -1 in case of errors
  *
@@ -28,14 +31,14 @@
  * \b thread-safe: no
  *
  */
-int rofi_init(char *prov) {
+int rofi_init(char *provs, char *domains) {
     int ret = 0;
 
     rofi.desc.status = ROFI_STATUS_NONE;
 
     DEBUG_MSG("Initilizing ROFI runtime...");
 
-    ret = rofi_init_internal(prov);
+    ret = rofi_init_internal(provs, domains);
 
     if (ret) {
         ERR_MSG("Error initializing ROFI library");

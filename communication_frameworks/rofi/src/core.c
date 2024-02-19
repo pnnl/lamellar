@@ -25,7 +25,7 @@ void *rofi_get_remote_addr_internal(void *addr, unsigned int id) {
         return NULL;
     }
 
-    DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Addr: %p Key: 0x%lx ", el->start, el->start + el->size, (void *)(addr - (uintptr_t)el->start + el->iov[id].addr), el->mr_key);
+    DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Addr: %p Key: 0x%lx ", el->start, el->start + el->size, (void *)(addr - (uintptr_t)el->start + el->iov[id].addr), el->iov[id].key);
     return (void *)(addr - (uintptr_t)el->start + el->iov[id].addr);
 }
 
@@ -38,7 +38,7 @@ void *rofi_get_local_addr_from_remote_addr_internal(void *addr, unsigned int id)
         return NULL;
     }
 
-    DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Addr: %p Key: 0x%lx", el->start, el->start + el->size, (void *)(addr - el->iov[id].addr + (uintptr_t)el->start), el->mr_key);
+    DEBUG_MSG("\t Found MR [0x%lx - 0x%lx] Addr: %p Key: 0x%lx", el->start, el->start + el->size, (void *)(addr - el->iov[id].addr + (uintptr_t)el->start), el->iov[id].key);
     return (void *)(addr - el->iov[id].addr + (uintptr_t)el->start);
 }
 
@@ -206,10 +206,34 @@ int rofi_send_internal(unsigned long id, void *buf, size_t size, unsigned long f
 int rofi_recv_internal(unsigned long id, void *buf, size_t size, unsigned long flags) {
 }
 
-int rofi_init_internal(char *prov) {
-    if (!prov) {
-        ERR_MSG("ROFI provider not specified. Currently ROFI only supports \"verbs\".");
+rofi_names_t *rofi_parse_names_internal(char *names_list) {
+    char token = ';';
+    int name_cnt = 0;
+    for (int i = 0; i < strlen(names_list); i++) {
+        if (names_list[i] == token) {
+            name_cnt++;
+        }
     }
+    name_cnt += 1;
+    char **name_strs = (char **)calloc(name_cnt, sizeof(char *));
+
+    int p = 0;
+    int i = 0;
+    for (int k = 0; k < strlen(names_list); k++) {
+        if (names_list[k] == token) {
+            name_strs[p] = strndup(&names_list[i], k - i);
+            p++;
+            i = k + 1;
+        }
+    }
+    name_strs[p] = strndup(&names_list[i], strlen(names_list) - i);
+    rofi_names_t *names = (rofi_names_t *)calloc(1, sizeof(rofi_names_t));
+    names->num = name_cnt;
+    names->names = name_strs;
+    return names;
+}
+
+int rofi_init_internal(char *provs, char *domains) {
     pthread_rwlock_init(&rofi.mr_lock, NULL);
     pthread_mutex_init(&rofi.lock, NULL);
     int ret = 0;
@@ -224,12 +248,7 @@ int rofi_init_internal(char *prov) {
     rofi.desc.nodes = rt_get_size();
     rofi.desc.nid = rt_get_rank();
 
-    rofi.info = (struct fi_info *)calloc(1, sizeof(struct fi_info));
-    if (!rofi.info) {
-        ERR_MSG("Error allocating memory for rofi. Aborting.");
-        ret = EXIT_FAILURE;
-        goto err;
-    }
+    rofi.info = NULL;
 
     DEBUG_MSG("Initializing process %d/%d...", rofi.desc.nid, rofi.desc.nodes);
 
@@ -238,7 +257,7 @@ int rofi_init_internal(char *prov) {
         return EXIT_FAILURE;
     }
 
-    hints->caps = FI_RMA | FI_ATOMIC | FI_COLLECTIVE; // eventually want FI_ATOMIC
+    hints->caps = FI_RMA | FI_ATOMIC | FI_COLLECTIVE;
     hints->addr_format = FI_FORMAT_UNSPEC;
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
     hints->domain_attr->threading = FI_THREAD_DOMAIN;
@@ -249,9 +268,21 @@ int rofi_init_internal(char *prov) {
     hints->ep_attr->type = FI_EP_RDM;
     hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE; // maybe need to change this to FI_INJECT_COMPLETE or FI_TRANSMIT_COMPLETE
 
-    if (prov) {
-        hints->fabric_attr->prov_name = strdup(prov);
+    rofi_names_t *prov_names = NULL;
+    if (provs) {
+        prov_names = rofi_parse_names_internal(provs);
     }
+    // else {
+    //     names = rofi_parse_names_internal("verbs");
+    // }
+
+    rofi_names_t *domain_names = NULL;
+    if (domains) {
+        domain_names = rofi_parse_names_internal(domains);
+    }
+    // else {
+    //     rofi.domains = rofi_parse_names_internal("ib");
+    // }
 
     // this isn't really needed for verbs since it is a connected endpoint
     rofi.remote_addrs = (fi_addr_t *)malloc(rofi.desc.nodes * sizeof(fi_addr_t));
@@ -264,11 +295,27 @@ int rofi_init_internal(char *prov) {
         rofi.remote_addrs[i] = i;
     }
 
-    rofi_transport_init(hints, &rofi);
+    rofi_transport_init(hints, &rofi, prov_names, domain_names);
+
+    if (prov_names) {
+        for (int i = 0; i < prov_names->num; i++) {
+            free(prov_names->names[i]);
+        }
+        free(prov_names);
+    }
+
+    if (domain_names) {
+        for (int i = 0; i < domain_names->num; i++) {
+            free(domain_names->names[i]);
+        }
+        free(domain_names);
+    }
 
     mr_init();
     uint64_t global_barrier_size = rofi.desc.nodes * sizeof(uint64_t);
-    int rofi_mr_size = global_barrier_size;
+    uint64_t sub_alloc_barrier_size = rofi.desc.nodes * sizeof(uint64_t);
+    uint64_t sub_alloc_size = rofi.desc.nodes * sizeof(struct fi_rma_iov);
+    int rofi_mr_size = global_barrier_size + sub_alloc_barrier_size + sub_alloc_size;
 
     rofi.mr = mr_add(&rofi, rofi_mr_size, 0);
     if (!rofi.mr) {
@@ -284,9 +331,14 @@ int rofi_init_internal(char *prov) {
 
     rofi.global_barrier_id = 0;
     rofi.global_barrier_buf = (uint64_t *)rofi.mr->start;
+    rofi.sub_alloc_barrier_buf = (uint64_t *)(rofi.mr->start + global_barrier_size);
+    rofi.sub_alloc_buf = (struct fi_rma_iov *)(rofi.mr->start + global_barrier_size + sub_alloc_barrier_size);
 
     for (int i = 0; i < rofi.desc.nid; i++) {
         rofi.global_barrier_buf[i] = 0;
+        rofi.sub_alloc_barrier_buf[i] = 0;
+        rofi.sub_alloc_buf[i].key = 0;
+        rofi.sub_alloc_buf[i].addr = 0;
     }
     fi_freeinfo(hints);
     return 0;

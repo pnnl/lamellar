@@ -15,7 +15,7 @@
 #define ROFI_FI_VERSION FI_VERSION(1, 20)
 #endif
 
-typedef struct rofi_transport_s rofi_transport_t;
+typedef struct rofi_transport_t rofi_transport_t;
 
 #include "context.h"
 #include "mr.h"
@@ -54,7 +54,12 @@ typedef struct {
     uint64_t inject_size;
 } rofi_desc_t;
 
-struct rofi_transport_s {
+typedef struct rofi_prov_names_t {
+    char **names;
+    int num;
+} rofi_names_t;
+
+struct rofi_transport_t {
     struct fi_info *info;
     struct fid_fabric *fabric;
     struct fid_domain *domain;
@@ -71,13 +76,16 @@ struct rofi_transport_s {
     rofi_mr_desc *mr;
     uint64_t global_barrier_id;
     uint64_t *global_barrier_buf;
+    uint64_t *sub_alloc_barrier_buf;
+    struct fi_rma_iov *sub_alloc_buf;
     pthread_mutex_t lock;
     pthread_rwlock_t mr_lock;
+    uint64_t fi_collective;
 };
 
 extern rofi_transport_t rofi;
 
-int rofi_init_internal(char *);
+int rofi_init_internal(char *, char *);
 int rofi_finit_internal(void);
 unsigned int rofi_get_size_internal(void);
 unsigned int rofi_get_id_internal(void);

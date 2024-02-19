@@ -61,7 +61,7 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
 
-    rofi_init("verbs");
+    rofi_init("verbs", NULL);
     np = rofi_get_size();
     if (np != 2) {
         printf("Invalid number of processes (%u) (Required 2)! Aborting.\n", np);
