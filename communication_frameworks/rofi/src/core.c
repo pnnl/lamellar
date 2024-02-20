@@ -200,10 +200,20 @@ int rofi_get_internal(void *dst, void *src, size_t size, unsigned int id, unsign
     return 0;
 }
 
-int rofi_send_internal(unsigned long id, void *buf, size_t size, unsigned long flags) {
+int rofi_send_internal(unsigned int pe, void *buf, size_t size, unsigned long flags) {
+    if (rofi_transport_send(&rofi, buf, size, pe)) {
+        ERR_MSG("\t Error sending %lu bytes to node %u", size, pe);
+        return -1;
+    }
+    return 0;
 }
 
-int rofi_recv_internal(unsigned long id, void *buf, size_t size, unsigned long flags) {
+int rofi_recv_internal(void *buf, size_t size, unsigned long flags) {
+    if (rofi_transport_recv(&rofi, buf, size)) {
+        ERR_MSG("\t Error receiving %lu bytes", size);
+        return -1;
+    }
+    return 0;
 }
 
 rofi_names_t *rofi_parse_names_internal(char *names_list) {
@@ -257,13 +267,12 @@ int rofi_init_internal(char *provs, char *domains) {
         return EXIT_FAILURE;
     }
 
-    hints->caps = FI_RMA | FI_ATOMIC | FI_COLLECTIVE;
+    hints->caps = FI_RMA | FI_ATOMIC | FI_COLLECTIVE | FI_MSG;
     hints->addr_format = FI_FORMAT_UNSPEC;
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
     hints->domain_attr->threading = FI_THREAD_DOMAIN;
     hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
-    // FI_MR_BASIC == FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR -- which is only mode supported by verbs
-    hints->domain_attr->mr_mode = FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR;
+    hints->domain_attr->mr_mode = FI_MR_BASIC; // FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR; //we do FI_MR_BASIC because tcp will clear the individual flags thus would require us to make our mr offsets 0-based
     hints->mode = FI_CONTEXT;
     hints->ep_attr->type = FI_EP_RDM;
     hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE; // maybe need to change this to FI_INJECT_COMPLETE or FI_TRANSMIT_COMPLETE
@@ -272,19 +281,13 @@ int rofi_init_internal(char *provs, char *domains) {
     if (provs) {
         prov_names = rofi_parse_names_internal(provs);
     }
-    // else {
-    //     names = rofi_parse_names_internal("verbs");
-    // }
 
     rofi_names_t *domain_names = NULL;
     if (domains) {
         domain_names = rofi_parse_names_internal(domains);
     }
-    // else {
-    //     rofi.domains = rofi_parse_names_internal("ib");
-    // }
 
-    // this isn't really needed for verbs since it is a connected endpoint
+    // I think the endpoints we support are all connected so I'm not sure these are even used?
     rofi.remote_addrs = (fi_addr_t *)malloc(rofi.desc.nodes * sizeof(fi_addr_t));
     if (!rofi.remote_addrs) {
         ERR_MSG("Error allocating memory for remote addresses. Aborting!");
@@ -341,6 +344,7 @@ int rofi_init_internal(char *provs, char *domains) {
         rofi.sub_alloc_buf[i].addr = 0;
     }
     fi_freeinfo(hints);
+    rofi_transport_barrier(&rofi);
     return 0;
 
 err:

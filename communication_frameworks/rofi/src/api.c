@@ -257,6 +257,66 @@ int rofi_iget(void *dst, void *src, size_t size, unsigned int id, unsigned long 
 }
 
 /**
+ * @brief ROFI Synchronous SEND
+ *
+ * Similar to `rofi_send()` blocks until a message has been transmitted to the specified PE
+ * (users should embed this information in their messages if the recieving node needs to know where a message came from).
+ * Users are free to re-use buffers after returning from this call.
+ *
+ * @param[in] pe the ID of the remote node
+ * @param[in] buf address of buffer to receive the message
+ * @param[in] size size of the entire buffer in bytes (no padding)
+ * @param[in] flags (not used at this time)
+ * @return 0 on success
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
+int rofi_send(unsigned int pe, void *buf, size_t size, unsigned long flags) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+
+    if (buf == NULL || size == 0 || pe >= rofi.desc.nodes) {
+        ERR_MSG("Invalid argument.");
+        return -1;
+    }
+
+    DEBUG_MSG("SEND pe %d buf %p size %lu flags 0x%lx",
+              pe, buf, size, flags);
+
+    return rofi_send_internal(pe, buf, size, flags);
+}
+
+/**
+ * @brief ROFI Synchronous RECV
+ *
+ * Similar to `rofi_recv()` blocks until a message has been received from any PE (users should embed this information in their messages). Users are
+ * free to re-used buffers after returning from this call.
+ *
+ * @param[in] buf address of buffer to receive the message
+ * @param[in] size size of the entire buffer in bytes (no padding)
+ * @param[in] flags (not used at this time)
+ * @return 0 on success
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
+int rofi_recv(void *buf, size_t size, unsigned long flags) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+
+    if (buf == NULL || size == 0) {
+        ERR_MSG("Invalid argument.");
+        return -1;
+    }
+
+    DEBUG_MSG("RECV  buf %p size %lu flags 0x%lx",
+              buf, size, flags);
+
+    return rofi_recv_internal(buf, size, flags);
+}
+
+/**
  * @brief ROFI Global Barrier
  *
  * This function blocks until all processes in the job have called `rofi_barrier()`. All

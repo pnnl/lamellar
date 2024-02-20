@@ -38,13 +38,14 @@ int main(void) {
         exit(EXIT_FAILURE);
 
     rofi_init("verbs", NULL);
+    // rofi_init(NULL, "ib0");
 
     np = rofi_get_size();
-    if (np != 2) {
-        printf("Invalid number of processes (%u) (Required 2)! Aborting.\n", np);
-        ret = -1;
-        goto out;
-    }
+    // if (np != 2) {
+    //     printf("Invalid number of processes (%u) (Required 2)! Aborting.\n", np);
+    //     ret = -1;
+    //     goto out;
+    // }
 
     me = rofi_get_id();
     if (!me)
@@ -58,35 +59,60 @@ int main(void) {
 
         if (!me)
             printf("Ping pong test size %lu...\n", size);
-        memset(send_buf, 'a', size);
+        switch (me) {
+        case 0:
+            memset(send_buf, '0', size);
+            break;
+        case 1:
+            memset(recv_buf, '1', size);
+            break;
+        case 2:
+            memset(send_buf, '2', size);
+            break;
+        case 3:
+            memset(recv_buf, '3', size);
+            break;
+        default:
+            memset(send_buf, 'a', size);
+            break;
+        }
+
         memset(recv_buf, 'z', size);
 
         rofi_barrier();
 
         clock_gettime(CLOCK_MONOTONIC, &(results[i].start));
-        if (!me)
-            ret = rofi_isend(1, (void *)send_buf, size, 0x0);
-        else {
-            ret = rofi_irecv(0, (void *)recv_buf, size, 0x0);
-            for (j = 0; j < size; j++)
-                if (recv_buf[j] != send_buf[j]) {
-                    printf("Error transferring element %d: sent %c != rec %c\n", i,
-                           send_buf[j], recv_buf[j]);
-                    ret = -1;
-                }
+        if (me) {
+            ret = rofi_send(0, (void *)send_buf, size, 0x0);
+            clock_gettime(CLOCK_MONOTONIC, &(results[i].end));
         }
-        clock_gettime(CLOCK_MONOTONIC, &(results[i].end));
+        else {
+            for (int p = 1; p < np; p++) {
+                ret = rofi_recv((void *)recv_buf, size, 0x0);
+                printf("pe: %d ", recv_buf[0]);
+            }
+            clock_gettime(CLOCK_MONOTONIC, &(results[i].end));
+            printf("\n");
+            // for (j = 0; j < size; j++) {
+            //     if (recv_buf[j] != send_buf[j]) {
+            //         printf("Error transferring element %d: sent %c != rec %c\n", i,
+            //                send_buf[j], recv_buf[j]);
+            //         ret = -1;
+            //     }
+            // }
+        }
+
         results[i].size = size;
         results[i].time = ((double)tdiff(results[i].end, results[i].start));
         results[i].bw = 2.0 * results[i].size / results[i].time;
     }
 
     rofi_barrier();
-    if (!me) {
-        printf("%10s %10s %10s\n", "size", "time (msec)", "BW (GB/s)");
-        for (i = 0; i < reps; i++)
-            printf(" %9lu %6.4f %7.2f\n", results[i].size, results[i].time / 1000000, results[i].bw);
-    }
+    // if (!me) {
+    printf("%10s %10s %10s\n", "size", "time (msec)", "BW (GB/s)");
+    for (i = 0; i < reps; i++)
+        printf(" %9lu %6.4f %7.2f\n", results[i].size, results[i].time / 1000000, results[i].bw);
+    // }
 
 out:
     if (!me)
