@@ -13,7 +13,11 @@ pub mod mr;
 pub mod sync;
 pub mod cntr;
 pub mod cq;
+pub mod comm;
 pub mod error;
+
+pub use comm::collective::MulticastGroupCollective;
+
 #[derive(Clone, Debug)]
 pub struct InfoCaps {
     bitfield: u64,
@@ -325,54 +329,6 @@ impl Msg {
     }
 }
 
-pub struct MsgRma {
-    c_msg_rma: libfabric_sys::fi_msg_rma,
-}
-
-impl MsgRma {
-    pub fn new<T0>(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address, rma_iov: &[RmaIoVec], context: &mut T0, data: u64) -> Self {
-        Self {
-            c_msg_rma : libfabric_sys::fi_msg_rma {
-                msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
-                desc: desc.get_desc_ptr(),
-                iov_count: iov.len(),
-                addr,
-                rma_iov: rma_iov.as_ptr() as *const libfabric_sys::fi_rma_iov,
-                rma_iov_count: rma_iov.len(),
-                context: context as *mut T0 as *mut std::ffi::c_void,
-                data,
-            }
-        }
-    }
-}
-
-pub struct MsgTagged {
-    c_msg_tagged: libfabric_sys::fi_msg_tagged,
-}
-
-impl MsgTagged {
-    pub fn new(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address, data: u64, tag: u64, ignore: u64) -> Self {
-    
-        Self {
-            c_msg_tagged: libfabric_sys::fi_msg_tagged {
-                msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
-                desc: desc.get_desc_ptr(),
-                iov_count: iov.len(),
-                addr,
-                context: std::ptr::null_mut(), // [TODO]
-                data,
-                tag,
-                ignore,
-            }
-        }
-    }
-}
-
-pub struct MsgAtomic {
-    c_msg_atomic: *mut libfabric_sys::fi_msg_atomic,
-}
-
-
 #[derive(Clone, Debug)]
 pub struct TxAttr {
     c_attr: libfabric_sys::fi_tx_attr,
@@ -640,57 +596,6 @@ impl IoVec {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
-pub struct RmaIoVec {
-    c_rma_iovec: libfabric_sys::fi_rma_iov,
-}
-
-impl RmaIoVec {
-    pub fn new() -> Self {
-        Self {
-            c_rma_iovec: libfabric_sys::fi_rma_iov {
-                addr: 0,
-                len: 0,
-                key: 0,
-            }
-        }
-    }
-
-    pub fn address(mut self, addr: u64) -> Self {
-        self.c_rma_iovec.addr = addr;
-        self
-    }
-
-    pub fn len(mut self, len: usize) -> Self {
-        self.c_rma_iovec.len = len;
-        self
-    }
-
-    pub fn key(mut self, key: u64) -> Self {
-        self.c_rma_iovec.key = key;
-        self
-    }
-
-    pub fn get_address(&self) -> u64 {
-        self.c_rma_iovec.addr
-    }
-    
-    pub fn get_len(&self) -> usize {
-        self.c_rma_iovec.len
-    }
-
-    pub fn get_key(&self) -> u64 {
-        self.c_rma_iovec.key
-    }
-
-}
-
-impl Default for RmaIoVec {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 pub struct Ioc {
     c_attr: libfabric_sys::fi_ioc,
@@ -706,85 +611,6 @@ impl Ioc {
     }
 }
 
-
-pub struct Mc {
-    c_mc: *mut libfabric_sys::fid_mc,
-    fid: OwnedFid,
-}
-
-impl Mc {
-    pub(crate) fn new<T: crate::ep::ActiveEndpoint, T0>(ep: &T, addr: &T0, flags: u64) -> Result<Mc, error::Error> {
-        let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
-        let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join(ep.handle(), addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, std::ptr::null_mut()) };
-
-        if err != 0 {
-            Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
-            )
-        }
-
-    }
-
-    pub(crate) fn new_with_context<T: crate::ep::ActiveEndpoint, T0>(ep: &T, addr: &T0, flags: u64, ctx: &mut crate::Context) -> Result<Mc, error::Error> {
-        let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
-        let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join(ep.handle(), addr as *const T0 as *const std::ffi::c_void, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
-
-        if err != 0 {
-            Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
-            )
-        }
-
-    }
-
-    pub(crate) fn new_collective<T: crate::ep::ActiveEndpoint>(ep: &T, addr: Address, set: &crate::av::AddressVectorSet, flags: u64) -> Result<Mc, crate::error::Error> {
-        let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
-        let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.handle(), addr, set.c_set, flags, c_mc_ptr, std::ptr::null_mut()) };
-
-        if err != 0 {
-            Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
-            )
-        }
-    }
-
-    pub(crate) fn new_collective_with_context<T: crate::ep::ActiveEndpoint>(ep: &T, addr: Address, set: &crate::av::AddressVectorSet, flags: u64, ctx: &mut crate::Context) -> Result<Mc, crate::error::Error> {
-        let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
-        let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
-        let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.handle(), addr, set.c_set, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
-
-        if err != 0 {
-            Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
-            )
-        }
-    }
-
-    pub fn get_addr(&self) -> Address {
-        unsafe { libfabric_sys::inlined_fi_mc_addr(self.c_mc) }
-    }
-}
-
-impl AsFid for Mc {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
-    }
-}
 
 pub trait DataDescriptor {
     fn get_desc(&mut self) -> *mut std::ffi::c_void;
@@ -1017,4 +843,104 @@ impl Default for Context2 {
 
 pub trait Bind {
     
+}
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+pub struct RmaIoVec {
+    c_rma_iovec: libfabric_sys::fi_rma_iov,
+}
+
+impl RmaIoVec {
+    pub fn new() -> Self {
+        Self {
+            c_rma_iovec: libfabric_sys::fi_rma_iov {
+                addr: 0,
+                len: 0,
+                key: 0,
+            }
+        }
+    }
+
+    pub fn address(mut self, addr: u64) -> Self {
+        self.c_rma_iovec.addr = addr;
+        self
+    }
+
+    pub fn len(mut self, len: usize) -> Self {
+        self.c_rma_iovec.len = len;
+        self
+    }
+
+    pub fn key(mut self, key: u64) -> Self {
+        self.c_rma_iovec.key = key;
+        self
+    }
+
+    pub fn get_address(&self) -> u64 {
+        self.c_rma_iovec.addr
+    }
+    
+    pub fn get_len(&self) -> usize {
+        self.c_rma_iovec.len
+    }
+
+    pub fn get_key(&self) -> u64 {
+        self.c_rma_iovec.key
+    }
+
+}
+
+impl Default for RmaIoVec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct MsgTagged {
+    c_msg_tagged: libfabric_sys::fi_msg_tagged,
+}
+
+impl MsgTagged {
+    pub fn new(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address, data: u64, tag: u64, ignore: u64) -> Self {
+    
+        Self {
+            c_msg_tagged: libfabric_sys::fi_msg_tagged {
+                msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
+                desc: desc.get_desc_ptr(),
+                iov_count: iov.len(),
+                addr,
+                context: std::ptr::null_mut(), // [TODO]
+                data,
+                tag,
+                ignore,
+            }
+        }
+    }
+}
+
+
+pub struct MsgAtomic {
+    c_msg_atomic: *mut libfabric_sys::fi_msg_atomic,
+}
+
+pub struct MsgRma {
+    c_msg_rma: libfabric_sys::fi_msg_rma,
+}
+
+impl MsgRma {
+    pub fn new<T0>(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address, rma_iov: &[RmaIoVec], context: &mut T0, data: u64) -> Self {
+        Self {
+            c_msg_rma : libfabric_sys::fi_msg_rma {
+                msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
+                desc: desc.get_desc_ptr(),
+                iov_count: iov.len(),
+                addr,
+                rma_iov: rma_iov.as_ptr() as *const libfabric_sys::fi_rma_iov,
+                rma_iov_count: rma_iov.len(),
+                context: context as *mut T0 as *mut std::ffi::c_void,
+                data,
+            }
+        }
+    }
 }
