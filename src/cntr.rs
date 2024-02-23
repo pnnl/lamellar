@@ -1,12 +1,17 @@
 //================== Domain (fi_domain) ==================//
 
+use std::os::fd::{AsFd, RawFd};
+
 use debug_print::debug_println;
 
 #[allow(unused_imports)]
-use crate::FID;
+use crate::AsFid;
+use crate::OwnedFid;
 
+// #[derive(Clone)]
 pub struct Counter {
     pub(crate) c_cntr: *mut libfabric_sys::fid_cntr,
+    fid: OwnedFid,
 }
 
 impl Counter {
@@ -21,7 +26,7 @@ impl Counter {
         }
         else {
             Ok (
-                Self { c_cntr }
+                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }} }
             )
         }
 
@@ -92,9 +97,9 @@ impl Counter {
 }
 
 
-impl crate::FID for Counter {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_cntr).fid }
+impl crate::AsFid for Counter {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
     }
 }
 
@@ -102,13 +107,15 @@ impl crate::Bind for Counter {
     
 }
 
-impl Drop for Counter {
-    fn drop(&mut self) {
-        debug_println!("Dropping cntr");
+// impl AsFd for Counter {
+//     fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+//         let mut fd: RawFd = 0;
+//         self.control(crate::enums::ControlOpt::GETWAIT, &mut fd).unwrap();
+//         unsafe{ std::os::fd::BorrowedFd::borrow_raw(fd) }
+//     }
+// }
 
-        self.close().unwrap();
-    }
-}
+
 
 //================== Counter attribute ==================//
 

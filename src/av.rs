@@ -1,11 +1,12 @@
 use std::ffi::CString;
-use debug_print::debug_println;
 
 #[allow(unused_imports)] 
-use crate::FID;
+use crate::AsFid;
+use crate::OwnedFid;
 //================== Address Vector (fi_av) ==================//
 pub struct AddressVector {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
+    fid: crate::OwnedFid,
 }
 
 impl AddressVector {
@@ -22,12 +23,13 @@ impl AddressVector {
             Ok(
             Self {
                 c_av,
+                fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} }
             })
         }
     }
 
     pub fn bind(&self, eq: &crate::eq::EventQueue) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.c_av, eq.fid(), 0) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.c_av, eq.as_fid(), 0) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -125,24 +127,15 @@ impl AddressVector {
 
 }
 
-impl crate::FID for AddressVector {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_av).fid }
+impl crate::AsFid for AddressVector {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
     }
 }
 
 impl crate::Bind for AddressVector {
     
 }
-
-impl Drop for AddressVector {
-    fn drop(&mut self) {
-        debug_println!("Dropping av");
-
-        self.close().unwrap()
-    }
-}
-
 //================== Address Vector attribute ==================//
 
 pub struct AddressVectorAttr {
@@ -205,6 +198,7 @@ impl Default for AddressVectorAttr {
 
 pub struct AddressVectorSet {
     pub(crate) c_set : *mut libfabric_sys::fid_av_set,
+    fid: OwnedFid,
 }
 
 impl AddressVectorSet {
@@ -219,7 +213,7 @@ impl AddressVectorSet {
         }
         else {
             Ok(
-                Self { c_set }
+                Self { c_set, fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } } }
             )
         }
     }
@@ -234,7 +228,7 @@ impl AddressVectorSet {
         }
         else {
             Ok(
-                Self { c_set }
+                Self { c_set, fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } } }
             )
         }
     }
@@ -308,16 +302,9 @@ impl AddressVectorSet {
     }
 }
 
-impl crate::FID for AddressVectorSet {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_set).fid }
-    }
-}
-
-impl Drop for AddressVectorSet {
-    fn drop(&mut self) {
-        debug_println!("Dropping av_set");
-        self.close().unwrap()
+impl crate::AsFid for AddressVectorSet {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
     }
 }
 

@@ -1,12 +1,14 @@
 use debug_print::debug_println;
 
 #[allow(unused_imports)]
-use crate::FID;
+use crate::AsFid;
+use crate::OwnedFid;
 
 //================== Domain (fi_domain) ==================//
 
 pub struct Domain {
     pub(crate) c_domain: *mut libfabric_sys::fid_domain,
+    fid: OwnedFid,
 }
 
 impl Domain {
@@ -20,7 +22,7 @@ impl Domain {
         }
         else {
             Ok(
-                Self { c_domain } 
+                Self { c_domain, fid: OwnedFid { fid: unsafe { &mut (*c_domain).fid } } } 
             )
         }
     }
@@ -35,13 +37,13 @@ impl Domain {
         }
         else {
             Ok(
-                Self { c_domain } 
+                Self { c_domain, fid: OwnedFid { fid: unsafe { &mut (*c_domain).fid } } } 
             )
         }
     }
 
-    pub fn bind(self, fid: &impl crate::FID, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.c_domain, fid.fid(), flags)} ;
+    pub fn bind(self, fid: &impl crate::AsFid, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.c_domain, fid.as_fid(), flags)} ;
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -146,18 +148,12 @@ impl Domain {
 
 }
 
-impl crate::FID for Domain {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe {&mut (*self.c_domain).fid }
+impl crate::AsFid for Domain {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+       self.fid.as_fid()
     }
 }
 
-impl Drop for Domain {
-    fn drop(&mut self) {
-        debug_println!("Dropping domain");
-        self.close().unwrap()
-    }
-}
 
 //================== Domain attribute ==================//
 

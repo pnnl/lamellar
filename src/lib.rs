@@ -568,14 +568,6 @@ impl AtomicAttr {
 //     pub(crate) c_mc: *mut libfabric_sys::fid_mc,
 // }
 
-impl FID for Mc {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_mc).fid as *mut libfabric_sys::fid }
-
-    }
-}
-
-
 pub struct Stx {
 
     #[allow(dead_code)]
@@ -717,6 +709,7 @@ impl Ioc {
 
 pub struct Mc {
     c_mc: *mut libfabric_sys::fid_mc,
+    fid: OwnedFid,
 }
 
 impl Mc {
@@ -730,7 +723,7 @@ impl Mc {
         }
         else {
             Ok(
-                Self { c_mc }
+                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
             )
         }
 
@@ -746,7 +739,7 @@ impl Mc {
         }
         else {
             Ok(
-                Self { c_mc }
+                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
             )
         }
 
@@ -762,7 +755,7 @@ impl Mc {
         }
         else {
             Ok(
-                Self { c_mc }
+                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
             )
         }
     }
@@ -777,7 +770,7 @@ impl Mc {
         }
         else {
             Ok(
-                Self { c_mc }
+                Self { c_mc, fid: OwnedFid { fid: unsafe { &mut (*c_mc).fid }  }  }
             )
         }
     }
@@ -787,10 +780,9 @@ impl Mc {
     }
 }
 
-impl Drop for Mc {
-    fn drop(&mut self) {
-        debug_println!("Dropping mc");
-        self.close().unwrap();
+impl AsFid for Mc {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
     }
 }
 
@@ -799,57 +791,73 @@ pub trait DataDescriptor {
     fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void;
 }
 
-pub trait FID{
-    fn fid(&self) -> *mut libfabric_sys::fid;
-    
-    fn setname<T>(&mut self, addr:&[T]) -> Result<(), error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_setname(self.fid(), addr.as_ptr() as *mut std::ffi::c_void, addr.len()) };
-        
-        if err != 0 {
-            Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
-    }
+pub(crate) struct OwnedFid {
+    fid: *mut libfabric_sys::fid,
+}
 
-    fn getname<T0>(&self, addr: &mut[T0]) -> Result<usize, error::Error> {
-        let mut len: usize = std::mem::size_of_val(addr);
-        let len_ptr: *mut usize = &mut len;
-        let err: i32 = unsafe { libfabric_sys::inlined_fi_getname(self.fid(), addr.as_mut_ptr() as *mut std::ffi::c_void, len_ptr) };
-
-        if -err as u32  == libfabric_sys::FI_ETOOSMALL {
-            Err(error::Error{ c_err: -err  as u32, kind: error::ErrorKind::TooSmall(len)} )
-        }
-        else if err < 0 {
-            Err(error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(len)
-        }
-    }
-
-    fn close(&mut self) -> Result<(), crate::error::Error> where Self: Sized {
-        let err = unsafe { libfabric_sys::inlined_fi_close(self.fid()) };
+impl Drop for OwnedFid {
+    fn drop(&mut self) {
+        let err = unsafe { libfabric_sys::inlined_fi_close(self.fid) };
 
         if err != 0 {
-            return Err(error::Error::from_err_code((-err).try_into().unwrap()));
+            panic!("{}", error::Error::from_err_code((-err).try_into().unwrap()));
         }
-
-        Ok(())
-    }
-
-
-    fn control<T0>(&self, opt: crate::enums::ControlOpt, arg: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_control(self.fid(), opt.get_value() as i32, arg as *mut T0 as *mut std::ffi::c_void) };
-    
-        if err != 0 {
-            return Err(error::Error::from_err_code((-err).try_into().unwrap()));
-        }
-
-        Ok(())
     }
 }
+
+impl AsFid for OwnedFid {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid
+    }
+}
+
+pub trait AsFid {
+    fn as_fid(&self) -> *mut libfabric_sys::fid;
+}
+
+
+
+// pub trait FID{
+//     // fn fid(&self) -> *mut libfabric_sys::fid;
+    
+//     fn setname<T>(&mut self, addr:&[T]) -> Result<(), error::Error> {
+//         let err = unsafe { libfabric_sys::inlined_fi_setname(self.as_fid(), addr.as_ptr() as *mut std::ffi::c_void, addr.len()) };
+        
+//         if err != 0 {
+//             Err(error::Error::from_err_code((-err).try_into().unwrap()))
+//         }
+//         else {
+//             Ok(())
+//         }
+//     }
+
+//     fn getname<T0>(&self, addr: &mut[T0]) -> Result<usize, error::Error> {
+//         let mut len: usize = std::mem::size_of_val(addr);
+//         let len_ptr: *mut usize = &mut len;
+//         let err: i32 = unsafe { libfabric_sys::inlined_fi_getname(self.as_fid(), addr.as_mut_ptr() as *mut std::ffi::c_void, len_ptr) };
+
+//         if -err as u32  == libfabric_sys::FI_ETOOSMALL {
+//             Err(error::Error{ c_err: -err  as u32, kind: error::ErrorKind::TooSmall(len)} )
+//         }
+//         else if err < 0 {
+//             Err(error::Error::from_err_code((-err).try_into().unwrap()))
+//         }
+//         else {
+//             Ok(len)
+//         }
+//     }
+
+
+//     fn control<T0>(&self, opt: crate::enums::ControlOpt, arg: &mut T0) -> Result<(), crate::error::Error> {
+//         let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), opt.get_value() as i32, arg as *mut T0 as *mut std::ffi::c_void) };
+    
+//         if err != 0 {
+//             return Err(error::Error::from_err_code((-err).try_into().unwrap()));
+//         }
+
+//         Ok(())
+//     }
+// }
 
 
 pub type CollectiveOp = libfabric_sys::fi_collective_op;

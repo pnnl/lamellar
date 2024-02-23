@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use libfabric::{domain, fabric, FID, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}, InfoCaps,  Context};
-use libfabric::ep::ActiveEndpoint;
+use libfabric::{domain, fabric, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}, InfoCaps,  Context};
+use libfabric::ep::{ActiveEndpoint, BaseEndpoint};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,

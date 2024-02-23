@@ -1,12 +1,14 @@
 
+
 use debug_print::debug_println;
 
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
-use crate::FID;
+use crate::AsFid;
 
 pub struct Fabric {
     pub(crate) c_fabric: *mut libfabric_sys::fid_fabric,
+    fid: crate::OwnedFid,
 }
 
 
@@ -22,7 +24,7 @@ impl Fabric {
         }
         else {
             Ok(
-                Self { c_fabric }
+                Self { c_fabric, fid: crate::OwnedFid { fid: unsafe{ &mut (*c_fabric).fid } } }
             )
         }
     }
@@ -48,8 +50,8 @@ impl Fabric {
         crate::sync::Wait::new(self, wait_attr)
     }
 
-    pub fn trywait(&self, fids: &[&impl crate::FID]) -> Result<(), crate::error::Error> {
-        let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.fid()).collect();
+    pub fn trywait(&self, fids: &[&impl crate::AsFid]) -> Result<(), crate::error::Error> {
+        let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.as_fid()).collect();
         let err = unsafe { libfabric_sys::inlined_fi_trywait(self.c_fabric, raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
         
         if err != 0 {
@@ -62,19 +64,12 @@ impl Fabric {
 }
 
 
-impl crate::FID for Fabric {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_fabric).fid }
+impl crate::AsFid for Fabric {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
     }
 }
 
-impl Drop for Fabric {
-    fn drop(&mut self) {
-        debug_println!("Dropping fabric");
-
-        self.close().unwrap()
-    }
-}
 
 //================== Fabric attribute ==================//
 

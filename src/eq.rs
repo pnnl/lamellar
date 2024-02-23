@@ -1,14 +1,15 @@
 use debug_print::debug_println;
 
 #[allow(unused_imports)]
-use crate::FID;
-use crate::{enums::Event, InfoEntry};
+use crate::AsFid;
+use crate::{enums::Event, InfoEntry, OwnedFid};
 
 
 //================== EventQueue (fi_eq) ==================//
 
 pub struct EventQueue {
     c_eq: *mut libfabric_sys::fid_eq,
+    fid: OwnedFid,
 }
 
 impl EventQueue {
@@ -22,7 +23,7 @@ impl EventQueue {
         }
         else {
             Ok(
-                Self { c_eq }
+                Self { c_eq, fid: OwnedFid { fid: unsafe{ &mut (*c_eq).fid } } }
             )
         }
     }
@@ -119,22 +120,14 @@ impl EventQueue {
 
 }
 
-impl crate::FID for EventQueue {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_eq).fid }
+impl crate::AsFid for EventQueue {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+       self.fid.as_fid()
     }
 }
 
 impl crate::Bind for EventQueue {
     
-}
-
-impl Drop for EventQueue {
-    fn drop(&mut self) {
-        debug_println!("Dropping eq");
-
-        self.close().unwrap();
-    }
 }
 
 //================== EventQueue Attribute(fi_eq_attr) ==================//
@@ -257,8 +250,8 @@ impl<T> EventQueueEntry<T> {
         Self { c_entry, phantom: std::marker::PhantomData }
     }
 
-    pub fn fid(&mut self, fid: &impl crate::FID) -> &mut Self { //[TODO] Should this be pub(crate)?
-        self.c_entry.fid = fid.fid();
+    pub fn fid(&mut self, fid: &impl crate::AsFid) -> &mut Self { //[TODO] Should this be pub(crate)?
+        self.c_entry.fid = fid.as_fid();
         self
     }
 
@@ -332,7 +325,7 @@ impl Default for EventQueueCmEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::FID;
+    use crate::AsFid;
 
     #[test]
     fn eq_write_read_self() {
@@ -381,7 +374,7 @@ mod tests {
                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
             }
 
-            if entry.get_fid() != if i & 2 == 2 {fab.fid()} else {eq.fid()} {
+            if entry.get_fid() != if i & 2 == 2 {fab.as_fid()} else {eq.as_fid()} {
                 panic!("Unexpected fid {:?}", entry.get_fid());
             }
         }
@@ -462,7 +455,7 @@ mod tests {
                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
             }
 
-            if entry.get_fid() != if i & 2 == 2 {fab.fid()} else {eq.fid()} {
+            if entry.get_fid() != if i & 2 == 2 {fab.as_fid()} else {eq.as_fid()} {
                 panic!("Unexpected fid {:?}", entry.get_fid());
             }
         }
@@ -513,7 +506,7 @@ mod tests {
                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
             }
 
-            if entry.get_fid() != fab.fid() {
+            if entry.get_fid() != fab.as_fid() {
                 panic!("Unexpected fid {:?}", entry.get_fid());
             }
         }

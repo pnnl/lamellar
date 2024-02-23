@@ -1,11 +1,12 @@
 use debug_print::debug_println;
 
 #[allow(unused_imports)]
-use crate::FID;
+use crate::AsFid;
 
 //================== Memory Region (fi_mr) ==================//
 pub struct MemoryRegion {
     pub(crate) c_mr: *mut libfabric_sys::fid_mr,
+    fid: crate::OwnedFid,
 }
 
 impl MemoryRegion {
@@ -20,7 +21,7 @@ impl MemoryRegion {
         }
         else {
             Ok(
-                Self { c_mr }        
+                Self { c_mr, fid: crate::OwnedFid{fid: unsafe {&mut (*c_mr).fid } }}        
             )
         }
     }
@@ -35,7 +36,7 @@ impl MemoryRegion {
         }
         else {
             Ok(
-                Self { c_mr }           
+                Self { c_mr, fid: crate::OwnedFid { fid: unsafe {&mut (*c_mr).fid }}}           
             )
         }
     
@@ -51,7 +52,7 @@ impl MemoryRegion {
         }
         else {
             Ok(
-                Self { c_mr }    
+                Self { c_mr, fid: unsafe {crate::OwnedFid { fid: &mut (*c_mr).fid }} }    
             )
         }
     
@@ -62,7 +63,7 @@ impl MemoryRegion {
     }
 
     pub fn bind_cntr(&self, cntr: &crate::cntr::Counter, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, cntr.fid(), flags) } ;
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, cntr.as_fid(), flags) } ;
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -73,7 +74,7 @@ impl MemoryRegion {
     }
 
     pub fn bind_ep(&self, ep: &crate::ep::Endpoint) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, ep.fid(), 0) } ;
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.c_mr, ep.as_fid(), 0) } ;
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -155,17 +156,9 @@ impl crate::DataDescriptor for MemoryRegionDesc {
     }
 }
 
-impl crate::FID for MemoryRegion{
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_mr).fid }
-    }
-}
-
-impl Drop for MemoryRegion {
-    fn drop(&mut self) {
-        debug_println!("Dropping mr");
-
-        self.close().unwrap();
+impl crate::AsFid for MemoryRegion{
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
     }
 }
 

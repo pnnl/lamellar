@@ -85,8 +85,8 @@ impl Poll {
         }
     }
 
-    pub fn add(&self, fid: &impl crate::FID, flags:u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_poll_add(self.c_poll, fid.fid(), flags) };
+    pub fn add(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_poll_add(self.c_poll, fid.as_fid(), flags) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -96,8 +96,8 @@ impl Poll {
         }
     }
 
-    pub fn del(&self, fid: &impl crate::FID, flags:u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_poll_del(self.c_poll, fid.fid(), flags) };
+    pub fn del(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_poll_del(self.c_poll, fid.as_fid(), flags) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))

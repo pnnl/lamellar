@@ -1,13 +1,13 @@
-use debug_print::debug_println;
-
 #[allow(unused_imports)]
-use crate::FID;
+use crate::AsFid;
+use crate::OwnedFid;
 
 //================== CompletionQueue (fi_cq) ==================//
 
 
 pub struct CompletionQueue {
     pub(crate) c_cq: *mut libfabric_sys::fid_cq,
+    fid: OwnedFid,
 }
 
 impl CompletionQueue {
@@ -21,7 +21,7 @@ impl CompletionQueue {
         }
         else {
             Ok(
-                Self { c_cq } 
+                Self { c_cq, fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } } } 
             )
         }
     }
@@ -36,7 +36,7 @@ impl CompletionQueue {
         }
         else {
             Ok(
-                Self { c_cq } 
+                Self { c_cq, fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } } } 
             )
         }
     }
@@ -139,22 +139,14 @@ impl CompletionQueue {
     }
 }
 
-impl crate::FID for CompletionQueue {
-    fn fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_cq).fid }
+impl crate::AsFid for CompletionQueue {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
     }
 }
 
 impl crate::Bind for CompletionQueue {
     
-}
-
-impl Drop for CompletionQueue {
-    fn drop(&mut self) {
-        debug_println!("Dropping cq");
-
-        self.close().unwrap()
-    }
 }
 
 //================== CompletionQueue Attribute (fi_cq_attr) ==================//

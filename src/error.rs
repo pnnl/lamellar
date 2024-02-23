@@ -1,7 +1,7 @@
  
  
 pub struct Error {
-    pub(crate) c_err: u32,
+    pub c_err: u32,
     pub kind : ErrorKind,
 }
 
