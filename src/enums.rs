@@ -1,3 +1,5 @@
+use std::clone;
+
 #[allow(non_camel_case_types)]
 pub enum Op {
     MIN,
@@ -81,6 +83,7 @@ impl CollectiveOp {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum CqFormat {
     UNSPEC,
     CONTEXT,
@@ -90,6 +93,29 @@ pub enum CqFormat {
 }
 
 impl CqFormat {
+
+    pub(crate) fn from_value(value: libfabric_sys::fi_cq_format) -> Self {
+        
+        if value == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC {
+            CqFormat::UNSPEC
+        }
+        else if value == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_CONTEXT {
+            CqFormat::CONTEXT
+        }
+        else if value == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_MSG {
+            CqFormat::MSG
+        }
+        else if value == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_DATA {
+            CqFormat::DATA
+        }
+        else if value == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_TAGGED {
+            CqFormat::TAGGED
+        }
+        else {
+            CqFormat::UNSPEC
+        }
+    }
+    
     pub(crate) fn get_value(&self) -> u32 {
         match self {   
             CqFormat::UNSPEC => libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC,
@@ -101,6 +127,7 @@ impl CqFormat {
     }
 }
 #[allow(non_camel_case_types)]
+#[derive(Copy, Clone)]
 pub enum WaitObj {
     NONE,
     UNSPEC,
@@ -122,6 +149,30 @@ impl WaitObj {
             WaitObj::MUTEX_COND => libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND,
             WaitObj::YIELD => libfabric_sys::fi_wait_obj_FI_WAIT_YIELD,
             WaitObj::POLLFD => libfabric_sys::fi_wait_obj_FI_WAIT_POLLFD,
+        }
+    }
+}
+
+
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone)]
+pub enum WaitObj2 {
+    UNSPEC,
+    FD,
+    MUTEX_COND,
+    YIELD,
+    POLLFD,
+}
+
+impl WaitObj2 {
+
+    pub(crate) fn get_value(&self) -> u32 {
+        match self {
+            WaitObj2::UNSPEC => libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
+            WaitObj2::FD => libfabric_sys::fi_wait_obj_FI_WAIT_FD,
+            WaitObj2::MUTEX_COND => libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND,
+            WaitObj2::YIELD => libfabric_sys::fi_wait_obj_FI_WAIT_YIELD,
+            WaitObj2::POLLFD => libfabric_sys::fi_wait_obj_FI_WAIT_POLLFD,
         }
     }
 }

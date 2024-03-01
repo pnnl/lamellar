@@ -1,3 +1,5 @@
+use std::task::Context;
+
 use debug_print::debug_println;
 
 #[allow(unused_imports)]
@@ -75,22 +77,10 @@ impl Domain {
             Ok(())
         }
     }
-    pub fn cq_open(&self, attr: crate::cq::CompletionQueueAttr) -> Result<crate::cq::CompletionQueue, crate::error::Error> {
-        crate::cq::CompletionQueue::new(self, attr)
-    }
 
-    pub fn cq_open_with_context<T0>(&self, attr: crate::cq::CompletionQueueAttr, context: &mut T0) -> Result<crate::cq::CompletionQueue, crate::error::Error> {
-        crate::cq::CompletionQueue::new_with_context(self, attr, context)
-    }
-
-    pub fn cntr_open(&self, attr: crate::cntr::CounterAttr) -> Result<crate::cntr::Counter, crate::error::Error> {
-        crate::cntr::Counter::new(self, attr)
-    }
-
-
-    pub fn poll_open(&self, attr: crate::sync::PollAttr) -> Result<crate::sync::Poll, crate::error::Error> {
-        crate::sync::Poll::new(self, attr)
-    }
+    // pub fn poll_open(&self, attr: crate::sync::PollSetAttr) -> Result<crate::sync::PollSet, crate::error::Error> {
+    //     crate::sync::PollSet::new(self, attr)
+    // }
 
     pub fn av_open(&self, attr: crate::av::AddressVectorAttr) -> Result<crate::av::AddressVector, crate::error::Error> {
         crate::av::AddressVector::new(self, attr)

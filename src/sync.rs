@@ -1,11 +1,39 @@
+use crate::{enums, AsFid};
+
 
 //================== Wait (fi_wait) ==================//
-pub struct Wait {
-    pub(crate) c_wait: *mut libfabric_sys::fid_wait,
+
+pub struct WaitSetBuilder<'a> {
+    wait_attr : WaitSetAttr,
+    fabric: &'a crate::fabric::Fabric,
 }
 
-impl Wait {
-    pub(crate) fn new(fabric: &crate::fabric::Fabric, mut attr: WaitAttr) -> Result<Self, crate::error::Error> {
+impl<'a> WaitSetBuilder<'a> {
+    pub fn new(fabric: &'a crate::fabric::Fabric) -> Self {
+        WaitSetBuilder {
+            wait_attr: WaitSetAttr::new(),
+            fabric,
+        }
+    }
+
+    pub fn wait_obj(mut self, wait_obj: enums::WaitObj2) -> Self {
+        self.wait_attr.wait_obj(wait_obj);
+        self
+    }
+
+    pub fn build(self) -> Result<WaitSet, crate::error::Error> {
+        WaitSet::new(self.fabric, self.wait_attr)
+    }
+}
+
+pub struct WaitSet {
+    pub(crate) c_wait: *mut libfabric_sys::fid_wait,
+    fid: crate::OwnedFid,
+}
+
+impl WaitSet {
+    
+    pub(crate) fn new(fabric: &crate::fabric::Fabric, mut attr: WaitSetAttr) -> Result<Self, crate::error::Error> {
         let mut c_wait: *mut libfabric_sys::fid_wait  = std::ptr::null_mut();
         let c_wait_ptr: *mut *mut libfabric_sys::fid_wait = &mut c_wait;
 
@@ -15,10 +43,9 @@ impl Wait {
         }
         else {
             Ok(
-                Self { c_wait }        
+                Self { c_wait, fid: crate::OwnedFid{fid: unsafe{ &mut (*c_wait).fid} } }        
             )
         }
-
     }
 
     pub fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> { 
@@ -33,14 +60,34 @@ impl Wait {
     }
 }
 
+impl AsFid for WaitSet {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
+    }
+}
+
 //================== Wait attribute ==================//
 
-pub struct WaitAttr {
+pub(crate) struct WaitSetAttr {
     pub(crate) c_attr: libfabric_sys::fi_wait_attr,
 }
 
-impl WaitAttr {
+impl WaitSetAttr {
+
+    pub(crate) fn new () -> Self {
+        Self {
+            c_attr: libfabric_sys::fi_wait_attr {
+                wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
+                flags: 0,
+            }
+        }
+    }
     
+    pub(crate) fn wait_obj(&mut self, wait_obj: enums::WaitObj2) -> &mut Self {
+        self.c_attr.wait_obj = wait_obj.get_value();
+        self
+    }
+
     #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_wait_attr {
         &self.c_attr
@@ -54,12 +101,31 @@ impl WaitAttr {
 //================== Poll (fi_poll) ==================//
 
 
-pub struct Poll {
-    pub(crate) c_poll: *mut libfabric_sys::fid_poll,
+pub struct PollSetBuilder<'a> {
+    poll_attr : PollSetAttr,
+    domain: &'a crate::domain::Domain,
 }
 
-impl Poll {
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: crate::sync::PollAttr) -> Result<Poll, crate::error::Error> {
+impl<'a> PollSetBuilder<'a> {
+    pub fn new(domain: &'a crate::domain::Domain) -> Self {
+        PollSetBuilder {
+            poll_attr: PollSetAttr::new(),
+            domain,
+        }
+    }
+
+    pub fn build(self) -> Result<PollSet, crate::error::Error> {
+        PollSet::new(self.domain, self.poll_attr)
+    }
+}
+
+pub struct PollSet {
+    pub(crate) c_poll: *mut libfabric_sys::fid_poll,
+    fid: crate::OwnedFid,
+}
+
+impl PollSet {
+    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: crate::sync::PollSetAttr) -> Result<PollSet, crate::error::Error> {
         let mut c_poll: *mut libfabric_sys::fid_poll = std::ptr::null_mut();
         let c_poll_ptr: *mut *mut libfabric_sys::fid_poll = &mut c_poll;
         let err = unsafe { libfabric_sys::inlined_fi_poll_open(domain.c_domain, attr.get_mut(), c_poll_ptr) };
@@ -69,7 +135,7 @@ impl Poll {
         }
         else {
             Ok(
-                Self { c_poll }
+                Self { c_poll, fid: crate::OwnedFid {fid: unsafe{ &mut (*c_poll).fid } } }
             )
         }
     }
@@ -85,7 +151,7 @@ impl Poll {
         }
     }
 
-    pub fn add(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> {
+    pub fn add(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_add(self.c_poll, fid.as_fid(), flags) };
 
         if err != 0 {
@@ -96,7 +162,7 @@ impl Poll {
         }
     }
 
-    pub fn del(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> {
+    pub fn del(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_del(self.c_poll, fid.as_fid(), flags) };
 
         if err != 0 {
@@ -110,13 +176,26 @@ impl Poll {
 
 }
 
+impl AsFid for PollSet {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
+    }
+}
+
 //================== Poll attribute ==================//
 
-pub struct PollAttr {
+pub struct PollSetAttr {
     pub(crate) c_attr: libfabric_sys::fi_poll_attr,
 }
 
-impl PollAttr {
+impl PollSetAttr {
+    pub(crate) fn new() -> Self {
+        Self {
+            c_attr: libfabric_sys::fi_poll_attr {
+                flags: 0,
+            }
+        }
+    }
 
     #[allow(dead_code)]
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_poll_attr {
@@ -126,41 +205,4 @@ impl PollAttr {
     pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_poll_attr {
         &mut self.c_attr
     }      
-}
-
-//================== PollFd (pollfd) ==================//
-
-pub struct PollFd {
-    c_poll: libfabric_sys::pollfd,
-}
-
-impl PollFd {
-    pub fn new() -> Self {
-        let c_poll = libfabric_sys::pollfd{ fd: 0, events: 0, revents: 0 };
-        Self { c_poll }
-    }
-
-    pub fn fd(&mut self, fd: i32) -> &mut Self {
-        
-        self.c_poll.fd = fd;
-        self
-    }
-
-    pub fn events(&mut self, events: i16) -> &mut Self {
-        
-        self.c_poll.events = events;
-        self
-    }
-
-    pub fn revents(&mut self, revents: i16) -> &mut Self {
-        
-        self.c_poll.revents = revents;
-        self
-    }
-}
-
-impl Default for PollFd {
-    fn default() -> Self {
-        Self::new()
-    }
 }

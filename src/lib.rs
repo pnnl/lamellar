@@ -17,7 +17,7 @@ pub mod comm;
 pub mod error;
 
 pub use comm::collective::MulticastGroupCollective;
-
+const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
 #[derive(Clone, Debug)]
 pub struct InfoCaps {
     bitfield: u64,
@@ -623,11 +623,11 @@ pub(crate) struct OwnedFid {
 
 impl Drop for OwnedFid {
     fn drop(&mut self) {
-        let err = unsafe { libfabric_sys::inlined_fi_close(self.fid) };
+        // let err = unsafe { libfabric_sys::inlined_fi_close(self.fid) };
 
-        if err != 0 {
-            panic!("{}", error::Error::from_err_code((-err).try_into().unwrap()));
-        }
+        // if err != 0 {
+        //     panic!("{}", error::Error::from_err_code((-err).try_into().unwrap()));
+        // }
     }
 }
 

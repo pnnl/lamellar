@@ -38,7 +38,7 @@ fn pp_server_msg() {
         .addr_format(enums::AddressFormat::UNSPEC);
 
 
-    let (info, fab, eq, _pep) = common::start_server(hints, "172.17.110.13".to_owned(), "9222".to_owned());
+    let (info, fab, eq, _pep) = common::start_server(hints, "172.17.110.4".to_owned(), "9222".to_owned());
     let (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, domain, _mr, mut mr_desc) = common::ft_server_connect(&mut gl_ctx, &eq, &fab);
     let entries = info.get();
     let test_sizes = gl_ctx.test_sizes.clone();
@@ -80,7 +80,7 @@ fn pp_client_msg() {
         .addr_format(enums::AddressFormat::UNSPEC);
 
     let (info, _fab, domain, _eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = 
-        common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.13".to_owned(), "9222".to_owned());
+        common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.4".to_owned(), "9222".to_owned());
     let entries = info.get();
     let test_sizes = gl_ctx.test_sizes.clone();
     for msg_size in test_sizes {

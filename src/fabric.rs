@@ -37,20 +37,15 @@ impl Fabric {
         crate::domain::Domain::new2(self, info, flags)
     }
 
-
     pub fn passive_ep(&self, info: &crate::InfoEntry) -> Result<crate::ep::PassiveEndpoint, crate::error::Error> {
         crate::ep::PassiveEndpoint::new(self, info)
     }
 
-    pub fn eq_open(&self, attr: crate::eq::EventQueueAttr) -> Result<crate::eq::EventQueue, crate::error::Error> {
-        crate::eq::EventQueue::new(self, attr)
-    }
+    // pub fn wait_open(&self, wait_attr: crate::sync::WaitAttr) -> Result<crate::sync::WaitSet, crate::error::Error> {
+    //     crate::sync::WaitSet::new(self, wait_attr)
+    // }
 
-    pub fn wait_open(&self, wait_attr: crate::sync::WaitAttr) -> Result<crate::sync::Wait, crate::error::Error> {
-        crate::sync::Wait::new(self, wait_attr)
-    }
-
-    pub fn trywait(&self, fids: &[&impl crate::AsFid]) -> Result<(), crate::error::Error> {
+    pub fn trywait(&self, fids: &[&impl crate::AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
         let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.as_fid()).collect();
         let err = unsafe { libfabric_sys::inlined_fi_trywait(self.c_fabric, raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
         

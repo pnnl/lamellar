@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{domain, fabric, InfoEntry, default_desc, cq::CompletionQueueAttr, cntr::{Counter, CounterAttr}, InfoCaps,  Context};
+use libfabric::{cntr::{Counter, CounterBuilder, CounterNonWaitable, CounterWaitable, Waitable}, cq::{CompletionQueue, CompletionQueueBuilder}, default_desc, domain, eq::EventQueueBuilder, fabric, Context, InfoCaps, InfoEntry};
 use libfabric::ep::{ActiveEndpoint, BaseEndpoint};
 use libfabric::enums;
 pub enum CompMeth {
@@ -136,7 +136,7 @@ impl Default for TestsGlobalCtx {
 pub fn ft_open_fabric_res(info: &libfabric::InfoEntry) -> (libfabric::fabric::Fabric, libfabric::eq::EventQueue, libfabric::domain::Domain) {
     
     let fab = libfabric::fabric::Fabric::new(info.get_fabric_attr().clone()).unwrap();
-    let eq = fab.eq_open(libfabric::eq::EventQueueAttr::new()).unwrap();
+    let eq = EventQueueBuilder::new(&fab).build().unwrap();
     let domain = ft_open_domain_res(info, &fab);
 
     (fab, eq, domain)
@@ -147,93 +147,72 @@ pub fn ft_open_domain_res(info: &libfabric::InfoEntry, fab: &fabric::Fabric) -> 
     fab.domain(info).unwrap()
 }
 
-pub fn ft_cq_set_wait_attr(gl_ctx: &mut TestsGlobalCtx, cq_attr: &mut CompletionQueueAttr) {
-    match gl_ctx.comp_method {
-        CompMeth::Spin => {
-            cq_attr.wait_obj(enums::WaitObj::NONE);
-        },
-        CompMeth::Sread => {
-            cq_attr.wait_obj(enums::WaitObj::UNSPEC);
-            cq_attr.wait_cond(enums::WaitCond::NONE);
-        },
-        CompMeth::WaitSet => todo!(),
-        CompMeth::WaitFd => {
-            cq_attr.wait_obj(enums::WaitObj::YIELD);
-            cq_attr.wait_cond(enums::WaitCond::NONE);
-        },
-        CompMeth::Yield => {
-            cq_attr.wait_obj(enums::WaitObj::YIELD);
-            cq_attr.wait_cond(enums::WaitCond::NONE);
-        },
-    }
-}
 
 pub fn ft_alloc_ep_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::Domain) -> (libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, libfabric::cq::CompletionQueue, Option<libfabric::cntr::Counter>, Option<libfabric::cntr::Counter>, Option<libfabric::av::AddressVector>){
 
-    let mut txcq_attr =  libfabric::cq::CompletionQueueAttr::new();
-    let mut rxcq_attr =  libfabric::cq::CompletionQueueAttr::new();
-
-    // [TODO] if cq_attr.form == UNSPEC
-    if info.get_caps().is_tagged() {
-
-        txcq_attr.format(enums::CqFormat::TAGGED);
-        rxcq_attr.format(enums::CqFormat::TAGGED);
+    let format = if info.get_caps().is_tagged() {
+        enums::CqFormat::TAGGED
     }
     else {
-        txcq_attr.format(enums::CqFormat::CONTEXT);
-        rxcq_attr.format(enums::CqFormat::CONTEXT);
-    }
+        enums::CqFormat::CONTEXT
+    };
 
-    let tx_cq;
-    let rx_cq;
+    let tx_cq_builder = CompletionQueueBuilder::new(domain)
+        .size(info.get_tx_attr().get_size())
+        .format(format);
 
-    if gl_ctx.options & FT_OPT_CQ_SHARED == 0{
-        ft_cq_set_wait_attr(gl_ctx, &mut txcq_attr);
-        ft_cq_set_wait_attr(gl_ctx, &mut rxcq_attr);
-
-        txcq_attr.size(info.get_tx_attr().get_size() + info.get_rx_attr().get_size());
-        rxcq_attr.size(info.get_tx_attr().get_size() + info.get_rx_attr().get_size());
-
-        tx_cq = domain.cq_open(txcq_attr).unwrap();
-        rx_cq = domain.cq_open(rxcq_attr).unwrap();
-    }
-    else {
-        todo!();
-    }
-
-    let mut cntr_attr = CounterAttr::new();
-    match gl_ctx.comp_method {
+    let rx_cq_builder = CompletionQueueBuilder::new(domain)
+        .size(info.get_rx_attr().get_size())
+        .format(format);
+    
+    let (tx_cq, rx_cq) = match gl_ctx.comp_method {
         CompMeth::Spin => {
-            cntr_attr.wait_obj(enums::WaitObj::NONE);
+            (tx_cq_builder.wait_obj(enums::WaitObj::NONE).build().unwrap(), rx_cq_builder.wait_obj(enums::WaitObj::NONE).build().unwrap())
+        },
+        CompMeth::Sread => {
+            (tx_cq_builder.build().unwrap(), rx_cq_builder.build().unwrap())
+        },
+        CompMeth::WaitSet => todo!(),
+        CompMeth::WaitFd => {
+            (tx_cq_builder.wait_obj(enums::WaitObj::YIELD).build().unwrap(), rx_cq_builder.wait_obj(enums::WaitObj::YIELD).build().unwrap())
+        },
+        CompMeth::Yield => {
+            (tx_cq_builder.wait_obj(enums::WaitObj::YIELD).build().unwrap(), rx_cq_builder.wait_obj(enums::WaitObj::YIELD).build().unwrap())
+        },
+    };
+
+    let wait_obj = match gl_ctx.comp_method {
+        CompMeth::Spin => {
+            enums::WaitObj::NONE
         }
         CompMeth::Sread => {
-            cntr_attr.wait_obj(enums::WaitObj::UNSPEC);
+            enums::WaitObj::UNSPEC
         }
         CompMeth::WaitSet => todo!(),
         CompMeth::WaitFd => {
-            cntr_attr.wait_obj(enums::WaitObj::FD);
+            enums::WaitObj::FD
         }
         CompMeth::Yield => {
-            cntr_attr.wait_obj(enums::WaitObj::YIELD);
+            enums::WaitObj::YIELD
         }
-    }
+    };
     
     let tx_cntr = if gl_ctx.options & FT_OPT_TX_CNTR != 0{
-        Some(domain.cntr_open(cntr_attr).unwrap())
+        Some(CounterBuilder::new(domain).wait_obj(wait_obj).build().unwrap())
     }
     else{
         None
     };
 
     let rx_cntr = if gl_ctx.options & FT_OPT_RX_CNTR != 0{
-        Some(domain.cntr_open(cntr_attr).unwrap())
+        Some(CounterBuilder::new(domain).wait_obj(wait_obj).build().unwrap())
     }
     else {
         None
     };
 
     let rma_cntr = if gl_ctx.options & FT_OPT_RX_CNTR != 0 && info.get_caps().is_rma() {
-        Some(domain.cntr_open(cntr_attr).unwrap())
+        Some(CounterBuilder::new(domain).wait_obj(wait_obj).build().unwrap())
     }
     else {
         None
@@ -331,14 +310,20 @@ pub fn ft_complete_connect(eq: &libfabric::eq::EventQueue) { // [TODO] Do not pa
     
     let mut eq_cm_entry = [libfabric::eq::EventQueueCmEntry::new()];
     
-    let (ret, event) = eq.sread(&mut eq_cm_entry, -1, 0).unwrap();
+    if let libfabric::eq::EventQueue::Waitable(eq) = eq {
 
-    if ret != std::mem::size_of::<libfabric::eq::EventQueueCmEntry>() {
-        panic!("Size different {} vs {}", ret, std::mem::size_of::<libfabric::eq::EventQueueCmEntry>());
+        let (ret, event) = eq.sread(&mut eq_cm_entry, -1, 0).unwrap();
+        
+        if ret != std::mem::size_of::<libfabric::eq::EventQueueCmEntry>() {
+            panic!("Size different {} vs {}", ret, std::mem::size_of::<libfabric::eq::EventQueueCmEntry>());
+        }
+        
+        if !matches!(event, crate::enums::Event::CONNECTED) {
+            panic!("Unexpected event value returned");
+        }
     }
-    
-    if !matches!(event, crate::enums::Event::CONNECTED) {
-        panic!("Unexpected event value returned");
+    else {
+        panic!("Not implemented!");
     }
 }
 
@@ -353,16 +338,22 @@ pub fn ft_retrieve_conn_req(eq: &libfabric::eq::EventQueue) -> libfabric::InfoEn
     
 
     let mut eq_cm_entry = libfabric::eq::EventQueueCmEntry::new();
-    let (ret, event) = eq.sread( std::slice::from_mut(&mut eq_cm_entry), -1, 0).unwrap();
-    if ret != std::mem::size_of::<libfabric::eq::EventQueueCmEntry>(){
-        panic!("Size different {} vs {}", ret, std::mem::size_of::<libfabric::eq::EventQueueCmEntry>());
-    }
+    if let libfabric::eq::EventQueue::Waitable(eq) = eq {
 
-    if !matches!(event, crate::enums::Event::CONNREQ) {
-        panic!("Unexpected event value returned");
+        let (ret, event) = eq.sread( std::slice::from_mut(&mut eq_cm_entry), -1, 0).unwrap();
+        if ret != std::mem::size_of::<libfabric::eq::EventQueueCmEntry>(){
+            panic!("Size different {} vs {}", ret, std::mem::size_of::<libfabric::eq::EventQueueCmEntry>());
+        }
+        
+        if !matches!(event, crate::enums::Event::CONNREQ) {
+            panic!("Unexpected event value returned");
+        }
+        
+        eq_cm_entry.get_info()
     }
-
-    eq_cm_entry.get_info()
+    else {
+        todo!();
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -721,8 +712,7 @@ pub fn ft_inject(info: &InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::
 }
 
 pub fn ft_progress(cq: &libfabric::cq::CompletionQueue, _total: u64, cq_cntr: &mut u64) {
-    let mut cq_err_entry = libfabric::cq::CqErrEntry::new();
-    let ret = cq.read(std::slice::from_mut(&mut cq_err_entry), 1);
+    let ret = cq.read(1);
     match ret {
         Ok(_) => {*cq_cntr += 1;},
         Err(ref err) => {
@@ -775,22 +765,19 @@ pub fn ft_init_av(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, av: 
     ft_init_av_dst_addr(info, gl_ctx, av, ep,  tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc, server);
 }
 
-pub fn ft_spin_for_comp(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, _timeout: i32, _tag: u64) {
+pub fn ft_spin_for_comp(cq: &libfabric::cq::CompletionQueueNonWaitable, curr: &mut u64, total: u64, _timeout: i32, _tag: u64) {
     
-    let mut comp = libfabric::cq::CqErrEntry::new();
-
     while total - *curr > 0 {
         loop {
 
-            let err = cq.read(std::slice::from_mut(&mut comp), 1);
+            let err = cq.read(1);
             match err {
                 Ok(_) => {
                     break
                 },
                 Err(err) => {
                     if !matches!(err.kind, libfabric::error::ErrorKind::TryAgain) {
-                        let mut err_entry = libfabric::cq::CqErrEntry::new();
-                        cq.readerr(&mut err_entry, 0).unwrap();
+                        let err_entry = cq.readerr( 0).unwrap();
             
                         cq.print_error(&err_entry);
                         panic!("ERROR IN CQ_READ {}", err);
@@ -803,92 +790,82 @@ pub fn ft_spin_for_comp(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, tot
     }
 }
 
-pub fn ft_wait_for_comp(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, _timeout: i32, _tag: u64) {
+pub fn ft_wait_for_comp(cq: &libfabric::cq::CompletionQueueWaitable, curr: &mut u64, total: u64, _timeout: i32, _tag: u64) {
     
-    let mut comp = libfabric::cq::CqErrEntry::new();
-
     while total - *curr > 0 {
-        let ret = cq.sread(std::slice::from_mut(&mut comp), 1, -1);
+        let ret = cq.sread( 1, -1);
         if ret.is_ok() {
             *curr += 1;
         }
     }
 }
 
-pub fn ft_read_cq(comp: &CompMeth, cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
+pub fn ft_read_cq(cq: &libfabric::cq::CompletionQueue, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
 
-    match comp {
-        CompMeth::Spin => {
+    match cq {
+        CompletionQueue::Waitable(cq) => {
+            ft_wait_for_comp(cq, curr, total, timeout, tag)
+        }
+        CompletionQueue::NonWaitable(cq) => {
             ft_spin_for_comp(cq, curr, total, timeout, tag);
-        },
-        CompMeth::WaitSet => todo!(),
-        CompMeth::WaitFd => todo!(),
-        CompMeth::Sread | CompMeth::Yield => {
-            ft_wait_for_comp(cq, curr, total, timeout, tag);
         }
     }
-
 }
 
-pub fn ft_spin_for_cntr(cntr: &Option<Counter>, total: u64) {
+pub fn ft_spin_for_cntr(cntr: &CounterNonWaitable, total: u64) {
 
-    if let Some(cntr_v) = cntr {
-        loop {
-            let cur = cntr_v.read();
-            if cur >= total {
-                break;
-            }
+    loop {
+        let cur = cntr.read();
+        if cur >= total {
+            break;
         }
     }
-    else {
-        panic!("Trying to wait on cntr without setting it up");
-    }
 }
 
-pub fn ft_wait_for_cntr(cntr: &Option<Counter>, total: u64) {
+pub fn ft_wait_for_cntr(cntr: &CounterWaitable, total: u64) {
 
-    if let Some(cntr_v) = cntr {
-        while total > cntr_v.read() {
-            let ret = cntr_v.wait(total, -1);
-            if matches!(ret, Ok(())) {
-                break;
-            }
+    while total > cntr.read() {
+        let ret = cntr.wait(total, -1);
+        if matches!(ret, Ok(())) {
+            break;
         }
     }
-    else {
-        panic!("Trying to wait on cntr without setting it up");
-    }
 }
 
-pub fn ft_get_cq_comp(comp: &CompMeth, rx_curr: &mut u64, rx_cq: &libfabric::cq::CompletionQueue, total: u64) {
-    ft_read_cq(comp, rx_cq, rx_curr, total, -1, 0);
+pub fn ft_get_cq_comp(rx_curr: &mut u64, rx_cq: &libfabric::cq::CompletionQueue, total: u64) {
+    ft_read_cq(rx_cq, rx_curr, total, -1, 0);
 }
 
-pub fn ft_get_cntr_comp(comp: &CompMeth, cntr: &Option<Counter>, total: u64) {
+pub fn ft_get_cntr_comp(cntr: &Option<Counter>, total: u64) {
     
-    match comp {
-        CompMeth::Spin => ft_spin_for_cntr(cntr, total),
-        _ => ft_wait_for_cntr(cntr, total),
+    if let Some(cntr_v) = cntr{
+        match cntr_v  {
+            Counter::Waitable(cntr) => { ft_wait_for_cntr(cntr, total);}
+            Counter::NonWaitable(cntr) => { ft_spin_for_cntr(cntr, total);}
+        }
+    }
+    else {
+        panic!("Counter not set");
     }
 }
 
 pub fn ft_get_rx_comp(gl_ctx: &mut TestsGlobalCtx, rx_cntr: &Option<Counter>, rx_cq: &libfabric::cq::CompletionQueue, total: u64) {
 
     if gl_ctx.options & FT_OPT_RX_CQ != 0{
-        ft_get_cq_comp(&gl_ctx.comp_method,&mut gl_ctx.rx_cq_cntr, rx_cq, total);
+        ft_get_cq_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, total);
     }
     else {
-        ft_get_cntr_comp(&gl_ctx.comp_method, rx_cntr, total);
+        ft_get_cntr_comp(rx_cntr, total);
     }
 }
 
 pub fn ft_get_tx_comp(gl_ctx: &mut TestsGlobalCtx, tx_cntr: &Option<Counter>, tx_cq: &libfabric::cq::CompletionQueue, total: u64) {
 
     if gl_ctx.options & FT_OPT_RX_CQ != 0{
-        ft_get_cq_comp(&gl_ctx.comp_method, &mut gl_ctx.tx_cq_cntr, tx_cq, total);
+        ft_get_cq_comp(&mut gl_ctx.tx_cq_cntr, tx_cq, total);
     }
     else {
-        ft_get_cntr_comp(&gl_ctx.comp_method, tx_cntr, total);
+        ft_get_cntr_comp(tx_cntr, total);
     }
 }
 
@@ -1056,7 +1033,7 @@ pub fn start_server(hints: libfabric::InfoHints, node: String, service: String) 
     }
     let fab = libfabric::fabric::Fabric::new(entries[0].get_fabric_attr().clone()).unwrap();
 
-    let eq = fab.eq_open(libfabric::eq::EventQueueAttr::new()).unwrap();
+    let eq = EventQueueBuilder::new(&fab).build().unwrap();
 
 
     let pep = fab.passive_ep(&entries[0]).unwrap();

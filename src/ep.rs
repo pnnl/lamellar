@@ -2,7 +2,7 @@ use debug_print::debug_println;
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{av::AddressVector, cntr::Counter, comm::collective::MulticastGroupCollective, cq::CompletionQueue, eq::EventQueue, OwnedFid};
+use crate::{av::AddressVector, cntr::Counter, comm::collective::MulticastGroupCollective, eq::EventQueue, OwnedFid};
 
 
 pub trait BaseEndpoint : AsFid {
@@ -446,7 +446,7 @@ impl<'a> IncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq(&mut self, cq: &CompletionQueue) -> Result<(), crate::error::Error> {
+    pub fn cq(&mut self, cq: &crate::cq::CompletionQueue) -> Result<(), crate::error::Error> {
         self.ep.bind(cq, self.flags)
     }
 }
