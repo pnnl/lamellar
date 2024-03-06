@@ -1,20 +1,37 @@
-use std::ffi::CString;
-
 #[allow(unused_imports)] 
 use crate::AsFid;
-use crate::OwnedFid;
-//================== Address Vector (fi_av) ==================//
+use crate::{domain::Domain, OwnedFid};
+
+//================== AddressVector ==================//
 pub struct AddressVector {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
     fid: crate::OwnedFid,
 }
 
 impl AddressVector {
-    pub fn new(domain: &crate::domain::Domain, mut attr: AddressVectorAttr) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: AddressVectorAttr) -> Result<Self, crate::error::Error> {
         let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
         let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
 
         let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.c_domain, attr.get_mut(), c_av_ptr, std::ptr::null_mut()) };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(
+            Self {
+                c_av,
+                fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} }
+            })
+        }
+    }
+
+    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: AddressVectorAttr, ctx: &mut T0) -> Result<Self, crate::error::Error> {
+        let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
+        let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
+
+        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.c_domain, attr.get_mut(), c_av_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -114,87 +131,83 @@ impl AddressVector {
         let mut strlen = addr_str.len();
         let strlen_ptr: *mut usize = &mut strlen;
         unsafe { libfabric_sys::inlined_fi_av_straddr(self.c_av, addr.as_ptr() as *const std::ffi::c_void, addr_str.as_mut_ptr() as *mut std::ffi::c_char, strlen_ptr) };
-        CString::from_vec_with_nul(addr_str).unwrap().into_string().unwrap()
-    }
-
-    pub fn avset(&self, attr:AddressVectorSetAttr) -> Result<AddressVectorSet, crate::error::Error> {
-        AddressVectorSet::new(self, attr)
-    }
-
-    pub fn avset_with_context<T0>(&self, attr:AddressVectorSetAttr , context: &mut T0) -> Result<AddressVectorSet, crate::error::Error> {
-        AddressVectorSet::new_with_context(self, attr, context)
-    }
-
-}
-
-impl crate::AsFid for AddressVector {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
+        std::ffi::CString::from_vec_with_nul(addr_str).unwrap().into_string().unwrap()
     }
 }
 
-impl crate::Bind for AddressVector {
+pub struct AddressVectorBuilder<'a, T> {
+    av_attr: AddressVectorAttr,
+    ctx: Option<&'a mut T>,
+    domain: &'a Domain,
+}
+
+impl<'a> AddressVectorBuilder<'a, ()> {
+    pub fn new(domain: &'a Domain) -> AddressVectorBuilder<'a, ()> {
+        AddressVectorBuilder {
+            av_attr: AddressVectorAttr::new(),
+            ctx: None,
+            domain,
+        }
+    }
+}
+
+impl<'a, T> AddressVectorBuilder<'a, T> {
+
+    pub fn type_(mut self, av_type: crate::enums::AddressVectorType) -> Self {
+        self.av_attr.type_(av_type);
+        self
+    }
+
+    pub fn rx_ctx_bits(mut self, rx_ctx_bits: i32) -> Self {
+        self.av_attr.rx_ctx_bits(rx_ctx_bits);
+        self
+    }
+
+    pub fn count(mut self, count: usize) -> Self {
+        self.av_attr.count(count);
+        self
+    }
+    
+    pub fn ep_per_node(mut self, count: usize) -> Self {
+        self.av_attr.ep_per_node(count);
+        self
+    }
+
+    pub fn name(mut self, name: String) -> Self {
+        self.av_attr.name(name);
+        self 
+    }
+
+    pub fn map_addr(mut self, addr: usize) -> Self {
+        self.av_attr.map_addr(addr);
+        self
+    }
+
+    pub fn flags(mut self, flags: u64) -> Self {
+        self.av_attr.flags(flags);
+        self
+    }
+
+    pub fn context(self, ctx: &'a mut T) -> AddressVectorBuilder<'a, T> {
+        AddressVectorBuilder {
+            av_attr: self.av_attr,
+            domain: self.domain,
+            ctx: Some(ctx),
+        }
+    }
+
+    pub fn build(self) -> Result<AddressVector, crate::error::Error> {
+        if let Some(ctx) = self.ctx {
+            AddressVector::new_with_context(self.domain, self.av_attr, ctx)
+        }
+        else {
+            AddressVector::new(self.domain, self.av_attr)
+        }
+    }
     
 }
-//================== Address Vector attribute ==================//
 
-pub struct AddressVectorAttr {
-    pub(crate) c_attr: libfabric_sys::fi_av_attr, 
-}
-
-impl AddressVectorAttr {
-    pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_av_attr{
-            type_: crate::enums::AddressVectorType::UNSPEC.get_value(), 
-            rx_ctx_bits: 0,
-            count: 0,
-            ep_per_node: 0,
-            name: std::ptr::null(),
-            map_addr: std::ptr::null_mut(),
-            flags: 0
-        };
-
-        Self { c_attr }
-    }
-
-    pub fn type_(self, av_type: crate::enums::AddressVectorType) -> Self{
-        let mut c_attr = self.c_attr;
-        c_attr.type_ = av_type.get_value();
-        
-        Self { c_attr }
-    }
-
-    pub fn count(self, count: usize) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.count = count;
-
-        Self { c_attr }
-    }
-
-    pub fn flags(self, flags: u64) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.flags = flags;
-
-        Self { c_attr }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) ->  *const libfabric_sys::fi_av_attr {
-        &self.c_attr
-    }   
-
-    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_av_attr {
-        &mut self.c_attr
-    }  
-}
-
-impl Default for AddressVectorAttr {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-//================== Address Set (fi_av_set) ==================//
+//================== AddressVectorSet ==================//
 
 pub struct AddressVectorSet {
     pub(crate) c_set : *mut libfabric_sys::fid_av_set,
@@ -302,24 +315,159 @@ impl AddressVectorSet {
     }
 }
 
-impl crate::AsFid for AddressVectorSet {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
+pub struct AddressVectorSetBuilder<'a, T> {
+    avset_attr: AddressVectorSetAttr,
+    ctx: Option<&'a mut T>,
+    av: &'a AddressVector,
+}
+
+impl<'a> AddressVectorSetBuilder<'a, ()> {
+    pub fn new(av: &'a AddressVector) -> AddressVectorSetBuilder<'a, ()> {
+        AddressVectorSetBuilder {
+            avset_attr: AddressVectorSetAttr::new(),
+            ctx: None,
+            av,
+        }
     }
 }
 
+impl<'a, T> AddressVectorSetBuilder<'a, T> {
 
-//================== Address Vector Set attribute ==================//
+    pub fn count(mut self, size: usize) -> Self {
 
+        self.avset_attr.count(size);
+        self
+    }
 
-pub struct AddressVectorSetAttr {
+    pub fn start_addr(mut self, addr: crate::Address) -> Self {
+        
+        self.avset_attr.start_addr(addr);
+        self
+    }
+
+    pub fn end_addr(mut self, addr: crate::Address) -> Self {
+        
+        self.avset_attr.end_addr(addr);
+        self
+    }
+
+    pub fn stride(mut self, stride: usize) -> Self {
+
+        self.avset_attr.stride(stride);
+        self
+    }
+
+    pub fn comm_key(mut self, key: &mut [u8]) -> Self {
+        
+        self.avset_attr.comm_key(key);
+        self
+    }
+
+    pub fn flags(mut self, flags: u64) -> Self {
+
+        self.avset_attr.flags(flags);
+        self
+    }
+
+    pub fn context(self, ctx: &'a mut T) -> AddressVectorSetBuilder<'a, T> {
+        AddressVectorSetBuilder {
+            avset_attr: self.avset_attr,
+            av: self.av,
+            ctx: Some(ctx),
+        }
+    }
+
+    pub fn build(self) -> Result<AddressVectorSet, crate::error::Error> {
+        if let Some(ctx) = self.ctx {
+            AddressVectorSet::new_with_context(self.av, self.avset_attr, ctx)
+        }
+        else {
+            AddressVectorSet::new(self.av, self.avset_attr)
+        }
+    }
+}
+
+//================== Attribute Structs ==================//
+
+pub struct AddressVectorAttr {
+    pub(crate) c_attr: libfabric_sys::fi_av_attr, 
+}
+
+impl AddressVectorAttr {
+    pub fn new() -> Self {
+        let c_attr = libfabric_sys::fi_av_attr{
+            type_: crate::enums::AddressVectorType::UNSPEC.get_value(), 
+            rx_ctx_bits: 0,
+            count: 0,
+            ep_per_node: 0,
+            name: std::ptr::null(),
+            map_addr: std::ptr::null_mut(),
+            flags: 0
+        };
+
+        Self { c_attr }
+    }
+
+    pub fn type_(&mut self, av_type: crate::enums::AddressVectorType) -> &mut Self {
+        self.c_attr.type_ = av_type.get_value();
+        self
+    }
+
+    pub fn rx_ctx_bits(&mut self, rx_ctx_bits: i32) -> &mut Self {
+        self.c_attr.rx_ctx_bits = rx_ctx_bits;
+        self
+    }
+
+    pub fn count(&mut self, count: usize) -> &mut Self {
+        self.c_attr.count = count;
+        self
+    }
+    
+    pub fn ep_per_node(&mut self, count: usize) -> &mut Self {
+        self.c_attr.ep_per_node = count;
+        self
+    }
+
+    pub fn name(&mut self, name: String) -> &mut Self {
+        let c_str = std::ffi::CString::new(name).unwrap();
+        self.c_attr.name = c_str.into_raw();
+        self 
+    }
+
+    pub fn map_addr(&mut self, addr: usize) -> &mut Self {
+        self.c_attr.map_addr = addr as *mut std::ffi::c_void;
+        self
+    }
+
+    pub fn flags(&mut self, flags: u64) -> &mut Self {
+        self.c_attr.flags = flags;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get(&self) ->  *const libfabric_sys::fi_av_attr {
+        &self.c_attr
+    }   
+
+    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_av_attr {
+        &mut self.c_attr
+    }  
+}
+
+impl Default for AddressVectorAttr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub(crate) struct AddressVectorSetAttr {
     c_attr: libfabric_sys::fi_av_set_attr,
 }
 
 
 impl AddressVectorSetAttr {
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             c_attr: libfabric_sys::fi_av_set_attr {
                 count: 0,
@@ -333,27 +481,40 @@ impl AddressVectorSetAttr {
         }
     }
 
-    pub fn count(mut self, size: usize) -> Self {
+    pub(crate) fn count(&mut self, size: usize) -> &mut Self {
 
         self.c_attr.count = size;
         self
     }
 
-    pub fn start_addr(mut self, addr: crate::Address) -> Self {
+    pub(crate) fn start_addr(&mut self, addr: crate::Address) -> &mut Self {
         
         self.c_attr.start_addr = addr;
         self
     }
 
-    pub fn end_addr(mut self, addr: crate::Address) -> Self {
+    pub(crate) fn end_addr(&mut self, addr: crate::Address) -> &mut Self {
         
         self.c_attr.end_addr = addr;
         self
     }
 
-    pub fn stride(mut self, stride: usize) -> Self {
+    pub(crate) fn stride(&mut self, stride: usize) -> &mut Self {
 
         self.c_attr.stride = stride as u64;
+        self
+    }
+
+    pub(crate) fn comm_key(&mut self, key: &mut [u8]) -> &mut Self {
+        
+        self.c_attr.comm_key_size = key.len();
+        self.c_attr.comm_key = key.as_mut_ptr();
+        self
+    }
+
+    pub(crate) fn flags(&mut self, flags: u64) -> &mut Self {
+
+        self.c_attr.flags = flags;
         self
     }
 
@@ -374,16 +535,38 @@ impl Default for AddressVectorSetAttr {
 }
 
 
-//================== Address Vector tests ==================//
+//================== Trait Impls ==================//
+
+
+impl crate::AsFid for AddressVectorSet {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
+    }
+}
+
+
+impl crate::AsFid for AddressVector {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
+    }
+}
+
+impl crate::Bind for AddressVector {}
+
+
+//================== Tests ==================//
 
 #[cfg(test)]
 mod tests {
+    use super::AddressVectorBuilder;
+
     #[test]
     fn av_open_close() {
-        let ep_attr = crate::ep::EndpointAttr::new()
-        .ep_type(crate::enums::EndpointType::RDM);
+        let mut ep_attr = crate::ep::EndpointAttr::new();
+            ep_attr.ep_type(crate::enums::EndpointType::RDM);
     
-        let dom_attr = crate::domain::DomainAttr::new()
+        let mut dom_attr = crate::domain::DomainAttr::new();
+            dom_attr
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
 
@@ -395,16 +578,17 @@ mod tests {
         let entries: Vec<crate::InfoEntry> = info.get();
         if !entries.is_empty() {
         
-            let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-            let domain = fab.domain(&entries[0]).unwrap();
+            let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         
             for i in 0..17 {
                 let count = 1 << i;
-                let attr = crate::av::AddressVectorAttr::new()
+                let _av = AddressVectorBuilder::new(&domain)
                     .type_(crate::enums::AddressVectorType::MAP)
                     .count(count)
-                    .flags(0);
-                let _av = domain.av_open(attr).unwrap();
+                    .flags(0)
+                    .build()
+                    .unwrap();
             }
         }
         else {
@@ -415,9 +599,11 @@ mod tests {
     #[test]
     fn av_good_sync() {
         
-        let ep_attr = crate::ep::EndpointAttr::new().ep_type(crate::enums::EndpointType::RDM);
+        let mut ep_attr = crate::ep::EndpointAttr::new();
+            ep_attr.ep_type(crate::enums::EndpointType::RDM);
 
-        let dom_attr = crate::domain::DomainAttr::new()
+        let mut dom_attr = crate::domain::DomainAttr::new();
+            dom_attr
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
 
@@ -430,12 +616,13 @@ mod tests {
 
         let entries: Vec<crate::InfoEntry> = info.get();
         if !entries.is_empty() {
-            let attr = crate::av::AddressVectorAttr::new()
+            let fab: crate::fabric::Fabric = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+            let _av = AddressVectorBuilder::new(&domain)
                 .type_(crate::enums::AddressVectorType::MAP)
-                .count(32);
-            let fab: crate::fabric::Fabric = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-            let domain = fab.domain(&entries[0]).unwrap();
-            let _av = domain.av_open(attr).unwrap();
+                .count(32)
+                .build()
+                .unwrap();
         }
         else {
             panic!("No capable fabric found!");

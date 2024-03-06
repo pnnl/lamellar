@@ -1,4 +1,4 @@
-use libfabric::{enums, domain, ep};
+use libfabric::{domain, enums, ep, xcontext::TxAttr};
 
 pub mod common; // Public to supress lint warnings (unused function)
 
@@ -15,10 +15,11 @@ pub mod common; // Public to supress lint warnings (unused function)
 fn pp_server_rdm_tagged() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
-    let ep_attr = ep::EndpointAttr::new()
-        .ep_type(enums::EndpointType::RDM);
+    let mut ep_attr = ep::EndpointAttr::new();
+        ep_attr.ep_type(enums::EndpointType::RDM);
 
-    let dom_attr = domain::DomainAttr::new()
+    let mut dom_attr = domain::DomainAttr::new();
+        dom_attr
         .threading(enums::Threading::DOMAIN)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
@@ -26,8 +27,8 @@ fn pp_server_rdm_tagged() {
         .tagged();
     
 
-    let tx_attr = libfabric::TxAttr::new()
-        .tclass(enums::TClass::LOW_LATENCY);
+    let mut tx_attr = TxAttr::new();
+        tx_attr.tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
         .mode(libfabric::enums::Mode::new().context())
@@ -62,10 +63,11 @@ fn pp_server_rdm_tagged() {
 fn pp_client_rdm_tagged() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
-    let ep_attr = ep::EndpointAttr::new()
-        .ep_type(enums::EndpointType::RDM);
+    let mut ep_attr = ep::EndpointAttr::new();
+        ep_attr.ep_type(enums::EndpointType::RDM);
 
-    let dom_attr = domain::DomainAttr::new()
+    let mut dom_attr = domain::DomainAttr::new();
+        dom_attr
         .threading(enums::Threading::DOMAIN)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
@@ -73,8 +75,8 @@ fn pp_client_rdm_tagged() {
         .tagged();
     
 
-    let tx_attr = libfabric::TxAttr::new()
-        .tclass(enums::TClass::LOW_LATENCY);
+    let mut tx_attr = TxAttr::new();
+        tx_attr.tclass(enums::TClass::LOW_LATENCY);
 
     let hints = libfabric::InfoHints::new()
         .mode(libfabric::enums::Mode::new().context())

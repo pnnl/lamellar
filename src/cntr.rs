@@ -1,12 +1,10 @@
 //================== Domain (fi_domain) ==================//
 
-use std::{marker::PhantomData, os::fd::{AsFd, RawFd}};
-
-use debug_print::debug_println;
+use std::{marker::PhantomData, os::fd::BorrowedFd};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::OwnedFid;
+use crate::{enums::WaitObjType, OwnedFid};
 
 pub struct Waitable;
 pub struct NonWaitable;
@@ -23,6 +21,7 @@ pub struct CounterBase<T> {
     pub(crate) c_cntr: *mut libfabric_sys::fid_cntr,
     fid: OwnedFid,
     phantom: PhantomData<T>,
+    wait_obj: Option<libfabric_sys::fi_wait_obj>,
 }
 
 impl Counter {
@@ -74,14 +73,14 @@ impl<T> CounterBase<T> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
         let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.c_domain, attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) };
-
+        
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
         else {
             Ok (
-                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData }
+                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: None }
             )
         }
 
@@ -98,7 +97,7 @@ impl<T> CounterBase<T> {
         }
         else {
             Ok (
-                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData }
+                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: None }
             )
         }
 
@@ -157,6 +156,7 @@ impl<T> CounterBase<T> {
     }
 }
 
+
 impl CounterBase<Waitable> {
 
     pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
@@ -167,6 +167,45 @@ impl CounterBase<Waitable> {
         }
         else {
             Ok(())
+        }
+    }
+
+    pub fn wait_obj(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
+
+        if let Some(wait) = self.wait_obj {
+            if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
+                let mut fd: i32 = 0;
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
+                if err < 0 {
+                    Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+                }
+                else {
+                    Ok(WaitObjType::Fd(unsafe{ BorrowedFd::borrow_raw(fd) }))
+                }
+            }
+            else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND {
+                let mut mutex_cond = libfabric_sys::fi_mutex_cond{
+                    mutex: std::ptr::null_mut(),
+                    cond: std::ptr::null_mut(),
+                };
+
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut libfabric_sys::fi_mutex_cond as *mut std::ffi::c_void) };
+                if err < 0 {
+                    Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+                }
+                else {
+                    Ok(WaitObjType::MutexCond(mutex_cond))
+                }
+            }
+            else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC{
+                Ok(WaitObjType::Unspec)
+            }
+            else {
+                panic!("Could not retrieve wait object")
+            }
+        }
+        else { 
+            panic!("Should not be reachable! Could not retrieve wait object")
         }
     }
 }
@@ -214,12 +253,6 @@ impl<'a, T> CounterBuilder<'a, T> {
 
     pub fn wait_obj(mut self, wait_obj: crate::enums::WaitObj) -> Self {
         self.cntr_attr.wait_obj(wait_obj);
-
-        self
-    }
-
-    pub fn wait_set(mut self, wait_set: &crate::sync::WaitSet) -> Self {
-        self.cntr_attr.wait_set(wait_set);
 
         self
     }
@@ -280,7 +313,7 @@ pub(crate) struct CounterAttr {
 
 impl CounterAttr {
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let c_attr = libfabric_sys::fi_cntr_attr {
             events: libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP,
             wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
@@ -298,14 +331,10 @@ impl CounterAttr {
     }
 
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
+        if let crate::enums::WaitObj::SET(wait_set) = wait_obj {
+            self.c_attr.wait_set = wait_set.c_wait;
+        }
         self.c_attr.wait_obj = wait_obj.get_value();
-
-        self
-    }
-
-    pub(crate) fn wait_set(&mut self, wait_set: &crate::sync::WaitSet) -> &mut Self {
-        self.c_attr.wait_set = wait_set.c_wait;
-
         self
     }
 
@@ -340,7 +369,8 @@ mod tests {
     #[test]
     fn cntr_loop() {
 
-        let dom_attr = crate::domain::DomainAttr::new()
+        let mut dom_attr = crate::domain::DomainAttr::new();
+            dom_attr
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
         
@@ -355,8 +385,8 @@ mod tests {
         if !entries.is_empty() {
             for e in entries {
                 if e.get_domain_attr().get_cntr_cnt() != 0 {
-                    let fab = crate::fabric::Fabric::new(e.fabric_attr.clone()).unwrap();
-                    let domain = fab.domain(&e).unwrap();
+                    let fab = crate::fabric::FabricBuilder::new(&e).build().unwrap();
+                    let domain = crate::domain::DomainBuilder::new(&fab, &e).build().unwrap();
                     let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
                     let cntrs: Vec<crate::cntr::Counter> = (0..cntr_cnt).map(|_| CounterBuilder::new(&domain).build().unwrap() ).collect();
 

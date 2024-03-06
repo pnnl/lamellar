@@ -1,7 +1,5 @@
 use core::panic;
 
-use debug_print::debug_println;
-
 // use ep::ActiveEndpoint;
 pub mod ep;
 pub mod domain;
@@ -15,12 +13,13 @@ pub mod cntr;
 pub mod cq;
 pub mod comm;
 pub mod error;
+pub mod xcontext;
 
 pub use comm::collective::MulticastGroupCollective;
 const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
 #[derive(Clone, Debug)]
 pub struct InfoCaps {
-    bitfield: u64,
+    pub(crate) bitfield: u64,
 }
 
 impl InfoCaps {
@@ -142,9 +141,10 @@ pub struct InfoEntry {
     caps: InfoCaps,
     fabric_attr: crate::fabric::FabricAttr,
     domain_attr: crate::domain::DomainAttr,
-    tx_attr: TxAttr,
-    rx_attr: RxAttr,
+    tx_attr: crate::xcontext::TxAttr,
+    rx_attr: crate::xcontext::RxAttr,
     ep_attr: crate::ep::EndpointAttr,
+    nic: Option<Nic>,
     c_info: *mut  libfabric_sys::fi_info,
 }
 
@@ -155,11 +155,12 @@ impl InfoEntry {
             unsafe { *fabric_attr.get_mut() = *(*c_info).fabric_attr}
         let mut domain_attr = crate::domain::DomainAttr::new();
             unsafe { *domain_attr.get_mut() = *(*c_info).domain_attr}
-        let tx_attr = TxAttr::from( unsafe {(*c_info).tx_attr } );
-        let rx_attr = RxAttr::from( unsafe {(*c_info).rx_attr } );
+        let tx_attr = crate::xcontext::TxAttr::from( unsafe {(*c_info).tx_attr } );
+        let rx_attr = crate::xcontext::RxAttr::from( unsafe {(*c_info).rx_attr } );
         let ep_attr = crate::ep::EndpointAttr::from(unsafe {(*c_info).ep_attr});
         let caps: u64 = unsafe {(*c_info).caps};
-        Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, c_info }
+        let nic = if ! unsafe{ (*c_info).nic.is_null()} {Some(Nic::from_attr(unsafe{*(*c_info).nic})) } else {None};
+        Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, nic, c_info }
     }
 
     pub fn get_dest_addr<T0>(&self) -> & T0 {
@@ -182,11 +183,11 @@ impl InfoEntry {
         &self.fabric_attr
     }
 
-    pub fn get_tx_attr(&self) -> &TxAttr {
+    pub fn get_tx_attr(&self) -> &crate::xcontext::TxAttr {
         &self.tx_attr
     }
 
-    pub fn get_rx_attr(&self) -> &RxAttr {
+    pub fn get_rx_attr(&self) -> &crate::xcontext::RxAttr {
         &self.rx_attr
     }
 
@@ -196,6 +197,10 @@ impl InfoEntry {
 
     pub fn get_caps(&self) -> &InfoCaps {
         &self.caps
+    }
+
+    pub fn get_nic(&self) -> Option<Nic> {
+        self.nic.clone()
     }
 
 }
@@ -268,7 +273,7 @@ impl InfoHints {
         self
     }
 
-    pub fn tx_attr(self, attr: crate::TxAttr) -> Self {
+    pub fn tx_attr(self, attr: crate::xcontext::TxAttr) -> Self {
         unsafe { *(*self.c_info).tx_attr = *attr.get() };
         
         self
@@ -329,181 +334,6 @@ impl Msg {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct TxAttr {
-    c_attr: libfabric_sys::fi_tx_attr,
-}
-
-impl TxAttr {
-
-    pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_tx_attr {
-            caps: 0,
-            mode: 0,
-            op_flags: 0,
-            msg_order: 0,
-            comp_order: 0,
-            inject_size: 0,
-            size: 0,
-            iov_limit: 0,
-            rma_iov_limit: 0,
-            tclass: 0,
-        };
-
-        Self { c_attr }        
-    }
-
-    pub(crate) fn from(c_tx_attr_ptr: *mut libfabric_sys::fi_tx_attr) -> Self {
-        let c_attr = unsafe { *c_tx_attr_ptr };
-
-        Self { c_attr }
-    }
-
-    pub fn tclass(self, class: crate::enums::TClass) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.tclass = class.get_value();
-
-        Self { c_attr }
-    }
-
-    pub fn op_flags(self, tfer: crate::enums::TransferOptions) -> Self {
-        let mut c_attr = self.c_attr;
-        c_attr.op_flags = tfer.get_value().into();
-
-        Self { c_attr }   
-    }
-
-    pub fn get_caps(&self) -> u64 {
-        self.c_attr.caps
-    }
-
-    pub fn get_mode(&self) -> crate::enums::Mode {
-        crate::enums::Mode::from_value(self.c_attr.mode)
-    }
-
-    pub fn get_op_flags(&self) -> u64 {
-        self.c_attr.op_flags
-    }
-
-    pub fn get_msg_order(&self) -> u64 {
-        self.c_attr.msg_order
-    }
-
-    pub fn get_comp_order(&self) -> u64 {
-        self.c_attr.comp_order
-    }
-
-    pub fn get_inject_size(&self) -> usize {
-        self.c_attr.inject_size
-    }
-
-    pub fn get_size(&self) -> usize {
-        self.c_attr.size
-    }
-    
-    pub fn get_iov_limit(&self) -> usize {
-        self.c_attr.iov_limit
-    }
-
-    pub fn get_rma_iov_limit(&self) -> usize {
-        self.c_attr.rma_iov_limit
-    }
-
-    pub fn get_tclass(&self) -> u32 {
-        self.c_attr.tclass
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_tx_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_tx_attr {
-        &mut self.c_attr
-    }
-}
-
-impl Default for TxAttr {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone)]
-pub struct RxAttr {
-    c_attr: libfabric_sys::fi_rx_attr,
-}
-
-
-impl RxAttr {
-    pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_rx_attr {
-            caps: 0,
-            mode: 0,
-            op_flags: 0,
-            msg_order: 0,
-            comp_order: 0,
-            total_buffered_recv: 0,
-            size: 0,
-            iov_limit: 0,
-        };
-
-        Self { c_attr }
-    }
-
-    pub(crate) fn from(c_rx_attr: *mut libfabric_sys::fi_rx_attr) -> Self {
-        let c_attr = unsafe { *c_rx_attr };
-
-        Self { c_attr }
-    }
-
-    pub fn get_caps(&self) -> u64 {
-        self.c_attr.caps
-    }
-
-    pub fn get_mode(&self) -> crate::enums::Mode {
-        crate::enums::Mode::from_value(self.c_attr.mode)
-    }
-
-    pub fn get_op_flags(&self) -> u64 {
-        self.c_attr.op_flags
-    }
-
-    pub fn get_msg_order(&self) -> u64 {
-        self.c_attr.msg_order
-    }
-
-    pub fn get_comp_order(&self) -> u64 {
-        self.c_attr.comp_order
-    }
-
-    pub fn get_size(&self) -> usize {
-        self.c_attr.size
-    }
-
-    pub fn get_iov_limit(&self) -> usize {
-        self.c_attr.iov_limit
-    }
-
-    pub fn get_total_buffered_recv(&self) -> usize {
-        self.c_attr.total_buffered_recv
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_rx_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_rx_attr {
-        &mut self.c_attr
-    }
-}
-
-impl Default for RxAttr {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 pub struct AtomicAttr {
     pub(crate) c_attr : libfabric_sys::fi_atomic_attr,
@@ -524,29 +354,29 @@ impl AtomicAttr {
 //     pub(crate) c_mc: *mut libfabric_sys::fid_mc,
 // }
 
-pub struct Stx {
+// pub struct Stx {
 
-    #[allow(dead_code)]
-    c_stx: *mut libfabric_sys::fid_stx,
-}
+//     #[allow(dead_code)]
+//     c_stx: *mut libfabric_sys::fid_stx,
+// }
 
-impl Stx {
-    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: crate::TxAttr, context: &mut T0) -> Result<Stx, error::Error> {
-        let mut c_stx: *mut libfabric_sys::fid_stx = std::ptr::null_mut();
-        let c_stx_ptr: *mut *mut libfabric_sys::fid_stx = &mut c_stx;
-        let err = unsafe { libfabric_sys::inlined_fi_stx_context(domain.c_domain, attr.get_mut(), c_stx_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+// impl Stx {
+//     pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: crate::TxAttr, context: &mut T0) -> Result<Stx, error::Error> {
+//         let mut c_stx: *mut libfabric_sys::fid_stx = std::ptr::null_mut();
+//         let c_stx_ptr: *mut *mut libfabric_sys::fid_stx = &mut c_stx;
+//         let err = unsafe { libfabric_sys::inlined_fi_stx_context(domain.c_domain, attr.get_mut(), c_stx_ptr, context as *mut T0 as *mut std::ffi::c_void) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self { c_stx }
-            )
-        }
+//         if err != 0 {
+//             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+//         }
+//         else {
+//             Ok(
+//                 Self { c_stx }
+//             )
+//         }
 
-    }
-}
+//     }
+// }
 
 // pub struct SrxAttr {
 //     c_attr: libfabric_sys::fi_srx_attr,
@@ -692,7 +522,6 @@ pub struct CollectiveAttr {
 }
 
 impl CollectiveAttr {
-
 
     //[TODO] CHECK INITIAL VALUES
     pub fn new() -> Self {
@@ -941,6 +770,169 @@ impl MsgRma {
                 context: context as *mut T0 as *mut std::ffi::c_void,
                 data,
             }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Nic {
+    pub device_attr: Option<DeviceAttr>,
+    pub bus_attr: Option<BusAttr>,
+    pub link_attr: Option<LinkAttr>,
+}
+
+impl Nic {
+    pub(crate) fn from_attr(fid: libfabric_sys::fid_nic) -> Self {
+        let device_attr = if ! fid.device_attr.is_null() {
+            Some(DeviceAttr::from_attr(unsafe{*fid.device_attr}))
+        }
+        else {
+            None
+        };
+
+        let bus_attr = if ! fid.bus_attr.is_null() {
+            Some(BusAttr::from_attr(unsafe{*fid.bus_attr}))
+        }
+        else {
+            None
+        };
+
+        let link_attr = if ! fid.link_attr.is_null() {
+            Some(LinkAttr::from_attr(unsafe{*fid.link_attr}))
+        }
+        else {
+            None
+        };
+
+        Self {
+            device_attr,
+            bus_attr,
+            link_attr,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct DeviceAttr {
+    pub name: Option<String>,
+    pub device_id: Option<String>,
+    pub device_version: Option<String>,
+    pub driver: Option<String>,
+    pub firmware: Option<String>,
+}
+
+impl DeviceAttr {
+    pub(crate) fn from_attr(attr: libfabric_sys::fi_device_attr) -> Self {
+        Self {
+            name: if attr.name.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.name).to_str().unwrap_or("").to_owned().into()}},
+            device_id: if attr.device_id.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.device_id).to_str().unwrap_or("").to_owned().into()}},
+            device_version: if attr.device_version.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.device_version).to_str().unwrap_or("").to_owned().into()}},
+            driver: if attr.driver.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.driver).to_str().unwrap_or("").to_owned().into()}},
+            firmware: if attr.firmware.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.firmware).to_str().unwrap_or("").to_owned().into()}},
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct LinkAttr {
+    pub address: Option<String>,
+    pub mtu: usize,
+    pub speed: usize,
+    pub state: LinkState,
+    pub network_type: Option<String>,
+}
+
+impl LinkAttr {
+    pub(crate) fn from_attr(attr: libfabric_sys::fi_link_attr) -> Self {
+        Self {
+            address: if attr.address.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.address).to_str().unwrap_or("").to_owned().into()}},
+            mtu: attr.mtu,
+            speed: attr.speed,
+            state: LinkState::from_value(attr.state),
+            network_type: if attr.network_type.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.network_type).to_str().unwrap_or("").to_owned().into()}},
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub enum LinkState {
+    Unknown,
+    Down,
+    Up,
+}
+
+impl LinkState {
+    pub(crate) fn from_value(val: libfabric_sys::fi_link_state) -> Self {
+        if val == libfabric_sys::fi_link_state_FI_LINK_UNKNOWN {
+            LinkState::Unknown
+        }
+        else if val == libfabric_sys::fi_link_state_FI_LINK_DOWN {
+            LinkState::Down
+        }
+        else if val == libfabric_sys::fi_link_state_FI_LINK_UP {
+            LinkState::Up
+        }
+        else {
+            panic!("Unexpected link state");
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct BusAttr {
+    pub bus_type: BusType,
+    pub pci: PciAttr,
+}
+
+impl BusAttr {
+    pub(crate) fn from_attr(attr: libfabric_sys::fi_bus_attr) -> Self {
+        Self {
+            bus_type: BusType::from_value(attr.bus_type),
+            pci: PciAttr::from_attr(unsafe{attr.attr.pci})
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum BusType {
+    Pci,
+    Unknown,
+    Unspec,
+}
+
+impl BusType {
+    pub(crate) fn from_value(val: libfabric_sys::fi_bus_type) -> Self {
+        if val == libfabric_sys::fi_bus_type_FI_BUS_UNKNOWN {
+            BusType::Unknown
+        }
+        else if val == libfabric_sys::fi_bus_type_FI_BUS_PCI {
+            BusType::Pci
+        }
+        else if val == libfabric_sys::fi_bus_type_FI_BUS_UNSPEC {
+            BusType::Unspec
+        }
+        else {
+            panic!("Unexpected link state");
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PciAttr {
+    pub domain_id: u16,
+    pub bus_id: u8,
+    pub device_id: u8,
+    pub function_id: u8,
+}
+
+impl PciAttr {
+    pub(crate) fn from_attr(attr: libfabric_sys::fi_pci_attr) -> Self {
+        Self {
+            domain_id: attr.domain_id,
+            bus_id: attr.bus_id,
+            device_id: attr.device_id,
+            function_id: attr.function_id,
         }
     }
 }

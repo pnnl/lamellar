@@ -1,8 +1,8 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, os::fd::BorrowedFd};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{domain::Domain, enums::CqFormat, Address, Context, OwnedFid};
+use crate::{domain::Domain, enums::{CqFormat, WaitObjType}, Address, Context, OwnedFid};
 
 
 
@@ -97,6 +97,7 @@ pub struct CompletionQueueBase<T> {
     fid: OwnedFid,
     format: CqFormat,
     phantom: PhantomData<T>,
+    wait_obj: Option<libfabric_sys::fi_wait_obj>,
 }
 
 pub struct Waitable;
@@ -105,7 +106,7 @@ pub struct NonWaitable;
 pub type CompletionQueueWaitable = CompletionQueueBase<Waitable>;
 pub type CompletionQueueNonWaitable = CompletionQueueBase<NonWaitable>;
 
-impl CompletionQueueWaitable {
+impl<'a> CompletionQueueWaitable {
 
     pub fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<CqEntryFormat, crate::error::Error> {
         let p_cond = cond as *const T0 as *const std::ffi::c_void;
@@ -162,6 +163,45 @@ impl CompletionQueueWaitable {
             Ok(())
         }
     }
+
+    pub fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
+
+        if let Some(wait) = self.wait_obj {
+            if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
+                let mut fd: i32 = 0;
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
+                if err < 0 {
+                    Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+                }
+                else {
+                    Ok(WaitObjType::Fd(unsafe{ BorrowedFd::borrow_raw(fd) }))
+                }
+            }
+            else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND {
+                let mut mutex_cond = libfabric_sys::fi_mutex_cond{
+                    mutex: std::ptr::null_mut(),
+                    cond: std::ptr::null_mut(),
+                };
+
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut libfabric_sys::fi_mutex_cond as *mut std::ffi::c_void) };
+                if err < 0 {
+                    Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+                }
+                else {
+                    Ok(WaitObjType::MutexCond(mutex_cond))
+                }
+            }
+            else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC{
+                Ok(WaitObjType::Unspec)
+            }
+            else {
+                panic!("Could not retrieve wait object")
+            }
+        }
+        else { 
+            panic!("Should not be reachable! Could not retrieve wait object")
+        }
+    }
 }
 
 
@@ -178,7 +218,7 @@ impl<T> CompletionQueueBase<T> {
         }
         else {
             Ok(
-                Self { c_cq, fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } }, format: CqFormat::from_value(attr.c_attr.format), phantom: PhantomData } 
+                Self { c_cq, fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } }, format: CqFormat::from_value(attr.c_attr.format), phantom: PhantomData, wait_obj: None } 
             )
         }
     }
@@ -194,7 +234,7 @@ impl<T> CompletionQueueBase<T> {
         }
         else {
             Ok(
-                Self { c_cq, fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } }, format: CqFormat::from_value(attr.c_attr.format), phantom: PhantomData } 
+                Self { c_cq, fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } }, format: CqFormat::from_value(attr.c_attr.format), phantom: PhantomData, wait_obj: None } 
             )
         }
     }
@@ -327,11 +367,6 @@ impl<'a, T> CompletionQueueBuilder<'a, T> {
         self
     }
 
-    pub fn wait_set(mut self, wait_set: &crate::sync::WaitSet) -> Self {
-        self.cq_attr.wait_set(wait_set);
-        self
-    }
-
     pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T> {
         CompletionQueueBuilder {
             cq_attr: self.cq_attr,
@@ -399,8 +434,11 @@ impl CompletionQueueAttr {
         self.c_attr.format = format.get_value();
         self
     }
-
+    
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
+        if let crate::enums::WaitObj::SET(wait_set) = wait_obj {
+            self.c_attr.wait_set = wait_set.c_wait;
+        }
         self.c_attr.wait_obj = wait_obj.get_value();
         self
     }
@@ -412,11 +450,6 @@ impl CompletionQueueAttr {
 
     pub(crate) fn wait_cond(&mut self, wait_cond: crate::enums::WaitCond) -> &mut Self {
         self.c_attr.wait_cond = wait_cond.get_value();
-        self
-    }
-
-    pub(crate) fn wait_set(&mut self, wait_set: &crate::sync::WaitSet) -> &mut Self {
-        self.c_attr.wait_set = wait_set.c_wait;
         self
     }
 
@@ -660,16 +693,16 @@ impl Default for CqErrEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::cq::*;
+    use crate::{cq::*, domain::DomainBuilder};
 
     #[test]
     fn cq_open_close_simultaneous() {
         let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
+        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let count = 10;
-        let domain = fab.domain(&entries[0]).unwrap();
+        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         let mut cqs = Vec::new();
         for _ in 0..count {
             let cq = CompletionQueueBuilder::new(&domain).build().unwrap();
@@ -682,8 +715,8 @@ mod tests {
         let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-        let domain = fab.domain(&entries[0]).unwrap();
+        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         let cq = CompletionQueueBuilder::new(&domain).size(1).build().unwrap();
 
         if let CompletionQueue::Waitable(cq) = cq {
@@ -702,8 +735,8 @@ mod tests {
         let info = crate::Info::new().request().unwrap();
         let entries = info.get();
         
-        let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-        let domain = fab.domain(&entries[0]).unwrap();
+        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
             let _cq = CompletionQueueBuilder::new(&domain).size(size).build().unwrap();

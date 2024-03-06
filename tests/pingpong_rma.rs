@@ -1,4 +1,4 @@
-use libfabric::{enums, TxAttr};
+use libfabric::{enums, xcontext::TxAttr};
 
 pub mod common; // Public to supress lint warnings (unused function)
 #[ignore]
@@ -6,7 +6,8 @@ pub mod common; // Public to supress lint warnings (unused function)
 fn pp_server_rma() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
-    let dom_attr = libfabric::domain::DomainAttr::new()
+    let mut dom_attr = libfabric::domain::DomainAttr::new();
+        dom_attr
         .threading(enums::Threading::DOMAIN)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
         .resource_mgmt(enums::ResourceMgmt::ENABLED);
@@ -14,7 +15,8 @@ fn pp_server_rma() {
     let caps = libfabric::InfoCaps::new().msg().rma();
     
 
-    let tx_attr = TxAttr::new().tclass(libfabric::enums::TClass::BULK_DATA); //.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
+    let mut tx_attr = TxAttr::new();
+        tx_attr.tclass(libfabric::enums::TClass::BULK_DATA); //.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
 
     let hints = libfabric::InfoHints::new()
         .caps(caps)
@@ -46,7 +48,8 @@ fn pp_server_rma() {
 #[test]
 fn pp_client_rma() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
-    let dom_attr = libfabric::domain::DomainAttr::new()
+    let mut dom_attr = libfabric::domain::DomainAttr::new();
+        dom_attr
         .threading(enums::Threading::DOMAIN)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
         .resource_mgmt(enums::ResourceMgmt::ENABLED);
@@ -54,7 +57,8 @@ fn pp_client_rma() {
     let caps = libfabric::InfoCaps::new().msg().rma();
     
 
-    let tx_attr = TxAttr::new().tclass(libfabric::enums::TClass::BULK_DATA);//.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
+    let mut tx_attr = TxAttr::new();
+        tx_attr.tclass(libfabric::enums::TClass::BULK_DATA);//.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
 
     let hints = libfabric::InfoHints::new()
         .caps(caps)

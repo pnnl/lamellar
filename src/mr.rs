@@ -1,5 +1,4 @@
-use debug_print::debug_println;
-
+use crate::enums::MrMode;
 #[allow(unused_imports)]
 use crate::AsFid;
 
@@ -10,10 +9,12 @@ pub struct MemoryRegion {
 }
 
 impl MemoryRegion {
-    pub(crate) fn from_buffer<T0>(domain: &crate::domain::Domain, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<MemoryRegion, crate::error::Error> {
+    
+    #[allow(dead_code)]
+    pub(crate) fn from_buffer<T0>(domain: &crate::domain::Domain, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.c_domain, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), acs, offset, requested_key, flags, c_mr_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.c_domain, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
         
         
         if err != 0 {
@@ -26,10 +27,10 @@ impl MemoryRegion {
         }
     }
 
-    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: u64) -> Result<MemoryRegion, crate::error::Error> {
+    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.c_domain, attr.get(), flags, c_mr_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.c_domain, attr.get(), flags.get_value() as u64, c_mr_ptr) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -41,11 +42,12 @@ impl MemoryRegion {
         }
     
     }
-    
-    pub(crate) fn from_iovec(domain: &crate::domain::Domain,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<MemoryRegion, crate::error::Error> {
+
+    #[allow(dead_code)]
+    pub(crate) fn from_iovec(domain: &crate::domain::Domain,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.c_domain, iov.get(), count, acs, offset, requested_key, flags, c_mr_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.c_domain, iov.get(), count, acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -144,7 +146,6 @@ pub struct MemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
 }
 
-
 impl crate::DataDescriptor for MemoryRegionDesc {
     
     fn get_desc(&mut self) -> *mut std::ffi::c_void {
@@ -188,66 +189,75 @@ impl MemoryRegionAttr {
         }
     }
 
-    pub fn iov(mut self, iov: &[crate::IoVec] ) -> Self {
+    pub fn iov(&mut self, iov: &[crate::IoVec] ) -> &mut Self {
         self.c_attr.mr_iov = iov.as_ptr() as *const libfabric_sys::iovec;
         self.c_attr.iov_count = iov.len();
         
         self
     }
 
-    pub fn access_send(mut self) -> Self { 
+    pub fn access(&mut self, access: u64) -> &mut Self {
+        self.c_attr.access = access;
+        self
+    }
+
+    pub fn access_send(&mut self) -> &mut Self { 
         self.c_attr.access |= libfabric_sys::FI_SEND as u64;
-
         self
     }
 
-    pub fn access_recv(mut self) -> Self { 
+    pub fn access_recv(&mut self) -> &mut Self { 
         self.c_attr.access |= libfabric_sys::FI_RECV as u64;
-
         self
     }
 
-    pub fn access_read(mut self) -> Self { 
+    pub fn access_read(&mut self) -> &mut Self { 
         self.c_attr.access |= libfabric_sys::FI_READ as u64;
-
         self
     }
 
-    pub fn access_write(mut self) -> Self { 
+    pub fn access_write(&mut self) -> &mut Self { 
         self.c_attr.access |= libfabric_sys::FI_WRITE as u64;
-
         self
     }
 
-    pub fn access_remote_write(mut self) -> Self { 
+    pub fn access_remote_write(&mut self) -> &mut Self { 
         self.c_attr.access |= libfabric_sys::FI_REMOTE_WRITE as u64;
-
         self
     }
 
-    pub fn access_remote_read(mut self) -> Self { 
+    pub fn access_remote_read(&mut self) -> &mut Self { 
         self.c_attr.access |= libfabric_sys::FI_REMOTE_READ as u64;
-
         self
     }
 
-    pub fn offset(mut self, offset: u64) -> Self {
+    pub fn offset(&mut self, offset: u64) -> &mut Self {
         self.c_attr.offset = offset;
-
         self
     }
 
-    pub fn requested_key(mut self, key: u64) -> Self {
+    pub fn context<T0>(&mut self, ctx: &mut T0) -> &mut Self {
+        self.c_attr.context = ctx as * mut T0 as *mut std::ffi::c_void;
+        self
+    }
+    
+    pub fn requested_key(&mut self, key: u64) -> &mut Self {
         self.c_attr.requested_key = key;
-
         self
     }
 
-    pub fn iface(mut self, iface: crate::enums::HmemIface) -> Self {
+    pub fn auth_key(&mut self, key: &mut [u8]) -> &mut Self {
+        self.c_attr.auth_key_size = key.len();
+        self.c_attr.auth_key = key.as_mut_ptr();
+        self
+    }
+
+    pub fn iface(&mut self, iface: crate::enums::HmemIface) -> &mut Self {
         self.c_attr.iface = iface.get_value();
-
         self
     }
+
+    // pub fn device(&mut self, device: libfabric_sys::devi) // [TODO]
 
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_mr_attr {
         &self.c_attr
@@ -265,10 +275,105 @@ impl Default for MemoryRegionAttr {
     }
 }
 
+pub struct MemoryRegionBuilder<'a> {
+    mr_attr: MemoryRegionAttr,
+    domain: &'a crate::domain::Domain,
+    flags: MrMode,
+}
+
+impl<'a> MemoryRegionBuilder<'a> {
+
+    pub fn new(domain: &'a crate::domain::Domain) -> Self {
+        Self {
+            mr_attr: MemoryRegionAttr::new(),
+            domain,
+            flags: MrMode::new(),
+        }
+    }
+
+    pub fn iov(mut self, iov: &[crate::IoVec] ) -> Self {
+        self.mr_attr.iov(iov);
+        self
+    }
+
+    
+    pub fn access_send(mut self) -> Self { 
+        self.mr_attr.access_send();
+        self
+    }
+
+    pub fn access_recv(mut self) -> Self { 
+        self.mr_attr.access_recv();
+        self
+    }
+
+    pub fn access_read(mut self) -> Self { 
+        self.mr_attr.access_read();
+        self
+    }
+
+    pub fn access_write(mut self) -> Self { 
+        self.mr_attr.access_write();
+        self
+    }
+
+    pub fn access_remote_write(mut self) -> Self { 
+        self.mr_attr.access_remote_write();
+        self
+    }
+
+    pub fn access_remote_read(mut self) -> Self { 
+        self.mr_attr.access_remote_read();
+        self
+    }
+
+    pub fn access(mut self, access: u64) -> Self {
+        self.mr_attr.access(access);
+        self
+    }
+
+    pub fn offset(mut self, offset: u64) -> Self {
+        self.mr_attr.offset(offset);
+        self
+    }
+
+    pub fn context<T0>(mut self, ctx: &mut T0) -> Self {
+        self.mr_attr.context(ctx);
+        self
+    }
+    
+    pub fn requested_key(mut self, key: u64) -> Self {
+        self.mr_attr.requested_key(key);
+        self
+    }
+
+    pub fn auth_key(mut self, key: &mut [u8]) -> Self {
+        self.mr_attr.auth_key(key);
+        self
+    }
+
+    pub fn iface(mut self, iface: crate::enums::HmemIface) -> Self {
+        self.mr_attr.iface(iface);
+        self
+    }
+
+    pub fn flags(mut self, flags: MrMode) -> Self {
+        self.flags = flags;
+        self
+    }
+
+    pub fn build(self) -> Result<MemoryRegion, crate::error::Error> {
+        MemoryRegion::from_attr(self.domain, self.mr_attr, self.flags)
+    }
+}
 
 //================== Memory Region tests ==================//
 #[cfg(test)]
 mod tests {
+    use crate::IoVec;
+
+    use super::MemoryRegionBuilder;
+
 
     fn ft_alloc_bit_combo(fixed: u64, opt: u64) -> Vec<u64> {
         let bits_set = |mut val: u64 | -> u64 { let mut cnt = 0; while val > 0 {  cnt += 1 ; val &= val-1; } cnt };
@@ -301,7 +406,8 @@ mod tests {
     #[test]
     fn mr_reg() {
         let ep_attr = crate::ep::EndpointAttr::new();
-        let dom_attr = crate::domain::DomainAttr::new()
+        let mut dom_attr = crate::domain::DomainAttr::new();
+            dom_attr
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
         
@@ -315,8 +421,8 @@ mod tests {
         
         if !entries.is_empty() {
 
-            let fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone()).unwrap();
-            let domain = fab.domain(&entries[0]).unwrap();
+            let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
 
             let mut mr_access: u64 = 0;
             if entries[0].get_mode().is_local_mr() || entries[0].get_domain_attr().get_mr_mode().is_local() {
@@ -349,9 +455,15 @@ mod tests {
             
             for test in &DEF_TEST_SIZES {
                 let buff_size = test.0;
-                let buf = vec![0_u64; buff_size as usize ];
+                let mut buf = vec![0_u64; buff_size as usize ];
                 for combo in &combos {
-                    let _mr = domain.mr_reg(&buf, *combo, 0, 0xC0DE, 0).unwrap();
+                    let _mr = MemoryRegionBuilder::new(&domain)
+                        .iov(std::slice::from_mut(&mut IoVec::new(&mut buf)))
+                        .access(*combo)
+                        .offset(0)
+                        .requested_key(0xC0DE)
+                        .build()
+                        .unwrap();
                     // mr.close().unwrap();
                 }
             }
