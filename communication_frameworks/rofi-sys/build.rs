@@ -26,6 +26,7 @@ fn build_bindings() {
                 .enable("verbs", None)
                 .enable("atomics", None)
                 .enable("rxm", None)
+                .enable("xpmem", Some("no"))
                 .build();
             std::path::PathBuf::from(install_dest)
         }
