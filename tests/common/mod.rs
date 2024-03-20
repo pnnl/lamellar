@@ -1135,7 +1135,6 @@ pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable>(info: &libfabric::
     
     let base = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
     let iov = libfabric::IoVec::new_slice(base);
-    drop(base);
 
     if info.get_caps().is_tagged() {
         let msg = if let Some(mr_desc) = data_desc.as_mut() {
