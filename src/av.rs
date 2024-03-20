@@ -1,8 +1,13 @@
 #[allow(unused_imports)] 
 use crate::AsFid;
-use crate::{domain::Domain, OwnedFid};
+use crate::{domain::Domain, eqoptions::EqConfig, OwnedFid};
 
 //================== AddressVector ==================//
+
+/// Owned wrapper around a libfabric `fid_av`.
+/// 
+/// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av.3.html).
 pub struct AddressVector {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
     fid: crate::OwnedFid,
@@ -45,7 +50,13 @@ impl AddressVector {
         }
     }
 
-    pub fn bind(&self, eq: &crate::eq::EventQueue) -> Result<(), crate::error::Error> {
+    /// Associates an [EventQueue](crate::eq::EventQueue) with the AddressVector.
+    /// 
+    /// This method directly corresponds to a call to `fi_av_bind(av, eq, 0)`.
+    /// # Errors
+    ///
+    /// This function will return an error if the underlying library call fails.
+    pub fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.c_av, eq.as_fid(), 0) };
 
         if err != 0 {
@@ -56,8 +67,15 @@ impl AddressVector {
         }
     }
 
-    pub fn insert<T0>(&self, buf: &[T0], addr: &mut [crate::Address], flags: u64) -> Result<usize, crate::error::Error> { // [TODO] Handle case where operation partially failed
-        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.c_av, buf.as_ptr() as *const std::ffi::c_void, addr.len(), addr.as_mut_ptr(), flags, std::ptr::null_mut()) };
+    /// Inserts one or more addresses into an AV. 
+    /// 
+    /// This method directly corresponds to a call to `fi_insert(av,..)`, where the 
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the underlying library call fails.
+    pub fn insert<T0>(&self, addr: &[T0], fi_addr: &mut [crate::Address], flags: u64) -> Result<usize, crate::error::Error> { // [TODO] Handle case where operation partially failed //[TODO] Handle flags
+        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.c_av, addr.as_ptr() as *const std::ffi::c_void, addr.len(), fi_addr.as_mut_ptr(), flags, std::ptr::null_mut()) };
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))

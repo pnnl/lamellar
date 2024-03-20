@@ -1,10 +1,10 @@
 use std::os::fd::{AsFd, BorrowedFd};
 
-use libfabric_sys::{inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
+use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{av::AddressVector, cntr::Counter, enums::{HmemP2p, TransferOptions}, eq::EventQueue, OwnedFid};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, OwnedFid};
 
 pub struct Endpoint {
     c_ep: *mut libfabric_sys::fid_ep,
@@ -209,7 +209,7 @@ pub trait BaseEndpoint : AsFid {
     fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
         let mut fd = 0;
 
-        let err = unsafe{ libfabric_sys::inlined_fi_control(self.as_fid(), FI_BACKLOG as i32, &mut fd as *mut i32 as *mut std::ffi::c_void)};
+        let err = unsafe{ libfabric_sys::inlined_fi_control(self.as_fid(), fi_wait_obj_FI_WAIT_FD as i32, &mut fd as *mut i32 as *mut std::ffi::c_void)};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
@@ -629,7 +629,7 @@ impl PassiveEndpoint {
         }
     }
     
-    pub fn bind(&self, res: &EventQueue, flags: u64) -> Result<(), crate::error::Error> {
+    pub fn bind<T: EqConfig>(&self, res: &EventQueue<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.c_pep, res.as_fid(), flags) };
         
         if err != 0 {
@@ -779,7 +779,7 @@ impl<'a> IncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq(&mut self, cq: &crate::cq::CompletionQueue) -> Result<(), crate::error::Error> {
+    pub fn cq<T: CqConfig>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cq, self.flags)
     }
 }
@@ -827,7 +827,7 @@ impl<'a> IncompleteBindCntr<'a> {
         self
     }
 
-    pub fn cntr(&mut self, cntr: &Counter) -> Result<(), crate::error::Error> {
+    pub fn cntr<T: crate::cntroptions::CntrConfig>(&mut self, cntr: &Counter<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cntr, self.flags)
     }
 }
@@ -934,7 +934,7 @@ impl Endpoint {
         IncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub fn bind_eq(&self, eq: &EventQueue) -> Result<(), crate::error::Error>  {
+    pub fn bind_eq<T: EqConfig>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }

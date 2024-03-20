@@ -14,6 +14,9 @@ pub mod cq;
 pub mod comm;
 pub mod error;
 pub mod xcontext;
+pub mod eqoptions;
+pub mod cqoptions;
+pub mod cntroptions;
 
 pub use comm::collective::MulticastGroupCollective;
 const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
@@ -936,3 +939,9 @@ impl PciAttr {
         }
     }
 }
+
+
+pub trait FdRetrievable{}
+pub trait Waitable{}
+pub trait Writable{}
+pub trait WaitRetrievable{}

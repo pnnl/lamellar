@@ -1,75 +1,20 @@
 //================== Domain (fi_domain) ==================//
 
-use std::{marker::PhantomData, os::fd::BorrowedFd};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{enums::WaitObjType, OwnedFid};
+use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, OwnedFid, WaitRetrievable};
 
-pub struct Waitable;
-pub struct NonWaitable;
-
-pub type CounterWaitable = CounterBase<Waitable>;
-pub type CounterNonWaitable = CounterBase<NonWaitable>;
-
-pub enum Counter {
-    Waitable(CounterBase<Waitable>),
-    NonWaitable(CounterBase<NonWaitable>),
-}
-
-pub struct CounterBase<T> {
+pub struct Counter<T: CntrConfig> {
     pub(crate) c_cntr: *mut libfabric_sys::fid_cntr,
     fid: OwnedFid,
     phantom: PhantomData<T>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
 }
 
-impl Counter {
-    pub fn read(&self) -> u64 {
-        match self {
-            Counter::Waitable(cntr) => cntr.read(),
-            Counter::NonWaitable(cntr) => cntr.read(),
-        }
-    }
-
-    pub fn readerr(&self) -> u64 {
-        match self {
-            Counter::Waitable(cntr) => cntr.readerr(),
-            Counter::NonWaitable(cntr) => cntr.readerr(),
-        }
-    }
-
-    pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
-        match self {
-            Counter::Waitable(cntr) => cntr.add(val),
-            Counter::NonWaitable(cntr) => cntr.add(val),
-        }
-    }
-
-    pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
-        match self {
-            Counter::Waitable(cntr) => cntr.adderr(val),
-            Counter::NonWaitable(cntr) => cntr.adderr(val),
-        }
-    }
-
-    pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
-        match self {
-            Counter::Waitable(cntr) => cntr.set(val),
-            Counter::NonWaitable(cntr) => cntr.set(val),
-        } 
-    }
-
-    pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
-        match self {
-            Counter::Waitable(cntr) => cntr.seterr(val),
-            Counter::NonWaitable(cntr) => cntr.seterr(val),
-        } 
-    }
-}
-
-impl<T> CounterBase<T> {
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CounterAttr) -> Result<CounterBase<T>, crate::error::Error> {
+impl<T: CntrConfig> Counter<T> {
+    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CounterAttr) -> Result<Counter<T>, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
         let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.c_domain, attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) };
@@ -80,13 +25,13 @@ impl<T> CounterBase<T> {
         }
         else {
             Ok (
-                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: None }
+                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: Some(attr.c_attr.wait_obj) }
             )
         }
 
     }
 
-    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, ctx: &mut T0) -> Result<CounterBase<T>, crate::error::Error> {
+    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, ctx: &mut T0) -> Result<Counter<T>, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
         let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.c_domain, attr.get_mut(), c_cntr_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
@@ -97,7 +42,7 @@ impl<T> CounterBase<T> {
         }
         else {
             Ok (
-                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: None }
+                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: Some(attr.c_attr.wait_obj) }
             )
         }
 
@@ -153,24 +98,13 @@ impl<T> CounterBase<T> {
         else {
             Ok(())
         }
-    }
+    }    
 }
 
 
-impl CounterBase<Waitable> {
+impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
 
-    pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.c_cntr, threshold, timeout) };
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(())
-        }
-    }
-
-    pub fn wait_obj(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
+    pub fn wait_object(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
 
         if let Some(wait) = self.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
@@ -210,40 +144,43 @@ impl CounterBase<Waitable> {
     }
 }
 
-impl crate::AsFid for CounterBase<Waitable> {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
-    }
-}
 
-impl crate::AsFid for CounterBase<NonWaitable> {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
-    }
-}
+impl<T: CntrConfig + crate::Waitable> Counter<T> {
 
-impl AsFid for Counter {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
-        match self {
-            Counter::Waitable(queue) => queue.as_fid(), 
-            Counter::NonWaitable(queue) => queue.as_fid(), 
+    pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.c_cntr, threshold, timeout) };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(())
         }
     }
 }
 
-impl crate::Bind for CounterBase<Waitable> {}
-impl crate::Bind for CounterBase<NonWaitable> {}
-impl crate::Bind for Counter {}
 
 //================== Counter Builder ==================//
 
-pub struct CounterBuilder<'a, T> {
+pub struct CounterBuilder<'a, T, WAIT, WAITFD> {
     cntr_attr: CounterAttr,
     domain: &'a crate::domain::Domain,
     ctx: Option<&'a mut T>,
+    options: cntroptions::Options<WAIT, WAITFD>,
 }
 
-impl<'a, T> CounterBuilder<'a, T> {
+impl<'a> CounterBuilder<'a, (), cntroptions::WaitNoRetrieve, cntroptions::Off> {
+    pub fn new(domain: &'a crate::domain::Domain) -> Self {
+        Self {
+            cntr_attr: CounterAttr::new(),
+            domain,
+            ctx: None,
+            options: Options::new(),
+        }
+    }
+}
+
+impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     
     pub fn events(mut self, events: crate::enums::CounterEvents) -> Self {
         self.cntr_attr.events(events);
@@ -251,60 +188,105 @@ impl<'a, T> CounterBuilder<'a, T> {
         self
     }
 
-    pub fn wait_obj(mut self, wait_obj: crate::enums::WaitObj) -> Self {
-        self.cntr_attr.wait_obj(wait_obj);
+    pub fn wait_none(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNone, cntroptions::Off> {
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::NONE);
 
-        self
+        CounterBuilder {
+            options: self.options.no_wait(),
+            cntr_attr: self.cntr_attr,
+            domain: self.domain,
+            ctx: self.ctx,
+        }
+    }        
+
+
+    pub fn wait_fd(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::On> {
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::FD);
+
+        CounterBuilder {
+            options: self.options.wait_fd(),
+            cntr_attr: self.cntr_attr,
+            domain: self.domain,
+            ctx: self.ctx,
+        }
     }
 
-    pub fn flags(mut self, flags: u64) -> Self {
-        self.cntr_attr.flags(flags);
+    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::SET(set));
 
-        self
+        CounterBuilder {
+            options: self.options.wait_no_retrieve(),
+            cntr_attr: self.cntr_attr,
+            domain: self.domain,
+            ctx: self.ctx,
+        }
     }
 
-    pub fn context(self, ctx: &'a mut T) -> CounterBuilder::<'a, T> {
+    pub fn wait_mutex(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::Off> {
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::MUTEX_COND);
+
+        CounterBuilder {
+            options: self.options.wait_retrievable(),
+            cntr_attr: self.cntr_attr,
+            domain: self.domain,
+            ctx: self.ctx,
+        }
+    }
+
+    pub fn wait_yield(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::YIELD);
+
+        CounterBuilder {
+            options: self.options.wait_no_retrieve(),
+            cntr_attr: self.cntr_attr,
+            domain: self.domain,
+            ctx: self.ctx,
+        }
+    }
+
+    pub fn context(self, ctx: &'a mut T) -> CounterBuilder::<'a, T, WAIT, WAITFD> {
         CounterBuilder {
             cntr_attr: self.cntr_attr,
             domain: self.domain,
             ctx: Some(ctx),
+            options: self.options,
         }
     }
 
-    pub fn build(self) -> Result<Counter, crate::error::Error> {
-        if self.cntr_attr.c_attr.wait_obj == crate::enums::WaitObj::NONE.get_value() {
-            let cntr = if let Some(ctx) = self.ctx{
-                CounterWaitable::new_with_context(self.domain, self.cntr_attr, ctx)?
+    pub fn build(self) -> Result<Counter<Options<WAIT, WAITFD>>, crate::error::Error> {
+        if let Some(ctx) = self.ctx{
+                Counter::new_with_context(self.domain, self.cntr_attr, ctx)
             }
             else {
-                CounterWaitable::new(self.domain, self.cntr_attr)?
-            };
+                Counter::new(self.domain, self.cntr_attr)
+        }
+    }
+}
 
-            Ok(Counter::Waitable(cntr))
+
+
+//================== Trait impls ==================//
+
+impl<T: CntrConfig> crate::AsFid for Counter<T> {
+    fn as_fid(&self) -> *mut libfabric_sys::fid {
+        self.fid.as_fid()
+    }
+}
+
+impl<T: CntrConfig + WaitRetrievable + FdRetrievable> AsFd for Counter<T> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
+            fd
         }
         else {
-            let cntr = if let Some(ctx) = self.ctx{
-                CounterNonWaitable::new_with_context(self.domain, self.cntr_attr, ctx)?
-            }
-            else {
-                CounterNonWaitable::new(self.domain, self.cntr_attr)?
-            };
-            Ok(Counter::NonWaitable(cntr))
+            panic!("Fabric object object type is not Fd")
         }
     }
 }
 
-impl<'a> CounterBuilder<'a, ()> {
-    pub fn new(domain: &crate::domain::Domain) -> CounterBuilder<()> {
-        CounterBuilder::<()> {
-            cntr_attr: CounterAttr::new(),
-            domain,
-            ctx: None,
-        }
-    }
-}
+impl<T: CntrConfig> crate::Bind for Counter<T> {}
 
-//================== Counter attribute ==================//
+//================== Attribute objects ==================//
 
 #[derive(Clone, Copy)]
 pub(crate) struct CounterAttr {
@@ -338,11 +320,11 @@ impl CounterAttr {
         self
     }
 
-    pub(crate) fn flags(&mut self, flags: u64) -> &mut Self {
-        self.c_attr.flags = flags;
+    // pub(crate) fn flags(&mut self, flags: u64) -> &mut Self {
+    //     self.c_attr.flags = flags;
 
-        self
-    }
+    //     self
+    // }
 
     #[allow(dead_code)]
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_cntr_attr {
@@ -388,7 +370,7 @@ mod tests {
                     let fab = crate::fabric::FabricBuilder::new(&e).build().unwrap();
                     let domain = crate::domain::DomainBuilder::new(&fab, &e).build().unwrap();
                     let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
-                    let cntrs: Vec<crate::cntr::Counter> = (0..cntr_cnt).map(|_| CounterBuilder::new(&domain).build().unwrap() ).collect();
+                    let cntrs: Vec<_> = (0..cntr_cnt).map(|_| CounterBuilder::new(&domain).build().unwrap() ).collect::<>();
 
                     for (i,cntr) in cntrs.iter().enumerate() {
                         cntr.set(i as u64).unwrap();
@@ -413,7 +395,6 @@ mod tests {
                     }
                     break;
                 }
-
             }
 
         }

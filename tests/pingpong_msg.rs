@@ -38,7 +38,7 @@ fn pp_server_msg() {
         .addr_format(enums::AddressFormat::UNSPEC);
 
 
-    let (info, fab, eq, _pep) = common::start_server(hints, "172.17.110.4".to_owned(), "9222".to_owned());
+    let (info, fab, eq, _pep) = common::start_server::<common::EventQueueOptions>(hints, "172.17.110.4".to_owned(), "9222".to_owned());
     let (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, domain, _mr, mut mr_desc) = common::ft_server_connect(&mut gl_ctx, &eq, &fab);
     let entries = info.get();
     let test_sizes = gl_ctx.test_sizes.clone();
