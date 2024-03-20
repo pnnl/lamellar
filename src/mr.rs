@@ -44,7 +44,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn from_iovec(domain: &crate::domain::Domain,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
+    pub(crate) fn from_iovec<T>(domain: &crate::domain::Domain,  iov : &crate::IoVec<T>, count: usize, acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.c_domain, iov.get(), count, acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
@@ -86,8 +86,8 @@ impl MemoryRegion {
         }
     }
 
-    pub fn refresh(&self, iov: &crate::IoVec, count: usize, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.c_mr, iov.get(), count, flags) };
+    pub fn refresh<T>(&self, iov: &[crate::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.c_mr, iov.as_ptr().cast(), iov.len(), flags) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -189,7 +189,7 @@ impl MemoryRegionAttr {
         }
     }
 
-    pub fn iov(&mut self, iov: &[crate::IoVec] ) -> &mut Self {
+    pub fn iov<T>(&mut self, iov: &[crate::IoVec<T>] ) -> &mut Self {
         self.c_attr.mr_iov = iov.as_ptr() as *const libfabric_sys::iovec;
         self.c_attr.iov_count = iov.len();
         
@@ -291,7 +291,7 @@ impl<'a> MemoryRegionBuilder<'a> {
         }
     }
 
-    pub fn iov(mut self, iov: &[crate::IoVec] ) -> Self {
+    pub fn iov<T>(mut self, iov: &[crate::IoVec<T>] ) -> Self {
         self.mr_attr.iov(iov);
         self
     }

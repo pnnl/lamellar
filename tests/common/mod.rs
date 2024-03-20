@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, default_desc, domain, ep::{Endpoint, EndpointBuilder}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, InfoCaps, InfoEntry, Waitable};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, default_desc, domain, ep::EndpointBuilder, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, InfoCaps, InfoEntry, Waitable};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -218,11 +218,11 @@ pub fn ft_alloc_ep_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx,
     };
 
     let av = match info.get_ep_attr().get_type() {
-        libfabric::enums::EndpointType::RDM | libfabric::enums::EndpointType::DGRAM  => {
+        libfabric::enums::EndpointType::Rdm | libfabric::enums::EndpointType::Dgram  => {
                 
                 
                 let av = match info.get_domain_attr().get_av_type() {
-                    libfabric::enums::AddressVectorType::UNSPEC => libfabric::av::AddressVectorBuilder::new(domain),
+                    libfabric::enums::AddressVectorType::Unspec => libfabric::av::AddressVectorBuilder::new(domain),
                     _ => libfabric::av::AddressVectorBuilder::new(domain).type_(info.get_domain_attr().get_av_type()),
                 }.count(1)
                 .build()
@@ -251,7 +251,7 @@ pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobal
 pub fn ft_enable_ep<T: EqConfig, CNTR: libfabric::cntroptions::CntrConfig>(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<T>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) {
     
     match info.get_ep_attr().get_type() {
-        libfabric::enums::EndpointType::MSG => ep.bind_eq(eq).unwrap(),
+        libfabric::enums::EndpointType::Msg => ep.bind_eq(eq).unwrap(),
         _ => if info.get_caps().is_collective() || info.get_caps().is_multicast() {
             ep.bind_eq(eq).unwrap();
         }
@@ -400,7 +400,7 @@ pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, fl
 
 
     let hints = match ep_attr.get_type() {
-        libfabric::enums::EndpointType::UNSPEC => {ep_attr.ep_type(libfabric::enums::EndpointType::RDM); hints.ep_attr(ep_attr)},
+        libfabric::enums::EndpointType::Unspec => {ep_attr.ep_type(libfabric::enums::EndpointType::Rdm); hints.ep_attr(ep_attr)},
         _ => hints ,
     };
 
@@ -791,7 +791,7 @@ pub fn ft_init_av_dst_addr<CNTR: CntrConfig + libfabric::Waitable>(info: &libfab
         v.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+FT_MAX_CTRL_MSG]);
 
 
-        if matches!(info.get_domain_attr().get_av_type(), libfabric::enums::AddressVectorType::TABLE ) {
+        if matches!(info.get_domain_attr().get_av_type(), libfabric::enums::AddressVectorType::Table ) {
             let mut zero = 0;
             ft_av_insert(av, &v, &mut zero, 0);
         }
@@ -808,7 +808,7 @@ pub fn ft_init_av_dst_addr<CNTR: CntrConfig + libfabric::Waitable>(info: &libfab
         }
         
         
-        if matches!(info.get_domain_attr().get_av_type(), libfabric::enums::AddressVectorType::TABLE) {
+        if matches!(info.get_domain_attr().get_av_type(), libfabric::enums::AddressVectorType::Table) {
             gl_ctx.remote_address = 0;
         }
         
@@ -1003,7 +1003,7 @@ pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain
         println!("MR not needed");
         return (None, None)
     }
-    let iov = libfabric::IoVec::new(buf);
+    let iov = libfabric::IoVec::new_slice(buf);
     // let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
     
     let mr = ft_info_to_mr_builder(domain, info).iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM).build().unwrap();
@@ -1132,15 +1132,17 @@ pub fn ft_client_connect(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCt
 #[allow(clippy::too_many_arguments)]
 pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable>(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>) {
 
+    
     let base = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
-    let iov = libfabric::IoVec::new(base);
+    let iov = libfabric::IoVec::new_slice(base);
+    drop(base);
 
     if info.get_caps().is_tagged() {
         let msg = if let Some(mr_desc) = data_desc.as_mut() {
-            libfabric::MsgTagged::new(std::slice::from_ref(&iov), mr_desc, gl_ctx.remote_address, 0, gl_ctx.tx_seq, 0)
+            libfabric::MsgTagged::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), gl_ctx.remote_address, 0, gl_ctx.tx_seq, 0)
         }
         else {
-            libfabric::MsgTagged::new(std::slice::from_ref(&iov), &mut default_desc(), gl_ctx.remote_address, 0, gl_ctx.tx_seq, 0)
+            libfabric::MsgTagged::new(std::slice::from_ref(&iov), &mut [default_desc()], gl_ctx.remote_address, 0, gl_ctx.tx_seq, 0)
         };
         let msg_ref = &msg;
         let flag = libfabric::enums::TransferOptions::new().transmit_complete();
@@ -1155,10 +1157,10 @@ pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable>(info: &libfabric::
     }
     else {
         let msg = if let Some(mr_desc) = data_desc.as_mut() {
-            libfabric::Msg::new(std::slice::from_ref(&iov), mr_desc, gl_ctx.remote_address)
+            libfabric::Msg::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), gl_ctx.remote_address)
         }
         else {
-            libfabric::Msg::new(std::slice::from_ref(&iov), &mut default_desc(), gl_ctx.remote_address)
+            libfabric::Msg::new(std::slice::from_ref(&iov), &mut [default_desc()], gl_ctx.remote_address)
         };
 
         let msg_ref = &msg;

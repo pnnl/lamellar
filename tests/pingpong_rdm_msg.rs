@@ -17,11 +17,11 @@ fn pp_server_rdm_msg() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
     let mut ep_attr = ep::EndpointAttr::new();
-        ep_attr.ep_type(enums::EndpointType::RDM);
+        ep_attr.ep_type(enums::EndpointType::Rdm);
 
     let mut dom_attr = domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::DOMAIN)
+        .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
     let caps = libfabric::InfoCaps::new()
@@ -29,7 +29,7 @@ fn pp_server_rdm_msg() {
     
 
     let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(enums::TClass::LOW_LATENCY);
+        tx_attr.tclass(enums::TClass::LowLatency);
 
     let hints = libfabric::InfoHints::new()
         .mode(libfabric::enums::Mode::new().context())
@@ -37,7 +37,7 @@ fn pp_server_rdm_msg() {
         .caps(caps)
         .domain_attr(dom_attr)
         .tx_attr(tx_attr)
-        .addr_format(enums::AddressFormat::UNSPEC);
+        .addr_format(enums::AddressFormat::Unspec);
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
@@ -65,11 +65,11 @@ fn pp_client_rdm_msg() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
     let mut ep_attr = ep::EndpointAttr::new();
-        ep_attr.ep_type(enums::EndpointType::RDM);
+        ep_attr.ep_type(enums::EndpointType::Rdm);
 
     let mut dom_attr = domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::DOMAIN)
+        .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
     let caps = libfabric::InfoCaps::new()
@@ -77,7 +77,7 @@ fn pp_client_rdm_msg() {
     
 
     let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(enums::TClass::LOW_LATENCY);
+        tx_attr.tclass(enums::TClass::LowLatency);
 
     let hints = libfabric::InfoHints::new()
         .mode(libfabric::enums::Mode::new().context())
@@ -85,7 +85,7 @@ fn pp_client_rdm_msg() {
         .caps(caps)
         .domain_attr(dom_attr)
         .tx_attr(tx_attr)
-        .addr_format(enums::AddressFormat::UNSPEC);
+        .addr_format(enums::AddressFormat::Unspec);
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.21".to_owned(), "9222".to_owned(), 0);

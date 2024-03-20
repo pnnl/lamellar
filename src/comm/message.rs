@@ -30,17 +30,25 @@ impl Endpoint {
     }
 
     #[allow(unused_variables)]
-	pub fn recvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address) -> Result<(), crate::error::Error> { //[TODO]
-        todo!();
-        // let ret = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.get(), desc.get_desc(), count, addr, std::ptr::null_mut()) };
-        // ret
+	pub fn recvv<T>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, addr: crate::Address) -> Result<(), crate::error::Error> { //[TODO]
+        let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.iter_mut().map(|v| v.get_desc()).collect::<Vec<_>>().as_mut_ptr().cast()  , count, addr, std::ptr::null_mut()) };
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
+        }
     }
     
     #[allow(unused_variables)]
-	pub fn recvv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
-        todo!();
-        // let ret = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.get(), desc.get_desc(), count, addr, context as *mut T1 as *mut std::ffi::c_void) };
-        // ret
+	pub fn recvv_with_context<T>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, addr: crate::Address,  context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
+        let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.iter_mut().map(|v| v.get_desc()).collect::<Vec<_>>().as_mut_ptr().cast()  , count, addr, context.get_mut().cast()) };
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
+        }
     }
     
     pub fn recvmsg(&self, msg: &crate::Msg, flags: u64) -> Result<(), crate::error::Error> {
@@ -54,18 +62,26 @@ impl Endpoint {
         }
     }
 
-    #[allow(unused_variables)]
-	pub fn sendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address) -> Result<(), crate::error::Error> { // [TODO]
-        todo!()
-        // let ret = let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.get(), desc.get_desc(), count, addr, std::ptr::null_mut()) };;
-        // ret
+	pub fn sendv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], addr: crate::Address) -> Result<(), crate::error::Error> { 
+        let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), addr, std::ptr::null_mut()) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
+        }
     }
     
-    #[allow(unused_variables)]
-	pub fn sendv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context : &mut crate::Context) -> Result<(), crate::error::Error> { // [TODO]
-        todo!()
-        // let ret = let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.get(), desc.get_desc(), count, addr, context.get_mut() as *mut  std::ffi::c_void) };;
-        // ret
+	pub fn sendv_with_context<T,T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], addr: crate::Address, context : &mut crate::Context) -> Result<(), crate::error::Error> { // [TODO]
+        let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), addr, context.get_mut().cast()) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
+        }
     }
 
     pub fn send<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address) -> Result<(), crate::error::Error> {
@@ -80,7 +96,7 @@ impl Endpoint {
     }
 
     pub fn send_with_context<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address, context : &mut crate::Context) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_send(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, context.get_mut() as *mut  std::ffi::c_void) };
+        let err = unsafe{ libfabric_sys::inlined_fi_send(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, context.get_mut().cast()) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -150,14 +166,14 @@ impl Endpoint {
 impl TransmitContext {
 
     #[allow(unused_variables)]
-	pub fn sendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address) -> Result<(), crate::error::Error> { // [TODO]
+	pub fn sendv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, addr: crate::Address) -> Result<(), crate::error::Error> { // [TODO]
         todo!()
         // let ret = let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.get(), desc.get_desc(), count, addr, std::ptr::null_mut()) };;
         // ret
     }
     
     #[allow(unused_variables)]
-	pub fn sendv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context : &mut crate::Context) -> Result<(), crate::error::Error> { // [TODO]
+	pub fn sendv_with_context<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, addr: crate::Address, context : &mut crate::Context) -> Result<(), crate::error::Error> { // [TODO]
         todo!()
         // let ret = let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.get(), desc.get_desc(), count, addr, context.get_mut() as *mut  std::ffi::c_void) };;
         // ret
@@ -267,14 +283,14 @@ impl ReceiveContext {
     }
 
     #[allow(unused_variables)]
-	pub fn recvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address) -> Result<(), crate::error::Error> { //[TODO]
+	pub fn recvv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, addr: crate::Address) -> Result<(), crate::error::Error> { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.get(), desc.get_desc(), count, addr, std::ptr::null_mut()) };
         // ret
     }
     
     #[allow(unused_variables)]
-	pub fn recvv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, addr: crate::Address, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
+	pub fn recvv_with_context<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, addr: crate::Address, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.get(), desc.get_desc(), count, addr, context as *mut T1 as *mut std::ffi::c_void) };
         // ret

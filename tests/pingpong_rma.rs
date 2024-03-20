@@ -8,22 +8,22 @@ fn pp_server_rma() {
 
     let mut dom_attr = libfabric::domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::DOMAIN)
+        .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
-        .resource_mgmt(enums::ResourceMgmt::ENABLED);
+        .resource_mgmt(enums::ResourceMgmt::Enabled);
     
     let caps = libfabric::InfoCaps::new().msg().rma();
     
 
     let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(libfabric::enums::TClass::BULK_DATA); //.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
+        tx_attr.tclass(libfabric::enums::TClass::BulkData); //.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
 
     let hints = libfabric::InfoHints::new()
         .caps(caps)
         .tx_attr(tx_attr)
         .mode(libfabric::enums::Mode::new().context())
         .domain_attr(dom_attr)
-        .addr_format(libfabric::enums::AddressFormat::UNSPEC);
+        .addr_format(libfabric::enums::AddressFormat::Unspec);
     
     
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, mut mr, _av, mut mr_desc) = 
@@ -50,22 +50,22 @@ fn pp_client_rma() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
     let mut dom_attr = libfabric::domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::DOMAIN)
+        .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
-        .resource_mgmt(enums::ResourceMgmt::ENABLED);
+        .resource_mgmt(enums::ResourceMgmt::Enabled);
     
     let caps = libfabric::InfoCaps::new().msg().rma();
     
 
     let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(libfabric::enums::TClass::BULK_DATA);//.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
+        tx_attr.tclass(libfabric::enums::TClass::BulkData);//.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
 
     let hints = libfabric::InfoHints::new()
         .caps(caps)
         .tx_attr(tx_attr)
         .mode(libfabric::enums::Mode::new().context())
         .domain_attr(dom_attr)
-        .addr_format(libfabric::enums::AddressFormat::UNSPEC);
+        .addr_format(libfabric::enums::AddressFormat::Unspec);
     
     
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr,_eqq, mut mr, _av, mut mr_desc) = 

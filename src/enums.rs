@@ -2,85 +2,83 @@ use std::os::fd::BorrowedFd;
 
 use libfabric_sys::{FI_RECV, FI_TRANSMIT};
 
-#[allow(non_camel_case_types)]
 pub enum Op {
-    MIN,
-    MAX,
-    SUM,
-    PROD,
-    LOR,
-    LAND,
-    BOR,
-    BAND,
-    LXOR,
-    BXOR,
-    ATOMIC_READ,
-    ATOMIC_WRITE,
-    CSWAP,
-    CSWAP_NE,
-    CSWAP_LE,
-    CSWAP_LT,
-    CSWAP_GE,
-    CSWAP_GT,
-    MSWAP,
-    ATOMIC_OP_LAST,
-    NOOP,
+    Min,
+    Max,
+    Sum,
+    Prod,
+    Lor,
+    Land,
+    Bor,
+    Bar,
+    Lxor,
+    Bxor,
+    AtomicRead,
+    AtomicWrite,
+    Cswap,
+    CswapNe,
+    CswapLe,
+    CswapLt,
+    CswapGe,
+    CswapGt,
+    Mswap,
+    AtomicOpLast,
+    Noop,
 }
 
 impl Op {
     pub(crate) fn get_value(&self) -> u32  {
         match self {
-            Op::MIN => libfabric_sys::fi_op_FI_MIN,
-            Op::MAX => libfabric_sys::fi_op_FI_MAX,
-            Op::SUM => libfabric_sys::fi_op_FI_SUM,
-            Op::PROD => libfabric_sys::fi_op_FI_PROD,
-            Op::LOR => libfabric_sys::fi_op_FI_LOR,
-            Op::LAND => libfabric_sys::fi_op_FI_LAND,
-            Op::BOR => libfabric_sys::fi_op_FI_BOR,
-            Op::BAND => libfabric_sys::fi_op_FI_BAND,
-            Op::LXOR => libfabric_sys::fi_op_FI_LXOR,
-            Op::BXOR => libfabric_sys::fi_op_FI_BXOR,
-            Op::ATOMIC_READ => libfabric_sys::fi_op_FI_ATOMIC_READ,
-            Op::ATOMIC_WRITE => libfabric_sys::fi_op_FI_ATOMIC_WRITE,
-            Op::CSWAP => libfabric_sys::fi_op_FI_CSWAP,
-            Op::CSWAP_NE => libfabric_sys::fi_op_FI_CSWAP_NE,
-            Op::CSWAP_LE => libfabric_sys::fi_op_FI_CSWAP_LE,
-            Op::CSWAP_LT => libfabric_sys::fi_op_FI_CSWAP_LT,
-            Op::CSWAP_GE => libfabric_sys::fi_op_FI_CSWAP_GE,
-            Op::CSWAP_GT => libfabric_sys::fi_op_FI_CSWAP_GT,
-            Op::MSWAP => libfabric_sys::fi_op_FI_MSWAP,
-            Op::ATOMIC_OP_LAST => libfabric_sys::fi_op_FI_ATOMIC_OP_LAST,
-            Op::NOOP  => libfabric_sys::fi_op_FI_NOOP,
+            Op::Min => libfabric_sys::fi_op_FI_MIN,
+            Op::Max => libfabric_sys::fi_op_FI_MAX,
+            Op::Sum => libfabric_sys::fi_op_FI_SUM,
+            Op::Prod => libfabric_sys::fi_op_FI_PROD,
+            Op::Lor => libfabric_sys::fi_op_FI_LOR,
+            Op::Land => libfabric_sys::fi_op_FI_LAND,
+            Op::Bor => libfabric_sys::fi_op_FI_BOR,
+            Op::Bar => libfabric_sys::fi_op_FI_BAND,
+            Op::Lxor => libfabric_sys::fi_op_FI_LXOR,
+            Op::Bxor => libfabric_sys::fi_op_FI_BXOR,
+            Op::AtomicRead => libfabric_sys::fi_op_FI_ATOMIC_READ,
+            Op::AtomicWrite => libfabric_sys::fi_op_FI_ATOMIC_WRITE,
+            Op::Cswap => libfabric_sys::fi_op_FI_CSWAP,
+            Op::CswapNe => libfabric_sys::fi_op_FI_CSWAP_NE,
+            Op::CswapLe => libfabric_sys::fi_op_FI_CSWAP_LE,
+            Op::CswapLt => libfabric_sys::fi_op_FI_CSWAP_LT,
+            Op::CswapGe => libfabric_sys::fi_op_FI_CSWAP_GE,
+            Op::CswapGt => libfabric_sys::fi_op_FI_CSWAP_GT,
+            Op::Mswap => libfabric_sys::fi_op_FI_MSWAP,
+            Op::AtomicOpLast => libfabric_sys::fi_op_FI_ATOMIC_OP_LAST,
+            Op::Noop  => libfabric_sys::fi_op_FI_NOOP,
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum CollectiveOp {
-    BARRIER,
-    BROADCAST,
-    ALLTOALL,
-    ALLREDUCE,
-    ALLGATHER,
-    REDUCE_SCATTER,
-    REDUCE,
-    SCATTER,
-    GATHER,
+    Barrier,
+    Broadcast,
+    AllToAll,
+    AllReduce,
+    AllGather,
+    ReduceScatter,
+    Reduce,
+    Scatter,
+    Gather,
 }
 
 impl CollectiveOp {
     pub(crate) fn get_value(&self) -> u32 {
         match self {
 
-            CollectiveOp::BARRIER => libfabric_sys::fi_collective_op_FI_BARRIER,
-            CollectiveOp::BROADCAST => libfabric_sys::fi_collective_op_FI_BROADCAST,
-            CollectiveOp::ALLTOALL => libfabric_sys::fi_collective_op_FI_ALLTOALL,
-            CollectiveOp::ALLREDUCE => libfabric_sys::fi_collective_op_FI_ALLREDUCE,
-            CollectiveOp::ALLGATHER => libfabric_sys::fi_collective_op_FI_ALLGATHER,
-            CollectiveOp::REDUCE_SCATTER => libfabric_sys::fi_collective_op_FI_REDUCE_SCATTER,
-            CollectiveOp::REDUCE => libfabric_sys::fi_collective_op_FI_REDUCE,
-            CollectiveOp::SCATTER => libfabric_sys::fi_collective_op_FI_SCATTER,
-            CollectiveOp::GATHER => libfabric_sys::fi_collective_op_FI_GATHER,
+            CollectiveOp::Barrier => libfabric_sys::fi_collective_op_FI_BARRIER,
+            CollectiveOp::Broadcast => libfabric_sys::fi_collective_op_FI_BROADCAST,
+            CollectiveOp::AllToAll => libfabric_sys::fi_collective_op_FI_ALLTOALL,
+            CollectiveOp::AllReduce => libfabric_sys::fi_collective_op_FI_ALLREDUCE,
+            CollectiveOp::AllGather => libfabric_sys::fi_collective_op_FI_ALLGATHER,
+            CollectiveOp::ReduceScatter => libfabric_sys::fi_collective_op_FI_REDUCE_SCATTER,
+            CollectiveOp::Reduce => libfabric_sys::fi_collective_op_FI_REDUCE,
+            CollectiveOp::Scatter => libfabric_sys::fi_collective_op_FI_SCATTER,
+            CollectiveOp::Gather => libfabric_sys::fi_collective_op_FI_GATHER,
         }
     }
 }
@@ -128,68 +126,67 @@ impl CqFormat {
         }
     }
 }
-#[allow(non_camel_case_types)]
+
 #[derive(Copy, Clone)]
 pub enum WaitObj<'a> {
-    NONE,
-    UNSPEC,
-    SET(&'a crate::sync::WaitSet),
-    FD,
-    MUTEX_COND,
-    YIELD,
-    POLLFD,
+    None,
+    Unspec,
+    Set(&'a crate::sync::WaitSet),
+    Fd,
+    MutexCond,
+    Yield,
+    PollFd,
 }
 
 impl<'a> WaitObj<'a> {
 
     pub(crate) fn get_value(&self) -> u32 {
         match self {
-            WaitObj::NONE => libfabric_sys::fi_wait_obj_FI_WAIT_NONE,
-            WaitObj::UNSPEC => libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
-            WaitObj::SET(_) => libfabric_sys::fi_wait_obj_FI_WAIT_SET,
-            WaitObj::FD => libfabric_sys::fi_wait_obj_FI_WAIT_FD,
-            WaitObj::MUTEX_COND => libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND,
-            WaitObj::YIELD => libfabric_sys::fi_wait_obj_FI_WAIT_YIELD,
-            WaitObj::POLLFD => libfabric_sys::fi_wait_obj_FI_WAIT_POLLFD,
+            WaitObj::None => libfabric_sys::fi_wait_obj_FI_WAIT_NONE,
+            WaitObj::Unspec => libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
+            WaitObj::Set(_) => libfabric_sys::fi_wait_obj_FI_WAIT_SET,
+            WaitObj::Fd => libfabric_sys::fi_wait_obj_FI_WAIT_FD,
+            WaitObj::MutexCond => libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND,
+            WaitObj::Yield => libfabric_sys::fi_wait_obj_FI_WAIT_YIELD,
+            WaitObj::PollFd => libfabric_sys::fi_wait_obj_FI_WAIT_POLLFD,
         }
     }
 }
 
 
-#[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
 pub enum WaitObj2 {
-    UNSPEC,
-    FD,
-    MUTEX_COND,
-    YIELD,
-    POLLFD,
+    Unspec,
+    Fd,
+    MutexCond,
+    Yield,
+    PollFd,
 }
 
 impl WaitObj2 {
 
     pub(crate) fn get_value(&self) -> u32 {
         match self {
-            WaitObj2::UNSPEC => libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
-            WaitObj2::FD => libfabric_sys::fi_wait_obj_FI_WAIT_FD,
-            WaitObj2::MUTEX_COND => libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND,
-            WaitObj2::YIELD => libfabric_sys::fi_wait_obj_FI_WAIT_YIELD,
-            WaitObj2::POLLFD => libfabric_sys::fi_wait_obj_FI_WAIT_POLLFD,
+            WaitObj2::Unspec => libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
+            WaitObj2::Fd => libfabric_sys::fi_wait_obj_FI_WAIT_FD,
+            WaitObj2::MutexCond => libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND,
+            WaitObj2::Yield => libfabric_sys::fi_wait_obj_FI_WAIT_YIELD,
+            WaitObj2::PollFd => libfabric_sys::fi_wait_obj_FI_WAIT_POLLFD,
         }
     }
 }
 
 pub enum WaitCond {
-    NONE,
-    THRESHOLD,
+    None,
+    Threshold,
 }
 
 impl WaitCond {
 
     pub(crate) fn get_value(&self) -> u32 {
         match self {
-            WaitCond::NONE => libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_NONE,
-            WaitCond::THRESHOLD => libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_THRESHOLD,
+            WaitCond::None => libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_NONE,
+            WaitCond::Threshold => libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_THRESHOLD,
         }
     }
 }
@@ -217,121 +214,118 @@ impl HmemIface {
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum EndpointOptName {
-    MIN_MULTI_RECV,
-    CM_DATA_SIZE,
-    BUFFERED_MIN,
-    BUFFERED_LIMIT,
-    SEND_BUF_SIZE,
-    RECV_BUF_SIZE,
-    TX_SIZE,
-    RX_SIZE,
-    FI_HMEM_P2P,
-    XPU_TRIGGER,
-    CUDA_API_PERMITTED,    
+    MinMultiRecv,
+    CmDataSize,
+    BufferedMin,
+    BufferedLimit,
+    SendBufSize,
+    RecvBufSize,
+    TxSize,
+    RxSize,
+    FiHmemP2p,
+    XpuTrigger,
+    CudaApiPermitted,    
 }
 
 impl EndpointOptName {
     
     pub fn get_value(&self) -> libfabric_sys::_bindgen_ty_20{
         match self {
-            EndpointOptName::MIN_MULTI_RECV => libfabric_sys::FI_OPT_MIN_MULTI_RECV,
-            EndpointOptName::CM_DATA_SIZE => libfabric_sys::FI_OPT_CM_DATA_SIZE,
-            EndpointOptName::BUFFERED_MIN => libfabric_sys::FI_OPT_BUFFERED_MIN,
-            EndpointOptName::BUFFERED_LIMIT => libfabric_sys::FI_OPT_BUFFERED_LIMIT,
-            EndpointOptName::SEND_BUF_SIZE => libfabric_sys::FI_OPT_SEND_BUF_SIZE,
-            EndpointOptName::RECV_BUF_SIZE => libfabric_sys::FI_OPT_RECV_BUF_SIZE,
-            EndpointOptName::TX_SIZE => libfabric_sys::FI_OPT_TX_SIZE,
-            EndpointOptName::RX_SIZE => libfabric_sys::FI_OPT_RX_SIZE,
-            EndpointOptName::FI_HMEM_P2P => libfabric_sys::FI_OPT_FI_HMEM_P2P,
-            EndpointOptName::XPU_TRIGGER => libfabric_sys::FI_OPT_XPU_TRIGGER,
-            EndpointOptName::CUDA_API_PERMITTED => libfabric_sys::FI_OPT_CUDA_API_PERMITTED,    
+            EndpointOptName::MinMultiRecv => libfabric_sys::FI_OPT_MIN_MULTI_RECV,
+            EndpointOptName::CmDataSize => libfabric_sys::FI_OPT_CM_DATA_SIZE,
+            EndpointOptName::BufferedMin => libfabric_sys::FI_OPT_BUFFERED_MIN,
+            EndpointOptName::BufferedLimit => libfabric_sys::FI_OPT_BUFFERED_LIMIT,
+            EndpointOptName::SendBufSize => libfabric_sys::FI_OPT_SEND_BUF_SIZE,
+            EndpointOptName::RecvBufSize => libfabric_sys::FI_OPT_RECV_BUF_SIZE,
+            EndpointOptName::TxSize => libfabric_sys::FI_OPT_TX_SIZE,
+            EndpointOptName::RxSize => libfabric_sys::FI_OPT_RX_SIZE,
+            EndpointOptName::FiHmemP2p => libfabric_sys::FI_OPT_FI_HMEM_P2P,
+            EndpointOptName::XpuTrigger => libfabric_sys::FI_OPT_XPU_TRIGGER,
+            EndpointOptName::CudaApiPermitted => libfabric_sys::FI_OPT_CUDA_API_PERMITTED,    
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum EndpointOptLevel {
-    ENDPOINT,
+    Endpoint,
 }
 
 impl EndpointOptLevel {
 
     pub fn get_value(&self) -> libfabric_sys::_bindgen_ty_19 {
         match self {
-            EndpointOptLevel::ENDPOINT => libfabric_sys::FI_OPT_ENDPOINT,
+            EndpointOptLevel::Endpoint => libfabric_sys::FI_OPT_ENDPOINT,
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum EndpointType {
-    UNSPEC,
-    MSG,
-    DGRAM,
-    RDM,
-    SOCK_STREAM,
-    SOCK_DGRAM,    
+    Unspec,
+    Msg,
+    Dgram,
+    Rdm,
+    SockStream,
+    SockDgram,    
 }
 
 impl EndpointType {
     pub fn get_value(&self) -> libfabric_sys::fi_ep_type {
         match self {
-            EndpointType::UNSPEC => libfabric_sys::fi_ep_type_FI_EP_UNSPEC, 
-            EndpointType::MSG => libfabric_sys::fi_ep_type_FI_EP_MSG, 
-            EndpointType::DGRAM => libfabric_sys::fi_ep_type_FI_EP_DGRAM, 
-            EndpointType::RDM => libfabric_sys::fi_ep_type_FI_EP_RDM, 
-            EndpointType::SOCK_STREAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM, 
-            EndpointType::SOCK_DGRAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM,        
+            EndpointType::Unspec => libfabric_sys::fi_ep_type_FI_EP_UNSPEC, 
+            EndpointType::Msg => libfabric_sys::fi_ep_type_FI_EP_MSG, 
+            EndpointType::Dgram => libfabric_sys::fi_ep_type_FI_EP_DGRAM, 
+            EndpointType::Rdm => libfabric_sys::fi_ep_type_FI_EP_RDM, 
+            EndpointType::SockStream => libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM, 
+            EndpointType::SockDgram => libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM,        
         }
     }
 
     pub fn from(val: libfabric_sys::fi_ep_type ) -> Self { // [TODO] Handle errors
         
         match val {
-            libfabric_sys::fi_ep_type_FI_EP_UNSPEC => EndpointType::UNSPEC,
-            libfabric_sys::fi_ep_type_FI_EP_MSG => EndpointType::MSG,
-            libfabric_sys::fi_ep_type_FI_EP_DGRAM => EndpointType::DGRAM,
-            libfabric_sys::fi_ep_type_FI_EP_RDM => EndpointType::RDM,
-            libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM => EndpointType::SOCK_STREAM,
-            libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM => EndpointType::SOCK_DGRAM,
+            libfabric_sys::fi_ep_type_FI_EP_UNSPEC => EndpointType::Unspec,
+            libfabric_sys::fi_ep_type_FI_EP_MSG => EndpointType::Msg,
+            libfabric_sys::fi_ep_type_FI_EP_DGRAM => EndpointType::Dgram,
+            libfabric_sys::fi_ep_type_FI_EP_RDM => EndpointType::Rdm,
+            libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM => EndpointType::SockStream,
+            libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM => EndpointType::SockDgram,
             _ => panic!("Endpoint type flag not valid {}", val)
         }
     }
 }
 
 pub enum HmemP2p {
-    ENABLED,
-    REQUIRED,
-    PREFERRED,
-    DISABLED,
+    Enabled,
+    Required,
+    Preferred,
+    Disabled,
 }
 
 impl HmemP2p {
 
     pub fn get_value(&self) -> libfabric_sys::_bindgen_ty_21 {
         match self { 
-            HmemP2p::ENABLED => libfabric_sys::FI_HMEM_P2P_ENABLED,
-            HmemP2p::REQUIRED => libfabric_sys::FI_HMEM_P2P_REQUIRED,
-            HmemP2p::PREFERRED => libfabric_sys::FI_HMEM_P2P_PREFERRED,
-            HmemP2p::DISABLED => libfabric_sys::FI_HMEM_P2P_DISABLED, 
+            HmemP2p::Enabled => libfabric_sys::FI_HMEM_P2P_ENABLED,
+            HmemP2p::Required => libfabric_sys::FI_HMEM_P2P_REQUIRED,
+            HmemP2p::Preferred => libfabric_sys::FI_HMEM_P2P_PREFERRED,
+            HmemP2p::Disabled => libfabric_sys::FI_HMEM_P2P_DISABLED, 
         }
     }
 
     pub fn from_value(val: u32) -> Self {
 
         if val == libfabric_sys::FI_HMEM_P2P_ENABLED {
-            HmemP2p::ENABLED
+            HmemP2p::Enabled
         }
         else if val == libfabric_sys::FI_HMEM_P2P_REQUIRED {
-            HmemP2p::REQUIRED
+            HmemP2p::Required
         }
         else if val == libfabric_sys::FI_HMEM_P2P_PREFERRED {
-            HmemP2p::PREFERRED
+            HmemP2p::Preferred
         }
         else if val == libfabric_sys::FI_HMEM_P2P_DISABLED {
-            HmemP2p::DISABLED
+            HmemP2p::Disabled
         }
         else {
             panic!("Unexpected HmemP2p value")
@@ -339,74 +333,73 @@ impl HmemP2p {
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum ControlOpt {
-    GETFIDFLAG,
-    SETFIDFLAG,
-    GETOPSFLAG,
-    SETOPSFLAG,
-    ALIAS,
-    GETWAIT,
-    ENABLE,
-    BACKLOG,
-    GET_RAW_MR,
-    MAP_RAW_MR,
-    UNMAP_KEY,
-    QUEUE_WORK,
-    CANCEL_WORK,
-    FLUSH_WORK,
-    REFRESH,
-    DUP,
-    GETWAITOBJ,
-    GET_VAL,
-    SET_VAL,
-    EXPORT_FID,
+    GetFidFlag,
+    SetFidFlag,
+    GetOpsFlag,
+    SetOpsFlag,
+    Alias,
+    GetWait,
+    Enable,
+    Backlog,
+    GetRawMr,
+    MapRawMr,
+    UnmapKey,
+    QueueWork,
+    CancelWork,
+    FlushWork,
+    Refresh,
+    Dup,
+    GetWaitObj,
+    GetVal,
+    SetVal,
+    ExportFid,
 }
 
 impl ControlOpt {
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_7 {
         match self {
 
-            ControlOpt::GETFIDFLAG =>     libfabric_sys::FI_GETFIDFLAG,
-            ControlOpt::SETFIDFLAG =>     libfabric_sys::FI_SETFIDFLAG,
-            ControlOpt::GETOPSFLAG =>     libfabric_sys::FI_GETOPSFLAG,
-            ControlOpt::SETOPSFLAG =>     libfabric_sys::FI_SETOPSFLAG,
-            ControlOpt::ALIAS =>     libfabric_sys::FI_ALIAS,
-            ControlOpt::GETWAIT =>     libfabric_sys::FI_GETWAIT,
-            ControlOpt::ENABLE =>     libfabric_sys::FI_ENABLE,
-            ControlOpt::BACKLOG =>     libfabric_sys::FI_BACKLOG,
-            ControlOpt::GET_RAW_MR =>     libfabric_sys::FI_GET_RAW_MR,
-            ControlOpt::MAP_RAW_MR =>     libfabric_sys::FI_MAP_RAW_MR,
-            ControlOpt::UNMAP_KEY =>     libfabric_sys::FI_UNMAP_KEY,
-            ControlOpt::QUEUE_WORK =>     libfabric_sys::FI_QUEUE_WORK,
-            ControlOpt::CANCEL_WORK =>     libfabric_sys::FI_CANCEL_WORK,
-            ControlOpt::FLUSH_WORK =>     libfabric_sys::FI_FLUSH_WORK,
-            ControlOpt::REFRESH =>     libfabric_sys::FI_REFRESH,
-            ControlOpt::DUP =>     libfabric_sys::FI_DUP,
-            ControlOpt::GETWAITOBJ =>     libfabric_sys::FI_GETWAITOBJ,
-            ControlOpt::GET_VAL =>     libfabric_sys::FI_GET_VAL,
-            ControlOpt::SET_VAL =>     libfabric_sys::FI_SET_VAL,
-            ControlOpt::EXPORT_FID =>     libfabric_sys::FI_EXPORT_FID,  
+            ControlOpt::GetFidFlag =>     libfabric_sys::FI_GETFIDFLAG,
+            ControlOpt::SetFidFlag =>     libfabric_sys::FI_SETFIDFLAG,
+            ControlOpt::GetOpsFlag =>     libfabric_sys::FI_GETOPSFLAG,
+            ControlOpt::SetOpsFlag =>     libfabric_sys::FI_SETOPSFLAG,
+            ControlOpt::Alias =>     libfabric_sys::FI_ALIAS,
+            ControlOpt::GetWait =>     libfabric_sys::FI_GETWAIT,
+            ControlOpt::Enable =>     libfabric_sys::FI_ENABLE,
+            ControlOpt::Backlog =>     libfabric_sys::FI_BACKLOG,
+            ControlOpt::GetRawMr =>     libfabric_sys::FI_GET_RAW_MR,
+            ControlOpt::MapRawMr =>     libfabric_sys::FI_MAP_RAW_MR,
+            ControlOpt::UnmapKey =>     libfabric_sys::FI_UNMAP_KEY,
+            ControlOpt::QueueWork =>     libfabric_sys::FI_QUEUE_WORK,
+            ControlOpt::CancelWork =>     libfabric_sys::FI_CANCEL_WORK,
+            ControlOpt::FlushWork =>     libfabric_sys::FI_FLUSH_WORK,
+            ControlOpt::Refresh =>     libfabric_sys::FI_REFRESH,
+            ControlOpt::Dup =>     libfabric_sys::FI_DUP,
+            ControlOpt::GetWaitObj =>     libfabric_sys::FI_GETWAITOBJ,
+            ControlOpt::GetVal =>     libfabric_sys::FI_GET_VAL,
+            ControlOpt::SetVal =>     libfabric_sys::FI_SET_VAL,
+            ControlOpt::ExportFid =>     libfabric_sys::FI_EXPORT_FID,  
         }
     }
 }
 
 pub enum AddressVectorType {
-    UNSPEC,
-    MAP,
-    TABLE,    
+    Unspec,
+    Map,
+    Table,    
 }
 
 impl AddressVectorType {
     pub(crate) fn from_value(value: libfabric_sys::fi_av_type) -> Self {
-        if value == Self::UNSPEC.get_value() {
-            Self::UNSPEC
+        if value == Self::Unspec.get_value() {
+            Self::Unspec
         }
-        else if value == Self::MAP.get_value(){
-            Self::MAP
+        else if value == Self::Map.get_value(){
+            Self::Map
         }
-        else if value == Self::TABLE.get_value() {
-            Self::TABLE
+        else if value == Self::Table.get_value() {
+            Self::Table
         }
         else {
             panic!("Unexpected value for AddressVectorType");
@@ -416,9 +409,9 @@ impl AddressVectorType {
     pub fn get_value(&self) -> libfabric_sys::fi_av_type {
         
         match self {
-            AddressVectorType::UNSPEC => libfabric_sys::fi_av_type_FI_AV_UNSPEC, 
-            AddressVectorType::MAP => libfabric_sys::fi_av_type_FI_AV_MAP, 
-            AddressVectorType::TABLE => libfabric_sys::fi_av_type_FI_AV_TABLE, 
+            AddressVectorType::Unspec => libfabric_sys::fi_av_type_FI_AV_UNSPEC, 
+            AddressVectorType::Map => libfabric_sys::fi_av_type_FI_AV_MAP, 
+            AddressVectorType::Table => libfabric_sys::fi_av_type_FI_AV_TABLE, 
         }
     }
 }
@@ -440,58 +433,12 @@ macro_rules! gen_set_get_flag {
 
 pub(crate) use gen_set_get_flag;
 
-// pub struct ModeBuilder;
-
-
-// impl ModeBuilder {
-
-//     pub fn context(self) -> Mode {
-//         Mode {c_flags: libfabric_sys::FI_CONTEXT}
-//     }
-    
-//     pub fn msg_prefix(self) -> Mode {
-//         Mode {c_flags: libfabric_sys::FI_MSG_PREFIX}
-//     }
-
-
-//     pub fn async_iov(self) -> Mode {
-
-//         Mode{c_flags: libfabric_sys::FI_ASYNC_IOV}
-//     }
-//     pub fn rx_cq_data(self) -> Mode {
-
-//         Mode{c_flags: libfabric_sys::FI_RX_CQ_DATA}
-//     }
-//     pub fn local_mr(self) -> Mode {
-
-//         Mode{c_flags: libfabric_sys::FI_LOCAL_MR}
-//     }
-//     pub fn notify_flags_only(self) -> Mode {
-
-//         Mode{c_flags: libfabric_sys::FI_NOTIFY_FLAGS_ONLY}
-//     }
-//     pub fn restricted_comp(self) -> Mode {
-
-//         Mode{c_flags: libfabric_sys::FI_RESTRICTED_COMP}
-//     }
-//     pub fn context2(self) -> Mode {
-
-//         Mode{c_flags: libfabric_sys::FI_CONTEXT2}
-//     }
-//     pub fn buffered_recv(self) -> Mode {
-
-//         Mode{c_flags: libfabric_sys::FI_BUFFERED_RECV}
-//     }
-    
-// }
-
-
 pub struct Mode {
     c_flags: u64
 }
 
 impl Mode {
-    #[allow(clippy::new_ret_no_self)]
+
     pub fn new() -> Self {
         Self {
             c_flags: 0,
@@ -526,8 +473,6 @@ pub struct MrMode {
     c_flags: u32
 }
 
-
-// pub fn msg(self) -> Self  { Self { bitfield: self.bitfield | libfabric_sys::FI_MSG as u64 } }
 impl MrMode {
     
     pub fn new() -> Self {
@@ -573,200 +518,181 @@ impl Default for MrMode {
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum Progress {
-    UNSPEC,
-    AUTO,
-    MANUAL,    
+    Unspec,
+    Auto,
+    Manual,    
 }
 
 impl Progress {
     pub fn get_value(&self) -> libfabric_sys::fi_progress {
         match self {
-            Progress::UNSPEC => libfabric_sys::fi_progress_FI_PROGRESS_UNSPEC,
-            Progress::AUTO => libfabric_sys::fi_progress_FI_PROGRESS_AUTO,
-            Progress::MANUAL => libfabric_sys::fi_progress_FI_PROGRESS_MANUAL,
+            Progress::Unspec => libfabric_sys::fi_progress_FI_PROGRESS_UNSPEC,
+            Progress::Auto => libfabric_sys::fi_progress_FI_PROGRESS_AUTO,
+            Progress::Manual => libfabric_sys::fi_progress_FI_PROGRESS_MANUAL,
         }
     }
 
     pub fn from_value(val: libfabric_sys::fi_progress) -> Self {
 
         if val == libfabric_sys::fi_progress_FI_PROGRESS_AUTO {
-            Progress::AUTO
+            Progress::Auto
         }
         else if val == libfabric_sys::fi_progress_FI_PROGRESS_MANUAL {
-            Progress::MANUAL
+            Progress::Manual
         }
         else {
-            Progress::UNSPEC
+            Progress::Unspec
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum Threading {
-    UNSPEC,
-    SAFE,
-    FID,
-    DOMAIN,
-    COMPLETION,
-    ENDPOINT,
+    Unspec,
+    Safe,
+    Fid,
+    Domain,
+    Completion,
+    Endpoint,
 }
 
 impl Threading {
     pub fn get_value(&self) -> libfabric_sys::fi_threading {
         match self {
-            Threading::UNSPEC => libfabric_sys::fi_threading_FI_THREAD_UNSPEC,
-            Threading::SAFE => libfabric_sys::fi_threading_FI_THREAD_SAFE,
-            Threading::FID => libfabric_sys::fi_threading_FI_THREAD_FID,
-            Threading::DOMAIN => libfabric_sys::fi_threading_FI_THREAD_DOMAIN,
-            Threading::COMPLETION => libfabric_sys::fi_threading_FI_THREAD_COMPLETION,
-            Threading::ENDPOINT => libfabric_sys::fi_threading_FI_THREAD_ENDPOINT,
+            Threading::Unspec => libfabric_sys::fi_threading_FI_THREAD_UNSPEC,
+            Threading::Safe => libfabric_sys::fi_threading_FI_THREAD_SAFE,
+            Threading::Fid => libfabric_sys::fi_threading_FI_THREAD_FID,
+            Threading::Domain => libfabric_sys::fi_threading_FI_THREAD_DOMAIN,
+            Threading::Completion => libfabric_sys::fi_threading_FI_THREAD_COMPLETION,
+            Threading::Endpoint => libfabric_sys::fi_threading_FI_THREAD_ENDPOINT,
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum ResourceMgmt {
-    UNSPEC,
-    DISABLED,
-    ENABLED,
+    Unspec,
+    Disabled,
+    Enabled,
 }
 
 impl ResourceMgmt {
     pub fn get_value(&self) -> libfabric_sys::fi_resource_mgmt {
         match self {
-            ResourceMgmt::UNSPEC => libfabric_sys::fi_resource_mgmt_FI_RM_UNSPEC,
-            ResourceMgmt::DISABLED => libfabric_sys::fi_resource_mgmt_FI_RM_DISABLED,
-            ResourceMgmt::ENABLED => libfabric_sys::fi_resource_mgmt_FI_RM_ENABLED,
+            ResourceMgmt::Unspec => libfabric_sys::fi_resource_mgmt_FI_RM_UNSPEC,
+            ResourceMgmt::Disabled => libfabric_sys::fi_resource_mgmt_FI_RM_DISABLED,
+            ResourceMgmt::Enabled => libfabric_sys::fi_resource_mgmt_FI_RM_ENABLED,
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum EpType {
-    UNSPEC,
-    MSG,
-    DGRAM,
-    RDM,
-    SOCK_STREAM,
-    SOCK_DGRAM,
+    Unspec,
+    Msg,
+    Dgram,
+    Rdm,
+    SockStream,
+    SockDgram,
 }
 
 impl EpType {
     pub fn get_value(&self) -> libfabric_sys::fi_ep_type {
 
         match self {
-            EpType::UNSPEC => libfabric_sys::fi_ep_type_FI_EP_UNSPEC,
-            EpType::MSG => libfabric_sys::fi_ep_type_FI_EP_MSG,
-            EpType::DGRAM => libfabric_sys::fi_ep_type_FI_EP_DGRAM,
-            EpType::RDM => libfabric_sys::fi_ep_type_FI_EP_RDM,
-            EpType::SOCK_STREAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM,
-            EpType::SOCK_DGRAM => libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM,
+            EpType::Unspec => libfabric_sys::fi_ep_type_FI_EP_UNSPEC,
+            EpType::Msg => libfabric_sys::fi_ep_type_FI_EP_MSG,
+            EpType::Dgram => libfabric_sys::fi_ep_type_FI_EP_DGRAM,
+            EpType::Rdm => libfabric_sys::fi_ep_type_FI_EP_RDM,
+            EpType::SockStream => libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM,
+            EpType::SockDgram => libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM,
         }
     }
 }
 
 pub enum CounterEvents {
-    COMP,
+    Comp,
 }
 
 impl CounterEvents {
     pub fn get_value(&self) -> libfabric_sys::fi_cntr_events {
         match self {
-            CounterEvents::COMP => libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP,
+            CounterEvents::Comp => libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP,
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum TClass {
-    UNSPEC,
-    DSCP,
-    LABEL,
-    BEST_EFFORT,
-    LOW_LATENCY,
-    DEDICATED_ACCESS,
-    BULK_DATA,
-    SCAVENGER,
-    NETWORK_CTRL,
+    Unspec,
+    Dscp,
+    Label,
+    BestEffort,
+    LowLatency,
+    DedicatedAccess,
+    BulkData,
+    Scavenger,
+    NetworkCtrl,
 }
 
 impl TClass {
     pub fn get_value(&self) -> libfabric_sys::_bindgen_ty_5 {
         
         match self {
-            TClass::UNSPEC => libfabric_sys::FI_TC_UNSPEC,
-            TClass::DSCP => libfabric_sys::FI_TC_DSCP,
-            TClass::LABEL => libfabric_sys::FI_TC_LABEL,
-            TClass::BEST_EFFORT => libfabric_sys::FI_TC_BEST_EFFORT,
-            TClass::LOW_LATENCY => libfabric_sys::FI_TC_LOW_LATENCY,
-            TClass::DEDICATED_ACCESS => libfabric_sys::FI_TC_DEDICATED_ACCESS,
-            TClass::BULK_DATA => libfabric_sys::FI_TC_BULK_DATA,
-            TClass::SCAVENGER => libfabric_sys::FI_TC_SCAVENGER,
-            TClass::NETWORK_CTRL => libfabric_sys::FI_TC_NETWORK_CTRL,
+            TClass::Unspec => libfabric_sys::FI_TC_UNSPEC,
+            TClass::Dscp => libfabric_sys::FI_TC_DSCP,
+            TClass::Label => libfabric_sys::FI_TC_LABEL,
+            TClass::BestEffort => libfabric_sys::FI_TC_BEST_EFFORT,
+            TClass::LowLatency => libfabric_sys::FI_TC_LOW_LATENCY,
+            TClass::DedicatedAccess => libfabric_sys::FI_TC_DEDICATED_ACCESS,
+            TClass::BulkData => libfabric_sys::FI_TC_BULK_DATA,
+            TClass::Scavenger => libfabric_sys::FI_TC_SCAVENGER,
+            TClass::NetworkCtrl => libfabric_sys::FI_TC_NETWORK_CTRL,
         }
     }
 }
 
-#[allow(non_camel_case_types)]
 pub enum AddressFormat {
-    UNSPEC,
-    SOCKADDR,
-    SOCKADDR_IN,
-    SOCKADDR_IN6,
-    SOCKADDR_IB,
-    PSMX,
-    GNI,
-    BGQ,
-    MLX,
-    STR,
-    PSMX2,
-    IB_UD,
-    EFA,
-    PSMX3,
-    OPX,
-    CXI,
-    UCX,
+    Unspec,
+    SockAddr,
+    SockaddrIn,
+    SockaddrIn6,
+    SockaddrIb,
+    Psmx,
+    Gni,
+    Bgq,
+    Mlx,
+    Str,
+    Psmx2,
+    IbUd,
+    Efa,
+    Psmx3,
+    Opx,
+    Cxi,
+    Ucx,
 }
 
 impl AddressFormat {
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_3 {
 
         match self {
-            AddressFormat::UNSPEC => libfabric_sys::FI_FORMAT_UNSPEC,
-            AddressFormat::SOCKADDR => libfabric_sys::FI_SOCKADDR,
-            AddressFormat::SOCKADDR_IN => libfabric_sys::FI_SOCKADDR_IN,
-            AddressFormat::SOCKADDR_IN6 => libfabric_sys::FI_SOCKADDR_IN6,
-            AddressFormat::SOCKADDR_IB => libfabric_sys::FI_SOCKADDR_IB,
-            AddressFormat::PSMX => libfabric_sys::FI_ADDR_PSMX,
-            AddressFormat::GNI => libfabric_sys::FI_ADDR_GNI,
-            AddressFormat::BGQ => libfabric_sys::FI_ADDR_BGQ,
-            AddressFormat::MLX => libfabric_sys::FI_ADDR_MLX,
-            AddressFormat::STR => libfabric_sys::FI_ADDR_STR,
-            AddressFormat::PSMX2 => libfabric_sys::FI_ADDR_PSMX2,
-            AddressFormat::IB_UD => libfabric_sys::FI_ADDR_IB_UD,
-            AddressFormat::EFA => libfabric_sys::FI_ADDR_EFA,
-            AddressFormat::PSMX3 => libfabric_sys::FI_ADDR_PSMX3,
-            AddressFormat::OPX => libfabric_sys::FI_ADDR_OPX,
-            AddressFormat::CXI => libfabric_sys::FI_ADDR_CXI,
-            AddressFormat::UCX => libfabric_sys::FI_ADDR_UCX,
+            AddressFormat::Unspec => libfabric_sys::FI_FORMAT_UNSPEC,
+            AddressFormat::SockAddr => libfabric_sys::FI_SOCKADDR,
+            AddressFormat::SockaddrIn => libfabric_sys::FI_SOCKADDR_IN,
+            AddressFormat::SockaddrIn6 => libfabric_sys::FI_SOCKADDR_IN6,
+            AddressFormat::SockaddrIb => libfabric_sys::FI_SOCKADDR_IB,
+            AddressFormat::Psmx => libfabric_sys::FI_ADDR_PSMX,
+            AddressFormat::Gni => libfabric_sys::FI_ADDR_GNI,
+            AddressFormat::Bgq => libfabric_sys::FI_ADDR_BGQ,
+            AddressFormat::Mlx => libfabric_sys::FI_ADDR_MLX,
+            AddressFormat::Str => libfabric_sys::FI_ADDR_STR,
+            AddressFormat::Psmx2 => libfabric_sys::FI_ADDR_PSMX2,
+            AddressFormat::IbUd => libfabric_sys::FI_ADDR_IB_UD,
+            AddressFormat::Efa => libfabric_sys::FI_ADDR_EFA,
+            AddressFormat::Psmx3 => libfabric_sys::FI_ADDR_PSMX3,
+            AddressFormat::Opx => libfabric_sys::FI_ADDR_OPX,
+            AddressFormat::Cxi => libfabric_sys::FI_ADDR_CXI,
+            AddressFormat::Ucx => libfabric_sys::FI_ADDR_UCX,
         }
     }
 }
-
-// #[allow(non_camel_case_types)]
-// #[derive(Clone,Copy)]
-// pub enum TransferOptions {
-//     COMMIT_COMPLETE,
-//     COMPLETION,
-//     DELIVERY_COMPLETE,
-//     INJECT,
-//     INJECT_COMPLETE,
-//     MULTICAST,
-//     MULTI_RECV,
-//     TRANSMIT_COMPLETE,
-// }
 
 #[derive(Clone,Copy)]
 pub struct TransferOptions {
@@ -833,12 +759,11 @@ impl Default for TransferOptions {
 
 
 
-#[allow(non_camel_case_types)]
 pub enum ParamType {
-    STRING,
-    INT,
-    BOOL,
-    SIZE_T, 
+    String,
+    Int,
+    Bool,
+    SizeT, 
 }
 
 impl ParamType {
@@ -846,28 +771,28 @@ impl ParamType {
     pub(crate) fn get_value(&self) -> libfabric_sys::fi_param_type {
 
         match self {
-            ParamType::STRING => libfabric_sys::fi_param_type_FI_PARAM_STRING,
-            ParamType::INT => libfabric_sys::fi_param_type_FI_PARAM_INT,
-            ParamType::BOOL => libfabric_sys::fi_param_type_FI_PARAM_BOOL,
-            ParamType::SIZE_T => libfabric_sys::fi_param_type_FI_PARAM_SIZE_T,
+            ParamType::String => libfabric_sys::fi_param_type_FI_PARAM_STRING,
+            ParamType::Int => libfabric_sys::fi_param_type_FI_PARAM_INT,
+            ParamType::Bool => libfabric_sys::fi_param_type_FI_PARAM_BOOL,
+            ParamType::SizeT => libfabric_sys::fi_param_type_FI_PARAM_SIZE_T,
         }
     }
 }
 
 pub enum Protocol {
-    GNI,
-    IB_RDM,
-    IB_UD,
+    Gni,
+    IbRdm,
+    IbUd,
     IWARP,
-    IWARP_RDM,
-    NETWORKDIRECT,
-    PSMX,
-    PSMX2,
-    PSMX3,
-    RDMA_CM_IB_RC,
-    RXD,
-    UDP,
-    UNSPEC,
+    IwarpRdm,
+    NetworkDirect,
+    Psmx,
+    Psmx2,
+    Psmx3,
+    RdmaCmIbRc,
+    Rxd,
+    Udp,
+    Unspec,
 }
 
 impl Protocol {
@@ -875,19 +800,19 @@ impl Protocol {
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_4 {
         
         match self {
-            Protocol::GNI => libfabric_sys::FI_PROTO_GNI,
-            Protocol::IB_RDM => libfabric_sys::FI_PROTO_IB_RDM,
-            Protocol::IB_UD => libfabric_sys::FI_PROTO_IB_UD,
+            Protocol::Gni => libfabric_sys::FI_PROTO_GNI,
+            Protocol::IbRdm => libfabric_sys::FI_PROTO_IB_RDM,
+            Protocol::IbUd => libfabric_sys::FI_PROTO_IB_UD,
             Protocol::IWARP => libfabric_sys::FI_PROTO_IWARP,
-            Protocol::IWARP_RDM => libfabric_sys::FI_PROTO_IWARP_RDM,
-            Protocol::NETWORKDIRECT => libfabric_sys::FI_PROTO_NETWORKDIRECT,
-            Protocol::PSMX => libfabric_sys::FI_PROTO_PSMX,
-            Protocol::PSMX2 => libfabric_sys::FI_PROTO_PSMX2,
-            Protocol::PSMX3 => libfabric_sys::FI_PROTO_PSMX3,
-            Protocol::RDMA_CM_IB_RC => libfabric_sys::FI_PROTO_RDMA_CM_IB_RC,
-            Protocol::RXD => libfabric_sys::FI_PROTO_RXD,
-            Protocol::UDP => libfabric_sys::FI_PROTO_UDP,
-            Protocol::UNSPEC => libfabric_sys::FI_PROTO_UNSPEC,
+            Protocol::IwarpRdm => libfabric_sys::FI_PROTO_IWARP_RDM,
+            Protocol::NetworkDirect => libfabric_sys::FI_PROTO_NETWORKDIRECT,
+            Protocol::Psmx => libfabric_sys::FI_PROTO_PSMX,
+            Protocol::Psmx2 => libfabric_sys::FI_PROTO_PSMX2,
+            Protocol::Psmx3 => libfabric_sys::FI_PROTO_PSMX3,
+            Protocol::RdmaCmIbRc => libfabric_sys::FI_PROTO_RDMA_CM_IB_RC,
+            Protocol::Rxd => libfabric_sys::FI_PROTO_RXD,
+            Protocol::Udp => libfabric_sys::FI_PROTO_UDP,
+            Protocol::Unspec => libfabric_sys::FI_PROTO_UNSPEC,
         }
     }
 }

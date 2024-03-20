@@ -1,4 +1,5 @@
 use core::panic;
+use std::marker::PhantomData;
 
 // use ep::ActiveEndpoint;
 pub mod ep;
@@ -323,11 +324,11 @@ pub struct Msg {
 
 impl Msg {
 
-    pub fn new(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address) -> Self {
+    pub fn new<T>(iov: &[IoVec<T>], desc: &mut [impl DataDescriptor], addr: Address) -> Self {
         Msg {
             c_msg : libfabric_sys::fi_msg {
                 msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
-                desc: desc.get_desc_ptr(),
+                desc: desc.as_mut_ptr().cast(),
                 iov_count: iov.len(),
                 addr,
                 context: std::ptr::null_mut(), // [TODO]
@@ -404,19 +405,29 @@ pub fn rx_addr(addr: Address, rx_index: i32, rx_ctx_bits: i32) -> Address {
 }
 
 #[repr(C)]
-pub struct IoVec{
+pub struct IoVec<'a, T>{
     c_iovec: libfabric_sys::iovec,
+    borrow: PhantomData<&'a T>,
 }
 
-impl IoVec {
+impl<'a, T> IoVec<'a, T> {
 
-    pub fn new<T0>(mem: &mut [T0] ) -> Self {
+    pub fn new(mem: &'a mut T) -> Self {
         let c_iovec = libfabric_sys::iovec{
-            iov_base:  mem.as_mut_ptr() as *mut std::ffi::c_void,
+            iov_base:  mem as *mut T as *mut std::ffi::c_void,
             iov_len: std::mem::size_of_val(mem),
         };
 
-        Self { c_iovec }
+        Self { c_iovec, borrow: PhantomData }
+    }
+
+    pub fn new_slice(mem: &'a mut [T]) -> Self {
+        let c_iovec = libfabric_sys::iovec{
+            iov_base:  mem.as_mut_ptr().cast(),
+            iov_len: std::mem::size_of_val(mem),
+        };
+
+        Self { c_iovec, borrow: PhantomData }
     }
 
     pub(crate) fn get(&self) ->  *const libfabric_sys::iovec {
@@ -610,9 +621,12 @@ pub fn error_to_string(errnum: i64) -> String {
     str.to_str().unwrap().to_string()
 }
 
-pub struct DefaultMemDesc {}
+#[repr(C)]
+pub struct DefaultMemDesc {
+    c_desc: *mut std::ffi::c_void,
+}
 
-pub fn default_desc() -> DefaultMemDesc { DefaultMemDesc {  }}
+pub fn default_desc() -> DefaultMemDesc { DefaultMemDesc { c_desc: std::ptr::null_mut() }}
 
 impl DataDescriptor for DefaultMemDesc {
     fn get_desc(&mut self) -> *mut std::ffi::c_void {
@@ -734,12 +748,12 @@ pub struct MsgTagged {
 }
 
 impl MsgTagged {
-    pub fn new(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address, data: u64, tag: u64, ignore: u64) -> Self {
+    pub fn new<T>(iov: &[IoVec<T>], desc: &mut [impl DataDescriptor], addr: Address, data: u64, tag: u64, ignore: u64) -> Self {
     
         Self {
             c_msg_tagged: libfabric_sys::fi_msg_tagged {
                 msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
-                desc: desc.get_desc_ptr(),
+                desc: desc.as_mut_ptr().cast(),
                 iov_count: iov.len(),
                 addr,
                 context: std::ptr::null_mut(), // [TODO]
@@ -761,11 +775,11 @@ pub struct MsgRma {
 }
 
 impl MsgRma {
-    pub fn new<T0>(iov: &[IoVec], desc: &mut impl DataDescriptor, addr: Address, rma_iov: &[RmaIoVec], context: &mut T0, data: u64) -> Self {
+    pub fn new<T, T0>(iov: &[IoVec<T>], desc: &mut [impl DataDescriptor], addr: Address, rma_iov: &[RmaIoVec], context: &mut T0, data: u64) -> Self {
         Self {
             c_msg_rma : libfabric_sys::fi_msg_rma {
                 msg_iov: iov.as_ptr() as *const libfabric_sys::iovec,
-                desc: desc.get_desc_ptr(),
+                desc: desc.as_mut_ptr().cast(),
                 iov_count: iov.len(),
                 addr,
                 rma_iov: rma_iov.as_ptr() as *const libfabric_sys::fi_rma_iov,

@@ -307,7 +307,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     }
 
     pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNone, cqoptions::Off> {
-        self.cq_attr.wait_obj(crate::enums::WaitObj::NONE);
+        self.cq_attr.wait_obj(crate::enums::WaitObj::None);
 
         CompletionQueueBuilder {
             options: self.options.no_wait(),
@@ -318,7 +318,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     }
     
     pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitRetrieve, cqoptions::On> {
-        self.cq_attr.wait_obj(crate::enums::WaitObj::FD);
+        self.cq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         CompletionQueueBuilder {
             options: self.options.wait_fd(),
@@ -329,7 +329,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     }
 
     pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNoRetrieve, cqoptions::Off> {
-        self.cq_attr.wait_obj(crate::enums::WaitObj::SET(set));
+        self.cq_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         
         CompletionQueueBuilder {
@@ -341,7 +341,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     }
 
     pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitRetrieve, cqoptions::Off> {
-        self.cq_attr.wait_obj(crate::enums::WaitObj::MUTEX_COND);
+        self.cq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         
         CompletionQueueBuilder {
@@ -353,7 +353,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     }
 
     pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNoRetrieve, cqoptions::Off> {
-        self.cq_attr.wait_obj(crate::enums::WaitObj::YIELD);
+        self.cq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         CompletionQueueBuilder {
             options: self.options.wait_no_retrieve(),
@@ -399,9 +399,9 @@ impl CompletionQueueAttr {
             size: 0, 
             flags: 0, 
             format: crate::enums::CqFormat::UNSPEC.get_value(), 
-            wait_obj: crate::enums::WaitObj::UNSPEC.get_value(),
+            wait_obj: crate::enums::WaitObj::Unspec.get_value(),
             signaling_vector: 0,
-            wait_cond: crate::enums::WaitCond::NONE.get_value(),
+            wait_cond: crate::enums::WaitCond::None.get_value(),
             wait_set: std::ptr::null_mut()
         };
 
@@ -419,7 +419,7 @@ impl CompletionQueueAttr {
     }
     
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
-        if let crate::enums::WaitObj::SET(wait_set) = wait_obj {
+        if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
             self.c_attr.wait_set = wait_set.c_wait;
         }
         self.c_attr.wait_obj = wait_obj.get_value();

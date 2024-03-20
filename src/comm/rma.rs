@@ -29,14 +29,14 @@ impl Endpoint {
     }
     
     #[allow(unused_variables)]
-    pub unsafe fn readv(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64) -> Result<(), crate::error::Error> { //[TODO]
+    pub unsafe fn readv<T>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, src_addr: crate::Address, addr: u64, key: u64) -> Result<(), crate::error::Error> { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.get(), desc.get_desc(), count, src_addr, addr, key, std::ptr::null_mut()) };
         // ret 
     }
     
     #[allow(unused_variables)]
-    pub unsafe  fn readv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
+    pub unsafe  fn readv_with_context<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, src_addr: crate::Address, addr: u64, key: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.get(), desc.get_desc(), count, src_addr, addr, key, context.get_mut() as *mut  std::ffi::c_void) };
         // ret 
@@ -78,7 +78,7 @@ impl Endpoint {
     }
     
     #[allow(unused_variables)]
-    pub unsafe fn writev<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize,  dest_addr: crate::Address, addr: u64, key:u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
+    pub unsafe fn writev<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize,  dest_addr: crate::Address, addr: u64, key:u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_writev(self.handle(), iov.get(), desc.get_desc(), count, dest_addr, addr, key, context.get_mut() as *mut  std::ffi::c_void) };
         // ret   
@@ -165,7 +165,7 @@ impl TransmitContext {
     }
     
     #[allow(unused_variables)]
-    pub unsafe fn writev<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize,  dest_addr: crate::Address, addr: u64, key:u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
+    pub unsafe fn writev<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize,  dest_addr: crate::Address, addr: u64, key:u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_writev(self.handle(), iov.get(), desc.get_desc(), count, dest_addr, addr, key, context.get_mut() as *mut  std::ffi::c_void) };
         // ret   
@@ -252,14 +252,14 @@ impl ReceiveContext {
     }
     
     #[allow(unused_variables)]
-    pub unsafe fn readv(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64) -> Result<(), crate::error::Error> { //[TODO]
+    pub unsafe fn readv<T>(&self, iov: &[crate::IoVec<T>], desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64) -> Result<(), crate::error::Error> { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.get(), desc.get_desc(), count, src_addr, addr, key, std::ptr::null_mut()) };
         // ret 
     }
     
     #[allow(unused_variables)]
-    pub unsafe  fn readv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
+    pub unsafe  fn readv_with_context<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, addr: u64, key: u64, context: &mut crate::Context) -> Result<(), crate::error::Error> { //[TODO]
         todo!()
         // let ret = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.get(), desc.get_desc(), count, src_addr, addr, key, context.get_mut() as *mut  std::ffi::c_void) };
         // ret 

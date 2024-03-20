@@ -16,11 +16,11 @@ fn pp_server_msg() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
 
     let mut ep_attr = ep::EndpointAttr::new();
-        ep_attr.ep_type(enums::EndpointType::MSG);
+        ep_attr.ep_type(enums::EndpointType::Msg);
 
     let mut dom_attr = domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::DOMAIN)
+        .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
     let caps = libfabric::InfoCaps::new()
@@ -28,14 +28,14 @@ fn pp_server_msg() {
     
 
     let mut tx_attr = libfabric::xcontext::TxAttr::new();
-        tx_attr.tclass(enums::TClass::LOW_LATENCY);
+        tx_attr.tclass(enums::TClass::LowLatency);
 
     let hints = libfabric::InfoHints::new()
         .ep_attr(ep_attr)
         .caps(caps)
         .domain_attr(dom_attr)
         .tx_attr(tx_attr)
-        .addr_format(enums::AddressFormat::UNSPEC);
+        .addr_format(enums::AddressFormat::Unspec);
 
 
     let (info, fab, eq, _pep) = common::start_server::<common::EventQueueOptions>(hints, "172.17.110.4".to_owned(), "9222".to_owned());
@@ -60,15 +60,15 @@ fn pp_server_msg() {
 fn pp_client_msg() {
     let mut gl_ctx = common::TestsGlobalCtx::new();
     let mut ep_attr = ep::EndpointAttr::new();
-        ep_attr    .ep_type(enums::EndpointType::MSG);
+        ep_attr    .ep_type(enums::EndpointType::Msg);
 
     let mut dom_attr = domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::DOMAIN)
+        .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
 
     let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(enums::TClass::LOW_LATENCY);
+        tx_attr.tclass(enums::TClass::LowLatency);
 
     let caps = libfabric::InfoCaps::new()
         .msg();
@@ -78,7 +78,7 @@ fn pp_client_msg() {
         .domain_attr(dom_attr)
         .tx_attr(tx_attr)
         .caps(caps)
-        .addr_format(enums::AddressFormat::UNSPEC);
+        .addr_format(enums::AddressFormat::Unspec);
 
     let (info, _fab, domain, _eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = 
         common::ft_client_connect(hints, &mut gl_ctx, "172.17.110.4".to_owned(), "9222".to_owned());

@@ -1030,7 +1030,6 @@ impl crate::AsFid for Endpoint {
     }
 }
 
-
 pub trait ActiveEndpoint: BaseEndpoint {
 
     fn handle(&self) -> *mut libfabric_sys::fid_ep;

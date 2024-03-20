@@ -30,7 +30,7 @@ impl Endpoint {
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
-	pub fn trecvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, tag: u64, ignore:u64, context : &mut T0) -> Result<(), crate::error::Error> { //[TODO]
+	pub fn trecvv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], src_addr: crate::Address, tag: u64, ignore:u64, context : &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.get(), desc.get_desc(), count, src_addr, tag, ignore, context as *mut T1 as *mut std::ffi::c_void) };
         // ret   
@@ -70,13 +70,13 @@ impl Endpoint {
     }
 
     #[allow(unused_variables)]
-	pub fn tsendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, dest_addr: crate::Address, tag:u64, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
+	pub fn tsendv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], dest_addr: crate::Address, tag:u64, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
         todo!()
         // let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.handle(), iov.get(), desc.get_desc(), count, dest_addr, tag, std::ptr::null_mut()) };
     }
 
     #[allow(unused_variables)]
-	pub fn tsendv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, dest_addr: crate::Address, tag:u64, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
+	pub fn tsendv_with_context<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], dest_addr: crate::Address, tag:u64, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
         todo!()
         // let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.handle(), iov.get(), desc.get_desc(), count, dest_addr, tag, context.get_mut() as *mut std::ffi::c_void) };
     }
@@ -163,13 +163,13 @@ impl TransmitContext {
     }
 
     #[allow(unused_variables)]
-	pub fn tsendv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, dest_addr: crate::Address, tag:u64, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
+	pub fn tsendv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, dest_addr: crate::Address, tag:u64, context : &mut crate::Context) -> Result<(), crate::error::Error> { // [TODO]
         todo!()
         // let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.handle(), iov.get(), desc.get_desc(), count, dest_addr, tag, std::ptr::null_mut()) };
     }
 
     #[allow(unused_variables)]
-	pub fn tsendv_with_context<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, dest_addr: crate::Address, tag:u64, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
+	pub fn tsendv_with_context<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], count: usize, dest_addr: crate::Address, tag:u64, context : &mut crate::Context) -> Result<(), crate::error::Error> { // [TODO]
         todo!()
         // let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.handle(), iov.get(), desc.get_desc(), count, dest_addr, tag, context.get_mut() as *mut std::ffi::c_void) };
     }
@@ -256,7 +256,7 @@ impl ReceiveContext {
 
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
-	pub fn trecvv<T0>(&self, iov: &crate::IoVec, desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, tag: u64, ignore:u64, context : &mut T0) -> Result<(), crate::error::Error> { //[TODO]
+	pub fn trecvv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut impl crate::DataDescriptor, count: usize, src_addr: crate::Address, tag: u64, ignore:u64, context : &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         todo!();
         // let ret = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.get(), desc.get_desc(), count, src_addr, tag, ignore, context as *mut T1 as *mut std::ffi::c_void) };
         // ret   

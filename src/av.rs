@@ -414,7 +414,7 @@ pub struct AddressVectorAttr {
 impl AddressVectorAttr {
     pub fn new() -> Self {
         let c_attr = libfabric_sys::fi_av_attr{
-            type_: crate::enums::AddressVectorType::UNSPEC.get_value(), 
+            type_: crate::enums::AddressVectorType::Unspec.get_value(), 
             rx_ctx_bits: 0,
             count: 0,
             ep_per_node: 0,
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn av_open_close() {
         let mut ep_attr = crate::ep::EndpointAttr::new();
-            ep_attr.ep_type(crate::enums::EndpointType::RDM);
+            ep_attr.ep_type(crate::enums::EndpointType::Rdm);
     
         let mut dom_attr = crate::domain::DomainAttr::new();
             dom_attr
@@ -602,7 +602,7 @@ mod tests {
             for i in 0..17 {
                 let count = 1 << i;
                 let _av = AddressVectorBuilder::new(&domain)
-                    .type_(crate::enums::AddressVectorType::MAP)
+                    .type_(crate::enums::AddressVectorType::Map)
                     .count(count)
                     .flags(0)
                     .build()
@@ -618,7 +618,7 @@ mod tests {
     fn av_good_sync() {
         
         let mut ep_attr = crate::ep::EndpointAttr::new();
-            ep_attr.ep_type(crate::enums::EndpointType::RDM);
+            ep_attr.ep_type(crate::enums::EndpointType::Rdm);
 
         let mut dom_attr = crate::domain::DomainAttr::new();
             dom_attr
@@ -637,7 +637,7 @@ mod tests {
             let fab: crate::fabric::Fabric = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
             let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
             let _av = AddressVectorBuilder::new(&domain)
-                .type_(crate::enums::AddressVectorType::MAP)
+                .type_(crate::enums::AddressVectorType::Map)
                 .count(32)
                 .build()
                 .unwrap();

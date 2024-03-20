@@ -267,7 +267,7 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
     }
 }
 
-fn read_eq_entry(bytes_read: isize, buffer: &Vec<u8>, event: &u32) -> Event<usize> {
+fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> {
     if event == &libfabric_sys::FI_CONNREQ || event == &libfabric_sys::FI_CONNECTED || event == &libfabric_sys::FI_SHUTDOWN {
         debug_assert_eq!(bytes_read as usize, std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>());
         // let res = unsafe { std::slice::from_raw_parts(buffer.as_mut_ptr()  as *mut libfabric_sys::fi_eq_cm_entry, 1) };
@@ -346,7 +346,7 @@ impl <'a, T, WRITE, WAIT, WAITFD> EventQueueBuilder<'a, T, WRITE, WAIT, WAITFD> 
     }
     
     pub fn wait_none(mut self) -> EventQueueBuilder<'a, T, WRITE, WaitNone, Off> {
-        self.eq_attr.wait_obj(crate::enums::WaitObj::NONE);
+        self.eq_attr.wait_obj(crate::enums::WaitObj::None);
 
         EventQueueBuilder {
             options: self.options.no_wait(),
@@ -357,7 +357,7 @@ impl <'a, T, WRITE, WAIT, WAITFD> EventQueueBuilder<'a, T, WRITE, WAIT, WAITFD> 
     }
     
     pub fn wait_fd(mut self) -> EventQueueBuilder<'a, T, WRITE, WaitRetrieve, On> {
-        self.eq_attr.wait_obj(crate::enums::WaitObj::FD);
+        self.eq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         EventQueueBuilder {
             options: self.options.wait_fd(),
@@ -368,7 +368,7 @@ impl <'a, T, WRITE, WAIT, WAITFD> EventQueueBuilder<'a, T, WRITE, WAIT, WAITFD> 
     }
 
     pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> EventQueueBuilder<'a, T, WRITE, WaitNoRetrieve, Off> {
-        self.eq_attr.wait_obj(crate::enums::WaitObj::SET(set));
+        self.eq_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         
         EventQueueBuilder {
@@ -380,7 +380,7 @@ impl <'a, T, WRITE, WAIT, WAITFD> EventQueueBuilder<'a, T, WRITE, WAIT, WAITFD> 
     }
 
     pub fn wait_mutex(mut self) -> EventQueueBuilder<'a, T, WRITE, WaitRetrieve, Off> {
-        self.eq_attr.wait_obj(crate::enums::WaitObj::MUTEX_COND);
+        self.eq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         
         EventQueueBuilder {
@@ -392,7 +392,7 @@ impl <'a, T, WRITE, WAIT, WAITFD> EventQueueBuilder<'a, T, WRITE, WAIT, WAITFD> 
     }
 
     pub fn wait_yield(mut self) -> EventQueueBuilder<'a, T, WRITE, WaitNoRetrieve, Off> {
-        self.eq_attr.wait_obj(crate::enums::WaitObj::YIELD);
+        self.eq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         EventQueueBuilder {
             options: self.options.wait_no_retrieve(),
@@ -458,7 +458,7 @@ impl EventQueueAttr {
 
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
         
-        if let crate::enums::WaitObj::SET(wait_set) = wait_obj {
+        if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
             self.c_attr.wait_set = wait_set.c_wait;
         }
         self.c_attr.wait_obj = wait_obj.get_value();

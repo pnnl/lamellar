@@ -189,7 +189,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     }
 
     pub fn wait_none(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNone, cntroptions::Off> {
-        self.cntr_attr.wait_obj(crate::enums::WaitObj::NONE);
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::None);
 
         CounterBuilder {
             options: self.options.no_wait(),
@@ -201,7 +201,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
 
 
     pub fn wait_fd(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::On> {
-        self.cntr_attr.wait_obj(crate::enums::WaitObj::FD);
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         CounterBuilder {
             options: self.options.wait_fd(),
@@ -212,7 +212,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     }
 
     pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
-        self.cntr_attr.wait_obj(crate::enums::WaitObj::SET(set));
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         CounterBuilder {
             options: self.options.wait_no_retrieve(),
@@ -223,7 +223,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     }
 
     pub fn wait_mutex(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::Off> {
-        self.cntr_attr.wait_obj(crate::enums::WaitObj::MUTEX_COND);
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         CounterBuilder {
             options: self.options.wait_retrievable(),
@@ -234,7 +234,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     }
 
     pub fn wait_yield(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
-        self.cntr_attr.wait_obj(crate::enums::WaitObj::YIELD);
+        self.cntr_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         CounterBuilder {
             options: self.options.wait_no_retrieve(),
@@ -313,7 +313,7 @@ impl CounterAttr {
     }
 
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
-        if let crate::enums::WaitObj::SET(wait_set) = wait_obj {
+        if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
             self.c_attr.wait_set = wait_set.c_wait;
         }
         self.c_attr.wait_obj = wait_obj.get_value();
