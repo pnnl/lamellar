@@ -1,14 +1,18 @@
 
 
-use std::ffi::CString;
+use std::{ffi::CString, rc::Rc};
 
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::AsFid;
 
-pub struct Fabric {
+pub(crate) struct FabricImpl {
     pub(crate) c_fabric: *mut libfabric_sys::fid_fabric,
     fid: crate::OwnedFid,
+}
+
+pub struct Fabric {
+    pub(crate) inner: Rc<FabricImpl>,
 }
 
 
@@ -24,8 +28,12 @@ impl Fabric {
         }
         else {
             Ok(
-                Self { c_fabric, fid: crate::OwnedFid { fid: unsafe{ &mut (*c_fabric).fid } } }
-            )
+                Self { 
+                    inner: Rc::new( FabricImpl {
+                        c_fabric, 
+                        fid: crate::OwnedFid { fid: unsafe{ &mut (*c_fabric).fid } } 
+                    })
+                })
         }
     }
 
@@ -40,18 +48,25 @@ impl Fabric {
         }
         else {
             Ok(
-                Self { c_fabric, fid: crate::OwnedFid { fid: unsafe{ &mut (*c_fabric).fid } } }
-            )
+                Self { 
+                    inner: Rc::new( FabricImpl {
+                        c_fabric, 
+                        fid: crate::OwnedFid { fid: unsafe{ &mut (*c_fabric).fid } } 
+                    })
+                })
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn from(c_fabric: *mut libfabric_sys::fid_fabric) -> Self {
-        Fabric {
-            c_fabric,
-            fid: crate::OwnedFid { fid: unsafe{&mut (*c_fabric).fid} },
-        }
-    }
+    // #[allow(dead_code)]
+    // pub(crate) fn from(c_fabric: *mut libfabric_sys::fid_fabric) -> Self {
+        
+    //     Self { 
+    //         inner: Rc::new (FabricImpl {
+    //             c_fabric,
+    //             fid: crate::OwnedFid { fid: unsafe{&mut (*c_fabric).fid} },
+    //         })
+    //     }
+    // }
 
     // pub fn domain(&self, info: &crate::InfoEntry) -> Result<crate::domain::Domain, crate::error::Error> {
     //     crate::domain::Domain::new(self, info)
@@ -63,7 +78,7 @@ impl Fabric {
 
     pub fn trywait(&self, fids: &[&impl crate::AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
         let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.as_fid()).collect();
-        let err = unsafe { libfabric_sys::inlined_fi_trywait(self.c_fabric, raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
+        let err = unsafe { libfabric_sys::inlined_fi_trywait(self.inner.c_fabric, raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -77,7 +92,7 @@ impl Fabric {
 
 impl crate::AsFid for Fabric {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
+        self.inner.fid.as_fid()
     }
 }
 

@@ -17,7 +17,7 @@ impl<T: CntrConfig> Counter<T> {
     pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CounterAttr) -> Result<Counter<T>, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.c_domain, attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.handle(), attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) };
         
 
         if err != 0 {
@@ -34,7 +34,7 @@ impl<T: CntrConfig> Counter<T> {
     pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, ctx: &mut T0) -> Result<Counter<T>, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.c_domain, attr.get_mut(), c_cntr_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.handle(), attr.get_mut(), c_cntr_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
 
 
         if err != 0 {

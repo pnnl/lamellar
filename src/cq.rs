@@ -61,7 +61,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
 
-        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.c_domain, attr.get_mut(), c_cq_ptr, std::ptr::null_mut())};
+        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, std::ptr::null_mut())};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
@@ -77,7 +77,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
 
-        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.c_domain, attr.get_mut(), c_cq_ptr, context as *mut T0 as *mut std::ffi::c_void)};
+        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, context as *mut T0 as *mut std::ffi::c_void)};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }

@@ -1,15 +1,23 @@
-use std::os::fd::{AsFd, BorrowedFd};
+use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, OwnedFid};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, OwnedFid, domain::DomainImpl, fabric::FabricImpl};
 
-pub struct Endpoint {
+
+
+pub struct EndpointImpl {
     c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
+    _domain_rc:  Rc<DomainImpl>
 }
+
+pub struct Endpoint {
+    inner: Rc<EndpointImpl>
+}
+
 
 pub trait BaseEndpoint : AsFid {
 
@@ -224,7 +232,7 @@ impl BaseEndpoint for Endpoint {}
 
 impl ActiveEndpoint for Endpoint {
     fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.c_ep
+        self.inner.c_ep
     }
 }
 
@@ -338,43 +346,63 @@ impl AsFd for Endpoint {
 }
 
 //================== Scalable Endpoint (fi_scalable_ep) ==================//
-pub struct ScalableEndpoint {
+pub struct ScalableEndpointImpl {
     pub(crate) c_sep: *mut libfabric_sys::fid_ep,
+    fid: OwnedFid,
+    _domain_rc:  Rc<DomainImpl>
+}
+
+pub struct ScalableEndpoint {
+    inner: Rc<ScalableEndpointImpl>,
 }
 
 impl ScalableEndpoint {
     pub fn new(domain: &crate::domain::Domain, info: &crate::InfoEntry) -> Result<Self, crate::error::Error> {
         let mut c_sep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_sep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_sep;
-        let err = unsafe { libfabric_sys::inlined_fi_scalable_ep(domain.c_domain, info.c_info, c_sep_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_scalable_ep(domain.handle(), info.c_info, c_sep_ptr, std::ptr::null_mut()) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
+            
             Ok(
-                Self { c_sep }
-            )
+                Self { 
+                    inner: Rc::new(
+                        ScalableEndpointImpl {
+                            c_sep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_sep).fid } },
+                            _domain_rc: domain.inner.clone(), 
+                    })
+                })
         }
     }
 
     pub fn new_with_context<T0>(domain: &crate::domain::Domain, info: &crate::InfoEntry, context: &mut T0) -> Result<Self, crate::error::Error> {
         let mut c_sep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_sep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_sep;
-        let err = unsafe { libfabric_sys::inlined_fi_scalable_ep(domain.c_domain, info.c_info, c_sep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_scalable_ep(domain.handle(), info.c_info, c_sep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
+            
             Ok(
-                Self { c_sep }
-            )
+                Self { 
+                    inner: Rc::new(
+                        ScalableEndpointImpl {
+                            c_sep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_sep).fid } },
+                            _domain_rc: domain.inner.clone(), 
+                    })
+                })
         }
     }
 
     fn bind<T: crate::Bind + crate::AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_scalable_ep_bind(self.c_sep, res.as_fid(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_scalable_ep_bind(self.handle(), res.as_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -463,8 +491,14 @@ impl ScalableEndpoint {
         }
         else {
             Ok(
-                Self { c_sep }
-            )
+                Self { 
+                    inner: Rc::new(
+                        ScalableEndpointImpl {
+                            c_sep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_sep).fid } },
+                            _domain_rc: self.inner._domain_rc.clone(), 
+                    })
+                })
         }
     }
 
@@ -574,7 +608,7 @@ impl ScalableEndpoint {
 
 impl crate::AsFid for ScalableEndpoint {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_sep).fid }
+        self.inner.fid.as_fid()
     }
 }
 
@@ -582,7 +616,7 @@ impl BaseEndpoint for ScalableEndpoint { }
 
 impl ActiveEndpoint for ScalableEndpoint {
     fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.c_sep
+        self.inner.c_sep
     }
 }
 
@@ -594,43 +628,66 @@ impl AsFd for ScalableEndpoint {
 
 //================== Passive Endpoint (fi_passive_ep) ==================//
 
-pub struct PassiveEndpoint {
+pub struct PassiveEndpointImpl {
     pub(crate) c_pep: *mut libfabric_sys::fid_pep,
+    fid: OwnedFid,
+    _fabric_rc: Rc<FabricImpl>,
+}
+
+pub struct PassiveEndpoint {
+    inner: Rc<PassiveEndpointImpl>,
 }
 
 impl PassiveEndpoint {
+    
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_pep {
+        self.inner.c_pep
+    }
+
     pub fn new(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry) -> Result<Self, crate::error::Error> {
         let mut c_pep: *mut libfabric_sys::fid_pep = std::ptr::null_mut();
         let c_pep_ptr: *mut *mut libfabric_sys::fid_pep = &mut c_pep;
-        let err = unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.c_fabric, info.c_info, c_pep_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.inner.c_fabric, info.c_info, c_pep_ptr, std::ptr::null_mut()) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(
-                Self { c_pep }
-            )
+                Self { 
+                    inner: Rc::new(
+                        PassiveEndpointImpl {
+                            c_pep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_pep).fid } },
+                            _fabric_rc: fabric.inner.clone(),
+                        })
+                })
         }
     }
 
     pub fn new_with_context<T0>(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, context: &mut T0) -> Result<Self, crate::error::Error> {
         let mut c_pep: *mut libfabric_sys::fid_pep = std::ptr::null_mut();
         let c_pep_ptr: *mut *mut libfabric_sys::fid_pep = &mut c_pep;
-        let err = unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.c_fabric, info.c_info, c_pep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.inner.c_fabric, info.c_info, c_pep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(
-                Self { c_pep }
-            )
+                Self { 
+                    inner: Rc::new(
+                        PassiveEndpointImpl {
+                            c_pep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_pep).fid } },
+                            _fabric_rc: fabric.inner.clone(),
+                        })
+                })
         }
     }
     
     pub fn bind<T: EqConfig>(&self, res: &EventQueue<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.c_pep, res.as_fid(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.inner.c_pep, res.as_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -641,7 +698,7 @@ impl PassiveEndpoint {
     }
 
     pub fn listen(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe {libfabric_sys::inlined_fi_listen(self.c_pep)};
+        let err = unsafe {libfabric_sys::inlined_fi_listen(self.handle())};
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -652,7 +709,7 @@ impl PassiveEndpoint {
     }
 
     pub fn reject<T0>(&self, fid: &impl crate::AsFid, params: &[T0]) -> Result<(), crate::error::Error> {
-        let err = unsafe {libfabric_sys::inlined_fi_reject(self.c_pep, fid.as_fid(), params.as_ptr() as *const std::ffi::c_void, params.len())};
+        let err = unsafe {libfabric_sys::inlined_fi_reject(self.handle(), fid.as_fid(), params.as_ptr() as *const std::ffi::c_void, params.len())};
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -735,7 +792,7 @@ impl BaseEndpoint for PassiveEndpoint {}
 
 impl crate::AsFid for PassiveEndpoint {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        unsafe { &mut (*self.c_pep).fid }
+        self.inner.fid.as_fid()
     }    
 }
 
@@ -837,15 +894,21 @@ impl Endpoint {
     pub fn new(domain: &crate::domain::Domain, info: &crate::InfoEntry) -> Result<Self, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
-        let err = unsafe { libfabric_sys::inlined_fi_endpoint(domain.c_domain, info.c_info, c_ep_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_endpoint(domain.handle(), info.c_info, c_ep_ptr, std::ptr::null_mut()) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(
-                Self { c_ep, fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } } }
-            )
+                Self { 
+                    inner: Rc::new(
+                        EndpointImpl {
+                            c_ep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
+                            _domain_rc: domain.inner.clone()
+                        })
+                })
         }
 
     }
@@ -854,15 +917,21 @@ impl Endpoint {
     pub fn new_with_context<T0>(domain: &crate::domain::Domain, info: &crate::InfoEntry, context: &mut T0) -> Result<Endpoint, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
-        let err = unsafe { libfabric_sys::inlined_fi_endpoint(domain.c_domain, info.c_info, c_ep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_endpoint(domain.handle(), info.c_info, c_ep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok (
-                Self { c_ep, fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } } }
-            )
+            Ok(
+                Self { 
+                    inner: Rc::new(
+                        EndpointImpl {
+                            c_ep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
+                            _domain_rc: domain.inner.clone()
+                        })
+                })
         }
 
     }
@@ -870,15 +939,21 @@ impl Endpoint {
     pub fn new2<T0>(domain: &crate::domain::Domain, info: &crate::InfoEntry, flags: u64, context: &mut T0) -> Result<Self, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
-        let err = unsafe { libfabric_sys::inlined_fi_endpoint2(domain.c_domain, info.c_info, c_ep_ptr, flags, context as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_endpoint2(domain.handle(), info.c_info, c_ep_ptr, flags, context as *mut T0 as *mut std::ffi::c_void) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(
-                Self { c_ep, fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } } }
-            )
+                Self { 
+                    inner: Rc::new(
+                        EndpointImpl {
+                            c_ep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
+                            _domain_rc: domain.inner.clone()
+                        })
+                })
         }
 
     }
@@ -886,7 +961,7 @@ impl Endpoint {
     // pub(crate) fn from_attr(domain: &crate::domain::Domain, mut rx_attr: crate::RxAttr) -> Result<Self, crate::error::Error> {
     //     let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
     //     let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
-    //     let err = unsafe { libfabric_sys::inlined_fi_srx_context(domain.c_domain, rx_attr.get_mut(), c_ep_ptr,  std::ptr::null_mut()) };
+    //     let err = unsafe { libfabric_sys::inlined_fi_srx_context(domain.handle(), rx_attr.get_mut(), c_ep_ptr,  std::ptr::null_mut()) };
 
     //     if err != 0 {
     //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -902,7 +977,7 @@ impl Endpoint {
     // pub(crate) fn from_attr_with_context<T0>(domain: &crate::domain::Domain, mut rx_attr: crate::RxAttr, context: &mut T0) -> Result<Self, crate::error::Error> {
     //     let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
     //     let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
-    //     let err = unsafe { libfabric_sys::inlined_fi_srx_context(domain.c_domain, rx_attr.get_mut(), c_ep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+    //     let err = unsafe { libfabric_sys::inlined_fi_srx_context(domain.handle(), rx_attr.get_mut(), c_ep_ptr, context as *mut T0 as *mut std::ffi::c_void) };
 
     //     if err != 0 {
     //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -916,7 +991,7 @@ impl Endpoint {
     // }
 
     pub(crate) fn bind<T: crate::Bind + crate::AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.c_ep, res.as_fid(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -1018,15 +1093,21 @@ impl Endpoint {
         }
         else {
             Ok(
-                Self { c_ep, fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } } }
-            )
+                Self { 
+                    inner: Rc::new(
+                        EndpointImpl {
+                            c_ep, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
+                            _domain_rc: self.inner._domain_rc.clone(),
+                        })
+                })
         }
     }
 }
 
 impl crate::AsFid for Endpoint {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
+        self.inner.fid.as_fid()
     }
 }
 
@@ -1453,3 +1534,26 @@ impl<'a> EndpointBuilder<'a, ()> {
         self
     }
 }
+
+// #[cfg(test)]
+// mod libfabric_lifetime_tests {
+//     use super::EndpointBuilder;
+
+//     #[test]
+
+//     fn ep_drops_before_domain() {
+//         let info = crate::Info::new().request().unwrap();
+//         let entries = info.get();
+        
+//         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+//         let count = 10;
+//         let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+//         // let mut eps = Vec::new();
+//         // for _ in 0..count {
+//         let ep = EndpointBuilder::new(&entries[0]).build(&domain).unwrap();
+//         println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
+//         // eps.push(ep);
+//         // }
+//         // drop(domain);
+//     }
+// }

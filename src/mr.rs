@@ -14,7 +14,7 @@ impl MemoryRegion {
     pub(crate) fn from_buffer<T0>(domain: &crate::domain::Domain, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.c_domain, buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
         
         
         if err != 0 {
@@ -30,7 +30,7 @@ impl MemoryRegion {
     pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.c_domain, attr.get(), flags.get_value() as u64, c_mr_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -47,7 +47,7 @@ impl MemoryRegion {
     pub(crate) fn from_iovec<T>(domain: &crate::domain::Domain,  iov : &crate::IoVec<T>, count: usize, acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.c_domain, iov.get(), count, acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.get(), count, acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -458,7 +458,7 @@ mod tests {
                 let mut buf = vec![0_u64; buff_size as usize ];
                 for combo in &combos {
                     let _mr = MemoryRegionBuilder::new(&domain)
-                        .iov(std::slice::from_mut(&mut IoVec::new(&mut buf)))
+                        .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
                         .access(*combo)
                         .offset(0)
                         .requested_key(0xC0DE)

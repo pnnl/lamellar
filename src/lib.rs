@@ -412,16 +412,34 @@ pub struct IoVec<'a, T>{
 
 impl<'a, T> IoVec<'a, T> {
 
-    pub fn new(mem: &'a mut T) -> Self {
+    pub fn from(mem: &'a T) -> Self {
         let c_iovec = libfabric_sys::iovec{
-            iov_base:  mem as *mut T as *mut std::ffi::c_void,
+            iov_base:  (mem as *const T as *mut T).cast(),
             iov_len: std::mem::size_of_val(mem),
         };
 
         Self { c_iovec, borrow: PhantomData }
     }
 
-    pub fn new_slice(mem: &'a mut [T]) -> Self {
+    pub fn from_mut(mem: &'a mut T) -> Self {
+        let c_iovec = libfabric_sys::iovec{
+            iov_base:  (mem as *mut T).cast(),
+            iov_len: std::mem::size_of_val(mem),
+        };
+
+        Self { c_iovec, borrow: PhantomData }
+    }
+
+    pub fn from_slice(mem: &'a [T]) -> Self {
+        let c_iovec = libfabric_sys::iovec{
+            iov_base:  (mem.as_ptr() as *mut T).cast(),
+            iov_len: std::mem::size_of_val(mem),
+        };
+
+        Self { c_iovec, borrow: PhantomData }
+    }
+
+    pub fn from_slice_mut(mem: &'a mut [T]) -> Self {
         let c_iovec = libfabric_sys::iovec{
             iov_base:  mem.as_mut_ptr().cast(),
             iov_len: std::mem::size_of_val(mem),
@@ -467,11 +485,11 @@ pub(crate) struct OwnedFid {
 
 impl Drop for OwnedFid {
     fn drop(&mut self) {
-        // let err = unsafe { libfabric_sys::inlined_fi_close(self.fid) };
+        let err = unsafe { libfabric_sys::inlined_fi_close(self.fid) };
 
-        // if err != 0 {
-        //     panic!("{}", error::Error::from_err_code((-err).try_into().unwrap()));
-        // }
+        if err != 0 {
+            panic!("{}", error::Error::from_err_code((-err).try_into().unwrap()));
+        }
     }
 }
 
@@ -959,3 +977,46 @@ pub trait FdRetrievable{}
 pub trait Waitable{}
 pub trait Writable{}
 pub trait WaitRetrievable{}
+
+#[cfg(test)]
+#[cfg(test_rust_lifetime)]
+mod rust_lifetime_tests {
+    use crate::IoVec;
+
+    fn foo(data: &mut [usize]) {}
+    fn foo_ref(data: & [usize]) {}
+
+    #[test]
+    fn iovec_lifetime() {
+        let mut  data: Vec<usize> = Vec::new();
+        let iov = IoVec::from_slice(&data);
+        drop(data);
+        iov.get();
+    }
+    
+    #[test]
+    fn iovec_borrow_mut() {
+        let mut  data: Vec<usize> = Vec::new();
+        let iov = IoVec::from_slice(&data);
+        foo(&mut data);
+        drop(data);
+        iov.get();
+    }
+    
+
+    #[test]
+    fn iovec_mut_mut() {
+        let mut  data: Vec<usize> = Vec::new();
+        let iov = IoVec::from_slice_mut(&mut data);
+        foo(&mut data);
+        iov.get();
+    }
+    
+    #[test]
+    fn iovec_mut_borrow() {
+        let mut  data: Vec<usize> = Vec::new();
+        let iov = IoVec::from_slice_mut(&mut data);
+        foo_ref(&data);
+        iov.get();
+    }
+}

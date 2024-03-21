@@ -94,7 +94,7 @@ impl<T: EqConfig> EventQueue<T> {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
-        let err = unsafe {libfabric_sys::inlined_fi_eq_open(fabric.c_fabric, attr.get_mut(), c_eq_ptr, std::ptr::null_mut())};
+        let err = unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, std::ptr::null_mut())};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
@@ -109,7 +109,7 @@ impl<T: EqConfig> EventQueue<T> {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
-        let err = unsafe {libfabric_sys::inlined_fi_eq_open(fabric.c_fabric, attr.get_mut(), c_eq_ptr, ctx as *mut T0 as *mut std::ffi::c_void)};
+        let err = unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, ctx as *mut T0 as *mut std::ffi::c_void)};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }

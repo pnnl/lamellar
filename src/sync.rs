@@ -39,7 +39,7 @@ impl WaitSet {
         let mut c_wait: *mut libfabric_sys::fid_wait  = std::ptr::null_mut();
         let c_wait_ptr: *mut *mut libfabric_sys::fid_wait = &mut c_wait;
 
-        let err = unsafe {libfabric_sys::inlined_fi_wait_open(fabric.c_fabric, attr.get_mut(), c_wait_ptr)};
+        let err = unsafe {libfabric_sys::inlined_fi_wait_open(fabric.inner.c_fabric, attr.get_mut(), c_wait_ptr)};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
@@ -183,7 +183,7 @@ impl PollSet {
     pub(crate) fn new(domain: &crate::domain::Domain, mut attr: crate::sync::PollSetAttr) -> Result<PollSet, crate::error::Error> {
         let mut c_poll: *mut libfabric_sys::fid_poll = std::ptr::null_mut();
         let c_poll_ptr: *mut *mut libfabric_sys::fid_poll = &mut c_poll;
-        let err = unsafe { libfabric_sys::inlined_fi_poll_open(domain.c_domain, attr.get_mut(), c_poll_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_poll_open(domain.handle(), attr.get_mut(), c_poll_ptr) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))

@@ -243,7 +243,7 @@ pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobal
 
 
     let ep = EndpointBuilder::new(info).build(domain).unwrap();
-
+    println!("Ep built\n");
     (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av)
 }
 
@@ -1003,7 +1003,7 @@ pub fn ft_reg_mr(info: &libfabric::InfoEntry, domain: &libfabric::domain::Domain
         println!("MR not needed");
         return (None, None)
     }
-    let iov = libfabric::IoVec::new_slice(buf);
+    let iov = libfabric::IoVec::from_slice(buf);
     // let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
     
     let mr = ft_info_to_mr_builder(domain, info).iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM).build().unwrap();
@@ -1134,7 +1134,7 @@ pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable>(info: &libfabric::
 
     
     let base = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
-    let iov = libfabric::IoVec::new_slice(base);
+    let iov = libfabric::IoVec::from_slice(base);
 
     if info.get_caps().is_tagged() {
         let msg = if let Some(mr_desc) = data_desc.as_mut() {

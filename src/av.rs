@@ -18,7 +18,7 @@ impl AddressVector {
         let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
         let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.c_domain, attr.get_mut(), c_av_ptr, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.handle(), attr.get_mut(), c_av_ptr, std::ptr::null_mut()) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -36,7 +36,7 @@ impl AddressVector {
         let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
         let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.c_domain, attr.get_mut(), c_av_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.handle(), attr.get_mut(), c_av_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
