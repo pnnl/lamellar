@@ -5,10 +5,17 @@ use std::{ffi::CString, rc::Rc};
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::AsFid;
+use crate::OwnedFid;
+
+// impl Drop for FabricImpl {
+//     fn drop(&mut self) {
+//        println!("Dropping FabricImpl\n");
+//     }
+// }
 
 pub(crate) struct FabricImpl {
     pub(crate) c_fabric: *mut libfabric_sys::fid_fabric,
-    fid: crate::OwnedFid,
+    fid: OwnedFid,
 }
 
 pub struct Fabric {

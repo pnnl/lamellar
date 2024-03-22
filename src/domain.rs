@@ -4,6 +4,13 @@ use std::{ffi::CString, rc::Rc};
 use crate::AsFid;
 use crate::{enums::{DomainCaps, TClass}, OwnedFid, fabric::FabricImpl};
 
+
+// impl Drop for DomainImpl {
+//     fn drop(&mut self) {
+//        println!("Dropping DomainImpl\n");
+//     }
+// }
+
 //================== Domain (fi_domain) ==================//
 
 pub(crate) struct DomainImpl {

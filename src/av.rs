@@ -1,19 +1,37 @@
+use std::rc::Rc;
+
 #[allow(unused_imports)] 
 use crate::AsFid;
-use crate::{domain::Domain, eqoptions::EqConfig, OwnedFid};
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, OwnedFid};
 
+
+// impl Drop for AddressVector {
+//     fn drop(&mut self) {
+//        println!("Dropping AddressVector\n");
+//     }
+// }
 //================== AddressVector ==================//
 
 /// Owned wrapper around a libfabric `fid_av`.
 /// 
 /// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
 /// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av.3.html).
-pub struct AddressVector {
+pub struct AddressVectorImpl {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
     fid: crate::OwnedFid,
+    _domain_rc: Rc<DomainImpl>,
+}
+
+pub struct AddressVector {
+    inner: Rc<AddressVectorImpl>,
 }
 
 impl AddressVector {
+
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av {
+        self.inner.c_av
+    }
+
     pub(crate) fn new(domain: &crate::domain::Domain, mut attr: AddressVectorAttr) -> Result<Self, crate::error::Error> {
         let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
         let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
@@ -25,10 +43,14 @@ impl AddressVector {
         }
         else {
             Ok(
-            Self {
-                c_av,
-                fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} }
-            })
+                Self {
+                    inner: Rc::new(
+                        AddressVectorImpl {
+                            c_av,
+                            fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} },
+                            _domain_rc: domain.inner.clone(),
+                    })
+                })
         }
     }
 
@@ -43,10 +65,14 @@ impl AddressVector {
         }
         else {
             Ok(
-            Self {
-                c_av,
-                fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} }
-            })
+                Self {
+                    inner: Rc::new(
+                        AddressVectorImpl {
+                            c_av,
+                            fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} },
+                            _domain_rc: domain.inner.clone(),
+                    })
+                })
         }
     }
 
@@ -57,7 +83,7 @@ impl AddressVector {
     ///
     /// This function will return an error if the underlying library call fails.
     pub fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.c_av, eq.as_fid(), 0) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.handle(), eq.as_fid(), 0) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -75,7 +101,7 @@ impl AddressVector {
     ///
     /// This function will return an error if the underlying library call fails.
     pub fn insert<T0>(&self, addr: &[T0], fi_addr: &mut [crate::Address], flags: u64) -> Result<usize, crate::error::Error> { // [TODO] Handle case where operation partially failed //[TODO] Handle flags
-        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.c_av, addr.as_ptr() as *const std::ffi::c_void, addr.len(), fi_addr.as_mut_ptr(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.handle(), addr.as_ptr() as *const std::ffi::c_void, addr.len(), fi_addr.as_mut_ptr(), flags, std::ptr::null_mut()) };
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -86,7 +112,7 @@ impl AddressVector {
     }
 
     pub fn insertsvc(&self, node: &str, service: &str, addr: &mut crate::Address, flags: u64) -> Result<usize, crate::error::Error> { // [TODO] Handle case where operation partially failed
-        let err = unsafe { libfabric_sys::inlined_fi_av_insertsvc(self.c_av, node.as_bytes().as_ptr() as *const i8, service.as_bytes().as_ptr() as *const i8, addr as *mut crate::Address, flags, std::ptr::null_mut())  };
+        let err = unsafe { libfabric_sys::inlined_fi_av_insertsvc(self.handle(), node.as_bytes().as_ptr() as *const i8, service.as_bytes().as_ptr() as *const i8, addr as *mut crate::Address, flags, std::ptr::null_mut())  };
 
 
         if err < 0 {
@@ -98,7 +124,7 @@ impl AddressVector {
     }
 
     pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, addr: &mut crate::Address, flags: u64) -> Result<usize, crate::error::Error> { // [TODO] Handle case where operation partially failed
-        let err = unsafe { libfabric_sys::inlined_fi_av_insertsym(self.c_av, node.as_bytes().as_ptr() as *const i8, nodecnt, service.as_bytes().as_ptr() as *const i8, svccnt, addr as *mut crate::Address, flags, std::ptr::null_mut())  };
+        let err = unsafe { libfabric_sys::inlined_fi_av_insertsym(self.handle(), node.as_bytes().as_ptr() as *const i8, nodecnt, service.as_bytes().as_ptr() as *const i8, svccnt, addr as *mut crate::Address, flags, std::ptr::null_mut())  };
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -109,7 +135,7 @@ impl AddressVector {
     }
 
     pub fn remove(&self, addr: &mut crate::Address, count: usize, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_remove(self.c_av, addr as *mut crate::Address, count, flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_remove(self.handle(), addr as *mut crate::Address, count, flags) };
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -122,7 +148,7 @@ impl AddressVector {
     pub fn lookup<T0>(&self, addr: crate::Address, address: &mut [T0] ) -> Result<usize, crate::error::Error> {
         let mut addrlen : usize = 0;
         let addrlen_ptr: *mut usize = &mut addrlen;
-        let err = unsafe { libfabric_sys::inlined_fi_av_lookup(self.c_av, addr, address.as_mut_ptr() as *mut std::ffi::c_void, addrlen_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_lookup(self.handle(), addr, address.as_mut_ptr() as *mut std::ffi::c_void, addrlen_ptr) };
         
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -143,12 +169,12 @@ impl AddressVector {
         let mut addr_str: Vec<u8> = Vec::new();
         let mut strlen = addr_str.len();
         let strlen_ptr: *mut usize = &mut strlen;
-        unsafe { libfabric_sys::inlined_fi_av_straddr(self.c_av, addr.as_ptr() as *const std::ffi::c_void, addr_str.as_mut_ptr() as *mut std::ffi::c_char, strlen_ptr) };
+        unsafe { libfabric_sys::inlined_fi_av_straddr(self.handle(), addr.as_ptr() as *const std::ffi::c_void, addr_str.as_mut_ptr() as *mut std::ffi::c_char, strlen_ptr) };
         addr_str.resize(strlen, 1);
         
         let mut strlen = addr_str.len();
         let strlen_ptr: *mut usize = &mut strlen;
-        unsafe { libfabric_sys::inlined_fi_av_straddr(self.c_av, addr.as_ptr() as *const std::ffi::c_void, addr_str.as_mut_ptr() as *mut std::ffi::c_char, strlen_ptr) };
+        unsafe { libfabric_sys::inlined_fi_av_straddr(self.handle(), addr.as_ptr() as *const std::ffi::c_void, addr_str.as_mut_ptr() as *mut std::ffi::c_char, strlen_ptr) };
         std::ffi::CString::from_vec_with_nul(addr_str).unwrap().into_string().unwrap()
     }
 }
@@ -227,25 +253,40 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
 
 //================== AddressVectorSet ==================//
 
-pub struct AddressVectorSet {
+pub struct AddressVectorSetImpl {
     pub(crate) c_set : *mut libfabric_sys::fid_av_set,
     fid: OwnedFid,
+    _av_rc: Rc<AddressVectorImpl>,
+}
+
+pub struct AddressVectorSet {
+    inner: Rc<AddressVectorSetImpl>,
 }
 
 impl AddressVectorSet {
+
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av_set {
+        self.inner.c_set
+    }
 
     pub(crate) fn new(av: &AddressVector, mut attr: AddressVectorSetAttr) -> Result<AddressVectorSet, crate::error::Error> {
         let mut c_set: *mut libfabric_sys::fid_av_set = std::ptr::null_mut();
         let c_set_ptr: *mut *mut libfabric_sys::fid_av_set = &mut c_set;
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.c_av, attr.get_mut(), c_set_ptr, std::ptr::null_mut() ) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.handle(), attr.get_mut(), c_set_ptr, std::ptr::null_mut() ) };
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(
-                Self { c_set, fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } } }
-            )
+                Self {
+                    inner: Rc::new(
+                        AddressVectorSetImpl { 
+                            c_set, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } },
+                            _av_rc: av.inner.clone(),
+                    })
+                })
         }
     }
 
@@ -253,19 +294,25 @@ impl AddressVectorSet {
         let mut c_set: *mut libfabric_sys::fid_av_set = std::ptr::null_mut();
         let c_set_ptr: *mut *mut libfabric_sys::fid_av_set = &mut c_set;
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.c_av, attr.get_mut(), c_set_ptr, context as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.handle(), attr.get_mut(), c_set_ptr, context as *mut T0 as *mut std::ffi::c_void) };
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(
-                Self { c_set, fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } } }
-            )
+                Self {
+                    inner: Rc::new(
+                        AddressVectorSetImpl { 
+                            c_set, 
+                            fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } },
+                            _av_rc: av.inner.clone(),
+                    })
+                })
         }
     }
     
     pub fn union(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_set_union(self.c_set, other.c_set) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_union(self.handle(), other.handle()) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -276,7 +323,7 @@ impl AddressVectorSet {
     }
 
     pub fn intersect(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_set_intersect(self.c_set, other.c_set) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_intersect(self.handle(), other.handle()) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -287,7 +334,7 @@ impl AddressVectorSet {
     }
     
     pub fn diff(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_set_diff(self.c_set, other.c_set) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_diff(self.handle(), other.handle()) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -298,7 +345,7 @@ impl AddressVectorSet {
     }
     
     pub fn insert(&mut self, addr: crate::Address) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_set_insert(self.c_set, addr) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_insert(self.handle(), addr) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -309,7 +356,7 @@ impl AddressVectorSet {
     }
 
     pub fn remove(&mut self, addr: crate::Address) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_set_remove(self.c_set, addr) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_remove(self.handle(), addr) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -322,7 +369,7 @@ impl AddressVectorSet {
     pub fn get_addr(&mut self) -> Result<crate::Address, crate::error::Error> {
         let mut addr: crate::Address = 0;
         let addr_ptr: *mut crate::Address = &mut addr;
-        let err = unsafe { libfabric_sys::inlined_fi_av_set_addr(self.c_set, addr_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_addr(self.handle(), addr_ptr) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -558,18 +605,23 @@ impl Default for AddressVectorSetAttr {
 
 impl crate::AsFid for AddressVectorSet {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
+        self.inner.fid.as_fid()
     }
 }
-
 
 impl crate::AsFid for AddressVector {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
+        self.inner.fid.as_fid()
     }
 }
 
-impl crate::Bind for AddressVector {}
+impl crate::BindImpl for AddressVectorImpl {}
+
+impl crate::Bind for AddressVector {
+    fn inner(&self) -> Rc<dyn crate::BindImpl> {
+        self.inner.clone()
+    }
+}
 
 
 //================== Tests ==================//
@@ -641,6 +693,53 @@ mod tests {
                 .count(32)
                 .build()
                 .unwrap();
+        }
+        else {
+            panic!("No capable fabric found!");
+        }
+    }
+}
+
+#[cfg(test)]
+mod libfabric_lifetime_tests {
+    use super::AddressVectorBuilder;
+
+    #[test]
+    fn av_drops_before_domain() {
+        
+        let mut ep_attr = crate::ep::EndpointAttr::new();
+            ep_attr.ep_type(crate::enums::EndpointType::Rdm);
+    
+        let mut dom_attr = crate::domain::DomainAttr::new();
+            dom_attr
+            .mode(crate::enums::Mode::all())
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
+
+        let hints = crate::InfoHints::new()
+            .ep_attr(ep_attr)
+            .domain_attr(dom_attr);
+
+        let info = crate::Info::new().hints(&hints).request().unwrap();
+        let entries: Vec<crate::InfoEntry> = info.get();
+        if !entries.is_empty() {
+        
+            let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        
+            let mut avs = Vec::new();
+            for i in 0..17 {
+                let count = 1 << i;
+                let av = AddressVectorBuilder::new(&domain)
+                    .type_(crate::enums::AddressVectorType::Map)
+                    .count(count)
+                    .flags(0)
+                    .build()
+                    .unwrap();
+                avs.push(av);
+                println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
+            }
+            drop(domain);
+            println!("Count = {} After dropping domain", std::rc::Rc::strong_count(&avs[0].inner._domain_rc));
         }
         else {
             panic!("No capable fabric found!");

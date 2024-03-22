@@ -1,5 +1,5 @@
 use core::panic;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, rc::Rc};
 
 // use ep::ActiveEndpoint;
 pub mod ep;
@@ -19,7 +19,6 @@ pub mod eqoptions;
 pub mod cqoptions;
 pub mod cntroptions;
 
-pub use comm::collective::MulticastGroupCollective;
 const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
 #[derive(Clone, Debug)]
 pub struct InfoCaps {
@@ -705,8 +704,9 @@ impl Default for Context2 {
     }
 }
 
+pub trait BindImpl{}
 pub trait Bind {
-    
+    fn inner(&self) -> Rc<dyn BindImpl>;
 }
 
 #[repr(C)]

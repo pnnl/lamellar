@@ -88,7 +88,7 @@ fn pp_client_rdm_msg() {
         .addr_format(enums::AddressFormat::Unspec);
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.21".to_owned(), "9222".to_owned(), 0);
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.5".to_owned(), "9222".to_owned(), 0);
 
     let entries: Vec<libfabric::InfoEntry> = info.get();
     

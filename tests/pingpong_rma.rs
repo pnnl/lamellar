@@ -69,7 +69,7 @@ fn pp_client_rma() {
     
     
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr,_eqq, mut mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.13".to_owned(), "9222".to_owned(), 0);
+        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.5".to_owned(), "9222".to_owned(), 0);
     let entries: Vec<libfabric::InfoEntry> = info.get();
     
     if entries.is_empty() {

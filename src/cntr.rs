@@ -1,19 +1,37 @@
 //================== Domain (fi_domain) ==================//
 
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, OwnedFid, WaitRetrievable};
+use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, OwnedFid, WaitRetrievable, domain::DomainImpl, BindImpl};
+
+// impl<T: CntrConfig> Drop for Counter<T> {
+//     fn drop(&mut self) {
+//        println!("Dropping Counter\n");
+//     }
+// }
 
 pub struct Counter<T: CntrConfig> {
+    inner: Rc<CounterImpl<T>>,
+}
+
+pub struct CounterImpl<T: CntrConfig> {
     pub(crate) c_cntr: *mut libfabric_sys::fid_cntr,
     fid: OwnedFid,
     phantom: PhantomData<T>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
+    _domain_rc: Rc<DomainImpl>,
 }
 
+
+
 impl<T: CntrConfig> Counter<T> {
+
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cntr {
+        self.inner.c_cntr
+    }
+
     pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CounterAttr) -> Result<Counter<T>, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
@@ -25,8 +43,16 @@ impl<T: CntrConfig> Counter<T> {
         }
         else {
             Ok (
-                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: Some(attr.c_attr.wait_obj) }
-            )
+                Self {
+                    inner: Rc::new (
+                        CounterImpl { 
+                            c_cntr, 
+                            fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, 
+                            phantom: PhantomData, 
+                            wait_obj: Some(attr.c_attr.wait_obj),
+                            _domain_rc: domain.inner.clone(),
+                    })
+                })
         }
 
     }
@@ -42,22 +68,30 @@ impl<T: CntrConfig> Counter<T> {
         }
         else {
             Ok (
-                Self { c_cntr, fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, phantom: PhantomData, wait_obj: Some(attr.c_attr.wait_obj) }
-            )
+                Self {
+                    inner: Rc::new (
+                        CounterImpl { 
+                            c_cntr, 
+                            fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, 
+                            phantom: PhantomData, 
+                            wait_obj: Some(attr.c_attr.wait_obj),
+                            _domain_rc: domain.inner.clone(),
+                    })
+                })
         }
 
     }
 
     pub fn read(&self) -> u64 {
-        unsafe { libfabric_sys::inlined_fi_cntr_read(self.c_cntr) }
+        unsafe { libfabric_sys::inlined_fi_cntr_read(self.handle()) }
     }
 
     pub fn readerr(&self) -> u64 {
-        unsafe { libfabric_sys::inlined_fi_cntr_readerr(self.c_cntr) }
+        unsafe { libfabric_sys::inlined_fi_cntr_readerr(self.handle()) }
     }
 
     pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_add(self.c_cntr, val) };
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_add(self.handle(), val) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -68,7 +102,7 @@ impl<T: CntrConfig> Counter<T> {
     }
 
     pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_adderr(self.c_cntr, val) };
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_adderr(self.handle(), val) };
             
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -79,7 +113,7 @@ impl<T: CntrConfig> Counter<T> {
     }
 
     pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_set(self.c_cntr, val) };
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_set(self.handle(), val) };
             
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -90,7 +124,7 @@ impl<T: CntrConfig> Counter<T> {
     }
 
     pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_seterr(self.c_cntr, val) };
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_seterr(self.handle(), val) };
             
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -106,7 +140,7 @@ impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
 
     pub fn wait_object(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
 
-        if let Some(wait) = self.wait_obj {
+        if let Some(wait) = self.inner.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
                 let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
@@ -148,7 +182,7 @@ impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
 impl<T: CntrConfig + crate::Waitable> Counter<T> {
 
     pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.c_cntr, threshold, timeout) };
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.handle(), threshold, timeout) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -269,7 +303,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
 
 impl<T: CntrConfig> crate::AsFid for Counter<T> {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.fid.as_fid()
+        self.inner.fid.as_fid()
     }
 }
 
@@ -284,7 +318,13 @@ impl<T: CntrConfig + WaitRetrievable + FdRetrievable> AsFd for Counter<T> {
     }
 }
 
-impl<T: CntrConfig> crate::Bind for Counter<T> {}
+impl<T: CntrConfig> BindImpl for CounterImpl<T> {}
+
+impl<T: CntrConfig + 'static> crate::Bind for Counter<T> {
+    fn inner(&self) -> Rc<dyn BindImpl> {
+        self.inner.clone()
+    }
+}
 
 //================== Attribute objects ==================//
 
@@ -314,7 +354,7 @@ impl CounterAttr {
 
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
         if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
-            self.c_attr.wait_set = wait_set.c_wait;
+            self.c_attr.wait_set = wait_set.handle();
         }
         self.c_attr.wait_obj = wait_obj.get_value();
         self
@@ -397,6 +437,68 @@ mod tests {
                 }
             }
 
+        }
+        else {
+            panic!("Could not find suitable fabric");
+        }
+    }
+}
+
+#[cfg(test)]
+mod libfabric_lifetime_tests {
+
+    use super::CounterBuilder;
+
+
+    #[test]
+    fn cntr_drops_before_domain() {
+        let mut dom_attr = crate::domain::DomainAttr::new();
+            dom_attr
+            .mode(crate::enums::Mode::all())
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
+        
+        let hints = crate::InfoHints::new()
+            .domain_attr(dom_attr)
+            .mode(crate::enums::Mode::all());
+        
+
+        let info = crate::Info::new().hints(&hints).request().unwrap();
+        let entries: Vec<crate::InfoEntry> = info.get();
+        
+        if !entries.is_empty() {
+            for e in entries {
+                if e.get_domain_attr().get_cntr_cnt() != 0 {
+                    let fab = crate::fabric::FabricBuilder::new(&e).build().unwrap();
+                    let domain = crate::domain::DomainBuilder::new(&fab, &e).build().unwrap();
+                    let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
+                    let cntrs: Vec<_> = (0..cntr_cnt).map(|_| CounterBuilder::new(&domain).build().unwrap() ).collect::<>();
+                    println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        cntr.set(i as u64).unwrap();
+                        cntr.seterr((i << 1) as u64).unwrap();
+                    }
+                    
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        cntr.add(i as u64).unwrap();
+                        cntr.adderr(i as u64).unwrap();
+                    }
+
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        let expected = i + i;
+                        let value = cntr.read() as usize;
+                        assert_eq!(expected, value);
+                    }
+                    
+                    for (i,cntr) in cntrs.iter().enumerate() {
+                        let expected = (i << 1) + i;
+                        let value = cntr.readerr() as usize;
+                        assert_eq!(expected, value);
+                    }
+                    drop(domain);
+                    println!("Count = {} After dropping domain ", std::rc::Rc::strong_count(&cntrs[0].inner._domain_rc));
+                    break;
+                }
+            }
         }
         else {
             panic!("Could not find suitable fabric");

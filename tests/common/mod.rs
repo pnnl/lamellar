@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, default_desc, domain, ep::EndpointBuilder, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, InfoCaps, InfoEntry, Waitable};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, default_desc, domain, ep::EndpointBuilder, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, InfoCaps, InfoEntry, Waitable, xcontext::TransmitContextBuilder};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -243,12 +243,12 @@ pub fn ft_alloc_active_res(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobal
 
 
     let ep = EndpointBuilder::new(info).build(domain).unwrap();
-    println!("Ep built\n");
+    
     (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep<T: EqConfig, CNTR: libfabric::cntroptions::CntrConfig>(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<T>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) {
+pub fn ft_enable_ep<T: EqConfig + 'static, CNTR: libfabric::cntroptions::CntrConfig + 'static>(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &mut libfabric::ep::Endpoint, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<T>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) {
     
     match info.get_ep_attr().get_type() {
         libfabric::enums::EndpointType::Msg => ep.bind_eq(eq).unwrap(),
@@ -259,8 +259,8 @@ pub fn ft_enable_ep<T: EqConfig, CNTR: libfabric::cntroptions::CntrConfig>(info:
 
     if let Some(av_val) = av { ep.bind_av(av_val).unwrap() }
 
-    bind_cq(tx_cq, ep, gl_ctx);
-    bind_cq(rx_cq, ep, gl_ctx);
+    bind_tx_cq(tx_cq, ep, gl_ctx);
+    bind_rx_cq(rx_cq, ep, gl_ctx);
 
     let mut bind_cntr = ep.bind_cntr();
     
@@ -304,7 +304,38 @@ pub fn ft_enable_ep<T: EqConfig, CNTR: libfabric::cntroptions::CntrConfig>(info:
     ep.enable().unwrap();
 }
 
-fn bind_cq(tx_cq: &CqType, ep: &libfabric::ep::Endpoint, gl_ctx: &mut TestsGlobalCtx) {
+fn bind_rx_cq(rx_cq: &CqType, ep: &mut libfabric::ep::Endpoint, gl_ctx: &mut TestsGlobalCtx) {
+
+    match rx_cq {
+        CqType::Spin(rx_cq) => {    
+            ep.bind_cq()
+                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
+                .cq(rx_cq).unwrap();
+        }
+        CqType::Sread(rx_cq) => {    
+            ep.bind_cq()
+                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
+                .cq(rx_cq).unwrap();
+        }
+        CqType::WaitSet(rx_cq) => {    
+            ep.bind_cq()
+                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
+                .cq(rx_cq).unwrap();
+        }
+        CqType::WaitFd(rx_cq) => {    
+            ep.bind_cq()
+                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
+                .cq(rx_cq).unwrap();
+        }
+        CqType::WaitYield(rx_cq) => {    
+            ep.bind_cq()
+                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
+                .cq(rx_cq).unwrap();
+        }
+    }
+}
+
+fn bind_tx_cq(tx_cq: &CqType, ep: &mut libfabric::ep::Endpoint, gl_ctx: &mut TestsGlobalCtx) {
 
     match tx_cq {
         CqType::Spin(tx_cq) => {    
@@ -380,19 +411,19 @@ pub fn ft_retrieve_conn_req<T: EqConfig + libfabric::Waitable>(eq: &libfabric::e
 }
 
 #[allow(clippy::type_complexity)]
-pub fn ft_server_connect<T: EqConfig + libfabric::Waitable>(gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, libfabric::ep::Endpoint, libfabric::domain::Domain, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_server_connect<T: EqConfig + libfabric::Waitable + 'static>(gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (libfabric::domain::Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, libfabric::ep::Endpoint,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     let new_info = ft_retrieve_conn_req(eq);
 
     let domain = ft_open_domain_res(&new_info, fab);
 
-    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, mut ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
     
-    let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx,&ep, &domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
+    let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx,&mut ep, &domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
 
     ft_accept_connection(&ep, eq);
 
-    (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, domain, mr, mr_desc)
+    (domain, tx_cq, rx_cq, tx_cntr, rx_cntr, ep,  mr, mr_desc)
 }
 
 pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, flags: u64) -> libfabric::Info {
@@ -406,7 +437,6 @@ pub fn ft_getinfo(hints: libfabric::InfoHints, node: String, service: String, fl
 
     let info = libfabric::Info::new().service(service.as_str()).flags(flags).hints(&hints);
     if node.is_empty() {
-        println!("Empty");
         info.request().unwrap()
     }
     else {
@@ -494,7 +524,7 @@ pub fn ft_alloc_msgs(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, d
 // }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep_recv<T: EqConfig, CNTR: CntrConfig>(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &libfabric::ep::Endpoint, domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<T>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_enable_ep_recv<T: EqConfig + 'static, CNTR: CntrConfig + 'static>(info: &libfabric::InfoEntry, gl_ctx: &mut TestsGlobalCtx, ep: &mut libfabric::ep::Endpoint, domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<T>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     
     ft_enable_ep(info, gl_ctx, ep, tx_cq, rx_cq, eq, av, tx_cntr, rx_cntr, rma_cntr);
 
@@ -524,9 +554,9 @@ pub fn ft_init_fabric(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCtx, 
         
     let (fabric, eq, domain) = ft_open_fabric_res(&entries[0]);
 
-    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain);
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, mut ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain);
 
-    let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
+    let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
     println!("Passed enable_ep_recv");
     let av = av.unwrap();
     ft_init_av(&entries[0], gl_ctx, &av , &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&mut mr_desc, node.is_empty());
@@ -1121,8 +1151,8 @@ pub fn ft_client_connect(hints: libfabric::InfoHints, gl_ctx: &mut TestsGlobalCt
     }
 
     let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
-    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entries[0], gl_ctx,&domain);
-    let (mr, mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, mut ep, _) = ft_alloc_active_res(&entries[0], gl_ctx,&domain);
+    let (mr, mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
     ft_connect_ep(&ep, &eq, entries[0].get_dest_addr::<libfabric::Address>());
 
     

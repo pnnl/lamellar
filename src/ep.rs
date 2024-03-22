@@ -1,21 +1,22 @@
-use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc};
+use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::{RefCell, Ref}};
 
 use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, OwnedFid, domain::DomainImpl, fabric::FabricImpl};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, OwnedFid, domain::DomainImpl, fabric::FabricImpl, cq::CompletionQueue};
 
 
 
 pub struct EndpointImpl {
-    c_ep: *mut libfabric_sys::fid_ep,
+    pub(crate) c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
+    _sync_rcs: Vec<Rc<dyn crate::BindImpl>>,
     _domain_rc:  Rc<DomainImpl>
 }
 
 pub struct Endpoint {
-    inner: Rc<EndpointImpl>
+    pub(crate) inner: Rc<RefCell<EndpointImpl>>
 }
 
 
@@ -230,9 +231,15 @@ pub trait BaseEndpoint : AsFid {
 
 impl BaseEndpoint for Endpoint {}
 
+impl ActiveEndpointImpl for Endpoint {}
+
 impl ActiveEndpoint for Endpoint {
     fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.inner.c_ep
+        self.inner.borrow().c_ep
+    }
+    
+    fn inner(&self) -> Rc<RefCell<dyn ActiveEndpointImpl>> {
+        self.inner.clone()
     }
 }
 
@@ -353,7 +360,7 @@ pub struct ScalableEndpointImpl {
 }
 
 pub struct ScalableEndpoint {
-    inner: Rc<ScalableEndpointImpl>,
+    inner: Rc<RefCell<ScalableEndpointImpl>>,
 }
 
 impl ScalableEndpoint {
@@ -369,12 +376,12 @@ impl ScalableEndpoint {
             
             Ok(
                 Self { 
-                    inner: Rc::new(
+                    inner: Rc::new( RefCell::new(
                         ScalableEndpointImpl {
                             c_sep, 
                             fid: OwnedFid { fid: unsafe{ &mut (*c_sep).fid } },
                             _domain_rc: domain.inner.clone(), 
-                    })
+                    }))
                 })
         }
     }
@@ -391,12 +398,12 @@ impl ScalableEndpoint {
             
             Ok(
                 Self { 
-                    inner: Rc::new(
+                    inner: Rc::new( RefCell::new(
                         ScalableEndpointImpl {
                             c_sep, 
                             fid: OwnedFid { fid: unsafe{ &mut (*c_sep).fid } },
                             _domain_rc: domain.inner.clone(), 
-                    })
+                    }))
                 })
         }
     }
@@ -492,12 +499,12 @@ impl ScalableEndpoint {
         else {
             Ok(
                 Self { 
-                    inner: Rc::new(
+                    inner: Rc::new( RefCell::new(
                         ScalableEndpointImpl {
                             c_sep, 
                             fid: OwnedFid { fid: unsafe{ &mut (*c_sep).fid } },
-                            _domain_rc: self.inner._domain_rc.clone(), 
-                    })
+                            _domain_rc: self.inner.borrow()._domain_rc.clone(), 
+                    }))
                 })
         }
     }
@@ -608,15 +615,21 @@ impl ScalableEndpoint {
 
 impl crate::AsFid for ScalableEndpoint {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.inner.fid.as_fid()
+        self.inner.borrow().fid.as_fid()
     }
 }
 
 impl BaseEndpoint for ScalableEndpoint { }
 
+impl ActiveEndpointImpl for ScalableEndpointImpl {}
+impl ActiveEndpointImpl for ScalableEndpoint {}
 impl ActiveEndpoint for ScalableEndpoint {
     fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.inner.c_sep
+        self.inner.borrow().c_sep
+    }
+    
+    fn inner(&self) -> Rc<RefCell<dyn ActiveEndpointImpl>> {
+        self.inner.clone()
     }
 }
 
@@ -805,7 +818,7 @@ impl AsFd for PassiveEndpoint {
 //================== Endpoint (fi_endpoint) ==================//
 
 pub struct IncompleteBindCq<'a> {
-    pub(crate) ep: &'a  Endpoint,
+    pub(crate) ep: &'a mut Endpoint,
     pub(crate) flags: u64,
 }
 
@@ -836,13 +849,32 @@ impl<'a> IncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CqConfig>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: CqConfig + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cq, self.flags)
     }
 }
 
+// impl Drop for PassiveEndpointImpl {
+//     fn drop(&mut self) {
+//        println!("Dropping PassiveEndpoint\n");
+//     }
+// }
+
+// impl Drop for EndpointImpl {
+//     fn drop(&mut self) {
+//         println!("Dropping Endpoint\n");
+//     }
+// }
+
+// impl Drop for ScalableEndpointImpl {
+//     fn drop(&mut self) {
+//         println!("Dropping ScalableEndpointImpl\n");
+//     }
+// }
+
+
 pub struct IncompleteBindCntr<'a> {
-    pub(crate) ep: &'a  Endpoint,
+    pub(crate) ep: &'a mut Endpoint,
     pub(crate) flags: u64,
 }
 
@@ -884,7 +916,7 @@ impl<'a> IncompleteBindCntr<'a> {
         self
     }
 
-    pub fn cntr<T: crate::cntroptions::CntrConfig>(&mut self, cntr: &Counter<T>) -> Result<(), crate::error::Error> {
+    pub fn cntr<T: crate::cntroptions::CntrConfig + 'static>(&mut self, cntr: &Counter<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cntr, self.flags)
     }
 }
@@ -902,12 +934,13 @@ impl Endpoint {
         else {
             Ok(
                 Self { 
-                    inner: Rc::new(
+                    inner: Rc::new(RefCell::new(
                         EndpointImpl {
                             c_ep, 
                             fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
+                            _sync_rcs: Vec::new(),
                             _domain_rc: domain.inner.clone()
-                        })
+                        }))
                 })
         }
 
@@ -925,12 +958,13 @@ impl Endpoint {
         else {
             Ok(
                 Self { 
-                    inner: Rc::new(
+                    inner: Rc::new( RefCell::new(
                         EndpointImpl {
                             c_ep, 
                             fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
+                            _sync_rcs: Vec::new(),
                             _domain_rc: domain.inner.clone()
-                        })
+                        }))
                 })
         }
 
@@ -947,12 +981,13 @@ impl Endpoint {
         else {
             Ok(
                 Self { 
-                    inner: Rc::new(
+                    inner: Rc::new( RefCell::new(
                         EndpointImpl {
                             c_ep, 
                             fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
+                            _sync_rcs: Vec::new(),
                             _domain_rc: domain.inner.clone()
-                        })
+                        }))
                 })
         }
 
@@ -997,24 +1032,25 @@ impl Endpoint {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
+            self.inner.borrow_mut()._sync_rcs.push(res.inner());
             Ok(())
         }
     } 
 
-    pub fn bind_cq(&self) -> IncompleteBindCq {
+    pub fn bind_cq(&mut self) -> IncompleteBindCq {
         IncompleteBindCq { ep: self, flags: 0}
     }
 
-    pub fn bind_cntr(&self) -> IncompleteBindCntr {
+    pub fn bind_cntr(&mut self) -> IncompleteBindCntr {
         IncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub fn bind_eq<T: EqConfig>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub fn bind_eq<T: EqConfig + 'static>(&mut self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }
 
-    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub fn bind_av(&mut self, av: &AddressVector) -> Result<(), crate::error::Error> {
     
         self.bind(av, 0)
     }
@@ -1094,12 +1130,13 @@ impl Endpoint {
         else {
             Ok(
                 Self { 
-                    inner: Rc::new(
+                    inner: Rc::new( RefCell::new(
                         EndpointImpl {
                             c_ep, 
                             fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } },
-                            _domain_rc: self.inner._domain_rc.clone(),
-                        })
+                            _sync_rcs: Vec::new(),
+                            _domain_rc: self.inner.borrow()._domain_rc.clone(),
+                        }))
                 })
         }
     }
@@ -1107,12 +1144,17 @@ impl Endpoint {
 
 impl crate::AsFid for Endpoint {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
-        self.inner.fid.as_fid()
+        self.inner.borrow().fid.as_fid()
     }
 }
+pub trait ActiveEndpointImpl {}
+impl ActiveEndpointImpl for EndpointImpl{}
 
-pub trait ActiveEndpoint: BaseEndpoint {
 
+
+pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
+
+    fn inner(&self) -> Rc<RefCell<dyn ActiveEndpointImpl>>;
     fn handle(&self) -> *mut libfabric_sys::fid_ep;
 
     fn enable(&self) -> Result<(), crate::error::Error> {
