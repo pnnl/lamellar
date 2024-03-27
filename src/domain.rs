@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{enums::{DomainCaps, TClass}, OwnedFid, fabric::FabricImpl};
+use crate::{enums::{DomainCaps, TClass}, OwnedFid, fabric::FabricImpl, check_error};
 
 
 // impl Drop for DomainImpl {
@@ -102,12 +102,7 @@ impl Domain {
     pub fn bind(self, fid: &impl crate::AsFid, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), fid.as_fid(), flags)} ;
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     } 
 
     // pub fn ep(&self, info: &crate::InfoEntry) -> Result<crate::ep::Endpoint, crate::error::Error> {
@@ -125,12 +120,7 @@ impl Domain {
     pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.handle(), datatype, op.get_value(), attr.get_mut(), flags )};
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     // pub fn poll_open(&self, attr: crate::sync::PollSetAttr) -> Result<crate::sync::PollSet, crate::error::Error> {
@@ -156,24 +146,14 @@ impl Domain {
     pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, raw_key as *mut u8, key_size, key as *mut u64, flags) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.handle(), key) };
 
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     // pub fn stx_context<T0>(&self, attr: crate::TxAttr , context: &mut T0) -> Result<crate::Stx, crate::error::Error> {
@@ -183,12 +163,7 @@ impl Domain {
     pub fn query_collective(&self, coll: crate::enums::CollectiveOp, mut attr: crate::CollectiveAttr, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), flags) };
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
 }

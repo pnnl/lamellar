@@ -1,6 +1,6 @@
 use std::{os::fd::BorrowedFd, rc::Rc};
 
-use crate::{enums::{self, WaitObjType2}, AsFid, fabric::FabricImpl};
+use crate::{enums::{self, WaitObjType2}, AsFid, fabric::FabricImpl, check_error};
 
 // impl Drop for WaitSet {
 //     fn drop(&mut self) {
@@ -80,12 +80,7 @@ impl WaitSet {
     pub fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> { 
         let err = unsafe { libfabric_sys::inlined_fi_wait(self.handle(), timeout) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
@@ -250,23 +245,13 @@ impl PollSet {
     pub fn add(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_add(self.handle(), fid.as_fid(), flags) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn del(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_del(self.handle(), fid.as_fid(), flags) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {

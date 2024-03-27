@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{enums::MrMode, OwnedFid, domain::DomainImpl};
+use crate::{enums::MrMode, OwnedFid, domain::DomainImpl, check_error};
 #[allow(unused_imports)]
 use crate::AsFid;
 
@@ -105,45 +105,25 @@ impl MemoryRegion {
     pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_fid(), flags) } ;
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn bind_ep(&self, ep: &crate::ep::Endpoint) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_fid(), 0) } ;
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn refresh<T>(&self, iov: &[crate::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.handle(), iov.as_ptr().cast(), iov.len(), flags) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn enable(&self) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.handle()) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {

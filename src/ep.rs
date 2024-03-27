@@ -1,10 +1,10 @@
-use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::{RefCell, Ref}};
+use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell};
 
 use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, OwnedFid, domain::DomainImpl, fabric::FabricImpl, cq::CompletionQueue};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, OwnedFid, domain::DomainImpl, fabric::FabricImpl, check_error};
 
 
 
@@ -59,12 +59,7 @@ pub trait BaseEndpoint : AsFid {
 
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn buffered_min(&self) -> Result<usize, crate::error::Error> {
@@ -87,12 +82,7 @@ pub trait BaseEndpoint : AsFid {
 
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_MIN as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
@@ -115,12 +105,7 @@ pub trait BaseEndpoint : AsFid {
 
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_CM_DATA_SIZE as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
@@ -143,12 +128,7 @@ pub trait BaseEndpoint : AsFid {
 
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
@@ -192,12 +172,7 @@ pub trait BaseEndpoint : AsFid {
 
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, &mut hmem.get_value() as *mut u32 as *mut std::ffi::c_void, &mut len)};
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
@@ -207,12 +182,7 @@ pub trait BaseEndpoint : AsFid {
 
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, &mut val as *mut u32 as *mut std::ffi::c_void, &mut len)};
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
@@ -411,12 +381,7 @@ impl ScalableEndpoint {
     fn bind<T: crate::Bind + crate::AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_scalable_ep_bind(self.handle(), res.as_fid(), flags) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
@@ -702,45 +667,25 @@ impl PassiveEndpoint {
     pub fn bind<T: EqConfig>(&self, res: &EventQueue<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.inner.c_pep, res.as_fid(), flags) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn listen(&self) -> Result<(), crate::error::Error> {
         let err = unsafe {libfabric_sys::inlined_fi_listen(self.handle())};
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn reject<T0>(&self, fid: &impl crate::AsFid, params: &[T0]) -> Result<(), crate::error::Error> {
         let err = unsafe {libfabric_sys::inlined_fi_reject(self.handle(), fid.as_fid(), params.as_ptr() as *const std::ffi::c_void, params.len())};
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
 
     }
 
     pub fn set_backlog_size(&self, size: i32) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_control(self.as_fid(), FI_BACKLOG as i32, &mut size.clone() as *mut i32 as *mut std::ffi::c_void)};
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
@@ -1160,34 +1105,19 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
     fn enable(&self) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_enable(self.handle()) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn cancel(&self) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_fid(), std::ptr::null_mut()) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err)
     }
 
     fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_fid(), context as *mut T0 as *mut std::ffi::c_void) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err)
     }
 
     fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
@@ -1231,56 +1161,31 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
     fn connect_with<T0,T1>(&self, addr: &T0, param: &[T1]) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr as *const T0 as *const std::ffi::c_void, param.as_ptr() as *const std::ffi::c_void, param.len()) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn connect<T0>(&self, addr: &T0) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr as *const T0 as *const std::ffi::c_void, std::ptr::null_mut(), 0) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_accept(self.handle(), param.as_ptr() as *const std::ffi::c_void, param.len()) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn accept(&self) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_accept(self.handle(), std::ptr::null_mut(), 0) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_shutdown(self.handle(), flags) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn transmit_options(&self) -> Result<TransferOptions, crate::error::Error> {
@@ -1312,12 +1217,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
         ops.transmit();
         let err = unsafe{ inlined_fi_control(self.as_fid(), FI_GETOPSFLAG as i32, &mut ops.get_value() as *mut u32 as *mut std::ffi::c_void)}; 
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     fn set_receive_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
@@ -1325,12 +1225,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
         ops.recv();
         let err = unsafe{ inlined_fi_control(self.as_fid(), FI_GETOPSFLAG as i32, &mut ops.get_value() as *mut u32 as *mut std::ffi::c_void)}; 
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 }
 //================== Endpoint attribute ==================//

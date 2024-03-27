@@ -4,7 +4,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, OwnedFid, WaitRetrievable, domain::DomainImpl, BindImpl};
+use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, OwnedFid, WaitRetrievable, domain::DomainImpl, BindImpl, check_error};
 
 // impl<T: CntrConfig> Drop for Counter<T> {
 //     fn drop(&mut self) {
@@ -93,45 +93,25 @@ impl<T: CntrConfig> Counter<T> {
     pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_add(self.handle(), val) };
     
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_adderr(self.handle(), val) };
             
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_set(self.handle(), val) };
             
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 
     pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_seterr(self.handle(), val) };
             
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }    
 }
 
@@ -184,12 +164,7 @@ impl<T: CntrConfig + crate::Waitable> Counter<T> {
     pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
         let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.handle(), threshold, timeout) };
 
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(())
-        }
+        check_error(err.try_into().unwrap())
     }
 }
 

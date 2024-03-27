@@ -404,7 +404,7 @@ pub fn rx_addr(addr: Address, rx_index: i32, rx_ctx_bits: i32) -> Address {
 }
 
 #[repr(C)]
-pub struct IoVec<'a, T>{
+pub struct IoVec<'a, T> {
     c_iovec: libfabric_sys::iovec,
     borrow: PhantomData<&'a T>,
 }
@@ -457,21 +457,59 @@ impl<'a, T> IoVec<'a, T> {
     }
 }
 
-
-pub struct Ioc {
-    c_attr: libfabric_sys::fi_ioc,
+#[repr(C)]
+pub struct Ioc<'a, T>{
+    c_ioc: libfabric_sys::fi_ioc,
+    borrow: PhantomData<&'a T>,
 }
 
-impl Ioc {
+impl<'a, T> Ioc<'a, T> {
+
+    pub fn from(mem: &'a T) -> Self {
+        let c_ioc = libfabric_sys::fi_ioc{
+            addr:  (mem as *const T as *mut T).cast(),
+            count: 1,
+        };
+
+        Self { c_ioc, borrow: PhantomData }
+    }
+
+    pub fn from_mut(mem: &'a mut T) -> Self {
+        let c_ioc = libfabric_sys::fi_ioc{
+            addr:  (mem as *mut T).cast(),
+            count: 1,
+        };
+
+        Self { c_ioc, borrow: PhantomData }
+    }
+
+    pub fn from_slice(mem: &'a [T]) -> Self {
+        let c_ioc = libfabric_sys::fi_ioc{
+            addr:  (mem.as_ptr() as *mut T).cast(),
+            count: mem.len(),
+        };
+
+        Self { c_ioc, borrow: PhantomData }
+    }
+
+    pub fn from_slice_mut(mem: &'a mut [T]) -> Self {
+        let c_ioc = libfabric_sys::fi_ioc{
+            addr:  mem.as_mut_ptr().cast(),
+            count: mem.len(),
+        };
+
+        Self { c_ioc, borrow: PhantomData }
+    }
+
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_ioc {
-        &self.c_attr
+        &self.c_ioc
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_ioc {
-        &mut self.c_attr
+        &mut self.c_ioc
     }
 }
-
 
 pub trait DataDescriptor {
     fn get_desc(&mut self) -> *mut std::ffi::c_void;
@@ -783,7 +821,6 @@ impl MsgTagged {
     }
 }
 
-
 pub struct MsgAtomic {
     c_msg_atomic: *mut libfabric_sys::fi_msg_atomic,
 }
@@ -971,7 +1008,14 @@ impl PciAttr {
         }
     }
 }
-
+fn check_error(err: isize) -> Result<(), crate::error::Error> {
+    if err != 0 {
+        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+    }
+    else {
+        Ok(())
+    }
+}
 
 pub trait FdRetrievable{}
 pub trait Waitable{}
@@ -979,12 +1023,13 @@ pub trait Writable{}
 pub trait WaitRetrievable{}
 
 #[cfg(test)]
-#[cfg(test_rust_lifetime)]
+#[cfg(ignore)]
 mod rust_lifetime_tests {
     use crate::IoVec;
 
     fn foo(data: &mut [usize]) {}
     fn foo_ref(data: & [usize]) {}
+    fn foo2<T>(data: & IoVec<T>) {}
 
     #[test]
     fn iovec_lifetime() {
