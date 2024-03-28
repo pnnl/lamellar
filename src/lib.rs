@@ -41,6 +41,17 @@ impl InfoCaps {
     pub fn multicast(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_MULTICAST as u64 } }
     pub fn collective(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_COLLECTIVE as u64 } }
 
+    pub fn read(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_READ as u64 }}
+    pub fn write(&self) -> Self { Self { bitfield: self.bitfield |  libfabric_sys::FI_WRITE as u64 }}
+    pub fn recv(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_RECV as u64 }}
+    pub fn send(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_SEND as u64 }}
+    pub fn transmit(&self) -> Self { Self { bitfield: self.bitfield |  libfabric_sys::FI_TRANSMIT as u64 }}
+    pub fn remote_read(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_REMOTE_READ as u64 }}
+    pub fn remote_write(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_REMOTE_WRITE as u64 }}
+
+    pub fn rma_event(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_RMA_EVENT }}
+
+    
     pub fn is_msg(&self) -> bool {self.bitfield & libfabric_sys::FI_MSG as u64 == libfabric_sys::FI_MSG as u64 }
     pub fn is_tagged(&self) -> bool {self.bitfield & libfabric_sys::FI_TAGGED as u64 == libfabric_sys::FI_TAGGED as u64 }
     pub fn is_rma(&self) -> bool {self.bitfield & libfabric_sys::FI_RMA as u64 == libfabric_sys::FI_RMA as u64 }
