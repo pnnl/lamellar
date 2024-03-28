@@ -41,7 +41,7 @@ fn pp_server_rdm_tagged() {
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
     
-    let entries: Vec<libfabric::InfoEntry> = info.get();
+    let entries = info.get();
 
     if entries.is_empty() {
         panic!("No entires in fi_info");
@@ -89,7 +89,7 @@ fn pp_client_rdm_tagged() {
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
         common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.5".to_owned(), "9222".to_owned(), 0);
 
-    let entries: Vec<libfabric::InfoEntry> = info.get();
+    let entries = info.get();
     
     if entries.is_empty() {
         panic!("No entires in fi_info");

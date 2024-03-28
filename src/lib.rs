@@ -1,5 +1,5 @@
 use core::panic;
-use std::{marker::PhantomData, rc::Rc};
+use std::{marker::PhantomData, rc::Rc, path::Display};
 
 // use ep::ActiveEndpoint;
 pub mod ep;
@@ -128,13 +128,13 @@ impl InfoBuilder {
             libfabric_sys::fi_getinfo(libfabric_sys::fi_version(), node, service, self.flags, self.c_info_hints, c_info_ptr)
         };
 
-        if err != 0 {
-            return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) );
-        }
+        check_error(err.try_into().unwrap())?;
 
 
         let mut entries = std::vec::Vec::new();
-        entries.push(InfoEntry::new(c_info));
+        if !c_info.is_null() {
+            entries.push(InfoEntry::new(c_info));
+        }
         unsafe {
             let mut curr = (*c_info).next;
             while  !curr.is_null() {
@@ -219,6 +219,19 @@ impl InfoEntry {
 
 }
 
+impl std::fmt::Debug for InfoEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let c_str = unsafe{libfabric_sys::fi_tostr(self.c_info.cast(), libfabric_sys::fi_type_FI_TYPE_INFO)};
+        if c_str.is_null() {
+            panic!("String is null")
+        }
+        let val = unsafe{std::ffi::CStr::from_ptr(c_str)};
+        
+        write!(f, "{}", val.to_str().unwrap())
+    }
+}
+
+
 impl Info {
     #[allow(clippy::new_ret_no_self)]
     pub fn new() -> InfoBuilder {
@@ -230,8 +243,8 @@ impl Info {
         }
     }
 
-    pub fn get(&self) -> Vec<InfoEntry> {
-        self.entries.clone()
+    pub fn get(&self) -> &Vec<InfoEntry> {
+        &self.entries
     }
 }
 

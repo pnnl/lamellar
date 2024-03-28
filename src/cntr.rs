@@ -377,7 +377,7 @@ mod tests {
         
 
         let info = crate::Info::new().hints(&hints).request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         
         if !entries.is_empty() {
             for e in entries {
@@ -438,7 +438,7 @@ mod libfabric_lifetime_tests {
         
 
         let info = crate::Info::new().hints(&hints).request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         
         if !entries.is_empty() {
             for e in entries {

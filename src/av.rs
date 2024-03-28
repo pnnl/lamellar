@@ -645,7 +645,7 @@ mod tests {
             .domain_attr(dom_attr);
 
         let info = crate::Info::new().hints(&hints).request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         if !entries.is_empty() {
         
             let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
@@ -684,7 +684,7 @@ mod tests {
         let info = crate::Info::new()
             .hints(&hints).request().unwrap();
 
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         if !entries.is_empty() {
             let fab: crate::fabric::Fabric = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
             let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
@@ -720,7 +720,7 @@ mod libfabric_lifetime_tests {
             .domain_attr(dom_attr);
 
         let info = crate::Info::new().hints(&hints).request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         if !entries.is_empty() {
         
             let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();

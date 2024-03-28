@@ -642,7 +642,7 @@ impl EventQueueCmEntry {
         Self { c_entry }
     }
 
-    pub fn get_info(&self) -> InfoEntry {
+    pub fn get_info(&self) -> InfoEntry { //[TODO]
         InfoEntry::new(self.c_entry.info)
     }
 }
@@ -664,7 +664,7 @@ mod tests {
     #[test]
     fn eq_write_read_self() {
         let info = crate::Info::new().request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
             .size(32)
@@ -720,7 +720,7 @@ mod tests {
     #[test]
     fn eq_size_verify() {
         let info = crate::Info::new().request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries:&Vec<crate::InfoEntry> = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
             .size(32)
@@ -740,7 +740,7 @@ mod tests {
     #[test]
     fn eq_write_sread_self() {
         let info = crate::Info::new().request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
             .size(32)
@@ -790,7 +790,7 @@ mod tests {
     #[test]
     fn eq_readerr() {
         let info = crate::Info::new().request().unwrap();
-        let entries: Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
             .size(32)
