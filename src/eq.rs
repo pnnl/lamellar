@@ -4,7 +4,7 @@ use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, InfoEntry, OwnedFid, WaitRetrievable, fabric::FabricImpl};
+use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, InfoEntry, OwnedFid, WaitRetrievable, fabric::FabricImpl, infocapsoptions::{Capabilities, NewInfoCaps}};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
 //     fn drop(&mut self) {
@@ -642,8 +642,14 @@ impl EventQueueCmEntry {
         Self { c_entry }
     }
 
-    pub fn get_info(&self) -> InfoEntry { //[TODO]
-        InfoEntry::new(self.c_entry.info)
+    pub fn get_info<E: Capabilities>(&self, _caps: &crate::InfoHints<E>) -> Result<InfoEntry<E>, crate::error::Error> { //[TODO] Should returen the proper type of info entry
+        let caps = E::get_bitfield();
+        if caps & unsafe{(*self.c_entry.info).caps} == caps {
+            Ok(InfoEntry::<E>::new(self.c_entry.info))
+        }
+        else {
+            Err(crate::error::Error::caps_error())
+        }
     }
 }
 
@@ -720,7 +726,7 @@ mod tests {
     #[test]
     fn eq_size_verify() {
         let info = crate::Info::new().request().unwrap();
-        let entries:&Vec<crate::InfoEntry> = info.get();
+        let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
             .size(32)

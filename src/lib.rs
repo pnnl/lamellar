@@ -1,6 +1,8 @@
 use core::panic;
 use std::{marker::PhantomData, rc::Rc, path::Display};
 
+use infocapsoptions::{Capabilities, NewInfoCaps};
+
 // use ep::ActiveEndpoint;
 pub mod ep;
 pub mod domain;
@@ -18,12 +20,19 @@ pub mod xcontext;
 pub mod eqoptions;
 pub mod cqoptions;
 pub mod cntroptions;
-
+pub mod infocapsoptions;
 const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
+
+
+
+
 #[derive(Clone, Debug)]
 pub struct InfoCaps {
     pub(crate) bitfield: u64,
 }
+
+
+
 
 impl InfoCaps {
     pub fn new() -> Self {
@@ -39,7 +48,22 @@ impl InfoCaps {
     pub fn rma(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_RMA as u64 } }
     pub fn atomic(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_ATOMIC as u64 } }
     pub fn multicast(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_MULTICAST as u64 } }
+    pub fn named_rx_ctx(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_NAMED_RX_CTX } }
+    pub fn directed_recv(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_DIRECTED_RECV } }
+    pub fn variable_msg(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_VARIABLE_MSG } }
+    pub fn hmem(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_HMEM } }
     pub fn collective(self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_COLLECTIVE as u64 } }
+    
+    pub fn msg_if(self, cond: bool) -> Self  { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_MSG as u64} else { self.bitfield } } }
+    pub fn tagged_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_TAGGED as u64} else { self.bitfield } } }
+    pub fn rma_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_RMA as u64} else { self.bitfield } } }
+    pub fn atomic_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_ATOMIC as u64} else { self.bitfield } } }
+    pub fn multicast_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_MULTICAST as u64} else { self.bitfield } } }
+    pub fn named_rx_ctx_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_NAMED_RX_CTX} else { self.bitfield } } }
+    pub fn directed_recv_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_DIRECTED_RECV} else { self.bitfield } } }
+    pub fn variable_msg_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_VARIABLE_MSG} else { self.bitfield } } }
+    pub fn hmem_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_HMEM} else { self.bitfield } } }
+    pub fn collective_if(self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_COLLECTIVE as u64} else { self.bitfield } } }
 
     pub fn read(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_READ as u64 }}
     pub fn write(&self) -> Self { Self { bitfield: self.bitfield |  libfabric_sys::FI_WRITE as u64 }}
@@ -57,6 +81,10 @@ impl InfoCaps {
     pub fn is_rma(&self) -> bool {self.bitfield & libfabric_sys::FI_RMA as u64 == libfabric_sys::FI_RMA as u64 }
     pub fn is_atomic(&self) -> bool {self.bitfield & libfabric_sys::FI_ATOMIC as u64 == libfabric_sys::FI_ATOMIC as u64 }
     pub fn is_multicast(&self) -> bool {self.bitfield & libfabric_sys::FI_MULTICAST as u64 == libfabric_sys::FI_MULTICAST as u64 }
+    pub fn is_named_rx_ctx(self) -> bool {self.bitfield & libfabric_sys::FI_NAMED_RX_CTX == libfabric_sys::FI_NAMED_RX_CTX} 
+    pub fn is_directed_recv(self) -> bool {self.bitfield & libfabric_sys::FI_DIRECTED_RECV == libfabric_sys::FI_DIRECTED_RECV} 
+    pub fn is_variable_msg(self) -> bool {self.bitfield & libfabric_sys::FI_VARIABLE_MSG == libfabric_sys::FI_VARIABLE_MSG} 
+    pub fn is_hmem(self) -> bool {self.bitfield & libfabric_sys::FI_HMEM == libfabric_sys::FI_HMEM} 
     pub fn is_collective(&self) -> bool {self.bitfield & libfabric_sys::FI_COLLECTIVE as u64 == libfabric_sys::FI_COLLECTIVE as u64 }
 
     pub fn is_read(&self) -> bool {self.bitfield & libfabric_sys::FI_READ as u64 == libfabric_sys::FI_READ as u64 }
@@ -76,49 +104,43 @@ impl Default for InfoCaps {
     }
 }
 
-pub struct Info {
-    entries : std::vec::Vec<InfoEntry>,
+pub struct Info<T> {
+    entries : std::vec::Vec<InfoEntry<T>>,
     c_info: *mut  libfabric_sys::fi_info,
 }
 
-pub struct InfoBuilder {
+pub struct InfoBuilder<T> {
     c_info_hints: *mut libfabric_sys::fi_info,
     c_node: std::ffi::CString,
     c_service: std::ffi::CString,
     flags: u64,
+    phantom: PhantomData<T>,
 }
 
-impl InfoBuilder {
+impl<T> InfoBuilder<T> {
     
     pub fn node(self, node: &str) -> Self {
-        InfoBuilder {
+        Self {
             c_node: std::ffi::CString::new(node).unwrap(),
             ..self
         }
     }
 
     pub fn service(self, service: &str) -> Self {
-        InfoBuilder {
+        Self {
             c_service: std::ffi::CString::new(service).unwrap(),
             ..self
         }
     }
 
     pub fn flags(self, flags: u64) -> Self {
-        InfoBuilder {
+        Self {
             flags,
             ..self
         }
     }
 
-    pub fn hints(self, hints: &InfoHints) -> Self {
-        InfoBuilder {
-            c_info_hints: hints.c_info,
-            ..self
-        }
-    }
-
-    pub fn request(self) -> Result<Info, crate::error::Error> {
+    pub fn request(self) -> Result<Info<T>, crate::error::Error> {
         let mut c_info: *mut libfabric_sys::fi_info = std::ptr::null_mut();
         let c_info_ptr: *mut *mut libfabric_sys::fi_info = &mut c_info;
         let node = if self.c_node.is_empty() { std::ptr::null_mut() } else { self.c_node.as_ptr() };
@@ -143,15 +165,28 @@ impl InfoBuilder {
             }
         }
         
-        Ok(Info {
+        Ok(Info::<T> {
             entries,
             c_info,
         })
     }
 }
 
+impl InfoBuilder<()> {
+    
+    pub fn hints<T>(self, hints: &InfoHints<T>) -> InfoBuilder<T> {
+        InfoBuilder::<T> {
+            c_info_hints: hints.c_info,
+            phantom: PhantomData,
+            c_node: self.c_node,
+            c_service: self.c_service,
+            flags: self.flags,
+        }
+    }
+}
+
 #[derive(Clone)]
-pub struct InfoEntry { 
+pub struct InfoEntry<T> { 
     caps: InfoCaps,
     fabric_attr: crate::fabric::FabricAttr,
     domain_attr: crate::domain::DomainAttr,
@@ -160,9 +195,10 @@ pub struct InfoEntry {
     ep_attr: crate::ep::EndpointAttr,
     nic: Option<Nic>,
     c_info: *mut  libfabric_sys::fi_info,
+    phantom: PhantomData<T>
 }
 
-impl InfoEntry {
+impl<T> InfoEntry<T> {
     
     pub(crate) fn new(c_info: *mut  libfabric_sys::fi_info) -> Self {
         let mut fabric_attr = crate::fabric::FabricAttr::new();
@@ -174,7 +210,7 @@ impl InfoEntry {
         let ep_attr = crate::ep::EndpointAttr::from(unsafe {(*c_info).ep_attr});
         let caps: u64 = unsafe {(*c_info).caps};
         let nic = if ! unsafe{ (*c_info).nic.is_null()} {Some(Nic::from_attr(unsafe{*(*c_info).nic})) } else {None};
-        Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, nic, c_info }
+        Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, nic, c_info, phantom: PhantomData }
     }
 
     pub fn get_dest_addr<T0>(&self) -> & T0 {
@@ -219,7 +255,7 @@ impl InfoEntry {
 
 }
 
-impl std::fmt::Debug for InfoEntry {
+impl<T> std::fmt::Debug for InfoEntry<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c_str = unsafe{libfabric_sys::fi_tostr(self.c_info.cast(), libfabric_sys::fi_type_FI_TYPE_INFO)};
         if c_str.is_null() {
@@ -232,23 +268,27 @@ impl std::fmt::Debug for InfoEntry {
 }
 
 
-impl Info {
+impl Info<()> {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new() -> InfoBuilder {
-        InfoBuilder {
+    pub fn new() -> InfoBuilder<()> {
+        InfoBuilder::<()> {
             c_info_hints: std::ptr::null_mut(),
             c_node: std::ffi::CString::new("").unwrap(),
             c_service: std::ffi::CString::new("").unwrap(),
             flags: 0,
+            phantom: PhantomData,
         }
     }
 
-    pub fn get(&self) -> &Vec<InfoEntry> {
+}
+impl<T> Info<T> {
+
+    pub fn get(&self) -> &Vec<InfoEntry<T>> {
         &self.entries
     }
 }
 
-impl Drop for Info {
+impl<T> Drop for Info<T> {
     
     fn drop(&mut self) {
         unsafe {
@@ -257,19 +297,80 @@ impl Drop for Info {
     }
 }
 
-pub  struct InfoHints {
+#[derive(Clone)]
+pub  struct InfoHints<T> {
     c_info: *mut libfabric_sys::fi_info,
+    phantom: PhantomData<T>
 }
 
-impl InfoHints {
+impl InfoHints<()> {
     pub fn new() -> Self {
         let c_info = unsafe { libfabric_sys::inlined_fi_allocinfo() };
         if c_info.is_null() {
             panic!("Failed to allocate memory");
         }
-        Self { c_info }
+        Self { c_info, phantom: PhantomData }
     }
 
+
+    #[allow(unused_mut)]
+    pub fn caps<T: Capabilities>(mut self, _caps: T)  -> InfoHints<T> {
+        unsafe { (*self.c_info).caps = T::get_bitfield() };
+        
+        InfoHints::<T> {
+            c_info: self.c_info,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: Capabilities> Capabilities for InfoHints<T> {
+    fn get_bitfield() -> u64 {
+        T::get_bitfield()
+    }
+    
+    fn is_msg() -> bool {
+        T::is_msg()
+    }
+    
+    fn is_rma() -> bool {
+        T::is_rma()
+    }
+    
+    fn is_tagged() -> bool {
+        T::is_tagged()
+    }
+    
+    fn is_atomic() -> bool {
+        T::is_atomic()
+    }
+    
+    fn is_mcast() -> bool {
+        T::is_mcast()
+    }
+    
+    fn is_named_rx_ctx() -> bool {
+        T::is_named_rx_ctx()
+    }
+    
+    fn is_directed_recv() -> bool {
+        T::is_directed_recv()
+    }
+    
+    fn is_hmem() -> bool {
+        T::is_hmem()
+    }
+    
+    fn is_collective() -> bool {
+        T::is_collective()
+    }
+    
+    fn is_xpu() -> bool {
+        T::is_xpu()
+    }
+}
+
+impl<T> InfoHints<T> {
     // pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
     //     unsafe { (*self.c_info).mode = mode.get_value() };
 
@@ -306,12 +407,6 @@ impl InfoHints {
         self
     }
 
-    #[allow(unused_mut)]
-    pub fn caps(mut self, caps: InfoCaps)  -> Self {
-        unsafe { (*self.c_info).caps = caps.bitfield };
-        
-        self
-    }
     
     
     #[allow(unused_mut)]
@@ -331,11 +426,11 @@ impl InfoHints {
     }
 }
 
-impl Default for InfoHints {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for InfoHints {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 
 

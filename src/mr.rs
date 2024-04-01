@@ -108,7 +108,7 @@ impl MemoryRegion {
         check_error(err.try_into().unwrap())
     }
 
-    pub fn bind_ep(&self, ep: &crate::ep::Endpoint) -> Result<(), crate::error::Error> {
+    pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())
@@ -430,7 +430,7 @@ mod tests {
             .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
         
         let hints = crate::InfoHints::new()
-            .caps(crate::InfoCaps::new().msg().rma())
+            .caps(crate::NewInfoCaps::new().msg().rma())
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
@@ -589,7 +589,7 @@ mod libfabric_lifetime_tests {
             .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
         
         let hints = crate::InfoHints::new()
-            .caps(crate::InfoCaps::new().msg().rma())
+            .caps(crate::NewInfoCaps::new().msg().rma())
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 

@@ -9,8 +9,9 @@ use crate::ep::EndpointImpl;
 use crate::error::Error;
 use crate::Address;
 use crate::AsFid;
+use crate::infocapsoptions::CollCap;
 
-impl Endpoint {
+impl<E: CollCap> Endpoint<E> {
 
     pub fn join<T0>(&self, addr: &T0, flags: u64) -> Result<MulticastGroupCollective, crate::error::Error> { // [TODO]
         MulticastGroupCollective::new(self, addr, flags)
@@ -45,7 +46,7 @@ impl MulticastGroupCollective {
         self.inner.c_mc
     }
 
-    pub(crate) fn new<T>(ep: &Endpoint, addr: &T, flags: u64) -> Result<MulticastGroupCollective, Error> {
+    pub(crate) fn new<T, E: CollCap>(ep: &Endpoint<E>, addr: &T, flags: u64) -> Result<MulticastGroupCollective, Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
         let err = unsafe { libfabric_sys::inlined_fi_join(ep.handle(), addr as *const T as *const std::ffi::c_void, flags, c_mc_ptr, std::ptr::null_mut()) };
@@ -65,7 +66,7 @@ impl MulticastGroupCollective {
         }
     }
 
-    pub(crate) fn new_with_context<T>(ep: &Endpoint, addr: &T, flags: u64, ctx: &mut crate::Context) -> Result<MulticastGroupCollective, Error> {
+    pub(crate) fn new_with_context<T, E: CollCap>(ep: &Endpoint<E>, addr: &T, flags: u64, ctx: &mut crate::Context) -> Result<MulticastGroupCollective, Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
         let err = unsafe { libfabric_sys::inlined_fi_join(ep.handle(), addr as *const T as *const std::ffi::c_void, flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };
@@ -86,7 +87,7 @@ impl MulticastGroupCollective {
 
     }
 
-    pub(crate) fn new_collective(ep: &Endpoint, addr: Address, set: &crate::av::AddressVectorSet, flags: u64) -> Result<MulticastGroupCollective, Error> {
+    pub(crate) fn new_collective<E: CollCap>(ep: &Endpoint<E>, addr: Address, set: &crate::av::AddressVectorSet, flags: u64) -> Result<MulticastGroupCollective, Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
         let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.handle(), addr, set.handle(), flags, c_mc_ptr, std::ptr::null_mut()) };
@@ -106,7 +107,7 @@ impl MulticastGroupCollective {
         }
     }
 
-    pub(crate) fn new_collective_with_context(ep: &Endpoint, addr: Address, set: &crate::av::AddressVectorSet, flags: u64, ctx: &mut crate::Context) -> Result<MulticastGroupCollective, Error> {
+    pub(crate) fn new_collective_with_context<E: CollCap>(ep: &Endpoint<E>, addr: Address, set: &crate::av::AddressVectorSet, flags: u64, ctx: &mut crate::Context) -> Result<MulticastGroupCollective, Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
         let err = unsafe { libfabric_sys::inlined_fi_join_collective(ep.handle(), addr, set.handle(), flags, c_mc_ptr, ctx.get_mut() as *mut std::ffi::c_void) };

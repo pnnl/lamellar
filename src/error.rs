@@ -6,17 +6,29 @@ pub struct Error {
 }
 
 impl std::fmt::Display for Error {
-    // This trait requires `fmt` with this exact signature.
+
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 
-        write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
+        if matches!(self.kind, ErrorKind::CapabilitiesNotMet)
+        {
+            write!(f, "Capabilities requested not met")
+        }
+        else {
+            write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
+        }
     }
 }
 impl std::fmt::Debug for Error {
-    // This trait requires `fmt` with this exact signature.
+
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 
-        write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
+        if matches!(self.kind, ErrorKind::CapabilitiesNotMet)
+        {
+            write!(f, "Capabilities requested not met")
+        }
+        else {
+            write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
+        }
     }
 }
 
@@ -87,6 +99,13 @@ impl Error {
 
         Self { c_err, kind}
     }
+
+    pub(crate) fn caps_error() -> Self {
+        Self {
+            c_err : 0,
+            kind: ErrorKind::CapabilitiesNotMet,
+        }
+    }
 }
     
 
@@ -149,6 +168,8 @@ pub enum ErrorKind {
     NoAddressVector,
     QueueOverrun,
     ReceiverNotReady,
+
+    CapabilitiesNotMet,
     Other,
 }
 

@@ -3,6 +3,7 @@ use crate::DataType;
 use crate::check_error;
 use crate::ep::Endpoint;
 use crate::ep::ActiveEndpoint;
+use crate::infocapsoptions::AtomicCap;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
 
@@ -51,7 +52,7 @@ fn to_fi_datatype<T: 'static>() -> DataType {
     else {panic!("Type not supported")}
 }
 
-impl Endpoint {
+impl<E: AtomicCap> Endpoint<E> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn atomic<T: 'static>(&self, buf: &[T], count : usize, desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {

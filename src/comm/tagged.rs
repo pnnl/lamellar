@@ -1,13 +1,14 @@
 use crate::check_error;
 use crate::ep::Endpoint;
 use crate::ep::ActiveEndpoint;
+use crate::infocapsoptions::TagCap;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
 
 
 
 
-impl Endpoint {
+impl<E: TagCap> Endpoint<E> {
 
     pub fn trecv<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, tag, ignore, std::ptr::null_mut()) };

@@ -382,8 +382,8 @@ mod tests {
         if !entries.is_empty() {
             for e in entries {
                 if e.get_domain_attr().get_cntr_cnt() != 0 {
-                    let fab = crate::fabric::FabricBuilder::new(&e).build().unwrap();
-                    let domain = crate::domain::DomainBuilder::new(&fab, &e).build().unwrap();
+                    let fab = crate::fabric::FabricBuilder::new(e).build().unwrap();
+                    let domain = crate::domain::DomainBuilder::new(&fab, e).build().unwrap();
                     let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
                     let cntrs: Vec<_> = (0..cntr_cnt).map(|_| CounterBuilder::new(&domain).build().unwrap() ).collect::<>();
 
@@ -443,8 +443,8 @@ mod libfabric_lifetime_tests {
         if !entries.is_empty() {
             for e in entries {
                 if e.get_domain_attr().get_cntr_cnt() != 0 {
-                    let fab = crate::fabric::FabricBuilder::new(&e).build().unwrap();
-                    let domain = crate::domain::DomainBuilder::new(&fab, &e).build().unwrap();
+                    let fab = crate::fabric::FabricBuilder::new(e).build().unwrap();
+                    let domain = crate::domain::DomainBuilder::new(&fab, e).build().unwrap();
                     let cntr_cnt = std::cmp::min(e.get_domain_attr().get_cntr_cnt(), 100);
                     let cntrs: Vec<_> = (0..cntr_cnt).map(|_| CounterBuilder::new(&domain).build().unwrap() ).collect::<>();
                     println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));

@@ -1,4 +1,4 @@
-use common::{ft_finalize, CompMeth};
+use common::{ft_finalize, CompMeth, HintsCaps, IP};
 use libfabric::{domain, enums, ep, xcontext::TxAttr};
 
 
@@ -27,40 +27,77 @@ fn pp_server_rdm_cntr() {
         dom_attr
         .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
-    
-    let caps = libfabric::InfoCaps::new()
-        .msg();
-    
 
     let mut tx_attr = TxAttr::new();
         tx_attr.tclass(enums::TClass::LowLatency);
 
-    let hints = libfabric::InfoHints::new()
-        .mode(libfabric::enums::Mode::new().context())
-        .ep_attr(ep_attr)
-        .caps(caps)
-        .domain_attr(dom_attr)
-        .tx_attr(tx_attr)
-        .addr_format(enums::AddressFormat::Unspec);
+    let hintscaps = if true {
+            HintsCaps::Msg(
+                libfabric::InfoHints::new()
+                .mode(libfabric::enums::Mode::new().context())
+                .ep_attr(ep_attr)
+                .caps(
+                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    .msg()
+                )
+                .domain_attr(dom_attr)
+                .tx_attr(tx_attr)
+                .addr_format(enums::AddressFormat::Unspec)
+            )
+        }
+        else {
+            HintsCaps::Tagged(
+                libfabric::InfoHints::new()
+                .mode(libfabric::enums::Mode::new().context())
+                .ep_attr(ep_attr)
+                .caps(
+                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    .tagged()
+                )
+                .domain_attr(dom_attr)
+                .tx_attr(tx_attr)
+                .addr_format(enums::AddressFormat::Unspec)
+            )
+        };
+
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
+        common::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
     
-    let entries = info.get();
-
-    if entries.is_empty() {
-        panic!("No entires in fi_info");
+    match info {
+        common::InfoWithCaps::Msg(info) => {
+            let entries = info.get();
+            
+            if entries.is_empty() {
+                panic!("No entires in fi_info");
+            }
+            
+            let test_sizes = gl_ctx.test_sizes.clone();
+            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            for msg_size in test_sizes {
+                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
+            }
+            
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+        }
+        common::InfoWithCaps::Tagged(info) => {
+            let entries = info.get();
+            
+            if entries.is_empty() {
+                panic!("No entires in fi_info");
+            }
+            
+            let test_sizes = gl_ctx.test_sizes.clone();
+            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            for msg_size in test_sizes {
+                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
+            }
+            
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+        }
     }
-
-    let test_sizes = gl_ctx.test_sizes.clone();
-    
-    for msg_size in test_sizes {
-        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
-    }
-
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
 }
-
+    
 
 
 #[ignore]
@@ -78,34 +115,72 @@ fn pp_client_rdm_cntr() {
         .threading(enums::Threading::Domain)
         .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
-    let caps = libfabric::InfoCaps::new()
-        .msg();
-    
 
     let mut tx_attr = TxAttr::new();
         tx_attr.tclass(enums::TClass::LowLatency);
-
-    let hints = libfabric::InfoHints::new()
-        .mode(libfabric::enums::Mode::new().context())
-        .ep_attr(ep_attr)
-        .caps(caps)
-        .domain_attr(dom_attr)
-        .tx_attr(tx_attr)
-        .addr_format(enums::AddressFormat::Unspec);
+    
+    let hintscaps = if true {
+            HintsCaps::Msg(
+                libfabric::InfoHints::new()
+                .mode(libfabric::enums::Mode::new().context())
+                .ep_attr(ep_attr)
+                .caps(
+                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    .msg()
+                )
+                .domain_attr(dom_attr)
+                .tx_attr(tx_attr)
+                .addr_format(enums::AddressFormat::Unspec)
+            )
+        }
+        else {
+            HintsCaps::Tagged(
+                libfabric::InfoHints::new()
+                .mode(libfabric::enums::Mode::new().context())
+                .ep_attr(ep_attr)
+                .caps(
+                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    .tagged()
+                )
+                .domain_attr(dom_attr)
+                .tx_attr(tx_attr)
+                .addr_format(enums::AddressFormat::Unspec)
+            )
+        };
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hints, &mut gl_ctx, "172.17.110.5".to_owned(), "9222".to_owned(), 0);
+        common::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), 0);
 
-    let entries = info.get();
-    
-    if entries.is_empty() {
-        panic!("No entires in fi_info");
+    match info {
+        common::InfoWithCaps::Msg(info) => {
+            let entries = info.get();
+            
+            if entries.is_empty() {
+                panic!("No entires in fi_info");
+            }
+            
+            let test_sizes = gl_ctx.test_sizes.clone();
+            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            for msg_size in test_sizes {
+                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
+            }
+            
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+        }
+        common::InfoWithCaps::Tagged(info) => {
+            let entries = info.get();
+            
+            if entries.is_empty() {
+                panic!("No entires in fi_info");
+            }
+            
+            let test_sizes = gl_ctx.test_sizes.clone();
+            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            for msg_size in test_sizes {
+                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
+            }
+            
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+        }
     }
-    let test_sizes = gl_ctx.test_sizes.clone();
-    
-    for msg_size in test_sizes {
-        common::pingpong(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
-    }
-
-    ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
 }

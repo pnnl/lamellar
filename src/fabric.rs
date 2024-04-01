@@ -192,7 +192,7 @@ pub struct FabricBuilder<'a, T> {
 }
 
 impl<'a> FabricBuilder<'a, ()> {
-    pub fn new(info: &crate::InfoEntry) -> FabricBuilder<()> {
+    pub fn new<E>(info: &crate::InfoEntry<E>) -> FabricBuilder<()> {
         FabricBuilder::<()> {
             fab_attr: info.get_fabric_attr().clone(),
             ctx: None,

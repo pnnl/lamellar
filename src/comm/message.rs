@@ -1,12 +1,13 @@
 use crate::check_error;
 use crate::ep::Endpoint;
 use crate::ep::ActiveEndpoint;
+use crate::infocapsoptions::MsgCap;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
 
 
 
-impl Endpoint {
+impl<E: MsgCap> Endpoint<E> {
 
     pub fn recv<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_recv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, std::ptr::null_mut()) };

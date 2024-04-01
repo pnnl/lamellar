@@ -214,17 +214,17 @@ impl TransmitContext {
 }
 
 
-pub struct TransmitContextBuilder<'a, T> {
+pub struct TransmitContextBuilder<'a, T, E> {
     tx_attr: TxAttr,
     index: i32,
-    ep: &'a Endpoint,
+    ep: &'a Endpoint<E>,
     ctx: Option<&'a mut T>,
 }
 
 
-impl<'a> TransmitContextBuilder<'a, ()> {
-    pub fn new(ep: &'a Endpoint, index: i32) -> TransmitContextBuilder<'a, ()> {
-        TransmitContextBuilder::<()> {
+impl<'a> TransmitContextBuilder<'a, (), ()> {
+    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> TransmitContextBuilder<'a, (), E> {
+        TransmitContextBuilder::<(), E> {
             tx_attr: TxAttr::new(),
             index,
             ep,
@@ -233,12 +233,12 @@ impl<'a> TransmitContextBuilder<'a, ()> {
     }
 }
 
-impl <'a, T> TransmitContextBuilder<'a, T> {
+impl <'a, T, E> TransmitContextBuilder<'a, T, E> {
     
-    pub fn caps(mut self, caps: TxCaps) -> Self {
-        self.tx_attr.caps(caps);
-        self
-    }
+    // pub fn caps(mut self, caps: TxCaps) -> Self {
+    //     self.tx_attr.caps(caps);
+    //     self
+    // }
 
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
         self.tx_attr.mode(mode);
@@ -285,7 +285,7 @@ impl <'a, T> TransmitContextBuilder<'a, T> {
         self
     }
 
-    pub fn context(self, ctx: &'a mut T) -> TransmitContextBuilder<'a, T> {
+    pub fn context(self, ctx: &'a mut T) -> TransmitContextBuilder<'a, T, E> {
         TransmitContextBuilder {
             tx_attr: self.tx_attr,
             index: self.index,
@@ -380,16 +380,16 @@ impl ReceiveContext {
     }
 }
 
-pub struct ReceiveContextBuilder<'a, T> {
+pub struct ReceiveContextBuilder<'a, T, E> {
     rx_attr: RxAttr,
     index: i32,
-    ep: &'a Endpoint,
+    ep: &'a Endpoint<E>,
     ctx: Option<&'a mut T>,
 }
 
-impl<'a> ReceiveContextBuilder<'a, ()> {
-    pub fn new(ep: &'a Endpoint, index: i32) -> ReceiveContextBuilder<'a, ()> {
-        ReceiveContextBuilder::<()> {
+impl<'a> ReceiveContextBuilder<'a, (), ()> {
+    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> ReceiveContextBuilder<'a, (), E> {
+        ReceiveContextBuilder::<(), E> {
             rx_attr: RxAttr::new(),
             index,
             ep,
@@ -398,12 +398,12 @@ impl<'a> ReceiveContextBuilder<'a, ()> {
     }
 }
 
-impl<'a, T> ReceiveContextBuilder<'a, T> {
+impl<'a, T, E> ReceiveContextBuilder<'a, T, E> {
 
-    pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
-        self.rx_attr.caps(caps);
-        self
-    }
+    // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
+    //     self.rx_attr.caps(caps);
+    //     self
+    // }
 
     pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
         self.rx_attr.mode(mode);
@@ -441,7 +441,7 @@ impl<'a, T> ReceiveContextBuilder<'a, T> {
         self
     }
 
-    pub fn context(self, ctx: &'a mut T) -> ReceiveContextBuilder<'a, T> {
+    pub fn context(self, ctx: &'a mut T) -> ReceiveContextBuilder<'a, T, E> {
         ReceiveContextBuilder {
             rx_attr: self.rx_attr,
             index: self.index,

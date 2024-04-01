@@ -57,7 +57,7 @@ impl Domain {
     //     }
     // }
 
-    pub(crate) fn new2(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, flags: u64) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new2<E>(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry<E>, flags: u64) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) };
@@ -78,7 +78,7 @@ impl Domain {
         }
     }
 
-    pub(crate) fn new2_with_context<T0>(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, flags: u64, ctx: &mut T0) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new2_with_context<T0, E>(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry<E>, flags: u64, ctx: &mut T0) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, ctx as *mut T0 as *mut std::ffi::c_void) };
@@ -397,16 +397,16 @@ impl Default for DomainAttr {
     }
 }
 
-pub struct DomainBuilder<'a, T> {
+pub struct DomainBuilder<'a, T, E> {
     fabric: &'a crate::fabric::Fabric,
-    info: &'a crate::InfoEntry,
+    info: &'a crate::InfoEntry<E>,
     ctx: Option<&'a mut T>,
     flags: u64,
 }
 
-impl<'a> DomainBuilder<'a, ()> {
-    pub fn new(fabric: &'a crate::fabric::Fabric, info: &'a crate::InfoEntry) -> DomainBuilder<'a, ()> {
-        DomainBuilder::<()> {
+impl<'a> DomainBuilder<'a, (), ()> {
+    pub fn new<E>(fabric: &'a crate::fabric::Fabric, info: &'a crate::InfoEntry<E>) -> DomainBuilder<'a, (), E> {
+        DomainBuilder::<(), E> {
             fabric,
             info,
             flags: 0,
@@ -416,8 +416,8 @@ impl<'a> DomainBuilder<'a, ()> {
 }
 
 
-impl<'a, T> DomainBuilder<'a, T> {
-    pub fn context(self, ctx: &'a mut T) -> DomainBuilder<'a, T> {
+impl<'a, T, E> DomainBuilder<'a, T, E> {
+    pub fn context(self, ctx: &'a mut T) -> DomainBuilder<'a, T, E> {
         DomainBuilder {
             fabric: self.fabric,
             info: self.info,
