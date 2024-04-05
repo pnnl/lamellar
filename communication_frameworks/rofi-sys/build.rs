@@ -5,7 +5,45 @@ use autotools;
 use glob::glob;
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{exit, Command, Stdio};
+
+fn build_rofi(out_path: &PathBuf, ofi_lib_dir: &PathBuf, ofi_inc_dir: &PathBuf) -> PathBuf {
+    let dest = out_path.clone().join("rofi_src");
+    Command::new("cp")
+        .args(&["-r", "rofi", &dest.to_string_lossy()])
+        .status()
+        .unwrap();
+
+    autotools::Config::new(dest)
+        .reconf("-ivfWnone")
+        .ldflag(format! {"-L{} -libverbs -pthread -ldl -lrdmacm -lrt",ofi_lib_dir.display()})
+        .cflag(format! {"-I{}",ofi_inc_dir.display()})
+        .build()
+}
+
+fn check_lib_for_function(lib: PathBuf, func: &str) -> Option<()> {
+    let nm_out = Command::new("nm")
+        .args(&["-g", &lib.to_string_lossy()])
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let grep1 = Command::new("grep")
+        .arg(func)
+        .stdin(Stdio::from(nm_out.stdout?)) // Pipe through.
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let grep2 = Command::new("grep")
+        .arg("T")
+        .stdin(Stdio::from(grep1.stdout?)) // Pipe through.
+        .output()
+        .ok()?;
+    if grep2.stdout.len() > 0 {
+        return Some(());
+    } else {
+        return None;
+    }
+}
 
 fn build_bindings() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -35,22 +73,21 @@ fn build_bindings() {
     let ofi_inc_dir = ofi_env.join("include");
 
     let rofi_env = match env::var("ROFI_DIR") {
-        Ok(val) => std::path::PathBuf::from(val),
-        Err(_) => {
-            let dest = out_path.clone().join("rofi_src");
-            Command::new("cp")
-                .args(&["-r", "rofi", &dest.to_string_lossy()])
-                .status()
-                .unwrap();
-
-            autotools::Config::new(dest)
-                .reconf("-ivfWnone")
-                .ldflag(
-                    format! {"-L{} -libverbs -pthread -ldl -lrdmacm -lrt",ofi_lib_dir.display()},
-                )
-                .cflag(format! {"-I{}",ofi_inc_dir.display()})
-                .build()
+        Ok(val) => {
+            let rofi_path = std::path::PathBuf::from(val);
+            let rofi_lib_dir = rofi_path.join("lib");
+            let rofi_a = rofi_lib_dir.join("librofi.a");
+            let rofi_so = rofi_lib_dir.join("librofi.so");
+            if check_lib_for_function(rofi_a, "rofi_transport_init").is_some() {
+                rofi_path
+            } else if check_lib_for_function(rofi_so, "rofi_transport_init").is_some() {
+                rofi_path
+            } else {
+                println!("cargo:warning=unable to detect rofi version at {:?}. SUGGESTED: Rofisys includes a bundled version of Rofi it can build itself, simply unset the ROFI_DIR env variable to use the bundled version. ALTERNATIVE: update to version 0.3 of Rofi manually.",rofi_path);
+                exit(1);
+            }
         }
+        Err(_) => build_rofi(&out_path, &ofi_lib_dir, &ofi_inc_dir),
     };
     for entry in glob("rofi/**/*.c").expect("Failed to read glob pattern") {
         match entry {
