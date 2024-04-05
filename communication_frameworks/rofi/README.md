@@ -72,7 +72,7 @@ Running
 shows the list of available options and flags:
 
 ```
-`configure' configures Rust OFI Library 0.1 to adapt to many kinds of systems.
+`configure' configures Rust OFI Library 0.3 to adapt to many kinds of systems.
 
 Usage: ./configure [OPTION]... [VAR=VALUE]...
 
@@ -251,11 +251,11 @@ where `<test>` in {`alloc, get, init, pp, put, put_bw`}. For example, to run a s
 
 SUPPORTED PROVIDERS
 -------------------
-ROFI is currently actively tested with libfabric `verbs` provider. Other providers, including `sockets` and `shm` are currently under development and not guaranteed to work.
+ROFI is currently actively tested with libfabric `verbs` provider.  The `tcp` provider is experimentally supported, when running with the `tcp` provider expect limited performance.
 
-To select a provider, add the provider name to the `rofi_init()` function. For example, to select the `shm` provider, call:
+To select a provider, add the provider name to the `rofi_init()` function. For example, to select the `verbs` provider, call:
 
-`rofi_init("shm")`
+`rofi_init("verbs")`
 
 then a test on a single node can be started in the same way as for distributed systems. For example,
 
@@ -265,11 +265,8 @@ launches two ROFI processes on the same compute node, while the command:
 
 `mpiexec -n 2 -ppn 1 ./tests/rofi_put`
 
-launches two ROFI processes on different nodes (note that `shm` does not work on multiple compute nodes).
 
-Note that libfabric `shm` uses Linux Cross Memory Attach (CMA) for shared memory communication. Any recent Linux kernel should support CMA, but for example OSX/Darwin does not. On old Linux kernels that do not support CMA, libfabrics will leverage the traditional POSIX shared memory Inter-Process Communication primitives (IPC). One could also use `sockets` (under development) or `verbs` to emulate `shm`.  On single-node OSX, `sockets` would be the best experimental provider option. From perfromance prospective, `shm` should perform better than `sockets`, thus we recommend Linux environments for single-node, production development.
-
-In the case no option is specified with `rofi_init()`, ROFI selects the first provider that satisfies its requirements. This is usually the best one, though libfabric does not _guarantee_ that. If a **specific** provider is requested that is not available in the system, ROFI initialization fails, to provide expected performance.
+In the case no option is specified with `rofi_init()`, ROFI selects the first provider that satisfies its requirements. This is usually the best one, though libfabric does not _guarantee_ that. If a **specific** provider is requested that is not available in the system, ROFI warns the user the provider is not available and defaults to one that satisfies ROFI's requirements (typically `tcp`).
 
 HISTORY
 -------
