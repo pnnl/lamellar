@@ -32,8 +32,9 @@ fn pp_server_msg() {
         HintsCaps::Msg(libfabric::InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
-                libfabric::infocapsoptions::NewInfoCaps::new()
-                .msg().clone())
+                libfabric::infocapsoptions::InfoCaps::new()
+                .msg()
+                .clone())
             .domain_attr(dom_attr)
             .tx_attr(tx_attr)
             .addr_format(enums::AddressFormat::Unspec))
@@ -42,7 +43,7 @@ fn pp_server_msg() {
             HintsCaps::Tagged(libfabric::InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
-                libfabric::infocapsoptions::NewInfoCaps::new()
+                libfabric::infocapsoptions::InfoCaps::new()
                 .tagged().clone())
             .domain_attr(dom_attr)
             .tx_attr(tx_attr)
@@ -51,7 +52,7 @@ fn pp_server_msg() {
 
     // match hintscaps {
         // HintsCaps::Msg(hints) => {
-    let (info, fab, eq, _pep) = common::start_server(hintscaps.clone(), IP.to_owned(), "9222".to_owned());
+    let (info, fab, eq) = common::start_server(hintscaps.clone(), IP.to_owned(), "9222".to_owned());
 
 
         let (domain, tx_cq, rx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = common::ft_server_connect(&hintscaps, &mut gl_ctx, &eq, &fab);
@@ -119,7 +120,7 @@ fn pp_client_msg() {
         HintsCaps::Msg(libfabric::InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
-                libfabric::infocapsoptions::NewInfoCaps::new()
+                libfabric::infocapsoptions::InfoCaps::new()
                 .msg().clone())
             .domain_attr(dom_attr)
             .tx_attr(tx_attr)
@@ -129,7 +130,7 @@ fn pp_client_msg() {
             HintsCaps::Tagged(libfabric::InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
-                libfabric::infocapsoptions::NewInfoCaps::new()
+                libfabric::infocapsoptions::InfoCaps::new()
                 .tagged().clone())
             .domain_attr(dom_attr)
             .tx_attr(tx_attr)

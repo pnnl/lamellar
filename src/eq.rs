@@ -4,7 +4,7 @@ use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 
 #[allow(unused_imports)]
 use crate::AsFid;
-use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, InfoEntry, OwnedFid, WaitRetrievable, fabric::FabricImpl, infocapsoptions::{Capabilities, NewInfoCaps}};
+use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, InfoEntry, OwnedFid, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
 //     fn drop(&mut self) {
@@ -642,8 +642,8 @@ impl EventQueueCmEntry {
         Self { c_entry }
     }
 
-    pub fn get_info<E: Capabilities>(&self, _caps: &crate::InfoHints<E>) -> Result<InfoEntry<E>, crate::error::Error> { //[TODO] Should returen the proper type of info entry
-        let caps = E::get_bitfield();
+    pub fn get_info<E: Caps>(&self, _caps: &crate::InfoHints<E>) -> Result<InfoEntry<E>, crate::error::Error> { //[TODO] Should returen the proper type of info entry
+        let caps = E::bitfield();
         if caps & unsafe{(*self.c_entry.info).caps} == caps {
             Ok(InfoEntry::<E>::new(self.c_entry.info))
         }

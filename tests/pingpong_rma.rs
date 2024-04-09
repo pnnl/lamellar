@@ -21,7 +21,7 @@ fn pp_server_rma() {
     let hintscaps = if true {
             HintsCaps::Msg(
                 libfabric::InfoHints::new()
-                .caps(libfabric::infocapsoptions::NewInfoCaps::new().msg().rma())
+                .caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
                 .domain_attr(dom_attr)
@@ -31,7 +31,7 @@ fn pp_server_rma() {
         else {
             HintsCaps::Tagged(
                 libfabric::InfoHints::new()
-                .caps(libfabric::infocapsoptions::NewInfoCaps::new().tagged().rma())
+                .caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
                 .domain_attr(dom_attr)
@@ -94,7 +94,7 @@ fn pp_client_rma() {
     let hintscaps = if true {
             HintsCaps::Msg(
                 libfabric::InfoHints::new()
-                .caps(libfabric::infocapsoptions::NewInfoCaps::new().msg().rma())
+                .caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
                 .domain_attr(dom_attr)
@@ -104,7 +104,7 @@ fn pp_client_rma() {
         else {
             HintsCaps::Tagged(
                 libfabric::InfoHints::new()
-                .caps(libfabric::infocapsoptions::NewInfoCaps::new().tagged().rma())
+                .caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
                 .domain_attr(dom_attr)

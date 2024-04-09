@@ -1,58 +1,15 @@
-use std::any::TypeId;
-use crate::DataType;
 use crate::check_error;
 use crate::ep::Endpoint;
 use crate::ep::ActiveEndpoint;
 use crate::infocapsoptions::AtomicCap;
+use crate::infocapsoptions::ReadMod;
+use crate::infocapsoptions::WriteMod;
+use crate::to_fi_datatype;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
 
-fn to_fi_datatype<T: 'static>() -> DataType {
-    let isize_t: TypeId = TypeId::of::<isize>();
-    let usize_t: TypeId = TypeId::of::<usize>();
-    let i8_t: TypeId = TypeId::of::<i8>();
-    let i16_t: TypeId = TypeId::of::<i16>();
-    let i32_t: TypeId = TypeId::of::<i32>();
-    let i64_t: TypeId = TypeId::of::<i64>();
-    let i128_t: TypeId = TypeId::of::<i128>();
-    let u8_t: TypeId = TypeId::of::<u8>();
-    let u16_t: TypeId = TypeId::of::<u16>();
-    let u32_t: TypeId = TypeId::of::<u32>();
-    let u64_t: TypeId = TypeId::of::<u64>();
-    let u128_t: TypeId = TypeId::of::<u128>();
-    let f32_t: TypeId = TypeId::of::<f32>();
-    let f64_t: TypeId = TypeId::of::<f64>();
 
-    if TypeId::of::<T>()  == isize_t{
-        if std::mem::size_of::<isize>() == 8 {libfabric_sys::fi_datatype_FI_INT64}
-        else if std::mem::size_of::<isize>() == 4 {libfabric_sys::fi_datatype_FI_INT32}
-        else if std::mem::size_of::<isize>() == 2 {libfabric_sys::fi_datatype_FI_INT16}
-        else if std::mem::size_of::<isize>() == 1 {libfabric_sys::fi_datatype_FI_INT8}
-        else {panic!("Unhandled isize datatype size")}
-    }
-    else if TypeId::of::<T>() == usize_t {
-        if std::mem::size_of::<usize>() == 8 {libfabric_sys::fi_datatype_FI_UINT64}
-        else if std::mem::size_of::<usize>() == 4 {libfabric_sys::fi_datatype_FI_UINT32}
-        else if std::mem::size_of::<usize>() == 2 {libfabric_sys::fi_datatype_FI_UINT16}
-        else if std::mem::size_of::<usize>() == 1 {libfabric_sys::fi_datatype_FI_UINT8}
-        else {panic!("Unhandled usize datatype size")}
-    }
-    else if TypeId::of::<T>() == i8_t {libfabric_sys::fi_datatype_FI_INT8}
-    else if TypeId::of::<T>() == i16_t {libfabric_sys::fi_datatype_FI_INT16}
-    else if TypeId::of::<T>() == i32_t {libfabric_sys::fi_datatype_FI_INT32}
-    else if TypeId::of::<T>() == i64_t {libfabric_sys::fi_datatype_FI_INT64}
-    else if TypeId::of::<T>() == i128_t {libfabric_sys::fi_datatype_FI_INT128}
-    else if TypeId::of::<T>() == u8_t {libfabric_sys::fi_datatype_FI_UINT8}
-    else if TypeId::of::<T>() == u16_t {libfabric_sys::fi_datatype_FI_UINT16}
-    else if TypeId::of::<T>() == u32_t {libfabric_sys::fi_datatype_FI_UINT32}
-    else if TypeId::of::<T>() == u64_t {libfabric_sys::fi_datatype_FI_UINT64}
-    else if TypeId::of::<T>() == u128_t {libfabric_sys::fi_datatype_FI_UINT128}
-    else if TypeId::of::<T>() == f32_t {libfabric_sys::fi_datatype_FI_FLOAT}
-    else if TypeId::of::<T>() == f64_t {libfabric_sys::fi_datatype_FI_DOUBLE}
-    else {panic!("Type not supported")}
-}
-
-impl<E: AtomicCap> Endpoint<E> {
+impl<E: AtomicCap+ WriteMod> Endpoint<E> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn atomic<T: 'static>(&self, buf: &[T], count : usize, desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
@@ -94,6 +51,10 @@ impl<E: AtomicCap> Endpoint<E> {
         
         check_error(err)
     }
+}
+
+impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
+
 
     #[allow(clippy::too_many_arguments)]
     pub fn fetch_atomic<T: 'static>(&self, buf: &[T], count : usize, desc: &mut impl crate::DataDescriptor, res: &mut [T], res_desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{

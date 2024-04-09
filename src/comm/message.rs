@@ -2,12 +2,14 @@ use crate::check_error;
 use crate::ep::Endpoint;
 use crate::ep::ActiveEndpoint;
 use crate::infocapsoptions::MsgCap;
+use crate::infocapsoptions::RecvMod;
+use crate::infocapsoptions::SendMod;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
 
 
 
-impl<E: MsgCap> Endpoint<E> {
+impl<E: MsgCap + RecvMod> Endpoint<E> {
 
     pub fn recv<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_recv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, std::ptr::null_mut()) };
@@ -32,12 +34,15 @@ impl<E: MsgCap> Endpoint<E> {
         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.iter_mut().map(|v| v.get_desc()).collect::<Vec<_>>().as_mut_ptr().cast()  , count, addr, context.get_mut().cast()) };
         check_error(err)
     }
-    
+
     pub fn recvmsg(&self, msg: &crate::Msg, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, flags) };
         
         check_error(err)
     }
+}
+
+impl<E: MsgCap + SendMod> Endpoint<E> {
 
 	pub fn sendv<T, T0>(&self, iov: &[crate::IoVec<T>], desc: &mut [impl crate::DataDescriptor], addr: crate::Address) -> Result<(), crate::error::Error> { 
         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), addr, std::ptr::null_mut()) };

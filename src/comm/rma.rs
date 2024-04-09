@@ -1,12 +1,14 @@
 use crate::check_error;
 use crate::ep::Endpoint;
 use crate::ep::ActiveEndpoint;
+use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::RmaCap;
+use crate::infocapsoptions::WriteMod;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
 
 
-impl<E: RmaCap> Endpoint<E> {
+impl<E: RmaCap + ReadMod> Endpoint<E> {
 
     pub unsafe fn read<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, src_addr: crate::Address, addr: u64,  key: u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), src_addr, addr, key, std::ptr::null_mut()) };
@@ -38,8 +40,10 @@ impl<E: RmaCap> Endpoint<E> {
         
         check_error(err)
     }
-    
-    
+}
+
+impl<E: RmaCap + WriteMod> Endpoint<E> {
+
     pub unsafe fn write<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, dest_addr: crate::Address, addr: u64, key:u64) -> Result<(), crate::error::Error>  {
         let err = unsafe{ libfabric_sys::inlined_fi_write(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), dest_addr, addr, key, std::ptr::null_mut()) };
         

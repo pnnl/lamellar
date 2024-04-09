@@ -1,6 +1,8 @@
 use crate::check_error;
 use crate::ep::Endpoint;
 use crate::ep::ActiveEndpoint;
+use crate::infocapsoptions::RecvMod;
+use crate::infocapsoptions::SendMod;
 use crate::infocapsoptions::TagCap;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
@@ -8,7 +10,7 @@ use crate::xcontext::TransmitContext;
 
 
 
-impl<E: TagCap> Endpoint<E> {
+impl<E: TagCap + RecvMod> Endpoint<E> {
 
     pub fn trecv<T0>(&self, buf: &mut [T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, tag, ignore, std::ptr::null_mut()) };
@@ -39,6 +41,9 @@ impl<E: TagCap> Endpoint<E> {
     
         check_error(err)
     }
+}
+
+impl<E: TagCap + SendMod> Endpoint<E> {
 
     pub fn tsend<T0>(&self, buf: &[T0], desc: &mut impl crate::DataDescriptor, addr: crate::Address, tag:u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), addr, tag, std::ptr::null_mut()) };

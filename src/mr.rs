@@ -430,7 +430,7 @@ mod tests {
             .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
         
         let hints = crate::InfoHints::new()
-            .caps(crate::NewInfoCaps::new().msg().rma())
+            .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
@@ -589,7 +589,7 @@ mod libfabric_lifetime_tests {
             .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
         
         let hints = crate::InfoHints::new()
-            .caps(crate::NewInfoCaps::new().msg().rma())
+            .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 

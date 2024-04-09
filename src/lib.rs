@@ -1,7 +1,7 @@
 use core::panic;
-use std::{marker::PhantomData, rc::Rc, path::Display};
+use std::{marker::PhantomData, rc::Rc, any::TypeId};
 
-use infocapsoptions::{Capabilities, NewInfoCaps};
+use infocapsoptions::Caps;
 
 // use ep::ActiveEndpoint;
 pub mod ep;
@@ -27,15 +27,15 @@ const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
 
 
 #[derive(Clone, Debug)]
-pub struct InfoCaps {
+pub struct InfoCapsImpl {
     pub(crate) bitfield: u64,
 }
 
 
 
 
-impl InfoCaps {
-    pub fn new() -> Self {
+impl InfoCapsImpl {
+    pub const fn new() -> Self {
         Self { bitfield: 0 }
     }
 
@@ -74,8 +74,18 @@ impl InfoCaps {
     pub fn remote_write(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_REMOTE_WRITE as u64 }}
 
     pub fn rma_event(&self) -> Self { Self { bitfield: self.bitfield | libfabric_sys::FI_RMA_EVENT }}
-
     
+    
+    pub fn read_if(&self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_READ as u64} else {self.bitfield} }}
+    pub fn write_if(&self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield |  libfabric_sys::FI_WRITE as u64} else {self.bitfield} }}
+    pub fn recv_if(&self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_RECV as u64} else {self.bitfield} }}
+    pub fn send_if(&self, cond: bool) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_SEND as u64} else {self.bitfield} }}
+    pub fn transmit_if(&self, cond: bool ) -> Self { Self { bitfield: if cond {self.bitfield |  libfabric_sys::FI_TRANSMIT as u64} else {self.bitfield} }}
+    pub fn remote_read_if(&self, cond: bool ) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_REMOTE_READ as u64} else {self.bitfield} }}
+    pub fn remote_write_if(&self, cond: bool ) -> Self { Self { bitfield: if cond {self.bitfield | libfabric_sys::FI_REMOTE_WRITE as u64} else {self.bitfield} }}
+    pub fn rma_event_if(&self, cond: bool) -> Self { Self { bitfield: if cond{self.bitfield | libfabric_sys::FI_RMA_EVENT} else {self.bitfield} }}
+
+
     pub fn is_msg(&self) -> bool {self.bitfield & libfabric_sys::FI_MSG as u64 == libfabric_sys::FI_MSG as u64 }
     pub fn is_tagged(&self) -> bool {self.bitfield & libfabric_sys::FI_TAGGED as u64 == libfabric_sys::FI_TAGGED as u64 }
     pub fn is_rma(&self) -> bool {self.bitfield & libfabric_sys::FI_RMA as u64 == libfabric_sys::FI_RMA as u64 }
@@ -98,7 +108,7 @@ impl InfoCaps {
     pub fn is_rma_event(&self) -> bool {self.bitfield & libfabric_sys::FI_RMA_EVENT == libfabric_sys::FI_RMA_EVENT }
 }
 
-impl Default for InfoCaps {
+impl Default for InfoCapsImpl {
     fn default() -> Self {
         Self::new()
     }
@@ -187,7 +197,7 @@ impl InfoBuilder<()> {
 
 #[derive(Clone)]
 pub struct InfoEntry<T> { 
-    caps: InfoCaps,
+    caps: InfoCapsImpl,
     fabric_attr: crate::fabric::FabricAttr,
     domain_attr: crate::domain::DomainAttr,
     tx_attr: crate::xcontext::TxAttr,
@@ -210,7 +220,7 @@ impl<T> InfoEntry<T> {
         let ep_attr = crate::ep::EndpointAttr::from(unsafe {(*c_info).ep_attr});
         let caps: u64 = unsafe {(*c_info).caps};
         let nic = if ! unsafe{ (*c_info).nic.is_null()} {Some(Nic::from_attr(unsafe{*(*c_info).nic})) } else {None};
-        Self { caps: InfoCaps::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, nic, c_info, phantom: PhantomData }
+        Self { caps: InfoCapsImpl::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, nic, c_info, phantom: PhantomData }
     }
 
     pub fn get_dest_addr<T0>(&self) -> & T0 {
@@ -245,7 +255,7 @@ impl<T> InfoEntry<T> {
         &self.ep_attr
     }
 
-    pub fn get_caps(&self) -> &InfoCaps {
+    pub fn get_caps(&self) -> &InfoCapsImpl {
         &self.caps
     }
 
@@ -266,6 +276,53 @@ impl<T> std::fmt::Debug for InfoEntry<T> {
         write!(f, "{}", val.to_str().unwrap())
     }
 }
+
+impl<T: Caps> Caps for InfoEntry<T> {
+    fn bitfield() -> u64 {
+        T::bitfield()
+    }
+
+    fn is_msg() -> bool {
+        T::is_msg()
+    }
+
+    fn is_rma() -> bool {
+        T::is_rma()
+    }
+
+    fn is_tagged() -> bool {
+        T::is_tagged()
+    }
+
+    fn is_atomic() -> bool {
+        T::is_atomic()
+    }
+
+    fn is_mcast() -> bool {
+        T::is_mcast()
+    }
+
+    fn is_named_rx_ctx() -> bool {
+        T::is_named_rx_ctx()
+    }
+
+    fn is_directed_recv() -> bool {
+        T::is_directed_recv()
+    }
+
+    fn is_hmem() -> bool {
+        T::is_hmem()
+    }
+
+    fn is_collective() -> bool {
+        T::is_collective()
+    }
+
+    fn is_xpu() -> bool {
+        T::is_xpu()
+    }
+} 
+
 
 
 impl Info<()> {
@@ -314,8 +371,8 @@ impl InfoHints<()> {
 
 
     #[allow(unused_mut)]
-    pub fn caps<T: Capabilities>(mut self, _caps: T)  -> InfoHints<T> {
-        unsafe { (*self.c_info).caps = T::get_bitfield() };
+    pub fn caps<T: Caps>(mut self, _caps: T)  -> InfoHints<T> {
+        unsafe { (*self.c_info).caps = T::bitfield() };
         
         InfoHints::<T> {
             c_info: self.c_info,
@@ -324,9 +381,9 @@ impl InfoHints<()> {
     }
 }
 
-impl<T: Capabilities> Capabilities for InfoHints<T> {
-    fn get_bitfield() -> u64 {
-        T::get_bitfield()
+impl<T: Caps> Caps for InfoHints<T> {
+    fn bitfield() -> u64 {
+        T::bitfield()
     }
     
     fn is_msg() -> bool {
@@ -417,8 +474,8 @@ impl<T> InfoHints<T> {
         self
     }
 
-    pub fn get_caps(&self) -> InfoCaps {
-        InfoCaps::from(unsafe{ (*self.c_info).caps })
+    pub fn get_caps(&self) -> InfoCapsImpl {
+        InfoCapsImpl::from(unsafe{ (*self.c_info).caps })
     }
 
     pub fn get_ep_attr(&self) -> crate::ep::EndpointAttr {
@@ -1134,6 +1191,52 @@ fn check_error(err: isize) -> Result<(), crate::error::Error> {
     else {
         Ok(())
     }
+}
+
+
+fn to_fi_datatype<T: 'static>() -> DataType {
+    let isize_t: TypeId = TypeId::of::<isize>();
+    let usize_t: TypeId = TypeId::of::<usize>();
+    let i8_t: TypeId = TypeId::of::<i8>();
+    let i16_t: TypeId = TypeId::of::<i16>();
+    let i32_t: TypeId = TypeId::of::<i32>();
+    let i64_t: TypeId = TypeId::of::<i64>();
+    let i128_t: TypeId = TypeId::of::<i128>();
+    let u8_t: TypeId = TypeId::of::<u8>();
+    let u16_t: TypeId = TypeId::of::<u16>();
+    let u32_t: TypeId = TypeId::of::<u32>();
+    let u64_t: TypeId = TypeId::of::<u64>();
+    let u128_t: TypeId = TypeId::of::<u128>();
+    let f32_t: TypeId = TypeId::of::<f32>();
+    let f64_t: TypeId = TypeId::of::<f64>();
+
+    if TypeId::of::<T>()  == isize_t{
+        if std::mem::size_of::<isize>() == 8 {libfabric_sys::fi_datatype_FI_INT64}
+        else if std::mem::size_of::<isize>() == 4 {libfabric_sys::fi_datatype_FI_INT32}
+        else if std::mem::size_of::<isize>() == 2 {libfabric_sys::fi_datatype_FI_INT16}
+        else if std::mem::size_of::<isize>() == 1 {libfabric_sys::fi_datatype_FI_INT8}
+        else {panic!("Unhandled isize datatype size")}
+    }
+    else if TypeId::of::<T>() == usize_t {
+        if std::mem::size_of::<usize>() == 8 {libfabric_sys::fi_datatype_FI_UINT64}
+        else if std::mem::size_of::<usize>() == 4 {libfabric_sys::fi_datatype_FI_UINT32}
+        else if std::mem::size_of::<usize>() == 2 {libfabric_sys::fi_datatype_FI_UINT16}
+        else if std::mem::size_of::<usize>() == 1 {libfabric_sys::fi_datatype_FI_UINT8}
+        else {panic!("Unhandled usize datatype size")}
+    }
+    else if TypeId::of::<T>() == i8_t {libfabric_sys::fi_datatype_FI_INT8}
+    else if TypeId::of::<T>() == i16_t {libfabric_sys::fi_datatype_FI_INT16}
+    else if TypeId::of::<T>() == i32_t {libfabric_sys::fi_datatype_FI_INT32}
+    else if TypeId::of::<T>() == i64_t {libfabric_sys::fi_datatype_FI_INT64}
+    else if TypeId::of::<T>() == i128_t {libfabric_sys::fi_datatype_FI_INT128}
+    else if TypeId::of::<T>() == u8_t {libfabric_sys::fi_datatype_FI_UINT8}
+    else if TypeId::of::<T>() == u16_t {libfabric_sys::fi_datatype_FI_UINT16}
+    else if TypeId::of::<T>() == u32_t {libfabric_sys::fi_datatype_FI_UINT32}
+    else if TypeId::of::<T>() == u64_t {libfabric_sys::fi_datatype_FI_UINT64}
+    else if TypeId::of::<T>() == u128_t {libfabric_sys::fi_datatype_FI_UINT128}
+    else if TypeId::of::<T>() == f32_t {libfabric_sys::fi_datatype_FI_FLOAT}
+    else if TypeId::of::<T>() == f64_t {libfabric_sys::fi_datatype_FI_DOUBLE}
+    else {panic!("Type not supported")}
 }
 
 pub trait FdRetrievable{}

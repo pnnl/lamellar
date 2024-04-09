@@ -37,7 +37,7 @@ fn pp_server_rdm_cntr() {
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
-                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    libfabric::infocapsoptions::InfoCaps::new()
                     .msg()
                 )
                 .domain_attr(dom_attr)
@@ -51,7 +51,7 @@ fn pp_server_rdm_cntr() {
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
-                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    libfabric::infocapsoptions::InfoCaps::new()
                     .tagged()
                 )
                 .domain_attr(dom_attr)
@@ -125,7 +125,7 @@ fn pp_client_rdm_cntr() {
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
-                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    libfabric::infocapsoptions::InfoCaps::new()
                     .msg()
                 )
                 .domain_attr(dom_attr)
@@ -139,7 +139,7 @@ fn pp_client_rdm_cntr() {
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
-                    libfabric::infocapsoptions::NewInfoCaps::new()
+                    libfabric::infocapsoptions::InfoCaps::new()
                     .tagged()
                 )
                 .domain_attr(dom_attr)
