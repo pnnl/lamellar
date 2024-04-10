@@ -1,8 +1,8 @@
 use std::{ffi::CString, rc::Rc};
 
 #[allow(unused_imports)]
-use crate::AsFid;
-use crate::{enums::{DomainCaps, TClass}, OwnedFid, fabric::FabricImpl, check_error};
+use crate::fid::AsFid;
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::OwnedFid};
 
 
 // impl Drop for DomainImpl {
@@ -37,7 +37,7 @@ impl Domain {
     //     }
     //     else {
     //         Ok(
-    //             Self { c_domain, fid: OwnedFid { fid: unsafe { &mut (*c_domain).fid } } } 
+    //             Self { c_domain, fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), } 
     //         )
     //     }
     // }
@@ -52,12 +52,12 @@ impl Domain {
     //     }
     //     else {
     //         Ok(
-    //             Self { c_domain, fid: OwnedFid { fid: unsafe { &mut (*c_domain).fid } } } 
+    //             Self { c_domain, fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), } 
     //         )
     //     }
     // }
 
-    pub(crate) fn new2<E>(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry<E>, flags: u64) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new2<E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) };
@@ -72,13 +72,13 @@ impl Domain {
                         DomainImpl {
                             c_domain, 
                             _fabric_rc: fabric.inner.clone(), 
-                            fid: OwnedFid { fid: unsafe { &mut (*c_domain).fid } } 
+                            fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
                     })
                 })
         }
     }
 
-    pub(crate) fn new2_with_context<T0, E>(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry<E>, flags: u64, ctx: &mut T0) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new2_with_context<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, ctx: &mut T0) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, ctx as *mut T0 as *mut std::ffi::c_void) };
@@ -93,13 +93,13 @@ impl Domain {
                         DomainImpl {
                             c_domain, 
                             _fabric_rc: fabric.inner.clone(), 
-                            fid: OwnedFid { fid: unsafe { &mut (*c_domain).fid } } 
+                            fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
                     })
                 })
         }
     }
 
-    pub fn bind(self, fid: &impl crate::AsFid, flags: u64) -> Result<(), crate::error::Error> {
+    pub fn bind(self, fid: &impl AsFid, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), fid.as_fid(), flags)} ;
 
         check_error(err.try_into().unwrap())
@@ -117,7 +117,7 @@ impl Domain {
     //     crate::ep::Endpoint::from_attr_with_context(self, rx_attr, context)
     // }
 
-    pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
+    pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.handle(), datatype, op.get_value(), attr.get_mut(), flags )};
 
         check_error(err.try_into().unwrap())
@@ -160,15 +160,21 @@ impl Domain {
     //     crate::Stx::new(self, attr, context)
     // }
 
-    pub fn query_collective(&self, coll: crate::enums::CollectiveOp, mut attr: crate::CollectiveAttr, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), flags) };
+    pub fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), 0) };
+    
+        check_error(err.try_into().unwrap())
+    }
+
+    pub fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), libfabric_sys::fi_collective_op_FI_SCATTER.into()) };
     
         check_error(err.try_into().unwrap())
     }
 
 }
 
-impl crate::AsFid for Domain {
+impl AsFid for Domain {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
        self.inner.fid.as_fid()
     }
@@ -399,13 +405,13 @@ impl Default for DomainAttr {
 
 pub struct DomainBuilder<'a, T, E> {
     fabric: &'a crate::fabric::Fabric,
-    info: &'a crate::InfoEntry<E>,
+    info: &'a InfoEntry<E>,
     ctx: Option<&'a mut T>,
     flags: u64,
 }
 
 impl<'a> DomainBuilder<'a, (), ()> {
-    pub fn new<E>(fabric: &'a crate::fabric::Fabric, info: &'a crate::InfoEntry<E>) -> DomainBuilder<'a, (), E> {
+    pub fn new<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>) -> DomainBuilder<'a, (), E> {
         DomainBuilder::<(), E> {
             fabric,
             info,
@@ -446,9 +452,11 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
 
 #[cfg(test)]
 mod tests {
+    use crate::info::Info;
+
     #[test]
     fn domain_test() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
@@ -463,10 +471,12 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
+    use crate::info::Info;
+
     #[test]
 
     fn domain_drops_before_fabric() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();

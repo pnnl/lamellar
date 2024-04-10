@@ -1,12 +1,12 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{ActiveEndpoint, BaseEndpoint, Endpoint, ActiveEndpointImpl}, eq::EventQueue, eqoptions::EqConfig, OwnedFid};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{ActiveEndpoint, BaseEndpoint, Endpoint, ActiveEndpointImpl}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid}};
 
 pub struct Receive;
 pub struct Transmit;
 
 pub struct XContextBaseImpl<T> {
     pub(crate) c_ep: *mut libfabric_sys::fid_ep,
-    fid: crate::OwnedFid,
+    fid: OwnedFid,
     phantom: PhantomData<T>,
     _sync_rcs: Vec<Rc<dyn crate::BindImpl>>,
 }
@@ -130,7 +130,7 @@ impl<T : 'static> ActiveEndpoint for XContextBase<T> {
     }
 }
 
-impl<T> crate::AsFid for XContextBase<T> {
+impl<T> AsFid for XContextBase<T> {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
         self.inner.borrow().fid.as_fid()
     }    
@@ -153,7 +153,7 @@ impl TransmitContext {
                     inner: Rc::new( RefCell::new(
                         XContextBaseImpl::<Transmit> { 
                             c_ep, 
-                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } }, 
+                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
                             phantom: PhantomData,
                             _sync_rcs: Vec::new(),
                     }))
@@ -174,7 +174,7 @@ impl TransmitContext {
                     inner: Rc::new( RefCell::new(
                         XContextBaseImpl::<Transmit> { 
                             c_ep, 
-                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } }, 
+                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
                             phantom: PhantomData,
                             _sync_rcs: Vec::new(),
                     }))
@@ -182,7 +182,7 @@ impl TransmitContext {
         }
     }
 
-    pub(crate) fn bind<T: crate::Bind + crate::AsFid>(&mut self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T: crate::Bind + AsFid>(&mut self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_fid(), flags) };
         
         if err != 0 {
@@ -321,7 +321,7 @@ impl ReceiveContext {
                     inner: Rc::new( RefCell::new(
                         XContextBaseImpl::<Receive> { 
                             c_ep, 
-                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } }, 
+                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
                             phantom: PhantomData,
                             _sync_rcs: Vec::new(),
                     }))
@@ -342,7 +342,7 @@ impl ReceiveContext {
                     inner: Rc::new( RefCell::new(
                         XContextBaseImpl::<Receive> { 
                             c_ep, 
-                            fid: OwnedFid { fid: unsafe{ &mut (*c_ep).fid } }, 
+                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
                             phantom: PhantomData,
                             _sync_rcs: Vec::new(),
                     }))
@@ -350,7 +350,7 @@ impl ReceiveContext {
         }
     }
 
-    pub(crate) fn bind<T: crate::Bind + crate::AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T: crate::Bind + AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_fid(), flags) };
         
         if err != 0 {

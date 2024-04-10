@@ -1,5 +1,5 @@
 use common::{ft_finalize, HintsCaps, IP};
-use libfabric::{domain, enums, ep, xcontext::TxAttr};
+use libfabric::{domain, enums, ep, xcontext::TxAttr, info::InfoHints};
 
 pub mod common; // Public to supress lint warnings (unused function)
 
@@ -31,7 +31,7 @@ fn pp_server_rdm_msg() {
 
     let hintscaps = if true {
             HintsCaps::Msg(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -45,7 +45,7 @@ fn pp_server_rdm_msg() {
         }
         else {
             HintsCaps::Tagged(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -118,7 +118,7 @@ fn pp_client_rdm_msg() {
     
     let hintscaps = if true {
             HintsCaps::Msg(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -132,7 +132,7 @@ fn pp_client_rdm_msg() {
         }
         else {
             HintsCaps::Tagged(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(

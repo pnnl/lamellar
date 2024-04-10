@@ -1,5 +1,5 @@
 use common::{HintsCaps, EndpointCaps, IP};
-use libfabric::{domain, enums, ep, xcontext::TxAttr};
+use libfabric::{domain, enums, ep, xcontext::TxAttr, info::InfoHints};
 
 pub mod common; // Public to supress lint warnings (unused function)
 
@@ -29,7 +29,7 @@ fn pp_server_msg() {
         tx_attr.tclass(enums::TClass::LowLatency);
 
     let hintscaps = if true {
-        HintsCaps::Msg(libfabric::InfoHints::new()
+        HintsCaps::Msg(InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
                 libfabric::infocapsoptions::InfoCaps::new()
@@ -40,7 +40,7 @@ fn pp_server_msg() {
             .addr_format(enums::AddressFormat::Unspec))
         }
         else {
-            HintsCaps::Tagged(libfabric::InfoHints::new()
+            HintsCaps::Tagged(InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
                 libfabric::infocapsoptions::InfoCaps::new()
@@ -117,7 +117,7 @@ fn pp_client_msg() {
         tx_attr.tclass(enums::TClass::LowLatency);
 
     let hintscaps = if true {
-        HintsCaps::Msg(libfabric::InfoHints::new()
+        HintsCaps::Msg(InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
                 libfabric::infocapsoptions::InfoCaps::new()
@@ -127,7 +127,7 @@ fn pp_client_msg() {
             .addr_format(enums::AddressFormat::Unspec))
         }
         else {
-            HintsCaps::Tagged(libfabric::InfoHints::new()
+            HintsCaps::Tagged(InfoHints::new()
             .ep_attr(ep_attr)
             .caps(
                 libfabric::infocapsoptions::InfoCaps::new()

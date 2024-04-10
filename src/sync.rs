@@ -1,7 +1,7 @@
 use std::{os::fd::BorrowedFd, rc::Rc};
 
-use crate::{enums::{self, WaitObjType2}, AsFid, fabric::FabricImpl, check_error};
-
+use crate::{enums::{self, WaitObjType2}, fabric::FabricImpl, utils::check_error};
+use crate::fid::{OwnedFid, AsFid};
 // impl Drop for WaitSet {
 //     fn drop(&mut self) {
 //        println!("Dropping WaitSet\n");
@@ -42,7 +42,7 @@ impl<'a> WaitSetBuilder<'a> {
 
 pub struct WaitSetImpl {
     pub(crate) c_wait: *mut libfabric_sys::fid_wait,
-    fid: crate::OwnedFid,
+    fid: OwnedFid,
     _fabric_rc: Rc<FabricImpl>,
 }
 
@@ -70,7 +70,7 @@ impl WaitSet {
                     inner: Rc::new(
                         WaitSetImpl { 
                             c_wait, 
-                            fid: crate::OwnedFid{fid: unsafe{ &mut (*c_wait).fid} },
+                            fid: OwnedFid::from(unsafe{ &mut (*c_wait).fid}),
                             _fabric_rc: fabric.inner.clone(), 
                     })
                 })
@@ -198,7 +198,7 @@ impl<'a> PollSetBuilder<'a> {
 
 pub struct PollSetImpl {
     pub(crate) c_poll: *mut libfabric_sys::fid_poll,
-    fid: crate::OwnedFid,
+    fid: OwnedFid,
 }
 
 pub struct PollSet {
@@ -225,7 +225,7 @@ impl PollSet {
                     inner: Rc::new(
                         PollSetImpl { 
                             c_poll, 
-                            fid: crate::OwnedFid {fid: unsafe{ &mut (*c_poll).fid } } 
+                            fid: OwnedFid::from(unsafe{ &mut (*c_poll).fid }), 
                     })
                 })
         }
@@ -242,13 +242,13 @@ impl PollSet {
         }
     }
 
-    pub fn add(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+    pub fn add(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_add(self.handle(), fid.as_fid(), flags) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn del(&self, fid: &impl crate::AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+    pub fn del(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_del(self.handle(), fid.as_fid(), flags) };
 
         check_error(err.try_into().unwrap())

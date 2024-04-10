@@ -1,5 +1,5 @@
 use common::{HintsCaps, IP};
-use libfabric::{enums, xcontext::TxAttr};
+use libfabric::{enums, xcontext::TxAttr, info::InfoHints};
 
 pub mod common; // Public to supress lint warnings (unused function)
 #[ignore]
@@ -20,7 +20,7 @@ fn pp_server_rma() {
    
     let hintscaps = if true {
             HintsCaps::Msg(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -30,7 +30,7 @@ fn pp_server_rma() {
         }
         else {
             HintsCaps::Tagged(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -50,7 +50,7 @@ fn pp_server_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
@@ -65,7 +65,7 @@ fn pp_server_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
@@ -93,7 +93,7 @@ fn pp_client_rma() {
     
     let hintscaps = if true {
             HintsCaps::Msg(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -103,7 +103,7 @@ fn pp_client_rma() {
         }
         else {
             HintsCaps::Tagged(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -123,7 +123,7 @@ fn pp_client_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
@@ -138,7 +138,7 @@ fn pp_client_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {

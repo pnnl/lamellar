@@ -1,8 +1,9 @@
 use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
-use crate::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, Address, Context, FdRetrievable, OwnedFid, WaitRetrievable, Waitable};
+use crate::fid::AsFid;
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, Address, Context, FdRetrievable, WaitRetrievable, Waitable, fid::OwnedFid};
+const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
 
 
 // impl<T: CqConfig> Drop for CompletionQueue<T> {
@@ -84,7 +85,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
                     inner: Rc::new(
                         CompletionQueueImpl { 
                             c_cq, 
-                            fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } }, 
+                            fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
                             format: CqFormat::from_value(attr.c_attr.format), 
                             phantom: PhantomData, 
                             wait_obj: Some(attr.c_attr.wait_obj),
@@ -109,7 +110,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
                     inner: Rc::new(
                         CompletionQueueImpl { 
                             c_cq, 
-                            fid: OwnedFid { fid: unsafe { &mut (*c_cq).fid } }, 
+                            fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
                             format: CqFormat::from_value(attr.c_attr.format), 
                             phantom: PhantomData, 
                             wait_obj: Some(attr.c_attr.wait_obj),
@@ -137,7 +138,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.inner.format, self.handle(),count, p_address);
-        let address = if address == crate::FI_ADDR_NOTAVAIL {
+        let address = if address == FI_ADDR_NOTAVAIL {
             None
         }
         else {
@@ -208,7 +209,7 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;   
         let p_cond = std::ptr::null_mut();
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.inner.format, self.handle(), count, p_address, p_cond, timeout);
-        let address = if address == crate::FI_ADDR_NOTAVAIL {
+        let address = if address == FI_ADDR_NOTAVAIL {
             None
         }
         else {
@@ -714,11 +715,11 @@ impl Default for CqErrEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::{cq::*, domain::DomainBuilder};
+    use crate::{cq::*, domain::DomainBuilder, info::Info};
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
@@ -733,7 +734,7 @@ mod tests {
 
     #[test]
     fn cq_signal() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
@@ -754,7 +755,7 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
@@ -768,11 +769,11 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{cq::*, domain::DomainBuilder};
+    use crate::{cq::*, domain::DomainBuilder, info::Info};
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();

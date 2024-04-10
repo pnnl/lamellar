@@ -1,6 +1,6 @@
 use std::ops::Add;
 
-use crate::InfoCapsImpl;
+use crate::info::InfoCapsImpl;
 
 pub struct On;
 pub struct Off;
@@ -397,11 +397,11 @@ impl<const MSG: bool, const TAG: bool, const ATOMIC: bool, const MCAST: bool , c
         InfoCaps::<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, true, RWRITE, RREAD> {}       
     }    
 
-    pub fn remote_write(self, gen_event: bool) -> InfoCaps<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, true, RREAD> {
+    pub fn remote_write(self) -> InfoCaps<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, true, RREAD> {
         InfoCaps::<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, true, RREAD> {}       
     }
     
-    pub fn remote_read(self, gen_event: bool) -> InfoCaps<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, true> {
+    pub fn remote_read(self) -> InfoCaps<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, true> {
         InfoCaps::<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, true> {}       
     }    
 }
@@ -416,11 +416,11 @@ impl<const MSG: bool, const TAG: bool, const MCAST: bool , const NAMEDRXCTX: boo
         InfoCaps::<MSG, false, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, true, RWRITE, RREAD> {}       
     }    
     
-    pub fn remote_write(self, gen_event: bool) -> InfoCaps<MSG, false, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, true, RREAD>  {
+    pub fn remote_write(self) -> InfoCaps<MSG, false, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, true, RREAD>  {
         InfoCaps::<MSG, false, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, true, RREAD>  {}       
     }
     
-    pub fn remote_read(self, gen_event: bool) -> InfoCaps<MSG, false, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, true>  {
+    pub fn remote_read(self) -> InfoCaps<MSG, false, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, true>  {
         InfoCaps::<MSG, false, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, true>  {}       
     }    
 }

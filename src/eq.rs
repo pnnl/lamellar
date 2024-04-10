@@ -3,8 +3,8 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 
 #[allow(unused_imports)]
-use crate::AsFid;
-use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, InfoEntry, OwnedFid, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps};
+use crate::fid::AsFid;
+use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::OwnedFid};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
 //     fn drop(&mut self) {
@@ -118,7 +118,8 @@ impl<T: EqConfig> EventQueue<T> {
                 Self {
                     inner: Rc::new(
                         EventQueueImpl { 
-                            c_eq, fid: OwnedFid { fid: unsafe{ &mut (*c_eq).fid } }, 
+                            c_eq, 
+                            fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
                             phantom: PhantomData, 
                             wait_obj:  Some(attr.c_attr.wait_obj),
                             _fabric_rc: fabric.inner.clone(),
@@ -140,7 +141,8 @@ impl<T: EqConfig> EventQueue<T> {
                 Self {
                     inner: Rc::new(
                         EventQueueImpl { 
-                            c_eq, fid: OwnedFid { fid: unsafe{ &mut (*c_eq).fid } }, 
+                            c_eq, 
+                            fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
                             phantom: PhantomData, 
                             wait_obj:  Some(attr.c_attr.wait_obj),
                             _fabric_rc: fabric.inner.clone(),
@@ -316,7 +318,7 @@ fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> 
     }    
 }
 
-impl<T: EqConfig> crate::AsFid for EventQueue<T> {
+impl<T: EqConfig> AsFid for EventQueue<T> {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
        self.inner.fid.as_fid()
     }
@@ -583,7 +585,7 @@ impl<T> EventQueueEntry<T> {
         Self { c_entry, phantom: std::marker::PhantomData }
     }
 
-    pub fn fid(&mut self, fid: &impl crate::AsFid) -> &mut Self { //[TODO] Should this be pub(crate)?
+    pub fn fid(&mut self, fid: &impl AsFid) -> &mut Self { //[TODO] Should this be pub(crate)?
         self.c_entry.fid = fid.as_fid();
         self
     }
@@ -642,7 +644,7 @@ impl EventQueueCmEntry {
         Self { c_entry }
     }
 
-    pub fn get_info<E: Caps>(&self, _caps: &crate::InfoHints<E>) -> Result<InfoEntry<E>, crate::error::Error> { //[TODO] Should returen the proper type of info entry
+    pub fn get_info<E: Caps>(&self, _caps: &InfoHints<E>) -> Result<InfoEntry<E>, crate::error::Error> { //[TODO] Should returen the proper type of info entry
         let caps = E::bitfield();
         if caps & unsafe{(*self.c_entry.info).caps} == caps {
             Ok(InfoEntry::<E>::new(self.c_entry.info))
@@ -663,13 +665,15 @@ impl Default for EventQueueCmEntry {
 
 #[cfg(test)]
 mod tests {
-    use crate::AsFid;
+
+    use crate::info::Info;
+    use crate::fid::AsFid;
 
     use super::{Event, EventQueueBuilder};
 
     #[test]
     fn eq_write_read_self() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
@@ -725,7 +729,7 @@ mod tests {
 
     #[test]
     fn eq_size_verify() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
@@ -745,7 +749,7 @@ mod tests {
 
     #[test]
     fn eq_write_sread_self() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
@@ -795,7 +799,7 @@ mod tests {
 
     #[test]
     fn eq_readerr() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let eq = EventQueueBuilder::new(&fab)
@@ -840,7 +844,7 @@ mod tests {
 
     #[test]
     fn eq_open_close_sizes() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
@@ -860,12 +864,14 @@ mod tests {
 #[cfg(test)]
 mod libfabric_lifetime_tests {
 
+    use crate::info::Info;
+
     use super::EventQueueBuilder;
 
 
     #[test]
     fn eq_drops_before_fabric() {
-        let info = crate::Info::new().request().unwrap();
+        let info = Info::new().request().unwrap();
         let entries = info.get();
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();

@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 #[allow(unused_imports)] 
-use crate::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, OwnedFid};
+use crate::fid::AsFid;
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::OwnedFid};
 
 
 // impl Drop for AddressVector {
@@ -18,7 +18,7 @@ use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, OwnedFid};
 /// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av.3.html).
 pub struct AddressVectorImpl {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
-    fid: crate::OwnedFid,
+    fid: OwnedFid,
     _domain_rc: Rc<DomainImpl>,
 }
 
@@ -47,7 +47,7 @@ impl AddressVector {
                     inner: Rc::new(
                         AddressVectorImpl {
                             c_av,
-                            fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} },
+                            fid: OwnedFid::from(unsafe {&mut (*c_av).fid} ),
                             _domain_rc: domain.inner.clone(),
                     })
                 })
@@ -69,7 +69,7 @@ impl AddressVector {
                     inner: Rc::new(
                         AddressVectorImpl {
                             c_av,
-                            fid: OwnedFid{fid: unsafe {&mut (*c_av).fid} },
+                            fid: OwnedFid::from(unsafe {&mut (*c_av).fid} ),
                             _domain_rc: domain.inner.clone(),
                     })
                 })
@@ -283,7 +283,7 @@ impl AddressVectorSet {
                     inner: Rc::new(
                         AddressVectorSetImpl { 
                             c_set, 
-                            fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } },
+                            fid: OwnedFid::from(unsafe {&mut (*c_set).fid} ),
                             _av_rc: av.inner.clone(),
                     })
                 })
@@ -304,7 +304,7 @@ impl AddressVectorSet {
                     inner: Rc::new(
                         AddressVectorSetImpl { 
                             c_set, 
-                            fid: OwnedFid { fid: unsafe{ &mut (*c_set).fid } },
+                            fid: OwnedFid::from(unsafe {&mut (*c_set).fid} ),
                             _av_rc: av.inner.clone(),
                     })
                 })
@@ -603,13 +603,13 @@ impl Default for AddressVectorSetAttr {
 //================== Trait Impls ==================//
 
 
-impl crate::AsFid for AddressVectorSet {
+impl AsFid for AddressVectorSet {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
         self.inner.fid.as_fid()
     }
 }
 
-impl crate::AsFid for AddressVector {
+impl AsFid for AddressVector {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
         self.inner.fid.as_fid()
     }
@@ -628,6 +628,8 @@ impl crate::Bind for AddressVector {
 
 #[cfg(test)]
 mod tests {
+    use crate::info::{InfoHints, Info};
+
     use super::AddressVectorBuilder;
 
     #[test]
@@ -640,11 +642,11 @@ mod tests {
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
 
-        let hints = crate::InfoHints::new()
+        let hints = InfoHints::new()
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = crate::Info::new().hints(&hints).request().unwrap();
+        let info = Info::new().hints(&hints).request().unwrap();
         let entries = info.get();
         if !entries.is_empty() {
         
@@ -677,11 +679,11 @@ mod tests {
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
 
-        let hints = crate::InfoHints::new()
+        let hints = InfoHints::new()
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = crate::Info::new()
+        let info = Info::new()
             .hints(&hints).request().unwrap();
 
         let entries = info.get();
@@ -702,6 +704,8 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
+    use crate::info::{InfoHints, Info};
+
     use super::AddressVectorBuilder;
 
     #[test]
@@ -715,11 +719,11 @@ mod libfabric_lifetime_tests {
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
 
-        let hints = crate::InfoHints::new()
+        let hints = InfoHints::new()
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = crate::Info::new().hints(&hints).request().unwrap();
+        let info = Info::new().hints(&hints).request().unwrap();
         let entries = info.get();
         if !entries.is_empty() {
         

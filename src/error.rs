@@ -14,7 +14,7 @@ impl std::fmt::Display for Error {
             write!(f, "Capabilities requested not met")
         }
         else {
-            write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
+            write!(f, "{} (Error {})", crate::utils::error_to_string(self.c_err.into()), self.c_err)
         }
     }
 }
@@ -27,7 +27,7 @@ impl std::fmt::Debug for Error {
             write!(f, "Capabilities requested not met")
         }
         else {
-            write!(f, "{} (Error {})", crate::error_to_string(self.c_err.into()), self.c_err)
+            write!(f, "{} (Error {})", crate::utils::error_to_string(self.c_err.into()), self.c_err)
         }
     }
 }

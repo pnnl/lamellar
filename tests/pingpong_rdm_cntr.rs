@@ -1,5 +1,5 @@
 use common::{ft_finalize, CompMeth, HintsCaps, IP};
-use libfabric::{domain, enums, ep, xcontext::TxAttr};
+use libfabric::{domain, enums, ep, xcontext::TxAttr, info::InfoHints};
 
 
 
@@ -33,7 +33,7 @@ fn pp_server_rdm_cntr() {
 
     let hintscaps = if true {
             HintsCaps::Msg(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -47,7 +47,7 @@ fn pp_server_rdm_cntr() {
         }
         else {
             HintsCaps::Tagged(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -121,7 +121,7 @@ fn pp_client_rdm_cntr() {
     
     let hintscaps = if true {
             HintsCaps::Msg(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -135,7 +135,7 @@ fn pp_client_rdm_cntr() {
         }
         else {
             HintsCaps::Tagged(
-                libfabric::InfoHints::new()
+                InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(

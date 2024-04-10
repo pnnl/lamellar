@@ -3,8 +3,8 @@
 use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
-use crate::AsFid;
-use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, OwnedFid, WaitRetrievable, domain::DomainImpl, BindImpl, check_error};
+use crate::fid::AsFid;
+use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImpl, BindImpl, utils::check_error, fid::OwnedFid};
 
 // impl<T: CntrConfig> Drop for Counter<T> {
 //     fn drop(&mut self) {
@@ -47,7 +47,7 @@ impl<T: CntrConfig> Counter<T> {
                     inner: Rc::new (
                         CounterImpl { 
                             c_cntr, 
-                            fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, 
+                            fid: OwnedFid::from(unsafe { &mut (*c_cntr).fid }), 
                             phantom: PhantomData, 
                             wait_obj: Some(attr.c_attr.wait_obj),
                             _domain_rc: domain.inner.clone(),
@@ -72,7 +72,7 @@ impl<T: CntrConfig> Counter<T> {
                     inner: Rc::new (
                         CounterImpl { 
                             c_cntr, 
-                            fid: OwnedFid { fid: unsafe { &mut (*c_cntr).fid }}, 
+                            fid: OwnedFid::from(unsafe { &mut (*c_cntr).fid }), 
                             phantom: PhantomData, 
                             wait_obj: Some(attr.c_attr.wait_obj),
                             _domain_rc: domain.inner.clone(),
@@ -276,7 +276,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
 
 //================== Trait impls ==================//
 
-impl<T: CntrConfig> crate::AsFid for Counter<T> {
+impl<T: CntrConfig> AsFid for Counter<T> {
     fn as_fid(&self) -> *mut libfabric_sys::fid {
         self.inner.fid.as_fid()
     }
@@ -361,6 +361,8 @@ impl Default for CounterAttr {
 
 #[cfg(test)]
 mod tests {
+    use crate::info::{InfoHints, Info};
+
     use super::CounterBuilder;
 
     #[test]
@@ -371,12 +373,12 @@ mod tests {
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
         
-        let hints = crate::InfoHints::new()
+        let hints = InfoHints::new()
             .domain_attr(dom_attr)
             .mode(crate::enums::Mode::all());
         
 
-        let info = crate::Info::new().hints(&hints).request().unwrap();
+        let info = Info::new().hints(&hints).request().unwrap();
         let entries = info.get();
         
         if !entries.is_empty() {
@@ -422,6 +424,8 @@ mod tests {
 #[cfg(test)]
 mod libfabric_lifetime_tests {
 
+    use crate::info::{InfoHints, Info};
+
     use super::CounterBuilder;
 
 
@@ -432,12 +436,12 @@ mod libfabric_lifetime_tests {
             .mode(crate::enums::Mode::all())
             .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
         
-        let hints = crate::InfoHints::new()
+        let hints = InfoHints::new()
             .domain_attr(dom_attr)
             .mode(crate::enums::Mode::all());
         
 
-        let info = crate::Info::new().hints(&hints).request().unwrap();
+        let info = Info::new().hints(&hints).request().unwrap();
         let entries = info.get();
         
         if !entries.is_empty() {
