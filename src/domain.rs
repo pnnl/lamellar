@@ -2,14 +2,7 @@ use std::{ffi::CString, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::OwnedFid};
-
-
-// impl Drop for DomainImpl {
-//     fn drop(&mut self) {
-//        println!("Dropping DomainImpl\n");
-//     }
-// }
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
 
 //================== Domain (fi_domain) ==================//
 
@@ -28,34 +21,6 @@ impl Domain {
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_domain {
         self.inner.c_domain
     }
-    // pub(crate) fn new(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry) -> Result<Self, crate::error::Error> {
-    //     let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
-    //     let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
-    //     let err = unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) };
-    //     if err != 0 {
-    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-    //     }
-    //     else {
-    //         Ok(
-    //             Self { c_domain, fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), } 
-    //         )
-    //     }
-    // }
-
-
-    // pub(crate) fn new_with_context<T0>(fabric: &crate::fabric::Fabric, info: &crate::InfoEntry, ctx: &mut T0) -> Result<Self, crate::error::Error> {
-    //     let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
-    //     let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
-    //     let err = unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
-    //     if err != 0 {
-    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-    //     }
-    //     else {
-    //         Ok(
-    //             Self { c_domain, fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), } 
-    //         )
-    //     }
-    // }
 
     pub(crate) fn new2<E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
@@ -100,20 +65,16 @@ impl Domain {
     }
 
     pub fn bind(self, fid: &impl AsFid, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), fid.as_fid(), flags)} ;
+        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), fid.as_fid().as_raw_fid(), flags)} ;
 
         check_error(err.try_into().unwrap())
     } 
 
-    // pub fn ep(&self, info: &crate::InfoEntry) -> Result<crate::ep::Endpoint, crate::error::Error> {
-    //     crate::ep::Endpoint::new(self, info)
-    // }
-
-    // pub fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> {
+    // pub fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
     //     crate::ep::Endpoint::from_attr(self, rx_attr)
     // }
     
-    // pub fn srx_context_with_context<T0>(&self, rx_attr: crate::RxAttr, context: &mut T0) -> Result<crate::ep::Endpoint, crate::error::Error> {
+    // pub fn srx_context_with_context<T0>(&self, rx_attr: crate::RxAttr, context: &mut T0) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
     //     crate::ep::Endpoint::from_attr_with_context(self, rx_attr, context)
     // }
 
@@ -122,26 +83,6 @@ impl Domain {
 
         check_error(err.try_into().unwrap())
     }
-
-    // pub fn poll_open(&self, attr: crate::sync::PollSetAttr) -> Result<crate::sync::PollSet, crate::error::Error> {
-    //     crate::sync::PollSet::new(self, attr)
-    // }
-
-    // pub fn av_open(&self, attr: crate::av::AddressVectorAttr) -> Result<crate::av::AddressVector, crate::error::Error> {
-    //     crate::av::AddressVector::new(self, attr)
-    // }
-
-    // pub fn mr_reg<T0>(&self, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<crate::mr::MemoryRegion, crate::error::Error> {
-    //     crate::mr::MemoryRegion::from_buffer(self, buf, acs, offset, requested_key, flags)
-    // }
-
-    // pub fn mr_regv<T0>(&self,  iov : &crate::IoVec, count: usize, acs: u64, offset: u64, requested_key: u64, flags: u64) -> Result<crate::mr::MemoryRegion, crate::error::Error> {
-    //     crate::mr::MemoryRegion::from_iovec(self, iov, count, acs, offset, requested_key, flags)
-    // }
-
-    // pub fn mr_regattr(&self, attr: crate::mr::MemoryRegionAttr ,  flags: u64) -> Result<crate::mr::MemoryRegion, crate::error::Error> {
-    //     crate::mr::MemoryRegion::from_attr(self, attr,  flags)
-    // }
 
     pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, raw_key as *mut u8, key_size, key as *mut u64, flags) };
@@ -156,7 +97,11 @@ impl Domain {
         check_error(err.try_into().unwrap())
     }
 
-    // pub fn stx_context<T0>(&self, attr: crate::TxAttr , context: &mut T0) -> Result<crate::Stx, crate::error::Error> {
+    // pub fn stx_context<T0>(&self, attr: crate::TxAttr) -> Result<crate::Stx, crate::error::Error> { //[TODO]
+    //     crate::Stx::new(self, attr, std::ptr::null_mut())
+    // }
+
+    // pub fn stx_context_with_context<T0>(&self, attr: crate::TxAttr , context: &mut T0) -> Result<crate::Stx, crate::error::Error> { //[TODO]
     //     crate::Stx::new(self, attr, context)
     // }
 
@@ -175,7 +120,7 @@ impl Domain {
 }
 
 impl AsFid for Domain {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
        self.inner.fid.as_fid()
     }
 }

@@ -518,6 +518,38 @@ impl Default for MrMode {
     }
 }
 
+pub struct MrAccess {
+    c_flags: u32,
+}
+
+impl MrAccess {
+    pub fn new() -> Self {
+        Self{c_flags: 0}
+    }
+
+    pub(crate) fn from_value(value: u32) -> Self {
+        Self {c_flags: value}
+    }
+
+    gen_set_get_flag!(send, is_send, libfabric_sys::FI_SEND);
+    gen_set_get_flag!(recv, is_recv, libfabric_sys::FI_RECV);
+    gen_set_get_flag!(read, is_read, libfabric_sys::FI_READ);
+    gen_set_get_flag!(write, is_write, libfabric_sys::FI_WRITE);
+    gen_set_get_flag!(remote_read, is_remote_read, libfabric_sys::FI_REMOTE_READ);
+    gen_set_get_flag!(remote_write, is_remote_write, libfabric_sys::FI_REMOTE_WRITE);
+    gen_set_get_flag!(collective, is_collective, libfabric_sys::FI_COLLECTIVE);
+
+    pub fn get_value(&self) -> u32 {
+        self.c_flags
+    }
+}
+
+impl Default for MrAccess {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub enum Progress {
     Unspec,
     Auto,

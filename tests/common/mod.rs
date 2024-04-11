@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, Address, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::default_desc};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, EndpointName}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, Address, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::default_desc};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -69,7 +69,7 @@ pub struct TestsGlobalCtx {
     pub options: u64,
 }
 
-pub const IP: &str = "172.17.110.46"; 
+pub const IP: &str = "172.17.110.7"; 
 
 #[derive(Clone)]
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -388,14 +388,22 @@ pub fn ft_complete_connect<T: EqConfig + libfabric::Waitable>(eq: &libfabric::eq
     
     // if let libfabric::eq::EventQueue::Waitable(eq) = eq {
 
-    let event = eq.sread(-1, 0).unwrap();
     
-    if let libfabric::eq::Event::CONNECTED(_) = event {
-
+    if let Ok(event) = eq.sread(-1, 0) {
+        if let libfabric::eq::Event::CONNECTED(_) = event {
+    
+        }
+        else {
+            panic!("Unexpected Event Type");
+        }
     }
     else {
-        panic!("Unexpected Event Type");
+        let err_entry = eq.readerr().unwrap();
+        panic!("{}\n", eq.strerror(&err_entry));
+
     }
+
+    
     // }
     // else {
     //     panic!("Not implemented!");
@@ -977,28 +985,30 @@ pub fn ft_progress<CQ: CqConfig>(cq: &libfabric::cq::CompletionQueue<CQ>, _total
 
 #[allow(clippy::too_many_arguments)]
 pub fn ft_init_av_dst_addr<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx,  av: &libfabric::av::AddressVector, ep: &EndpointCaps<M,T>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
-    let mut v = [0_u8; FT_MAX_CTRL_MSG];
     if !server {
         ft_av_insert(av, info.get_dest_addr::<libfabric::Address>(), &mut gl_ctx.remote_address, 0);
-        let len = match ep {
+        let epname = match ep {
             EndpointCaps::Msg(ep) => {
-                ep.getname(&mut v).unwrap()
+                ep.getname().unwrap()
             }
             EndpointCaps::Tagged(ep) => {
-                ep.getname(&mut v).unwrap()
+                ep.getname().unwrap()
             }
         };
-        
-        gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(&v[0..len]);
+        let epname_bytes = epname.as_bytes();
+        let len = epname_bytes.len();
+        gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(epname_bytes );
 
         ft_tx(gl_ctx, ep, gl_ctx.remote_address, len, data_desc, tx_cq, tx_cntr);
         ft_rx(gl_ctx, ep, gl_ctx.remote_address, 1, data_desc, rx_cq, rx_cntr);
 
     }
     else {
+        let mut v = [0_u8; FT_MAX_CTRL_MSG];
+
         ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
         v.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+FT_MAX_CTRL_MSG]);
-
+        let epname = unsafe {EndpointName::from_bytes(&v)};
 
         if matches!(info.get_domain_attr().get_av_type(), libfabric::enums::AddressVectorType::Table ) {
             let mut zero = 0;
@@ -1261,7 +1271,7 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
         mr.raw_attr_with_key(&mut addr, &mut (rma_iov.get_key() as u8), &mut key_size, 0).unwrap();
     }
     else {
-        rma_iov = rma_iov.key(mr.get_key());
+        rma_iov = rma_iov.key(mr.get_key().unwrap());
     }
     
     gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(unsafe{ std::slice::from_raw_parts(&rma_iov as *const libfabric::iovec::RmaIoVec as *const u8, std::mem::size_of::<libfabric::iovec::RmaIoVec>())});

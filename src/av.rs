@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::OwnedFid};
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}};
 
 
 // impl Drop for AddressVector {
@@ -83,7 +83,7 @@ impl AddressVector {
     ///
     /// This function will return an error if the underlying library call fails.
     pub fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.handle(), eq.as_fid(), 0) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.handle(), eq.as_raw_fid(), 0) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -604,13 +604,13 @@ impl Default for AddressVectorSetAttr {
 
 
 impl AsFid for AddressVectorSet {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> fid::BorrowedFid {
         self.inner.fid.as_fid()
     }
 }
 
 impl AsFid for AddressVector {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> fid::BorrowedFid {
         self.inner.fid.as_fid()
     }
 }

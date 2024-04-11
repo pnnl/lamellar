@@ -436,9 +436,7 @@ impl<T> InfoHints<T> {
         
         self
     }
-
-    
-    
+     
     #[allow(unused_mut)]
     pub fn no_src_address(mut self) -> Self { // [TODO]
         unsafe { (*self.c_info).src_addr = std::ptr::null_mut() };

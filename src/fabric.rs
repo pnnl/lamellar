@@ -5,7 +5,7 @@ use std::{ffi::CString, rc::Rc};
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{utils::check_error, info::InfoEntry, fid::OwnedFid};
+use crate::{utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
 
 // impl Drop for FabricImpl {
 //     fn drop(&mut self) {
@@ -84,7 +84,7 @@ impl Fabric {
     // }
 
     pub fn trywait(&self, fids: &[&impl AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
-        let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.as_fid()).collect();
+        let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.as_fid().as_raw_fid()).collect();
         let err = unsafe { libfabric_sys::inlined_fi_trywait(self.inner.c_fabric, raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
         
         check_error(err.try_into().unwrap())
@@ -93,7 +93,7 @@ impl Fabric {
 
 
 impl AsFid for Fabric {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.fid.as_fid()
     }
 }

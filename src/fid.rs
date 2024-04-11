@@ -1,7 +1,25 @@
+use std::marker::PhantomData;
+
 use crate::error;
+pub(crate) type Fid = *mut libfabric_sys::fid;
+
+#[derive(Clone)]
+pub struct BorrowedFid<'a> {
+    fid: Fid,
+    phantom: PhantomData<&'a OwnedFid>
+}
+
+impl<'a> BorrowedFid<'a> {
+    pub(crate) fn from(fid: &'a OwnedFid) -> Self {
+        Self {
+            fid: fid.fid,
+            phantom: PhantomData,
+        }
+    }
+}
 
 pub(crate) struct OwnedFid {
-    fid: *mut libfabric_sys::fid,
+    fid: Fid,
 }
 
 impl OwnedFid {
@@ -22,11 +40,39 @@ impl Drop for OwnedFid {
 }
 
 impl AsFid for OwnedFid {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> BorrowedFid {
+        BorrowedFid::from(self)
+    }
+}
+
+// impl AsFid for OwnedFid {
+//     fn as_fid(&self) -> *mut libfabric_sys::fid {
+//         self.fid
+//     }
+// }
+
+pub trait AsFid {
+    fn as_fid(&self) -> BorrowedFid;
+}
+
+pub(crate) trait AsRawFid {
+    fn as_raw_fid(&self) -> Fid;
+}
+
+impl<'a> AsRawFid for BorrowedFid<'a> {
+    fn as_raw_fid(&self) -> Fid {
         self.fid
     }
 }
 
-pub trait AsFid {
-    fn as_fid(&self) -> *mut libfabric_sys::fid;
+
+
+// pub trait AsFid {
+//     fn as_fid(&self) -> *mut libfabric_sys::fid;
+// }
+
+impl<T: AsFid> AsRawFid for T  {
+    fn as_raw_fid(&self) -> Fid {
+        self.as_fid().as_raw_fid()
+    }
 }

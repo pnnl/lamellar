@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{enums::MrMode, domain::DomainImpl, utils::check_error};
+use crate::{enums::{MrMode, MrAccess}, domain::DomainImpl, utils::check_error, fid::{self, AsRawFid}};
 #[allow(unused_imports)]
 use crate::fid::{AsFid, OwnedFid};
 
@@ -50,10 +50,25 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn from_buffer<T0>(domain: &crate::domain::Domain, buf: &[T0], acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
+    pub(crate) fn from_buffer<T>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> { // [TODO] Add context version
+        MemoryRegion::from_buffer_::<T,()>(domain, buf, access, requested_key, flags, None)
+    }
+    
+    #[allow(dead_code)]
+    pub(crate) fn from_buffer_with_context<T,T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: &mut T0) -> Result<MemoryRegion, crate::error::Error> { // [TODO] Add context version
+        MemoryRegion::from_buffer_(domain, buf, access, requested_key, flags, Some(context))
+    }
+
+    fn from_buffer_<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
+        let err = 
+        if let Some(ctx) = context {
+            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast() ) }
+        } 
+        else {
+            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
+        };
         
         
         if err != 0 {
@@ -73,7 +88,7 @@ impl MemoryRegion {
         }
     }
 
-    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
+    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
@@ -97,10 +112,25 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn from_iovec<T>(domain: &crate::domain::Domain,  iov : &crate::iovec::IoVec<T>, count: usize, acs: u64, offset: u64, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
+    pub(crate) fn from_iovec<T>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
+        MemoryRegion::from_iovec_::<T, ()>(domain, iov, access, requested_key, flags, None)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_iovec_with_context<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: &mut T0) -> Result<MemoryRegion, crate::error::Error> {
+        MemoryRegion::from_iovec_(domain, iov, access, requested_key, flags, Some(context))
+    }
+    
+    fn from_iovec_<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.get(), count, acs, offset, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) };
+        let err =
+        if let Some(ctx) = context {
+            unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast()) }
+        }
+        else {
+            unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
+        };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -120,18 +150,25 @@ impl MemoryRegion {
     
     }
 
-    pub fn get_key(&mut self) -> u64 {
-        unsafe { libfabric_sys::inlined_fi_mr_key(self.handle()) }
+    pub fn get_key(&mut self) -> Option<u64> {
+        
+        let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.handle()) };
+        if ret == crate::FI_KEY_NOTAVAIL {
+            None
+        }
+        else {  
+            Some(ret)
+        }
     }
 
     pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_fid(), flags) } ;
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_raw_fid(), flags) } ;
         
         check_error(err.try_into().unwrap())
     }
 
     pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_fid(), 0) } ;
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_raw_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())
     }
@@ -198,7 +235,7 @@ impl crate::DataDescriptor for MemoryRegionDesc {
 }
 
 impl AsFid for MemoryRegion{
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.fid.as_fid()
     }
 }
@@ -236,8 +273,13 @@ impl MemoryRegionAttr {
         self
     }
 
-    pub fn access(&mut self, access: u64) -> &mut Self {
-        self.c_attr.access = access;
+    pub fn access(&mut self, access: &MrAccess) -> &mut Self {
+        self.c_attr.access = access.get_value() as u64;
+        self
+    }
+
+    pub fn access_collective(&mut self) -> &mut Self { 
+        self.c_attr.access |= libfabric_sys::FI_COLLECTIVE as u64;
         self
     }
 
@@ -337,6 +379,11 @@ impl<'a> MemoryRegionBuilder<'a> {
     }
 
     
+    pub fn access_collective(mut self) -> Self { 
+        self.mr_attr.access_collective();
+        self
+    }
+
     pub fn access_send(mut self) -> Self { 
         self.mr_attr.access_send();
         self
@@ -367,7 +414,7 @@ impl<'a> MemoryRegionBuilder<'a> {
         self
     }
 
-    pub fn access(mut self, access: u64) -> Self {
+    pub fn access(mut self, access: &MrAccess) -> Self {
         self.mr_attr.access(access);
         self
     }
@@ -410,7 +457,7 @@ impl<'a> MemoryRegionBuilder<'a> {
 //================== Memory Region tests ==================//
 #[cfg(test)]
 mod tests {
-    use crate::{iovec::IoVec, info::{Info, InfoHints}};
+    use crate::{iovec::IoVec, info::{Info, InfoHints}, enums::MrAccess};
 
     use super::MemoryRegionBuilder;
 
@@ -499,7 +546,7 @@ mod tests {
                 for combo in &combos {
                     let _mr = MemoryRegionBuilder::new(&domain)
                         .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
-                        .access(*combo)
+                        .access(&MrAccess::from_value(*combo as u32))
                         .offset(0)
                         .requested_key(0xC0DE)
                         .build()
@@ -598,10 +645,9 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{iovec::IoVec, info::{Info, InfoHints}};
+    use crate::{iovec::IoVec, info::{Info, InfoHints}, enums::MrAccess};
 
     use super::MemoryRegionBuilder;
-    use crate::infocapsoptions::Caps;
     
     #[test]
     fn mr_drops_before_domain() {
@@ -660,7 +706,7 @@ mod libfabric_lifetime_tests {
                 for combo in &combos {
                     let mr = MemoryRegionBuilder::new(&domain)
                         .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
-                        .access(*combo)
+                        .access(&MrAccess::from_value(*combo as u32))
                         .offset(0)
                         .requested_key(0xC0DE)
                         .build()

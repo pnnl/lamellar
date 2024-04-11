@@ -1,10 +1,10 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, path::Display};
 
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::OwnedFid};
+use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, AsRawFid, self}};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
 //     fn drop(&mut self) {
@@ -201,7 +201,7 @@ impl<T: EqConfig> EventQueue<T> {
     }
 
     pub fn strerror(&self, entry: &EventQueueErrEntry) -> &str {
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
     
             unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     }
@@ -263,7 +263,7 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
         if let Some(wait) = self.inner.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -277,7 +277,7 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
                     cond: std::ptr::null_mut(),
                 };
 
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut fi_mutex_cond as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut fi_mutex_cond as *mut std::ffi::c_void) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -319,7 +319,7 @@ fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> 
 }
 
 impl<T: EqConfig> AsFid for EventQueue<T> {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
        self.inner.fid.as_fid()
     }
 }
@@ -585,8 +585,8 @@ impl<T> EventQueueEntry<T> {
         Self { c_entry, phantom: std::marker::PhantomData }
     }
 
-    pub fn fid(&mut self, fid: &impl AsFid) -> &mut Self { //[TODO] Should this be pub(crate)?
-        self.c_entry.fid = fid.as_fid();
+    pub fn fid(&mut self, fid: &impl AsFid) -> &mut Self { //[TODO] Should this be pub(crate)? Also, should use BorrowedFid
+        self.c_entry.fid = fid.as_fid().as_raw_fid();
         self
     }
 
@@ -666,8 +666,7 @@ impl Default for EventQueueCmEntry {
 #[cfg(test)]
 mod tests {
 
-    use crate::info::Info;
-    use crate::fid::AsFid;
+    use crate::{info::Info, fid::AsRawFid};
 
     use super::{Event, EventQueueBuilder};
 
@@ -709,7 +708,7 @@ mod tests {
                     panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
                 }
                 
-                if entry.get_fid() != if i & 2 == 2 {fab.as_fid()} else {eq.as_fid()} {
+                if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
                     panic!("Unexpected fid {:?}", entry.get_fid());
                 }
             }
@@ -779,7 +778,7 @@ mod tests {
                     panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
                 }
                 
-                if entry.get_fid() != if i & 2 == 2 {fab.as_fid()} else {eq.as_fid()} {
+                if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
                     panic!("Unexpected fid {:?}", entry.get_fid());
                 }
             }
@@ -825,7 +824,7 @@ mod tests {
                     panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
                 }
                 
-                if entry.get_fid() != fab.as_fid() {
+                if entry.get_fid() != fab.as_raw_fid() {
                     panic!("Unexpected fid {:?}", entry.get_fid());
                 }
             }

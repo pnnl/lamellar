@@ -1,8 +1,6 @@
-use core::panic;
-use std::{marker::PhantomData, rc::Rc};
+use std::rc::Rc;
 
 use mr::DataDescriptor;
-use utils::to_fi_datatype;
 
 pub mod ep;
 pub mod domain;
@@ -31,6 +29,8 @@ pub mod msg;
 pub type Address = libfabric_sys::fi_addr_t; 
 pub type DataType = libfabric_sys::fi_datatype;
 pub type CollectiveOp = libfabric_sys::fi_collective_op;
+const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
+const FI_KEY_NOTAVAIL : u64 = u64::MAX;
 
 
 

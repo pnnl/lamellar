@@ -2,8 +2,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, Address, Context, FdRetrievable, WaitRetrievable, Waitable, fid::OwnedFid};
-const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, Address, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}};
 
 
 // impl<T: CqConfig> Drop for CompletionQueue<T> {
@@ -138,7 +137,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.inner.format, self.handle(),count, p_address);
-        let address = if address == FI_ADDR_NOTAVAIL {
+        let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
         }
         else {
@@ -209,7 +208,7 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;   
         let p_cond = std::ptr::null_mut();
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.inner.format, self.handle(), count, p_address, p_cond, timeout);
-        let address = if address == FI_ADDR_NOTAVAIL {
+        let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
         }
         else {
@@ -244,7 +243,7 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
         if let Some(wait) = self.inner.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -258,7 +257,7 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
                     cond: std::ptr::null_mut(),
                 };
 
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut libfabric_sys::fi_mutex_cond as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut libfabric_sys::fi_mutex_cond as *mut std::ffi::c_void) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -290,7 +289,7 @@ impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
 }
 
 impl<T: CqConfig> AsFid for CompletionQueue<T> {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
             self.inner.fid.as_fid()
     }
 }

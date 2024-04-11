@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -8,6 +7,7 @@ use crate::ep::Endpoint;
 use crate::ep::EndpointImpl;
 use crate::error::Error;
 use crate::Address;
+use crate::fid;
 use crate::fid::AsFid;
 use crate::fid::OwnedFid;
 use crate::infocapsoptions::CollCap;
@@ -41,7 +41,7 @@ pub struct MulticastGroupCollective {
 pub struct MulticastGroupCollectiveImpl  {
     c_mc: *mut libfabric_sys::fid_mc,
     fid: OwnedFid,
-    ep: Rc<RefCell<EndpointImpl>>,
+    ep: Rc<EndpointImpl>,
 }
 
 impl MulticastGroupCollective {
@@ -136,142 +136,142 @@ impl MulticastGroupCollective {
     }
 
     pub fn barrier(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_barrier(self.inner.ep.borrow().c_ep, self.get_addr(), std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_barrier(self.inner.ep.c_ep, self.get_addr(), std::ptr::null_mut()) };
 
         check_error(err)
     }
 
     pub fn barrier_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_barrier(self.inner.ep.borrow().c_ep, self.get_addr(), (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_barrier(self.inner.ep.c_ep, self.get_addr(), (context as *mut T0).cast()) };
 
         check_error(err)
     }
 
     pub fn barrier2(&self, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_barrier2(self.inner.ep.borrow().c_ep, self.get_addr(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_barrier2(self.inner.ep.c_ep, self.get_addr(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
 
     pub fn barrier2_with_context<T0>(&self, flags: u64, context : &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_barrier2(self.inner.ep.borrow().c_ep, self.get_addr(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_barrier2(self.inner.ep.c_ep, self.get_addr(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
 
     pub fn broadcas<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, root_addr: crate::Address, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_broadcast(self.inner.ep.borrow().c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_broadcast(self.inner.ep.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn broadcast_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, root_addr: crate::Address,flags: u64, context : &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_broadcast(self.inner.ep.borrow().c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_broadcast(self.inner.ep.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn alltoall<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn alltoall_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,flags: u64, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn allreduce<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn allreduce_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  flags: u64, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
     
     pub fn allgather<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.inner.ep.borrow().c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr() as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), libfabric_sys::fi_datatype_FI_UINT8, flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.inner.ep.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr() as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), libfabric_sys::fi_datatype_FI_UINT8, flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn allgather_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, flags: u64, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.inner.ep.borrow().c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr() as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), libfabric_sys::fi_datatype_FI_UINT8, flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.inner.ep.c_ep, buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr() as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), libfabric_sys::fi_datatype_FI_UINT8, flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn reduce_scatter<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn reduce_scatter_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  flags: u64, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), to_fi_datatype::<T>(), op.get_value(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn reduce<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_addr: crate::Address,op: crate::enums::Op,  flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_reduce(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), op.get_value(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_reduce(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), op.get_value(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn reduce_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_addr: crate::Address,op: crate::enums::Op,  flags: u64, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_reduce(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), op.get_value(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_reduce(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), op.get_value(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn scatter<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_addr: crate::Address, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_scatter(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_scatter(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn scatter_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_addr: crate::Address, flags: u64, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_scatter(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_scatter(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn gather<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_addr: crate::Address, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_gather(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
+        let err = unsafe { libfabric_sys::inlined_fi_gather(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, std::ptr::null_mut()) };
 
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
     pub fn gather_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_addr: crate::Address, flags: u64, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_gather(self.inner.ep.borrow().c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
+        let err = unsafe { libfabric_sys::inlined_fi_gather(self.inner.ep.c_ep, buf as *mut [T] as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), self.get_addr(), root_addr, to_fi_datatype::<T>(), flags, (context as *mut T0).cast()) };
 
         check_error(err)
     }
 }
 
 impl AsFid for MulticastGroupCollective {
-    fn as_fid(&self) -> *mut libfabric_sys::fid {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.fid.as_fid()
     }
 }
