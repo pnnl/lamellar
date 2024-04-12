@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, EndpointName}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, Address, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::default_desc};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, EndpointName, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, Address, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::default_desc};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -443,6 +443,12 @@ pub enum EndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
     Msg(Endpoint<M>),
     Tagged(Endpoint<T>),
 }
+pub enum PassiveEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
+    Msg(PassiveEndpoint<M>),
+    Tagged(PassiveEndpoint<T>),
+}
+
+
 
 #[allow(clippy::type_complexity)]
 pub fn ft_server_connect<T: EqConfig + libfabric::Waitable + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(caps: &HintsCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (libfabric::domain::Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
@@ -1305,7 +1311,7 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
     peer_iov
 }
 
-pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, node: String, service: String) -> (InfoWithCaps<M, T>, fabric::Fabric, libfabric::eq::EventQueue<EventQueueOptions>) {
+pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, node: String, service: String) -> (InfoWithCaps<M, T>, fabric::Fabric, libfabric::eq::EventQueue<EventQueueOptions>, PassiveEndpointCaps<M, T>) {
    
     match hints {
         HintsCaps::Msg(hints) => {
@@ -1328,7 +1334,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
             pep.listen().unwrap();
 
 
-            (InfoWithCaps::Msg(info), fab, eq)
+            (InfoWithCaps::Msg(info), fab, eq, PassiveEndpointCaps::Msg(pep))
         }
         HintsCaps::Tagged(hints) => {
             let info = ft_getinfo(hints, node, service, libfabric_sys::FI_SOURCE);
@@ -1350,7 +1356,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
             pep.listen().unwrap();
 
 
-            (InfoWithCaps::Tagged(info), fab, eq)
+            (InfoWithCaps::Tagged(info), fab, eq, PassiveEndpointCaps::Tagged(pep))
         }
     }
 

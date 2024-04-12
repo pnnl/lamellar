@@ -52,7 +52,7 @@ fn pp_server_msg() {
 
     // match hintscaps {
         // HintsCaps::Msg(hints) => {
-    let (info, fab, eq) = common::start_server(hintscaps.clone(), IP.to_owned(), "9222".to_owned());
+    let (info, fab, eq, _pep) = common::start_server(hintscaps.clone(), IP.to_owned(), "9222".to_owned());
 
 
         let (domain, tx_cq, rx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = common::ft_server_connect(&hintscaps, &mut gl_ctx, &eq, &fab);

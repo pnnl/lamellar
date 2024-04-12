@@ -4,7 +4,7 @@ use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_G
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, Bind};
 
 #[repr(C)]
 pub struct EndpointName {
@@ -653,6 +653,7 @@ impl<E> AsFd for ScalableEndpoint<E> {
 pub struct PassiveEndpointImpl {
     pub(crate) c_pep: *mut libfabric_sys::fid_pep,
     fid: OwnedFid,
+    _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
     _fabric_rc: Rc<FabricImpl>,
 }
 
@@ -678,6 +679,7 @@ impl PassiveEndpoint<()> {
                         PassiveEndpointImpl {
                             c_pep, 
                             fid: OwnedFid::from(unsafe{ &mut (*c_pep).fid }),
+                            _sync_rcs: RefCell::new(Vec::new()),
                             _fabric_rc: fabric.inner.clone(),
                         }),
                     phantom: PhantomData,
@@ -700,6 +702,7 @@ impl PassiveEndpoint<()> {
                         PassiveEndpointImpl {
                             c_pep, 
                             fid: OwnedFid::from(unsafe{ &mut (*c_pep).fid }),
+                            _sync_rcs: RefCell::new(Vec::new()),
                             _fabric_rc: fabric.inner.clone(),
                         }),
                     phantom: PhantomData,
@@ -717,10 +720,15 @@ impl<E> PassiveEndpoint<E> {
 
 
     
-    pub fn bind<T: EqConfig>(&self, res: &EventQueue<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub fn bind<T: EqConfig + 'static>(&self, res: &EventQueue<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.inner.c_pep, res.as_fid().as_raw_fid(), flags) };
-        
-        check_error(err.try_into().unwrap())
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            self.inner._sync_rcs.borrow_mut().push(res.inner().clone()); //  [TODO] Do this with inner mutability.
+            Ok(())
+        }
     }
 
     pub fn listen(&self) -> Result<(), crate::error::Error> {
@@ -1038,7 +1046,7 @@ impl<E> Endpoint<E> {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            self.inner._sync_rcs.borrow_mut().push(res.inner()); //  [TODO] Do this with inner mutability.
+            self.inner._sync_rcs.borrow_mut().push(res.inner().clone()); //  [TODO] Do this with inner mutability.
             Ok(())
         }
     } 
