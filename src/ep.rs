@@ -7,13 +7,21 @@ use crate::fid::AsFid;
 use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::EventQueue, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, Bind};
 
 #[repr(C)]
-pub struct EndpointName {
+pub struct Address {
     address: Vec<u8>,
 }
 
-impl EndpointName {
+impl Address {
+
+
+    pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
+        let mut address = vec![0u8; len];
+        address.copy_from_slice(std::slice::from_raw_parts(raw, len));
+        Self{address}
+    }
+
     pub unsafe fn from_bytes(raw: &[u8]) -> Self {
-        EndpointName { address: raw.to_vec() }
+        Address { address: raw.to_vec() }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -36,7 +44,7 @@ pub struct Endpoint<T> {
 
 pub trait BaseEndpoint : AsFid {
 
-    fn getname(&self) -> Result<EndpointName, crate::error::Error> {
+    fn getname(&self) -> Result<Address, crate::error::Error> {
         let mut len = 0;
         let err: i32 = unsafe { libfabric_sys::inlined_fi_getname(self.as_fid().as_raw_fid(), std::ptr::null_mut(), &mut len) };
         if -err as u32  == libfabric_sys::FI_ETOOSMALL {
@@ -48,7 +56,7 @@ pub trait BaseEndpoint : AsFid {
             }
             else 
             {
-                Ok(EndpointName{address})
+                Ok(Address{address})
             }
         }
         else
@@ -233,7 +241,7 @@ impl<T> ActiveEndpoint for Endpoint<T> {
 
 impl<T> Endpoint<T> {
     
-    pub fn getname(&self) -> Result<EndpointName, crate::error::Error> {
+    pub fn getname(&self) -> Result<Address, crate::error::Error> {
         BaseEndpoint::getname(self)
     }
 
@@ -309,19 +317,19 @@ impl<T> Endpoint<T> {
         ActiveEndpoint::tx_size_left(self)
     }
 
-    pub fn getpeer(&self) -> Result<EndpointName, crate::error::Error> {
+    pub fn getpeer(&self) -> Result<Address, crate::error::Error> {
         ActiveEndpoint::getpeer(self)
     }
 
-    pub fn connect_with<T0,T1>(&self, addr: &T0, param: &[T1]) -> Result<(), crate::error::Error> {
+    pub fn connect_with<P>(&self, addr: &Address, param: &[P]) -> Result<(), crate::error::Error> {
         ActiveEndpoint::connect_with(self,addr, param)
     }
 
-    pub fn connect<T0>(&self, addr: &T0) -> Result<(), crate::error::Error> {
+    pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
         ActiveEndpoint::connect(self, addr)
     }
 
-    pub fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
+    pub fn accept_with<P>(&self, param: &[P]) -> Result<(), crate::error::Error> {
         ActiveEndpoint::accept_with(self, param)
     }
 
@@ -420,7 +428,7 @@ impl<E> ScalableEndpoint<E> {
         }
     }
 
-    pub fn getname(&self) -> Result<EndpointName, crate::error::Error> {
+    pub fn getname(&self) -> Result<Address, crate::error::Error> {
         BaseEndpoint::getname(self)
     }
 
@@ -499,15 +507,15 @@ impl<E> ScalableEndpoint<E> {
         ActiveEndpoint::tx_size_left(self)
     }
 
-    pub fn getpeer<T0>(&self) -> Result<EndpointName, crate::error::Error> {
+    pub fn getpeer<T0>(&self) -> Result<Address, crate::error::Error> {
         ActiveEndpoint::getpeer(self)
     }
 
-    pub fn connect_with<T0,T1>(&self, addr: &T0, param: &[T1]) -> Result<(), crate::error::Error> {
+    pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
         ActiveEndpoint::connect_with(self,addr, param)
     }
 
-    pub fn connect<T0>(&self, addr: &T0) -> Result<(), crate::error::Error> {
+    pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
         ActiveEndpoint::connect(self, addr)
     }
 
@@ -991,7 +999,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
         }
     }
 
-    fn getpeer(&self) -> Result<EndpointName, crate::error::Error> {
+    fn getpeer(&self) -> Result<Address, crate::error::Error> {
         let mut len = 0;
         let err = unsafe { libfabric_sys::inlined_fi_getpeer(self.handle(), std::ptr::null_mut(), &mut len)};
         
@@ -1002,7 +1010,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
                 Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
             }
             else {
-                Ok(EndpointName{address})
+                Ok(Address{address})
             }
         }
         else {
@@ -1010,14 +1018,14 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
         }
     }
 
-    fn connect_with<T0,T1>(&self, addr: &T0, param: &[T1]) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr as *const T0 as *const std::ffi::c_void, param.as_ptr() as *const std::ffi::c_void, param.len()) };
+    fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr.as_bytes().as_ptr().cast(), param.as_ptr() as *const std::ffi::c_void, param.len()) };
         
         check_error(err.try_into().unwrap())
     }
 
-    fn connect<T0>(&self, addr: &T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr as *const T0 as *const std::ffi::c_void, std::ptr::null_mut(), 0) };
+    fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr.as_bytes().as_ptr().cast(), std::ptr::null_mut(), 0) };
 
         check_error(err.try_into().unwrap())
     }

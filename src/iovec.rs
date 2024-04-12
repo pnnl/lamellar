@@ -44,6 +44,7 @@ impl<'a, T> IoVec<'a, T> {
         Self { c_iovec, borrow: PhantomData }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get(&self) ->  *const libfabric_sys::iovec {
         &self.c_iovec
     }
@@ -98,6 +99,7 @@ impl<'a, T> Ioc<'a, T> {
         Self { c_ioc, borrow: PhantomData }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_ioc {
         &self.c_ioc
     }

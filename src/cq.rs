@@ -2,7 +2,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, Address, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}};
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}};
 
 
 // impl<T: CqConfig> Drop for CompletionQueue<T> {
@@ -116,7 +116,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         }
     }
 
-    pub fn readfrom(&self, count: usize) -> Result<(CqEntryFormat, Option<Address>), crate::error::Error> {
+    pub fn readfrom(&self, count: usize) -> Result<(CqEntryFormat, Option<MappedAddress>), crate::error::Error> {
        
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
@@ -125,7 +125,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
             None
         }
         else {
-            Some(address)
+            Some(MappedAddress::from_raw_addr(address))
         };
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -186,7 +186,7 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
         }
     }
 
-    pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(CqEntryFormat, Option<Address>), crate::error::Error> {
+    pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(CqEntryFormat, Option<MappedAddress>), crate::error::Error> {
         
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;   
@@ -196,7 +196,7 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
             None
         }
         else {
-            Some(address)
+            Some(MappedAddress::from_raw_addr(address))
         };
 
         if err < 0 {

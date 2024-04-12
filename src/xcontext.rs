@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{ActiveEndpoint, BaseEndpoint, Endpoint, ActiveEndpointImpl, EndpointName}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{ActiveEndpoint, BaseEndpoint, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
 
 pub struct Receive;
 pub struct Transmit;
@@ -20,7 +20,7 @@ impl<T: 'static> XContextBase<T> {
         self.inner.c_ep
     }
 
-    pub fn getname<T0>(&self) -> Result<EndpointName, crate::error::Error> {
+    pub fn getname<T0>(&self) -> Result<Address, crate::error::Error> {
         BaseEndpoint::getname(self)
     }
 
@@ -92,19 +92,19 @@ impl<T: 'static> XContextBase<T> {
         ActiveEndpoint::tx_size_left(self)
     }
 
-    pub fn getpeer(&self) -> Result<EndpointName, crate::error::Error> {
+    pub fn getpeer(&self) -> Result<Address, crate::error::Error> {
         ActiveEndpoint::getpeer(self)
     }
 
-    pub fn connect_with<T0,T1>(&self, addr: &T0, param: &[T1]) -> Result<(), crate::error::Error> {
+    pub fn connect_with<P>(&self, addr: &Address, param: &[P]) -> Result<(), crate::error::Error> {
         ActiveEndpoint::connect_with(self,addr, param)
     }
 
-    pub fn connect<T0>(&self, addr: &T0) -> Result<(), crate::error::Error> {
+    pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
         ActiveEndpoint::connect(self, addr)
     }
 
-    pub fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
+    pub fn accept_with<P>(&self, param: &[P]) -> Result<(), crate::error::Error> {
         ActiveEndpoint::accept_with(self, param)
     }
 

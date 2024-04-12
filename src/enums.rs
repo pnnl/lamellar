@@ -357,6 +357,8 @@ pub enum ControlOpt {
 }
 
 impl ControlOpt {
+
+    #[allow(dead_code)]
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_7 {
         match self {
 
@@ -527,6 +529,7 @@ impl MrAccess {
         Self{c_flags: 0}
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_value(value: u32) -> Self {
         Self {c_flags: value}
     }

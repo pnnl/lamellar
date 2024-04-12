@@ -13,29 +13,29 @@ use crate::xcontext::TransmitContext;
 impl<E: AtomicCap+ WriteMod> Endpoint<E> {
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomic_with_context<T: 'static, T0>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn atomic_with_context<T: 'static, T0>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context: &mut T0) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor],  dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor],  dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
@@ -47,8 +47,8 @@ impl<E: AtomicCap+ WriteMod> Endpoint<E> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn inject_atomic<T: 'static>(&self, buf: &[T], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value())};
+    pub fn inject_atomic<T: 'static>(&self, buf: &[T], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value())};
         
         check_error(err)
     }
@@ -58,29 +58,29 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
 
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn fetch_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn fetch_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor],  dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn fetch_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor],  dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn fetch_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
@@ -93,10 +93,10 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
-            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), compare.as_mut_ptr().cast(), 
-            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         
         check_error(err)
@@ -104,10 +104,10 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
-            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
+            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
         
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), compare.as_mut_ptr().cast(), 
-            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         
         check_error(err)
@@ -115,9 +115,9 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor], 
-        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         
-        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         
         check_error(err)
@@ -125,9 +125,9 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor],
-        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
+        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
         
-        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         
         check_error(err)
@@ -180,29 +180,29 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
 impl TransmitContext {
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context: &mut T0) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor],  dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor],  dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
@@ -214,36 +214,36 @@ impl TransmitContext {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn inject_atomic<T: 'static>(&self, buf: &[T], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value())};
+    pub fn inject_atomic<T: 'static>(&self, buf: &[T], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn fetch_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn fetch_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn fetch_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn fetch_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
@@ -257,10 +257,10 @@ impl TransmitContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
-            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), compare.as_mut_ptr().cast(), 
-            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         
         check_error(err)
@@ -268,10 +268,10 @@ impl TransmitContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
-            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
+            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
         
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), compare.as_mut_ptr().cast(), 
-            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         
         check_error(err)
@@ -279,16 +279,16 @@ impl TransmitContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor], 
-        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
-        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor], 
-        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast() , res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
+        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast() , res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         
         check_error(err)
@@ -341,29 +341,29 @@ impl TransmitContext {
 impl ReceiveContext {
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context: &mut T0) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
@@ -375,36 +375,36 @@ impl ReceiveContext {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn inject_atomic<T: 'static>(&self, buf: &[T], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value())};
+    pub fn inject_atomic<T: 'static>(&self, buf: &[T], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn fetch_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), res.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn fetch_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomic(self.handle(), buf.as_ptr().cast(), res.len(), desc.get_desc().cast(), res.as_mut_ptr().cast(), res_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+    pub fn fetch_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn fetch_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+    pub fn fetch_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error>{
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         check_error(err)
     }
@@ -418,10 +418,10 @@ impl ReceiveContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
-            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), compare.as_mut_ptr().cast(), 
-            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         
         check_error(err)
@@ -429,10 +429,10 @@ impl ReceiveContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomic_with_context<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
-            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
+            result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
         
         let err = unsafe {libfabric_sys::inlined_fi_compare_atomic(self.handle(), buf.as_ptr().cast(), buf.len(), desc.get_desc().cast(), compare.as_mut_ptr().cast(), 
-            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+            compare_desc.get_desc().cast(), result.as_mut_ptr().cast(), result_desc.get_desc().cast(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         
         check_error(err)
@@ -440,18 +440,18 @@ impl ReceiveContext {
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv<T: 'static>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor], 
-        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
+        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         
-        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
+        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), std::ptr::null_mut())};
         
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn compare_atomicv_with_context<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor], 
-        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: crate::Address, addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
+        resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, key: u64, op: crate::enums::Op, context : &mut T0) -> Result<(), crate::error::Error> {
         
-        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr, addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
+        let err = unsafe {libfabric_sys::inlined_fi_compare_atomicv(self.handle(), ioc.as_ptr().cast(), desc.as_mut_ptr().cast(), ioc.len(), comparetv.as_mut_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparetv.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), dest_addr.raw_addr(), mem_addr, key, to_fi_datatype::<T>(), op.get_value(), (context as *mut T0).cast())};
         
         
         check_error(err)

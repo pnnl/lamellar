@@ -26,12 +26,29 @@ mod fid;
 pub mod iovec;
 pub mod msg;
 
-pub type Address = libfabric_sys::fi_addr_t; 
+pub type RawMappedAddress = libfabric_sys::fi_addr_t; 
+
+#[repr(C)]
+pub struct MappedAddress (libfabric_sys::fi_addr_t);
+
+impl MappedAddress {
+    pub fn unspec() -> Self {
+        Self(FI_ADDR_UNSPEC)
+    }
+    pub(crate) fn from_raw_addr(addr: RawMappedAddress) -> Self {
+        Self(addr)
+    }
+
+    pub(crate) fn raw_addr(&self) -> RawMappedAddress {
+        self.0
+    }
+}
+
 pub type DataType = libfabric_sys::fi_datatype;
 pub type CollectiveOp = libfabric_sys::fi_collective_op;
 const FI_ADDR_NOTAVAIL : u64 = u64::MAX;
 const FI_KEY_NOTAVAIL : u64 = u64::MAX;
-
+const FI_ADDR_UNSPEC : u64 = u64::MAX;
 
 
 // pub struct Stx {
@@ -76,8 +93,24 @@ const FI_KEY_NOTAVAIL : u64 = u64::MAX;
 
 
 
-pub fn rx_addr(addr: Address, rx_index: i32, rx_ctx_bits: i32) -> Address {
-    unsafe { libfabric_sys::inlined_fi_rx_addr(addr, rx_index, rx_ctx_bits) }
+pub fn rx_addr(addr: &MappedAddress, rx_index: i32, rx_ctx_bits: i32) -> Option<MappedAddress> {
+    let ret = unsafe { libfabric_sys::inlined_fi_rx_addr(addr.raw_addr(), rx_index, rx_ctx_bits) };
+    if ret == FI_ADDR_NOTAVAIL {
+        None
+    }
+    else {
+        Some(MappedAddress::from_raw_addr(ret))
+    }
+}
+
+pub fn rx_addr_no_av(rx_index: i32, rx_ctx_bits: i32) -> Option<MappedAddress> {
+    let ret = unsafe { libfabric_sys::inlined_fi_rx_addr(FI_ADDR_NOTAVAIL, rx_index, rx_ctx_bits) };
+    if ret == FI_ADDR_NOTAVAIL {
+        None
+    }
+    else {
+        Some(MappedAddress::from_raw_addr(ret))
+    }
 }
 
 
@@ -127,6 +160,8 @@ pub fn rx_addr(addr: Address, rx_index: i32, rx_ctx_bits: i32) -> Address {
 
 
 pub struct Context {
+    #[allow(dead_code)]
+
     c_val: libfabric_sys::fi_context,
 }
 
@@ -138,7 +173,8 @@ impl Context {
             }
         }
     }
-
+    
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context {
         &mut self.c_val
     }

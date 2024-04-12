@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{nic::Nic, utils::check_error, infocapsoptions::Caps};
+use crate::{nic::Nic, utils::check_error, infocapsoptions::Caps, ep::Address};
 
 #[derive(Clone, Debug)]
 pub struct InfoCapsImpl {
@@ -196,12 +196,12 @@ impl<T> InfoEntry<T> {
         Self { caps: InfoCapsImpl::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, nic, c_info, phantom: PhantomData }
     }
 
-    pub fn get_dest_addr<T0>(&self) -> & T0 {
-        unsafe { &*((*self.c_info).dest_addr as *const  usize as *const T0) as &T0}
+    pub fn get_dest_addr(&self) -> Address {
+        unsafe{ Address::from_raw_parts((*self.c_info).dest_addr as *const u8, (*self.c_info).dest_addrlen) }
     }
 
-    pub fn get_src_addr<T0>(&self) -> & T0 {
-        unsafe { &*((*self.c_info).src_addr as *const  usize as *const T0) as &T0}
+    pub fn get_src_addr(&self) -> Address {
+        unsafe{ Address::from_raw_parts((*self.c_info).src_addr as *const u8, (*self.c_info).src_addrlen) }
     }
 
     pub fn get_mode(&self) -> crate::enums::Mode {

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, path::Display};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 
