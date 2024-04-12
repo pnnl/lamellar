@@ -48,18 +48,9 @@ impl MemoryRegion {
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
         self.inner.c_mr
     }
-
-    #[allow(dead_code)]
-    pub(crate) fn from_buffer<T>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> { // [TODO] Add context version
-        MemoryRegion::from_buffer_::<T,()>(domain, buf, access, requested_key, flags, None)
-    }
     
     #[allow(dead_code)]
-    pub(crate) fn from_buffer_with_context<T,T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: &mut T0) -> Result<MemoryRegion, crate::error::Error> { // [TODO] Add context version
-        MemoryRegion::from_buffer_(domain, buf, access, requested_key, flags, Some(context))
-    }
-
-    fn from_buffer_<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
+    fn from_buffer<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = 
@@ -110,18 +101,9 @@ impl MemoryRegion {
         }
     
     }
-
+            
     #[allow(dead_code)]
-    pub(crate) fn from_iovec<T>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> {
-        MemoryRegion::from_iovec_::<T, ()>(domain, iov, access, requested_key, flags, None)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn from_iovec_with_context<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: &mut T0) -> Result<MemoryRegion, crate::error::Error> {
-        MemoryRegion::from_iovec_(domain, iov, access, requested_key, flags, Some(context))
-    }
-    
-    fn from_iovec_<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
+    fn from_iovec<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =

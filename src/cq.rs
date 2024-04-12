@@ -69,37 +69,19 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         self.inner.c_cq
     }
 
-    pub(crate) fn new(_options: T, domain: &crate::domain::Domain, mut attr: CompletionQueueAttr) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(_options: T, domain: &crate::domain::Domain, mut attr: CompletionQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
 
-        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, std::ptr::null_mut())};
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(
-                Self {
-                    inner: Rc::new(
-                        CompletionQueueImpl { 
-                            c_cq, 
-                            fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
-                            format: CqFormat::from_value(attr.c_attr.format), 
-                            phantom: PhantomData, 
-                            wait_obj: Some(attr.c_attr.wait_obj),
-                            _domain_rc: domain.inner.clone(),
-                        }) 
-                })
-        }
-    }
-
-    pub(crate) fn new_with_context<T0>(_options: T, domain: &crate::domain::Domain, mut attr: CompletionQueueAttr, context: &mut T0) -> Result<Self, crate::error::Error> {
+        let err = 
+            if let Some(ctx) = context {
+                unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, (ctx as *mut T0).cast())}
+            }
+            else {
+                unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, std::ptr::null_mut())}
+            };
         
-        let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
-        let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
-
-        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, context as *mut T0 as *mut std::ffi::c_void)};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
@@ -119,6 +101,8 @@ impl<T> CompletionQueue<T> where T: CqConfig {
             )
         }
     }
+
+
 
     //[TODO] Maybe avoid making the extra copies for the final vector
     pub fn read(&self, count: usize) -> Result<CqEntryFormat, crate::error::Error> {
@@ -415,13 +399,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     }
 
     pub fn build(self) ->  Result<CompletionQueue<Options<WAIT, WAITFD>>, crate::error::Error> {
-
-        if let Some(ctx) = self.ctx {
-            CompletionQueue::new_with_context(self.options, self.domain, self.cq_attr, ctx)
-        }
-        else {
-            CompletionQueue::new(self.options, self.domain, self.cq_attr)   
-        }
+        CompletionQueue::new(self.options, self.domain, self.cq_attr, self.ctx)   
     }
 }
 

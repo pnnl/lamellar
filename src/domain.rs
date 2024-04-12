@@ -22,31 +22,16 @@ impl Domain {
         self.inner.c_domain
     }
 
-    pub(crate) fn new2<E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
-        let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) };
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(
-                Self { 
-                    inner : Rc::new(
-                        DomainImpl {
-                            c_domain, 
-                            _fabric_rc: fabric.inner.clone(), 
-                            fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
-                    })
-                })
-        }
-    }
-
-    pub(crate) fn new2_with_context<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, ctx: &mut T0) -> Result<Self, crate::error::Error> {
-        let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
-        let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
-        let err = unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, ctx as *mut T0 as *mut std::ffi::c_void) };
+        let err =
+            if let Some(ctx) = context {
+                unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, (ctx as *mut T0).cast()) }
+            }
+            else {
+                unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
+            };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -383,12 +368,7 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
     }
 
     pub fn build(self) -> Result<Domain, crate::error::Error> {
-        if let Some(ctx) = self.ctx {
-            Domain::new2_with_context(self.fabric, self.info, self.flags, ctx)
-        }
-        else {
-            Domain::new2(self.fabric, self.info, self.flags)
-        }
+        Domain::new(self.fabric, self.info, self.flags, self.ctx)
     }
 }
 

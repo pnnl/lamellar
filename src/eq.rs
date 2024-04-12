@@ -105,34 +105,18 @@ impl<T: EqConfig> EventQueue<T> {
         self.inner.c_eq
     }
 
-    pub(crate) fn new(_options: T, fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(_options: T,fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
-        let err = unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, std::ptr::null_mut())};
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self {
-                    inner: Rc::new(
-                        EventQueueImpl { 
-                            c_eq, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
-                            phantom: PhantomData, 
-                            wait_obj:  Some(attr.c_attr.wait_obj),
-                            _fabric_rc: fabric.inner.clone(),
-                        })
-                })
-        }
-    }
+        let err = 
+            if let Some(ctx) = context {
+                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, (ctx as *mut T0).cast())}
+            }
+            else {
+                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, std::ptr::null_mut())}
+            };
 
-    pub(crate) fn new_with_context<T0>(_options: T,fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr, ctx: &mut T0) -> Result<Self, crate::error::Error> {
-        let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
-        let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
-
-        let err = unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, ctx as *mut T0 as *mut std::ffi::c_void)};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
@@ -454,13 +438,7 @@ impl <'a, T, WRITE, WAIT, WAITFD> EventQueueBuilder<'a, T, WRITE, WAIT, WAITFD> 
     }
 
     pub fn build(self) ->  Result<EventQueue<Options<WRITE, WAIT, WAITFD>>, crate::error::Error> {
-
-        if let Some(ctx) = self.ctx {
-            EventQueue::new_with_context(self.options, self.fabric, self.eq_attr, ctx)
-        }
-        else {
-            EventQueue::new(self.options, self.fabric, self.eq_attr)   
-        }
+        EventQueue::new(self.options, self.fabric, self.eq_attr, self.ctx)   
     }
 }
 

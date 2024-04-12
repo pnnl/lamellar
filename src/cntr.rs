@@ -32,35 +32,16 @@ impl<T: CntrConfig> Counter<T> {
         self.inner.c_cntr
     }
 
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: CounterAttr) -> Result<Counter<T>, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Counter<T>, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.handle(), attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) };
-        
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok (
-                Self {
-                    inner: Rc::new (
-                        CounterImpl { 
-                            c_cntr, 
-                            fid: OwnedFid::from(unsafe { &mut (*c_cntr).fid }), 
-                            phantom: PhantomData, 
-                            wait_obj: Some(attr.c_attr.wait_obj),
-                            _domain_rc: domain.inner.clone(),
-                    })
-                })
-        }
-
-    }
-
-    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, ctx: &mut T0) -> Result<Counter<T>, crate::error::Error> {
-        let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
-        let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_open(domain.handle(), attr.get_mut(), c_cntr_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
+        let err = 
+            if let Some(ctx) = context {
+                unsafe { libfabric_sys::inlined_fi_cntr_open(domain.handle(), attr.get_mut(), c_cntr_ptr, (ctx as *mut T0).cast()) }
+            }
+            else {
+                unsafe { libfabric_sys::inlined_fi_cntr_open(domain.handle(), attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) }
+            };
 
 
         if err != 0 {
@@ -263,12 +244,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     }
 
     pub fn build(self) -> Result<Counter<Options<WAIT, WAITFD>>, crate::error::Error> {
-        if let Some(ctx) = self.ctx{
-                Counter::new_with_context(self.domain, self.cntr_attr, ctx)
-            }
-            else {
-                Counter::new(self.domain, self.cntr_attr)
-        }
+        Counter::new(self.domain, self.cntr_attr, self.ctx)
     }
 }
 

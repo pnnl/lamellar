@@ -32,11 +32,17 @@ impl AddressVector {
         self.inner.c_av
     }
 
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: AddressVectorAttr) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T>(domain: &crate::domain::Domain, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
         let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.handle(), attr.get_mut(), c_av_ptr, std::ptr::null_mut()) };
+        let err = 
+        if let Some(ctx) = context {
+            unsafe { libfabric_sys::inlined_fi_av_open(domain.handle(), attr.get_mut(), c_av_ptr, ctx as *mut T as *mut std::ffi::c_void) }
+        }
+        else {
+            unsafe { libfabric_sys::inlined_fi_av_open(domain.handle(), attr.get_mut(), c_av_ptr, std::ptr::null_mut()) }
+        };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -54,27 +60,6 @@ impl AddressVector {
         }
     }
 
-    pub(crate) fn new_with_context<T0>(domain: &crate::domain::Domain, mut attr: AddressVectorAttr, ctx: &mut T0) -> Result<Self, crate::error::Error> {
-        let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
-        let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
-
-        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.handle(), attr.get_mut(), c_av_ptr, ctx as *mut T0 as *mut std::ffi::c_void) };
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(
-                Self {
-                    inner: Rc::new(
-                        AddressVectorImpl {
-                            c_av,
-                            fid: OwnedFid::from(unsafe {&mut (*c_av).fid} ),
-                            _domain_rc: domain.inner.clone(),
-                    })
-                })
-        }
-    }
 
     /// Associates an [EventQueue](crate::eq::EventQueue) with the AddressVector.
     /// 
@@ -241,12 +226,7 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
     }
 
     pub fn build(self) -> Result<AddressVector, crate::error::Error> {
-        if let Some(ctx) = self.ctx {
-            AddressVector::new_with_context(self.domain, self.av_attr, ctx)
-        }
-        else {
-            AddressVector::new(self.domain, self.av_attr)
-        }
+        AddressVector::new(self.domain, self.av_attr, self.ctx)
     }
     
 }
@@ -269,11 +249,26 @@ impl AddressVectorSet {
         self.inner.c_set
     }
 
-    pub(crate) fn new(av: &AddressVector, mut attr: AddressVectorSetAttr) -> Result<AddressVectorSet, crate::error::Error> {
+    // pub(crate) fn new(av: &AddressVector,attr: AddressVectorSetAttr) -> Result<AddressVectorSet, crate::error::Error> {
+    //     Self::new_::<()>(av, attr, None)
+    // }
+
+    // pub(crate) fn new_with_context<T>(av: &AddressVector, attr: AddressVectorSetAttr, context: &mut T) -> Result<AddressVectorSet, crate::error::Error> {
+    //     Self::new_(av, attr, Some(context))
+    // }
+
+    fn new<T>(av: &AddressVector, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<AddressVectorSet, crate::error::Error> {
         let mut c_set: *mut libfabric_sys::fid_av_set = std::ptr::null_mut();
         let c_set_ptr: *mut *mut libfabric_sys::fid_av_set = &mut c_set;
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.handle(), attr.get_mut(), c_set_ptr, std::ptr::null_mut() ) };
+        let err = 
+        if let Some(ctx) = context {
+            unsafe { libfabric_sys::inlined_fi_av_set(av.handle(), attr.get_mut(), c_set_ptr, (ctx as *mut T).cast()) }
+        }
+        else {
+            unsafe { libfabric_sys::inlined_fi_av_set(av.handle(), attr.get_mut(), c_set_ptr, std::ptr::null_mut()) }
+        };
+
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
@@ -290,27 +285,6 @@ impl AddressVectorSet {
         }
     }
 
-    pub(crate) fn new_with_context<T0>(av: &AddressVector, mut attr: AddressVectorSetAttr, context: &mut T0) -> Result<AddressVectorSet, crate::error::Error> {
-        let mut c_set: *mut libfabric_sys::fid_av_set = std::ptr::null_mut();
-        let c_set_ptr: *mut *mut libfabric_sys::fid_av_set = &mut c_set;
-
-        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.handle(), attr.get_mut(), c_set_ptr, context as *mut T0 as *mut std::ffi::c_void) };
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self {
-                    inner: Rc::new(
-                        AddressVectorSetImpl { 
-                            c_set, 
-                            fid: OwnedFid::from(unsafe {&mut (*c_set).fid} ),
-                            _av_rc: av.inner.clone(),
-                    })
-                })
-        }
-    }
-    
     pub fn union(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_union(self.handle(), other.handle()) };
 
@@ -443,12 +417,7 @@ impl<'a, T> AddressVectorSetBuilder<'a, T> {
     }
 
     pub fn build(self) -> Result<AddressVectorSet, crate::error::Error> {
-        if let Some(ctx) = self.ctx {
-            AddressVectorSet::new_with_context(self.av, self.avset_attr, ctx)
-        }
-        else {
-            AddressVectorSet::new(self.av, self.avset_attr)
-        }
+        AddressVectorSet::new(self.av, self.avset_attr, self.ctx)
     }
 }
 

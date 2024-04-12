@@ -140,30 +140,15 @@ pub type TransmitContext = XContextBase<Transmit>;
 
 impl TransmitContext {
 
-    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, mut attr: TxAttr) -> Result<TransmitContext, crate::error::Error> {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: TxAttr, context: Option<&mut T0>) -> Result<TransmitContext, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-        let err = unsafe{ libfabric_sys::inlined_fi_tx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())};
-        
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self {
-                    inner: Rc::new( 
-                        XContextBaseImpl::<Transmit> { 
-                            c_ep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
-                            phantom: PhantomData,
-                            _sync_rcs: RefCell::new(Vec::new()),
-                    })
-                })
-        }
-    }
-
-    pub(crate) fn new_with_context<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: TxAttr, ctx: &mut T0) -> Result<TransmitContext, crate::error::Error> {
-        let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-        let err = unsafe{ libfabric_sys::inlined_fi_tx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, ctx as *mut T0 as *mut std::ffi::c_void)};
+        let err = 
+            if let Some(ctx) = context {
+                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
+            }
+            else {
+                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
+            };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -295,12 +280,7 @@ impl <'a, T, E> TransmitContextBuilder<'a, T, E> {
     }
 
     pub fn build(self) -> Result<TransmitContext, crate::error::Error> {
-        if let Some(ctx) = self.ctx {
-            TransmitContext::new_with_context(self.ep, self.index, self.tx_attr, ctx)
-        }
-        else {
-            TransmitContext::new(self.ep, self.index, self.tx_attr)
-        }
+        TransmitContext::new(self.ep, self.index, self.tx_attr, self.ctx)
     }
 }
 
@@ -308,30 +288,15 @@ pub type ReceiveContext = XContextBase<Receive>;
 
 impl ReceiveContext {
 
-    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, mut attr: RxAttr) -> Result<ReceiveContext, crate::error::Error> {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: RxAttr, context: Option<&mut T0>) -> Result<ReceiveContext, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-        let err = unsafe{ libfabric_sys::inlined_fi_rx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())};
-        
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self {
-                    inner: Rc::new(
-                        XContextBaseImpl::<Receive> { 
-                            c_ep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
-                            phantom: PhantomData,
-                            _sync_rcs: RefCell::new(Vec::new()),
-                    })
-                })
-        }
-    }
-
-    pub(crate) fn new_with_context<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: RxAttr, ctx: &mut T0) -> Result<ReceiveContext, crate::error::Error> {
-        let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-        let err = unsafe{ libfabric_sys::inlined_fi_rx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, ctx as *mut T0 as *mut std::ffi::c_void)};
+        let err = 
+            if let Some(ctx) = context {
+                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
+            }
+            else {
+                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
+            };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -451,12 +416,7 @@ impl<'a, T, E> ReceiveContextBuilder<'a, T, E> {
     }
 
     pub fn build(self) -> Result<ReceiveContext, crate::error::Error> {
-        if let Some(ctx) = self.ctx {
-            ReceiveContext::new_with_context(self.ep, self.index, self.rx_attr, ctx)
-        }
-        else {
-            ReceiveContext::new(self.ep, self.index, self.rx_attr)
-        }
+        ReceiveContext::new(self.ep, self.index, self.rx_attr, self.ctx)
     }
 }
 
@@ -756,9 +716,6 @@ impl Default for TxAttr {
         Self::new()
     }
 }
-
-
-
 
 pub struct RxIncompleteBindCq<'a> {
     pub(crate) ep: &'a  ReceiveContext,

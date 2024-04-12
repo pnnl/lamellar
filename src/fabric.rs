@@ -24,31 +24,18 @@ pub struct Fabric {
 
 
 impl Fabric {
-    pub(crate) fn new(mut attr: FabricAttr) -> Result<Fabric, crate::error::Error> {
+
+    pub(crate) fn new<T0>(mut attr: FabricAttr, context: Option<&mut T0>) -> Result<Fabric, crate::error::Error> {
         let mut c_fabric: *mut libfabric_sys::fid_fabric  = std::ptr::null_mut();
         let c_fabric_ptr: *mut *mut libfabric_sys::fid_fabric = &mut c_fabric;
 
-        let err = unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, std::ptr::null_mut())};
-        
-        if err != 0 || c_fabric.is_null() {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self { 
-                    inner: Rc::new( FabricImpl {
-                        c_fabric, 
-                        fid: OwnedFid::from(unsafe{ &mut (*c_fabric).fid }), 
-                    })
-                })
-        }
-    }
-
-    pub(crate) fn new_with_context<T0>(mut attr: FabricAttr, ctx: &mut T0) -> Result<Fabric, crate::error::Error> {
-        let mut c_fabric: *mut libfabric_sys::fid_fabric  = std::ptr::null_mut();
-        let c_fabric_ptr: *mut *mut libfabric_sys::fid_fabric = &mut c_fabric;
-
-        let err = unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, ctx as *mut T0 as *mut std::ffi::c_void)};
+        let err = 
+            if let Some(ctx) = context {
+                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, (ctx as *mut T0).cast())}
+            }
+            else {
+                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, std::ptr::null_mut())}
+            };
         
         if err != 0 || c_fabric.is_null() {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -241,11 +228,6 @@ impl<'a, T> FabricBuilder<'a, T> {
     }
 
     pub fn build(self) -> Result<Fabric, crate::error::Error> {
-        if let Some(ctx) = self.ctx {
-            Fabric::new_with_context(self.fab_attr, ctx)
-        }
-        else {
-            Fabric::new(self.fab_attr)
-        }
+        Fabric::new(self.fab_attr, self.ctx)
     }    
 }
