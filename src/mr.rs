@@ -55,10 +55,10 @@ impl MemoryRegion {
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = 
         if let Some(ctx) = context {
-            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast() ) }
+            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast() ) }
         } 
         else {
-            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
+            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
         };
         
         
@@ -167,8 +167,8 @@ impl MemoryRegion {
         check_error(err.try_into().unwrap())
     }
 
-    pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr as *mut u64, std::ptr::null_mut(), key_size as *mut usize, flags) };
+    pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Return the key as it should be returned
+        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, std::ptr::null_mut(), key_size, flags) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -179,7 +179,7 @@ impl MemoryRegion {
     }
 
     pub fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr as *mut u64, raw_key as *mut u8, key_size as *mut usize, flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, raw_key, key_size, flags) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -249,7 +249,7 @@ impl MemoryRegionAttr {
     }
 
     pub fn iov<T>(&mut self, iov: &[crate::iovec::IoVec<T>] ) -> &mut Self {
-        self.c_attr.mr_iov = iov.as_ptr() as *const libfabric_sys::iovec;
+        self.c_attr.mr_iov = iov.as_ptr().cast();
         self.c_attr.iov_count = iov.len();
         
         self
@@ -301,7 +301,7 @@ impl MemoryRegionAttr {
     }
 
     pub fn context<T0>(&mut self, ctx: &mut T0) -> &mut Self {
-        self.c_attr.context = ctx as * mut T0 as *mut std::ffi::c_void;
+        self.c_attr.context = (ctx as * mut T0).cast();
         self
     }
     

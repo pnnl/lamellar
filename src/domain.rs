@@ -70,7 +70,7 @@ impl Domain {
     }
 
     pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, raw_key as *mut u8, key_size, key as *mut u64, flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, raw_key, key_size, key, flags) };
         
         check_error(err.try_into().unwrap())
     }

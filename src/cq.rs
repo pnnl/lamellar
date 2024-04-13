@@ -2,20 +2,9 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}};
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress};
 
-
-// impl<T: CqConfig> Drop for CompletionQueue<T> {
-//     fn drop(&mut self) {
-//        println!("Dropping CompletionQueue\n");
-//     }
-// }
 //================== CompletionQueue (fi_cq) ==================//
-
-// pub enum CompletionQueue {
-//     Waitable(CompletionQueueWaitable),
-//     NonWaitable(CompletionQueueNonWaitable)
-// }
 
 macro_rules! read_cq_entry {
     ($read_fn: expr, $format: expr, $cq: expr, $count: expr,  $( $x:ident),*) => {
@@ -27,22 +16,22 @@ macro_rules! read_cq_entry {
                 CqFormat::CONTEXT => {
                     let mut entries: Vec<CqEntry> = Vec::new();
                     entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr() as *mut std::ffi::c_void, $count, $($x,)*)}, CqEntryFormat::Context(entries))
+                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Context(entries))
                 }
                 CqFormat::DATA => {
                     let mut entries: Vec<CqDataEntry>= Vec::new();
                     entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr() as *mut std::ffi::c_void, $count, $($x,)*)}, CqEntryFormat::Data(entries))
+                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Data(entries))
                 }
                 CqFormat::TAGGED => {
                     let mut entries: Vec<CqTaggedEntry> = Vec::new();
                     entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr() as *mut std::ffi::c_void, $count, $($x,)*)}, CqEntryFormat::Tagged(entries))
+                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Tagged(entries))
                 }
                 CqFormat::MSG => {
                     let mut entries: Vec<CqMsgEntry> = Vec::new();
                     entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr() as *mut std::ffi::c_void, $count, $($x,)*)}, CqEntryFormat::Message(entries))
+                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Message(entries))
                 }
                 CqFormat::UNSPEC => todo!(),
             }
@@ -101,8 +90,6 @@ impl<T> CompletionQueue<T> where T: CqConfig {
             )
         }
     }
-
-
 
     //[TODO] Maybe avoid making the extra copies for the final vector
     pub fn read(&self, count: usize) -> Result<CqEntryFormat, crate::error::Error> {
@@ -189,7 +176,7 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
     pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(CqEntryFormat, Option<MappedAddress>), crate::error::Error> {
         
         let mut address = 0;
-        let p_address = &mut address as *mut libfabric_sys::fi_addr_t;   
+        let p_address = &mut address as *mut RawMappedAddress;   
         let p_cond = std::ptr::null_mut();
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.inner.format, self.handle(), count, p_address, p_cond, timeout);
         let address = if address == crate::FI_ADDR_NOTAVAIL {
@@ -227,7 +214,7 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
         if let Some(wait) = self.inner.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast()) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -241,7 +228,7 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
                     cond: std::ptr::null_mut(),
                 };
 
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut libfabric_sys::fi_mutex_cond as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut mutex_cond as *mut libfabric_sys::fi_mutex_cond).cast()) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }

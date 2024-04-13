@@ -69,10 +69,10 @@ fn pp_server_msg() {
                 
                 match ep {
                     EndpointCaps::Msg(ep) => {
-                        ep.shutdown(0).unwrap();
+                        ep.shutdown().unwrap();
                     }
                     EndpointCaps::Tagged(ep) => {
-                        ep.shutdown(0).unwrap();
+                        ep.shutdown().unwrap();
                     }
                 }
             }
@@ -88,10 +88,10 @@ fn pp_server_msg() {
                 
                 match ep {
                     EndpointCaps::Msg(ep) => {
-                        ep.shutdown(0).unwrap();
+                        ep.shutdown().unwrap();
                     }
                     EndpointCaps::Tagged(ep) => {
-                        ep.shutdown(0).unwrap();
+                        ep.shutdown().unwrap();
                     }
                 }
             }
@@ -156,10 +156,10 @@ fn pp_client_msg() {
             common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
                 EndpointCaps::Msg(ep) => {
-                    ep.shutdown(0).unwrap();
+                    ep.shutdown().unwrap();
                 }
                 EndpointCaps::Tagged(ep) => {
-                    ep.shutdown(0).unwrap();
+                    ep.shutdown().unwrap();
                 }
             }
         }
@@ -174,10 +174,10 @@ fn pp_client_msg() {
             common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
                 EndpointCaps::Msg(ep) => {
-                    ep.shutdown(0).unwrap();
+                    ep.shutdown().unwrap();
                 }
                 EndpointCaps::Tagged(ep) => {
-                    ep.shutdown(0).unwrap();
+                    ep.shutdown().unwrap();
                 }
             }
         }

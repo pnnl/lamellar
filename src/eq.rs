@@ -42,10 +42,10 @@ impl<T> Event<T>{
     pub(crate) fn get_entry(&self) -> (*const std::ffi::c_void, usize) {
         match self {
             Event::NOTIFY(entry)| Event::MR_COMPLETE(entry) | Event::AV_COMPLETE(entry) | Event::JOIN_COMPLETE(entry) => 
-                (&entry.c_entry as *const libfabric_sys::fi_eq_entry as *const std::ffi::c_void, std::mem::size_of::<libfabric_sys::fi_eq_entry>()),  
+                ( (&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>()),  
             
             Event::CONNREQ(entry) | Event::CONNECTED(entry) | Event::SHUTDOWN(entry) => 
-                (&entry.c_entry as *const libfabric_sys::fi_eq_cm_entry as *const std::ffi::c_void, std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>()),
+                ( (&entry.c_entry as *const libfabric_sys::fi_eq_cm_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>()),
         } 
     } 
 
@@ -138,7 +138,7 @@ impl<T: EqConfig> EventQueue<T> {
     pub fn read(&self) -> Result<Event<usize>, crate::error::Error>{
         let mut event = 0 ;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event as *mut u32, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
@@ -150,7 +150,7 @@ impl<T: EqConfig> EventQueue<T> {
     pub fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
         let mut event = 0 ;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event as *mut u32, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -194,7 +194,6 @@ impl<T: EqConfig> EventQueue<T> {
 impl<T: EqWritable + EqConfig> EventQueue<T> {
 
     pub fn write(&self, event: Event<usize>, flags: u64) -> Result<(), crate::error::Error>{
-        // println!("{:?}", buf);
         let event_val = event.get_value();
         let (event_entry, event_entry_size) = event.get_entry();
 
@@ -214,7 +213,7 @@ impl<T: crate::Waitable + EqConfig> EventQueue<T> {
     pub fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error> { 
         let mut event = 0;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.handle(), &mut event as *mut u32,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, flags) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.handle(), &mut event,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, flags) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -228,7 +227,7 @@ impl<T: crate::Waitable + EqConfig> EventQueue<T> {
         let mut event = 0;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
 
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.handle(), &mut event as *mut u32,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, libfabric_sys::FI_PEEK.into()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.handle(), &mut event,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -247,7 +246,7 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
         if let Some(wait) = self.inner.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast()) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -261,7 +260,7 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
                     cond: std::ptr::null_mut(),
                 };
 
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut mutex_cond as *mut fi_mutex_cond as *mut std::ffi::c_void) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut mutex_cond as *mut fi_mutex_cond).cast()) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -285,9 +284,8 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
 fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> {
     if event == &libfabric_sys::FI_CONNREQ || event == &libfabric_sys::FI_CONNECTED || event == &libfabric_sys::FI_SHUTDOWN {
         debug_assert_eq!(bytes_read as usize, std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>());
-        // let res = unsafe { std::slice::from_raw_parts(buffer.as_mut_ptr()  as *mut libfabric_sys::fi_eq_cm_entry, 1) };
         Event::from_connect_value(*event, EventQueueCmEntry {
-            c_entry: unsafe { std::ptr::read(buffer.as_ptr() as *const libfabric_sys::fi_eq_cm_entry) }
+            c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) }
         })          
     }
     else {
@@ -295,7 +293,7 @@ fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> 
 
         Event::<usize>::from_control_value(*event,
             EventQueueEntry::<usize> {
-                c_entry: unsafe { std::ptr::read(buffer.as_ptr() as *const libfabric_sys::fi_eq_entry) },
+                c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) },
                 phantom: PhantomData,
             }
         )

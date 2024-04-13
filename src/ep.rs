@@ -69,7 +69,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -83,7 +83,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = size;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         check_error(err.try_into().unwrap())
     }
@@ -92,7 +92,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_MIN as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_MIN as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -106,7 +106,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = size;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_MIN as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_BUFFERED_MIN as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         check_error(err.try_into().unwrap())
     }
@@ -115,7 +115,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_CM_DATA_SIZE as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_CM_DATA_SIZE as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -129,7 +129,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = size;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_CM_DATA_SIZE as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_CM_DATA_SIZE as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         check_error(err.try_into().unwrap())
     }
@@ -138,7 +138,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -152,7 +152,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = size;
         let mut len = std::mem::size_of::<usize>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32, &mut res as *mut usize as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32, (&mut res as *mut usize).cast(), &mut len)};
     
         check_error(err.try_into().unwrap())
     }
@@ -161,7 +161,7 @@ pub trait BaseEndpoint : AsFid {
         let mut res = 0_u32;
         let mut len = std::mem::size_of::<u32>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, &mut res as *mut u32 as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, (&mut res as *mut u32).cast(), &mut len)};
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -182,7 +182,7 @@ pub trait BaseEndpoint : AsFid {
         };
         let mut len = std::mem::size_of::<libfabric_sys::fi_trigger_xpu>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_XPU_TRIGGER as i32, &mut res as *mut libfabric_sys::fi_trigger_xpu as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_XPU_TRIGGER as i32, (&mut res as *mut libfabric_sys::fi_trigger_xpu).cast(), &mut len)};
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -196,7 +196,7 @@ pub trait BaseEndpoint : AsFid {
 
         let mut len = std::mem::size_of::<u32>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, &mut hmem.get_value() as *mut u32 as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, (&mut hmem.get_value() as *mut u32).cast(), &mut len)};
     
         check_error(err.try_into().unwrap())
     }
@@ -206,7 +206,7 @@ pub trait BaseEndpoint : AsFid {
         let mut val = if permitted {1_u32} else {0_u32}; 
         let mut len = std::mem::size_of::<u32>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, &mut val as *mut u32 as *mut std::ffi::c_void, &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_fid().as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, (&mut val as *mut u32).cast(), &mut len)};
     
         check_error(err.try_into().unwrap())
     }
@@ -214,7 +214,7 @@ pub trait BaseEndpoint : AsFid {
     fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
         let mut fd = 0;
 
-        let err = unsafe{ libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), fi_wait_obj_FI_WAIT_FD as i32, &mut fd as *mut i32 as *mut std::ffi::c_void)};
+        let err = unsafe{ libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), fi_wait_obj_FI_WAIT_FD as i32, (&mut fd as *mut i32).cast())};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
@@ -337,8 +337,8 @@ impl<T> Endpoint<T> {
         ActiveEndpoint::accept(self)
     }
 
-    pub fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::shutdown(self, flags)
+    pub fn shutdown(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpoint::shutdown(self, 0)
     } 
 }
 
@@ -631,14 +631,14 @@ impl<E> PassiveEndpoint<E> {
     }
 
     pub fn reject<T0>(&self, fid: &impl AsFid, params: &[T0]) -> Result<(), crate::error::Error> {
-        let err = unsafe {libfabric_sys::inlined_fi_reject(self.handle(), fid.as_fid().as_raw_fid(), params.as_ptr() as *const std::ffi::c_void, params.len())};
+        let err = unsafe {libfabric_sys::inlined_fi_reject(self.handle(), fid.as_fid().as_raw_fid(), params.as_ptr().cast(), params.len())};
 
         check_error(err.try_into().unwrap())
 
     }
 
     pub fn set_backlog_size(&self, size: i32) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), FI_BACKLOG as i32, &mut size.clone() as *mut i32 as *mut std::ffi::c_void)};
+        let err = unsafe{ libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), FI_BACKLOG as i32, (&mut size.clone() as *mut i32).cast())};
         check_error(err.try_into().unwrap())
     }
 
@@ -972,7 +972,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
     }
 
     fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_fid().as_raw_fid(), context as *mut T0 as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_fid().as_raw_fid(), (context as *mut T0).cast()) };
         
         check_error(err)
     }
@@ -1019,7 +1019,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
     }
 
     fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr.as_bytes().as_ptr().cast(), param.as_ptr() as *const std::ffi::c_void, param.len()) };
+        let err = unsafe { libfabric_sys::inlined_fi_connect(self.handle(), addr.as_bytes().as_ptr().cast(), param.as_ptr().cast(), param.len()) };
         
         check_error(err.try_into().unwrap())
     }
@@ -1031,7 +1031,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
     }
 
     fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_accept(self.handle(), param.as_ptr() as *const std::ffi::c_void, param.len()) };
+        let err = unsafe { libfabric_sys::inlined_fi_accept(self.handle(), param.as_ptr().cast(), param.len()) };
         
         check_error(err.try_into().unwrap())
     }
@@ -1050,7 +1050,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
 
     fn transmit_options(&self) -> Result<TransferOptions, crate::error::Error> {
         let mut ops = libfabric_sys::FI_TRANSMIT;
-        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, &mut ops as *mut u32 as *mut std::ffi::c_void)}; 
+        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, (&mut ops as *mut u32).cast())}; 
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -1062,7 +1062,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
 
     fn receive_options(&self) -> Result<TransferOptions, crate::error::Error> {
         let mut ops = libfabric_sys::FI_RECV;
-        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, &mut ops as *mut u32 as *mut std::ffi::c_void)}; 
+        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, (&mut ops as *mut u32).cast())}; 
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -1075,7 +1075,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
     fn set_transmit_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
 
         ops.transmit();
-        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, &mut ops.get_value() as *mut u32 as *mut std::ffi::c_void)}; 
+        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
 
         check_error(err.try_into().unwrap())
     }
@@ -1083,7 +1083,7 @@ pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
     fn set_receive_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
         
         ops.recv();
-        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, &mut ops.get_value() as *mut u32 as *mut std::ffi::c_void)}; 
+        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
 
         check_error(err.try_into().unwrap())
     }

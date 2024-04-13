@@ -85,7 +85,7 @@ impl WaitSet {
 
     pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
         let mut res: libfabric_sys::fi_wait_obj = 0;
-        let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAITOBJ as i32, &mut res as *mut libfabric_sys::fi_wait_obj as *mut std::ffi::c_void )};
+        let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAITOBJ as i32, (&mut res as *mut libfabric_sys::fi_wait_obj).cast() )};
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -97,7 +97,7 @@ impl WaitSet {
             }
             else if res == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd = 0; 
-                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void )};
+                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast() )};
                 if err != 0 {
                     return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()));
                 }
@@ -108,7 +108,7 @@ impl WaitSet {
                     mutex: std::ptr::null_mut(),
                     cond: std::ptr::null_mut(),
                 }; 
-                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut cond as *mut libfabric_sys::fi_mutex_cond as *mut std::ffi::c_void )};
+                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut cond as *mut libfabric_sys::fi_mutex_cond).cast() )};
                 if err != 0 {
                     return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()));
                 }
@@ -123,7 +123,7 @@ impl WaitSet {
                     nfds: 0,
                     fd: std::ptr::null_mut(),
                 }; 
-                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut wait as *mut libfabric_sys::fi_wait_pollfd as *mut std::ffi::c_void )};
+                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut wait as *mut libfabric_sys::fi_wait_pollfd).cast() )};
                 if err != 0 {
                     return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()));
                 }
@@ -232,7 +232,7 @@ impl PollSet {
     }
 
     pub fn poll<T0>(&self, contexts: &mut [T0]) -> Result<usize, crate::error::Error> {
-        let ret = unsafe { libfabric_sys::inlined_fi_poll(self.handle(), contexts.as_mut_ptr() as *mut *mut std::ffi::c_void,  contexts.len() as i32) };
+        let ret = unsafe { libfabric_sys::inlined_fi_poll(self.handle(), contexts.as_mut_ptr().cast(),  contexts.len() as i32) };
         
         if ret < 0{
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()))
@@ -256,7 +256,7 @@ impl PollSet {
 
     pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
         let mut res: libfabric_sys::fi_wait_obj = 0;
-        let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAITOBJ as i32, &mut res as *mut libfabric_sys::fi_wait_obj as *mut std::ffi::c_void )};
+        let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAITOBJ as i32, (&mut res as *mut libfabric_sys::fi_wait_obj).cast())};
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -268,7 +268,7 @@ impl PollSet {
             }
             else if res == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd = 0; 
-                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut fd as *mut i32 as *mut std::ffi::c_void )};
+                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast())};
                 if err != 0 {
                     return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()));
                 }
@@ -279,7 +279,7 @@ impl PollSet {
                     mutex: std::ptr::null_mut(),
                     cond: std::ptr::null_mut(),
                 }; 
-                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut cond as *mut libfabric_sys::fi_mutex_cond as *mut std::ffi::c_void )};
+                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut cond as *mut libfabric_sys::fi_mutex_cond).cast())};
                 if err != 0 {
                     return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()));
                 }
@@ -294,7 +294,7 @@ impl PollSet {
                     nfds: 0,
                     fd: std::ptr::null_mut(),
                 }; 
-                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, &mut wait as *mut libfabric_sys::fi_wait_pollfd as *mut std::ffi::c_void )};
+                let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut wait as *mut libfabric_sys::fi_wait_pollfd).cast())};
                 if err != 0 {
                     return Err(crate::error::Error::from_err_code((-err).try_into().unwrap()));
                 }

@@ -105,9 +105,9 @@ impl AddressVector {
         }
     }
 
-    pub fn insertsvc(&self, node: &str, service: &str, flags: u64) -> Result<Option<MappedAddress>, crate::error::Error> { // [TODO] Handle case where operation partially failed
+    pub fn insertsvc(&self, node: &str, service: &str, flags: u64) -> Result<Option<MappedAddress>, crate::error::Error> {
         let mut fi_addr = 0u64;
-        let err = unsafe { libfabric_sys::inlined_fi_av_insertsvc(self.handle(), node.as_bytes().as_ptr() as *const i8, service.as_bytes().as_ptr() as *const i8, &mut fi_addr, flags, std::ptr::null_mut())  };
+        let err = unsafe { libfabric_sys::inlined_fi_av_insertsvc(self.handle(), node.as_bytes().as_ptr().cast(), service.as_bytes().as_ptr().cast(), &mut fi_addr, flags, std::ptr::null_mut())  };
 
 
         if err < 0 {
@@ -124,7 +124,7 @@ impl AddressVector {
     pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
         let total_cnt = nodecnt * svccnt;
         let mut fi_addresses = vec![0u64; total_cnt];
-        let err = unsafe { libfabric_sys::inlined_fi_av_insertsym(self.handle(), node.as_bytes().as_ptr() as *const i8, nodecnt, service.as_bytes().as_ptr() as *const i8, svccnt, fi_addresses.as_mut_ptr().cast(), flags, std::ptr::null_mut())  };
+        let err = unsafe { libfabric_sys::inlined_fi_av_insertsym(self.handle(), node.as_bytes().as_ptr().cast(), nodecnt, service.as_bytes().as_ptr().cast(), svccnt, fi_addresses.as_mut_ptr().cast(), flags, std::ptr::null_mut())  };
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -172,12 +172,12 @@ impl AddressVector {
         let mut addr_str: Vec<u8> = Vec::new();
         let mut strlen = addr_str.len();
         let strlen_ptr: *mut usize = &mut strlen;
-        unsafe { libfabric_sys::inlined_fi_av_straddr(self.handle(), addr.as_bytes().as_ptr().cast(), addr_str.as_mut_ptr() as *mut std::ffi::c_char, strlen_ptr) };
+        unsafe { libfabric_sys::inlined_fi_av_straddr(self.handle(), addr.as_bytes().as_ptr().cast(), addr_str.as_mut_ptr().cast(), strlen_ptr) };
         addr_str.resize(strlen, 1);
         
         let mut strlen = addr_str.len();
         let strlen_ptr: *mut usize = &mut strlen;
-        unsafe { libfabric_sys::inlined_fi_av_straddr(self.handle(), addr.as_bytes().as_ptr().cast(), addr_str.as_mut_ptr() as *mut std::ffi::c_char, strlen_ptr) };
+        unsafe { libfabric_sys::inlined_fi_av_straddr(self.handle(), addr.as_bytes().as_ptr().cast(), addr_str.as_mut_ptr().cast(), strlen_ptr) };
         std::ffi::CString::from_vec_with_nul(addr_str).unwrap().into_string().unwrap()
     }
 }
