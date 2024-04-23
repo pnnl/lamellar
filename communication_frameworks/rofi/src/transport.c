@@ -83,6 +83,20 @@ int rofi_transport_fini(rofi_transport_t *rofi) {
     }
     DEBUG_MSG("get_cntr closed");
 
+    ret = fi_close(&rofi->send_cntr->fid);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
+        rofi->put_cntr = NULL;
+    }
+    DEBUG_MSG("send_cntr closed");
+
+    ret = fi_close(&rofi->recv_cntr->fid);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
+        rofi->get_cntr = NULL;
+    }
+    DEBUG_MSG("recv_cntr closed");
+
     ret = fi_close(&rofi->av->fid);
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
