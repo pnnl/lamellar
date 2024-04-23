@@ -222,3 +222,76 @@ pub trait FdRetrievable{}
 pub trait Waitable{}
 pub trait Writable{}
 pub trait WaitRetrievable{}
+
+
+pub const MSG : usize = 0;
+pub const RMA : usize = 1;
+pub const TAG : usize = 2;
+pub const ATOMIC : usize = 3;
+pub const MCAST : usize = 4;
+pub const NAMEDRXCTX : usize = 5;
+pub const DRECV: usize = 6; 
+pub const VMSG: usize = 7; 
+pub const HMEM: usize = 8; 
+pub const COLL: usize = 9; 
+pub const XPU: usize = 10; 
+pub const SEND: usize = 11; 
+pub const RECV: usize = 12; 
+pub const WRITE: usize = 13; 
+pub const READ: usize = 14; 
+pub const RWRITE: usize = 15; 
+pub const RREAD: usize = 16;
+
+pub const fn get<const N: usize>(index: usize, asked: &[usize]) -> bool {
+    let mut i = 0;
+    while i < N {
+        if index == asked[i] {
+            return true
+        }
+        i+=1;
+    }
+    false
+}
+
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules! count {
+    () => (0usize);
+    ( $x:tt $($xs:tt)* ) => (1usize + libfabric::count!($($xs)*));
+}
+// macro_rules! set {
+//     ($N: stmt, $opt: ident $opts: expr, ) => {
+//         {get::<{$N}>($opt, &[$($opts),*])}
+//     };
+// }
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules! caps_type_N {
+    ($N: stmt, $($opt: ident),*) => {
+        libfabric::infocapsoptions::InfoCaps<
+        // set($N, MSG, $($opt),*), 
+        {libfabric::get::<{$N}>(libfabric::MSG, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::RMA, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::TAG, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::ATOMIC, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::MCAST, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::NAMEDRXCTX, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::DRECV, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::VMSG, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::HMEM, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::COLL, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::XPU, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::SEND, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::RECV, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::WRITE, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::READ, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::RWRITE, &[$($opt),*])}, 
+        {libfabric::get::<{$N}>(libfabric::RREAD, &[$($opt),*])}>
+        
+    };
+}
+
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules!  caps_type{
+    ($($opt: ident),*) => {
+        libfabric::caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
+    };
+}

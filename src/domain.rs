@@ -9,6 +9,7 @@ use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::check_error,
 pub(crate) struct DomainImpl {
     pub(crate) c_domain: *mut libfabric_sys::fid_domain,
     fid: OwnedFid,
+    pub(crate) domain_attr: DomainAttr,
     _fabric_rc: Rc<FabricImpl>,
 }
 
@@ -22,7 +23,7 @@ impl Domain {
         self.inner.c_domain
     }
 
-    pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err =
@@ -42,6 +43,7 @@ impl Domain {
                     inner : Rc::new(
                         DomainImpl {
                             c_domain, 
+                            domain_attr,
                             _fabric_rc: fabric.inner.clone(), 
                             fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
                     })
@@ -69,11 +71,31 @@ impl Domain {
         check_error(err.try_into().unwrap())
     }
 
-    pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, raw_key, key_size, key, flags) };
+    pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MrKey, flags: u64) -> Result<u64, crate::error::Error> {
+        let mut mapped_key = 0;
+        let err = match mr_key {
+            crate::mr::MrKey::Key(simple_key) => {
+                return Ok(*simple_key)
+                // unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, simple_key as *mut u64 as *mut u8, std::mem::size_of::<u64>(), &mut mapped_key, flags) }
+            }
+            crate::mr::MrKey::RawKey(raw_key) => {
+                unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), raw_key.1 , raw_key.0.as_mut_ptr().cast(), raw_key.0.len(), &mut mapped_key, flags) }
+            }
+        };
         
-        check_error(err.try_into().unwrap())
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(mapped_key)
+        }
     }
+
+    // pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
+    //     let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, raw_key, key_size, key, flags) };
+        
+    //     check_error(err.try_into().unwrap())
+    // }
 
     pub fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.handle(), key) };
@@ -318,6 +340,10 @@ impl DomainAttr {
         self.c_attr.cq_data_size as u64
     }
 
+    pub fn get_mr_key_size(&self) -> usize {
+        self.c_attr.mr_key_size
+    }
+
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_domain_attr {
         &self.c_attr
     }
@@ -368,7 +394,7 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
     }
 
     pub fn build(self) -> Result<Domain, crate::error::Error> {
-        Domain::new(self.fabric, self.info, self.flags, self.ctx)
+        Domain::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)
     }
 }
 

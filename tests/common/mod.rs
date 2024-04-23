@@ -1,6 +1,6 @@
-use std::time::Instant;
+use std::{time::Instant, collections::btree_map::Keys, ops::Index};
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, MappedAddress, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::default_desc};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, MappedAddress, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MrKey}, MSG, RMA, TAG};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -69,7 +69,12 @@ pub struct TestsGlobalCtx {
     pub options: u64,
 }
 
-pub const IP: &str = "172.17.110.48"; 
+
+pub type MsgRma = libfabric::caps_type!(MSG, RMA);
+pub type MsgTagRma = libfabric::caps_type!(MSG, TAG, RMA);
+
+
+pub const IP: &str = "172.17.110.7"; 
 
 #[derive(Clone)]
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -1258,49 +1263,72 @@ pub fn ft_sync<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T:TagDe
 
 #[allow(clippy::too_many_arguments)]
 pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, mr: &mut libfabric::mr::MemoryRegion, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, domain: &libfabric::domain::Domain, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) -> libfabric::iovec::RmaIoVec{
-    let mut addr = 0; 
-    let mut key_size = 0;
+    // let mut addr ; 
+    // let mut key_size = 0;
     let mut rma_iov = libfabric::iovec::RmaIoVec::new();
     
-    if info.get_domain_attr().get_mr_mode().is_raw() { 
-        mr.raw_attr(&mut addr, &mut key_size, 0).unwrap(); // [TODO] Change this to return base_addr, key_size
-    }
+    // if info.get_domain_attr().get_mr_mode().is_raw() { 
+    //     addr = mr.address( 0).unwrap(); // [TODO] Change this to return base_addr, key_size
+    // }
 
     let len = std::mem::size_of::<libfabric::iovec::RmaIoVec>();
-    if key_size >= len - std::mem::size_of_val(&rma_iov.get_key()) {
-        panic!("Key size does not fit");
-    }
+    // if key_size >= len - std::mem::size_of_val(&rma_iov.get_key()) {
+    //     panic!("Key size does not fit");
+    // }
 
     if info.get_domain_attr().get_mr_mode().is_basic() || info.get_domain_attr().get_mr_mode().is_virt_addr() {
-        addr = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)].as_mut_ptr() as u64;
+        let addr = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)].as_mut_ptr() as u64;
         rma_iov = rma_iov.address(addr);
     }
     
-    if info.get_domain_attr().get_mr_mode().is_raw() {
-        mr.raw_attr_with_key(&mut addr, &mut (rma_iov.get_key() as u8), &mut key_size, 0).unwrap();
-    }
-    else {
-        rma_iov = rma_iov.key(mr.get_key().unwrap());
-    }
-    
+
+    let key = mr.key().unwrap();
+    // if info.get_domain_attr().get_mr_mode().is_raw() {
+    //     // panic!("Not handled currently");
+    //     let mr_key = mr.raw_key(0).unwrap();
+    //     let raw_key_bytes = mr_key.as_bytes();
+
+    //     if std::mem::size_of_val(raw_key_bytes) > std::mem::size_of_val(&rma_iov.get_key()) {
+    //         panic!("Key size does not fit");
+    //     }
+    //     else {
+    //         let mut raw_key = 0u64;
+    //         unsafe {std::slice::from_raw_parts_mut(&mut raw_key as *mut u64 as * mut u8, 8).copy_from_slice(raw_key_bytes)};
+    //         rma_iov = rma_iov.key(raw_key);
+    //     }
+    // }
+    // else {
+    //     rma_iov = rma_iov.key(mr.key().unwrap());
+    // }
+    rma_iov = match key {
+        MrKey::Key(simple_key) => {
+            rma_iov.key(simple_key)
+        }
+        MrKey::RawKey(raw_key) => {
+            if raw_key.0.len() > std::mem::size_of::<u64>() {
+                todo!();
+            }
+
+            let mut key = 0u64;
+            unsafe {std::slice::from_raw_parts_mut(&mut key as *mut u64 as * mut u8, 8).copy_from_slice(&raw_key.0)};
+            rma_iov.key(key)
+                .address(raw_key.1)
+        }
+    };
+
     gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(unsafe{ std::slice::from_raw_parts(&rma_iov as *const libfabric::iovec::RmaIoVec as *const u8, std::mem::size_of::<libfabric::iovec::RmaIoVec>())});
     
     ft_tx(gl_ctx, ep, len + ft_tx_prefix_size(info), mr_desc, tx_cq, tx_cntr);
     ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
     
     unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut libfabric::iovec::RmaIoVec as *mut u8,std::mem::size_of::<libfabric::iovec::RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
-    let mut peer_iov = libfabric::iovec::RmaIoVec::new();
-    if info.get_domain_attr().get_mr_mode().is_raw() {
-        peer_iov = peer_iov.address(rma_iov.get_address());
-        peer_iov = peer_iov.len(rma_iov.get_len());
-        let mut key = 0;
-        domain.map_raw(rma_iov.get_address(), &mut (rma_iov.get_key() as u8), key_size, &mut key, 0).unwrap();
-        peer_iov = peer_iov.key(key);
-    }
-    else {
-        peer_iov = rma_iov.clone();
-    }
-    
+    let mr_key = unsafe{MrKey::from_bytes(&gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index+len], domain)};
+    let mapped_key = mr_key.into_mapped(0, domain).unwrap();
+    let peer_iov = libfabric::iovec::RmaIoVec::new()
+        .address(rma_iov.get_address())
+        .len(rma_iov.get_len())
+        .key(mapped_key.get_key());
+
     match rx_cq {
         CqType::Spin(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),
         CqType::Sread(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),

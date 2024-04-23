@@ -266,63 +266,67 @@ impl InfoCaps<false, false, false, false, false, false, false, false, false, fal
     }
 }
 
+// impl InfoCaps<(), (),(),(),(),(),(),(),(),(),(),(),(),(),(),(),()> {
+//     pub const fn new() -> 
+// }
+
 impl<const MSG: bool, const RMA: bool, const TAG: bool , const ATOMIC: bool, const MCAST: bool , const NAMEDRXCTX: bool, const DRECV: bool, const VMSG: bool , const HMEM: bool , const COLL: bool, const XPU: bool, const SEND: bool, const RECV: bool, const WRITE: bool, const READ: bool, const RWRITE: bool, const RREAD: bool> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
  
-    pub fn msg(self) -> InfoCaps<true, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn msg(self) -> InfoCaps<true, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<true, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_msg(&self) -> bool {MSG}
     
-    pub fn rma(self) -> InfoCaps<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn rma(self) -> InfoCaps<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, true, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
     
     pub fn is_rma(&self) -> bool {RMA}
     
-    pub fn tagged(self) -> InfoCaps<MSG, RMA, true, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn tagged(self) -> InfoCaps<MSG, RMA, true, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, true, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_tagged(&self) -> bool {TAG}
     
-    pub fn atomic(self) -> InfoCaps<MSG, RMA, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn atomic(self) -> InfoCaps<MSG, RMA, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, TAG, true, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_atomic(&self) -> bool {ATOMIC}
     
-    pub fn mcast(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, true, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn mcast(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, true, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, TAG, ATOMIC, true, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_mcast(&self) -> bool {MCAST}
     
-    pub fn named_rx_ctx(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, true, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn named_rx_ctx(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, true, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, TAG, ATOMIC, MCAST, true, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_named_rx_ctx(&self) -> bool {NAMEDRXCTX}
     
-    pub fn directed_recv(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, true, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn directed_recv(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, true, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, true, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_directed_recv(&self) -> bool {DRECV}
     
-    pub fn hmem(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, true, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn hmem(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, true, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, true, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_hmem(&self) -> bool {HMEM}
     
-    pub fn collective(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, true, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn collective(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, true, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, true, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 
     pub fn is_collective(&self) -> bool {COLL}
     
-    pub fn xpu(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, true, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
+    pub const fn xpu(self) -> InfoCaps<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, true, SEND, RECV, WRITE, READ, RWRITE, RREAD> {
         InfoCaps::<MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, true, SEND, RECV, WRITE, READ, RWRITE, RREAD> {}
     }
 

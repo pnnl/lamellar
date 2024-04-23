@@ -336,7 +336,7 @@ impl AddressVectorSet {
         }
     }
     
-    pub fn insert(&mut self, mapped_addr: crate::MappedAddress) -> Result<(), crate::error::Error> {
+    pub fn insert(&mut self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_insert(self.handle(), mapped_addr.raw_addr()) };
 
         if err != 0 {
@@ -396,13 +396,13 @@ impl<'a, T> AddressVectorSetBuilder<'a, T> {
         self
     }
 
-    pub fn start_addr(mut self, mapped_addr: crate::MappedAddress) -> Self {
+    pub fn start_addr(mut self, mapped_addr: &crate::MappedAddress) -> Self {
         
         self.avset_attr.start_addr(mapped_addr);
         self
     }
 
-    pub fn end_addr(mut self, mapped_addr: crate::MappedAddress) -> Self {
+    pub fn end_addr(mut self, mapped_addr: &crate::MappedAddress) -> Self {
         
         self.avset_attr.end_addr(mapped_addr);
         self
@@ -539,13 +539,13 @@ impl AddressVectorSetAttr {
         self
     }
 
-    pub(crate) fn start_addr(&mut self, mapped_addr: crate::MappedAddress) -> &mut Self {
+    pub(crate) fn start_addr(&mut self, mapped_addr: &crate::MappedAddress) -> &mut Self {
         
         self.c_attr.start_addr = mapped_addr.raw_addr();
         self
     }
 
-    pub(crate) fn end_addr(&mut self, mapped_addr: crate::MappedAddress) -> &mut Self {
+    pub(crate) fn end_addr(&mut self, mapped_addr: &crate::MappedAddress) -> &mut Self {
         
         self.c_attr.end_addr = mapped_addr.raw_addr();
         self

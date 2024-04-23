@@ -717,7 +717,7 @@ impl<E> AsFd for PassiveEndpoint<E> {
 //================== Endpoint (fi_endpoint) ==================//
 
 pub struct IncompleteBindCq<'a, T> {
-    pub(crate) ep: &'a mut Endpoint<T>,
+    pub(crate) ep: &'a Endpoint<T>,
     pub(crate) flags: u64,
 }
 
@@ -773,7 +773,7 @@ impl<'a, E> IncompleteBindCq<'a, E> {
 
 
 pub struct IncompleteBindCntr<'a, T> {
-    pub(crate) ep: &'a mut Endpoint<T>,
+    pub(crate) ep: &'a Endpoint<T>,
     pub(crate) flags: u64,
 }
 
@@ -901,20 +901,20 @@ impl<E> Endpoint<E> {
         }
     } 
 
-    pub fn bind_cq(&mut self) -> IncompleteBindCq<E> {
+    pub fn bind_cq(&self) -> IncompleteBindCq<E> {
         IncompleteBindCq { ep: self, flags: 0}
     }
 
-    pub fn bind_cntr(&mut self) -> IncompleteBindCntr<E> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<E> {
         IncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub fn bind_eq<T: EqConfig + 'static>(&mut self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }
 
-    pub fn bind_av(&mut self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
     
         self.bind(av, 0)
     }

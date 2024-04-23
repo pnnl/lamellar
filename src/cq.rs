@@ -8,32 +8,41 @@ use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, 
 
 macro_rules! read_cq_entry {
     ($read_fn: expr, $format: expr, $cq: expr, $count: expr,  $( $x:ident),*) => {
-        if matches!($format, CqFormat::UNSPEC) {
-            (unsafe{ $read_fn($cq, std::ptr::null_mut(), 0, $($x,)*)}, CqEntryFormat::Unspec)
-        }
-        else {
-            match $format {
-                CqFormat::CONTEXT => {
-                    let mut entries: Vec<CqEntry> = Vec::new();
-                    entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Context(entries))
+        match $format {
+            CqFormat::CONTEXT => {
+                let mut entries: Vec<CqEntry> = Vec::new();
+                entries.resize_with($count, Default::default);
+                let err = unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)};
+                (err, Completion::Context(entries))
+            }
+            CqFormat::DATA => {
+                let mut entries: Vec<CqDataEntry>= Vec::new();
+                entries.resize_with($count, Default::default);
+                let err = unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)};
+                (err, Completion::Data(entries))
+            }
+            CqFormat::TAGGED => {
+                let mut entries: Vec<CqTaggedEntry> = Vec::new();
+                entries.resize_with($count, Default::default);
+                let err = unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)};
+
+                (err, Completion::Tagged(entries))
+            }
+            CqFormat::MSG => {
+                let mut entries: Vec<CqMsgEntry> = Vec::new();
+                entries.resize_with($count, Default::default);
+                let err = unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)};
+
+                (err, Completion::Message(entries))
+            }
+            CqFormat::UNSPEC => {
+                let res = unsafe{ $read_fn($cq, std::ptr::null_mut(), $count, $($x,)*)};
+                if res >= 0 {
+                    (res, Completion::Unspec(-res as usize))
                 }
-                CqFormat::DATA => {
-                    let mut entries: Vec<CqDataEntry>= Vec::new();
-                    entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Data(entries))
+                else {
+                    (res, Completion::Unspec(0))
                 }
-                CqFormat::TAGGED => {
-                    let mut entries: Vec<CqTaggedEntry> = Vec::new();
-                    entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Tagged(entries))
-                }
-                CqFormat::MSG => {
-                    let mut entries: Vec<CqMsgEntry> = Vec::new();
-                    entries.resize_with($count, Default::default);
-                    (unsafe{ $read_fn($cq, entries.as_mut_ptr().cast(), $count, $($x,)*)}, CqEntryFormat::Message(entries))
-                }
-                CqFormat::UNSPEC => todo!(),
             }
         }
     }
@@ -92,7 +101,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
     }
 
     //[TODO] Maybe avoid making the extra copies for the final vector
-    pub fn read(&self, count: usize) -> Result<CqEntryFormat, crate::error::Error> {
+    pub fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
        
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.inner.format, self.handle(),count,);
         if err < 0 {
@@ -103,7 +112,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         }
     }
 
-    pub fn readfrom(&self, count: usize) -> Result<(CqEntryFormat, Option<MappedAddress>), crate::error::Error> {
+    pub fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
        
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
@@ -150,7 +159,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
 
 
 impl<T: CqConfig + Waitable> CompletionQueue<T> {
-    pub fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<CqEntryFormat, crate::error::Error> {
+    pub fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<Completion, crate::error::Error> {
         let p_cond = cond as *const T0 as *const std::ffi::c_void;
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.inner.format, self.handle(), count, p_cond, timeout);
         if err < 0 {
@@ -161,7 +170,7 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
         }
     }
 
-    pub fn sread(&self, count: usize, timeout: i32) -> Result<CqEntryFormat, crate::error::Error> {
+    pub fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
         
         let p_cond = std::ptr::null_mut();
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.inner.format, self.handle(), count, p_cond, timeout);
@@ -173,7 +182,7 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
         }
     }
 
-    pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(CqEntryFormat, Option<MappedAddress>), crate::error::Error> {
+    pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
         
         let mut address = 0;
         let p_address = &mut address as *mut RawMappedAddress;   
@@ -476,6 +485,10 @@ impl CqEntry {
         let p_ctx = self.c_entry.op_context as *const Context;
         unsafe {& *p_ctx}
     }
+
+    pub fn is_op_context_equal<T>(&self, ctx: &T) -> bool {
+        std::ptr::eq(self.c_entry.op_context, (ctx as *const T).cast() )
+    }
 }
 
 impl Default for CqEntry {
@@ -607,8 +620,8 @@ impl Default for CqTaggedEntry {
     }
 }
 
-pub enum CqEntryFormat {
-    Unspec,
+pub enum Completion {
+    Unspec(usize),
     Context(Vec<CqEntry>),
     Message(Vec<CqMsgEntry>),
     Data(Vec<CqDataEntry>),

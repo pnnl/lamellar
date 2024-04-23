@@ -9,6 +9,81 @@ pub struct DefaultMemDesc {
     c_desc: *mut std::ffi::c_void,
 }
 
+pub enum MrKey {
+    Key(u64),
+    RawKey((Vec<u8>, u64)),
+}
+
+impl MrKey {
+
+    // pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
+    //     let mut raw_key = vec![0u8; len];
+    //     raw_key.copy_from_slice(std::slice::from_raw_parts(raw, len));
+    //     Self::RawKey(raw_key)
+    // }
+
+    pub unsafe fn from_bytes(raw: &[u8], domain: &crate::domain::Domain) -> Self {
+        MrKey::from_bytes_impl(raw, &domain.inner)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            MrKey::Key(key) => {
+                let mut bytes = vec![0; std::mem::size_of::<u64>()];
+                unsafe{bytes.copy_from_slice(std::slice::from_raw_parts(key as *const u64 as *const u8,  std::mem::size_of::<u64>()))};
+                bytes
+            }
+            MrKey::RawKey(key) => {
+                [&key.0[..], unsafe{std::slice::from_raw_parts(&key.1 as *const u64 as *const u8,  std::mem::size_of::<u64>()) }].concat()
+            }
+
+        }
+    }
+
+    unsafe fn from_bytes_impl(raw: &[u8], domain: &crate::domain::DomainImpl) -> Self {
+        if domain.domain_attr.get_mr_mode().is_raw() {
+            assert!(raw.len() == domain.domain_attr.get_mr_key_size());
+            let base_addr = *(raw[raw.len()-std::mem::size_of::<u64>()..].as_ptr() as *const u64);
+            Self::RawKey((raw[0..raw.len()-std::mem::size_of::<u64>()].to_vec(), base_addr))
+        }
+        else {
+            let mut key = 0u64;
+            unsafe {std::slice::from_raw_parts_mut(&mut key as *mut u64 as * mut u8, 8).copy_from_slice(raw)};
+            Self::Key(key)
+        }
+    }
+
+    pub unsafe fn from_u64(key: u64) -> Self {
+        MrKey::Key(key) 
+    }
+
+    pub fn into_mapped(mut self, flags: u64, domain: &crate::domain::Domain) -> Result<MappedKey, crate::error::Error> {
+        match self {
+            MrKey::Key(mapped_key) => {
+                Ok(MappedKey::Key(mapped_key))
+            }
+            MrKey::RawKey(_) => {
+                let mapped_key = domain.map_raw( &mut self, flags)?;
+                Ok(MappedKey::MappedRawKey(mapped_key))
+            }
+        }
+    }
+}
+
+pub enum MappedKey {
+    Key(u64),
+    MappedRawKey(u64),
+}
+
+impl MappedKey {
+    pub fn get_key(&self) -> u64 {
+        match self {
+            MappedKey::Key(key) | MappedKey::MappedRawKey(key) => *key 
+        }
+    }
+}
+
+
 pub trait DataDescriptor {
     fn get_desc(&mut self) -> *mut std::ffi::c_void;
     fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void;
@@ -132,14 +207,34 @@ impl MemoryRegion {
     
     }
 
-    pub fn get_key(&mut self) -> Option<u64> {
+    pub fn key(&self) -> Result<MrKey, crate::error::Error> {
         
-        let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.handle()) };
-        if ret == crate::FI_KEY_NOTAVAIL {
-            None
+        if self.inner._domain_rc.domain_attr.get_mr_mode().is_raw()
+        {
+            self.raw_key(0)
         }
-        else {  
-            Some(ret)
+        else {
+            let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.handle()) };
+            if ret == crate::FI_KEY_NOTAVAIL {
+                Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
+            }
+            else {  
+                Ok(MrKey::Key(ret))
+            }
+        }
+    }
+
+    fn raw_key(&self, flags: u64) -> Result<MrKey, crate::error::Error>  {
+        let mut base_addr = 0u64;
+        let mut key_size = self.inner._domain_rc.domain_attr.get_mr_key_size();
+        let mut raw_key = vec![0u8; key_size];
+        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), &mut base_addr, raw_key.as_mut_ptr().cast(), &mut key_size, flags) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(unsafe {MrKey::from_bytes_impl(&raw_key, &self.inner._domain_rc)})
         }
     }
 
@@ -167,27 +262,42 @@ impl MemoryRegion {
         check_error(err.try_into().unwrap())
     }
 
-    pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Return the key as it should be returned
-        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, std::ptr::null_mut(), key_size, flags) };
-
-        if err != 0 {
+    pub fn address(&self, flags: u64) -> Result<u64, crate::error::Error>  {
+        let mut base_addr = 0u64;
+        let mut key_size = 0usize;
+        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), &mut base_addr, std::ptr::null_mut(), &mut key_size, flags) };
+        
+        if err != 0 && -err as u32 != libfabric_sys::FI_ETOOSMALL {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        } 
+        }
         else {
-            Ok(())
-        }       
-    }
-
-    pub fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, raw_key, key_size, flags) };
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }        
-        else {
-            Ok(())
+            Ok(base_addr)
         }
     }
+
+
+
+    // pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Return the key as it should be returned
+    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, std::ptr::null_mut(), key_size, flags) };
+
+    //     if err != 0 {
+    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+    //     } 
+    //     else {
+    //         Ok(())
+    //     }       
+    // }
+
+    // pub fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
+    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, raw_key, key_size, flags) };
+
+    //     if err != 0 {
+    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+    //     }        
+    //     else {
+    //         Ok(())
+    //     }
+    // }
 
     pub fn description(&self) -> MemoryRegionDesc {
         let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.handle())};
