@@ -86,6 +86,14 @@ impl AddressVector {
     ///
     /// This function will return an error if the underlying library call fails.
     pub fn insert(&self, addr: &[Address], flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+        self.insert_::<()>(addr, flags, None)
+    }
+
+    pub fn insert_with_context<T>(&self, addr: &[Address], flags: u64, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+        self.insert_(addr, flags, Some(ctx))
+    }
+
+    fn insert_<T>(&self, addr: &[Address], flags: u64, ctx: Option<&mut T>) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
 
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len() );
@@ -94,7 +102,12 @@ impl AddressVector {
             serialized.extend(a.as_bytes().iter())
         }
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.handle(), serialized.as_ptr().cast(), fi_addresses.len(), fi_addresses.as_mut_ptr().cast(), flags, std::ptr::null_mut()) };
+        let err = if let Some(ctx) = ctx {
+            unsafe { libfabric_sys::inlined_fi_av_insert(self.handle(), serialized.as_ptr().cast(), fi_addresses.len(), fi_addresses.as_mut_ptr().cast(), flags, (ctx as *mut T).cast()) }
+        }
+        else {
+             unsafe { libfabric_sys::inlined_fi_av_insert(self.handle(), serialized.as_ptr().cast(), fi_addresses.len(), fi_addresses.as_mut_ptr().cast(), flags, std::ptr::null_mut()) }
+        };
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))

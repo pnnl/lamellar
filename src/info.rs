@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use libfabric_sys::FI_SOURCE;
+
 use crate::{nic::Nic, utils::check_error, infocapsoptions::Caps, ep::Address};
 
 #[derive(Clone, Debug)]
@@ -116,12 +118,22 @@ impl<T> InfoBuilder<T> {
         }
     }
 
-    pub fn flags(self, flags: u64) -> Self {
-        Self {
-            flags,
-            ..self
-        }
+    pub fn numeric_host(mut self) -> Self {
+        self.flags |= libfabric_sys::FI_NUMERICHOST;
+        self
     }
+
+    pub fn prov_attr_only(mut self) -> Self {
+        self.flags |= libfabric_sys::FI_PROV_ATTR_ONLY;
+        self
+    }
+
+    // pub fn flags(self, flags: u64) -> Self {
+    //     Self {
+    //         flags,
+    //         ..self
+    //     }
+    // }
 
     pub fn request(self) -> Result<Info<T>, crate::error::Error> {
         let mut c_info: *mut libfabric_sys::fi_info = std::ptr::null_mut();
@@ -296,7 +308,11 @@ impl<T: Caps> Caps for InfoEntry<T> {
     }
 } 
 
-
+pub enum InfoSourceOpt {
+    NodeAndService(String, String),
+    Node(String),
+    Service(String),
+}
 
 impl Info<()> {
     #[allow(clippy::new_ret_no_self)]
@@ -306,6 +322,29 @@ impl Info<()> {
             c_node: std::ffi::CString::new("").unwrap(),
             c_service: std::ffi::CString::new("").unwrap(),
             flags: 0,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn new_source(source: InfoSourceOpt) -> InfoBuilder<()> {
+        let (c_node, c_service) = 
+            match source {
+                InfoSourceOpt::NodeAndService(node, service) => {
+                    (std::ffi::CString::new(node).unwrap(), std::ffi::CString::new(service).unwrap())
+                } 
+                InfoSourceOpt::Node(node) => {
+                    (std::ffi::CString::new(node).unwrap(), std::ffi::CString::new("").unwrap())
+                }
+                InfoSourceOpt::Service(service) => {
+                    (std::ffi::CString::new("").unwrap(), std::ffi::CString::new(service).unwrap())
+                }
+            };
+
+        InfoBuilder::<()> {
+            c_info_hints: std::ptr::null_mut(),
+            c_node,
+            c_service,
+            flags: FI_SOURCE,
             phantom: PhantomData,
         }
     }

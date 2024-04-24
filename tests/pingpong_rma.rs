@@ -41,7 +41,7 @@ fn pp_server_rma() {
 
     
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, mut mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), libfabric_sys::FI_SOURCE);
+        common::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
 
     match info {
         common::InfoWithCaps::Msg(info) => {
@@ -114,7 +114,7 @@ fn pp_client_rma() {
     
     
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr,_eqq, mut mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), 0);
+        common::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
     
     match info {
         common::InfoWithCaps::Msg(info) => {

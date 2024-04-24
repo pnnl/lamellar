@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{enums::{MrMode, MrAccess}, domain::DomainImpl, utils::check_error, fid::{self, AsRawFid}};
+use crate::{domain::DomainImpl, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error};
 #[allow(unused_imports)]
 use crate::fid::{AsFid, OwnedFid};
 
@@ -9,12 +9,12 @@ pub struct DefaultMemDesc {
     c_desc: *mut std::ffi::c_void,
 }
 
-pub enum MrKey {
+pub enum MemoryRegionKey {
     Key(u64),
     RawKey((Vec<u8>, u64)),
 }
 
-impl MrKey {
+impl MemoryRegionKey {
 
     // pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
     //     let mut raw_key = vec![0u8; len];
@@ -23,17 +23,17 @@ impl MrKey {
     // }
 
     pub unsafe fn from_bytes(raw: &[u8], domain: &crate::domain::Domain) -> Self {
-        MrKey::from_bytes_impl(raw, &domain.inner)
+        MemoryRegionKey::from_bytes_impl(raw, &domain.inner)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            MrKey::Key(key) => {
+            MemoryRegionKey::Key(key) => {
                 let mut bytes = vec![0; std::mem::size_of::<u64>()];
                 unsafe{bytes.copy_from_slice(std::slice::from_raw_parts(key as *const u64 as *const u8,  std::mem::size_of::<u64>()))};
                 bytes
             }
-            MrKey::RawKey(key) => {
+            MemoryRegionKey::RawKey(key) => {
                 [&key.0[..], unsafe{std::slice::from_raw_parts(&key.1 as *const u64 as *const u8,  std::mem::size_of::<u64>()) }].concat()
             }
 
@@ -54,31 +54,31 @@ impl MrKey {
     }
 
     pub unsafe fn from_u64(key: u64) -> Self {
-        MrKey::Key(key) 
+        MemoryRegionKey::Key(key) 
     }
 
-    pub fn into_mapped(mut self, flags: u64, domain: &crate::domain::Domain) -> Result<MappedKey, crate::error::Error> {
+    pub fn into_mapped(mut self, flags: u64, domain: &crate::domain::Domain) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
-            MrKey::Key(mapped_key) => {
-                Ok(MappedKey::Key(mapped_key))
+            MemoryRegionKey::Key(mapped_key) => {
+                Ok(MappedMemoryRegionKey::Key(mapped_key))
             }
-            MrKey::RawKey(_) => {
+            MemoryRegionKey::RawKey(_) => {
                 let mapped_key = domain.map_raw( &mut self, flags)?;
-                Ok(MappedKey::MappedRawKey(mapped_key))
+                Ok(MappedMemoryRegionKey::MappedRawKey(mapped_key))
             }
         }
     }
 }
 
-pub enum MappedKey {
+pub enum MappedMemoryRegionKey {
     Key(u64),
     MappedRawKey(u64),
 }
 
-impl MappedKey {
+impl MappedMemoryRegionKey {
     pub fn get_key(&self) -> u64 {
         match self {
-            MappedKey::Key(key) | MappedKey::MappedRawKey(key) => *key 
+            MappedMemoryRegionKey::Key(key) | MappedMemoryRegionKey::MappedRawKey(key) => *key 
         }
     }
 }
@@ -207,7 +207,7 @@ impl MemoryRegion {
     
     }
 
-    pub fn key(&self) -> Result<MrKey, crate::error::Error> {
+    pub fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
         
         if self.inner._domain_rc.domain_attr.get_mr_mode().is_raw()
         {
@@ -219,12 +219,12 @@ impl MemoryRegion {
                 Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
             }
             else {  
-                Ok(MrKey::Key(ret))
+                Ok(MemoryRegionKey::Key(ret))
             }
         }
     }
 
-    fn raw_key(&self, flags: u64) -> Result<MrKey, crate::error::Error>  {
+    fn raw_key(&self, flags: u64) -> Result<MemoryRegionKey, crate::error::Error>  {
         let mut base_addr = 0u64;
         let mut key_size = self.inner._domain_rc.domain_attr.get_mr_key_size();
         let mut raw_key = vec![0u8; key_size];
@@ -234,7 +234,7 @@ impl MemoryRegion {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(unsafe {MrKey::from_bytes_impl(&raw_key, &self.inner._domain_rc)})
+            Ok(unsafe {MemoryRegionKey::from_bytes_impl(&raw_key, &self.inner._domain_rc)})
         }
     }
 
@@ -449,26 +449,34 @@ impl Default for MemoryRegionAttr {
     }
 }
 
-pub struct MemoryRegionBuilder<'a> {
+pub struct MemoryRegionBuilder<'a, 'b, T> {
     mr_attr: MemoryRegionAttr,
     domain: &'a crate::domain::Domain,
+    iovs: Vec<IoVec<'b, T>>,
     flags: MrMode,
 }
 
-impl<'a> MemoryRegionBuilder<'a> {
+impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
 
-    pub fn new(domain: &'a crate::domain::Domain) -> Self {
+    pub fn new(domain: &'a crate::domain::Domain, buff: &'b [T]) -> Self {
         Self {
             mr_attr: MemoryRegionAttr::new(),
             domain,
             flags: MrMode::new(),
+            iovs: vec![IoVec::from_slice(buff)],
         }
     }
 
-    pub fn iov<T>(mut self, iov: &[crate::iovec::IoVec<T>] ) -> Self {
-        self.mr_attr.iov(iov);
+    pub fn add_buffer(mut self, buff: &'b [T]) -> Self {
+        self.iovs.push(IoVec::from_slice(buff));
+
         self
     }
+
+    // fn iovs(mut self, iov: &[crate::iovec::IoVec<T>] ) -> Self {
+    //     self.mr_attr.iov(iov);
+    //     self
+    // }
 
     
     pub fn access_collective(mut self) -> Self { 
@@ -541,7 +549,8 @@ impl<'a> MemoryRegionBuilder<'a> {
         self
     }
 
-    pub fn build(self) -> Result<MemoryRegion, crate::error::Error> {
+    pub fn build(mut self) -> Result<MemoryRegion, crate::error::Error> {
+        self.mr_attr.iov(&self.iovs);
         MemoryRegion::from_attr(self.domain, self.mr_attr, self.flags)
     }
 }
@@ -549,7 +558,7 @@ impl<'a> MemoryRegionBuilder<'a> {
 //================== Memory Region tests ==================//
 #[cfg(test)]
 mod tests {
-    use crate::{iovec::IoVec, info::{Info, InfoHints}, enums::MrAccess};
+    use crate::{info::{Info, InfoHints}, enums::MrAccess};
 
     use super::MemoryRegionBuilder;
 
@@ -634,10 +643,10 @@ mod tests {
             
             for test in &DEF_TEST_SIZES {
                 let buff_size = test.0;
-                let mut buf = vec![0_u64; buff_size as usize ];
+                let buf = vec![0_u64; buff_size as usize];
                 for combo in &combos {
-                    let _mr = MemoryRegionBuilder::new(&domain)
-                        .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
+                    let _mr = MemoryRegionBuilder::new(&domain, &buf)
+                        // .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
                         .access(&MrAccess::from_value(*combo as u32))
                         .offset(0)
                         .requested_key(0xC0DE)
@@ -737,7 +746,7 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{iovec::IoVec, info::{Info, InfoHints}, enums::MrAccess};
+    use crate::{info::{Info, InfoHints}, enums::MrAccess};
 
     use super::MemoryRegionBuilder;
     
@@ -794,10 +803,9 @@ mod libfabric_lifetime_tests {
             let mut mrs = Vec::new();
             for test in &super::tests::DEF_TEST_SIZES {
                 let buff_size = test.0;
-                let mut buf = vec![0_u64; buff_size as usize ];
+                let buf = vec![0_u64; buff_size as usize ];
                 for combo in &combos {
-                    let mr = MemoryRegionBuilder::new(&domain)
-                        .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
+                    let mr = MemoryRegionBuilder::new(&domain, &buf)
                         .access(&MrAccess::from_value(*combo as u32))
                         .offset(0)
                         .requested_key(0xC0DE)
@@ -808,7 +816,7 @@ mod libfabric_lifetime_tests {
                 }
             }
             drop(domain);
-            println!("Count = {} After dropping domain\n", std::rc::Rc::strong_count(&mrs[0].inner._domain_rc));
+            // println!("Count = {} After dropping domain\n", std::rc::Rc::strong_count(&mrs[0].inner._domain_rc));
             
             // domain.close().unwrap();
             // fab.close().unwrap();

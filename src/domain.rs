@@ -71,14 +71,14 @@ impl Domain {
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MrKey, flags: u64) -> Result<u64, crate::error::Error> {
+    pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MemoryRegionKey, flags: u64) -> Result<u64, crate::error::Error> {
         let mut mapped_key = 0;
         let err = match mr_key {
-            crate::mr::MrKey::Key(simple_key) => {
+            crate::mr::MemoryRegionKey::Key(simple_key) => {
                 return Ok(*simple_key)
                 // unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, simple_key as *mut u64 as *mut u8, std::mem::size_of::<u64>(), &mut mapped_key, flags) }
             }
-            crate::mr::MrKey::RawKey(raw_key) => {
+            crate::mr::MemoryRegionKey::RawKey(raw_key) => {
                 unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), raw_key.1 , raw_key.0.as_mut_ptr().cast(), raw_key.0.len(), &mut mapped_key, flags) }
             }
         };

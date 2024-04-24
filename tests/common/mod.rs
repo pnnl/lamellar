@@ -1,6 +1,6 @@
-use std::{time::Instant, collections::btree_map::Keys, ops::Index};
+use std::time::Instant;
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, MappedAddress, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MrKey}, MSG, RMA, TAG};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, MappedAddress, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey}, MSG, RMA, TAG};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -74,7 +74,7 @@ pub type MsgRma = libfabric::caps_type!(MSG, RMA);
 pub type MsgTagRma = libfabric::caps_type!(MSG, TAG, RMA);
 
 
-pub const IP: &str = "172.17.110.7"; 
+pub const IP: &str = "172.17.110.18"; 
 
 #[derive(Clone)]
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -481,7 +481,7 @@ pub fn ft_server_connect<T: EqConfig + libfabric::Waitable + 'static, M: infocap
     }
 }
 
-pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, flags: u64) -> Info<T> {
+pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, source: bool) -> Info<T> {
     let mut ep_attr = hints.get_ep_attr();
 
 
@@ -490,13 +490,21 @@ pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, flags: 
         _ => hints ,
     };
 
-    let info = Info::new().service(service.as_str()).flags(flags).hints(&hints);
-    if node.is_empty() {
-        info.request().unwrap()
-    }
-    else {
-        info.node(node.as_str()).request().unwrap()
-    }
+    let info = 
+        if source {
+            Info::new_source(libfabric::info::InfoSourceOpt::Service(service))
+        }
+        else {
+            Info::new().service(&service).node(&node)
+        };
+
+     info.hints(&hints).request().unwrap()
+    // if node.is_empty() {
+    //     info.request().unwrap()
+    // }
+    // else {
+    //     info.node(node.as_str()).request().unwrap()
+    // }
 
 }
 
@@ -609,11 +617,11 @@ pub enum InfoWithCaps<M,T> {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, flags: u64) -> (InfoWithCaps<M, T>, libfabric::fabric::Fabric, EndpointCaps<M, T>, libfabric::domain::Domain, CqType, CqType, Option<Counter<CounterOptions>>, Option<Counter<CounterOptions>>, libfabric::eq::EventQueue<EventQueueOptions>, Option<libfabric::mr::MemoryRegion>, libfabric::av::AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, source: bool) -> (InfoWithCaps<M, T>, libfabric::fabric::Fabric, EndpointCaps<M, T>, libfabric::domain::Domain, CqType, CqType, Option<Counter<CounterOptions>>, Option<Counter<CounterOptions>>, libfabric::eq::EventQueue<EventQueueOptions>, Option<libfabric::mr::MemoryRegion>, libfabric::av::AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
     
     match hints {
         HintsCaps::Msg(hints) => {
-            let info = ft_getinfo(hints, node.clone(), service.clone(), flags);
+            let info = ft_getinfo(hints, node.clone(), service.clone(), source);
             let entries = info.get();
             let (fabric, eq, domain) = ft_open_fabric_res(&entries[0]);
             let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain);
@@ -624,7 +632,7 @@ pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>
             (InfoWithCaps::Msg(info), fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mr_desc)
         }
         HintsCaps::Tagged(hints) => {
-            let info =ft_getinfo(hints, node.clone(), service.clone(), flags);
+            let info =ft_getinfo(hints, node.clone(), service.clone(), source);
             let entries = info.get();
             let (fabric, eq, domain) = ft_open_fabric_res(&entries[0]);
             let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain);
@@ -1199,9 +1207,9 @@ pub fn ft_rma_write_target_allowed(caps: &InfoCapsImpl) -> bool {
     false
 }
 
-pub fn ft_info_to_mr_builder<'a, E>(domain: &'a libfabric::domain::Domain, info: &InfoEntry<E>) -> libfabric::mr::MemoryRegionBuilder<'a> {
+pub fn ft_info_to_mr_builder<'a, 'b, E>(domain: &'a libfabric::domain::Domain, buff: &'b [u8], info: &InfoEntry<E>) -> libfabric::mr::MemoryRegionBuilder<'a, 'b, u8> {
 
-    let mut mr_builder = libfabric::mr::MemoryRegionBuilder::new(domain);
+    let mut mr_builder = libfabric::mr::MemoryRegionBuilder::new(domain, buff);
 
     if ft_chek_mr_local_flag(info) {
         if info.get_caps().is_msg() || info.get_caps().is_tagged() {
@@ -1236,10 +1244,10 @@ pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &libfabric::domain::Domain, e
         println!("MR not needed");
         return (None, None)
     }
-    let iov = libfabric::iovec::IoVec::from_slice(buf);
+    // let iov = libfabric::iovec::IoVec::from_slice(buf);
     // let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
     
-    let mr = ft_info_to_mr_builder(domain, info).iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM).build().unwrap();
+    let mr = ft_info_to_mr_builder(domain, buf, info).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM).build().unwrap();
 
     let desc = mr.description();
 
@@ -1301,10 +1309,10 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
     //     rma_iov = rma_iov.key(mr.key().unwrap());
     // }
     rma_iov = match key {
-        MrKey::Key(simple_key) => {
+        MemoryRegionKey::Key(simple_key) => {
             rma_iov.key(simple_key)
         }
-        MrKey::RawKey(raw_key) => {
+        MemoryRegionKey::RawKey(raw_key) => {
             if raw_key.0.len() > std::mem::size_of::<u64>() {
                 todo!();
             }
@@ -1312,7 +1320,7 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
             let mut key = 0u64;
             unsafe {std::slice::from_raw_parts_mut(&mut key as *mut u64 as * mut u8, 8).copy_from_slice(&raw_key.0)};
             rma_iov.key(key)
-                .address(raw_key.1)
+                .address(0)
         }
     };
 
@@ -1322,7 +1330,7 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
     ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
     
     unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut libfabric::iovec::RmaIoVec as *mut u8,std::mem::size_of::<libfabric::iovec::RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
-    let mr_key = unsafe{MrKey::from_bytes(&gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index+len], domain)};
+    let mr_key = unsafe{MemoryRegionKey::from_bytes(&gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index+len], domain)};
     let mapped_key = mr_key.into_mapped(0, domain).unwrap();
     let peer_iov = libfabric::iovec::RmaIoVec::new()
         .address(rma_iov.get_address())
@@ -1346,7 +1354,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
    
     match hints {
         HintsCaps::Msg(hints) => {
-            let info = ft_getinfo(hints, node, service, libfabric_sys::FI_SOURCE);
+            let info = ft_getinfo(hints, node, service, true);
             let entries = info.get();
             
             if entries.is_empty() {
@@ -1368,7 +1376,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
             (InfoWithCaps::Msg(info), fab, eq, PassiveEndpointCaps::Msg(pep))
         }
         HintsCaps::Tagged(hints) => {
-            let info = ft_getinfo(hints, node, service, libfabric_sys::FI_SOURCE);
+            let info = ft_getinfo(hints, node, service, true);
             let entries = info.get();
             
             if entries.is_empty() {
@@ -1397,7 +1405,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
 pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (InfoWithCaps<M, T>, fabric::Fabric,  domain::Domain, libfabric::eq::EventQueue<EventQueueOptions>, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M, T>, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     match hints {
         HintsCaps::Msg(hints) => {
-            let info = ft_getinfo(hints, node, service, 0);
+            let info = ft_getinfo(hints, node, service, false);
 
             let entries = info.get();
 
@@ -1419,7 +1427,7 @@ pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M,
 
         }
         HintsCaps::Tagged(hints) => {
-            let info = ft_getinfo(hints, node, service, 0);
+            let info = ft_getinfo(hints, node, service, false);
 
             let entries = info.get();
 
