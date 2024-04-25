@@ -1,10 +1,10 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{ActiveEndpoint, BaseEndpoint, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
 
 pub struct Receive;
 pub struct Transmit;
 
-pub struct XContextBaseImpl<T> {
+pub(crate) struct XContextBaseImpl<T> {
     pub(crate) c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
     phantom: PhantomData<T>,
@@ -21,126 +21,145 @@ impl<T: 'static> XContextBase<T> {
     }
 
     pub fn getname<T0>(&self) -> Result<Address, crate::error::Error> {
-        BaseEndpoint::getname(self)
+        BaseEndpointImpl::getname(self)
     }
 
     pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_limit(self)
+        BaseEndpointImpl::buffered_limit(self)
     }
 
     pub fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_limit(self, size)
+        BaseEndpointImpl::set_buffered_limit(self, size)
     }
 
     pub fn buffered_min(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_min(self)
+        BaseEndpointImpl::buffered_min(self)
     }
 
     pub fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_min(self, size)
+        BaseEndpointImpl::set_buffered_min(self, size)
     }
 
     pub fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::cm_data_size(self)
+        BaseEndpointImpl::cm_data_size(self)
     }
 
     pub fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cm_data_size(self, size)
+        BaseEndpointImpl::set_cm_data_size(self, size)
     }
 
     pub fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::min_multi_recv(self)
+        BaseEndpointImpl::min_multi_recv(self)
     }
 
     pub fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_min_multi_recv(self, size)
+        BaseEndpointImpl::set_min_multi_recv(self, size)
     }
 
     pub fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_hmem_p2p(self, hmem)
+        BaseEndpointImpl::set_hmem_p2p(self, hmem)
     }
 
     pub fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
-        BaseEndpoint::hmem_p2p(self)
+        BaseEndpointImpl::hmem_p2p(self)
     }
 
     pub fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
-        BaseEndpoint::xpu_trigger(self)
+        BaseEndpointImpl::xpu_trigger(self)
     }
 
     pub fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cuda_api_permitted(self, permitted)
+        BaseEndpointImpl::set_cuda_api_permitted(self, permitted)
     }
 
     pub fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
-        BaseEndpoint::wait_fd(self)
+        BaseEndpointImpl::wait_fd(self)
     }
 
     pub fn enable(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::enable(self)
+        ActiveEndpointImpl::enable(self)
     }
 
     pub fn cancel(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::cancel(self)
+        ActiveEndpointImpl::cancel(self)
     }
 
     pub fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::cancel_with_context(self, context)
+        ActiveEndpointImpl::cancel_with_context(self, context)
     }
 
     pub fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
-        ActiveEndpoint::tx_size_left(self)
+        ActiveEndpointImpl::tx_size_left(self)
     }
 
     pub fn getpeer(&self) -> Result<Address, crate::error::Error> {
-        ActiveEndpoint::getpeer(self)
+        ActiveEndpointImpl::getpeer(self)
     }
 
     pub fn connect_with<P>(&self, addr: &Address, param: &[P]) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::connect_with(self,addr, param)
+        ActiveEndpointImpl::connect_with(self,addr, param)
     }
 
     pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::connect(self, addr)
+        ActiveEndpointImpl::connect(self, addr)
     }
 
     pub fn accept_with<P>(&self, param: &[P]) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::accept_with(self, param)
+        ActiveEndpointImpl::accept_with(self, param)
     }
 
     pub fn accept(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::accept(self)
+        ActiveEndpointImpl::accept(self)
     }
 
     pub fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::shutdown(self, flags)
+        ActiveEndpointImpl::shutdown(self, flags)
     }
 }
 
-impl<T> ActiveEndpointImpl for XContextBase<T> {}
-impl<T> ActiveEndpointImpl for XContextBaseImpl<T> {}
-impl<T> BaseEndpoint for XContextBase<T> {}
-impl<T : 'static> ActiveEndpoint for XContextBase<T> {
+impl<T> ActiveEndpointImpl for XContextBase<T> {
     fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.handle()
-    }
-    
-    fn inner(&self) -> std::rc::Rc<(dyn crate::ep::ActiveEndpointImpl + 'static)> {
-        self.inner.clone()
+        self.inner.handle()
     }
 }
+
+impl<T> ActiveEndpointImpl for XContextBaseImpl<T> {
+    fn handle(&self) -> *mut libfabric_sys::fid_ep {
+        self.c_ep
+    }
+}
+// impl<T> ActiveEndpointImpl for XContextBaseImpl<T> {}
+
+
+
+impl<T> BaseEndpointImpl for XContextBase<T> {}
+impl<T> BaseEndpointImpl for XContextBaseImpl<T> {}
+
+// impl<'a, T> ActiveEndpoint<'a> for XContextBase<T> {
+    
+//     fn inner(&self) -> std::rc::Rc<(dyn crate::ep::BaseEndpointImpl + 'static)> {
+//         self.inner.clone()
+//     }
+// }
 
 impl<T> AsFid for XContextBase<T> {
     fn as_fid(&self) -> fid::BorrowedFid {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
+    }    
+}
+
+impl<T> AsFid for XContextBaseImpl<T> {
+    fn as_fid(&self) -> fid::BorrowedFid {
+        self.fid.as_fid()
     }    
 }
 
 pub type TransmitContext = XContextBase<Transmit>; 
+type TransmitContextImpl = XContextBaseImpl<Transmit>; 
 
-impl TransmitContext {
+impl TransmitContextImpl {
 
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: TxAttr, context: Option<&mut T0>) -> Result<TransmitContext, crate::error::Error> {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpointImpl, index: i32, mut attr: TxAttr, context: Option<&mut T0>) -> Result<TransmitContextImpl, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = 
             if let Some(ctx) = context {
@@ -156,48 +175,70 @@ impl TransmitContext {
         else {
             Ok(
                 Self {
-                    inner: Rc::new( 
-                        XContextBaseImpl::<Transmit> { 
-                            c_ep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
-                            phantom: PhantomData,
-                            _sync_rcs: RefCell::new(Vec::new()),
-                    })
+                    c_ep, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
+                    phantom: PhantomData,
+                    _sync_rcs: RefCell::new(Vec::new()),
                 })
         }
     }
 
-    pub(crate) fn bind<T: crate::Bind + AsFid>(&mut self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T: crate::Bind + AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            self.inner._sync_rcs.borrow_mut().push(res.inner());
+            self._sync_rcs.borrow_mut().push(res.inner());
             Ok(())
         }
     } 
 
-    pub fn bind_cq(&mut self) -> TxIncompleteBindCq {
+    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq {
         TxIncompleteBindCq { ep: self, flags: 0}
     }
 
-    pub fn bind_cntr(&mut self) -> TxIncompleteBindCntr {
+    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr {
         TxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub fn bind_eq<T: EqConfig + 'static>(&mut self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }
 
-    pub fn bind_av(&mut self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
     
         self.bind(av, 0)
     }
 }
 
+impl TransmitContext {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpointImpl, index: i32, attr: TxAttr, context: Option<&mut T0>) -> Result<TransmitContext, crate::error::Error> {
+        Ok(
+            Self {
+                inner: Rc::new(TransmitContextImpl::new(ep, index, attr, context)?)
+            }
+        )
+    }
+    
+    pub fn bind_cq(&self) -> TxIncompleteBindCq {
+        self.inner.bind_cq()
+    }
+
+    pub fn bind_cntr(&self) -> TxIncompleteBindCntr {
+        self.inner.bind_cntr()
+    }
+
+    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+        self.inner.bind_eq(eq)
+    }
+
+    pub fn bind_av(&mut self, av: &AddressVector) -> Result<(), crate::error::Error> {
+        self.inner.bind_av(av)
+    }
+}
 
 pub struct TransmitContextBuilder<'a, T, E> {
     tx_attr: TxAttr,
@@ -285,10 +326,11 @@ impl <'a, T, E> TransmitContextBuilder<'a, T, E> {
 }
 
 pub type ReceiveContext = XContextBase<Receive>; 
+type ReceiveContextImpl = XContextBaseImpl<Receive>; 
 
-impl ReceiveContext {
+impl ReceiveContextImpl {
 
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: RxAttr, context: Option<&mut T0>) -> Result<ReceiveContext, crate::error::Error> {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpointImpl, index: i32, mut attr: RxAttr, context: Option<&mut T0>) -> Result<ReceiveContextImpl, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = 
             if let Some(ctx) = context {
@@ -304,13 +346,10 @@ impl ReceiveContext {
         else {
             Ok(
                 Self {
-                    inner: Rc::new( 
-                        XContextBaseImpl::<Receive> { 
-                            c_ep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
-                            phantom: PhantomData,
-                            _sync_rcs: RefCell::new(Vec::new()),
-                    })
+                    c_ep, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
+                    phantom: PhantomData,
+                    _sync_rcs: RefCell::new(Vec::new()),
                 })
         }
     }
@@ -326,24 +365,53 @@ impl ReceiveContext {
         }
     } 
 
-    pub fn bind_cq(&self) -> RxIncompleteBindCq {
+    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq {
         RxIncompleteBindCq { ep: self, flags: 0}
     }
 
-    pub fn bind_cntr(&self) -> RxIncompleteBindCntr {
+    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr {
         RxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }
 
-    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
     
         self.bind(av, 0)
     }
 }
+
+impl ReceiveContext {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpointImpl, index: i32, attr: RxAttr, context: Option<&mut T0>) -> Result<ReceiveContext, crate::error::Error> {
+        Ok(
+            Self {
+                inner: Rc::new(ReceiveContextImpl::new(ep, index, attr, context)?)
+            }
+        )
+    }
+
+    pub fn bind_cq(&self) -> RxIncompleteBindCq {
+        self.inner.bind_cq()
+    }
+
+    pub fn bind_cntr(&self) -> RxIncompleteBindCntr {
+        self.inner.bind_cntr()
+    }
+
+    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+        self.inner.bind_eq(eq)
+    }
+
+    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+        self.inner.bind_av(av)
+    }
+    
+
+}
+
 
 pub struct ReceiveContextBuilder<'a, T, E> {
     rx_attr: RxAttr,
@@ -421,7 +489,7 @@ impl<'a, T, E> ReceiveContextBuilder<'a, T, E> {
 }
 
 pub struct TxIncompleteBindCq<'a> {
-    pub(crate) ep: &'a mut TransmitContext,
+    pub(crate) ep: &'a TransmitContextImpl,
     pub(crate) flags: u64,
 }
 
@@ -446,7 +514,7 @@ impl<'a> TxIncompleteBindCq<'a> {
 }
 
 pub struct TxIncompleteBindCntr<'a> {
-    pub(crate) ep: &'a mut TransmitContext,
+    pub(crate) ep: &'a TransmitContextImpl,
     pub(crate) flags: u64,
 }
 
@@ -470,7 +538,7 @@ impl<'a> TxIncompleteBindCntr<'a> {
         self
     }
 
-    pub fn cntr<T: crate::cntroptions::CntrConfig + 'static>(&mut self, cntr: &Counter<T>) -> Result<(), crate::error::Error> {
+    pub fn cntr<T: crate::cntroptions::CntrConfig + 'static>(&self, cntr: &Counter<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cntr, self.flags)
     }
 }
@@ -718,7 +786,7 @@ impl Default for TxAttr {
 }
 
 pub struct RxIncompleteBindCq<'a> {
-    pub(crate) ep: &'a  ReceiveContext,
+    pub(crate) ep: &'a  ReceiveContextImpl,
     pub(crate) flags: u64,
 }
 
@@ -737,13 +805,13 @@ impl<'a> RxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CqConfig+ 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: CqConfig+ 'static>(&self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cq, self.flags)
     }
 }
 
 pub struct RxIncompleteBindCntr<'a> {
-    pub(crate) ep: &'a  ReceiveContext,
+    pub(crate) ep: &'a  ReceiveContextImpl,
     pub(crate) flags: u64,
 }
 

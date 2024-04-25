@@ -48,26 +48,26 @@ macro_rules! read_cq_entry {
     }
 }
 
-pub(crate) struct CompletionQueueImpl<T> {
+pub(crate) struct CompletionQueueImpl {
     c_cq: *mut libfabric_sys::fid_cq,
     fid: OwnedFid,
     format: CqFormat,
-    phantom: PhantomData<T>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
     _domain_rc: Rc<DomainImpl>
 }
 
 pub struct CompletionQueue<T: CqConfig> {
-    inner: Rc<CompletionQueueImpl<T>>,
+    inner: Rc<CompletionQueueImpl>,
+    phantom: PhantomData<T>,
 }
 
-impl<T> CompletionQueue<T> where T: CqConfig {
+impl<'a> CompletionQueueImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cq {
-        self.inner.c_cq
+        self.c_cq
     }
 
-    pub(crate) fn new<T0>(_options: T, domain: &crate::domain::Domain, mut attr: CompletionQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: CompletionQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
@@ -86,24 +86,19 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        CompletionQueueImpl { 
-                            c_cq, 
-                            fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
-                            format: CqFormat::from_value(attr.c_attr.format), 
-                            phantom: PhantomData, 
-                            wait_obj: Some(attr.c_attr.wait_obj),
-                            _domain_rc: domain.inner.clone(),
-                        }) 
-                }
-            )
+                    c_cq, 
+                    fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
+                    format: CqFormat::from_value(attr.c_attr.format), 
+                    wait_obj: Some(attr.c_attr.wait_obj),
+                    _domain_rc: domain.inner.clone(),
+                })
         }
     }
 
     //[TODO] Maybe avoid making the extra copies for the final vector
-    pub fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
+    pub(crate) fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
        
-        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.inner.format, self.handle(),count,);
+        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.format, self.handle(),count,);
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
@@ -112,11 +107,11 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         }
     }
 
-    pub fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+    pub(crate) fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
        
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
-        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.inner.format, self.handle(),count, p_address);
+        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.format, self.handle(),count, p_address);
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
         }
@@ -132,7 +127,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
     }
 
     // // [TODO]  Condition is not taken into account
-    pub fn readerr(&self, flags: u64) -> Result<CqErrEntry, crate::error::Error> {
+    pub(crate) fn readerr(&self, flags: u64) -> Result<CqErrEntry, crate::error::Error> {
         
         let mut entry = CqErrEntry::new();
         let ret = unsafe { libfabric_sys::inlined_fi_cq_readerr(self.handle(), entry.get_mut(), flags) };
@@ -145,7 +140,7 @@ impl<T> CompletionQueue<T> where T: CqConfig {
         }
     }
 
-    pub fn print_error(&self, err_entry: &crate::cq::CqErrEntry) {
+    pub(crate) fn print_error(&self, err_entry: &crate::cq::CqErrEntry) {
         println!("{}", unsafe{self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size())} );
     }
 
@@ -155,72 +150,10 @@ impl<T> CompletionQueue<T> where T: CqConfig {
     
             unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     }
-}
 
+    pub(crate) fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
 
-impl<T: CqConfig + Waitable> CompletionQueue<T> {
-    pub fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<Completion, crate::error::Error> {
-        let p_cond = cond as *const T0 as *const std::ffi::c_void;
-        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.inner.format, self.handle(), count, p_cond, timeout);
-        if err < 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
-        }
-        else {
-            Ok(ret)
-        }
-    }
-
-    pub fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
-        
-        let p_cond = std::ptr::null_mut();
-        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.inner.format, self.handle(), count, p_cond, timeout);
-        if err < 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
-        }
-        else {
-            Ok(ret)
-        }
-    }
-
-    pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
-        
-        let mut address = 0;
-        let p_address = &mut address as *mut RawMappedAddress;   
-        let p_cond = std::ptr::null_mut();
-        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.inner.format, self.handle(), count, p_address, p_cond, timeout);
-        let address = if address == crate::FI_ADDR_NOTAVAIL {
-            None
-        }
-        else {
-            Some(MappedAddress::from_raw_addr(address))
-        };
-
-        if err < 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
-        }
-        else {
-            Ok((ret, address))
-        }
-    }
-
-    pub fn signal(&self) -> Result<(), crate::error::Error>{
-        
-        let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.handle()) };
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(())
-        }
-    }
-}
-
-impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
-
-    pub fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
-
-        if let Some(wait) = self.inner.wait_obj {
+        if let Some(wait) = self.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
                 let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast()) };
@@ -257,24 +190,142 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
         }
     }
 
+
+    pub(crate) fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<Completion, crate::error::Error> {
+        let p_cond = cond as *const T0 as *const std::ffi::c_void;
+        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.format, self.handle(), count, p_cond, timeout);
+        if err < 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
+        }
+        else {
+            Ok(ret)
+        }
+    }
+
+    pub(crate) fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+        
+        let p_cond = std::ptr::null_mut();
+        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.format, self.handle(), count, p_cond, timeout);
+        if err < 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
+        }
+        else {
+            Ok(ret)
+        }
+    }
+
+    pub(crate) fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        
+        let mut address = 0;
+        let p_address = &mut address as *mut RawMappedAddress;   
+        let p_cond = std::ptr::null_mut();
+        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.format, self.handle(), count, p_address, p_cond, timeout);
+        let address = if address == crate::FI_ADDR_NOTAVAIL {
+            None
+        }
+        else {
+            Some(MappedAddress::from_raw_addr(address))
+        };
+
+        if err < 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
+        }
+        else {
+            Ok((ret, address))
+        }
+    }
+
+    pub(crate) fn signal(&self) -> Result<(), crate::error::Error>{
+        
+        let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.handle()) };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(())
+        }
+    }
 }
 
 
+impl<T: CqConfig> CompletionQueue<T> {
+    #[allow(dead_code)]
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cq {
+        self.inner.handle()
+    }
 
-impl<T: CqConfig> crate::BindImpl for CompletionQueueImpl<T> {}
+    pub(crate) fn new<T0>(_options: T, domain: &crate::domain::Domain, attr: CompletionQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self {
+                inner: Rc::new(CompletionQueueImpl::new(domain, attr, context)?),
+                phantom: PhantomData,
+            }
+        )
+    }
+
+    pub fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
+        self.inner.read(count)
+    }
+
+    pub fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        self.inner.readfrom(count)
+    }
+    
+    pub fn readerr(&self, flags: u64) -> Result<CqErrEntry, crate::error::Error> {
+        self.inner.readerr(flags)
+    }
+
+    pub fn print_error(&self, err_entry: &crate::cq::CqErrEntry) {
+        self.inner.print_error(err_entry)
+    }
+
+}
+
+impl<T: CqConfig + Waitable> CompletionQueue<T> {
+    pub fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<Completion, crate::error::Error> {
+        self.inner.sread_with_cond(count, cond, timeout)
+    }
+
+    pub fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+        self.inner.sread(count, timeout)
+    }
+
+    pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        self.inner.sreadfrom(count, timeout)
+    }
+
+    pub fn signal(&self) -> Result<(), crate::error::Error>{
+        self.inner.signal()
+    }
+}
+
+impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
+    pub fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
+        self.inner.wait_object()
+    }
+}
+
+impl crate::BindImpl for CompletionQueueImpl {}
 impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
     fn inner(&self) -> Rc<dyn crate::BindImpl> {
         self.inner.clone()
     }
 }
 
-impl<T: CqConfig> AsFid for CompletionQueue<T> {
+impl AsFid for CompletionQueueImpl {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-            self.inner.fid.as_fid()
+            self.fid.as_fid()
     }
 }
 
-impl<T: CqConfig + WaitRetrievable + FdRetrievable> AsFd for CompletionQueue<T> {
+impl<T: CqConfig> AsFid for CompletionQueue<T> {
+    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+            self.inner.as_fid()
+    }
+}
+
+impl AsFd for CompletionQueueImpl {
     fn as_fd(&self) -> BorrowedFd<'_> {
         if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
             fd
@@ -282,6 +333,12 @@ impl<T: CqConfig + WaitRetrievable + FdRetrievable> AsFd for CompletionQueue<T> 
         else {
             panic!("Fabric object object type is not Fd")
         }
+    }
+}
+
+impl<T: CqConfig + WaitRetrievable + FdRetrievable> AsFd for CompletionQueue<T> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
     }
 }
 

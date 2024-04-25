@@ -40,7 +40,7 @@ impl<'a> WaitSetBuilder<'a> {
     }
 }
 
-pub struct WaitSetImpl {
+pub(crate) struct WaitSetImpl {
     pub(crate) c_wait: *mut libfabric_sys::fid_wait,
     fid: OwnedFid,
     _fabric_rc: Rc<FabricImpl>,
@@ -50,40 +50,37 @@ pub struct WaitSet {
     inner: Rc<WaitSetImpl>,
 }
 
-impl WaitSet {
+impl WaitSetImpl {
     
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_wait {
-        self.inner.c_wait
+        self.c_wait
     }
 
     pub(crate) fn new(fabric: &crate::fabric::Fabric, mut attr: WaitSetAttr) -> Result<Self, crate::error::Error> {
         let mut c_wait: *mut libfabric_sys::fid_wait  = std::ptr::null_mut();
         let c_wait_ptr: *mut *mut libfabric_sys::fid_wait = &mut c_wait;
 
-        let err = unsafe {libfabric_sys::inlined_fi_wait_open(fabric.inner.c_fabric, attr.get_mut(), c_wait_ptr)};
+        let err = unsafe {libfabric_sys::inlined_fi_wait_open(fabric.handle(), attr.get_mut(), c_wait_ptr)};
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        WaitSetImpl { 
-                            c_wait, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_wait).fid}),
-                            _fabric_rc: fabric.inner.clone(), 
-                    })
+                    c_wait, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_wait).fid}),
+                    _fabric_rc: fabric.inner.clone(), 
                 })
         }
     }
 
-    pub fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> { 
+    pub(crate) fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> { 
         let err = unsafe { libfabric_sys::inlined_fi_wait(self.handle(), timeout) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+    pub(crate) fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
         let mut res: libfabric_sys::fi_wait_obj = 0;
         let err = unsafe{libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAITOBJ as i32, (&mut res as *mut libfabric_sys::fi_wait_obj).cast() )};
         
@@ -137,9 +134,41 @@ impl WaitSet {
     }
 }
 
+
+impl WaitSet {
+        
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_wait {
+        self.inner.handle()
+    }
+
+    pub(crate) fn new(fabric: &crate::fabric::Fabric, attr: WaitSetAttr) -> Result<Self, crate::error::Error> {
+        Ok (
+            Self {
+                inner: 
+                    Rc::new(WaitSetImpl::new(fabric, attr)?)
+            }
+        )
+    }
+
+    pub fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> { 
+        self.inner.wait(timeout)
+    }
+
+    pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+        self.inner.wait_object()
+    }
+}
+
+
+impl AsFid for WaitSetImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.fid.as_fid()
+    }
+}
+
 impl AsFid for WaitSet {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
     }
 }
 
@@ -196,7 +225,7 @@ impl<'a> PollSetBuilder<'a> {
     }
 }
 
-pub struct PollSetImpl {
+pub(crate) struct PollSetImpl {
     pub(crate) c_poll: *mut libfabric_sys::fid_poll,
     fid: OwnedFid,
 }
@@ -205,13 +234,13 @@ pub struct PollSet {
     inner: Rc<PollSetImpl>
 }
 
-impl PollSet {
+impl PollSetImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_poll {
-        self.inner.c_poll
+        self.c_poll
     }
 
-    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: crate::sync::PollSetAttr) -> Result<PollSet, crate::error::Error> {
+    pub(crate) fn new(domain: &crate::domain::Domain, mut attr: crate::sync::PollSetAttr) -> Result<Self, crate::error::Error> {
         let mut c_poll: *mut libfabric_sys::fid_poll = std::ptr::null_mut();
         let c_poll_ptr: *mut *mut libfabric_sys::fid_poll = &mut c_poll;
         let err = unsafe { libfabric_sys::inlined_fi_poll_open(domain.handle(), attr.get_mut(), c_poll_ptr) };
@@ -222,16 +251,13 @@ impl PollSet {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        PollSetImpl { 
-                            c_poll, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_poll).fid }), 
-                    })
+                    c_poll, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_poll).fid }), 
                 })
         }
     }
 
-    pub fn poll<T0>(&self, contexts: &mut [T0]) -> Result<usize, crate::error::Error> {
+    pub(crate) fn poll<T0>(&self, contexts: &mut [T0]) -> Result<usize, crate::error::Error> {
         let ret = unsafe { libfabric_sys::inlined_fi_poll(self.handle(), contexts.as_mut_ptr().cast(),  contexts.len() as i32) };
         
         if ret < 0{
@@ -242,19 +268,19 @@ impl PollSet {
         }
     }
 
-    pub fn add(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+    pub(crate) fn add(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_add(self.handle(), fid.as_fid().as_raw_fid(), flags) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn del(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+    pub(crate) fn del(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
         let err = unsafe { libfabric_sys::inlined_fi_poll_del(self.handle(), fid.as_fid().as_raw_fid(), flags) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+    pub(crate) fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
         let mut res: libfabric_sys::fi_wait_obj = 0;
         let err = unsafe{libfabric_sys::inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_GETWAITOBJ as i32, (&mut res as *mut libfabric_sys::fi_wait_obj).cast())};
         
@@ -308,9 +334,49 @@ impl PollSet {
     }
 }
 
+impl PollSet {
+    
+    #[allow(dead_code)]
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_poll {
+        self.inner.handle()
+    }
+
+    pub(crate) fn new(domain: &crate::domain::Domain, attr: crate::sync::PollSetAttr) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self {
+                inner: 
+                    Rc::new(PollSetImpl::new(domain, attr)?)
+            }
+        )
+    }
+
+    pub fn poll<T0>(&self, contexts: &mut [T0]) -> Result<usize, crate::error::Error> {
+        self.inner.poll(contexts)
+    }
+
+
+    pub fn add(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+        self.inner.add(fid, flags)
+    }
+
+    pub fn del(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+        self.inner.del(fid, flags)
+    }
+
+    pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+        self.inner.wait_object()
+    }
+}
+
+impl AsFid for PollSetImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.fid.as_fid()
+    }
+}
+
 impl AsFid for PollSet {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
     }
 }
 

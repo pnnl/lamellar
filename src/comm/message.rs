@@ -1,5 +1,5 @@
+use crate::ep::ActiveEndpointImpl;
 use crate::ep::Endpoint;
-use crate::ep::ActiveEndpoint;
 use crate::infocapsoptions::MsgCap;
 use crate::infocapsoptions::RecvMod;
 use crate::infocapsoptions::SendMod;

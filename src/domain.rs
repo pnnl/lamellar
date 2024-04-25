@@ -17,10 +17,10 @@ pub struct Domain {
     pub(crate) inner: Rc<DomainImpl>,
 }
 
-impl Domain {
+impl DomainImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_domain {
-        self.inner.c_domain
+        self.c_domain
     }
 
     pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
@@ -40,32 +40,29 @@ impl Domain {
         else {
             Ok(
                 Self { 
-                    inner : Rc::new(
-                        DomainImpl {
-                            c_domain, 
-                            domain_attr,
-                            _fabric_rc: fabric.inner.clone(), 
-                            fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
-                    })
+                    c_domain, 
+                    domain_attr,
+                    _fabric_rc: fabric.inner.clone(), 
+                    fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
                 })
         }
     }
 
-    pub fn bind(self, fid: &impl AsFid, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, fid: &impl AsFid, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), fid.as_fid().as_raw_fid(), flags)} ;
 
         check_error(err.try_into().unwrap())
     } 
 
-    // pub fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
+    // pub(crate) fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
     //     crate::ep::Endpoint::from_attr(self, rx_attr)
     // }
     
-    // pub fn srx_context_with_context<T0>(&self, rx_attr: crate::RxAttr, context: &mut T0) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
+    // pub(crate) fn srx_context_with_context<T0>(&self, rx_attr: crate::RxAttr, context: &mut T0) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
     //     crate::ep::Endpoint::from_attr_with_context(self, rx_attr, context)
     // }
 
-    pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.handle(), datatype, op.get_value(), attr.get_mut(), flags )};
 
         check_error(err.try_into().unwrap())
@@ -97,7 +94,7 @@ impl Domain {
     //     check_error(err.try_into().unwrap())
     // }
 
-    pub fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.handle(), key) };
 
 
@@ -112,13 +109,13 @@ impl Domain {
     //     crate::Stx::new(self, attr, context)
     // }
 
-    pub fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+    pub(crate) fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), 0) };
     
         check_error(err.try_into().unwrap())
     }
 
-    pub fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+    pub(crate) fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), libfabric_sys::fi_collective_op_FI_SCATTER.into()) };
     
         check_error(err.try_into().unwrap())
@@ -126,9 +123,56 @@ impl Domain {
 
 }
 
+impl Domain {
+
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_domain {
+        self.inner.handle()
+    }
+    
+    pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self{
+                inner: 
+                    Rc::new(DomainImpl::new(fabric, info, flags, domain_attr, context)?)
+            }
+        )    
+    }
+    
+    pub fn bind(&self, fid: &impl AsFid, flags: u64) -> Result<(), crate::error::Error> {
+        self.inner.bind(fid, flags)
+    }
+
+    pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
+        self.inner.query_atomic(datatype, op, attr, flags)
+    }
+
+    pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MemoryRegionKey, flags: u64) -> Result<u64, crate::error::Error> {
+        self.inner.map_raw(mr_key, flags)
+    }
+
+    pub fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
+        self.inner.unmap_key(key)
+    }
+
+    pub fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+        self.inner.query_collective::<T>(coll, attr)
+    }
+
+    pub fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+        self.inner.query_collective_scatter::<T>(coll, attr)
+    }
+                                
+}
+
+impl AsFid for DomainImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+       self.fid.as_fid()
+    }
+}
+
 impl AsFid for Domain {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.inner.fid.as_fid()
+       self.inner.as_fid()
     }
 }
 

@@ -50,7 +50,7 @@ fn pp_server_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
@@ -65,7 +65,7 @@ fn pp_server_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
@@ -123,7 +123,7 @@ fn pp_client_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
@@ -138,14 +138,14 @@ fn pp_client_rma() {
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote: libfabric::iovec::RmaIoVec = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
-
+            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
                 common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
             }
 
             common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            // drop(domain);
         }
     }
 }

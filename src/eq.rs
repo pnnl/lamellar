@@ -86,26 +86,23 @@ impl<T> Event<T>{
 }
 
 //================== EventQueue (fi_eq) ==================//
-pub struct EventQueueImpl<T: EqConfig> {
+pub(crate) struct EventQueueImpl {
     c_eq: *mut libfabric_sys::fid_eq,
     fid: OwnedFid,
-    phantom: PhantomData<T>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
     _fabric_rc: Rc<FabricImpl>,
 }
 
 
 pub struct EventQueue<T: EqConfig> {
-    inner: Rc<EventQueueImpl<T>>,
+    pub(crate) inner: Rc<EventQueueImpl>,
+    phantom: PhantomData<T>,
 }
 
-impl<T: EqConfig> EventQueue<T> {
 
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_eq {
-        self.inner.c_eq
-    }
+impl<'a> EventQueueImpl {
 
-    pub(crate) fn new<T0>(_options: T,fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
@@ -123,19 +120,19 @@ impl<T: EqConfig> EventQueue<T> {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        EventQueueImpl { 
-                            c_eq, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
-                            phantom: PhantomData, 
-                            wait_obj:  Some(attr.c_attr.wait_obj),
-                            _fabric_rc: fabric.inner.clone(),
-                        })
+                    c_eq, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
+                    wait_obj:  Some(attr.c_attr.wait_obj),
+                    _fabric_rc: fabric.inner.clone(),
                 })
         }
     }
 
-    pub fn read(&self) -> Result<Event<usize>, crate::error::Error>{
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_eq {
+        self.c_eq
+    }
+
+    pub(crate) fn read(&self) -> Result<Event<usize>, crate::error::Error>{
         let mut event = 0 ;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
         let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
@@ -147,7 +144,7 @@ impl<T: EqConfig> EventQueue<T> {
         }
     }
 
-    pub fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
+    pub(crate) fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
         let mut event = 0 ;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
         let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
@@ -160,7 +157,7 @@ impl<T: EqConfig> EventQueue<T> {
         }
     }
 
-    pub fn readerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
+    pub(crate) fn readerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
         let mut err_q = EventQueueErrEntry::new();
         let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), err_q.get_mut(), 0) };
 
@@ -172,7 +169,7 @@ impl<T: EqConfig> EventQueue<T> {
         }
     }
 
-    pub fn peekerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
+    pub(crate) fn peekerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
         let mut err_q = EventQueueErrEntry::new();
         let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), err_q.get_mut(), libfabric_sys::FI_PEEK.into()) };
 
@@ -184,16 +181,13 @@ impl<T: EqConfig> EventQueue<T> {
         }
     }
 
-    pub fn strerror(&self, entry: &EventQueueErrEntry) -> &str {
+    pub(crate) fn strerror(&self, entry: &EventQueueErrEntry) -> &str {
         let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
     
             unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     }
-}
 
-impl<T: EqWritable + EqConfig> EventQueue<T> {
-
-    pub fn write(&self, event: Event<usize>, flags: u64) -> Result<(), crate::error::Error>{
+    pub(crate) fn write(&self, event: Event<usize>, flags: u64) -> Result<(), crate::error::Error>{
         let event_val = event.get_value();
         let (event_entry, event_entry_size) = event.get_entry();
 
@@ -206,11 +200,8 @@ impl<T: EqWritable + EqConfig> EventQueue<T> {
             Ok(())
         }
     }
-}
 
-impl<T: crate::Waitable + EqConfig> EventQueue<T> {
-
-    pub fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error> { 
+    pub(crate) fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error> { 
         let mut event = 0;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
         let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.handle(), &mut event,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, flags) };
@@ -223,7 +214,7 @@ impl<T: crate::Waitable + EqConfig> EventQueue<T> {
         }
     }
 
-    pub fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
+    pub(crate) fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
         let mut event = 0;
         let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
 
@@ -236,14 +227,10 @@ impl<T: crate::Waitable + EqConfig> EventQueue<T> {
             Ok(read_eq_entry(ret, &buffer, &event))
         }
     }
-}
 
+    pub(crate) fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
 
-impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
-
-    pub fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
-
-        if let Some(wait) = self.inner.wait_obj {
+        if let Some(wait) = self.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
                 let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast()) };
@@ -281,6 +268,73 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
     }
 }
 
+impl<T: EqConfig> EventQueue<T> {
+    
+    #[allow(dead_code)]
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_eq {
+        self.inner.handle()
+    }
+
+    pub(crate) fn new<T0>(_options: T,fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+
+        Ok(
+            Self {
+                inner: Rc::new(
+                    EventQueueImpl::new(fabric, attr, context)?
+                ),
+                phantom: PhantomData, 
+            })
+    }
+
+    pub fn read(&self) -> Result<Event<usize>, crate::error::Error>{
+        self.inner.read()
+    }
+
+    pub fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
+        self.inner.peek()
+    }
+        
+    pub fn readerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
+        self.inner.readerr()
+    }
+
+    pub fn peekerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
+        self.inner.peekerr()
+    }
+
+    pub fn strerror(&self, entry: &EventQueueErrEntry) -> &str {
+        self.inner.strerror(entry)
+    }
+    
+}
+
+
+impl<T: EqWritable + EqConfig> EventQueue<T> {
+
+    pub fn write(&self, event: Event<usize>, flags: u64) -> Result<(), crate::error::Error>{
+        self.inner.write(event, flags)
+    }
+}
+
+impl<T: crate::Waitable + EqConfig> EventQueue<T> {
+
+    pub fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error> { 
+        self.inner.sread(timeout, flags)
+    }
+
+    pub fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
+        self.inner.speek(timeout)
+    }
+}
+
+
+impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
+
+    pub fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
+        self.inner.wait_object()
+    }
+}
+
 fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> {
     if event == &libfabric_sys::FI_CONNREQ || event == &libfabric_sys::FI_CONNECTED || event == &libfabric_sys::FI_SHUTDOWN {
         debug_assert_eq!(bytes_read as usize, std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>());
@@ -302,7 +356,13 @@ fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> 
 
 impl<T: EqConfig> AsFid for EventQueue<T> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.inner.fid.as_fid()
+       self.inner.as_fid()
+    }
+}
+
+impl AsFid for EventQueueImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+       self.fid.as_fid()
     }
 }
 
@@ -317,7 +377,7 @@ impl<T: EqConfig + WaitRetrievable + FdRetrievable> AsFd for EventQueue<T> {
     }
 }
 
-impl<T: EqConfig> crate::BindImpl for EventQueueImpl<T> {}
+impl crate::BindImpl for EventQueueImpl {}
 impl<T: EqConfig + 'static> crate::Bind for EventQueue<T> {
     
     fn inner(&self) -> Rc<dyn crate::BindImpl> {

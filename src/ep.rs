@@ -13,7 +13,6 @@ pub struct Address {
 
 impl Address {
 
-
     pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
         let mut address = vec![0u8; len];
         address.copy_from_slice(std::slice::from_raw_parts(raw, len));
@@ -29,11 +28,11 @@ impl Address {
     } 
 }
 
-pub struct EndpointImpl {
+pub(crate) struct EndpointImpl {
     pub(crate) c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
-    _domain_rc:  Rc<DomainImpl>
+    _domain_rc:  Rc<DomainImpl>,
 }
 
 pub struct Endpoint<T> {
@@ -42,7 +41,7 @@ pub struct Endpoint<T> {
 }
 
 
-pub trait BaseEndpoint : AsFid {
+pub trait BaseEndpointImpl : AsFid {
 
     fn getname(&self) -> Result<Address, crate::error::Error> {
         let mut len = 0;
@@ -225,131 +224,243 @@ pub trait BaseEndpoint : AsFid {
 }
 
 
-impl<T> BaseEndpoint for Endpoint<T> {}
+impl<T> BaseEndpointImpl for Endpoint<T> {}
 
-impl<T> ActiveEndpointImpl for Endpoint<T> {}
+impl BaseEndpointImpl for EndpointImpl {}
 
-impl<T> ActiveEndpoint for Endpoint<T> {
+impl<T> ActiveEndpointImpl for Endpoint<T> {
     fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.inner.c_ep
+        self.inner.handle()
     }
+}
+
+// impl<'a, T> ActiveEndpoint<'a> for Endpoint<T> {
     
-    fn inner(&self) -> Rc<dyn ActiveEndpointImpl> {
-        self.inner.clone()
+//     fn inner(&self) -> Rc<dyn BaseEndpointImpl> {
+//         self.inner.clone()
+//     }
+// }
+
+impl EndpointImpl {
+    
+    pub fn getname(&self) -> Result<Address, crate::error::Error> {
+        BaseEndpointImpl::getname(self)
     }
+
+    pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_limit(self)
+    }
+
+    pub fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_limit(self, size)
+    }
+
+    pub fn buffered_min(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_min(self)
+    }
+
+    pub fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_min(self, size)
+    }
+
+    pub fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::cm_data_size(self)
+    }
+
+    pub fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cm_data_size(self, size)
+    }
+
+    pub fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::min_multi_recv(self)
+    }
+
+    pub fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_min_multi_recv(self, size)
+    }
+
+    pub fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_hmem_p2p(self, hmem)
+    }
+
+    pub fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
+        BaseEndpointImpl::hmem_p2p(self)
+    }
+
+    pub fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
+        BaseEndpointImpl::xpu_trigger(self)
+    }
+
+    pub fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cuda_api_permitted(self, permitted)
+    }
+
+    pub fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
+        BaseEndpointImpl::wait_fd(self)
+    }
+
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::enable(self)
+    }
+
+    pub fn cancel(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::cancel(self)
+    }
+
+    pub fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::cancel_with_context(self, context)
+    }
+
+    pub fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
+        ActiveEndpointImpl::rx_size_left(self)
+    }
+
+    pub fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
+        ActiveEndpointImpl::tx_size_left(self)
+    }
+
+    pub fn getpeer(&self) -> Result<Address, crate::error::Error> {
+        ActiveEndpointImpl::getpeer(self)
+    }
+
+    pub fn connect_with<P>(&self, addr: &Address, param: &[P]) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::connect_with(self,addr, param)
+    }
+
+    pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::connect(self, addr)
+    }
+
+    pub fn accept_with<P>(&self, param: &[P]) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::accept_with(self, param)
+    }
+
+    pub fn accept(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::accept(self)
+    }
+
+    pub fn shutdown(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::shutdown(self, 0)
+    } 
 }
 
 impl<T> Endpoint<T> {
     
     pub fn getname(&self) -> Result<Address, crate::error::Error> {
-        BaseEndpoint::getname(self)
+        BaseEndpointImpl::getname(self)
     }
 
     pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_limit(self)
+        BaseEndpointImpl::buffered_limit(self)
     }
 
     pub fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_limit(self, size)
+        BaseEndpointImpl::set_buffered_limit(self, size)
     }
 
     pub fn buffered_min(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_min(self)
+        BaseEndpointImpl::buffered_min(self)
     }
 
     pub fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_min(self, size)
+        BaseEndpointImpl::set_buffered_min(self, size)
     }
 
     pub fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::cm_data_size(self)
+        BaseEndpointImpl::cm_data_size(self)
     }
 
     pub fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cm_data_size(self, size)
+        BaseEndpointImpl::set_cm_data_size(self, size)
     }
 
     pub fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::min_multi_recv(self)
+        BaseEndpointImpl::min_multi_recv(self)
     }
 
     pub fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_min_multi_recv(self, size)
+        BaseEndpointImpl::set_min_multi_recv(self, size)
     }
 
     pub fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_hmem_p2p(self, hmem)
+        BaseEndpointImpl::set_hmem_p2p(self, hmem)
     }
 
     pub fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
-        BaseEndpoint::hmem_p2p(self)
+        BaseEndpointImpl::hmem_p2p(self)
     }
 
     pub fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
-        BaseEndpoint::xpu_trigger(self)
+        BaseEndpointImpl::xpu_trigger(self)
     }
 
     pub fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cuda_api_permitted(self, permitted)
+        BaseEndpointImpl::set_cuda_api_permitted(self, permitted)
     }
 
     pub fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
-        BaseEndpoint::wait_fd(self)
+        BaseEndpointImpl::wait_fd(self)
     }
 
     pub fn enable(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::enable(self)
+        ActiveEndpointImpl::enable(self)
     }
 
     pub fn cancel(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::cancel(self)
+        ActiveEndpointImpl::cancel(self)
     }
 
     pub fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::cancel_with_context(self, context)
+        ActiveEndpointImpl::cancel_with_context(self, context)
     }
 
     pub fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
-        ActiveEndpoint::rx_size_left(self)
+        ActiveEndpointImpl::rx_size_left(self)
     }
 
     pub fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
-        ActiveEndpoint::tx_size_left(self)
+        ActiveEndpointImpl::tx_size_left(self)
     }
 
     pub fn getpeer(&self) -> Result<Address, crate::error::Error> {
-        ActiveEndpoint::getpeer(self)
+        ActiveEndpointImpl::getpeer(self)
     }
 
     pub fn connect_with<P>(&self, addr: &Address, param: &[P]) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::connect_with(self,addr, param)
+        ActiveEndpointImpl::connect_with(self,addr, param)
     }
 
     pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::connect(self, addr)
+        ActiveEndpointImpl::connect(self, addr)
     }
 
     pub fn accept_with<P>(&self, param: &[P]) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::accept_with(self, param)
+        ActiveEndpointImpl::accept_with(self, param)
     }
 
     pub fn accept(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::accept(self)
+        ActiveEndpointImpl::accept(self)
     }
 
     pub fn shutdown(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::shutdown(self, 0)
+        ActiveEndpointImpl::shutdown(self, 0)
     } 
 }
 
-impl<T> AsFd for Endpoint<T> {
+impl<E> AsFd for Endpoint<E> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.wait_fd().unwrap()
+    }
+}
+
+impl AsFd for EndpointImpl {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.wait_fd().unwrap()
     }
 }
 
 //================== Scalable Endpoint (fi_scalable_ep) ==================//
-pub struct ScalableEndpointImpl {
+pub(crate) struct ScalableEndpointImpl {
     pub(crate) c_sep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
     _domain_rc:  Rc<DomainImpl>
@@ -357,12 +468,22 @@ pub struct ScalableEndpointImpl {
 
 pub struct ScalableEndpoint<E> {
     inner: Rc<ScalableEndpointImpl>,
-    phantom: PhantomData<E>
+    phantom: PhantomData<E>,
 }
 
 impl ScalableEndpoint<()> {
-
     pub fn new<T0, E>(domain: &crate::domain::Domain, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<ScalableEndpoint<E>, crate::error::Error> {
+        Ok(
+            ScalableEndpoint::<E> { 
+                inner: Rc::new( ScalableEndpointImpl::new(domain, info, context)?),
+                phantom: PhantomData,
+            })
+    }
+}
+
+impl ScalableEndpointImpl {
+
+    pub fn new<T0, E>(domain: &crate::domain::Domain, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<ScalableEndpointImpl, crate::error::Error> {
         let mut c_sep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_sep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_sep;
         let err = 
@@ -379,21 +500,17 @@ impl ScalableEndpoint<()> {
         else {
             
             Ok(
-                ScalableEndpoint::<E> { 
-                    inner: Rc::new( 
-                        ScalableEndpointImpl {
-                            c_sep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_sep).fid }),
-                            _domain_rc: domain.inner.clone(), 
-                    }),
-                    phantom: PhantomData,
+                ScalableEndpointImpl { 
+                    c_sep, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_sep).fid }),
+                    _domain_rc: domain.inner.clone(), 
                 })
         }
     }
-}
 
-impl<E> ScalableEndpoint<E> {
-
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_ep {
+        self.c_sep
+    }
 
     fn bind<T: crate::Bind + crate::fid::AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_scalable_ep_bind(self.handle(), res.as_fid().as_raw_fid(), flags) };
@@ -401,12 +518,12 @@ impl<E> ScalableEndpoint<E> {
         check_error(err.try_into().unwrap())
     }
 
-    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
     
         self.bind(av, 0)
     }
 
-    pub fn alias(&self, flags: u64) -> Result<ScalableEndpoint<E>, crate::error::Error> {
+    pub(crate) fn alias(&self, flags: u64) -> Result<ScalableEndpointImpl, crate::error::Error> {
         let mut c_sep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_sep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_sep;
         let err = unsafe { libfabric_sys::inlined_fi_ep_alias(self.handle(), c_sep_ptr, flags) };
@@ -416,141 +533,284 @@ impl<E> ScalableEndpoint<E> {
         }
         else {
             Ok(
-                Self { 
-                    inner: Rc::new( 
-                        ScalableEndpointImpl {
-                            c_sep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_sep).fid }),
-                            _domain_rc: self.inner._domain_rc.clone(), 
-                    }),
-                    phantom: PhantomData,
+                ScalableEndpointImpl { 
+                    c_sep, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_sep).fid }),
+                    _domain_rc: self._domain_rc.clone(), 
                 })
         }
     }
 
-    pub fn getname(&self) -> Result<Address, crate::error::Error> {
-        BaseEndpoint::getname(self)
+    pub(crate) fn getname(&self) -> Result<Address, crate::error::Error> {
+        BaseEndpointImpl::getname(self)
     }
 
-    pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_limit(self)
+    pub(crate) fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_limit(self)
     }
 
-    pub fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_limit(self, size)
-
-    }
-
-    pub fn buffered_min(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_min(self)
-    }
-
-    pub fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_min(self, size)
+    pub(crate) fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_limit(self, size)
 
     }
 
-    pub fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::cm_data_size(self)
+    pub(crate) fn buffered_min(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_min(self)
     }
 
-    pub fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cm_data_size(self, size)
+    pub(crate) fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_min(self, size)
 
     }
 
-    pub fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::min_multi_recv(self)
+    pub(crate) fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::cm_data_size(self)
     }
 
-    pub fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_min_multi_recv(self, size)
+    pub(crate) fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cm_data_size(self, size)
+
     }
 
-    pub fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_hmem_p2p(self, hmem)
+    pub(crate) fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::min_multi_recv(self)
     }
 
-    pub fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
-        BaseEndpoint::hmem_p2p(self)
+    pub(crate) fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_min_multi_recv(self, size)
     }
 
-    pub fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
-        BaseEndpoint::xpu_trigger(self)
+    pub(crate) fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_hmem_p2p(self, hmem)
     }
 
-    pub fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cuda_api_permitted(self, permitted)
+    pub(crate) fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
+        BaseEndpointImpl::hmem_p2p(self)
     }
 
-    pub fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
-        BaseEndpoint::wait_fd(self)
+    pub(crate) fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
+        BaseEndpointImpl::xpu_trigger(self)
     }
 
-    pub fn enable(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::enable(self)
+    pub(crate) fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cuda_api_permitted(self, permitted)
     }
 
-    pub fn cancel(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::cancel(self)
+    pub(crate) fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
+        BaseEndpointImpl::wait_fd(self)
     }
 
-    pub fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::cancel_with_context(self, context)
+    pub(crate) fn enable(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::enable(self)
     }
 
-    pub fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
-        ActiveEndpoint::rx_size_left(self)
+    pub(crate) fn cancel(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::cancel(self)
     }
 
-    pub fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
-        ActiveEndpoint::tx_size_left(self)
+    pub(crate) fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::cancel_with_context(self, context)
     }
 
-    pub fn getpeer<T0>(&self) -> Result<Address, crate::error::Error> {
-        ActiveEndpoint::getpeer(self)
+    pub(crate) fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
+        ActiveEndpointImpl::rx_size_left(self)
     }
 
-    pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::connect_with(self,addr, param)
+    pub(crate) fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
+        ActiveEndpointImpl::tx_size_left(self)
     }
 
-    pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::connect(self, addr)
+    pub(crate) fn getpeer<T0>(&self) -> Result<Address, crate::error::Error> {
+        ActiveEndpointImpl::getpeer(self)
     }
 
-    pub fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::accept_with(self, param)
+    pub(crate) fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::connect_with(self,addr, param)
     }
 
-    pub fn accept(&self) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::accept(self)
+    pub(crate) fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::connect(self, addr)
     }
 
-    pub fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
-        ActiveEndpoint::shutdown(self, flags)
+    pub(crate) fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::accept_with(self, param)
+    }
+
+    pub(crate) fn accept(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::accept(self)
+    }
+
+    pub(crate) fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::shutdown(self, flags)
     } 
 }
 
+impl<E> ScalableEndpoint<E> {
+
+    pub fn handle(&self) -> *mut libfabric_sys::fid_ep {
+        self.inner.handle()
+    }
+
+    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+        self.inner.bind(av, 0)
+    }
+
+    pub fn alias(&self, flags: u64) -> Result<ScalableEndpoint<E>, crate::error::Error> {
+        Ok(
+            Self {
+                inner: Rc::new(self.inner.alias(flags)?),
+                phantom: PhantomData,
+            }
+        )
+    }
+
+    pub fn getname(&self) -> Result<Address, crate::error::Error> {
+        BaseEndpointImpl::getname(self)
+    }
+
+    pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_limit(self)
+    }
+
+    pub fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_limit(self, size)
+    }
+
+    pub fn buffered_min(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_min(self)
+    }
+
+    pub fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_min(self, size)
+    }
+
+    pub fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::cm_data_size(self)
+    }
+
+    pub fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cm_data_size(self, size)
+    }
+
+    pub fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::min_multi_recv(self)
+    }
+
+    pub fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_min_multi_recv(self, size)
+    }
+
+    pub fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_hmem_p2p(self, hmem)
+    }
+
+    pub fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
+        BaseEndpointImpl::hmem_p2p(self)
+    }
+
+    pub fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
+        BaseEndpointImpl::xpu_trigger(self)
+    }
+
+    pub fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cuda_api_permitted(self, permitted)
+    }
+
+    pub fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
+        BaseEndpointImpl::wait_fd(self)
+    }
+
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::enable(self)
+    }
+
+    pub fn cancel(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::cancel(self)
+    }
+
+    pub fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::cancel_with_context(self, context)
+    }
+
+    pub fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
+        ActiveEndpointImpl::rx_size_left(self)
+    }
+
+    pub fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
+        ActiveEndpointImpl::tx_size_left(self)
+    }
+
+    pub fn getpeer<T0>(&self) -> Result<Address, crate::error::Error> {
+        ActiveEndpointImpl::getpeer(self)
+    }
+
+    pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::connect_with(self,addr, param)
+    }
+
+    pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::connect(self, addr)
+    }
+
+    pub fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::accept_with(self, param)
+    }
+
+    pub fn accept(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::accept(self)
+    }
+
+    pub fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::shutdown(self, flags)
+    }     
+}
+
+
+impl AsFid for ScalableEndpointImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.fid.as_fid()
+    }
+}
 impl<E> AsFid for ScalableEndpoint<E> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
     }
 }
 
-impl<E> BaseEndpoint for ScalableEndpoint<E> { }
+impl<E> BaseEndpointImpl for ScalableEndpoint<E> {}
+//     fn handle(&self) -> *mut libfabric_sys::fid_ep {
+//         self.handle()
+//     }
+// }
 
-impl ActiveEndpointImpl for ScalableEndpointImpl {}
-impl<E> ActiveEndpointImpl for ScalableEndpoint<E> {}
-impl<E> ActiveEndpoint for ScalableEndpoint<E> {
+impl BaseEndpointImpl for ScalableEndpointImpl {}
+//     fn handle(&self) -> *mut libfabric_sys::fid_ep {
+//         self.handle()
+//     }
+// }
+
+impl ActiveEndpointImpl for ScalableEndpointImpl {
     fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.inner.c_sep
-    }
-    
-    fn inner(&self) -> Rc<dyn ActiveEndpointImpl> {
-        self.inner.clone()
+        self.c_sep
     }
 }
+
+impl<E> ActiveEndpointImpl for ScalableEndpoint<E> {
+    fn handle(&self) -> *mut libfabric_sys::fid_ep {
+        self.inner.handle()
+    }
+}
+
+
+// impl<'a, E> ActiveEndpoint<'a> for ScalableEndpointImpl<E> {
+//     fn handle(&self) -> *mut libfabric_sys::fid_ep {
+//         self.c_sep
+//     }
+    
+//     fn inner(&self) -> Rc<dyn ActiveEndpointImpl> {
+//         self.clone()
+//     }
+// }
 
 impl<E> AsFd for ScalableEndpoint<E> {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -560,21 +820,32 @@ impl<E> AsFd for ScalableEndpoint<E> {
 
 //================== Passive Endpoint (fi_passive_ep) ==================//
 
-pub struct PassiveEndpointImpl {
+pub(crate) struct PassiveEndpointImpl<E> {
     pub(crate) c_pep: *mut libfabric_sys::fid_pep,
     fid: OwnedFid,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
+    phantom: PhantomData<E>,
     _fabric_rc: Rc<FabricImpl>,
 }
 
 pub struct PassiveEndpoint<E> {
-    inner: Rc<PassiveEndpointImpl>,
-    phantom: PhantomData<E>,
+    inner: Rc<PassiveEndpointImpl<E>>,
 }
 
 impl PassiveEndpoint<()> {
-
     pub fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<PassiveEndpoint<E>, crate::error::Error> {
+        Ok(
+            PassiveEndpoint::<E> {
+                inner: 
+                    Rc::new(PassiveEndpointImpl::new(fabric, info, context)?)
+            }
+        )
+    }
+}
+
+impl PassiveEndpointImpl<()> {
+
+    pub fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<PassiveEndpointImpl<E>, crate::error::Error> {
         let mut c_pep: *mut libfabric_sys::fid_pep = std::ptr::null_mut();
         let c_pep_ptr: *mut *mut libfabric_sys::fid_pep = &mut c_pep;
         let err = 
@@ -590,14 +861,11 @@ impl PassiveEndpoint<()> {
         }
         else {
             Ok(
-                PassiveEndpoint::<E> { 
-                    inner: Rc::new(
-                        PassiveEndpointImpl {
-                            c_pep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_pep).fid }),
-                            _sync_rcs: RefCell::new(Vec::new()),
-                            _fabric_rc: fabric.inner.clone(),
-                        }),
+                PassiveEndpointImpl::<E> { 
+                    c_pep, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_pep).fid }),
+                    _sync_rcs: RefCell::new(Vec::new()),
+                    _fabric_rc: fabric.inner.clone(),
                     phantom: PhantomData,
                 })
         }
@@ -605,21 +873,19 @@ impl PassiveEndpoint<()> {
 }
 
 
-impl<E> PassiveEndpoint<E> {
+impl<E> PassiveEndpointImpl<E> {
     
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_pep {
-        self.inner.c_pep
+        self.c_pep
     }
 
-
-    
     pub fn bind<T: EqConfig + 'static>(&self, res: &EventQueue<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.inner.c_pep, res.as_fid().as_raw_fid(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.c_pep, res.as_fid().as_raw_fid(), flags) };
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            self.inner._sync_rcs.borrow_mut().push(res.inner().clone()); //  [TODO] Do this with inner mutability.
+            self._sync_rcs.borrow_mut().push(res.inner().clone()); //  [TODO] Do this with inner mutability.
             Ok(())
         }
     }
@@ -643,69 +909,169 @@ impl<E> PassiveEndpoint<E> {
     }
 
     pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_limit(self)
+        BaseEndpointImpl::buffered_limit(self)
     }
 
     pub fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_limit(self, size)
+        BaseEndpointImpl::set_buffered_limit(self, size)
 
     }
 
     pub fn buffered_min(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::buffered_min(self)
+        BaseEndpointImpl::buffered_min(self)
     }
 
     pub fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_buffered_min(self, size)
+        BaseEndpointImpl::set_buffered_min(self, size)
 
     }
 
     pub fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::cm_data_size(self)
+        BaseEndpointImpl::cm_data_size(self)
     }
 
     pub fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cm_data_size(self, size)
+        BaseEndpointImpl::set_cm_data_size(self, size)
 
     }
 
     pub fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
-        BaseEndpoint::min_multi_recv(self)
+        BaseEndpointImpl::min_multi_recv(self)
     }
 
     pub fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_min_multi_recv(self, size)
+        BaseEndpointImpl::set_min_multi_recv(self, size)
     }
 
     pub fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_hmem_p2p(self, hmem)
+        BaseEndpointImpl::set_hmem_p2p(self, hmem)
     }
 
     pub fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
-        BaseEndpoint::hmem_p2p(self)
+        BaseEndpointImpl::hmem_p2p(self)
     }
 
     pub fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
-        BaseEndpoint::xpu_trigger(self)
+        BaseEndpointImpl::xpu_trigger(self)
     }
 
     pub fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
-        BaseEndpoint::set_cuda_api_permitted(self, permitted)
+        BaseEndpointImpl::set_cuda_api_permitted(self, permitted)
     }
     
     pub fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
-        BaseEndpoint::wait_fd(self)
+        BaseEndpointImpl::wait_fd(self)
     }
 
 }
 
-impl<E> BaseEndpoint for PassiveEndpoint<E> {}
+impl<E> PassiveEndpoint<E> {
+    
+    #[allow(dead_code)]
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_pep {
+        self.inner.handle()
+    }
 
+    pub fn bind<T: EqConfig + 'static>(&self, res: &EventQueue<T>, flags: u64) -> Result<(), crate::error::Error> {
+        self.inner.bind(res, flags)
+    }
+
+    pub fn listen(&self) -> Result<(), crate::error::Error> {
+        self.inner.listen()
+    }
+
+    pub fn reject<T0>(&self, fid: &impl AsFid, params: &[T0]) -> Result<(), crate::error::Error> {
+        self.inner.reject(fid, params)
+    }
+
+    pub fn set_backlog_size(&self, size: i32) -> Result<(), crate::error::Error> {
+        self.inner.set_backlog_size(size)
+    }
+
+    pub fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_limit(self)
+    }
+
+    pub fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_limit(self, size)
+
+    }
+
+    pub fn buffered_min(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::buffered_min(self)
+    }
+
+    pub fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_buffered_min(self, size)
+
+    }
+
+    pub fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::cm_data_size(self)
+    }
+
+    pub fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cm_data_size(self, size)
+
+    }
+
+    pub fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
+        BaseEndpointImpl::min_multi_recv(self)
+    }
+
+    pub fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_min_multi_recv(self, size)
+    }
+
+    pub fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_hmem_p2p(self, hmem)
+    }
+
+    pub fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
+        BaseEndpointImpl::hmem_p2p(self)
+    }
+
+    pub fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
+        BaseEndpointImpl::xpu_trigger(self)
+    }
+
+    pub fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        BaseEndpointImpl::set_cuda_api_permitted(self, permitted)
+    }
+    
+    pub fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
+        BaseEndpointImpl::wait_fd(self)
+    }
+}
+
+impl<E> BaseEndpointImpl for PassiveEndpoint<E> {}
+//     fn handle(&self) -> *mut libfabric_sys::fid_ep {
+//         self.handle()
+//     }
+// }
+
+impl<E> BaseEndpointImpl for PassiveEndpointImpl<E> {}
+//     fn handle(&self) -> *mut libfabric_sys::fid_ep {
+//         self.handle()
+//     }
+// }
+
+impl<E> AsFid for PassiveEndpointImpl<E> {
+    fn as_fid(&self) -> fid::BorrowedFid {
+        self.fid.as_fid()
+    }    
+}
 
 impl<E> AsFid for PassiveEndpoint<E> {
     fn as_fid(&self) -> fid::BorrowedFid {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
     }    
+}
+
+impl<E> AsFd for PassiveEndpointImpl<E> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.wait_fd().unwrap()
+    }
 }
 
 impl<E> AsFd for PassiveEndpoint<E> {
@@ -716,12 +1082,12 @@ impl<E> AsFd for PassiveEndpoint<E> {
 
 //================== Endpoint (fi_endpoint) ==================//
 
-pub struct IncompleteBindCq<'a, T> {
-    pub(crate) ep: &'a Endpoint<T>,
+pub struct IncompleteBindCq<'a> {
+    pub(crate) ep: &'a EndpointImpl,
     pub(crate) flags: u64,
 }
 
-impl<'a, E> IncompleteBindCq<'a, E> {
+impl<'a> IncompleteBindCq<'a> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
@@ -772,12 +1138,12 @@ impl<'a, E> IncompleteBindCq<'a, E> {
 // }
 
 
-pub struct IncompleteBindCntr<'a, T> {
-    pub(crate) ep: &'a Endpoint<T>,
+pub struct IncompleteBindCntr<'a> {
+    pub(crate) ep: &'a EndpointImpl,
     pub(crate) flags: u64,
 }
 
-impl<'a, E> IncompleteBindCntr<'a, E> {
+impl<'a> IncompleteBindCntr<'a> {
 
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
@@ -820,12 +1186,9 @@ impl<'a, E> IncompleteBindCntr<'a, E> {
     }
 }
 
+impl EndpointImpl {
 
-
-    
-impl Endpoint<()> {
-
-    pub fn new<T0, E>(domain: &crate::domain::Domain, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
+    pub fn new<T0, E>(domain: &crate::domain::Domain, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< EndpointImpl, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
         let err =
@@ -841,22 +1204,28 @@ impl Endpoint<()> {
         }
         else {
             Ok(
-                Endpoint::<E> { 
-                    inner: Rc::new( 
-                        EndpointImpl {
-                            c_ep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
-                            _sync_rcs: RefCell::new(Vec::new()),
-                            _domain_rc: domain.inner.clone()
-                        }),
-                    phantom: PhantomData,
-
+                Self { 
+                    c_ep, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
+                    _sync_rcs: RefCell::new(Vec::new()),
+                    _domain_rc: domain.inner.clone(),
                 })
         }
     }
 }
 
-    // pub(crate) fn from_attr(domain: &crate::domain::Domain, mut rx_attr: crate::RxAttr) -> Result<Self, crate::error::Error> {
+impl Endpoint<()> {
+    pub fn new<T0, E>(domain: &crate::domain::Domain, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
+        Ok(
+            Endpoint::<E> {
+                inner:Rc::new(EndpointImpl::new(domain, info, flags, context)?),
+                phantom: PhantomData,
+            }
+        )
+    }
+}
+
+// pub(crate) fn from_attr(domain: &crate::domain::Domain, mut rx_attr: crate::RxAttr) -> Result<Self, crate::error::Error> {
     //     let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
     //     let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
     //     let err = unsafe { libfabric_sys::inlined_fi_srx_context(domain.handle(), rx_attr.get_mut(), c_ep_ptr,  std::ptr::null_mut()) };
@@ -887,7 +1256,7 @@ impl Endpoint<()> {
     //     }
 
     // }
-impl<E> Endpoint<E> {
+impl EndpointImpl {
 
     pub(crate) fn bind<T: crate::Bind + AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_raw_fid(), flags) };
@@ -896,16 +1265,16 @@ impl<E> Endpoint<E> {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            self.inner._sync_rcs.borrow_mut().push(res.inner().clone()); //  [TODO] Do this with inner mutability.
+            self._sync_rcs.borrow_mut().push(res.inner().clone()); //  [TODO] Do this with inner mutability.
             Ok(())
         }
     } 
 
-    pub fn bind_cq(&self) -> IncompleteBindCq<E> {
+    pub fn bind_cq(&self) -> IncompleteBindCq {
         IncompleteBindCq { ep: self, flags: 0}
     }
 
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<E> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr {
         IncompleteBindCntr { ep: self, flags: 0}
     }
 
@@ -919,7 +1288,7 @@ impl<E> Endpoint<E> {
         self.bind(av, 0)
     }
 
-    pub fn alias(&self, flags: u64) -> Result<Endpoint<E>, crate::error::Error> {
+    pub fn alias(&self, flags: u64) -> Result<EndpointImpl, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
         let err = unsafe { libfabric_sys::inlined_fi_ep_alias(self.handle(), c_ep_ptr, flags) };
@@ -930,33 +1299,79 @@ impl<E> Endpoint<E> {
         else {
             Ok(
                 Self { 
-                    inner: Rc::new( 
-                        EndpointImpl {
-                            c_ep, 
-                            fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
-                            _sync_rcs: RefCell::new(Vec::new()),
-                            _domain_rc: self.inner._domain_rc.clone(),
-                        }),
-                    phantom: PhantomData,
-                    
+                    c_ep, 
+                    fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
+                    _sync_rcs: RefCell::new(Vec::new()),
+                    _domain_rc: self._domain_rc.clone(),
                 })
         }
     }
 }
 
-impl<E> AsFid for Endpoint<E> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.fid.as_fid().clone()
+impl<E> Endpoint<E> {
+    pub fn bind_cq(&self) -> IncompleteBindCq {
+        self.inner.bind_cq()
+    }
+
+    pub fn bind_cntr(&self) -> IncompleteBindCntr {
+        self.inner.bind_cntr()
+    }
+        
+    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+        self.inner.bind_eq(eq)
+    }
+
+    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+        self.inner.bind_av(av)
+    }
+
+    pub fn alias(&self, flags: u64) -> Result<Endpoint<E>, crate::error::Error> {
+        Ok(
+            Self {
+                inner: Rc::new (self.inner.alias(flags)?),
+                phantom: PhantomData,
+            }
+        )
     }
 }
-pub trait ActiveEndpointImpl {}
-impl ActiveEndpointImpl for EndpointImpl{}
 
 
+impl<E> AsFid for Endpoint<E> {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.inner.as_fid().clone()
+    }
+}
 
-pub trait ActiveEndpoint: BaseEndpoint + ActiveEndpointImpl {
+impl AsFid for EndpointImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.fid.as_fid().clone()
+    }
+}
 
-    fn inner(&self) -> Rc<dyn ActiveEndpointImpl>;
+impl ActiveEndpointImpl for EndpointImpl {
+    fn handle(&self) -> *mut libfabric_sys::fid_ep {
+        self.c_ep
+    }
+}
+
+// impl<E> ActiveEndpointImpl for Endpoint<E> {
+//     fn handle(&self) -> *mut libfabric_sys::fid_ep {
+//         self.inner.handle()
+//     }
+// }
+// impl<'a, E> ActiveEndpoint<'a> for EndpointImpl<E> {
+//     fn inner(&'a self) -> Rc<dyn BaseEndpointImpl + 'a> {
+//         self.inner()
+//     }
+// }
+
+// pub trait ActiveEndpoint<'a>: ActiveEndpointImpl {
+//     fn inner(&'a self) -> Rc<dyn BaseEndpointImpl + 'a>;
+// }
+
+
+pub trait ActiveEndpointImpl: AsFid{
+    
     fn handle(&self) -> *mut libfabric_sys::fid_ep;
 
     fn enable(&self) -> Result<(), crate::error::Error> {
@@ -1215,7 +1630,6 @@ impl Default for EndpointAttr {
         Self::new()
     }
 }
-
 
 pub struct EndpointBuilder<'a, T, E> {
     ep_attr: EndpointAttr,

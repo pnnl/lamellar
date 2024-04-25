@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address};
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::EventQueueImpl};
 
 
 // impl Drop for AddressVector {
@@ -16,20 +16,18 @@ use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, A
 /// 
 /// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
 /// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av.3.html).
-pub struct AddressVectorImpl {
+pub(crate) struct AddressVectorImpl {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
     fid: OwnedFid,
+    _eq_rc: OnceCell<Rc<EventQueueImpl>>,
     _domain_rc: Rc<DomainImpl>,
 }
 
-pub struct AddressVector {
-    inner: Rc<AddressVectorImpl>,
-}
 
-impl AddressVector {
+impl AddressVectorImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av {
-        self.inner.c_av
+        self.c_av
     }
 
     pub(crate) fn new<T>(domain: &crate::domain::Domain, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
@@ -50,13 +48,12 @@ impl AddressVector {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        AddressVectorImpl {
-                            c_av,
-                            fid: OwnedFid::from(unsafe {&mut (*c_av).fid} ),
-                            _domain_rc: domain.inner.clone(),
-                    })
-                })
+                    c_av,
+                    fid: OwnedFid::from(unsafe {&mut (*c_av).fid} ),
+                    _eq_rc: OnceCell::new(),
+                    _domain_rc: domain.inner.clone(),
+                }
+            )
         }
     }
 
@@ -67,33 +64,21 @@ impl AddressVector {
     /// # Errors
     ///
     /// This function will return an error if the underlying library call fails.
-    pub fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.handle(), eq.as_raw_fid(), 0) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
         else {
+            if self._eq_rc.set(eq.inner.clone()).is_err() {
+                panic!("AddressVector is alread bound to an EventQueue");
+            }
             Ok(())
         }
     }
 
-    /// Inserts one or more addresses into an AV. 
-    /// 
-    /// This method directly corresponds to a call to `fi_insert(av,..)`, where the 
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the underlying library call fails.
-    pub fn insert(&self, addr: &[Address], flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
-        self.insert_::<()>(addr, flags, None)
-    }
-
-    pub fn insert_with_context<T>(&self, addr: &[Address], flags: u64, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
-        self.insert_(addr, flags, Some(ctx))
-    }
-
-    fn insert_<T>(&self, addr: &[Address], flags: u64, ctx: Option<&mut T>) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+    fn insert<T>(&self, addr: &[Address], flags: u64, ctx: Option<&mut T>) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
 
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len() );
@@ -118,7 +103,7 @@ impl AddressVector {
         }
     }
 
-    pub fn insertsvc(&self, node: &str, service: &str, flags: u64) -> Result<Option<MappedAddress>, crate::error::Error> {
+    pub(crate) fn insertsvc(&self, node: &str, service: &str, flags: u64) -> Result<Option<MappedAddress>, crate::error::Error> {
         let mut fi_addr = 0u64;
         let err = unsafe { libfabric_sys::inlined_fi_av_insertsvc(self.handle(), node.as_bytes().as_ptr().cast(), service.as_bytes().as_ptr().cast(), &mut fi_addr, flags, std::ptr::null_mut())  };
 
@@ -134,7 +119,7 @@ impl AddressVector {
         }
     }
 
-    pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
+    pub(crate) fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
         let total_cnt = nodecnt * svccnt;
         let mut fi_addresses = vec![0u64; total_cnt];
         let err = unsafe { libfabric_sys::inlined_fi_av_insertsym(self.handle(), node.as_bytes().as_ptr().cast(), nodecnt, service.as_bytes().as_ptr().cast(), svccnt, fi_addresses.as_mut_ptr().cast(), flags, std::ptr::null_mut())  };
@@ -148,7 +133,7 @@ impl AddressVector {
         }
     }
 
-    pub fn remove(&self, addr: Vec<crate::MappedAddress>) -> Result<(), crate::error::Error> {
+    pub(crate) fn remove(&self, addr: Vec<crate::MappedAddress>) -> Result<(), crate::error::Error> {
         let mut fi_addresses =  addr.into_iter().map(|mapped_addr| {mapped_addr.raw_addr()}).collect::<Vec<u64>>();
         
         let err = unsafe { libfabric_sys::inlined_fi_av_remove(self.handle(), fi_addresses.as_mut_ptr().cast(), fi_addresses.len(), 0) };
@@ -161,7 +146,7 @@ impl AddressVector {
         }
     }
 
-    pub fn lookup(&self, mapped_addr: crate::MappedAddress) -> Result<Address, crate::error::Error> {
+    pub(crate) fn lookup(&self, mapped_addr: crate::MappedAddress) -> Result<Address, crate::error::Error> {
         let mut addrlen : usize = 0;
         let err = unsafe { libfabric_sys::inlined_fi_av_lookup(self.handle(), mapped_addr.raw_addr(), std::ptr::null_mut(), &mut addrlen) };
         
@@ -181,7 +166,7 @@ impl AddressVector {
         }
     }
 
-    pub fn straddr<T0>(&self, addr: &Address) -> String {
+    pub(crate) fn straddr(&self, addr: &Address) -> String {
         let mut addr_str: Vec<u8> = Vec::new();
         let mut strlen = addr_str.len();
         let strlen_ptr: *mut usize = &mut strlen;
@@ -194,6 +179,60 @@ impl AddressVector {
         std::ffi::CString::from_vec_with_nul(addr_str).unwrap().into_string().unwrap()
     }
 }
+
+pub struct AddressVector {
+    inner: Rc<AddressVectorImpl>,
+}
+
+impl AddressVector {
+
+    pub(crate) fn new<T>(domain: &crate::domain::Domain, attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+        
+        Ok(
+            Self {
+                inner: Rc::new (AddressVectorImpl::new(domain, attr, context)?)
+            }
+        )
+    }
+
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av {
+        self.inner.handle()
+    }
+
+    pub fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
+        self.inner.bind(eq)
+    }
+    
+    pub fn insert(&self, addr: &[Address], flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+        self.inner.insert::<()>(addr, flags, None)
+    }
+
+    pub fn insert_with_context<T>(&self, addr: &[Address], flags: u64, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+        self.inner.insert(addr, flags, Some(ctx))
+    }
+
+    pub fn insertsvc(&self, node: &str, service: &str, flags: u64) -> Result<Option<MappedAddress>, crate::error::Error> {
+        self.inner.insertsvc(node, service, flags)
+    }
+
+    pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
+        self.inner.insertsym(node, nodecnt, service, svccnt, flags)
+    }
+
+    pub fn remove(&self, addr: Vec<crate::MappedAddress>) -> Result<(), crate::error::Error> {
+        self.inner.remove(addr)
+    }
+    
+    pub fn lookup(&self, mapped_addr: crate::MappedAddress) -> Result<Address, crate::error::Error> {
+        self.inner.lookup(mapped_addr)
+    }
+    
+    pub fn straddr(&self, addr: &Address) -> String {
+        self.inner.straddr(addr)
+    }
+    
+}
+
 
 pub struct AddressVectorBuilder<'a, T> {
     av_attr: AddressVectorAttr,
@@ -274,10 +313,10 @@ pub struct AddressVectorSet {
     inner: Rc<AddressVectorSetImpl>,
 }
 
-impl AddressVectorSet {
+impl AddressVectorSetImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av_set {
-        self.inner.c_set
+        self.c_set
     }
 
     // pub(crate) fn new(av: &AddressVector,attr: AddressVectorSetAttr) -> Result<AddressVectorSet, crate::error::Error> {
@@ -288,7 +327,7 @@ impl AddressVectorSet {
     //     Self::new_(av, attr, Some(context))
     // }
 
-    fn new<T>(av: &AddressVector, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<AddressVectorSet, crate::error::Error> {
+    fn new<T>(av: &AddressVector, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         let mut c_set: *mut libfabric_sys::fid_av_set = std::ptr::null_mut();
         let c_set_ptr: *mut *mut libfabric_sys::fid_av_set = &mut c_set;
 
@@ -306,17 +345,14 @@ impl AddressVectorSet {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        AddressVectorSetImpl { 
-                            c_set, 
-                            fid: OwnedFid::from(unsafe {&mut (*c_set).fid} ),
-                            _av_rc: av.inner.clone(),
-                    })
+                    c_set, 
+                    fid: OwnedFid::from(unsafe {&mut (*c_set).fid} ),
+                    _av_rc: av.inner.clone(),
                 })
         }
     }
 
-    pub fn union(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    pub(crate) fn union(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_union(self.handle(), other.handle()) };
 
         if err != 0 {
@@ -327,7 +363,7 @@ impl AddressVectorSet {
         }
     }
 
-    pub fn intersect(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    pub(crate) fn intersect(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_intersect(self.handle(), other.handle()) };
 
         if err != 0 {
@@ -338,7 +374,7 @@ impl AddressVectorSet {
         }
     }
     
-    pub fn diff(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    pub(crate) fn diff(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_diff(self.handle(), other.handle()) };
 
         if err != 0 {
@@ -349,7 +385,7 @@ impl AddressVectorSet {
         }
     }
     
-    pub fn insert(&mut self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
+    pub(crate) fn insert(&self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_insert(self.handle(), mapped_addr.raw_addr()) };
 
         if err != 0 {
@@ -360,7 +396,7 @@ impl AddressVectorSet {
         }
     }
 
-    pub fn remove(&mut self, mapped_addr: crate::MappedAddress) -> Result<(), crate::error::Error> {
+    pub(crate) fn remove(&self, mapped_addr: crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_remove(self.handle(), mapped_addr.raw_addr()) };
 
         if err != 0 {
@@ -371,7 +407,7 @@ impl AddressVectorSet {
         }
     }
 
-    pub fn get_addr(&mut self) -> Result<crate::MappedAddress, crate::error::Error> {
+    pub(crate) fn get_addr(&self) -> Result<crate::MappedAddress, crate::error::Error> {
         let mut addr = 0u64;
         // let addr_ptr: *mut crate::MappedAddress = &mut addr;
         let err = unsafe { libfabric_sys::inlined_fi_av_set_addr(self.handle(), &mut addr) };
@@ -383,6 +419,46 @@ impl AddressVectorSet {
             Ok(MappedAddress::from_raw_addr(addr))
         }
     }
+}
+
+impl AddressVectorSet {
+
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av_set {
+        self.inner.c_set
+    }
+
+    pub(crate) fn new<T>(av: &AddressVector, attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self {
+                inner: 
+                    Rc::new(AddressVectorSetImpl::new(av, attr, context)?)
+            }
+        )
+    }
+
+    pub fn union(&self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+        self.inner.union(&other.inner)
+    }
+
+    pub fn intersect(&self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+        self.inner.intersect(&other.inner)
+    }
+
+    pub fn diff(&self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+        self.inner.diff(&other.inner)
+    }
+    
+    pub fn insert(&self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
+        self.inner.insert(mapped_addr)
+    }
+
+    pub fn remove(&self, mapped_addr: crate::MappedAddress) -> Result<(), crate::error::Error> {
+        self.inner.remove(mapped_addr)
+    }
+    
+    pub fn get_addr(&self) -> Result<crate::MappedAddress, crate::error::Error> {
+        self.inner.get_addr()
+    }    
 }
 
 pub struct AddressVectorSetBuilder<'a, T> {

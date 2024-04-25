@@ -7,26 +7,26 @@ use crate::fid::AsFid;
 use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImpl, BindImpl, utils::check_error, fid::{OwnedFid, self, AsRawFid}};
 
 pub struct Counter<T: CntrConfig> {
-    inner: Rc<CounterImpl<T>>,
+    inner: Rc<CounterImpl>,
+    phantom: PhantomData<T>,
 }
 
-pub struct CounterImpl<T: CntrConfig> {
+pub(crate) struct CounterImpl {
     pub(crate) c_cntr: *mut libfabric_sys::fid_cntr,
     fid: OwnedFid,
-    phantom: PhantomData<T>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
     _domain_rc: Rc<DomainImpl>,
 }
 
 
 
-impl<T: CntrConfig> Counter<T> {
+impl CounterImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cntr {
-        self.inner.c_cntr
+        self.c_cntr
     }
 
-    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Counter<T>, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
         let err = 
@@ -37,65 +37,55 @@ impl<T: CntrConfig> Counter<T> {
                 unsafe { libfabric_sys::inlined_fi_cntr_open(domain.handle(), attr.get_mut(), c_cntr_ptr, std::ptr::null_mut()) }
             };
 
-
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
         else {
             Ok (
                 Self {
-                    inner: Rc::new (
-                        CounterImpl { 
-                            c_cntr, 
-                            fid: OwnedFid::from(unsafe { &mut (*c_cntr).fid }), 
-                            phantom: PhantomData, 
-                            wait_obj: Some(attr.c_attr.wait_obj),
-                            _domain_rc: domain.inner.clone(),
-                    })
+                    c_cntr, 
+                    fid: OwnedFid::from(unsafe { &mut (*c_cntr).fid }), 
+                    wait_obj: Some(attr.c_attr.wait_obj),
+                    _domain_rc: domain.inner.clone(),
                 })
         }
-
     }
 
-    pub fn read(&self) -> u64 {
+    pub(crate) fn read(&self) -> u64 {
         unsafe { libfabric_sys::inlined_fi_cntr_read(self.handle()) }
     }
 
-    pub fn readerr(&self) -> u64 {
+    pub(crate) fn readerr(&self) -> u64 {
         unsafe { libfabric_sys::inlined_fi_cntr_readerr(self.handle()) }
     }
 
-    pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn add(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_add(self.handle(), val) };
     
         check_error(err.try_into().unwrap())
     }
 
-    pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_adderr(self.handle(), val) };
             
         check_error(err.try_into().unwrap())
     }
 
-    pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn set(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_set(self.handle(), val) };
             
         check_error(err.try_into().unwrap())
     }
 
-    pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cntr_seterr(self.handle(), val) };
             
         check_error(err.try_into().unwrap())
     }    
-}
 
+    pub(crate) fn wait_object(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
 
-impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
-
-    pub fn wait_object(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
-
-        if let Some(wait) = self.inner.wait_obj {
+        if let Some(wait) = self.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
                 let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast()) };
@@ -131,15 +121,65 @@ impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
             panic!("Should not be reachable! Could not retrieve wait object")
         }
     }
+
+    pub(crate) fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
+        let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.handle(), threshold, timeout) };
+
+        check_error(err.try_into().unwrap())
+    }
 }
 
+impl<T: CntrConfig> Counter<T> {
+    #[allow(dead_code)]
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cntr {
+        self.inner.handle()
+    }
+
+    pub(crate) fn new<T0>(domain: &crate::domain::Domain, attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self {
+                inner: Rc::new(CounterImpl::new(domain, attr, context)?),
+                phantom: PhantomData,
+            }
+        )
+    }
+    
+    pub fn read(&self) -> u64 {
+        self.inner.read()
+    }
+
+    pub fn readerr(&self) -> u64 {
+        self.inner.readerr()
+    }
+
+    pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
+        self.inner.add(val)
+    }
+
+    pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
+        self.inner.adderr(val)
+    }
+
+    pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
+        self.inner.set(val)
+    }
+
+    pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
+        self.inner.seterr(val)
+    }
+}
+
+impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
+    
+    pub fn wait_object(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
+        self.inner.wait_object()
+    }
+}
 
 impl<T: CntrConfig + crate::Waitable> Counter<T> {
 
     pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_wait(self.handle(), threshold, timeout) };
-
-        check_error(err.try_into().unwrap())
+        self.inner.wait(threshold, timeout)
     }
 }
 
@@ -248,11 +288,17 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
 
 impl<T: CntrConfig> AsFid for Counter<T> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
     }
 }
 
-impl<T: CntrConfig + WaitRetrievable + FdRetrievable> AsFd for Counter<T> {
+impl AsFid for CounterImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.fid.as_fid()
+    }
+}
+
+impl AsFd for CounterImpl {
     fn as_fd(&self) -> BorrowedFd<'_> {
         if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
             fd
@@ -263,7 +309,13 @@ impl<T: CntrConfig + WaitRetrievable + FdRetrievable> AsFd for Counter<T> {
     }
 }
 
-impl<T: CntrConfig> BindImpl for CounterImpl<T> {}
+impl<T: CntrConfig + WaitRetrievable + FdRetrievable> AsFd for Counter<T> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
+    }
+}
+
+impl BindImpl for CounterImpl {}
 
 impl<T: CntrConfig + 'static> crate::Bind for Counter<T> {
     fn inner(&self) -> Rc<dyn BindImpl> {

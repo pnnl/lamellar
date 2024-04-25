@@ -60,25 +60,39 @@ impl MemoryRegionKey {
     pub fn into_mapped(mut self, flags: u64, domain: &crate::domain::Domain) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
             MemoryRegionKey::Key(mapped_key) => {
-                Ok(MappedMemoryRegionKey::Key(mapped_key))
+                Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::Key(mapped_key)})
             }
             MemoryRegionKey::RawKey(_) => {
                 let mapped_key = domain.map_raw( &mut self, flags)?;
-                Ok(MappedMemoryRegionKey::MappedRawKey(mapped_key))
+                Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::MappedRawKey((mapped_key, domain.inner.clone()))})
             }
         }
     }
 }
-
-pub enum MappedMemoryRegionKey {
+enum MappedMemoryRegionKeyImpl {
     Key(u64),
-    MappedRawKey(u64),
+    MappedRawKey((u64, Rc<DomainImpl>)),
+}
+
+pub struct MappedMemoryRegionKey {
+    inner: MappedMemoryRegionKeyImpl,
 }
 
 impl MappedMemoryRegionKey {
     pub fn get_key(&self) -> u64 {
-        match self {
-            MappedMemoryRegionKey::Key(key) | MappedMemoryRegionKey::MappedRawKey(key) => *key 
+        match self.inner {
+            MappedMemoryRegionKeyImpl::Key(key) | MappedMemoryRegionKeyImpl::MappedRawKey((key, _)) => key 
+        }
+    }
+}
+
+impl Drop for MappedMemoryRegionKey {
+    fn drop(&mut self) {
+        match self.inner {
+            MappedMemoryRegionKeyImpl::Key(_) => {}
+            MappedMemoryRegionKeyImpl::MappedRawKey((key, ref domain_impl)) => { 
+                domain_impl.unmap_key(key).unwrap();
+            }
         }
     }
 }
@@ -118,14 +132,14 @@ pub struct MemoryRegion {
     inner: Rc<MemoryRegionImpl>
 }
 
-impl MemoryRegion {
+impl MemoryRegionImpl {
     
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
-        self.inner.c_mr
+        self.c_mr
     }
     
     #[allow(dead_code)]
-    fn from_buffer<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
+    fn from_buffer<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = 
@@ -143,18 +157,14 @@ impl MemoryRegion {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        MemoryRegionImpl { 
-                            c_mr, 
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                            _domain_rc: domain.inner.clone(),
-                        })        
-
+                    c_mr, 
+                    fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                    _domain_rc: domain.inner.clone(),
                 })
         }
     }
 
-    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<MemoryRegion, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
@@ -165,20 +175,15 @@ impl MemoryRegion {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        MemoryRegionImpl { 
-                            c_mr, 
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                            _domain_rc: domain.inner.clone(),
-                        })        
-
+                    c_mr, 
+                    fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                    _domain_rc: domain.inner.clone(),
                 })
         }
-    
     }
             
     #[allow(dead_code)]
-    fn from_iovec<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<MemoryRegion, crate::error::Error> {
+    fn from_iovec<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =
@@ -195,21 +200,17 @@ impl MemoryRegion {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(
-                        MemoryRegionImpl { 
-                            c_mr, 
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                            _domain_rc: domain.inner.clone(),
-                        })        
-
+                    c_mr, 
+                    fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                    _domain_rc: domain.inner.clone(),
                 })
         }
     
     }
 
-    pub fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
+    pub(crate) fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
         
-        if self.inner._domain_rc.domain_attr.get_mr_mode().is_raw()
+        if self._domain_rc.domain_attr.get_mr_mode().is_raw()
         {
             self.raw_key(0)
         }
@@ -226,7 +227,7 @@ impl MemoryRegion {
 
     fn raw_key(&self, flags: u64) -> Result<MemoryRegionKey, crate::error::Error>  {
         let mut base_addr = 0u64;
-        let mut key_size = self.inner._domain_rc.domain_attr.get_mr_key_size();
+        let mut key_size = self._domain_rc.domain_attr.get_mr_key_size();
         let mut raw_key = vec![0u8; key_size];
         let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), &mut base_addr, raw_key.as_mut_ptr().cast(), &mut key_size, flags) };
         
@@ -234,35 +235,35 @@ impl MemoryRegion {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(unsafe {MemoryRegionKey::from_bytes_impl(&raw_key, &self.inner._domain_rc)})
+            Ok(unsafe {MemoryRegionKey::from_bytes_impl(&raw_key, &self._domain_rc)})
         }
     }
 
-    pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_raw_fid(), flags) } ;
         
         check_error(err.try_into().unwrap())
     }
 
-    pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_raw_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())
     }
 
-    pub fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.handle(), iov.as_ptr().cast(), iov.len(), flags) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn enable(&self) -> Result<(), crate::error::Error> {
+    pub(crate) fn enable(&self) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.handle()) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn address(&self, flags: u64) -> Result<u64, crate::error::Error>  {
+    pub(crate) fn address(&self, flags: u64) -> Result<u64, crate::error::Error>  {
         let mut base_addr = 0u64;
         let mut key_size = 0usize;
         let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), &mut base_addr, std::ptr::null_mut(), &mut key_size, flags) };
@@ -277,7 +278,7 @@ impl MemoryRegion {
 
 
 
-    // pub fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Return the key as it should be returned
+    // pub(crate) fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Return the key as it should be returned
     //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, std::ptr::null_mut(), key_size, flags) };
 
     //     if err != 0 {
@@ -288,7 +289,7 @@ impl MemoryRegion {
     //     }       
     // }
 
-    // pub fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
+    // pub(crate) fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
     //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, raw_key, key_size, flags) };
 
     //     if err != 0 {
@@ -299,13 +300,82 @@ impl MemoryRegion {
     //     }
     // }
 
-    pub fn description(&self) -> MemoryRegionDesc {
+    pub(crate) fn description(&self) -> MemoryRegionDesc {
         let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.handle())};
         if c_desc.is_null() {
             panic!("fi_mr_desc returned NULL");
         }
 
         MemoryRegionDesc { c_desc }
+    }
+}
+
+impl MemoryRegion {
+    
+    #[allow(dead_code)]
+    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
+        self.inner.handle()
+    }
+
+    #[allow(dead_code)]
+    fn from_buffer<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self {
+                inner:
+                    Rc::new(MemoryRegionImpl::from_buffer(domain, buf, access, requested_key, flags, context)?)
+            }
+        )
+    }
+    
+    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+        Ok(
+            Self {
+                inner: 
+                    Rc::new(MemoryRegionImpl::from_attr(domain, attr, flags)?)
+            }
+        )
+    }
+
+    #[allow(dead_code)]
+    fn from_iovec<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self {
+                inner: 
+                    Rc::new(MemoryRegionImpl::from_iovec(domain, iov, access, requested_key, flags, context)?)
+            }
+        )
+    }
+
+    pub fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
+        self.inner.key()
+    }
+
+    // fn raw_key(&self, flags: u64) -> Result<MemoryRegionKey, crate::error::Error>  {
+    //     self.inner.raw_key(flags)
+    // }
+    
+    pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
+        self.inner.bind_cntr(cntr, flags)
+    }
+
+    pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
+        self.inner.bind_ep(ep)
+    }
+
+    pub fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
+        self.inner.refresh(iov, flags)   
+    }
+
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
+        self.inner.enable()
+    }
+
+    pub fn address(&self, flags: u64) -> Result<u64, crate::error::Error>  {
+        self.inner.address(flags)
+    }
+
+    pub fn description(&self) -> MemoryRegionDesc {
+        self.inner.description()
     }
 }
 

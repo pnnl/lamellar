@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::enums;
-use crate::ep::ActiveEndpoint;
+use crate::ep::ActiveEndpointImpl;
 use crate::ep::Address;
 use crate::ep::Endpoint;
 use crate::ep::EndpointImpl;
@@ -78,7 +78,7 @@ impl MulticastGroupCollective {
 
     }
 
-    pub(crate) fn new_collective<E: CollCap, T0>(ep: &Endpoint<E>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, flags: u64, context: Option<&mut T0>) -> Result<MulticastGroupCollective, Error> {
+    pub(crate) fn new_collective<E: CollCap,T0>(ep: &Endpoint<E>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, flags: u64, context: Option<&mut T0>) -> Result<MulticastGroupCollective, Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
         let err = 
