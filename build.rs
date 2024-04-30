@@ -1,7 +1,30 @@
 mod create_inlined_wrappers;
-use std::io::Write;
+use std::{io::{Write, BufWriter}, fs::{ReadDir, File}};
 
 extern crate bindgen;
+fn iter_dir(dir: ReadDir, inlined_funcs: &mut Vec<String>, writer: &mut BufWriter<File>, writer_inlined: &mut BufWriter<File>) {
+    for file in dir {
+        if file.as_ref().unwrap().file_type().unwrap().is_file() {
+            // Create the wrappers (prototype, definition) for all inlined functions
+            let mut funcs = crate::create_inlined_wrappers::read_file(file.as_ref().unwrap().path().to_str().unwrap());
+
+            // Store the prototype for later
+            inlined_funcs.append(&mut funcs.0);
+            
+            // Write the definition to inlined.c
+            for f in funcs.1 {
+                let _ = writer_inlined.write_all((f+"\n").as_bytes());
+            }
+            
+            // #include the header to fabric_sys.h
+            let _ = writer.write_all(("#include<".to_owned()+file.as_ref().unwrap().path().to_str().unwrap()+">\n").as_bytes());
+        }
+        else if file.as_ref().unwrap().file_type().unwrap().is_dir() {
+            iter_dir(std::fs::read_dir(file.unwrap().path()).unwrap() , inlined_funcs, writer, writer_inlined)
+        }
+    }
+}
+
 fn main(){
     
     let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -56,25 +79,9 @@ fn main(){
         let mut inlined_funcs: Vec<String> = Vec::new();
         
         let headers = std::fs::read_dir(libfabrics_path.clone()+"/include/rdma/").unwrap();
-        
+
         // For each file in libfabric/include/
-        for header in headers {
-            if header.as_ref().unwrap().file_type().unwrap().is_file() {
-                // Create the wrappers (prototype, definition) for all inlined functions
-                let mut funcs = crate::create_inlined_wrappers::read_file(header.as_ref().unwrap().path().to_str().unwrap());
-                
-                // Store the prototype for later
-                inlined_funcs.append(&mut funcs.0);
-                
-                // Write the definition to inlined.c
-                for f in funcs.1 {
-                    let _ = writer_inlined.write_all((f+"\n").as_bytes());
-                }
-                
-                // #include the header to fabric_sys.h
-                let _ = writer.write_all(("#include<rdma/".to_owned()+&header.as_ref().unwrap().file_name().into_string().unwrap()+">\n").as_bytes());
-            }
-        }
+        iter_dir(headers, &mut inlined_funcs, &mut writer, &mut writer_inlined);
         
         // Append the prototypes of the wrappers for the inline functions to fabric_sys.h
         for f in inlined_funcs {
