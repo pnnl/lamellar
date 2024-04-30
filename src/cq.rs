@@ -116,7 +116,7 @@ impl<'a> CompletionQueueImpl {
             None
         }
         else {
-            Some(MappedAddress::from_raw_addr(address))
+            Some(MappedAddress::from_raw_addr_no_av(address))
         };
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -224,7 +224,7 @@ impl<'a> CompletionQueueImpl {
             None
         }
         else {
-            Some(MappedAddress::from_raw_addr(address))
+            Some(MappedAddress::from_raw_addr_no_av(address))
         };
 
         if err < 0 {

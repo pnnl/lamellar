@@ -1,5 +1,6 @@
-use std::rc::Rc;
+use std::{rc::Rc, cell::OnceCell};
 
+use av::{AddressVector, AddressVectorImpl};
 use mr::DataDescriptor;
 
 pub mod ep;
@@ -29,18 +30,41 @@ pub mod msg;
 pub type RawMappedAddress = libfabric_sys::fi_addr_t; 
 
 #[repr(C)]
-pub struct MappedAddress (libfabric_sys::fi_addr_t);
+pub struct MappedAddress {
+    addr: libfabric_sys::fi_addr_t,
+    av: OnceCell<Rc<AddressVectorImpl>>,
+}
 
 impl MappedAddress {
-    pub fn unspec() -> Self {
-        Self(FI_ADDR_UNSPEC)
+    // pub fn unspec() -> Self {
+    //     Self {
+    //         FI_ADDR_UNSPEC
+    //     }
+    // }
+    
+    pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: &Rc<AddressVectorImpl>) -> Self {
+        let avcell = OnceCell::new();
+        
+        if avcell.set(av.clone()).is_err() {
+            panic!("MappedAddress is already set");
+        } 
+        
+        Self {
+            addr,
+            av: avcell,
+        }
     }
-    pub(crate) fn from_raw_addr(addr: RawMappedAddress) -> Self {
-        Self(addr)
+
+    pub(crate) fn from_raw_addr_no_av(addr: RawMappedAddress) -> Self {
+        
+        Self {
+            addr,
+            av: OnceCell::new(),
+        }
     }
 
     pub(crate) fn raw_addr(&self) -> RawMappedAddress {
-        self.0
+        self.addr
     }
 }
 
@@ -99,7 +123,7 @@ pub fn rx_addr(addr: &MappedAddress, rx_index: i32, rx_ctx_bits: i32) -> Option<
         None
     }
     else {
-        Some(MappedAddress::from_raw_addr(ret))
+        Some(MappedAddress::from_raw_addr(ret, addr.av.get().unwrap()))
     }
 }
 
@@ -109,7 +133,7 @@ pub fn rx_addr_no_av(rx_index: i32, rx_ctx_bits: i32) -> Option<MappedAddress> {
         None
     }
     else {
-        Some(MappedAddress::from_raw_addr(ret))
+        Some(MappedAddress::from_raw_addr_no_av(ret))
     }
 }
 
