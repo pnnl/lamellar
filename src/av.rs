@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::EventQueueImpl};
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::EventQueueImpl, enums::{AVOptions, AVSetOptions}};
 
 
 // impl Drop for AddressVector {
@@ -203,20 +203,20 @@ impl AddressVector {
         self.inner.bind(&eq.inner)
     }
     
-    pub fn insert(&self, addr: &[Address], flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
-        self.inner.insert::<()>(addr, flags, None)
+    pub fn insert(&self, addr: &[Address], options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+        self.inner.insert::<()>(addr, options.get_value(), None)
     }
 
-    pub fn insert_with_context<T>(&self, addr: &[Address], flags: u64, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
-        self.inner.insert(addr, flags, Some(ctx))
+    pub fn insert_with_context<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+        self.inner.insert(addr, options.get_value(), Some(ctx))
     }
 
-    pub fn insertsvc(&self, node: &str, service: &str, flags: u64) -> Result<Option<MappedAddress>, crate::error::Error> {
-        self.inner.insertsvc(node, service, flags)
+    pub fn insertsvc(&self, node: &str, service: &str, options: AVOptions) -> Result<Option<MappedAddress>, crate::error::Error> {
+        self.inner.insertsvc(node, service, options.get_value())
     }
 
-    pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
-        self.inner.insertsym(node, nodecnt, service, svccnt, flags)
+    pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
+        self.inner.insertsym(node, nodecnt, service, svccnt, options.get_value())
     }
 
     pub fn remove(&self, addr: Vec<crate::MappedAddress>) -> Result<(), crate::error::Error> {
@@ -282,8 +282,18 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
         self
     }
 
-    pub fn flags(mut self, flags: u64) -> Self {
-        self.av_attr.flags(flags);
+    pub fn read_only(mut self) -> Self {
+        self.av_attr.read_only();
+        self
+    }
+
+    pub fn async_(mut self) -> Self {
+        self.av_attr.async_();
+        self
+    }
+
+    pub fn symmetric(mut self) -> Self {
+        self.av_attr.symmetric();
         self
     }
 
@@ -509,9 +519,9 @@ impl<'a, T> AddressVectorSetBuilder<'a, T> {
         self
     }
 
-    pub fn flags(mut self, flags: u64) -> Self {
+    pub fn options(mut self, options: AVSetOptions) -> Self {
 
-        self.avset_attr.flags(flags);
+        self.avset_attr.options(options);
         self
     }
 
@@ -580,10 +590,21 @@ impl AddressVectorAttr {
         self
     }
 
-    pub fn flags(&mut self, flags: u64) -> &mut Self {
-        self.c_attr.flags = flags;
+    pub fn read_only(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_READ as u64;
         self
     }
+
+    pub fn symmetric(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_SYMMETRIC;
+        self
+    }
+
+    pub fn async_(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_EVENT as u64;
+        self
+    }
+
 
     #[allow(dead_code)]
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_av_attr {
@@ -653,9 +674,9 @@ impl AddressVectorSetAttr {
         self
     }
 
-    pub(crate) fn flags(&mut self, flags: u64) -> &mut Self {
+    pub(crate) fn options(&mut self, options: AVSetOptions) -> &mut Self {
 
-        self.c_attr.flags = flags;
+        self.c_attr.flags = options.get_value();
         self
     }
 
@@ -745,7 +766,6 @@ mod tests {
                 let _av = AddressVectorBuilder::new(&domain)
                     .type_(crate::enums::AddressVectorType::Map)
                     .count(count)
-                    .flags(0)
                     .build()
                     .unwrap();
             }
@@ -823,7 +843,6 @@ mod libfabric_lifetime_tests {
                 let av = AddressVectorBuilder::new(&domain)
                     .type_(crate::enums::AddressVectorType::Map)
                     .count(count)
-                    .flags(0)
                     .build()
                     .unwrap();
                 avs.push(av);

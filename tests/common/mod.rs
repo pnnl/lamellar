@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, MappedAddress, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, MappedAddress, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::AVOptions};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -663,9 +663,9 @@ pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>
     // (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mr_desc)
 }
 
-pub fn ft_av_insert(av: &libfabric::av::AddressVector, addr: &Address, flags: u64) -> MappedAddress {
+pub fn ft_av_insert(av: &libfabric::av::AddressVector, addr: &Address, options: AVOptions) -> MappedAddress {
 
-    let mut added = av.insert(std::slice::from_ref(addr), flags).unwrap();
+    let mut added = av.insert(std::slice::from_ref(addr), options).unwrap();
     added.pop().unwrap().expect("Could not add address to address vector")
 }
 
@@ -1023,7 +1023,7 @@ pub fn ft_progress<CQ: CqConfig>(cq: &libfabric::cq::CompletionQueue<CQ>, _total
 #[allow(clippy::too_many_arguments)]
 pub fn ft_init_av_dst_addr<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx,  av: &libfabric::av::AddressVector, ep: &EndpointCaps<M,T>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
     if !server {
-        gl_ctx.remote_address = ft_av_insert(av, &info.get_dest_addr(),  0);
+        gl_ctx.remote_address = ft_av_insert(av, &info.get_dest_addr(),  AVOptions::new());
         let epname = match ep {
             EndpointCaps::Msg(ep) => {
                 ep.getname().unwrap()
@@ -1047,7 +1047,7 @@ pub fn ft_init_av_dst_addr<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefa
         v.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+FT_MAX_CTRL_MSG]);
         let address = unsafe {Address::from_bytes(&v)};
 
-        gl_ctx.remote_address = ft_av_insert(av, &address, 0);
+        gl_ctx.remote_address = ft_av_insert(av, &address, AVOptions::new());
         // if matches!(info.get_domain_attr().get_av_type(), libfabric::enums::AddressVectorType::Table ) {
         //     let mut zero = 0;
         //     ft_av_insert(av, &v, &mut zero, 0);

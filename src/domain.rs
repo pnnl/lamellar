@@ -1,8 +1,8 @@
-use std::{ffi::CString, rc::Rc};
+use std::{ffi::CString, rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig};
 
 //================== Domain (fi_domain) ==================//
 
@@ -10,6 +10,7 @@ pub(crate) struct DomainImpl {
     pub(crate) c_domain: *mut libfabric_sys::fid_domain,
     fid: OwnedFid,
     pub(crate) domain_attr: DomainAttr,
+    _eq_rc: OnceCell<Rc<EventQueueImpl>>,
     _fabric_rc: Rc<FabricImpl>,
 }
 
@@ -28,10 +29,21 @@ impl DomainImpl {
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err =
             if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, (ctx as *mut T0).cast()) }
+                if flags == 0 {
+                    unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, (ctx as *mut T0).cast()) }
+                    
+                }
+                else {
+                    unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, (ctx as *mut T0).cast()) }
+                }
             }
             else {
-                unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
+                if flags == 0 {
+                    unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) }
+                }
+                else {
+                    unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
+                }
             };
 
         if err != 0 {
@@ -43,15 +55,24 @@ impl DomainImpl {
                     c_domain, 
                     domain_attr,
                     _fabric_rc: fabric.clone(), 
+                    _eq_rc: OnceCell::new(),
                     fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
                 })
         }
     }
+    
+    pub(crate) fn bind(&self, eq: &Rc<EventQueueImpl>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), eq.as_fid().as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
 
-    pub(crate) fn bind(&self, fid: &impl AsFid, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), fid.as_fid().as_raw_fid(), flags)} ;
-
-        check_error(err.try_into().unwrap())
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            if self._eq_rc.set(eq.clone()).is_err() {
+                panic!("Domain is alread bound to an EventQueue");
+            }
+            Ok(())
+        }
     } 
 
     // pub(crate) fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
@@ -109,16 +130,26 @@ impl DomainImpl {
     //     crate::Stx::new(self, attr, context)
     // }
 
-    pub(crate) fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+    pub(crate) fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), 0) };
     
-        check_error(err.try_into().unwrap())
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(true)
+        }
     }
 
-    pub(crate) fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, mut attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+    pub(crate) fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), libfabric_sys::fi_collective_op_FI_SCATTER.into()) };
     
-        check_error(err.try_into().unwrap())
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        }
+        else {
+            Ok(true)
+        }
     }
 
 }
@@ -138,8 +169,8 @@ impl Domain {
         )    
     }
     
-    pub fn bind(&self, fid: &impl AsFid, flags: u64) -> Result<(), crate::error::Error> {
-        self.inner.bind(fid, flags)
+    pub fn bind_eq<T: EqConfig>(&self, eq: &EventQueue<T>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+        self.inner.bind(&eq.inner, async_mem_reg)
     }
 
     pub fn query_atomic<T: 'static>(&self, op: crate::enums::Op, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
@@ -155,11 +186,11 @@ impl Domain {
         self.inner.unmap_key(key)
     }
 
-    pub fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+    pub fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
         self.inner.query_collective::<T>(coll, attr)
     }
 
-    pub fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: crate::comm::collective::CollectiveAttr<T>) -> Result<(), crate::error::Error> {
+    pub fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
         self.inner.query_collective_scatter::<T>(coll, attr)
     }
                                 
@@ -420,11 +451,21 @@ impl<'a> DomainBuilder<'a, (), ()> {
             ctx: None,
         }
     }
+
+    pub fn new_with_peer<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>, peer_ctx: &'a mut PeerDomainCtx) -> DomainBuilder<'a, PeerDomainCtx, E> {
+        DomainBuilder::<PeerDomainCtx, E> {
+            fabric,
+            info,
+            flags: libfabric_sys::FI_PEER,
+            ctx: Some(peer_ctx),
+        }
+    }
 }
 
 
-impl<'a, T, E> DomainBuilder<'a, T, E> {
-    pub fn context(self, ctx: &'a mut T) -> DomainBuilder<'a, T, E> {
+impl<'a, E> DomainBuilder<'a, (), E> {
+    
+    pub fn context<T>(self, ctx: &'a mut T) -> DomainBuilder<'a, T, E> {
         DomainBuilder {
             fabric: self.fabric,
             info: self.info,
@@ -432,6 +473,10 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
             ctx: Some(ctx),
         }
     }
+}
+
+impl<'a, T, E> DomainBuilder<'a, T, E> {
+
 
     pub fn flags(mut self, flags: u64) -> Self {
         self.flags = flags;
@@ -440,6 +485,24 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
 
     pub fn build(self) -> Result<Domain, crate::error::Error> {
         Domain::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)
+    }
+}
+
+#[repr(C)]
+pub struct PeerDomainCtx {
+    c_ctx: libfabric_sys::fi_peer_domain_context,
+}
+
+impl PeerDomainCtx {
+    pub fn new(size: usize, domain: Domain) -> Self {
+        Self {
+            c_ctx : {
+                libfabric_sys::fi_peer_domain_context {
+                    domain: domain.handle(),
+                    size,
+                }
+            }
+        }
     }
 }
 

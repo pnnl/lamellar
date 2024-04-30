@@ -433,6 +433,15 @@ macro_rules! gen_set_get_flag {
     };
 }
 
+macro_rules! gen_get_flag {
+    ($get_method_name:ident, $flag:expr) => {
+
+        pub fn $get_method_name(&self) -> bool {
+            self.c_flags & $flag != 0
+        } 
+    };
+}
+
 pub(crate) use gen_set_get_flag;
 
 pub struct Mode {
@@ -729,6 +738,33 @@ impl AddressFormat {
     }
 }
 
+pub struct AVOptions {
+    c_flags: u64,
+} 
+
+impl AVOptions {
+    
+    pub fn new() -> Self {
+        Self{
+            c_flags: 0,
+        }
+    }
+    gen_set_get_flag!(more, is_more, libfabric_sys::FI_MORE as u64);
+    gen_set_get_flag!(sync_err, is_sync_err, libfabric_sys::FI_SYNC_ERR);
+    gen_set_get_flag!(user_id, is_user_id, libfabric_sys::FI_AV_USER_ID);
+
+    pub(crate) fn get_value(&self) -> u64 {
+        self.c_flags
+    }
+}
+
+impl Default for AVOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 #[derive(Clone,Copy)]
 pub struct TransferOptions {
     c_flags: u32,
@@ -879,5 +915,66 @@ impl DomainCaps {
             DomainCaps::RemoteComm => libfabric_sys::FI_REMOTE_COMM,
             DomainCaps::SharedAv => libfabric_sys::FI_SHARED_AV,
         }
+    }
+}
+
+pub struct CompletionFlags {
+    c_flags: u64,
+}
+
+impl CompletionFlags {
+    pub(crate) fn from_value(c_flags: u64) -> Self {
+        Self{
+            c_flags
+        }
+    }
+
+    gen_get_flag!(is_send, libfabric_sys::FI_SEND as u64);
+    gen_get_flag!(is_recv, libfabric_sys::FI_RECV as u64);
+    gen_get_flag!(is_rma, libfabric_sys::FI_RMA as u64);
+    gen_get_flag!(is_atomic, libfabric_sys::FI_ATOMIC as u64);
+    gen_get_flag!(is_msg, libfabric_sys::FI_MSG as u64);
+    gen_get_flag!(is_tagged, libfabric_sys::FI_TAGGED as u64);
+    gen_get_flag!(is_multicast, libfabric_sys::FI_MULTICAST as u64);
+    gen_get_flag!(is_read, libfabric_sys::FI_READ as u64);
+    gen_get_flag!(is_write, libfabric_sys::FI_WRITE as u64);
+    gen_get_flag!(is_remote_read, libfabric_sys::FI_REMOTE_READ as u64);
+    gen_get_flag!(is_remote_write, libfabric_sys::FI_REMOTE_WRITE as u64);
+    gen_get_flag!(is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
+    gen_get_flag!(is_multi_recv, libfabric_sys::FI_MULTI_RECV as u64);
+    gen_get_flag!(is_more, libfabric_sys::FI_MORE as u64);
+    gen_get_flag!(is_claim, libfabric_sys::FI_CLAIM);
+}
+
+pub struct AVSetOptions {
+    c_flags: u64,
+}
+
+impl AVSetOptions {
+    pub fn new() -> Self {
+        Self {
+            c_flags: 0,
+        }
+    }
+    
+    pub(crate) fn get_value(&self) -> u64 {
+        self.c_flags
+    }
+
+    gen_set_get_flag!(universe, is_universe, libfabric_sys::FI_UNIVERSE);
+    gen_set_get_flag!(barrier_set, is_barrier_set, libfabric_sys::FI_BARRIER_SET);
+    gen_set_get_flag!(broadcast_set, is_broadcast_set, libfabric_sys::FI_BROADCAST_SET);
+    gen_set_get_flag!(alltoall_set, is_alltoall_set, libfabric_sys::FI_ALLTOALL_SET);
+    gen_set_get_flag!(allreduce_set, is_allreduce_set, libfabric_sys::FI_ALLREDUCE_SET);
+    gen_set_get_flag!(allgather_set, is_allgather_set, libfabric_sys::FI_ALLGATHER_SET);
+    gen_set_get_flag!(reduce_scatter_set, is_reduce_scatter_set, libfabric_sys::FI_REDUCE_SCATTER_SET);
+    gen_set_get_flag!(reduce_set, is_reduce_set, libfabric_sys::FI_REDUCE_SET);
+    gen_set_get_flag!(scatter_set, is_scatter_set, libfabric_sys::FI_SCATTER_SET);
+    gen_set_get_flag!(gather_set, is_gather_set, libfabric_sys::FI_GATHER_SET);
+}
+
+impl Default for AVSetOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }

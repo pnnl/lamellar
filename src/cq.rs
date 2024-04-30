@@ -2,7 +2,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress};
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType, CompletionFlags}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress};
 
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -575,8 +575,8 @@ impl CqMsgEntry {
         unsafe {& *p_ctx}
     }
 
-    pub fn flags(&self) -> u64 {
-        self.c_entry.flags
+    pub fn flags(&self) -> CompletionFlags {
+        CompletionFlags::from_value(self.c_entry.flags)
     }
 
     pub fn size(&self) -> usize {
@@ -611,8 +611,8 @@ impl CqDataEntry {
         unsafe {& *p_ctx}
     }
 
-    pub fn flags(&self) -> u64 {
-        self.c_entry.flags
+    pub fn flags(&self) -> CompletionFlags {
+        CompletionFlags::from_value(self.c_entry.flags)
     }
 
     pub fn buffer<T>(&self) -> &[T] {
@@ -652,8 +652,8 @@ impl CqTaggedEntry {
         unsafe {& *p_ctx}
     }
 
-    pub fn flags(&self) -> u64 {
-        self.c_entry.flags
+    pub fn flags(&self) -> CompletionFlags {
+        CompletionFlags::from_value(self.c_entry.flags)
     }
 
     pub fn buffer<T>(&self) -> &[T] {
@@ -724,6 +724,10 @@ impl CompletionError {
 
     pub fn get_prov_errno(&self) -> i32 {
         self.c_err.prov_errno
+    }
+
+    pub fn flags(&self) -> CompletionFlags {
+        CompletionFlags::from_value(self.c_err.flags)
     }
 
     pub fn is_op_context_equal(&self, ctx: &crate::Context) -> bool {
