@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
 
 //================== Domain (fi_domain) ==================//
 
@@ -23,15 +23,15 @@ impl DomainImpl {
         self.c_domain
     }
 
-    pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0, E>(fabric: &Rc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
         let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
         let err =
             if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, (ctx as *mut T0).cast()) }
+                unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, (ctx as *mut T0).cast()) }
             }
             else {
-                unsafe { libfabric_sys::inlined_fi_domain2(fabric.inner.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
+                unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
             };
 
         if err != 0 {
@@ -42,7 +42,7 @@ impl DomainImpl {
                 Self { 
                     c_domain, 
                     domain_attr,
-                    _fabric_rc: fabric.inner.clone(), 
+                    _fabric_rc: fabric.clone(), 
                     fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
                 })
         }
@@ -62,8 +62,8 @@ impl DomainImpl {
     //     crate::ep::Endpoint::from_attr_with_context(self, rx_attr, context)
     // }
 
-    pub(crate) fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.handle(), datatype, op.get_value(), attr.get_mut(), flags )};
+    pub(crate) fn query_atomic<T: 'static>(&self, op: crate::enums::Op, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.handle(), to_fi_datatype::<T>(), op.get_value(), attr.get_mut(), flags )};
 
         check_error(err.try_into().unwrap())
     }
@@ -133,7 +133,7 @@ impl Domain {
         Ok(
             Self{
                 inner: 
-                    Rc::new(DomainImpl::new(fabric, info, flags, domain_attr, context)?)
+                    Rc::new(DomainImpl::new(&fabric.inner, info, flags, domain_attr, context)?)
             }
         )    
     }
@@ -142,8 +142,9 @@ impl Domain {
         self.inner.bind(fid, flags)
     }
 
-    pub fn query_atomic(&self, datatype: crate::DataType, op: crate::enums::Op, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
-        self.inner.query_atomic(datatype, op, attr, flags)
+    pub fn query_atomic<T: 'static>(&self, op: crate::enums::Op, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
+        
+        self.inner.query_atomic::<T>(op, attr, flags)
     }
 
     pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MemoryRegionKey, flags: u64) -> Result<u64, crate::error::Error> {

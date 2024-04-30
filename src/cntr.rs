@@ -7,7 +7,7 @@ use crate::fid::AsFid;
 use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImpl, BindImpl, utils::check_error, fid::{OwnedFid, self, AsRawFid}};
 
 pub struct Counter<T: CntrConfig> {
-    inner: Rc<CounterImpl>,
+    pub(crate) inner: Rc<CounterImpl>,
     phantom: PhantomData<T>,
 }
 
@@ -26,7 +26,7 @@ impl CounterImpl {
         self.c_cntr
     }
 
-    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImpl>, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_cntr: *mut libfabric_sys::fid_cntr = std::ptr::null_mut();
         let c_cntr_ptr: *mut *mut libfabric_sys::fid_cntr = &mut c_cntr;
         let err = 
@@ -46,7 +46,7 @@ impl CounterImpl {
                     c_cntr, 
                     fid: OwnedFid::from(unsafe { &mut (*c_cntr).fid }), 
                     wait_obj: Some(attr.c_attr.wait_obj),
-                    _domain_rc: domain.inner.clone(),
+                    _domain_rc: domain.clone(),
                 })
         }
     }
@@ -138,7 +138,7 @@ impl<T: CntrConfig> Counter<T> {
     pub(crate) fn new<T0>(domain: &crate::domain::Domain, attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(CounterImpl::new(domain, attr, context)?),
+                inner: Rc::new(CounterImpl::new(&domain.inner, attr, context)?),
                 phantom: PhantomData,
             }
         )

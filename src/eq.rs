@@ -102,16 +102,16 @@ pub struct EventQueue<T: EqConfig> {
 
 impl<'a> EventQueueImpl {
 
-    pub(crate) fn new<T0>(fabric: &crate::fabric::Fabric, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(fabric: &Rc<crate::fabric::FabricImpl>, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
         let err = 
             if let Some(ctx) = context {
-                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, (ctx as *mut T0).cast())}
+                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.c_fabric, attr.get_mut(), c_eq_ptr, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.inner.c_fabric, attr.get_mut(), c_eq_ptr, std::ptr::null_mut())}
+                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.c_fabric, attr.get_mut(), c_eq_ptr, std::ptr::null_mut())}
             };
 
         if err != 0 {
@@ -123,7 +123,7 @@ impl<'a> EventQueueImpl {
                     c_eq, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
                     wait_obj:  Some(attr.c_attr.wait_obj),
-                    _fabric_rc: fabric.inner.clone(),
+                    _fabric_rc: fabric.clone(),
                 })
         }
     }
@@ -157,8 +157,8 @@ impl<'a> EventQueueImpl {
         }
     }
 
-    pub(crate) fn readerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
-        let mut err_q = EventQueueErrEntry::new();
+    pub(crate) fn readerr(&self) -> Result<EventError, crate::error::Error> {
+        let mut err_q = EventError::new();
         let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), err_q.get_mut(), 0) };
 
         if ret < 0 {
@@ -169,8 +169,8 @@ impl<'a> EventQueueImpl {
         }
     }
 
-    pub(crate) fn peekerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
-        let mut err_q = EventQueueErrEntry::new();
+    pub(crate) fn peekerr(&self) -> Result<EventError, crate::error::Error> {
+        let mut err_q = EventError::new();
         let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), err_q.get_mut(), libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
@@ -181,7 +181,7 @@ impl<'a> EventQueueImpl {
         }
     }
 
-    pub(crate) fn strerror(&self, entry: &EventQueueErrEntry) -> &str {
+    pub(crate) fn strerror(&self, entry: &EventError) -> &str {
         let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
     
             unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
@@ -280,7 +280,7 @@ impl<T: EqConfig> EventQueue<T> {
         Ok(
             Self {
                 inner: Rc::new(
-                    EventQueueImpl::new(fabric, attr, context)?
+                    EventQueueImpl::new(&fabric.inner, attr, context)?
                 ),
                 phantom: PhantomData, 
             })
@@ -294,15 +294,15 @@ impl<T: EqConfig> EventQueue<T> {
         self.inner.peek()
     }
         
-    pub fn readerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
+    pub fn readerr(&self) -> Result<EventError, crate::error::Error> {
         self.inner.readerr()
     }
 
-    pub fn peekerr(&self) -> Result<EventQueueErrEntry, crate::error::Error> {
+    pub fn peekerr(&self) -> Result<EventError, crate::error::Error> {
         self.inner.peekerr()
     }
 
-    pub fn strerror(&self, entry: &EventQueueErrEntry) -> &str {
+    pub fn strerror(&self, entry: &EventError) -> &str {
         self.inner.strerror(entry)
     }
     
@@ -562,11 +562,11 @@ impl Default for EventQueueAttr {
 
 //================== EqErrEntry (fi_eq_err_entry) ==================//
 #[repr(C)]
-pub struct EventQueueErrEntry {
+pub struct EventError {
     pub(crate) c_err: libfabric_sys::fi_eq_err_entry,
 }
 
-impl EventQueueErrEntry {
+impl EventError {
     pub fn new() -> Self {
         let c_err = libfabric_sys::fi_eq_err_entry{
             fid: std::ptr::null_mut(),
@@ -591,7 +591,7 @@ impl EventQueueErrEntry {
     }       
 }
 
-impl Default for EventQueueErrEntry {
+impl Default for EventError {
     fn default() -> Self {
         Self::new()
     }

@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
 
 pub struct Receive;
 pub struct Transmit;
@@ -183,14 +183,14 @@ impl TransmitContextImpl {
         }
     }
 
-    pub(crate) fn bind<T: crate::Bind + AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T: crate::BindImpl + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            self._sync_rcs.borrow_mut().push(res.inner());
+            self._sync_rcs.borrow_mut().push(res.clone());
             Ok(())
         }
     } 
@@ -203,14 +203,14 @@ impl TransmitContextImpl {
         TxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq(&self, eq: &Rc<EventQueueImpl>) -> Result<(), crate::error::Error>  {
         
-        self.bind(eq, 0)
+        self.bind(&eq, 0)
     }
 
-    pub(crate) fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_av(&self, av: &Rc<AddressVectorImpl>) -> Result<(), crate::error::Error> {
     
-        self.bind(av, 0)
+        self.bind(&av, 0)
     }
 }
 
@@ -232,11 +232,11 @@ impl TransmitContext {
     }
 
     pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
-        self.inner.bind_eq(eq)
+        self.inner.bind_eq(&eq.inner)
     }
 
     pub fn bind_av(&mut self, av: &AddressVector) -> Result<(), crate::error::Error> {
-        self.inner.bind_av(av)
+        self.inner.bind_av(&av.inner)
     }
 }
 
@@ -509,7 +509,7 @@ impl<'a> TxIncompleteBindCq<'a> {
     }
 
     pub fn cq<T: CqConfig + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
-        self.ep.bind(cq, self.flags)
+        self.ep.bind(&cq.inner, self.flags)
     }
 }
 
@@ -539,7 +539,7 @@ impl<'a> TxIncompleteBindCntr<'a> {
     }
 
     pub fn cntr<T: crate::cntroptions::CntrConfig + 'static>(&self, cntr: &Counter<T>) -> Result<(), crate::error::Error> {
-        self.ep.bind(cntr, self.flags)
+        self.ep.bind(&cntr.inner, self.flags)
     }
 }
 

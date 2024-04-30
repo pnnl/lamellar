@@ -30,7 +30,7 @@ impl AddressVectorImpl {
         self.c_av
     }
 
-    pub(crate) fn new<T>(domain: &crate::domain::Domain, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T>(domain: &Rc<crate::domain::DomainImpl>, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
         let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
 
@@ -51,7 +51,7 @@ impl AddressVectorImpl {
                     c_av,
                     fid: OwnedFid::from(unsafe {&mut (*c_av).fid} ),
                     _eq_rc: OnceCell::new(),
-                    _domain_rc: domain.inner.clone(),
+                    _domain_rc: domain.clone(),
                 }
             )
         }
@@ -64,14 +64,14 @@ impl AddressVectorImpl {
     /// # Errors
     ///
     /// This function will return an error if the underlying library call fails.
-    pub(crate) fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, eq: &Rc<crate::eq::EventQueueImpl>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.handle(), eq.as_raw_fid(), 0) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
         else {
-            if self._eq_rc.set(eq.inner.clone()).is_err() {
+            if self._eq_rc.set(eq.clone()).is_err() {
                 panic!("AddressVector is alread bound to an EventQueue");
             }
             Ok(())
@@ -181,7 +181,7 @@ impl AddressVectorImpl {
 }
 
 pub struct AddressVector {
-    inner: Rc<AddressVectorImpl>,
+    pub(crate) inner: Rc<AddressVectorImpl>,
 }
 
 impl AddressVector {
@@ -190,7 +190,7 @@ impl AddressVector {
         
         Ok(
             Self {
-                inner: Rc::new (AddressVectorImpl::new(domain, attr, context)?)
+                inner: Rc::new (AddressVectorImpl::new(&domain.inner, attr, context)?)
             }
         )
     }
@@ -200,7 +200,7 @@ impl AddressVector {
     }
 
     pub fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
-        self.inner.bind(eq)
+        self.inner.bind(&eq.inner)
     }
     
     pub fn insert(&self, addr: &[Address], flags: u64) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
@@ -687,7 +687,18 @@ impl AsFid for AddressVectorSet {
 
 impl AsFid for AddressVector {
     fn as_fid(&self) -> fid::BorrowedFid {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
+    }
+}
+
+impl AsFid for AddressVectorImpl {
+    fn as_fid(&self) -> fid::BorrowedFid {
+        self.fid.as_fid()
+    }
+}
+impl AsFid for Rc<AddressVectorImpl> {
+    fn as_fid(&self) -> fid::BorrowedFid {
+        self.fid.as_fid()
     }
 }
 

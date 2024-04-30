@@ -57,7 +57,7 @@ pub(crate) struct CompletionQueueImpl {
 }
 
 pub struct CompletionQueue<T: CqConfig> {
-    inner: Rc<CompletionQueueImpl>,
+    pub(crate) inner: Rc<CompletionQueueImpl>,
     phantom: PhantomData<T>,
 }
 
@@ -67,7 +67,7 @@ impl<'a> CompletionQueueImpl {
         self.c_cq
     }
 
-    pub(crate) fn new<T0>(domain: &crate::domain::Domain, mut attr: CompletionQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImpl>, mut attr: CompletionQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
@@ -90,7 +90,7 @@ impl<'a> CompletionQueueImpl {
                     fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
                     format: CqFormat::from_value(attr.c_attr.format), 
                     wait_obj: Some(attr.c_attr.wait_obj),
-                    _domain_rc: domain.inner.clone(),
+                    _domain_rc: domain.clone(),
                 })
         }
     }
@@ -127,9 +127,9 @@ impl<'a> CompletionQueueImpl {
     }
 
     // // [TODO]  Condition is not taken into account
-    pub(crate) fn readerr(&self, flags: u64) -> Result<CqErrEntry, crate::error::Error> {
+    pub(crate) fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> {
         
-        let mut entry = CqErrEntry::new();
+        let mut entry = CompletionError::new();
         let ret = unsafe { libfabric_sys::inlined_fi_cq_readerr(self.handle(), entry.get_mut(), flags) };
 
         if ret < 0 {
@@ -140,7 +140,7 @@ impl<'a> CompletionQueueImpl {
         }
     }
 
-    pub(crate) fn print_error(&self, err_entry: &crate::cq::CqErrEntry) {
+    pub(crate) fn print_error(&self, err_entry: &crate::cq::CompletionError) {
         println!("{}", unsafe{self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size())} );
     }
 
@@ -258,7 +258,7 @@ impl<T: CqConfig> CompletionQueue<T> {
     pub(crate) fn new<T0>(_options: T, domain: &crate::domain::Domain, attr: CompletionQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(CompletionQueueImpl::new(domain, attr, context)?),
+                inner: Rc::new(CompletionQueueImpl::new(&domain.inner, attr, context)?),
                 phantom: PhantomData,
             }
         )
@@ -272,11 +272,11 @@ impl<T: CqConfig> CompletionQueue<T> {
         self.inner.readfrom(count)
     }
     
-    pub fn readerr(&self, flags: u64) -> Result<CqErrEntry, crate::error::Error> {
+    pub fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> {
         self.inner.readerr(flags)
     }
 
-    pub fn print_error(&self, err_entry: &crate::cq::CqErrEntry) {
+    pub fn print_error(&self, err_entry: &crate::cq::CompletionError) {
         self.inner.print_error(err_entry)
     }
 
@@ -689,11 +689,11 @@ pub enum Completion {
 //================== CompletionQueue Error Entry (fi_cq_err_entry) ==================//
 
 #[repr(C)]
-pub struct CqErrEntry {
+pub struct CompletionError {
     pub(crate) c_err: libfabric_sys::fi_cq_err_entry,
 }
 
-impl CqErrEntry {
+impl CompletionError {
 
     pub fn new() -> Self {
         Self {
@@ -739,7 +739,7 @@ impl CqErrEntry {
     }
 }
 
-impl Default for CqErrEntry {
+impl Default for CompletionError {
     fn default() -> Self {
         Self::new()
     }

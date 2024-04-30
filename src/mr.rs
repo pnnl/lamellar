@@ -139,7 +139,7 @@ impl MemoryRegionImpl {
     }
     
     #[allow(dead_code)]
-    fn from_buffer<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = 
@@ -159,12 +159,12 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr, 
                     fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                    _domain_rc: domain.inner.clone(),
+                    _domain_rc: domain.clone(),
                 })
         }
     }
 
-    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr(domain: &Rc<crate::domain::DomainImpl>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
@@ -177,13 +177,13 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr, 
                     fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                    _domain_rc: domain.inner.clone(),
+                    _domain_rc: domain.clone(),
                 })
         }
     }
             
     #[allow(dead_code)]
-    fn from_iovec<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T, T0>(domain: &Rc<crate::domain::DomainImpl>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =
@@ -202,7 +202,7 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr, 
                     fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                    _domain_rc: domain.inner.clone(),
+                    _domain_rc: domain.clone(),
                 })
         }
     
@@ -239,13 +239,13 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cntr(&self, cntr: &Rc<crate::cntr::CounterImpl>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_raw_fid(), flags) } ;
         
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep(&self, ep: &Rc<crate::ep::EndpointImpl>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_raw_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())
@@ -322,7 +322,7 @@ impl MemoryRegion {
         Ok(
             Self {
                 inner:
-                    Rc::new(MemoryRegionImpl::from_buffer(domain, buf, access, requested_key, flags, context)?)
+                    Rc::new(MemoryRegionImpl::from_buffer(&domain.inner, buf, access, requested_key, flags, context)?)
             }
         )
     }
@@ -331,7 +331,7 @@ impl MemoryRegion {
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImpl::from_attr(domain, attr, flags)?)
+                    Rc::new(MemoryRegionImpl::from_attr(&domain.inner, attr, flags)?)
             }
         )
     }
@@ -341,7 +341,7 @@ impl MemoryRegion {
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImpl::from_iovec(domain, iov, access, requested_key, flags, context)?)
+                    Rc::new(MemoryRegionImpl::from_iovec(&domain.inner, iov, access, requested_key, flags, context)?)
             }
         )
     }
@@ -355,11 +355,11 @@ impl MemoryRegion {
     // }
     
     pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
-        self.inner.bind_cntr(cntr, flags)
+        self.inner.bind_cntr(&cntr.inner, flags)
     }
 
     pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
-        self.inner.bind_ep(ep)
+        self.inner.bind_ep(&ep.inner)
     }
 
     pub fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
