@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::EventQueueImpl, enums::{AVOptions, AVSetOptions}, RawMappedAddress};
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::{EventQueueImpl, EventQueue}, enums::{AVOptions, AVSetOptions}, RawMappedAddress};
 
 
 // impl Drop for AddressVector {
@@ -12,10 +12,7 @@ use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, A
 // }
 //================== AddressVector ==================//
 
-/// Owned wrapper around a libfabric `fid_av`.
-/// 
-/// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av.3.html).
+
 pub(crate) struct AddressVectorImpl {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
     fid: OwnedFid,
@@ -177,6 +174,13 @@ impl AddressVectorImpl {
     }
 }
 
+/// Owned wrapper around a libfabric `fid_av`.
+/// 
+/// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av.3.html).
+/// 
+/// Note that other objects that rely on an AddressVector (e.g., [MappedAddress]) will extend its lifetime until they
+/// are also dropped.
 pub struct AddressVector {
     pub(crate) inner: Rc<AddressVectorImpl>,
 }
@@ -196,20 +200,28 @@ impl AddressVector {
         self.inner.handle()
     }
 
-    pub fn bind<T: EqConfig>(&self, eq: &crate::eq::EventQueue<T>) -> Result<(), crate::error::Error> {
-        self.inner.bind(&eq.inner)
-    }
-    
-    pub fn insert(&self, addr: &[Address], options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+
+    /// Insert one or more [Address]es into the [AddressVector] and return a [Vec] of [MappedAddress]es, one for each input address.
+    /// 
+    /// The operation can be modified using the requested `options` as defined in [AVOptions].
+    /// For address(es) that could not be mapped a [None] value will be returned at the respective index.
+    /// 
+    /// This method directly corresponds to a call to `fi_av_insert`
+    pub fn insert(&self, addr: &[Address], options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = self.inner.insert::<()>(addr, options.get_value(), None)?;
         Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
     }
     
-    pub fn insert_with_context<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+    /// Same as [Self::insert] but with an extra argument to provide a context
+    ///
+    pub fn insert_with_context<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = self.inner.insert(addr, options.get_value(), Some(ctx))?;
         Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
     }
 
+    /// Similar to [Self::insert] but with address formatted as node, service [String]s
+    ///
+    /// Directly corrsponds to `fi_av_insertsvc`
     pub fn insertsvc(&self, node: &str, service: &str, options: AVOptions) -> Result<Option<MappedAddress>, crate::error::Error> {
         let fi_addr = self.inner.insertsvc(node, service, options.get_value())?;
         if fi_addr != FI_ADDR_NOTAVAIL {
@@ -221,36 +233,62 @@ impl AddressVector {
         
     }
 
+    /// Similar to [Self::insert] but with address(es) formatted as a base `node` + increments up to `nodecnt`, base `service`  + increments up to `svccnt`
+    ///
+    /// Directly corresponds to `fi_av_insertsym`
     pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
         let fi_addresses = self.inner.insertsym(node, nodecnt, service, svccnt, options.get_value())?;
         Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
     }
 
+    /// Removes the given [MappedAddress]es from the AddressVector. 
+    /// 
+    /// This method will consume the mapped addresses passed to it to prevent their reuse.
+    /// 
+    /// Directly corresponds to `fi_av_remove`
     pub fn remove(&self, addr: Vec<crate::MappedAddress>) -> Result<(), crate::error::Error> {
         self.inner.remove(addr)
     }
     
+    /// Retrieves an address stored in the address vector.
+    /// 
+    /// Directly corresponds to `fi_av_lookup`
     pub fn lookup(&self, mapped_addr: crate::MappedAddress) -> Result<Address, crate::error::Error> {
         self.inner.lookup(mapped_addr)
     }
     
+    /// Convert an [Address] into a printable string.
+    ///
+    /// Directly corresponds to `fi_av_straddr`
     pub fn straddr(&self, addr: &Address) -> String {
         self.inner.straddr(addr)
     }
     
 }
 
-
+/// Builder for the [`AddressVector`] type.
+/// 
+/// `AddressVectorBuilder` is used to configure and build a new `AddressVector`.
+/// It encapsulates an incremental configuration of the address vector, as provided by a `fi_av_attr`,
+/// followed by a call to `fi_av_open`  
 pub struct AddressVectorBuilder<'a, T> {
     av_attr: AddressVectorAttr,
+    eq: Option<&'a Rc<EventQueueImpl>>,
     ctx: Option<&'a mut T>,
     domain: &'a Domain,
 }
 
+
 impl<'a> AddressVectorBuilder<'a, ()> {
+    
+    /// Initiates the creation of a new [AddressVector] on `domain`.
+    /// 
+    /// The initial configuration is what would be set if no `fi_av_attr` or `context` was provided to 
+    /// the `fi_av_open` call. 
     pub fn new(domain: &'a Domain) -> AddressVectorBuilder<'a, ()> {
         AddressVectorBuilder {
             av_attr: AddressVectorAttr::new(),
+            eq: None,
             ctx: None,
             domain,
         }
@@ -259,76 +297,122 @@ impl<'a> AddressVectorBuilder<'a, ()> {
 
 impl<'a, T> AddressVectorBuilder<'a, T> {
 
+
+    /// Sets the type of the [AddressVector].
+    /// 
+    /// Corresponds to setting field `fi_av_attr::type`
     pub fn type_(mut self, av_type: crate::enums::AddressVectorType) -> Self {
         self.av_attr.type_(av_type);
         self
     }
 
-    pub fn rx_ctx_bits(mut self, rx_ctx_bits: i32) -> Self {
+    /// Sets address bits to identify rx ctx of the [AddressVector].
+    /// 
+    /// Corresponds to setting field `fi_av_attr::rx_ctx_bits`
+    pub fn rx_ctx_bits(mut self, rx_ctx_bits: i32) -> Self { //[TODO] Maybe wrap bitfield
         self.av_attr.rx_ctx_bits(rx_ctx_bits);
         self
     }
 
+    /// Sets the number of [Address]es that will be inserted into the [AddressVector]
+    /// 
+    /// Corresponds to setting field `fi_av_attr::count`
     pub fn count(mut self, count: usize) -> Self {
         self.av_attr.count(count);
         self
     }
-    
+
+    /// Sets the number of [Endpoint][crate::ep::Endpoint]s that will be inserted into the [AddressVector]
+    /// 
+    /// Corresponds to setting field `fi_av_attr::ep_per_node`
     pub fn ep_per_node(mut self, count: usize) -> Self {
         self.av_attr.ep_per_node(count);
         self
     }
 
+
+    /// Sets the system name of the [AddressVector] to `name`.
+    /// 
+    /// Corresponds to setting field `fi_av_attr::name`
     pub fn name(mut self, name: String) -> Self {
         self.av_attr.name(name);
         self 
     }
 
+    /// Sets the base mmap address of the [AddressVector] to `addr`.
+    /// 
+    /// Corresponds to setting field `fi_av_attr::map_addr`
     pub fn map_addr(mut self, addr: usize) -> Self {
         self.av_attr.map_addr(addr);
         self
     }
 
+    /// Sets the [AddressVector] to read-only mode.
+    /// 
+    /// Corresponds to setting the corresponding bit (`FI_READ`) of the field `fi_av_attr::flags`
     pub fn read_only(mut self) -> Self {
         self.av_attr.read_only();
         self
     }
 
-    pub fn async_(mut self) -> Self {
+    /// Requests that insertions to [AddressVector] be done asynchronously.
+    /// 
+    /// An asynchronous address vector is required to be bound to an [EventQueue] before any insertions take place.
+    /// Thus, setting this option requires the user to specify the queue that will be used to report the completion
+    /// of address insertions.
+    /// 
+    /// Corresponds to setting the corresponding bit (`FI_EVENT`) of the field `fi_av_attr::flags` and calling
+    /// `fi_av_bind(eq)`, once the address vector has been constructed.
+    pub fn async_<EQ: EqConfig>(mut self, eq: &'a EventQueue<EQ>) -> Self {
         self.av_attr.async_();
+        self.eq = Some(&eq.inner);
         self
     }
 
+    /// Indicates that each node will be associated with the same number of endpoints.
+    /// 
+    /// Corresponds to setting the corresponding bit (`FI_SYMMETRIC`) of the field `fi_av_attr::flags`.
     pub fn symmetric(mut self) -> Self {
         self.av_attr.symmetric();
         self
     }
 
+    /// Sets the context to be passed to the [AddressVector].
+    /// 
+    /// Corresponds to passing a non-NULL `context` value to `fi_av_open`.
     pub fn context(self, ctx: &'a mut T) -> AddressVectorBuilder<'a, T> {
         AddressVectorBuilder {
             av_attr: self.av_attr,
             domain: self.domain,
+            eq: self.eq,
             ctx: Some(ctx),
         }
     }
 
+    /// Constructs a new [AddressVector] with the configurations requested so far.
+    /// 
+    /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
+    /// calling `fi_av_open` with an optional `context`, and, if asynchronous, binding with
+    /// the selected [EventQueue].
     pub fn build(self) -> Result<AddressVector, crate::error::Error> {
-        AddressVector::new(self.domain, self.av_attr, self.ctx)
+        let av = AddressVector::new(self.domain, self.av_attr, self.ctx)?;
+        match self.eq {
+            None => Ok(av),
+            Some(eq) => {av.inner.bind(eq)?; Ok(av)}
+        }
     }
     
 }
 
 //================== AddressVectorSet ==================//
 
-pub struct AddressVectorSetImpl {
+pub(crate) struct AddressVectorSetImpl {
     pub(crate) c_set : *mut libfabric_sys::fid_av_set,
     fid: OwnedFid,
     _av_rc: Rc<AddressVectorImpl>,
 }
 
-pub struct AddressVectorSet {
-    inner: Rc<AddressVectorSetImpl>,
-}
+
 
 impl AddressVectorSetImpl {
 
@@ -413,7 +497,7 @@ impl AddressVectorSetImpl {
         }
     }
 
-    pub(crate) fn remove(&self, mapped_addr: crate::MappedAddress) -> Result<(), crate::error::Error> {
+    pub(crate) fn remove(&self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_remove(self.handle(), mapped_addr.raw_addr()) };
 
         if err != 0 {
@@ -438,6 +522,17 @@ impl AddressVectorSetImpl {
     // }
 }
 
+/// Owned wrapper around a libfabric `fid_av_set`.
+/// 
+/// This type wraps an instance of a `fid_av_set`, monitoring its lifetime and closing it when it goes out of scope.
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av_set.3.html).
+/// 
+/// Note that other objects that rely on an AddressVectorSet (e.g., [crate::comm::collective::MulticastGroupCollective]) will extend its lifetime until they
+/// are also dropped.
+pub struct AddressVectorSet {
+    inner: Rc<AddressVectorSetImpl>,
+}
+
 impl AddressVectorSet {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av_set {
@@ -453,23 +548,48 @@ impl AddressVectorSet {
         )
     }
 
-    pub fn union(&self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    /// Perform a set union operation on two AV sets
+    /// 
+    /// The result is stored in `Self`, which is modified.
+    /// 
+    /// Corresponds to `fi_av_set_union`
+    pub fn union(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
         self.inner.union(&other.inner)
     }
 
-    pub fn intersect(&self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    /// Perform a set intersection operation on two AV sets
+    /// 
+    /// The result is stored in `Self`, which is modified.
+    /// 
+    /// Corresponds to `fi_av_set_intersect`
+    pub fn intersect(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
         self.inner.intersect(&other.inner)
     }
-
-    pub fn diff(&self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    
+    /// Perform a set difference operation on two AV sets
+    /// 
+    /// The result is stored in `Self`, which is modified.
+    /// 
+    /// Corresponds to `fi_av_set_diff`
+    pub fn diff(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
         self.inner.diff(&other.inner)
     }
     
-    pub fn insert(&self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
+    /// Adds an address to the [AddressVectorSet].
+    /// 
+    /// `Self` is modified.
+    /// 
+    /// Corresponds to `fi_av_set_insert`
+    pub fn insert(&mut self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.inner.insert(mapped_addr)
     }
-
-    pub fn remove(&self, mapped_addr: crate::MappedAddress) -> Result<(), crate::error::Error> {
+    
+    /// Removes an address to the [AddressVectorSet].
+    /// 
+    /// `Self` is modified.
+    /// 
+    /// Corresponds to `fi_av_set_remove`
+    pub fn remove(&mut self, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.inner.remove(mapped_addr)
     }
     
@@ -478,6 +598,11 @@ impl AddressVectorSet {
     // }    
 }
 
+/// Builder for the AddressVectorSet type.
+/// 
+/// `AddressVectorSetBuilder` is used to configure and build a new [AddressVectorSet].
+/// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_av_set_attr`,
+/// followed by a call to `fi_av_set`  
 pub struct AddressVectorSetBuilder<'a, T> {
     avset_attr: AddressVectorSetAttr,
     ctx: Option<&'a mut T>,
@@ -496,42 +621,65 @@ impl<'a> AddressVectorSetBuilder<'a, ()> {
 
 impl<'a, T> AddressVectorSetBuilder<'a, T> {
 
+    /// Indicates the expected the number of members that will be a part of the AV set.
+    /// 
+    /// Corresponds to setting the `fi_av_set_attr::count` field.
     pub fn count(mut self, size: usize) -> Self {
 
         self.avset_attr.count(size);
         self
     }
 
-    pub fn start_addr(mut self, mapped_addr: &crate::MappedAddress) -> Self {
+    /// Indicates the start address to include to the the AV set.
+    /// 
+    /// Corresponds to setting the `fi_av_set_attr::start_addr` field.
+    pub fn start_addr(mut self, mapped_addr: &crate::MappedAddress) -> Self { // [TODO] Merge with end_addr + stride
         
         self.avset_attr.start_addr(mapped_addr);
         self
     }
 
+    /// Indicates the end address to include to the the AV set.
+    /// 
+    /// Corresponds to setting the `fi_av_set_attr::end_addr` field.
     pub fn end_addr(mut self, mapped_addr: &crate::MappedAddress) -> Self {
         
         self.avset_attr.end_addr(mapped_addr);
         self
     }
 
+    /// The number of entries between successive addresses included in the AV set.
+    /// 
+    /// Corresponds to setting the `fi_av_set_attr::stride` field.
     pub fn stride(mut self, stride: usize) -> Self {
 
         self.avset_attr.stride(stride);
         self
     }
 
+    /// If supported by the fabric, this represents a key associated with the AV set. 
+    /// 
+    /// Corresponds to setting the `fi_av_set_addr::comm_key` and `fi_av_set_addr::comm_key_size` fields. 
     pub fn comm_key(mut self, key: &mut [u8]) -> Self {
         
         self.avset_attr.comm_key(key);
         self
     }
 
-    pub fn options(mut self, options: AVSetOptions) -> Self {
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    /// 
+    /// `options` captures the [flags](AVSetOptions) that can be possibly set for an AV set.
+    /// 
+    /// Corresponds to setting the `fi_av_set_addr::flags` field.
+    pub fn options(mut self, options: AVSetOptions) -> Self { //[TODO] We should provide different function for each bitflag. 
 
         self.avset_attr.options(options);
         self
     }
 
+    /// Sets the context to be passed to the AV set.
+    /// 
+    /// Corresponds to passing a non-NULL `context` value to `fi_av_set`.
     pub fn context(self, ctx: &'a mut T) -> AddressVectorSetBuilder<'a, T> {
         AddressVectorSetBuilder {
             avset_attr: self.avset_attr,
@@ -540,6 +688,10 @@ impl<'a, T> AddressVectorSetBuilder<'a, T> {
         }
     }
 
+    /// Constructs a new [AddressVectorSet] with the configurations requested so far.
+    /// 
+    /// Corresponds to creating an `fi_av_set_attr`, setting its fields to the requested ones,
+    /// passing it to a `fi_av_set` call with an optional `context` (set by [Self::context]).
     pub fn build(self) -> Result<AddressVectorSet, crate::error::Error> {
         AddressVectorSet::new(self.av, self.avset_attr, self.ctx)
     }

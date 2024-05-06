@@ -423,8 +423,8 @@ pub fn ft_complete_connect<T: EqConfig + libfabric::Waitable>(eq: &libfabric::eq
     // if let libfabric::eq::EventQueue::Waitable(eq) = eq {
 
     
-    if let Ok(event) = eq.sread(-1, 0) {
-        if let libfabric::eq::Event::CONNECTED(_) = event {
+    if let Ok(event) = eq.sread(-1) {
+        if let libfabric::eq::Event::Connected(_) = event {
     
         }
         else {
@@ -456,9 +456,9 @@ pub fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable, M:MsgDefaultCap, 
 
 pub fn ft_retrieve_conn_req<T: EqConfig + libfabric::Waitable, E: infocapsoptions::Caps>(eq: &libfabric::eq::EventQueue<T>, caps: &InfoHints<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
     
-    let event = eq.sread(-1, 0).unwrap();
+    let event = eq.sread(-1).unwrap();
     
-    if let libfabric::eq::Event::CONNREQ(entry) = event {
+    if let libfabric::eq::Event::ConnReq(entry) = event {
         entry.get_info(caps).unwrap()
     } 
     else {
@@ -798,7 +798,7 @@ pub fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx
                 libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut [default_desc()], remote_address)
             };
             let msg_ref = &msg;
-            let flag = libfabric::enums::TransferOptions::new().transmit_complete();
+            let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
             
             ft_post!(sendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
         }
@@ -863,7 +863,7 @@ pub fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u6
                 libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), &mut [default_desc()], remote_address, 0, *tx_seq, 0)
             };
             let msg_ref = &msg;
-            let flag = libfabric::enums::TransferOptions::new().transmit_complete();
+            let flag = libfabric::enums::TaggedSendMsgOptions::new().transmit_complete();
             
             ft_post!(tsendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
         }
@@ -1347,7 +1347,7 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
     
     unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut libfabric::iovec::RmaIoVec as *mut u8,std::mem::size_of::<libfabric::iovec::RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
     let mr_key = unsafe{MemoryRegionKey::from_bytes(&gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index+len], domain)};
-    let mapped_key = mr_key.into_mapped(0, domain).unwrap();
+    let mapped_key = mr_key.into_mapped(domain).unwrap();
     let peer_info = RmaInfo::new(rma_iov.get_address(), rma_iov.get_len(), mapped_key);
 
     match rx_cq {
@@ -1500,9 +1500,9 @@ pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCa
 #[allow(clippy::too_many_arguments)]
 pub fn ft_finalize<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
 
-    if info.get_domain_attr().get_mr_mode().is_raw() { 
-        domain.unmap_key(0xC0DE).unwrap();
-    }
+    // if info.get_domain_attr().get_mr_mode().is_raw() { 
+    //     domain.unmap_key(0xC0DE).unwrap();
+    // }
 
     ft_finalize_ep(info, gl_ctx, ep, data_desc, tx_cq, rx_cq, tx_cntr, rx_cntr);
 }

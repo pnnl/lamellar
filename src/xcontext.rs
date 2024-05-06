@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::HmemP2p, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
 
 pub struct Receive;
 pub struct Transmit;
@@ -112,8 +112,8 @@ impl<T: 'static> XContextBase<T> {
         ActiveEndpointImpl::accept(self)
     }
 
-    pub fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
-        ActiveEndpointImpl::shutdown(self, flags)
+    pub fn shutdown(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::shutdown(self, 0)
     }
 }
 
@@ -271,8 +271,9 @@ impl <'a, T, E> TransmitContextBuilder<'a, T, E> {
         self
     }
 
-    pub fn op_flags(mut self, tfer: crate::enums::TransferOptions) -> Self {
-        self.tx_attr.op_flags(tfer);
+    pub fn set_transmit_options(mut self, ops: TransferOptions) -> Self {
+        ops.transmit();
+        self.tx_attr.op_flags(ops);
         self
     }
 
@@ -438,39 +439,40 @@ impl<'a, T, E> ReceiveContextBuilder<'a, T, E> {
     //     self
     // }
 
-    pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
+    pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
         self.rx_attr.mode(mode);
         self
     }
 
 
-    pub fn msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
+    pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
         self.rx_attr.msg_order(msg_order);
         self
     }
 
-    pub fn comp_order(&mut self, comp_order: RxCompOrder) -> &mut Self {
+    pub fn comp_order(mut self, comp_order: RxCompOrder) -> Self {
         self.rx_attr.comp_order(comp_order);
         self
     }
 
-    pub fn total_buffered_recv(&mut self, total_buffered_recv: usize) -> &mut Self {
+    pub fn total_buffered_recv(mut self, total_buffered_recv: usize) -> Self {
         self.rx_attr.total_buffered_recv(total_buffered_recv);
         self
     }
 
-    pub fn size(&mut self, size: usize) -> &mut Self {
+    pub fn size(mut self, size: usize) -> Self {
         self.rx_attr.size(size);
         self
     }
 
-    pub fn iov_limit(&mut self, iov_limit: usize) -> &mut Self {
+    pub fn iov_limit(mut self, iov_limit: usize) -> Self {
         self.rx_attr.iov_limit(iov_limit);
         self
     }
 
-    pub fn op_flags(&mut self, tfer: crate::enums::TransferOptions) -> &mut Self {
-        self.rx_attr.op_flags(tfer);
+    pub fn set_receive_options(mut self, ops: TransferOptions) -> Self {
+        ops.recv();
+        self.rx_attr.op_flags(ops);
         self
     }
 

@@ -1,3 +1,5 @@
+use crate::enums::RecvMsgOptions;
+use crate::enums::SendMsgOptions;
 use crate::ep::ActiveEndpointImpl;
 use crate::ep::Endpoint;
 use crate::infocapsoptions::MsgCap;
@@ -34,8 +36,8 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
         check_error(err)
     }
 
-    pub fn recvmsg(&self, msg: &crate::msg::Msg, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, flags) };
+    pub fn recvmsg(&self, msg: &crate::msg::Msg, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
         
         check_error(err)
     }
@@ -67,8 +69,8 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
         check_error(err)
     }
 
-    pub fn sendmsg(&self, msg: &crate::msg::Msg, flags: crate::enums::TransferOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, flags.get_value().into()) };
+    pub fn sendmsg(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
     
         check_error(err)
     }
@@ -125,8 +127,8 @@ impl TransmitContext {
         check_error(err)
     }
 
-    pub fn sendmsg(&self, msg: &crate::msg::Msg, flags: crate::enums::TransferOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, flags.get_value().into()) };
+    pub fn sendmsg(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
     
         check_error(err)
     }
@@ -183,8 +185,8 @@ impl ReceiveContext {
         check_error(err)
     }
     
-    pub fn recvmsg(&self, msg: &crate::msg::Msg, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, flags) };
+    pub fn recvmsg(&self, msg: &crate::msg::Msg, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
         
         check_error(err)
     }

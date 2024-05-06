@@ -355,12 +355,12 @@ impl PollSet {
     }
 
 
-    pub fn add(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
-        self.inner.add(fid, flags)
+    pub fn add(&self, fid: &impl AsFid) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+        self.inner.add(fid, 0)
     }
 
-    pub fn del(&self, fid: &impl AsFid, flags:u64) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
-        self.inner.del(fid, flags)
+    pub fn del(&self, fid: &impl AsFid) -> Result<(), crate::error::Error> { //[TODO] fid should implement Waitable trait
+        self.inner.del(fid, 0)
     }
 
     pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {

@@ -1,3 +1,5 @@
+use crate::enums::AtomicFetchMsgOptions;
+use crate::enums::AtomicMsgOptions;
 use crate::ep::ActiveEndpointImpl;
 use crate::ep::Endpoint;
 use crate::infocapsoptions::AtomicCap;
@@ -41,8 +43,8 @@ impl<E: AtomicCap+ WriteMod> Endpoint<E> {
         check_error(err)
     }
 
-    pub fn atomicmsg(&self, msg: &crate::msg::MsgAtomic, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicmsg(self.handle(), msg.c_msg_atomic, flags) };
+    pub fn atomicmsg(&self, msg: &crate::msg::MsgAtomic, options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicmsg(self.handle(), msg.c_msg_atomic, options.get_value()) };
         
         check_error(err)
     }
@@ -86,8 +88,8 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
         check_error(err)
     }
 
-    pub fn fetch_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic,  resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicmsg(self.handle(), msg.c_msg_atomic, resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), flags) };
+    pub fn fetch_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic,  resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicFetchMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicmsg(self.handle(), msg.c_msg_atomic, resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), options.get_value()) };
         
         check_error(err)
     }
@@ -135,8 +137,8 @@ impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn compare_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], flags: u64) -> Result<(), crate::error::Error> {
-        let err: isize = unsafe { libfabric_sys::inlined_fi_compare_atomicmsg(self.handle(), msg.c_msg_atomic, comparev.as_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparev.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), flags) };
+    pub fn compare_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
+        let err: isize = unsafe { libfabric_sys::inlined_fi_compare_atomicmsg(self.handle(), msg.c_msg_atomic, comparev.as_ptr().cast(), compare_desc.as_mut_ptr().cast(), comparev.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), options.get_value()) };
 
         check_error(err)
     }
@@ -208,8 +210,8 @@ impl TransmitContext {
         check_error(err)
     }
 
-    pub fn atomicmsg(&self, msg: &crate::msg::MsgAtomic, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicmsg(self.handle(), msg.c_msg_atomic, flags) };
+    pub fn atomicmsg(&self, msg: &crate::msg::MsgAtomic, options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicmsg(self.handle(), msg.c_msg_atomic, options.get_value()) };
         
         check_error(err)
     }
@@ -249,8 +251,8 @@ impl TransmitContext {
         check_error(err)
     }
 
-    pub fn fetch_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic,  resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicmsg(self.handle(), msg.c_msg_atomic, resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), flags) };
+    pub fn fetch_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic,  resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicFetchMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicmsg(self.handle(), msg.c_msg_atomic, resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), options.get_value()) };
         
         
         check_error(err)
@@ -296,8 +298,8 @@ impl TransmitContext {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn compare_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], flags: u64) -> Result<(), crate::error::Error> {
-        let err: isize = unsafe { libfabric_sys::inlined_fi_compare_atomicmsg(self.handle(), msg.c_msg_atomic, comparev.as_ptr().cast() , compare_desc.as_mut_ptr().cast(), comparev.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), flags) };
+    pub fn compare_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
+        let err: isize = unsafe { libfabric_sys::inlined_fi_compare_atomicmsg(self.handle(), msg.c_msg_atomic, comparev.as_ptr().cast() , compare_desc.as_mut_ptr().cast(), comparev.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), options.get_value()) };
 
         check_error(err)
     }
@@ -369,8 +371,8 @@ impl ReceiveContext {
         check_error(err)
     }
 
-    pub fn atomicmsg(&self, msg: &crate::msg::MsgAtomic, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_atomicmsg(self.handle(), msg.c_msg_atomic, flags) };
+    pub fn atomicmsg(&self, msg: &crate::msg::MsgAtomic, options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_atomicmsg(self.handle(), msg.c_msg_atomic, options.get_value()) };
         
         check_error(err)
     }
@@ -410,8 +412,8 @@ impl ReceiveContext {
         check_error(err)
     }
 
-    pub fn fetch_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic,  resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicmsg(self.handle(), msg.c_msg_atomic, resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), flags) };
+    pub fn fetch_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic,  resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicFetchMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_fetch_atomicmsg(self.handle(), msg.c_msg_atomic, resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), options.get_value()) };
         
         
         check_error(err)
@@ -459,8 +461,8 @@ impl ReceiveContext {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn compare_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], flags: u64) -> Result<(), crate::error::Error> {
-        let err: isize = unsafe { libfabric_sys::inlined_fi_compare_atomicmsg(self.handle(), msg.c_msg_atomic, comparev.as_ptr().cast() , compare_desc.as_mut_ptr().cast(), comparev.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), flags) };
+    pub fn compare_atomicmsg<T: 'static>(&self, msg: &crate::msg::MsgAtomic, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
+        let err: isize = unsafe { libfabric_sys::inlined_fi_compare_atomicmsg(self.handle(), msg.c_msg_atomic, comparev.as_ptr().cast() , compare_desc.as_mut_ptr().cast(), comparev.len(), resultv.as_mut_ptr().cast(), res_desc.as_mut_ptr().cast(), resultv.len(), options.get_value()) };
 
         check_error(err)
     }

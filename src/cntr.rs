@@ -6,6 +6,15 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 use crate::fid::AsFid;
 use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImpl, BindImpl, utils::check_error, fid::{OwnedFid, self, AsRawFid}};
 
+/// Owned wrapper around a libfabric `fi_cntr`.
+/// 
+/// This type wraps an instance of a `fi_cntr`, monitoring its lifetime and closing it when it goes out of scope.
+/// To be able to check its configuration at compile this object is extended with a `T:`[`CntrConfig`] (e.g. [Options]) that provides this information.
+/// 
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_cntr.3.html).
+/// 
+/// Note that other objects that rely on a Counter (e.g., an [crate::ep::Endpoint] bound to it) will extend its lifetime until they
+/// are also dropped.
 pub struct Counter<T: CntrConfig> {
     pub(crate) inner: Rc<CounterImpl>,
     phantom: PhantomData<T>,
@@ -144,26 +153,44 @@ impl<T: CntrConfig> Counter<T> {
         )
     }
     
+    /// Returns the current value of the counter
+    /// 
+    /// Corresponds to `fi_cntr_read`
     pub fn read(&self) -> u64 {
         self.inner.read()
     }
-
+    
+    /// Returns the number of operations that completed in error and were unable to update the counter.
+    /// 
+    /// Corresponds to `fi_cntr_readerr`
     pub fn readerr(&self) -> u64 {
         self.inner.readerr()
     }
 
+    /// Adds value `val` to the Counter
+    /// 
+    /// Corresponds to `fi_cntr_add`
     pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
         self.inner.add(val)
     }
 
+    /// Adds value `val` to the error value of the Counter
+    /// 
+    /// Corresponds to `fi_cntr_adderr`
     pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
         self.inner.adderr(val)
     }
 
+    /// Sets the Counter value to `val`
+    /// 
+    /// Corresponds to `fi_cntr_set`
     pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
         self.inner.set(val)
     }
 
+    /// Sets the Counter error value to `val`
+    /// 
+    /// Corresponds to `fi_cntr_seterr`
     pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
         self.inner.seterr(val)
     }
@@ -171,6 +198,12 @@ impl<T: CntrConfig> Counter<T> {
 
 impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
     
+    /// Retreives the low-level wait object associated with the counter.
+    /// 
+    /// This method is available only if the counter has been configured with a retrievable
+    /// underlying wait object.
+    /// 
+    /// Corresponds to `fi_cntr_control` with command `FI_GETWAIT`.
     pub fn wait_object(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
         self.inner.wait_object()
     }
@@ -178,6 +211,11 @@ impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
 
 impl<T: CntrConfig + crate::Waitable> Counter<T> {
 
+    /// Wait until the counter reaches the specified `threshold``, or until an error or `timeout` occurs.
+    /// 
+    /// This method is not available if the counter is configured with no wait object ([CounterBuilder::wait_none])
+    /// 
+    /// Corresponds to `fi_cntr_wait`
     pub fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
         self.inner.wait(threshold, timeout)
     }
@@ -186,6 +224,11 @@ impl<T: CntrConfig + crate::Waitable> Counter<T> {
 
 //================== Counter Builder ==================//
 
+/// Builder for the [`Counter`] type.
+/// 
+/// `CounterBuilder` is used to configure and build a new `Counter`.
+/// It encapsulates an incremental configuration of the counter, as provided by a `fi_cntr_attr`,
+/// followed by a call to `fi_cntr_open`  
 pub struct CounterBuilder<'a, T, WAIT, WAITFD> {
     cntr_attr: CounterAttr,
     domain: &'a crate::domain::Domain,
@@ -194,6 +237,11 @@ pub struct CounterBuilder<'a, T, WAIT, WAITFD> {
 }
 
 impl<'a> CounterBuilder<'a, (), cntroptions::WaitNoRetrieve, cntroptions::Off> {
+
+    /// Initiates the creation of new [Counter] on `domain`.
+    /// 
+    /// The initial configuration is what would be set if no `fi_cntr_attr` or `context` was provided to 
+    /// the `fi_cntr_open` call. 
     pub fn new(domain: &'a crate::domain::Domain) -> Self {
         Self {
             cntr_attr: CounterAttr::new(),
@@ -206,12 +254,18 @@ impl<'a> CounterBuilder<'a, (), cntroptions::WaitNoRetrieve, cntroptions::Off> {
 
 impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     
+    /// Sets the type of events to count
+    /// 
+    /// Corresponds to setting the `fi_cntr_attr::events` field.
     pub fn events(mut self, events: crate::enums::CounterEvents) -> Self {
         self.cntr_attr.events(events);
 
         self
     }
 
+    /// Sets the underlying low-level waiting object to none.
+    /// 
+    /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_NONE`.
     pub fn wait_none(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNone, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::None);
 
@@ -223,7 +277,9 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
         }
     }        
 
-
+    /// Sets the underlying low-level waiting object to FD.
+    /// 
+    /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_FD`.
     pub fn wait_fd(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::On> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::Fd);
 
@@ -235,6 +291,9 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
         }
     }
 
+    /// Sets the underlying low-level waiting object to [crate::sync::WaitSet] `set`.
+    /// 
+    /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_SET` and `fi_cntr_attr::wait_set` to `set`.
     pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
@@ -246,6 +305,9 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
         }
     }
 
+    /// Sets the underlying low-level waiting object to Mutex+Conditional.
+    /// 
+    /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_MUTEX_COND`.
     pub fn wait_mutex(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
@@ -257,6 +319,9 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
         }
     }
 
+    /// Indicates that the counter will wait without a wait object but instead yield on every wait.
+    /// 
+    /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_YIELD`.
     pub fn wait_yield(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::Yield);
 
@@ -268,6 +333,9 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
         }
     }
 
+    /// Sets the context to be passed to the `Counter`.
+    /// 
+    /// Corresponds to passing a non-NULL `context` value to `fi_cntr_open`.
     pub fn context(self, ctx: &'a mut T) -> CounterBuilder::<'a, T, WAIT, WAITFD> {
         CounterBuilder {
             cntr_attr: self.cntr_attr,
@@ -277,6 +345,10 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
         }
     }
 
+    /// Constructs a new [Counter] with the configurations requested so far.
+    /// 
+    /// Corresponds to creating a `fi_cntr_attr`, setting its fields to the requested ones,
+    /// and passing it to the `fi_cntr_open` call with an optional `context`.
     pub fn build(self) -> Result<Counter<Options<WAIT, WAITFD>>, crate::error::Error> {
         Counter::new(self.domain, self.cntr_attr, self.ctx)
     }

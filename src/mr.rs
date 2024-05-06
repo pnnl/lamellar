@@ -9,6 +9,10 @@ pub struct DefaultMemDesc {
     c_desc: *mut std::ffi::c_void,
 }
 
+/// Represents a key needed to access a remote [MemoryRegion].
+/// 
+/// This enum encapsulates either a  'regular' key obtained from `fi_mr_key` or a 'raw' key obtained from `fir_mr_raw_attr`,
+/// depending on the requirements of the provider.
 pub enum MemoryRegionKey {
     Key(u64),
     RawKey((Vec<u8>, u64)),
@@ -57,13 +61,13 @@ impl MemoryRegionKey {
         MemoryRegionKey::Key(key) 
     }
 
-    pub fn into_mapped(mut self, flags: u64, domain: &crate::domain::Domain) -> Result<MappedMemoryRegionKey, crate::error::Error> {
+    pub fn into_mapped(mut self, domain: &crate::domain::Domain) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
             MemoryRegionKey::Key(mapped_key) => {
                 Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::Key(mapped_key)})
             }
             MemoryRegionKey::RawKey(_) => {
-                let mapped_key = domain.map_raw( &mut self, flags)?;
+                let mapped_key = domain.map_raw( &mut self, 0)?;
                 Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::MappedRawKey((mapped_key, domain.inner.clone()))})
             }
         }
@@ -74,12 +78,15 @@ enum MappedMemoryRegionKeyImpl {
     MappedRawKey((u64, Rc<DomainImpl>)),
 }
 
+/// Uniformly represents a (mapped if raw) memory region  key that can be used to
+/// access remote [MemoryRegion]s. This struct will automatically unmap the key
+/// if needed when it is dropped.
 pub struct MappedMemoryRegionKey {
     inner: MappedMemoryRegionKeyImpl,
 }
 
 impl MappedMemoryRegionKey {
-    pub fn get_key(&self) -> u64 {
+    pub(crate) fn get_key(&self) -> u64 {
         match self.inner {
             MappedMemoryRegionKeyImpl::Key(key) | MappedMemoryRegionKeyImpl::MappedRawKey((key, _)) => key 
         }
@@ -128,6 +135,13 @@ pub(crate) struct MemoryRegionImpl {
     _domain_rc: Rc<DomainImpl>,
 }
 
+/// Owned wrapper around a libfabric `fid_mr`.
+/// 
+/// This type wraps an instance of a `fid_mr`, monitoring its lifetime and closing it when it goes out of scope.
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_mr.3.html).
+/// 
+/// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
+/// are also dropped.
 pub struct MemoryRegion {
     inner: Rc<MemoryRegionImpl>
 }
@@ -239,8 +253,8 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn bind_cntr(&self, cntr: &Rc<crate::cntr::CounterImpl>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_raw_fid(), flags) } ;
+    pub(crate) fn bind_cntr(&self, cntr: &Rc<crate::cntr::CounterImpl>, remote_write_event: bool) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_raw_fid(), if remote_write_event {libfabric_sys::FI_REMOTE_WRITE as u64} else {0}) } ;
         
         check_error(err.try_into().unwrap())
     }
@@ -346,6 +360,11 @@ impl MemoryRegion {
         )
     }
 
+    /// Returns the remote key needed to access a registered memory region.
+    /// 
+    /// This call will automatically request a 'raw' key if the provider requires it.
+    /// 
+    /// Corresponds to calling `fi_mr_raw_attr` or `fi_mr_key` depending on the requirements of the respective [Domain](crate::domain::Domain). 
     pub fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
         self.inner.key()
     }
@@ -354,31 +373,55 @@ impl MemoryRegion {
     //     self.inner.raw_key(flags)
     // }
     
-    pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, flags: u64) -> Result<(), crate::error::Error> {
-        self.inner.bind_cntr(&cntr.inner, flags)
+    /// Associates the memory region with a counter
+    /// 
+    /// Bind the memory region to `cntr` and request event generation for remote writes or atomics targeting this memory region.
+    /// 
+    /// Corresponds to `fi_mr_bind` with a `fid_cntr` 
+    pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, remote_write_event: bool) -> Result<(), crate::error::Error> {
+        self.inner.bind_cntr(&cntr.inner, remote_write_event)
     }
 
+    /// Associates the memory region with an endpoint
+    /// 
+    /// Bind the memory region to `ep`.
+    /// 
+    /// Corresponds to `fi_mr_bind` with a `fid_ep` 
     pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
         self.inner.bind_ep(&ep.inner)
     }
 
-    pub fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
-        self.inner.refresh(iov, flags)   
+    /// Notify the provider of any change to the physical pages backing a registered memory region.
+    /// 
+    /// Corresponds to `fi_mr_refresh`
+    pub fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>]) -> Result<(), crate::error::Error> { //[TODO]
+        self.inner.refresh(iov, 0)   
     }
 
+    /// Enables a memory region for use.
+    /// 
+    /// Corresponds to `fi_mr_enable`
     pub fn enable(&self) -> Result<(), crate::error::Error> {
         self.inner.enable()
     }
 
-    pub fn address(&self, flags: u64) -> Result<u64, crate::error::Error>  {
-        self.inner.address(flags)
+    /// Retrieves the address of memory backing this memory region
+    /// 
+    /// Corresponds to `fi_mr_raw_attr`
+    pub fn address(&self) -> Result<u64, crate::error::Error>  {
+        self.inner.address(0)
     }
 
+    /// Return a local descriptor associated with a registered memory region.
+    /// 
+    /// Corresponds to `fi_mr_desc`
     pub fn description(&self) -> MemoryRegionDesc {
         self.inner.description()
     }
 }
 
+/// An opaque wrapper for the descriptor of a [MemoryRegion] as obtained from
+/// `fi_mr_desc`.
 #[repr(C)]
 #[derive(Clone)]
 pub struct MemoryRegionDesc {
@@ -519,6 +562,11 @@ impl Default for MemoryRegionAttr {
     }
 }
 
+/// Builder for the [MemoryRegion] type.
+/// 
+/// `MemoryRegionBuilder` is used to configure and build a new [MemoryRegion].
+/// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_mr_attr`,
+/// followed by a call to `fi_mr_regattr.  
 pub struct MemoryRegionBuilder<'a, 'b, T> {
     mr_attr: MemoryRegionAttr,
     domain: &'a crate::domain::Domain,
@@ -528,6 +576,10 @@ pub struct MemoryRegionBuilder<'a, 'b, T> {
 
 impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
 
+
+    /// Initiates the creation of new [MemoryRegion] on `domain`, with backing memory `buff`.
+    /// 
+    /// The initial configuration is what would be set if ony the field `fi_mr_attr::mr_iov` was set.
     pub fn new(domain: &'a crate::domain::Domain, buff: &'b [T]) -> Self {
         Self {
             mr_attr: MemoryRegionAttr::new(),
@@ -537,6 +589,9 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
         }
     }
 
+    /// Add another backing buffer to the memory region
+    /// 
+    /// Corresponds to 'pusing' another value to the `fi_mr_attr::mr_iov` field.
     pub fn add_buffer(mut self, buff: &'b [T]) -> Self {
         self.iovs.push(IoVec::from_slice(buff));
 
@@ -548,67 +603,103 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
     //     self
     // }
 
-    
-    pub fn access_collective(mut self) -> Self { 
+    /// Indicates that the MR may be used for collective operations.
+    /// 
+    /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
+    pub fn access_collective(mut self) -> Self {  //[TODO] Required if the FI_MR_COLLECTIVE mr_mode bit has been set on the domain.
+                                                  //[TODO] Should be paired with FI_SEND/FI_RECV
         self.mr_attr.access_collective();
         self
     }
 
+    /// Indicates that the MR may be used for send operations.
+    /// 
+    /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_send(mut self) -> Self { 
         self.mr_attr.access_send();
         self
     }
 
+    /// Indicates that the MR may be used for receive operations.
+    /// 
+    /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_recv(mut self) -> Self { 
         self.mr_attr.access_recv();
         self
     }
 
+    /// Indicates that the MR may be used as buffer to store the results of RMA read operations.
+    /// 
+    /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_read(mut self) -> Self { 
         self.mr_attr.access_read();
         self
     }
 
+    /// Indicates that the memory buffer may be used as the source buffer for RMA write and atomic operations on the initiator side
+    /// 
+    /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_write(mut self) -> Self { 
         self.mr_attr.access_write();
         self
     }
 
+    /// Indicates that the memory buffer may be used as the target buffer of an RMA write or atomic operation.
+    /// 
+    /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_remote_write(mut self) -> Self { 
         self.mr_attr.access_remote_write();
         self
     }
 
+    /// Indicates that the memory buffer may be used as the source buffer of an RMA read operation on the target side
+    /// 
+    /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_remote_read(mut self) -> Self { 
         self.mr_attr.access_remote_read();
         self
     }
 
+    /// Another method to provide the access permissions collectively
+    /// 
+    /// Corresponds to setting the respective bitflags of the `fi_mr_attr::access` field
     pub fn access(mut self, access: &MrAccess) -> Self {
         self.mr_attr.access(access);
         self
     }
 
-    pub fn offset(mut self, offset: u64) -> Self {
-        self.mr_attr.offset(offset);
-        self
-    }
+    // pub fn offset(mut self, offset: u64) -> Self {
+    //     self.mr_attr.offset(offset);
+    //     self
+    // }
 
+    /// Application context associated with asynchronous memory registration operations.
+    /// 
+    /// Corresponds to setting the `fi_mr_attr::context` field to `ctx`
     pub fn context<T0>(mut self, ctx: &mut T0) -> Self {
         self.mr_attr.context(ctx);
         self
     }
     
+    /// An application specified access key associated with the memory region.
+    /// 
+    /// Corresponds to setting the `fi_mr_attr::requested_key` field
     pub fn requested_key(mut self, key: u64) -> Self {
         self.mr_attr.requested_key(key);
         self
     }
 
+    /// Indicates the key to associate with this memory registration
+    /// 
+    /// Corresponds to setting the fields `fi_mr_attr::auth_key` and `fi_mr_attr::auth_key_size`
     pub fn auth_key(mut self, key: &mut [u8]) -> Self {
         self.mr_attr.auth_key(key);
         self
     }
 
+    /// Indicates the software interfaces used by the application to allocate and manage the memory region
+    /// 
+    /// Corresponds to setting the `fi_mr_attr::iface` field
     pub fn iface(mut self, iface: crate::enums::HmemIface) -> Self {
         self.mr_attr.iface(iface);
         self
@@ -619,6 +710,11 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
         self
     }
 
+
+    /// Constructs a new [MemoryRegion] with the configurations requested so far.
+    /// 
+    /// Corresponds to creating a `fi_mr_attr`, setting its fields to the requested ones,
+    /// and passign it to `fi_mr_regattr`.
     pub fn build(mut self) -> Result<MemoryRegion, crate::error::Error> {
         self.mr_attr.iov(&self.iovs);
         MemoryRegion::from_attr(self.domain, self.mr_attr, self.flags)
@@ -718,7 +814,6 @@ mod tests {
                     let _mr = MemoryRegionBuilder::new(&domain, &buf)
                         // .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
                         .access(&MrAccess::from_value(*combo as u32))
-                        .offset(0)
                         .requested_key(0xC0DE)
                         .build()
                         .unwrap();
@@ -877,7 +972,6 @@ mod libfabric_lifetime_tests {
                 for combo in &combos {
                     let mr = MemoryRegionBuilder::new(&domain, &buf)
                         .access(&MrAccess::from_value(*combo as u32))
-                        .offset(0)
                         .requested_key(0xC0DE)
                         .build()
                         .unwrap();
