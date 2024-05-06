@@ -18,6 +18,13 @@ pub(crate) struct FabricImpl {
     fid: OwnedFid,
 }
 
+/// Owned wrapper around a libfabric `fid_fabric`.
+/// 
+/// This type wraps an instance of a `fid_fabric`, monitoring its lifetime and closing it when it goes out of scope.
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_fabric.3.html).
+/// 
+/// Note that other objects that rely on a `Fabric` (e.g., [`PassiveEndpoint`](crate::ep::PassiveEndpoint)) will extend its lifetime until they
+/// are also dropped.
 pub struct Fabric {
     pub(crate) inner: Rc<FabricImpl>,
 }
@@ -178,53 +185,35 @@ impl Default for FabricAttr {
     }
 }
 
+
+/// Builder for the [`Fabric`] type.
+/// 
+/// `FabricBuilder` is used to configure and build a new `Fabric`.
+/// It encapsulates an incremental configuration of the address vector, as provided by a `fi_fabric_attr`,
+/// followed by a call to `fi_fabric`  
 pub struct FabricBuilder<'a, T> {
     fab_attr: FabricAttr,
     ctx: Option<&'a mut T>,
 }
 
 impl<'a> FabricBuilder<'a, ()> {
+    
+    /// Initiates the creation of a new [Fabric] based on the respective field of the `info` entry.
+    /// 
+    /// The initial configuration is what is set in the `fi_info::fabric_attr` field and no `context` is provided.
     pub fn new<E>(info: &InfoEntry<E>) -> FabricBuilder<()> {
         FabricBuilder::<()> {
             fab_attr: info.get_fabric_attr().clone(),
             ctx: None,
         }
     }
-
-    pub fn from_attr(fab_attr: FabricAttr) -> FabricBuilder<'a, ()> {
-        FabricBuilder::<()> {
-            fab_attr,
-            ctx: None,
-        }
-    }
 }
 
 impl<'a, T> FabricBuilder<'a, T> {
-    // pub fn fabric(mut self, fabric: &Fabric) -> Self {
-    //     self.fab_attr.fabric(fabric);
-    //     self
-    // }
 
-    pub fn name(mut self, name: String) -> Self {
-        self.fab_attr.name(name);
-        self
-    }
-
-    pub fn prov_name(mut self, name: String) -> Self {
-        self.fab_attr.prov_name(name);
-        self
-    }
-
-    pub fn prov_version(mut self, version: u32) -> Self {
-        self.fab_attr.prov_version(version);
-        self
-    }
-
-    pub fn api_version(mut self, version: u32) -> Self {
-        self.fab_attr.api_version(version);
-        self
-    }
-
+    /// Sets the context to be passed to the `Fabric`.
+    /// 
+    /// Corresponds to passing a non-NULL `context` value to `fi_fabric`.
     pub fn context(self, ctx: &'a mut T) -> FabricBuilder<'a, T> {
         FabricBuilder {
             fab_attr: self.fab_attr,
@@ -232,6 +221,10 @@ impl<'a, T> FabricBuilder<'a, T> {
         }
     }
 
+    /// Constructs a new [Fabric] with the configurations requested so far.
+    /// 
+    /// Corresponds to retrieving the `fabric_attr` field of the provided `fi_info` entry (from [`new`](Self::new))
+    /// and passing it along with an optional `context` to `fi_fabric`
     pub fn build(self) -> Result<Fabric, crate::error::Error> {
         Fabric::new(self.fab_attr, self.ctx)
     }    

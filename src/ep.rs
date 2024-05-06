@@ -690,8 +690,8 @@ impl ScalableEndpointImpl {
     }
     
     #[allow(dead_code)]
-    pub(crate) fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
-        ActiveEndpointImpl::shutdown(self, flags)
+    pub(crate) fn shutdown(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::shutdown(self, 0)
     } 
 }
 
@@ -810,8 +810,8 @@ impl<E> ScalableEndpoint<E> {
         ActiveEndpointImpl::accept(self)
     }
 
-    pub fn shutdown(&self, flags: u64) -> Result<(), crate::error::Error> {
-        ActiveEndpointImpl::shutdown(self, flags)
+    pub fn shutdown(&self) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::shutdown(self, 0)
     }     
 }
 
@@ -1552,7 +1552,7 @@ pub trait ActiveEndpointImpl: AsFid{
     fn set_transmit_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
 
         ops.transmit();
-        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
+        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_SETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
 
         check_error(err.try_into().unwrap())
     }
@@ -1560,7 +1560,7 @@ pub trait ActiveEndpointImpl: AsFid{
     fn set_receive_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
         
         ops.recv();
-        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), FI_GETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
+        let err = unsafe{ inlined_fi_control(self.as_fid().as_raw_fid(), libfabric_sys::FI_SETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
 
         check_error(err.try_into().unwrap())
     }

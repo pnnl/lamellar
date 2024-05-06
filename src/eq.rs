@@ -12,15 +12,14 @@ use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On
 //     }
 // }
 
-#[allow(non_camel_case_types)]
 pub enum Event<T> {
-    NOTIFY(EventQueueEntry<T>),
-    CONNREQ(EventQueueCmEntry),
-    CONNECTED(EventQueueCmEntry),
-    SHUTDOWN(EventQueueCmEntry),
-    MR_COMPLETE(EventQueueEntry<T>),
-    AV_COMPLETE(EventQueueEntry<T>),
-    JOIN_COMPLETE(EventQueueEntry<T>),
+    Notify(EventQueueEntry<T>),
+    ConnReq(EventQueueCmEntry),
+    Connected(EventQueueCmEntry),
+    Shutdown(EventQueueCmEntry),
+    MrComplete(EventQueueEntry<T>),
+    AVComplete(EventQueueEntry<T>),
+    JoinComplete(EventQueueEntry<T>),
 }
 
 impl<T> Event<T>{
@@ -29,38 +28,38 @@ impl<T> Event<T>{
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18 {
 
         match self {
-            Event::NOTIFY(_) => libfabric_sys::FI_NOTIFY,
-            Event::CONNREQ(_) => libfabric_sys::FI_CONNREQ,
-            Event::CONNECTED(_) => libfabric_sys::FI_CONNECTED,
-            Event::SHUTDOWN(_) => libfabric_sys::FI_SHUTDOWN,
-            Event::MR_COMPLETE(_) => libfabric_sys::FI_MR_COMPLETE,
-            Event::AV_COMPLETE(_) => libfabric_sys::FI_AV_COMPLETE,
-            Event::JOIN_COMPLETE(_) => libfabric_sys::FI_JOIN_COMPLETE,
+            Event::Notify(_) => libfabric_sys::FI_NOTIFY,
+            Event::ConnReq(_) => libfabric_sys::FI_CONNREQ,
+            Event::Connected(_) => libfabric_sys::FI_CONNECTED,
+            Event::Shutdown(_) => libfabric_sys::FI_SHUTDOWN,
+            Event::MrComplete(_) => libfabric_sys::FI_MR_COMPLETE,
+            Event::AVComplete(_) => libfabric_sys::FI_AV_COMPLETE,
+            Event::JoinComplete(_) => libfabric_sys::FI_JOIN_COMPLETE,
         }
     }
 
     pub(crate) fn get_entry(&self) -> (*const std::ffi::c_void, usize) {
         match self {
-            Event::NOTIFY(entry)| Event::MR_COMPLETE(entry) | Event::AV_COMPLETE(entry) | Event::JOIN_COMPLETE(entry) => 
+            Event::Notify(entry)| Event::MrComplete(entry) | Event::AVComplete(entry) | Event::JoinComplete(entry) => 
                 ( (&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>()),  
             
-            Event::CONNREQ(entry) | Event::CONNECTED(entry) | Event::SHUTDOWN(entry) => 
+            Event::ConnReq(entry) | Event::Connected(entry) | Event::Shutdown(entry) => 
                 ( (&entry.c_entry as *const libfabric_sys::fi_eq_cm_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>()),
         } 
     } 
 
     pub(crate) fn from_control_value(val: u32, entry: EventQueueEntry<usize>) -> Event<usize> {
         if val == libfabric_sys::FI_NOTIFY {
-            Event::NOTIFY(entry)
+            Event::Notify(entry)
         }
         else if val == libfabric_sys::FI_MR_COMPLETE {
-            Event::MR_COMPLETE(entry)
+            Event::MrComplete(entry)
         }
         else if val == libfabric_sys::FI_AV_COMPLETE {
-            Event::AV_COMPLETE(entry)
+            Event::AVComplete(entry)
         }
         else if val == libfabric_sys::FI_JOIN_COMPLETE {
-            Event::JOIN_COMPLETE(entry)
+            Event::JoinComplete(entry)
         }
         else {
             panic!("Unexpected value for Event")
@@ -70,13 +69,13 @@ impl<T> Event<T>{
     pub(crate) fn from_connect_value(val: u32, entry: EventQueueCmEntry) -> Self {
     
         if  val == libfabric_sys::FI_CONNREQ {
-            Event::CONNREQ(entry)
+            Event::ConnReq(entry)
         }
         else if val == libfabric_sys::FI_CONNECTED {
-            Event::CONNECTED(entry)
+            Event::Connected(entry)
         }
         else if val == libfabric_sys::FI_SHUTDOWN {
-            Event::SHUTDOWN(entry)
+            Event::Shutdown(entry)
         }
         else {
             panic!("Unexpected value for Event")
@@ -311,15 +310,15 @@ impl<T: EqConfig> EventQueue<T> {
 
 impl<T: EqWritable + EqConfig> EventQueue<T> {
 
-    pub fn write(&self, event: Event<usize>, flags: u64) -> Result<(), crate::error::Error>{
-        self.inner.write(event, flags)
+    pub fn write(&self, event: Event<usize>) -> Result<(), crate::error::Error>{
+        self.inner.write(event, 0)
     }
 }
 
 impl<T: crate::Waitable + EqConfig> EventQueue<T> {
 
-    pub fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error> { 
-        self.inner.sread(timeout, flags)
+    pub fn sread(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
+        self.inner.sread(timeout, 0)
     }
 
     pub fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
@@ -621,7 +620,7 @@ impl<T> EventQueueEntry<T> {
         Self { c_entry, phantom: std::marker::PhantomData }
     }
 
-    pub fn fid(&mut self, fid: &impl AsFid) -> &mut Self { //[TODO] Should this be pub(crate)? Also, should use BorrowedFid
+    pub fn fid(&mut self, fid: &impl AsFid) -> &mut Self {
         self.c_entry.fid = fid.as_fid().as_raw_fid();
         self
     }
@@ -727,7 +726,7 @@ mod tests {
             }
 
             entry.context(&mut i);
-            eq.write(Event::NOTIFY(entry), 0).unwrap();
+            eq.write(Event::Notify(entry)).unwrap();
         }
         for i in 0..10 {
 
@@ -738,7 +737,7 @@ mod tests {
                 eq.peek().unwrap()
             };
 
-            if let crate::eq::Event::NOTIFY(entry) = ret {
+            if let crate::eq::Event::Notify(entry) = ret {
                 
                 if entry.get_context() != i /2 {
                     panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
@@ -778,7 +777,7 @@ mod tests {
             entry
                 .fid(&fab)
                 .context(&mut i);
-            eq.write(Event::NOTIFY(entry), 0).unwrap();
+            eq.write(Event::Notify(entry)).unwrap();
         }
     }
 
@@ -803,12 +802,12 @@ mod tests {
             }
 
             entry.context(&mut i);
-            eq.write(Event::NOTIFY(entry), 0).unwrap();
+            eq.write(Event::Notify(entry)).unwrap();
         }
         for i in 0..10 {
-            let event = if (i & 1) == 1 { eq.sread(2000, 0) } else { eq.speek(2000) }.unwrap();
+            let event = if (i & 1) == 1 { eq.sread(2000) } else { eq.speek(2000) }.unwrap();
 
-            if let crate::eq::Event::NOTIFY(entry) = event {
+            if let crate::eq::Event::Notify(entry) = event {
 
                 if entry.get_context() != i /2 {
                     panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
@@ -848,13 +847,13 @@ mod tests {
             entry.fid(&fab);
 
             entry.context(&mut i);
-            eq.write(Event::NOTIFY(entry), 0).unwrap();
+            eq.write(Event::Notify(entry)).unwrap();
         }
 
         for i in 0..5 {
             let event = eq.read().unwrap();
 
-            if let Event::NOTIFY(entry) = event {
+            if let Event::Notify(entry) = event {
 
                 if entry.get_context() != i  {
                     panic!("Unexpected context {} vs {}", entry.get_context(), i/2);

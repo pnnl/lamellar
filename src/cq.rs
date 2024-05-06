@@ -2,7 +2,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType, CompletionFlags}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress};
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType, CompletionFlags}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress, error::Error};
 
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -56,6 +56,15 @@ pub(crate) struct CompletionQueueImpl {
     _domain_rc: Rc<DomainImpl>
 }
 
+/// Owned wrapper around a libfabric `fid_cq`.
+/// 
+/// This type wraps an instance of a `fid_cq`, monitoring its lifetime and closing it when it goes out of scope.
+/// To be able to check its configuration at compile this object is extended with a `T:`[`CqConfig`] (e.g. [Options]) that provides this information.
+/// 
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_cq.3.html).
+/// 
+/// Note that other objects that rely on a CompletQueue (e.g., an [crate::ep::Endpoint] bound to it) will extend its lifetime until they
+/// are also dropped.
 pub struct CompletionQueue<T: CqConfig> {
     pub(crate) inner: Rc<CompletionQueueImpl>,
     phantom: PhantomData<T>,
@@ -141,7 +150,7 @@ impl<'a> CompletionQueueImpl {
     }
 
     pub(crate) fn print_error(&self, err_entry: &crate::cq::CompletionError) {
-        println!("{}", unsafe{self.strerror(err_entry.get_prov_errno(), err_entry.get_err_data(), err_entry.get_err_data_size())} );
+        println!("{}", unsafe{self.strerror(err_entry.prov_errno(), err_entry.err_data(), err_entry.err_data_size())} );
     }
 
     unsafe fn strerror(&self, prov_errno: i32, err_data: *const std::ffi::c_void, err_data_size: usize) -> &str {
@@ -191,8 +200,20 @@ impl<'a> CompletionQueueImpl {
     }
 
 
-    pub(crate) fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<Completion, crate::error::Error> {
-        let p_cond = cond as *const T0 as *const std::ffi::c_void;
+    // pub(crate) fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+    //     let p_cond = cond as *const usize as *const std::ffi::c_void;
+    //     let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.format, self.handle(), count, p_cond, timeout);
+    //     if err < 0 {
+    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
+    //     }
+    //     else {
+    //         Ok(ret)
+    //     }
+    // }
+
+    pub(crate) fn sread(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+        
+        let p_cond = cond as *const usize as *const std::ffi::c_void;
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.format, self.handle(), count, p_cond, timeout);
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -202,20 +223,30 @@ impl<'a> CompletionQueueImpl {
         }
     }
 
-    pub(crate) fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+    // pub(crate) fn sreadfrom_with_cond(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
         
-        let p_cond = std::ptr::null_mut();
-        let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.format, self.handle(), count, p_cond, timeout);
-        if err < 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
-        }
-        else {
-            Ok(ret)
-        }
-    }
+    //     let mut address = 0;
+    //     let p_address = &mut address as *mut RawMappedAddress;   
+    //     let p_cond = std::ptr::null_mut();
+    //     let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.format, self.handle(), count, p_address, p_cond, timeout);
+    //     let address = if address == crate::FI_ADDR_NOTAVAIL {
+    //         None
+    //     }
+    //     else {
+    //         Some(MappedAddress::from_raw_addr_no_av(address))
+    //     };
 
-    pub(crate) fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+    //     if err < 0 {
+    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
+    //     }
+    //     else {
+    //         Ok((ret, address))
+    //     }
+    // }
+
+    pub(crate) fn sreadfrom(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
         
+        let p_cond = cond as *const usize as *const std::ffi::c_void;
         let mut address = 0;
         let p_address = &mut address as *mut RawMappedAddress;   
         let p_cond = std::ptr::null_mut();
@@ -264,43 +295,98 @@ impl<T: CqConfig> CompletionQueue<T> {
         )
     }
 
+    /// Reads one or more completions from a completion queue
+    /// 
+    /// The call will read up to `count` completion entries which will be stored in a [Completion]
+    /// 
+    /// Corresponds to `fi_cq_read` with the `buf` maintained and casted automatically
     pub fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
         self.inner.read(count)
     }
 
+    /// Similar to [Self::read] with the exception that it allows the CQ to return source address information to the user for any received data
+    /// 
+    /// If there is no source address to return it will return None as the second parameter
+    /// 
+    /// Corresponds to `fi_cq_readfrom`
     pub fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
         self.inner.readfrom(count)
     }
     
+    /// Reads one error completion from the queue
+    /// 
+    /// Corresponds to `fi_cq_readerr`
     pub fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> {
         self.inner.readerr(flags)
     }
 
-    pub fn print_error(&self, err_entry: &crate::cq::CompletionError) {
+    pub fn print_error(&self, err_entry: &crate::cq::CompletionError) { //[TODO] Return a string
         self.inner.print_error(err_entry)
     }
 
 }
 
 impl<T: CqConfig + Waitable> CompletionQueue<T> {
-    pub fn sread_with_cond<T0>(&self, count: usize, cond: &T0, timeout: i32) -> Result<Completion, crate::error::Error> {
-        self.inner.sread_with_cond(count, cond, timeout)
-    }
 
+
+    /// Blocking version of [Self::read]
+    /// 
+    /// This call will block the calling thread until either `count` completions have been read, or a timeout occurs.
+    /// This call is not available for completion queues configured with no wait object (i.e. [CompletionQueueBuilder::wait_none()]).
+    /// 
+    /// Corresponds to `fi_cq_sread` with `cond` set to `NULL`.
     pub fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
-        self.inner.sread(count, timeout)
+        self.inner.sread(count, 0, timeout)
     }
 
+    /// Similar to  [Self::sread] with the ability to set a condition to unblock
+    /// 
+    /// This call will block the calling thread until `count` completions have been read, a timeout occurs or condition `cond` is met.
+    /// This call is not available for completion queues configured with no wait object (i.e. [CompletionQueueBuilder::wait_none()]).
+    /// 
+    /// Corresponds to `fi_cq_sread`
+    pub fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+        self.inner.sread(count, cond, timeout)
+    }
+
+    /// Blocking version of [Self::readfrom]
+    /// 
+    /// Operates the same as [`Self::sread`] with the exception that the call will also return the source address when it unblocks
+    /// This call is not available for completion queues configured with no wait object (i.e. [CompletionQueueBuilder::wait_none()]).
+    /// 
+    /// Corresponds to `fi_cq_sreadfrom` with `cond` set to `NULL`.
     pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
-        self.inner.sreadfrom(count, timeout)
+        self.inner.sreadfrom(count, 0, timeout)
     }
 
+    /// Similar to  [Self::sreadfrom] with the ability to set a condition to unblock
+    /// 
+    /// This call will block the calling thread until `count` completions have been read, a timeout occurs or condition `cond` is met.
+    /// This call is not available for completion queues configured with no wait object (i.e. [CompletionQueueBuilder::wait_none()]).
+    /// 
+    /// Corresponds to `fi_cq_sreadfrom`
+    pub fn sreadfrom_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        self.inner.sreadfrom(count, cond, timeout)
+    }
+
+    /// Unblock any thread waiting in [Self::sread], [Self::sreadfrom], [Self::sread_with_cond]
+    /// 
+    /// This call is not available for completion queues configured with no wait object (i.e. [CompletionQueueBuilder::wait_none()]).
+    /// 
+    /// Corresponds to `fi_cq_signal`
     pub fn signal(&self) -> Result<(), crate::error::Error>{
         self.inner.signal()
     }
 }
 
-impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> {
+impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> { //[TODO] Make this a method of the trait ?
+
+    /// Retreives the low-level wait object associated with the counter.
+    /// 
+    /// This method is available only if the counter has been configured with a retrievable
+    /// underlying wait object.
+    /// 
+    /// Corresponds to `fi_cntr_control` with command `FI_GETWAIT`.
     pub fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
         self.inner.wait_object()
     }
@@ -315,13 +401,13 @@ impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
 
 impl AsFid for CompletionQueueImpl {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-            self.fid.as_fid()
+        self.fid.as_fid()
     }
 }
 
 impl<T: CqConfig> AsFid for CompletionQueue<T> {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-            self.inner.as_fid()
+        self.inner.as_fid()
     }
 }
 
@@ -342,8 +428,15 @@ impl<T: CqConfig + WaitRetrievable + FdRetrievable> AsFd for CompletionQueue<T> 
     }
 }
 
-//================== CompletionQueue Attribute (fi_cq_attr) ==================//
 
+//================== CompletionQueue Builder ==================//
+
+
+/// Builder for the [`CompletionQueue`] type.
+/// 
+/// `CompletionQueueBuilder` is used to configure and build a new `CompletionQueue`.
+/// It encapsulates an incremental configuration of the address vector, as provided by a `fi_cq_attr`,
+/// followed by a call to `fi_cq_open`  
 pub struct CompletionQueueBuilder<'a, T, WAIT, WAITFD> {
     cq_attr: CompletionQueueAttr,
     domain: &'a Domain,
@@ -351,7 +444,13 @@ pub struct CompletionQueueBuilder<'a, T, WAIT, WAITFD> {
     options: Options<WAIT, WAITFD>,
 }
 
+    
 impl<'a> CompletionQueueBuilder<'a, (), cqoptions::WaitNoRetrieve, cqoptions::Off> {
+    
+    /// Initiates the creation of a new [CompletionQueue] on `domain`.
+    /// 
+    /// The initial configuration is what would be set if no `fi_cq_attr` or `context` was provided to 
+    /// the `fi_cq_open` call. 
     pub fn new(domain: &'a Domain) -> CompletionQueueBuilder<(), cqoptions::WaitNoRetrieve, cqoptions::Off> {
         Self  {
             cq_attr: CompletionQueueAttr::new(),
@@ -364,22 +463,32 @@ impl<'a> CompletionQueueBuilder<'a, (), cqoptions::WaitNoRetrieve, cqoptions::Of
 
 impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
 
+    /// Specifies the minimum size of a completion queue.
+    /// 
+    /// Corresponds to setting the field `fi_cq_attr::size` to `size`.
     pub fn size(mut self, size: usize) -> Self {
         self.cq_attr.size(size);
         self
     }
 
-    pub fn signaling_vector(mut self, signaling_vector: i32) -> Self {
+
+    pub fn signaling_vector(mut self, signaling_vector: i32) -> Self { // [TODO]
         self.cq_attr.signaling_vector(signaling_vector);
         self
     }
 
-
+    /// Specificies the completion `format`
+    /// 
+    /// Corresponds to setting the field `fi_cq_attr::format`.
     pub fn format(mut self, format: crate::enums::CqFormat) -> Self {
         self.cq_attr.format(format);
         self
     }
 
+
+    /// Sets the underlying low-level waiting object to none.
+    /// 
+    /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_NONE`.
     pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNone, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::None);
 
@@ -391,6 +500,9 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
         }
     }
     
+    /// Sets the underlying low-level waiting object to FD.
+    /// 
+    /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_FD`.
     pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitRetrieve, cqoptions::On> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
@@ -402,6 +514,10 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
         }
     }
 
+
+    /// Sets the underlying low-level waiting object to [crate::sync::WaitSet] `set`.
+    /// 
+    /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_SET` and `fi_cq_attr::wait_set` to `set`.
     pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNoRetrieve, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
@@ -414,6 +530,9 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
         }
     }
 
+    /// Sets the underlying low-level waiting object to Mutex+Conditional.
+    /// 
+    /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_MUTEX_COND`.
     pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitRetrieve, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
@@ -426,6 +545,9 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
         }
     }
 
+    /// Indicates that the counter will wait without a wait object but instead yield on every wait.
+    /// 
+    /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_YIELD`.
     pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNoRetrieve, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
@@ -437,11 +559,18 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
         }
     }
     
-    pub fn wait_cond(mut self, wait_cond: crate::enums::WaitCond) -> Self {
-        self.cq_attr.wait_cond(wait_cond);
+    /// Enables blocking calls like [CompletionQueue::sread_with_cond] to only 'wake up' after
+    /// the number of completions in their field `cond` is satisfied.
+    /// 
+    /// Corresponds to setting `fi_cq_attr::wait_cond` to `FI_CQ_COND_THRESHOLD`.
+    pub fn enable_wait_cond(mut self) -> Self {
+        self.cq_attr.wait_cond(crate::enums::WaitCond::Threshold);
         self
     }
 
+    /// Sets the context to be passed to the `CompletionQueue`.
+    /// 
+    /// Corresponds to passing a non-NULL `context` value to `fi_cq_open`.
     pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T, WAIT, WAITFD> {
         CompletionQueueBuilder {
             ctx: Some(ctx),
@@ -451,10 +580,16 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
         }
     }
 
+    /// Constructs a new [CompletionQueue] with the configurations requested so far.
+    /// 
+    /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
+    /// and passing it to the `fi_cq_open` call with an optional `context`.
     pub fn build(self) ->  Result<CompletionQueue<Options<WAIT, WAITFD>>, crate::error::Error> {
         CompletionQueue::new(self.options, self.domain, self.cq_attr, self.ctx)   
     }
 }
+
+//================== CompletionQueue Attribute (fi_cq_attr) ==================//
 
 pub(crate) struct CompletionQueueAttr {
     pub(crate) c_attr: libfabric_sys::fi_cq_attr,
@@ -524,6 +659,9 @@ impl Default for CompletionQueueAttr {
 
 //================== CompletionQueue Entry (fi_cq_entry) ==================//
 
+/// A completion format that provides only user specified context that was associated with the completion.
+/// 
+/// Corresponds to `fi_cq_entry`
 #[repr(C)]
 pub struct CqEntry {
     pub(crate) c_entry: libfabric_sys::fi_cq_entry,
@@ -531,18 +669,21 @@ pub struct CqEntry {
 
 impl CqEntry {
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             c_entry: libfabric_sys::fi_cq_entry { op_context: std::ptr::null_mut() }
         }
     }
 
-    pub fn op_context(&self) -> &Context { 
+    // pub fn op_context(&self) -> &Context { 
 
-        let p_ctx = self.c_entry.op_context as *const Context;
-        unsafe {& *p_ctx}
-    }
+    //     let p_ctx = self.c_entry.op_context as *const Context;
+    //     unsafe {& *p_ctx}
+    // }
 
+    /// Checks if the context held by the completion entry is equal to `ctx`
+    /// 
+    /// Corresponds to `fi_cq_entry::op_context == ctx`
     pub fn is_op_context_equal<T>(&self, ctx: &T) -> bool {
         std::ptr::eq(self.c_entry.op_context, (ctx as *const T).cast() )
     }
@@ -556,6 +697,9 @@ impl Default for CqEntry {
 
 //================== CompletionQueue Message Entry (fi_cq_msg_entry) ==================//
 
+/// A completion format that provides minimal data for processing completions, with expanded support for reporting information about received messages.
+/// 
+/// Corresponds to `fi_cq_msg_entry`
 #[repr(C)]
 pub struct CqMsgEntry {
     pub(crate) c_entry: libfabric_sys::fi_cq_msg_entry,
@@ -563,24 +707,23 @@ pub struct CqMsgEntry {
 
 impl CqMsgEntry {
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             c_entry: libfabric_sys::fi_cq_msg_entry { op_context: std::ptr::null_mut(), flags: 0, len: 0 }
         }
     }
 
-    pub fn op_context(&self) -> &Context { 
+    // pub fn op_context(&self) -> &Context { 
 
-        let p_ctx = self.c_entry.op_context as *const Context;
-        unsafe {& *p_ctx}
-    }
+    //     let p_ctx = self.c_entry.op_context as *const Context;
+    //     unsafe {& *p_ctx}
+    // }
 
+    /// Returns the completion flags related to this completion entry
+    /// 
+    /// Corresponds to accessing the `fi_cq_msg_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
         CompletionFlags::from_value(self.c_entry.flags)
-    }
-
-    pub fn size(&self) -> usize {
-        self.c_entry.len
     }
 }
 
@@ -592,6 +735,9 @@ impl Default for CqMsgEntry {
 
 //================== CompletionQueue Data Entry (fi_cq_data_entry) ==================//
 
+/// A completion format that provides data associated with a completion. Includes support for received message length, remote CQ data, and multi-receive buffers.
+/// 
+/// Corresponds to `fi_cq_data_entry`
 #[repr(C)]
 pub struct CqDataEntry {
     pub(crate) c_entry: libfabric_sys::fi_cq_data_entry,
@@ -599,27 +745,40 @@ pub struct CqDataEntry {
 
 impl CqDataEntry {
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             c_entry: libfabric_sys::fi_cq_data_entry { op_context: std::ptr::null_mut(), flags: 0, len: 0, buf: std::ptr::null_mut(), data: 0}
         }
     }
 
-    pub fn op_context(&self) -> &Context { 
+    // pub fn op_context(&self) -> &Context { 
 
-        let p_ctx = self.c_entry.op_context as *const Context;
-        unsafe {& *p_ctx}
-    }
+    //     let p_ctx = self.c_entry.op_context as *const Context;
+    //     unsafe {& *p_ctx}
+    // }
 
+
+    /// Returns the completion flags related to this completion entry
+    /// 
+    /// Corresponds to accessing the `fi_cq_data_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
         CompletionFlags::from_value(self.c_entry.flags)
     }
 
-    pub fn buffer<T>(&self) -> &[T] {
+    /// Returns the receive data buffer.
+    /// 
+    /// # Safety
+    /// This is an unsafe method because the user needs to specify the datatype of the received data.
+    /// 
+    /// Corresponds to accessing the `fi_cq_data_entry::buf` field.
+    pub unsafe fn buffer<T>(&self) -> &[T] {
 
         unsafe {std::slice::from_raw_parts(self.c_entry.buf as *const T, self.c_entry.len/std::mem::size_of::<T>())}
     }
 
+    /// Returns the remote completion data.
+    /// 
+    /// Corresponds to accessing the `fi_cq_data_entry::data` field.
     pub fn data(&self) -> u64 {
         self.c_entry.data
     }
@@ -633,6 +792,9 @@ impl Default for CqDataEntry {
 
 //================== CompletionQueue Tagged Entry (fi_cq_tagged_entry) ==================//
 
+/// A completion format that expands completion data to include support for the tagged message interfaces.
+/// 
+/// Corresponds to `fi_cq_tagged_entry`
 #[repr(C)]
 pub struct CqTaggedEntry {
     pub(crate) c_entry: libfabric_sys::fi_cq_tagged_entry,
@@ -640,7 +802,7 @@ pub struct CqTaggedEntry {
 
 impl CqTaggedEntry {
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             c_entry: libfabric_sys::fi_cq_tagged_entry { op_context: std::ptr::null_mut(), flags: 0, len: 0, buf: std::ptr::null_mut(), data: 0, tag: 0}
         }
@@ -652,19 +814,34 @@ impl CqTaggedEntry {
         unsafe {& *p_ctx}
     }
 
+    /// Returns the completion flags related to this completion entry
+    /// 
+    /// Corresponds to accessing the `fi_cq_tagged_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
         CompletionFlags::from_value(self.c_entry.flags)
     }
 
-    pub fn buffer<T>(&self) -> &[T] {
+    /// Returns the receive data buffer.
+    /// 
+    /// # Safety
+    /// This is an unsafe method because the user needs to specify the datatype of the received data.
+    /// 
+    /// Corresponds to accessing the `fi_cq_tagged_entry::buf` field.
+    pub unsafe fn buffer<T>(&self) -> &[T] {
 
         unsafe {std::slice::from_raw_parts(self.c_entry.buf as *const T, self.c_entry.len/std::mem::size_of::<T>())}
     }
 
+    /// Returns the remote completion data.
+    /// 
+    /// Corresponds to accessing the `fi_cq_tagged_entry::data` field.
     pub fn data(&self) -> u64 {
         self.c_entry.data
     }
 
+    /// Returns the tag of the message associated with the completion.
+    /// 
+    /// Corresponds to accessing the `fi_cq_tagged_entry::tag` field.
     pub fn tag(&self) -> u64 {
         self.c_entry.tag
     }
@@ -677,6 +854,7 @@ impl Default for CqTaggedEntry {
     }
 }
 
+/// A `Completion` represents one or more entries read from a [CompletionQueue] in one of the supported formats
 pub enum Completion {
     Unspec(usize),
     Context(Vec<CqEntry>),
@@ -688,6 +866,7 @@ pub enum Completion {
 
 //================== CompletionQueue Error Entry (fi_cq_err_entry) ==================//
 
+/// A `CompletionError` represents a an error associated with a completion entry
 #[repr(C)]
 pub struct CompletionError {
     pub(crate) c_err: libfabric_sys::fi_cq_err_entry,
@@ -695,7 +874,7 @@ pub struct CompletionError {
 
 impl CompletionError {
 
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             c_err: libfabric_sys::fi_cq_err_entry {
                 op_context: std::ptr::null_mut(),
@@ -722,23 +901,65 @@ impl CompletionError {
         &mut self.c_err
     }       
 
-    pub fn get_prov_errno(&self) -> i32 {
+    /// Returns the provider error code
+    /// 
+    /// Corresponds to access the `fi_cq_err_entry::prov_errno` field.
+    pub fn prov_errno(&self) -> i32 {
         self.c_err.prov_errno
     }
 
+    /// Returns the completion flags related to this completion error entry
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
         CompletionFlags::from_value(self.c_err.flags)
+    }
+
+    /// Returns the receive data buffer.
+    /// 
+    /// # Safety
+    /// This is an unsafe method because the user needs to specify the datatype of the received data.
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::buf` field.
+    pub unsafe fn buffer<T>(&self) -> &[T] {
+
+        unsafe {std::slice::from_raw_parts(self.c_err.buf as *const T, self.c_err.len/std::mem::size_of::<T>())}
+    }
+
+    /// Returns the remote completion error data.
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::data` field.
+    pub fn data(&self) -> u64 {
+        self.c_err.data
+    }
+
+    /// Returns the tag of the message associated with the completion error.
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::tag` field.
+    pub fn tag(&self) -> u64 {
+        self.c_err.tag
+    }
+
+    /// Returns the overflow length of the completion error entry.
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::olen` field.
+    pub fn overflow_length(&self) -> usize {
+        self.c_err.olen
+    }
+
+    pub fn error(&self) -> Error {
+        Error::from_err_code(self.c_err.err as u32)
     }
 
     pub fn is_op_context_equal(&self, ctx: &crate::Context) -> bool {
         std::ptr::eq(self.c_err.op_context, ctx as *const crate::Context as *const std::ffi::c_void)
     }
 
-    pub(crate) fn get_err_data(&self) -> *const std::ffi::c_void {
+    pub(crate) fn err_data(&self) -> *const std::ffi::c_void {
         self.c_err.err_data
     }
 
-    pub(crate) fn get_err_data_size(&self) -> usize {
+    pub(crate) fn err_data_size(&self) -> usize {
         self.c_err.err_data_size
     }
 }

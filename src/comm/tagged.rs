@@ -1,3 +1,5 @@
+use crate::enums::TaggedRecvMsgOptions;
+use crate::enums::TaggedSendMsgOptions;
 use crate::ep::ActiveEndpointImpl;
 use crate::ep::Endpoint;
 use crate::infocapsoptions::RecvMod;
@@ -37,8 +39,8 @@ impl<E: TagCap + RecvMod> Endpoint<E> {
         check_error(err)   
     }
 
-    pub fn trecvmsg(&self, msg: &crate::msg::MsgTagged, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) };
+    pub fn trecvmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
     
         check_error(err)
     }
@@ -70,8 +72,8 @@ impl<E: TagCap + SendMod> Endpoint<E> {
         check_error(err)
     }
 
-    pub fn tsendmsg(&self, msg: &crate::msg::MsgTagged, flags: crate::enums::TransferOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags.get_value().into()) };
+    pub fn tsendmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
     
         check_error(err)
     }
@@ -128,8 +130,8 @@ impl TransmitContext {
         check_error(err)
     }
 
-    pub fn tsendmsg(&self, msg: &crate::msg::MsgTagged, flags: crate::enums::TransferOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags.get_value().into()) };
+    pub fn tsendmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
     
         check_error(err)
     }
@@ -185,8 +187,8 @@ impl ReceiveContext {
         check_error(err)
     }
 
-    pub fn trecvmsg(&self, msg: &crate::msg::MsgTagged, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, flags) };
+    pub fn trecvmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
     
         check_error(err)
     }

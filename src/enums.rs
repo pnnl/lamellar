@@ -408,7 +408,7 @@ impl AddressVectorType {
         }
     }
 
-    pub fn get_value(&self) -> libfabric_sys::fi_av_type {
+    pub(crate) fn get_value(&self) -> libfabric_sys::fi_av_type {
         
         match self {
             AddressVectorType::Unspec => libfabric_sys::fi_av_type_FI_AV_UNSPEC, 
@@ -419,14 +419,16 @@ impl AddressVectorType {
 }
 
 macro_rules! gen_set_get_flag {
-    ($set_method_name:ident, $get_method_name:ident, $flag:expr) => {
+    ($(#[$attr0:meta])* $set_method_name:ident, $(#[$attr1:meta])? $get_method_name:ident, $flag:expr) => {
 
+        $(#[$attr0])*
         pub fn $set_method_name(mut self) -> Self {
             self.c_flags |= $flag;
             
             self
         }
 
+        $(#[$attr1])*
         pub fn $get_method_name(&self) -> bool {
             self.c_flags & $flag != 0
         } 
@@ -744,13 +746,28 @@ pub struct AVOptions {
 
 impl AVOptions {
     
+    /// Create a new [AVOptions] object with the default configuration.
     pub fn new() -> Self {
         Self{
             c_flags: 0,
         }
     }
-    gen_set_get_flag!(more, is_more, libfabric_sys::FI_MORE as u64);
-    gen_set_get_flag!(sync_err, is_sync_err, libfabric_sys::FI_SYNC_ERR);
+
+    gen_set_get_flag!(
+        /// Hint to the provider that more insertion requests will follow, allowing the provider to aggregate insertion requests if desired.
+        /// 
+        /// Corresponds to setting the bitflag `FI_MORE`.
+        more, 
+        /// Check if the `FI_MORE` bitflag is set.
+        is_more, libfabric_sys::FI_MORE as u64);
+    
+    gen_set_get_flag!(
+        /// This flag applies to synchronous insertions only, and is used to retrieve error details of failed insertions.alloc
+        /// 
+        /// Corrsponds to setting the bitflag `FI_SYNC_ERR`.
+        sync_err, 
+        /// Check if the `FI_SYNC_ERR` bitflag is set.
+        is_sync_err, libfabric_sys::FI_SYNC_ERR);
     gen_set_get_flag!(user_id, is_user_id, libfabric_sys::FI_AV_USER_ID);
 
     pub(crate) fn get_value(&self) -> u64 {
@@ -764,6 +781,111 @@ impl Default for AVOptions {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct TferOptions<const OUT: bool, const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> {
+    c_flags: u64,
+}
+
+
+
+impl<const OUT: bool, const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> TferOptions<OUT, MSG, RMA, DATA, TAGGED, ATOMIC> { // All transfer types
+    pub fn new() -> Self {
+        Self {
+            c_flags: 0,
+        }
+    }
+
+    pub(crate) fn get_value(&self) -> u64 {
+        self.c_flags
+    }
+
+    gen_set_get_flag!(completion, is_completion, libfabric_sys::FI_COMPLETION as u64);
+    gen_set_get_flag!(more, is_more, libfabric_sys::FI_MORE as u64);
+}
+
+impl<const OUT: bool, const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> Default for TferOptions<OUT, MSG, RMA, DATA, TAGGED, ATOMIC> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const OUT: bool, const MSG: bool> TferOptions<OUT, MSG, false, false, false, true> { // All atomic transfers
+    gen_set_get_flag!(tagged, is_tagged, libfabric_sys::FI_TAGGED as u64);
+}
+
+
+impl<const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> TferOptions<true, MSG, RMA, DATA, TAGGED, ATOMIC> { // All transmits
+    gen_set_get_flag!(fence, is_fence, libfabric_sys::FI_FENCE as u64);
+}
+
+impl<const RMA: bool, const TAGGED: bool> TferOptions<true, false, RMA, true, TAGGED, false> { // Only data transmits (no msg)
+    gen_set_get_flag!(remote_cq_data, is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
+}
+
+
+
+impl<const RMA: bool, const TAGGED: bool> TferOptions<true, true, RMA, false, TAGGED, false> { // Only msg transmits (no data)
+    gen_set_get_flag!(inject, is_inject, libfabric_sys::FI_INJECT as u64);
+    gen_set_get_flag!(inject_complete, is_inject_complete, libfabric_sys::FI_INJECT_COMPLETE as u64);
+    gen_set_get_flag!(transmit_complete, is_transmit_complete, libfabric_sys::FI_TRANSMIT_COMPLETE as u64);
+    gen_set_get_flag!(delivery_complete, is_delivery_complete, libfabric_sys::FI_DELIVERY_COMPLETE as u64);
+    gen_set_get_flag!(remote_cq_data, is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
+}
+
+
+
+impl TferOptions<true, true, false, false, true, false> { // Only tagged msg transmits (no data)
+    gen_set_get_flag!(match_complete, is_match_complete, libfabric_sys::FI_MATCH_COMPLETE as u64);
+}
+
+impl TferOptions<true, true, true, false, false, false> { // Only RMA msg transmits (no data)
+    gen_set_get_flag!(commit_complete, is_commit_complete, libfabric_sys::FI_COMMIT_COMPLETE as u64);
+}
+
+impl<const MSG: bool, const DATA: bool> TferOptions<true, MSG, false, DATA, false, false> { // Non-RMA or Tagged transmits
+    gen_set_get_flag!(multicast, is_multicast, libfabric_sys::FI_MULTICAST as u64);
+}
+
+impl<const MSG: bool> TferOptions<false, MSG, false, false, false, false> { // All Posted Receive Operations (i.e. recv, recvmsg)
+    gen_set_get_flag!(claim, is_claim, libfabric_sys::FI_CLAIM);
+    gen_set_get_flag!(discard, is_discard, libfabric_sys::FI_DISCARD);
+    gen_set_get_flag!(multi_recv, is_multi_recv, libfabric_sys::FI_MULTI_RECV as u64);
+    
+}
+
+impl TferOptions<false, true, false, false, true, false> { // Only tagged Posted Receive Operations
+    gen_set_get_flag!(peek, is_peek, libfabric_sys::FI_PEEK as u64);
+    gen_set_get_flag!(claim, is_claim, libfabric_sys::FI_CLAIM);
+    gen_set_get_flag!(discard, is_discard, libfabric_sys::FI_DISCARD);
+}
+
+// pub type SendOptions = TferOptions<true, false, false, false, false>;
+pub type SendMsgOptions = TferOptions<true, true, false, false, false, false>;
+// pub type SendDataOptions = TferOptions<true, true, false, true, false>;
+// pub type TaggedSendOptions = TferOptions<true, false, false, false, true>;
+pub type TaggedSendMsgOptions = TferOptions<true, true, false, false, true, false>;
+// pub type TaggedSendDataOptions = TferOptions<true, false, false, true, true>;
+
+// pub type WriteOptions = TferOptions<true, false, true, false, false>;
+pub type WriteMsgOptions = TferOptions<true, true, true, false, false, false>;
+// pub type WriteDataOptions = TferOptions<true, false, true, true, false>;
+
+
+// pub type RecvOptions = TferOptions<false, false, false, false, false>;
+pub type RecvMsgOptions = TferOptions<false, true, false, false, false, false>;
+// pub type TaggedRecvOptions = TferOptions<false, false, false, false, true>;
+pub type TaggedRecvMsgOptions = TferOptions<false, true, false, false, true, false>;
+
+// pub type ReadOptions = TferOptions<false, false, true, false, false>;
+pub type ReadMsgOptions = TferOptions<false, true, true, false, false, false>;
+
+// pub type AtomicOptions = TferOptions<true, false, true, false, false, true>;
+pub type AtomicMsgOptions = TferOptions<true, true, true, false, false, true>;
+
+// pub type AtomicFetchOptions = TferOptions<true, false, true, false, false, true>;
+pub type AtomicFetchMsgOptions = TferOptions<true, true, true, false, false, true>;
+
+pub type CollectiveOptions = AtomicMsgOptions;
 
 #[derive(Clone,Copy)]
 pub struct TransferOptions {
@@ -888,6 +1010,7 @@ impl Protocol {
     }
 }
 
+/// Encapsulates the possible values returned by a call to `Counter/EventQueue/CompletionQueue::wait_object`
 pub enum WaitObjType<'a> {
     MutexCond(libfabric_sys::fi_mutex_cond),
     Fd(BorrowedFd<'a>),
@@ -974,6 +1097,31 @@ impl AVSetOptions {
 }
 
 impl Default for AVSetOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct JoinOptions {
+    c_flags: u64,
+}
+
+impl JoinOptions {
+    pub fn new() -> Self {
+        Self {
+            c_flags: 0,
+        }
+    }
+
+    pub(crate) fn get_value(&self) -> u64 {
+        self.c_flags
+    }
+
+    gen_set_get_flag!(send, is_send, libfabric_sys::FI_SEND as u64);
+    gen_set_get_flag!(receive, is_receive, libfabric_sys::FI_SEND as u64);
+}
+
+impl Default for JoinOptions {
     fn default() -> Self {
         Self::new()
     }

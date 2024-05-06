@@ -14,10 +14,6 @@ pub(crate) struct DomainImpl {
     _fabric_rc: Rc<FabricImpl>,
 }
 
-pub struct Domain {
-    pub(crate) inner: Rc<DomainImpl>,
-}
-
 impl DomainImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_domain {
@@ -154,6 +150,17 @@ impl DomainImpl {
 
 }
 
+/// Owned wrapper around a libfabric `fid_domain`.
+/// 
+/// This type wraps an instance of a `fid_domain`, monitoring its lifetime and closing it when it goes out of scope.
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_domain.3.html).
+/// 
+/// Note that other objects that rely on a Domain (e.g., [`Endpoint`](crate::ep::Endpoint)) will extend its lifetime until they
+/// are also dropped.
+pub struct Domain {
+    pub(crate) inner: Rc<DomainImpl>,
+}
+
 impl Domain {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_domain {
@@ -169,11 +176,21 @@ impl Domain {
         )    
     }
     
+    /// Associates an [crate::eq::EventQueue] with the domain.
+    /// 
+    /// If `async_mem_reg` is true, the provider should perform all memory registration operations asynchronously, with the completion reported through the event queue
+    /// 
+    /// Corresponds to `fi_domain_bind`, with flag `FI_REG_MR` if `async_mem_reg` is true. 
     pub fn bind_eq<T: EqConfig>(&self, eq: &EventQueue<T>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
         self.inner.bind(&eq.inner, async_mem_reg)
     }
 
-    pub fn query_atomic<T: 'static>(&self, op: crate::enums::Op, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
+    /// Indicates if a provider supports a specific atomic operation
+    /// 
+    /// Returns true if the provider supports operations `op` for datatype `T` and atomic ops as reflected in `flags`.
+    /// 
+    /// Corresponds to `fi_query_atomic` with `datatype` automatically inferred from `T`.
+    pub fn query_atomic<T: 'static>(&self, op: crate::enums::Op, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Flags
         
         self.inner.query_atomic::<T>(op, attr, flags)
     }
@@ -182,14 +199,20 @@ impl Domain {
         self.inner.map_raw(mr_key, flags)
     }
 
-    pub fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         self.inner.unmap_key(key)
     }
 
+    /// Returns information about which collective operations are supported by a provider, and limitations on the collective.
+    /// 
+    /// Direclty corresponds to `fi_query_collective` with `flags` = 0
     pub fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
         self.inner.query_collective::<T>(coll, attr)
     }
 
+    /// Requests attribute information on the reduce-scatter collective operation.
+    /// 
+    /// Direclty corresponds to `fi_query_collective` with `flags` = `FI_SCATTER`
     pub fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
         self.inner.query_collective_scatter::<T>(coll, attr)
     }
@@ -435,6 +458,11 @@ impl Default for DomainAttr {
     }
 }
 
+/// Builder for the [Domain] type.
+/// 
+/// `DomainBuilder` is used to configure and build a new [Domain].
+/// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_domain_attr`,
+/// followed by a call to `fi_domain_open`  
 pub struct DomainBuilder<'a, T, E> {
     fabric: &'a crate::fabric::Fabric,
     info: &'a InfoEntry<E>,
@@ -443,6 +471,12 @@ pub struct DomainBuilder<'a, T, E> {
 }
 
 impl<'a> DomainBuilder<'a, (), ()> {
+
+
+    /// Initiates the creation of new [Domain] on `fabric`, using the configuration found in `info`.
+    /// 
+    /// The initial configuration is what would be set if no `fi_domain_attr` or `context` was provided to 
+    /// the `fi_domain` call. 
     pub fn new<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>) -> DomainBuilder<'a, (), E> {
         DomainBuilder::<(), E> {
             fabric,
@@ -452,6 +486,11 @@ impl<'a> DomainBuilder<'a, (), ()> {
         }
     }
 
+
+    /// Initiates the creation of new [Domain] on `fabir`, using the configuration found in `info`.
+    /// 
+    /// The initial configuration is what would be set if no `fi_domain_attr` was provided to 
+    /// the `fi_domain2` call and `context` was set to a `fi_peer_context`. 
     pub fn new_with_peer<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>, peer_ctx: &'a mut PeerDomainCtx) -> DomainBuilder<'a, PeerDomainCtx, E> {
         DomainBuilder::<PeerDomainCtx, E> {
             fabric,
@@ -465,6 +504,9 @@ impl<'a> DomainBuilder<'a, (), ()> {
 
 impl<'a, E> DomainBuilder<'a, (), E> {
     
+    /// Sets the context to be passed to the domain.
+    /// 
+    /// Corresponds to passing a non-NULL, non-`fi_peer_context` `context` value to `fi_domain`.
     pub fn context<T>(self, ctx: &'a mut T) -> DomainBuilder<'a, T, E> {
         DomainBuilder {
             fabric: self.fabric,
@@ -477,12 +519,17 @@ impl<'a, E> DomainBuilder<'a, (), E> {
 
 impl<'a, T, E> DomainBuilder<'a, T, E> {
 
+    // pub fn flags(mut self, flags: u64) -> Self {
+    //     self.flags = flags;
+    //     self
+    // }
 
-    pub fn flags(mut self, flags: u64) -> Self {
-        self.flags = flags;
-        self
-    }
 
+    /// Constructs a new [Domain] with the configurations requested so far.
+    /// 
+    /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
+    /// and passing it to a `fi_domain` call with an optional `context` (set by [Self::context]).
+    /// Or a call to `fi_domain2` with `context` of type `fi_peer_context` and `flags` equal to `FI_PEER`
     pub fn build(self) -> Result<Domain, crate::error::Error> {
         Domain::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)
     }
@@ -494,7 +541,7 @@ pub struct PeerDomainCtx {
 }
 
 impl PeerDomainCtx {
-    pub fn new(size: usize, domain: Domain) -> Self {
+    pub fn new(size: usize, domain: &Domain) -> Self {
         Self {
             c_ctx : {
                 libfabric_sys::fi_peer_domain_context {
