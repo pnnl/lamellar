@@ -1,4 +1,4 @@
-use crate::{iovec, mr::DataDescriptor, MappedAddress};
+use crate::{iovec, mr::DataDescriptor, MappedAddress, FI_ADDR_UNSPEC};
 
 pub struct Msg {
     pub(crate) c_msg: libfabric_sys::fi_msg,
@@ -13,6 +13,19 @@ impl Msg {
                 desc: desc.as_mut_ptr().cast(),
                 iov_count: iov.len(),
                 addr: mapped_addr.raw_addr(),
+                context: std::ptr::null_mut(), // [TODO]
+                data: 0,
+            }
+        }
+    }
+
+    pub fn new_connected<T>(iov: &[iovec::IoVec<T>], desc: &mut [impl DataDescriptor]) -> Self {
+        Msg {
+            c_msg : libfabric_sys::fi_msg {
+                msg_iov: iov.as_ptr().cast(),
+                desc: desc.as_mut_ptr().cast(),
+                iov_count: iov.len(),
+                addr: FI_ADDR_UNSPEC,
                 context: std::ptr::null_mut(), // [TODO]
                 data: 0,
             }
@@ -34,6 +47,22 @@ impl MsgTagged {
                 desc: desc.as_mut_ptr().cast(),
                 iov_count: iov.len(),
                 addr: mapped_addr.raw_addr(),
+                context: std::ptr::null_mut(), // [TODO]
+                data,
+                tag,
+                ignore,
+            }
+        }
+    }
+
+    pub fn new_connected<T>(iov: &[iovec::IoVec<T>], desc: &mut [impl DataDescriptor], data: u64, tag: u64, ignore: u64) -> Self {
+    
+        Self {
+            c_msg_tagged: libfabric_sys::fi_msg_tagged {
+                msg_iov: iov.as_ptr().cast(),
+                desc: desc.as_mut_ptr().cast(),
+                iov_count: iov.len(),
+                addr: FI_ADDR_UNSPEC,
                 context: std::ptr::null_mut(), // [TODO]
                 data,
                 tag,
