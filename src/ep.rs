@@ -4,7 +4,7 @@ use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_G
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::{AddressVector}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
+use crate::{av::{AddressVector}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::CompletionQueueImpl};
 
 #[repr(C)]
 pub struct Address {
@@ -31,6 +31,8 @@ impl Address {
 pub(crate) struct EndpointImpl {
     pub(crate) c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
+    pub(crate) tx_cq: RefCell<Option<Rc<CompletionQueueImpl>>>,
+    pub(crate) rx_cq: RefCell<Option<Rc<CompletionQueueImpl>>>,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
     pub(crate) bound_eq: OnceCell<Rc<EventQueueImpl>>,
     _domain_rc:  Rc<DomainImpl>,
@@ -1178,7 +1180,7 @@ impl<'a> IncompleteBindCq<'a> {
     }
 
     pub fn cq<T: CqConfig + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
-        self.ep.bind(cq, self.flags)
+        self.ep.bind_cq_(&cq.inner, self.flags)
     }
 }
 
@@ -1271,6 +1273,8 @@ impl EndpointImpl {
                     c_ep, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
                     _sync_rcs: RefCell::new(Vec::new()),
+                    rx_cq: RefCell::new(None),
+                    tx_cq: RefCell::new(None),
                     bound_eq: OnceCell::new(),
                     _domain_rc: domain.clone(),
                 })
@@ -1334,6 +1338,25 @@ impl EndpointImpl {
         }
     } 
 
+    pub(crate) fn bind_cq_(&self, cq: &Rc<CompletionQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), cq.as_raw_fid(), flags) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            if flags & libfabric_sys::FI_TRANSMIT as u64 != 0 {
+                *self.tx_cq.borrow_mut() = Some(cq.clone());
+            }
+            else {
+                *self.rx_cq.borrow_mut() = Some(cq.clone());
+            }
+
+            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do this with inner mutability.
+            Ok(())
+        }
+    } 
+
     pub(crate) fn bind_eq_(&self, res: &Rc<EventQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_raw_fid(), flags) };
         
@@ -1380,6 +1403,8 @@ impl EndpointImpl {
                     c_ep, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
                     _sync_rcs: RefCell::new(Vec::new()),
+                    rx_cq: RefCell::new(None),
+                    tx_cq: RefCell::new(None),
                     bound_eq: OnceCell::new(),
                     _domain_rc: self._domain_rc.clone(),
                 })

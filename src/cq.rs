@@ -72,6 +72,8 @@ pub(crate) struct CompletionQueueImpl {
     entry_buff: RefCell<CompletionFormat>,
     error_buff: RefCell<CompletionError>,
     fid: OwnedFid,
+    requests: RefCell<usize>,
+    completions: RefCell<usize>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
     _domain_rc: Rc<DomainImpl>,
 }
@@ -119,6 +121,8 @@ impl<'a> CompletionQueueImpl {
                     c_cq, 
                     fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
                     wait_obj: Some(attr.c_attr.wait_obj),
+                    completions: RefCell::new(0),
+                    requests: RefCell::new(0),
                     _domain_rc: domain.clone(),
                     entry_buff: 
                         if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC {
@@ -165,6 +169,8 @@ impl<'a> CompletionQueueImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
         else {
+            *self.completions.borrow_mut() += err as usize;
+            println!("Complete: {}/{}", self.completions.borrow(), self.requests.borrow());
             Ok(())
         }
     }
@@ -188,6 +194,7 @@ impl<'a> CompletionQueueImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
         else {
+            *self.completions.borrow_mut() += err as usize;
             Ok((self.entry_buff.borrow().clone(), address))
         }
     }
@@ -324,6 +331,9 @@ impl<'a> CompletionQueueImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
         else {
+            *self.completions.borrow_mut() += err as usize;
+            println!("Complete: {}/{}", self.completions.borrow(), self.requests.borrow());
+
             Ok(())
         }
     }
@@ -405,6 +415,16 @@ impl<'a> CompletionQueueImpl {
         else {
             Ok(())
         }
+    }
+
+    pub(crate) fn completions(&self) -> usize {
+        *self.completions.borrow()
+    }
+
+    pub(crate) fn request(&self) -> usize {
+        *self.requests.borrow_mut() += 1;
+        println!("Requests: {}", self.requests.borrow());
+        *self.requests.borrow()
     }
 }
 
@@ -496,6 +516,10 @@ impl<T: CqConfig> CompletionQueue<T> {
 
     pub fn print_error(&self, err_entry: &crate::cq::CompletionError) { //[TODO] Return a string
         self.inner.print_error(err_entry)
+    }
+
+    pub(crate) fn request(&self) -> usize {
+        self.inner.request()
     }
 
 }
