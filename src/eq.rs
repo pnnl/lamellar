@@ -1,10 +1,10 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::{Rc, Weak}, cell::RefCell, collections::HashMap};
 
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
-
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, AsRawFid, self}};
+use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector};
+use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, self, Fid}, mr::MemoryRegionImpl, av::AddressVectorImpl, comm::collective::MulticastGroupCollectiveImpl};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
 //     fn drop(&mut self) {
@@ -12,14 +12,15 @@ use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On
 //     }
 // }
 
+
 pub enum Event<T> {
-    Notify(EventQueueEntry<T>),
+    // Notify(EventQueueEntry<T>),
     ConnReq(EventQueueCmEntry),
     Connected(EventQueueCmEntry),
     Shutdown(EventQueueCmEntry),
-    MrComplete(EventQueueEntry<T>),
-    AVComplete(EventQueueEntry<T>),
-    JoinComplete(EventQueueEntry<T>),
+    MrComplete(EventQueueEntry<T, MemoryRegion>),
+    AVComplete(EventQueueEntry<T, AddressVector>),
+    JoinComplete(EventQueueEntry<T, MulticastGroupCollective>),
 }
 
 impl<T> Event<T>{
@@ -28,7 +29,7 @@ impl<T> Event<T>{
     pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18 {
 
         match self {
-            Event::Notify(_) => libfabric_sys::FI_NOTIFY,
+            // Event::Notify(_) => libfabric_sys::FI_NOTIFY,
             Event::ConnReq(_) => libfabric_sys::FI_CONNREQ,
             Event::Connected(_) => libfabric_sys::FI_CONNECTED,
             Event::Shutdown(_) => libfabric_sys::FI_SHUTDOWN,
@@ -40,31 +41,34 @@ impl<T> Event<T>{
 
     pub(crate) fn get_entry(&self) -> (*const std::ffi::c_void, usize) {
         match self {
-            Event::Notify(entry)| Event::MrComplete(entry) | Event::AVComplete(entry) | Event::JoinComplete(entry) => 
-                ( (&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>()),  
+            // Event::Notify(entry)| 
+            Event::MrComplete(entry) => {((&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>())},
+            Event::AVComplete(entry) => {((&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>())},
+            Event::JoinComplete(entry) => {((&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>())},
+                // ( (&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>()),  
             
             Event::ConnReq(entry) | Event::Connected(entry) | Event::Shutdown(entry) => 
                 ( (&entry.c_entry as *const libfabric_sys::fi_eq_cm_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>()),
         } 
     } 
 
-    pub(crate) fn from_control_value(val: u32, entry: EventQueueEntry<usize>) -> Event<usize> {
-        if val == libfabric_sys::FI_NOTIFY {
-            Event::Notify(entry)
-        }
-        else if val == libfabric_sys::FI_MR_COMPLETE {
-            Event::MrComplete(entry)
-        }
-        else if val == libfabric_sys::FI_AV_COMPLETE {
-            Event::AVComplete(entry)
-        }
-        else if val == libfabric_sys::FI_JOIN_COMPLETE {
-            Event::JoinComplete(entry)
-        }
-        else {
-            panic!("Unexpected value for Event")
-        }
-    }
+    // pub(crate) fn from_control_value(event: u32, entry: EventQueueEntry<usize>) -> Event<usize> {
+    //     if event == libfabric_sys::FI_NOTIFY {
+    //         Event::Notify(entry)
+    //     }
+    //     else if event == libfabric_sys::FI_MR_COMPLETE {
+    //         Event::MrComplete(entry)
+    //     }
+    //     else if event == libfabric_sys::FI_AV_COMPLETE {
+    //         Event::AVComplete(entry)
+    //     }
+    //     else if event == libfabric_sys::FI_JOIN_COMPLETE {
+    //         Event::JoinComplete(entry)
+    //     }
+    //     else {
+    //         panic!("Unexpected value for Event")
+    //     }
+    // }
 
     pub(crate) fn from_connect_value(val: u32, entry: EventQueueCmEntry) -> Self {
     
@@ -89,6 +93,13 @@ pub(crate) struct EventQueueImpl {
     c_eq: *mut libfabric_sys::fid_eq,
     fid: OwnedFid,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
+    mrs: RefCell<std::collections::HashMap<Fid, Weak<MemoryRegionImpl>>>,   // We neep maps Fid -> MemoryRegionImpl/AddressVectorImpl/MulticastGroupCollectiveImpl, however, we don't want to extend 
+                                                                            // the lifetime of any of these objects just because of the maps.
+                                                                            // Moreover, these objects will keep references to the EQ to keep it from dropping while
+                                                                            // they are still bound, thus, we would have cyclic references that wouldn't let any 
+                                                                            // of the two sides drop. 
+    avs: RefCell<std::collections::HashMap<Fid, Weak<AddressVectorImpl>>>,
+    mcs: RefCell<std::collections::HashMap<Fid, Weak<MulticastGroupCollectiveImpl>>>,
     _fabric_rc: Rc<FabricImpl>,
 }
 
@@ -122,6 +133,9 @@ impl<'a> EventQueueImpl {
                     c_eq, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
                     wait_obj:  Some(attr.c_attr.wait_obj),
+                    mrs: RefCell::new(HashMap::new()),
+                    avs: RefCell::new(HashMap::new()),
+                    mcs: RefCell::new(HashMap::new()),
                     _fabric_rc: fabric.clone(),
                 })
         }
@@ -129,6 +143,18 @@ impl<'a> EventQueueImpl {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_eq {
         self.c_eq
+    }
+
+    pub(crate) fn bind_mr(&self, mr: &Rc<MemoryRegionImpl>) {
+        self.mrs.borrow_mut().insert(mr.as_fid().as_raw_fid(), Rc::downgrade(mr));
+    }
+
+    pub(crate) fn bind_av(&self, av: &Rc<AddressVectorImpl>) {
+        self.avs.borrow_mut().insert(av.as_fid().as_raw_fid(), Rc::downgrade(av));
+    }
+
+    pub(crate) fn bind_mc(&self, mc: &Rc<MulticastGroupCollectiveImpl>) {
+        self.mcs.borrow_mut().insert(mc.as_fid().as_raw_fid(), Rc::downgrade(mc));
     }
 
     pub(crate) fn read(&self) -> Result<Event<usize>, crate::error::Error>{
@@ -139,7 +165,7 @@ impl<'a> EventQueueImpl {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
         else {
-            Ok(read_eq_entry(ret, &buffer, &event))
+            Ok(self.read_eq_entry(ret, &buffer, &event))
         }
     }
 
@@ -152,7 +178,7 @@ impl<'a> EventQueueImpl {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
         else {
-            Ok(read_eq_entry(ret, &buffer, &event))
+            Ok(self.read_eq_entry(ret, &buffer, &event))
         }
     }
 
@@ -209,7 +235,7 @@ impl<'a> EventQueueImpl {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
         else {
-            Ok(read_eq_entry(ret, &buffer, &event))
+            Ok(self.read_eq_entry(ret, &buffer, &event))
         }
     }
 
@@ -223,8 +249,57 @@ impl<'a> EventQueueImpl {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
         else {
-            Ok(read_eq_entry(ret, &buffer, &event))
+            Ok(self.read_eq_entry(ret, &buffer, &event))
         }
+    }
+
+    fn read_eq_entry(&self, bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> {
+        if event == &libfabric_sys::FI_CONNREQ || event == &libfabric_sys::FI_CONNECTED || event == &libfabric_sys::FI_SHUTDOWN {
+            debug_assert_eq!(bytes_read as usize, std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>());
+            Event::from_connect_value(*event, EventQueueCmEntry {
+                c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) }
+            })          
+        }
+        else {
+            debug_assert_eq!(bytes_read as usize, std::mem::size_of::<libfabric_sys::fi_eq_entry>());
+            let c_entry: libfabric_sys::fi_eq_entry = unsafe { std::ptr::read(buffer.as_ptr().cast()) };
+            
+            if event == &libfabric_sys::FI_NOTIFY {
+                panic!("Unexpected event");
+            //     self.
+            //     Event::Notify(entry)
+            }
+            if event == &libfabric_sys::FI_MR_COMPLETE {
+                let event_fid = self.mrs.borrow().get(&c_entry.fid).unwrap().clone();
+                Event::MrComplete(
+                    EventQueueEntry::<usize, MemoryRegion> {
+                        c_entry,
+                        event_fid: MemoryRegion::from_impl(&event_fid.upgrade().unwrap()),
+                        phantom: PhantomData,
+                })
+            }
+            else if event == &libfabric_sys::FI_AV_COMPLETE {
+                let event_fid = self.avs.borrow().get(&c_entry.fid).unwrap().clone();
+                Event::AVComplete(
+                    EventQueueEntry::<usize, AddressVector> {
+                        c_entry,
+                        event_fid: AddressVector::from_impl(&event_fid.upgrade().unwrap()),
+                        phantom: PhantomData,
+                })
+            }
+            else if event == &libfabric_sys::FI_JOIN_COMPLETE {
+                let event_fid = self.mcs.borrow().get(&c_entry.fid).unwrap().clone();
+                Event::JoinComplete(
+                    EventQueueEntry::<usize, MulticastGroupCollective> {
+                        c_entry,
+                        event_fid: MulticastGroupCollective::from_impl(&event_fid.upgrade().unwrap()),
+                        phantom: PhantomData,
+                })
+            }
+            else {
+                panic!("Unexpected value for Event")
+            }
+        }    
     }
 
     pub(crate) fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
@@ -334,24 +409,7 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
     }
 }
 
-fn read_eq_entry(bytes_read: isize, buffer: &[u8], event: &u32) -> Event<usize> {
-    if event == &libfabric_sys::FI_CONNREQ || event == &libfabric_sys::FI_CONNECTED || event == &libfabric_sys::FI_SHUTDOWN {
-        debug_assert_eq!(bytes_read as usize, std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>());
-        Event::from_connect_value(*event, EventQueueCmEntry {
-            c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) }
-        })          
-    }
-    else {
-        debug_assert_eq!(bytes_read as usize, std::mem::size_of::<libfabric_sys::fi_eq_entry>());
 
-        Event::<usize>::from_control_value(*event,
-            EventQueueEntry::<usize> {
-                c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) },
-                phantom: PhantomData,
-            }
-        )
-    }    
-}
 
 impl<T: EqConfig> AsFid for EventQueue<T> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
@@ -600,49 +658,44 @@ impl Default for EventError {
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct EventQueueEntry<T> {
+pub struct EventQueueEntry<T, F> {
     c_entry: libfabric_sys::fi_eq_entry,
+    event_fid: F, 
     phantom: std::marker::PhantomData<T>,
 }
 
-impl<T> EventQueueEntry<T> {
+impl<T, F: AsFid> EventQueueEntry<T, F> {
     // const SIZE_OK: () = assert!(std::mem::size_of::<T>() == std::mem::size_of::<usize>(), 
     // "The context of an EventQueueEntry must always be of size equal to usize datatype.");
 
-    pub fn new() -> Self {
+    pub fn new(event_fid: F) -> Self {
         // let _ = Self::SIZE_OK;
         let c_entry = libfabric_sys::fi_eq_entry { 
-            fid: std::ptr::null_mut(), 
+            fid: event_fid.as_raw_fid(), 
             context: std::ptr::null_mut(), 
             data: 0 
         };
 
-        Self { c_entry, phantom: std::marker::PhantomData }
+        Self { c_entry, event_fid, phantom: std::marker::PhantomData }
     }
 
-    pub fn fid(&mut self, fid: &impl AsFid) -> &mut Self {
-        self.c_entry.fid = fid.as_fid().as_raw_fid();
-        self
+    pub fn fid(&mut self) -> &F {
+        &self.event_fid
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_fid(&self) -> *mut libfabric_sys::fid {
-        self.c_entry.fid
-    }
-
-    pub fn context(&mut self, context: &mut T) -> &mut Self {
+    pub fn set_context(&mut self, context: &mut T) -> &mut Self {
         let context_writable: *mut *mut std::ffi::c_void =  &mut (self.c_entry.context);
         let context_writable_usize: *mut  usize = context_writable as  *mut usize;
         unsafe { *context_writable_usize = *(context as *mut T as *mut usize) };
         self
     }
 
-    pub fn data(&mut self, data: u64) -> &mut Self {
+    pub fn set_data(&mut self, data: u64) -> &mut Self {
         self.c_entry.data = data;
         self
     }
 
-    pub fn get_context(&self) -> T {
+    pub fn context(&self) -> T {
         let context_ptr:*mut *mut T = &mut (self.c_entry.context as *mut T);
         unsafe { std::mem::transmute_copy::<T,T>(&*(context_ptr as *const T)) }
     }
@@ -654,11 +707,11 @@ impl<T> EventQueueEntry<T> {
 
 }
 
-impl<T> Default for EventQueueEntry<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl<T> Default for EventQueueEntry<T> {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 //================== EventQueueCmEntry (fi_eq_cm_entry) ==================//
 #[repr(C)]
@@ -701,179 +754,179 @@ impl Default for EventQueueCmEntry {
 #[cfg(test)]
 mod tests {
 
-    use crate::{info::Info, fid::AsRawFid};
+    use crate::info::Info;
 
-    use super::{Event, EventQueueBuilder};
+    use super::EventQueueBuilder;
 
-    #[test]
-    fn eq_write_read_self() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-        let eq = EventQueueBuilder::new(&fab)
-            .size(32)
-            .write()
-            .wait_none()
-            .build().unwrap();
+    // #[test]
+    // fn eq_write_read_self() {
+    //     let info = Info::new().request().unwrap();
+    //     let entries = info.get();
+    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let eq = EventQueueBuilder::new(&fab)
+    //         .size(32)
+    //         .write()
+    //         .wait_none()
+    //         .build().unwrap();
 
-        for mut i in 0_usize ..5 {
-            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
-            if i & 1 == 1 {
-                entry.fid(&fab);
-            }
-            else {
-                entry.fid(&eq);
-            }
+    //     for mut i in 0_usize ..5 {
+    //         let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+    //         if i & 1 == 1 {
+    //             entry.fid(&fab);
+    //         }
+    //         else {
+    //             entry.fid(&eq);
+    //         }
 
-            entry.context(&mut i);
-            eq.write(Event::Notify(entry)).unwrap();
-        }
-        for i in 0..10 {
+    //         entry.context(&mut i);
+    //         eq.write(Event::Notify(entry)).unwrap();
+    //     }
+    //     for i in 0..10 {
 
-            let ret = if i & 1 == 1 {
-                eq.read().unwrap()
-            }
-            else {
-                eq.peek().unwrap()
-            };
+    //         let ret = if i & 1 == 1 {
+    //             eq.read().unwrap()
+    //         }
+    //         else {
+    //             eq.peek().unwrap()
+    //         };
 
-            if let crate::eq::Event::Notify(entry) = ret {
+    //         if let crate::eq::Event::Notify(entry) = ret {
                 
-                if entry.get_context() != i /2 {
-                    panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
-                }
+    //             if entry.get_context() != i /2 {
+    //                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
+    //             }
                 
-                if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
-                    panic!("Unexpected fid {:?}", entry.get_fid());
-                }
-            }
-            else {
-                panic!("Unexpected EventType");
-            } 
-        }
+    //             if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
+    //                 panic!("Unexpected fid {:?}", entry.get_fid());
+    //             }
+    //         }
+    //         else {
+    //             panic!("Unexpected EventType");
+    //         } 
+    //     }
 
-        let ret = eq.read();
-        if let Err(ref err) = ret {
-            if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
-                ret.unwrap();
-            }
-        }
+    //     let ret = eq.read();
+    //     if let Err(ref err) = ret {
+    //         if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
+    //             ret.unwrap();
+    //         }
+    //     }
 
-    }
+    // }
 
-    #[test]
-    fn eq_size_verify() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-        let eq = EventQueueBuilder::new(&fab)
-            .size(32)
-            .write()
-            .wait_none()
-            .build().unwrap();
+    // #[test]
+    // fn eq_size_verify() {
+    //     let info = Info::new().request().unwrap();
+    //     let entries = info.get();
+    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let eq = EventQueueBuilder::new(&fab)
+    //         .size(32)
+    //         .write()
+    //         .wait_none()
+    //         .build().unwrap();
 
-        for mut i in 0_usize .. 32 {
-            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
-            entry
-                .fid(&fab)
-                .context(&mut i);
-            eq.write(Event::Notify(entry)).unwrap();
-        }
-    }
+    //     for mut i in 0_usize .. 32 {
+    //         let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+    //         entry
+    //             .fid(&fab)
+    //             .context(&mut i);
+    //         eq.write(Event::Notify(entry)).unwrap();
+    //     }
+    // }
 
-    #[test]
-    fn eq_write_sread_self() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-        let eq = EventQueueBuilder::new(&fab)
-            .size(32)
-            .write()
-            .wait_fd()
-            .build().unwrap();
+    // #[test]
+    // fn eq_write_sread_self() {
+    //     let info = Info::new().request().unwrap();
+    //     let entries = info.get();
+    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let eq = EventQueueBuilder::new(&fab)
+    //         .size(32)
+    //         .write()
+    //         .wait_fd()
+    //         .build().unwrap();
 
-        for mut i in 0_usize ..5 {
-            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
-            if i & 1 == 1 {
-                entry.fid(&fab);
-            }
-            else {
-                entry.fid(&eq);
-            }
+    //     for mut i in 0_usize ..5 {
+    //         let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+    //         if i & 1 == 1 {
+    //             entry.fid(&fab);
+    //         }
+    //         else {
+    //             entry.fid(&eq);
+    //         }
 
-            entry.context(&mut i);
-            eq.write(Event::Notify(entry)).unwrap();
-        }
-        for i in 0..10 {
-            let event = if (i & 1) == 1 { eq.sread(2000) } else { eq.speek(2000) }.unwrap();
+    //         entry.context(&mut i);
+    //         eq.write(Event::Notify(entry)).unwrap();
+    //     }
+    //     for i in 0..10 {
+    //         let event = if (i & 1) == 1 { eq.sread(2000) } else { eq.speek(2000) }.unwrap();
 
-            if let crate::eq::Event::Notify(entry) = event {
+    //         if let crate::eq::Event::Notify(entry) = event {
 
-                if entry.get_context() != i /2 {
-                    panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
-                }
+    //             if entry.get_context() != i /2 {
+    //                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
+    //             }
                 
-                if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
-                    panic!("Unexpected fid {:?}", entry.get_fid());
-                }
-            }
-            else {
-                panic!("Unexpected EventType");
-            }
-        }
+    //             if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
+    //                 panic!("Unexpected fid {:?}", entry.get_fid());
+    //             }
+    //         }
+    //         else {
+    //             panic!("Unexpected EventType");
+    //         }
+    //     }
             
-        let ret = eq.read();
-        if let Err(ref err) = ret {
-            if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
-                ret.unwrap();
-            }
-        }
+    //     let ret = eq.read();
+    //     if let Err(ref err) = ret {
+    //         if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
+    //             ret.unwrap();
+    //         }
+    //     }
 
-    }
+    // }
 
-    #[test]
-    fn eq_readerr() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-        let eq = EventQueueBuilder::new(&fab)
-            .size(32)
-            .write()
-            .wait_fd()
-            .build().unwrap();
+    // #[test]
+    // fn eq_readerr() {
+    //     let info = Info::new().request().unwrap();
+    //     let entries = info.get();
+    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let eq = EventQueueBuilder::new(&fab)
+    //         .size(32)
+    //         .write()
+    //         .wait_fd()
+    //         .build().unwrap();
 
-        for mut i in 0_usize ..5 {
-            let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
-            entry.fid(&fab);
+    //     for mut i in 0_usize ..5 {
+    //         let mut entry: crate::eq::EventQueueEntry<usize> = crate::eq::EventQueueEntry::new();
+    //         entry.fid(&fab);
 
-            entry.context(&mut i);
-            eq.write(Event::Notify(entry)).unwrap();
-        }
+    //         entry.context(&mut i);
+    //         eq.write(Event::Notify(entry)).unwrap();
+    //     }
 
-        for i in 0..5 {
-            let event = eq.read().unwrap();
+    //     for i in 0..5 {
+    //         let event = eq.read().unwrap();
 
-            if let Event::Notify(entry) = event {
+    //         if let Event::Notify(entry) = event {
 
-                if entry.get_context() != i  {
-                    panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
-                }
+    //             if entry.get_context() != i  {
+    //                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
+    //             }
                 
-                if entry.get_fid() != fab.as_raw_fid() {
-                    panic!("Unexpected fid {:?}", entry.get_fid());
-                }
-            }
-            else {
-                panic!("Unexpected EventQueueEntryFormat");
-            }
-        }
-        let ret = eq.readerr();
-        if let Err(ref err) = ret {
-            if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
-                ret.unwrap();
-            }
-        }
-    }
+    //             if entry.get_fid() != fab.as_raw_fid() {
+    //                 panic!("Unexpected fid {:?}", entry.get_fid());
+    //             }
+    //         }
+    //         else {
+    //             panic!("Unexpected EventQueueEntryFormat");
+    //         }
+    //     }
+    //     let ret = eq.readerr();
+    //     if let Err(ref err) = ret {
+    //         if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
+    //             ret.unwrap();
+    //         }
+    //     }
+    // }
 
 
     #[test]

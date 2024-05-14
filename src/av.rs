@@ -187,6 +187,12 @@ pub struct AddressVector {
 
 impl AddressVector {
 
+    pub(crate) fn from_impl(av_impl: &Rc<AddressVectorImpl>) -> Self {
+        Self {
+            inner: av_impl.clone(),
+        }
+    }
+
     pub(crate) fn new<T>(domain: &crate::domain::Domain, attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         
         Ok(
@@ -398,7 +404,7 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
         let av = AddressVector::new(self.domain, self.av_attr, self.ctx)?;
         match self.eq {
             None => Ok(av),
-            Some(eq) => {av.inner.bind(eq)?; Ok(av)}
+            Some(eq) => {av.inner.bind(eq)?; eq.bind_av(&av.inner); Ok(av)}
         }
     }
     

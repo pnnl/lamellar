@@ -22,19 +22,27 @@ use crate::utils::to_fi_datatype;
 impl<E: CollCap> Endpoint<E> {
 
     pub fn join(&self, addr: &Address, options: JoinOptions) -> Result<MulticastGroupCollective, crate::error::Error> { // [TODO]
-        MulticastGroupCollective::new::<E, ()>(self, addr, options.get_value(), None)
+        let mc = MulticastGroupCollective::new::<E, ()>(self, addr, options.get_value(), None)?;
+        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        Ok(mc)
     }
 
     pub fn join_with_context<T>(&self, addr: &Address, options: JoinOptions, context: &mut T) -> Result<MulticastGroupCollective, crate::error::Error> {
-        MulticastGroupCollective::new::<E, T>(self, addr, options.get_value(), Some(context))
+        let mc = MulticastGroupCollective::new::<E, T>(self, addr, options.get_value(), Some(context))?;
+        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        Ok(mc)
     }
 
     pub fn join_collective(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<MulticastGroupCollective, crate::error::Error> {
-        MulticastGroupCollective::new_collective::<E, ()>(self, coll_mapped_addr, set, options.get_value(), None)
+        let mc = MulticastGroupCollective::new_collective::<E, ()>(self, coll_mapped_addr, set, options.get_value(), None)?;
+        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        Ok(mc)
     }
 
     pub fn join_collective_with_context<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context : &mut T) -> Result<MulticastGroupCollective, crate::error::Error> {
-        MulticastGroupCollective::new_collective::<E, T>(self, coll_mapped_addr, set, options.get_value(), Some(context))
+        let mc = MulticastGroupCollective::new_collective::<E, T>(self, coll_mapped_addr, set, options.get_value(), Some(context))?;
+        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        Ok(mc)
     }
 }
 
@@ -43,6 +51,7 @@ pub struct MulticastGroupCollective {
 }
 
 pub struct MulticastGroupCollectiveImpl  {
+    #[allow(dead_code)]
     c_mc: *mut libfabric_sys::fid_mc,
     addr: RawMappedAddress,
     fid: OwnedFid,
@@ -51,6 +60,13 @@ pub struct MulticastGroupCollectiveImpl  {
 
 impl MulticastGroupCollective {
 
+    pub(crate) fn from_impl(mc_impl: &Rc<MulticastGroupCollectiveImpl>) -> Self {
+        Self {
+            inner: mc_impl.clone(),
+        }
+    }
+    
+    #[allow(dead_code)]
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mc {
         self.inner.c_mc
     }
@@ -251,7 +267,13 @@ impl MulticastGroupCollective {
 
 impl AsFid for MulticastGroupCollective {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
+    }
+}
+
+impl AsFid for MulticastGroupCollectiveImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.fid.as_fid()
     }
 }
 

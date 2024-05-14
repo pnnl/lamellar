@@ -1,4 +1,4 @@
-use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, marker::PhantomData};
+use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::{RefCell, OnceCell}, marker::PhantomData};
 
 use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
@@ -32,6 +32,7 @@ pub(crate) struct EndpointImpl {
     pub(crate) c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
+    pub(crate) bound_eq: OnceCell<Rc<EventQueueImpl>>,
     _domain_rc:  Rc<DomainImpl>,
 }
 
@@ -935,7 +936,7 @@ impl<E> PassiveEndpointImpl<E> {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            self._sync_rcs.borrow_mut().push(res.clone()); //  [TODO] Do this with inner mutability.
+            self._sync_rcs.borrow_mut().push(res.clone()); 
             Ok(())
         }
     }
@@ -1270,6 +1271,7 @@ impl EndpointImpl {
                     c_ep, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
                     _sync_rcs: RefCell::new(Vec::new()),
+                    bound_eq: OnceCell::new(),
                     _domain_rc: domain.clone(),
                 })
         }
@@ -1332,25 +1334,39 @@ impl EndpointImpl {
         }
     } 
 
-    pub fn bind_cq(&self) -> IncompleteBindCq {
+    pub(crate) fn bind_eq_(&self, res: &Rc<EventQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_raw_fid(), flags) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            if self.bound_eq.set(res.clone()).is_err() {
+                panic!("Endpoint is already bound to an EventQueue");
+            }
+            Ok(())
+        }
+    } 
+
+    pub(crate) fn bind_cq(&self) -> IncompleteBindCq {
         IncompleteBindCq { ep: self, flags: 0}
     }
 
-    pub fn bind_cntr(&self) -> IncompleteBindCntr {
+    pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr {
         IncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
-        self.bind(eq, 0)
+        self.bind_eq_(&eq.inner, 0)
     }
 
-    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
     
         self.bind(av, 0)
     }
 
-    pub fn alias(&self, flags: u64) -> Result<EndpointImpl, crate::error::Error> {
+    pub(crate) fn alias(&self, flags: u64) -> Result<EndpointImpl, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let c_ep_ptr: *mut *mut libfabric_sys::fid_ep = &mut c_ep;
         let err = unsafe { libfabric_sys::inlined_fi_ep_alias(self.handle(), c_ep_ptr, flags) };
@@ -1364,6 +1380,7 @@ impl EndpointImpl {
                     c_ep, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
                     _sync_rcs: RefCell::new(Vec::new()),
+                    bound_eq: OnceCell::new(),
                     _domain_rc: self._domain_rc.clone(),
                 })
         }

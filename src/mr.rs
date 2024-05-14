@@ -152,6 +152,8 @@ impl MemoryRegionImpl {
         self.c_mr
     }
     
+
+
     #[allow(dead_code)]
     fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
@@ -331,6 +333,12 @@ impl MemoryRegion {
         self.inner.handle()
     }
 
+    pub(crate) fn from_impl(mr_impl: &Rc<MemoryRegionImpl>)  -> Self {
+        MemoryRegion {
+            inner: mr_impl.clone()
+        }
+    }
+
     #[allow(dead_code)]
     fn from_buffer<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
@@ -388,7 +396,9 @@ impl MemoryRegion {
     /// 
     /// Corresponds to `fi_mr_bind` with a `fid_ep` 
     pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
-        self.inner.bind_ep(&ep.inner)
+        self.inner.bind_ep(&ep.inner)?;
+        ep.inner.bound_eq.get().unwrap().bind_mr(&self.inner);
+        Ok(())
     }
 
     /// Notify the provider of any change to the physical pages backing a registered memory region.
@@ -441,7 +451,13 @@ impl crate::DataDescriptor for MemoryRegionDesc {
 
 impl AsFid for MemoryRegion{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.fid.as_fid()
+        self.inner.as_fid()
+    }
+}
+
+impl AsFid for MemoryRegionImpl{
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+        self.fid.as_fid()
     }
 }
 
@@ -815,6 +831,7 @@ mod tests {
                         // .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
                         .access(&MrAccess::from_value(*combo as u32))
                         .requested_key(0xC0DE)
+                        
                         .build()
                         .unwrap();
                     // mr.close().unwrap();

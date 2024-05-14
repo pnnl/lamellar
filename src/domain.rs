@@ -198,7 +198,8 @@ impl Domain {
     pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MemoryRegionKey, flags: u64) -> Result<u64, crate::error::Error> {
         self.inner.map_raw(mr_key, flags)
     }
-
+    
+    #[allow(dead_code)]
     pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         self.inner.unmap_key(key)
     }

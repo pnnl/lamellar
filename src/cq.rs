@@ -249,7 +249,6 @@ impl<'a> CompletionQueueImpl {
         let p_cond = cond as *const usize as *const std::ffi::c_void;
         let mut address = 0;
         let p_address = &mut address as *mut RawMappedAddress;   
-        let p_cond = std::ptr::null_mut();
         let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.format, self.handle(), count, p_address, p_cond, timeout);
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
