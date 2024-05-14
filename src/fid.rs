@@ -39,6 +39,12 @@ impl Drop for OwnedFid {
     }
 }
 
+impl PartialEq for OwnedFid {
+    fn eq(&self, other: &Self) -> bool {
+        self.fid == other.fid
+    }
+}
+
 impl AsFid for OwnedFid {
     fn as_fid(&self) -> BorrowedFid {
         BorrowedFid::from(self)

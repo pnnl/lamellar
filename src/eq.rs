@@ -3,7 +3,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::{Rc, Weak}, cell:
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector};
+use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector, fabric::Fabric, domain::Domain};
 use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, self, Fid}, mr::MemoryRegionImpl, av::AddressVectorImpl, comm::collective::MulticastGroupCollectiveImpl};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
@@ -12,9 +12,15 @@ use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On
 //     }
 // }
 
+// enum NotifyEventFid {
+//     Fabric(Fabric),
+//     Domain(Domain),
+//     Mr(MemoryRegion),
+// }
+
 
 pub enum Event<T> {
-    // Notify(EventQueueEntry<T>),
+    // Notify(EventQueueEntry<T, NotifyEventFid>),
     ConnReq(EventQueueCmEntry),
     Connected(EventQueueCmEntry),
     Shutdown(EventQueueCmEntry),
