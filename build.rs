@@ -42,14 +42,13 @@ fn main(){
     
         // If /libfabric/build does not exist we have not built libfabric yet
         if !build_path.exists(){
-    
             std::process::Command::new("sh").current_dir(src_path.to_str().unwrap()).arg("autogen.sh").status().unwrap();
             std::process::Command::new("sh").current_dir(src_path.to_str().unwrap()).arg("configure").arg("CFLAGS=-fPIC").arg("--prefix=".to_owned()+build_path.to_str().unwrap()).arg("--enable-static").status().unwrap();
+            
+            
+            // Let make figure out if we need to build libfabric again. (Should we ?)    
+            std::process::Command::new("make").current_dir(src_path.to_str().unwrap()).arg("-j").arg("install").status().unwrap();
         }
-        
-        
-        // Let make figure out if we need to build libfabric again. (Should we ?)    
-        std::process::Command::new("make").current_dir(src_path.to_str().unwrap()).arg("-j").arg("install").status().unwrap();
     }
     else{
 
