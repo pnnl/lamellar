@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::{EventQueueImpl, EventQueue}, enums::{AVOptions, AVSetOptions}, RawMappedAddress};
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::{EventQueueImpl, EventQueue, AsyncEventQueueImpl}, enums::{AVOptions, AVSetOptions}, RawMappedAddress};
 
 
 // impl Drop for AddressVector {
@@ -16,7 +16,7 @@ use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, A
 pub(crate) struct AddressVectorImpl {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
     fid: OwnedFid,
-    _eq_rc: OnceCell<Rc<EventQueueImpl>>,
+    _eq_rc: OnceCell<Rc<AsyncEventQueueImpl>>,
     _domain_rc: Rc<DomainImpl>,
 }
 
@@ -61,7 +61,7 @@ impl AddressVectorImpl {
     /// # Errors
     ///
     /// This function will return an error if the underlying library call fails.
-    pub(crate) fn bind(&self, eq: &Rc<crate::eq::EventQueueImpl>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, eq: &Rc<crate::eq::AsyncEventQueueImpl>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.handle(), eq.as_raw_fid(), 0) };
 
         if err != 0 {
@@ -279,7 +279,7 @@ impl AddressVector {
 /// followed by a call to `fi_av_open`  
 pub struct AddressVectorBuilder<'a, T> {
     av_attr: AddressVectorAttr,
-    eq: Option<&'a Rc<EventQueueImpl>>,
+    eq: Option<&'a Rc<AsyncEventQueueImpl>>,
     ctx: Option<&'a mut T>,
     domain: &'a Domain,
 }

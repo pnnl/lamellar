@@ -78,7 +78,7 @@ fn pp_server_rdm_cntr() {
                 common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
         }
         common::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
@@ -93,7 +93,7 @@ fn pp_server_rdm_cntr() {
                 common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
         }
     }
 }
@@ -165,7 +165,7 @@ fn pp_client_rdm_cntr() {
                 common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
         }
         common::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
@@ -180,7 +180,7 @@ fn pp_client_rdm_cntr() {
                 common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
         }
     }
 }

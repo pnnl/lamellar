@@ -1,6 +1,7 @@
 use core::panic;
 use std::time::Instant;
 
+use async_io::Async;
 use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder, EntryFormat, UnspecEntry}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, MappedAddress, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::AVOptions};
 use libfabric::enums;
 pub enum CompMeth {
@@ -10,8 +11,7 @@ pub enum CompMeth {
     WaitFd,
     Yield,
 }
-pub type EventQueueOptions = libfabric::eqoptions::Options<libfabric::eqoptions::Off, libfabric::eqoptions::WaitNoRetrieve, libfabric::eqoptions::Off>;
-pub type CompletionQueueOptions = libfabric::cqoptions::Options<libfabric::cqoptions::WaitNoRetrieve, libfabric::cqoptions::Off>;
+pub type EventQueueOptions = libfabric::eqoptions::Options<libfabric::eqoptions::Off, libfabric::eqoptions::WaitRetrieve, libfabric::eqoptions::On>;
 pub type CounterOptions = libfabric::cntroptions::Options<libfabric::cntroptions::WaitNoRetrieve, libfabric::cntroptions::Off>;
 
 pub const FT_OPT_ACTIVE: u64			= 1 << 0;
@@ -184,7 +184,7 @@ impl TestsGlobalCtx {
             1 << 23,
         ],
         window_size: 64,
-        comp_method: CompMeth::Spin, 
+        comp_method: CompMeth::WaitFd, 
         tx_ctx: Context::new(),
         rx_ctx: Context::new(),
         options: FT_OPT_RX_CQ | FT_OPT_TX_CQ}
@@ -200,7 +200,10 @@ impl Default for TestsGlobalCtx {
 pub fn ft_open_fabric_res<E>(info: &InfoEntry<E>) -> (libfabric::fabric::Fabric, libfabric::eq::EventQueue<EventQueueOptions>, libfabric::domain::Domain) {
     
     let fab = libfabric::fabric::FabricBuilder::new(info).build().unwrap();
-    let eq = EventQueueBuilder::new(&fab).build().unwrap();
+    let eq = EventQueueBuilder::new(&fab)
+        .wait_fd()
+        .build().
+        unwrap();
     let domain = ft_open_domain_res(info, &fab);
 
     (fab, eq, domain)
@@ -298,6 +301,7 @@ pub fn ft_alloc_active_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, 
 
 
     let ep = EndpointBuilder::new(info).build(domain).unwrap();
+    
     (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av)
 }
 
@@ -420,14 +424,12 @@ fn bind_tx_cq<E>(tx_cq: &CqType, ep: &mut libfabric::ep::Endpoint<E>, gl_ctx: &m
     }
 }
 
-pub fn ft_complete_connect<T: EqConfig + libfabric::Waitable>(eq: &libfabric::eq::EventQueue<T>) { // [TODO] Do not panic, return errors
+pub fn ft_complete_connect<T: EqConfig + libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable>(eq: &libfabric::eq::EventQueue<T>) { // [TODO] Do not panic, return errors
     
-    // if let libfabric::eq::EventQueue::Waitable(eq) = eq {
-
-    
-    if let Ok(event) = eq.sread(-1) {
+    println!("Checking for Connected");
+    if let Ok(event) = async_std::task::block_on( async {eq.read_async().await}) {
         if let libfabric::eq::Event::Connected(_) = event {
-    
+            println!("Connected retrieved");
         }
         else {
             panic!("Unexpected Event Type");
@@ -438,15 +440,9 @@ pub fn ft_complete_connect<T: EqConfig + libfabric::Waitable>(eq: &libfabric::eq
         panic!("{}\n", eq.strerror(&err_entry));
 
     }
-
-    
-    // }
-    // else {
-    //     panic!("Not implemented!");
-    // }
 }
 
-pub fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable, M:MsgDefaultCap, T:TagDefaultCap>(ep: &EndpointCaps<M, T>, eq: &libfabric::eq::EventQueue<EQ>) {
+pub fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable, M:MsgDefaultCap, T:TagDefaultCap>(ep: &EndpointCaps<M, T>, eq: &libfabric::eq::EventQueue<EQ>) {
     match ep {
         EndpointCaps::Msg(ep) => ep.accept().unwrap(),
         EndpointCaps::Tagged(ep) => ep.accept().unwrap(),
@@ -456,11 +452,14 @@ pub fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable, M:MsgDefaultCap, 
     ft_complete_connect(eq);
 }
 
-pub fn ft_retrieve_conn_req<T: EqConfig + libfabric::Waitable, E: infocapsoptions::Caps>(eq: &libfabric::eq::EventQueue<T>, caps: &InfoHints<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
+pub fn ft_retrieve_conn_req<T: EqConfig + libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable, E: infocapsoptions::Caps>(eq: &libfabric::eq::EventQueue<T>, caps: &InfoHints<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
     
-    let event = eq.sread(-1).unwrap();
+    println!("Checking for Connection Request");
+    let event: libfabric::eq::Event<usize> = async_std::task::block_on( async {eq.read_async().await}).unwrap();
+    println!("Done!");
     
     if let libfabric::eq::Event::ConnReq(entry) = event {
+        println!("Retrieve Connection Request");
         entry.get_info(caps).unwrap()
     } 
     else {
@@ -480,7 +479,7 @@ pub enum PassiveEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
 
 
 #[allow(clippy::type_complexity)]
-pub fn ft_server_connect<T: EqConfig + libfabric::Waitable + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(caps: &HintsCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (libfabric::domain::Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_server_connect<T: EqConfig + libfabric::WaitRetrievable + libfabric::FdRetrievable + libfabric::Waitable + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(caps: &HintsCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (libfabric::domain::Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     match caps {
 
@@ -526,16 +525,10 @@ pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, source:
 
 }
 
-pub fn ft_connect_ep<T: EqConfig + libfabric::Waitable, E>(ep: &libfabric::ep::Endpoint<E>, eq: &libfabric::eq::EventQueue<T>, addr: &libfabric::ep::Address) {
+pub fn ft_connect_ep<T: EqConfig + libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable, E>(ep: &libfabric::ep::Endpoint<E>, eq: &libfabric::eq::EventQueue<T>, addr: &libfabric::ep::Address) {
     
-    ep.connect(addr).unwrap();
-    ft_complete_connect(eq);
+    async_std::task::block_on(async {ep.connect_async(addr).await}).unwrap();
 }
-
-// fn ft_av_insert<T0>(addr: T0, count: size, fi_addr: libfabric::Address, flags: u64) {
-//pub      a
-// }
-
 
 pub fn ft_rx_prefix_size<E>(info: &InfoEntry<E>) -> usize {
 
@@ -598,10 +591,6 @@ pub fn ft_alloc_msgs<I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, dom
 
     ft_reg_mr(info, domain, ep, &mut gl_ctx.buf, 0xC0DE)
 }
-
-// pub fn ft_alloc_ctx_array(gl_ctx: &mut TestsGlobalCtx) {
-
-// }
 
 #[allow(clippy::too_many_arguments)]
 pub fn ft_enable_ep_recv<EQ: EqConfig + 'static, CNTR: CntrConfig + 'static, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &mut EndpointCaps<M, T>, domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<EQ>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
@@ -693,6 +682,22 @@ macro_rules!  ft_post{
     };
 }
 
+macro_rules!  ft_post_async{
+    ($post_fn:ident, $op_str:literal, $ep:ident, $( $x:ident),* ) => {
+        loop {
+            let ret = $ep.$post_fn($($x,)*).await;
+            if ret.is_ok() {
+                break;
+            }
+            else if let Err(ref err) = ret {
+                if !matches!(err.kind, libfabric::error::ErrorKind::TryAgain) {
+                    panic!("Unexpected error!")
+                }
+            }
+        }
+    };
+}
+
 #[allow(non_camel_case_types)]
 pub enum RmaOp {
     RMA_WRITE,
@@ -768,7 +773,8 @@ pub fn ft_post_rma<CQ: CqConfig, E: RmaDefaultCap>(gl_ctx: &mut TestsGlobalCtx, 
             let addr = remote.mem_address() + offset as u64;
             let key = remote.key();
             let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
-            unsafe{ ft_post!(write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
+            // unsafe{ ft_post!(write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
+            unsafe{ async_std::task::block_on(async {ep.write_async(buf, data_desc, fi_addr, addr, key).await.unwrap();}) }
         }
 
         RmaOp::RMA_WRITEDATA => {
@@ -776,7 +782,8 @@ pub fn ft_post_rma<CQ: CqConfig, E: RmaDefaultCap>(gl_ctx: &mut TestsGlobalCtx, 
             let key = remote.key();
             let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
             let remote_cq_data = gl_ctx.remote_cq_data;
-            unsafe{ ft_post!(writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, remote_cq_data, fi_addr, addr, key); }
+            // unsafe{ ft_post!(writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, remote_cq_data, fi_addr, addr, key); }
+            unsafe{ async_std::task::block_on(async {ep.writedata_async(buf, data_desc, remote_cq_data, fi_addr, addr, key).await.unwrap();}) }
         }
         
         RmaOp::RMA_READ => {
@@ -789,7 +796,7 @@ pub fn ft_post_rma<CQ: CqConfig, E: RmaDefaultCap>(gl_ctx: &mut TestsGlobalCtx, 
     }
 }
 
-pub fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
+pub async fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
     match op {
         SendOp::MsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
@@ -803,13 +810,11 @@ pub fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx
                         libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_addr)
                     }
                 }
+                else if let Some(mr_desc) = data_desc.as_mut() {
+                    libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc))
+                }
                 else {
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc))
-                    }
-                    else {
-                        libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut [default_desc()])
-                    }
+                    libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut [default_desc()])
                 };
             let msg_ref = &msg;
             let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
@@ -822,45 +827,45 @@ pub fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx
 
                 if data != NO_CQ_DATA {
                     if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(senddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, ctx);
+                        // ft_post!(senddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, ctx);
+                        ep.senddata_with_context_async(base, mr_desc, data, fi_address, ctx).await.unwrap();
                     }
                     else {
                         let mr_desc = &mut default_desc();
-                        ft_post!(senddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, ctx);
+                        // ft_post!(senddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, ctx);
+                        ep.senddata_with_context_async(base, mr_desc, data, fi_address, ctx).await.unwrap();
                     }
+                }
+                else if let Some(mr_desc) = data_desc.as_mut() {
+                    // ft_post!(send_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, ctx);
+                    ft_post_async!(send_with_context_async, "transmit", ep, base, mr_desc, fi_address, ctx);
+                    // ep.send_with_context_async(base, mr_desc, fi_address, ctx).await.unwrap();
                 }
                 else {
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(send_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, ctx);
-                    }
-                    else {
-                        let mr_desc = &mut default_desc();
-                        ft_post!(send_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, ctx);
-                    }
+                    let mr_desc = &mut default_desc();
+                    // ft_post!(send_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, ctx);
+                    ep.send_with_context_async(base, mr_desc, fi_address, ctx).await.unwrap();
                 }
             }
-            else {
-                if data != NO_CQ_DATA {
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(senddata_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, ctx);
-                    }
-                    else {
-                        let mr_desc = &mut default_desc();
-                        ft_post!(senddata_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, ctx);
-                    }
+            else if data != NO_CQ_DATA {
+                if let Some(mr_desc) = data_desc.as_mut() {
+                    // ft_post!(senddata_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, ctx);
+                    ep.senddata_connected_with_context_async(base, mr_desc, data, ctx).await.unwrap();
                 }
-                else
-                 {
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(send_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, ctx);
-                    }
-                    else {
-                        let mr_desc = &mut default_desc();
-                        ft_post!(send_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, ctx);
-                    }
+                else {
+                    let mr_desc = &mut default_desc();
+                    ep.senddata_connected_with_context_async(base, mr_desc, data, ctx).await.unwrap();
                 }
-                
             }
+            else if let Some(mr_desc) = data_desc.as_mut() {
+                 ep.send_connected_with_context_async(base, mr_desc, ctx).await.unwrap();
+                 // ft_post!(send_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, ctx);
+             }
+             else {
+                 let mr_desc = &mut default_desc();
+                 ep.send_connected_with_context_async(base, mr_desc, ctx).await.unwrap();
+                 // ft_post!(send_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, ctx);
+             }
         }
         SendOp::Inject => {
             if let Some(fi_address) = remote_address {
@@ -891,22 +896,20 @@ pub fn msg_post_recv<CQ: CqConfig, E: MsgDefaultCap>(op: RecvOp, rx_seq: &mut u6
                     ft_post!(recv_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, fi_address, ctx);
                 }
             }
+            else if let Some(mr_desc) = data_desc.as_mut() {
+                
+                ft_post!(recv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, ctx);
+            }
             else {
-                if let Some(mr_desc) = data_desc.as_mut() {
-                    
-                    ft_post!(recv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, ctx);
-                }
-                else {
-                    let mr_desc = &mut default_desc();
-                    ft_post!(recv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, ctx);
-                }
+                let mr_desc = &mut default_desc();
+                ft_post!(recv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, ctx);
             }
         }
     }
 }
 
 
-pub fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>,  ft_tag: u64, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
+pub async fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>,  ft_tag: u64, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
     match op {
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
@@ -920,74 +923,78 @@ pub fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u6
                         libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_address, 0, *tx_seq, 0)
                     }
                 }
+                else if let Some(mr_desc) = data_desc.as_mut() {
+                    libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), 0, *tx_seq, 0)
+                }
                 else {
-                    
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), 0, *tx_seq, 0)
-                    }
-                    else {
-                        libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), &mut [default_desc()], 0, *tx_seq, 0)
-                    }
+                    libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), &mut [default_desc()], 0, *tx_seq, 0)
                 };
             let msg_ref = &msg;
             let flag = libfabric::enums::TaggedSendMsgOptions::new().transmit_complete();
             
-            ft_post!(tsendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
+            // let var_name = ft_post!(tsendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
+            ep.tsendmsg_async(msg_ref, flag).await.unwrap();
         }
         TagSendOp::TagSend => {
-            let op_tag = if ft_tag != 0 {ft_tag} else {*tx_seq};
+            // let op_tag = if ft_tag != 0 {ft_tag} else {*tx_seq};
+            let op_tag = ft_tag;
             if let Some(fi_address) = remote_address {
 
                 // let ctx = &mut tx_ctx;
                 
                 if data != NO_CQ_DATA {
                     if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(tsenddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, op_tag, ctx);
+                        // ft_post!(tsenddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, op_tag, ctx);
+                        ep.tsenddata_with_context_async(base, mr_desc, data, fi_address, op_tag, ctx).await.unwrap();
                     }
                     else {
                         let mr_desc = &mut default_desc();
-                        ft_post!(tsenddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, op_tag, ctx);
+                        // ft_post!(tsenddata_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, fi_address, op_tag, ctx);
+                        ep.tsenddata_with_context_async(base, mr_desc, data, fi_address, op_tag, ctx).await.unwrap();
                     }
                 }
-                else { 
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(tsend_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, op_tag, ctx);
-                    }
-                    else {
-                        let mr_desc = &mut default_desc();
-                        ft_post!(tsend_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, op_tag, ctx);
-                    }
+                else if let Some(mr_desc) = data_desc.as_mut() {
+                    // ft_post!(tsend_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, op_tag, ctx);
+                    ft_post_async!(tsend_with_context_async, "transmit", ep, base, mr_desc, fi_address, op_tag, ctx); 
+                    // ep.tsend_with_context_async(base, mr_desc, fi_address, op_tag, ctx).await.unwrap();
+                }
+                else {
+                    let mr_desc = &mut default_desc();
+                    // ft_post!(tsend_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, fi_address, op_tag, ctx);
+                    ep.tsend_with_context_async(base, mr_desc, fi_address, op_tag, ctx).await.unwrap();
                 }
             }
+            else if data != NO_CQ_DATA {
+                if let Some(mr_desc) = data_desc.as_mut() {
+                    // ft_post!(tsenddata_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, op_tag, ctx);
+                    ep.tsenddata_connected_with_context_async(base, mr_desc, data, op_tag, ctx).await.unwrap();
+                }
+                else {
+                    let mr_desc = &mut default_desc();
+                    // ft_post!(tsenddata_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, op_tag, ctx);
+                    ep.tsenddata_connected_with_context_async(base, mr_desc, data, op_tag, ctx).await.unwrap();
+                }
+            }
+            else if let Some(mr_desc) = data_desc.as_mut() {
+                // ft_post!(tsend_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, op_tag, ctx);
+                ep.tsenddata_connected_with_context_async(base, mr_desc, data, op_tag, ctx).await.unwrap();
+            }
             else {
-                if data != NO_CQ_DATA {
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(tsenddata_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, op_tag, ctx);
-                    }
-                    else {
-                        let mr_desc = &mut default_desc();
-                        ft_post!(tsenddata_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, data, op_tag, ctx);
-                    }
-                }
-                else { 
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(tsend_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, op_tag, ctx);
-                    }
-                    else {
-                        let mr_desc = &mut default_desc();
-                        ft_post!(tsend_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, op_tag, ctx);
-                    }
-                }
+                let mr_desc = &mut default_desc();
+                // ft_post!(tsend_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, op_tag, ctx);
+                ep.tsenddata_connected_with_context_async(base, mr_desc, data, op_tag, ctx).await.unwrap();
             }
         },
         TagSendOp::TagInject => {
             let tag = *tx_seq;
             if let Some(fi_address) = remote_address {
 
-                ft_post!(tinject, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, fi_address, tag);  
+                // ft_post!(tinject, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, fi_address, tag);  
+                ep.tinject_async(base, fi_address, tag).await.unwrap();
             }
             else {
-                ft_post!(tinject_connected, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, tag);  
+                // ft_post!(tinject_connected, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, tag);  
+                ep.tinject_connected_async(base,  tag).await.unwrap();
             }
         },
     }
@@ -999,7 +1006,8 @@ pub fn tagged_post_recv<CQ: CqConfig,E: TagDefaultCap>(op: TagRecvOp, rx_seq: &m
             todo!()
         }
         TagRecvOp::TagRecv => {
-            let op_tag = if ft_tag != 0 {ft_tag} else {*rx_seq};
+            // let op_tag = if ft_tag != 0 {ft_tag} else {*rx_seq};
+            let op_tag = ft_tag;
             let zero = 0;
             if let Some(fi_address) = remote_address {
 
@@ -1012,14 +1020,12 @@ pub fn tagged_post_recv<CQ: CqConfig,E: TagDefaultCap>(op: TagRecvOp, rx_seq: &m
                     ft_post!(trecv_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, fi_address, op_tag, zero, ctx);
                 }
             }
+            else if let Some(mr_desc) = data_desc.as_mut() {
+                ft_post!(trecv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, op_tag, zero, ctx );
+            }
             else {
-                if let Some(mr_desc) = data_desc.as_mut() {
-                    ft_post!(trecv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, op_tag, zero, ctx );
-                }
-                else {
-                    let mr_desc = &mut default_desc();
-                    ft_post!(trecv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, op_tag, zero, ctx);
-                }
+                let mr_desc = &mut default_desc();
+                ft_post!(trecv_connected_with_context, ft_progress, rx_cq, *rx_seq, rx_cq_cntr, "receive", ep, base, mr_desc, op_tag, zero, ctx);
             }
         }
     }
@@ -1028,33 +1034,34 @@ pub fn tagged_post_recv<CQ: CqConfig,E: TagDefaultCap>(op: TagRecvOp, rx_seq: &m
 
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_post_tx<CQ: CqConfig, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, data: u64, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CompletionQueue<CQ>) {
+pub async fn ft_post_tx<CQ: CqConfig, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, data: u64, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CompletionQueue<CQ>) {
     
     // size += ft_tx_prefix_size(info);
     let fi_addr = &gl_ctx.remote_address;
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+size];
     match ep {
         EndpointCaps::Msg(ep) => {
-            msg_post(SendOp::Send, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, data_desc, buf, data);
+            msg_post(SendOp::Send, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, data_desc, buf, data).await;
         }
         EndpointCaps::Tagged(ep) => {
-            tagged_post(TagSendOp::TagSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, data_desc, buf, data);
+            // todo!();
+            tagged_post(TagSendOp::TagSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, data_desc, buf, data).await;
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_tx<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>) {
+pub async fn ft_tx<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>) {
 
     match tx_cq {
-        CqType::Spin(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::Sread(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::WaitSet(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::WaitFd(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::WaitYield(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
+        CqType::Spin(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq).await},
+        CqType::Sread(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq).await},
+        CqType::WaitSet(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq).await},
+        CqType::WaitFd(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq).await},
+        CqType::WaitYield(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq).await},
     }
     
-    ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
+    // ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1085,30 +1092,30 @@ pub fn ft_rx<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: TagDef
     }
 }
 
-pub fn ft_post_inject<CQ: CqConfig, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &libfabric::cq::CompletionQueue<CQ>) {
+pub async fn ft_post_inject<CQ: CqConfig, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &libfabric::cq::CompletionQueue<CQ>) {
     // size += ft_tx_prefix_size(info);
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+size];
     let fi_addr = &gl_ctx.remote_address;
     
     match ep {
         EndpointCaps::Msg(ep) => {
-            msg_post(SendOp::Inject, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, &mut None, buf, NO_CQ_DATA);
+            msg_post(SendOp::Inject, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, &mut None, buf, NO_CQ_DATA).await;
         }
         EndpointCaps::Tagged(ep) => {
-            tagged_post(TagSendOp::TagInject, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, &mut None, buf, NO_CQ_DATA)
+            tagged_post(TagSendOp::TagInject, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, &mut None, buf, NO_CQ_DATA).await;
         }
     }
-    gl_ctx.tx_cq_cntr += 1;
+    // gl_ctx.tx_cq_cntr += 1;
 }
 
-pub fn ft_inject<M: MsgDefaultCap, T:TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &CqType) {
+pub async fn ft_inject<M: MsgDefaultCap, T:TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &CqType) {
     
     match tx_cq{
-        CqType::Spin(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::Sread(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::WaitSet(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::WaitFd(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::WaitYield(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
+        CqType::Spin(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
+        CqType::Sread(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
+        CqType::WaitSet(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
+        CqType::WaitFd(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
+        CqType::WaitYield(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
     }
 }
 
@@ -1140,7 +1147,7 @@ pub fn ft_init_av_dst_addr<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefa
         let len = epname_bytes.len();
         gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(epname_bytes );
 
-        ft_tx(gl_ctx, ep, len, data_desc, tx_cq, tx_cntr);
+        async_std::task::block_on(async {ft_tx(gl_ctx, ep, len, data_desc, tx_cq, tx_cntr).await});
         ft_rx(gl_ctx, ep, 1, data_desc, rx_cq, rx_cntr);
 
     }
@@ -1173,7 +1180,7 @@ pub fn ft_init_av_dst_addr<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefa
         //     gl_ctx.remote_address = 0;
         // }
         
-        ft_tx(gl_ctx, ep, 1, data_desc, tx_cq, tx_cntr);
+        async_std::task::block_on(async {ft_tx(gl_ctx, ep, 1, data_desc, tx_cq, tx_cntr).await});
     }
 }
 
@@ -1385,7 +1392,9 @@ pub fn ft_sync<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T:TagDe
     
     // println!("TX SEQ: {},  TX_CTR: {}", gl_ctx.tx_seq, gl_ctx.tx_cq_cntr);
     // println!("RX SEQ: {},  RX_CTR: {}", gl_ctx.rx_seq, gl_ctx.rx_cq_cntr);
-    ft_tx(gl_ctx, ep, 1, mr_desc, tx_cq, tx_cntr);
+    println!("Sending!");
+    async_std::task::block_on(async {ft_tx(gl_ctx, ep, 1, mr_desc, tx_cq, tx_cntr).await});
+    println!("Done Sending!");
     ft_rx(gl_ctx, ep, 1, mr_desc, rx_cq, rx_cntr);
 }
 
@@ -1446,7 +1455,8 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
 
     gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(unsafe{ std::slice::from_raw_parts(&rma_iov as *const libfabric::iovec::RmaIoVec as *const u8, std::mem::size_of::<libfabric::iovec::RmaIoVec>())});
     
-    ft_tx(gl_ctx, ep, len + ft_tx_prefix_size(info), mr_desc, tx_cq, tx_cntr);
+    
+    async_std::task::block_on(async {ft_tx(gl_ctx, ep, len + ft_tx_prefix_size(info), mr_desc, tx_cq, tx_cntr).await});
     ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
     
     unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut libfabric::iovec::RmaIoVec as *mut u8,std::mem::size_of::<libfabric::iovec::RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
@@ -1479,7 +1489,10 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
             }
             let fab = libfabric::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
 
-            let eq = EventQueueBuilder::new(&fab).build().unwrap();
+            let eq = EventQueueBuilder::new(&fab)
+                .wait_fd()
+                .build()
+                .unwrap();
 
 
             let pep = EndpointBuilder::new(&entries[0])
@@ -1501,7 +1514,10 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
             }
             let fab = libfabric::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
 
-            let eq = EventQueueBuilder::new(&fab).build().unwrap();
+            let eq = EventQueueBuilder::new(&fab)
+                .wait_fd()
+                .build()
+                .unwrap();
 
 
             let pep = EndpointBuilder::new(&entries[0])
@@ -1570,7 +1586,7 @@ pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M,
 
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>) {
+pub async fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>) {
 
     
     let base = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
@@ -1578,69 +1594,41 @@ pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCa
     match ep {
         EndpointCaps::Msg(ep) => {
             match tx_cq {
-                CqType::Spin(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::Sread(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitSet(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitFd(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitYield(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
+                CqType::Spin(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::Sread(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitSet(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitFd(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitYield(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
             }
         }
         EndpointCaps::Tagged(ep) => {
             match tx_cq {
-                CqType::Spin(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::Sread(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitSet(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitFd(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitYield(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
+                CqType::Spin(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::Sread(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitSet(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitFd(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitYield(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
             }
         }
     }
 
-    ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
+    // ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
     ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_finalize<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+pub async fn ft_finalize<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
 
-    // if info.get_domain_attr().get_mr_mode().is_raw() { 
-    //     domain.unmap_key(0xC0DE).unwrap();
-    // }
-
-    ft_finalize_ep(info, gl_ctx, ep, data_desc, tx_cq, rx_cq, tx_cntr, rx_cntr);
+    ft_finalize_ep(info, gl_ctx, ep, data_desc, tx_cq, rx_cq, tx_cntr, rx_cntr).await;
 }
-
-// pub fn close_all_pep(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, ep: libfabric::ep::Endpoint<E>, pep: libfabric::ep::PassiveEndpoint, mr: Option<libfabric::mr::MemoryRegion>) {
-//     ep.close().unwrap();
-//     pep.close().unwrap();
-//     eq.close().unwrap();
-//     tx_cq.close().unwrap();
-//     rx_cq.close().unwrap();
-//     if let Some(mr_val) = mr { mr_val.close().unwrap(); }
-//     domain.close().unwrap();
-//     fab.close().unwrap();        
-// }
-
-// pub fn close_all(fab: &mut libfabric::fabric::Fabric, domain: &mut libfabric::domain::Domain, eq :&mut libfabric::eq::EventQueue, rx_cq: &mut libfabric::cq::CompletionQueue, tx_cq: &mut libfabric::cq::CompletionQueue, tx_cntr: Option<Counter>, rx_cntr: Option<Counter>, ep: &mut libfabric::ep::Endpoint<E>, mr: Option<&mut libfabric::mr::MemoryRegion>, av: Option<&mut libfabric::av::AddressVector>) {
-    
-//     ep.close().unwrap();
-//     eq.close().unwrap();
-//     tx_cq.close().unwrap();
-//     rx_cq.close().unwrap();
-//     if let Some(mr_val) = mr { mr_val.close().unwrap() }
-//     if let Some(av_val) = av { av_val.close().unwrap() }
-//     if let Some(rxcntr_val) = rx_cntr { rxcntr_val.close().unwrap() }
-//     if let Some(txcnr_val) = tx_cntr { txcnr_val.close().unwrap() }
-//     domain.close().unwrap();
-//     fab.close().unwrap();    
-// }
 
 #[allow(clippy::too_many_arguments)]
 pub fn pingpong<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: TagDefaultCap>(inject_size: usize, gl_ctx: &mut TestsGlobalCtx, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, iters: usize, warmup: usize, size: usize, server: bool) {
     // let inject_size = info.get_tx_attr().get_inject_size();
-
+    println!("About to start ping pong");
     ft_sync(ep, gl_ctx, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc);
+    println!("Passed sync");
     let mut now = Instant::now();
     if ! server {
         for i in 0..warmup+iters {
@@ -1649,10 +1637,10 @@ pub fn pingpong<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: Tag
             }
 
             if size < inject_size {
-                ft_inject(gl_ctx, ep, size, tx_cq);
+                async_std::task::block_on(async {ft_inject(gl_ctx, ep, size, tx_cq).await}); // Should return immediately
             }
             else {
-                ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr);
+                async_std::task::block_on(async {ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr).await});
             }
 
             ft_rx(gl_ctx, ep, size, mr_desc, rx_cq, rx_cntr);
@@ -1668,10 +1656,10 @@ pub fn pingpong<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: Tag
 
 
             if size < inject_size {
-                ft_inject(gl_ctx, ep, size, tx_cq);
+                async_std::task::block_on(async {ft_inject(gl_ctx, ep, size, tx_cq).await}); // Should return immediately
             }
             else {
-                ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr);
+                async_std::task::block_on(async {ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr).await});
             }
         }
     }

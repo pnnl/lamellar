@@ -1,10 +1,11 @@
 use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::{RefCell, OnceCell}, marker::PhantomData};
 
+use async_io::Async;
 use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::{AddressVector}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::CompletionQueueImpl};
+use crate::{av::{AddressVector}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, EventQueueImpl, AsyncEventQueueImpl}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::{CompletionQueueImpl, AsyncCompletionQueueImpl}, error::Error};
 
 #[repr(C)]
 pub struct Address {
@@ -31,10 +32,10 @@ impl Address {
 pub(crate) struct EndpointImpl {
     pub(crate) c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
-    pub(crate) tx_cq: RefCell<Option<Rc<CompletionQueueImpl>>>,
-    pub(crate) rx_cq: RefCell<Option<Rc<CompletionQueueImpl>>>,
+    pub(crate) tx_cq: RefCell<Option<Rc<AsyncCompletionQueueImpl>>>,
+    pub(crate) rx_cq: RefCell<Option<Rc<AsyncCompletionQueueImpl>>>,
+    pub(crate) eq: RefCell<Option<Rc<AsyncEventQueueImpl>>>,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
-    pub(crate) bound_eq: OnceCell<Rc<EventQueueImpl>>,
     _domain_rc:  Rc<DomainImpl>,
 }
 
@@ -474,6 +475,8 @@ impl<T> Endpoint<T> {
         ActiveEndpointImpl::shutdown(self, 0)
     } 
 }
+
+
 
 impl<E> AsFd for Endpoint<E> {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -932,7 +935,7 @@ impl<E> PassiveEndpointImpl<E> {
         self.c_pep
     }
 
-    pub fn bind(&self, res: &Rc<EventQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
+    pub fn bind(&self, res: &Rc<AsyncEventQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.c_pep, res.as_fid().as_raw_fid(), flags) };
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -1275,7 +1278,7 @@ impl EndpointImpl {
                     _sync_rcs: RefCell::new(Vec::new()),
                     rx_cq: RefCell::new(None),
                     tx_cq: RefCell::new(None),
-                    bound_eq: OnceCell::new(),
+                    eq: RefCell::new(None),
                     _domain_rc: domain.clone(),
                 })
         }
@@ -1338,7 +1341,7 @@ impl EndpointImpl {
         }
     } 
 
-    pub(crate) fn bind_cq_(&self, cq: &Rc<CompletionQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cq_(&self, cq: &Rc<AsyncCompletionQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), cq.as_raw_fid(), flags) };
         
         if err != 0 {
@@ -1357,20 +1360,6 @@ impl EndpointImpl {
         }
     } 
 
-    pub(crate) fn bind_eq_(&self, res: &Rc<EventQueueImpl>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_raw_fid(), flags) };
-        
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            if self.bound_eq.set(res.clone()).is_err() {
-                panic!("Endpoint is already bound to an EventQueue");
-            }
-            Ok(())
-        }
-    } 
-
     pub(crate) fn bind_cq(&self) -> IncompleteBindCq {
         IncompleteBindCq { ep: self, flags: 0}
     }
@@ -1379,9 +1368,24 @@ impl EndpointImpl {
         IncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    // pub(crate) fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
-        self.bind_eq_(&eq.inner, 0)
+    //     self.bind_eq__eq_(&eq.inner, 0)
+    // }
+
+    pub(crate) fn bind_eq(&self, eq: &Rc<AsyncEventQueueImpl>) -> Result<(), crate::error::Error>  {
+        
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), eq.as_raw_fid(), 0) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            *self.eq.borrow_mut() = Some(eq.clone());
+
+            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do this with inner mutability.
+            Ok(())
+        }
     }
 
     pub(crate) fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
@@ -1405,7 +1409,7 @@ impl EndpointImpl {
                     _sync_rcs: RefCell::new(Vec::new()),
                     rx_cq: RefCell::new(None),
                     tx_cq: RefCell::new(None),
-                    bound_eq: OnceCell::new(),
+                    eq: RefCell::new(None),
                     _domain_rc: self._domain_rc.clone(),
                 })
         }
@@ -1422,7 +1426,7 @@ impl<E> Endpoint<E> {
     }
         
     pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
-        self.inner.bind_eq(eq)
+        self.inner.bind_eq(&eq.inner)
     }
 
     pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
@@ -1845,3 +1849,21 @@ impl<'a, E> EndpointBuilder<'a, (), E> {
         self
     }
 }
+
+
+// ============== Async stuff ======================= //
+
+impl<T> Endpoint<T> {
+
+    pub async fn connect_async(&self, addr: &Address) -> Result<(), crate::error::Error> {
+        ActiveEndpointImpl::connect(self, addr)?;
+        
+        let eq = self.inner.eq.borrow().as_ref().unwrap().clone();
+        println!("Connecting async");
+        crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid()}.await?;
+        println!("Done Connecting async");
+
+        Ok(())
+    }
+}
+

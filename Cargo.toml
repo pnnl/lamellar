@@ -8,7 +8,8 @@ edition = "2021"
 libfabric-sys = { path = "../libfabric-sys" }
 debug_print = "1.0.0"
 async-std = {version = "1.12.0"}
-
+async-io = {version = "2.3.2"}
+futures-io = {version = "0.3.30"}
 
 # [features]
 # async = ["async-std"]

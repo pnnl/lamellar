@@ -23,25 +23,25 @@ impl<E: CollCap> Endpoint<E> {
 
     pub fn join(&self, addr: &Address, options: JoinOptions) -> Result<MulticastGroupCollective, crate::error::Error> { // [TODO]
         let mc = MulticastGroupCollective::new::<E, ()>(self, addr, options.get_value(), None)?;
-        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        self.inner.eq.borrow().as_ref().unwrap().bind_mc(&mc.inner);
         Ok(mc)
     }
 
     pub fn join_with_context<T>(&self, addr: &Address, options: JoinOptions, context: &mut T) -> Result<MulticastGroupCollective, crate::error::Error> {
         let mc = MulticastGroupCollective::new::<E, T>(self, addr, options.get_value(), Some(context))?;
-        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        self.inner.eq.borrow().as_ref().unwrap().bind_mc(&mc.inner);
         Ok(mc)
     }
 
     pub fn join_collective(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<MulticastGroupCollective, crate::error::Error> {
         let mc = MulticastGroupCollective::new_collective::<E, ()>(self, coll_mapped_addr, set, options.get_value(), None)?;
-        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        self.inner.eq.borrow().as_ref().unwrap().bind_mc(&mc.inner);
         Ok(mc)
     }
 
     pub fn join_collective_with_context<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context : &mut T) -> Result<MulticastGroupCollective, crate::error::Error> {
         let mc = MulticastGroupCollective::new_collective::<E, T>(self, coll_mapped_addr, set, options.get_value(), Some(context))?;
-        self.inner.bound_eq.get().unwrap().bind_mc(&mc.inner);
+        self.inner.eq.borrow().as_ref().unwrap().bind_mc(&mc.inner);
         Ok(mc)
     }
 }

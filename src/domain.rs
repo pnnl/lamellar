@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, eq::{EventQueue, EventQueueImpl}, eqoptions::EqConfig};
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, eq::{EventQueue, EventQueueImpl, AsyncEventQueueImpl}, eqoptions::EqConfig};
 
 //================== Domain (fi_domain) ==================//
 
@@ -10,7 +10,7 @@ pub(crate) struct DomainImpl {
     pub(crate) c_domain: *mut libfabric_sys::fid_domain,
     fid: OwnedFid,
     pub(crate) domain_attr: DomainAttr,
-    _eq_rc: OnceCell<Rc<EventQueueImpl>>,
+    _eq_rc: OnceCell<Rc<AsyncEventQueueImpl>>,
     _fabric_rc: Rc<FabricImpl>,
 }
 
@@ -57,7 +57,7 @@ impl DomainImpl {
         }
     }
     
-    pub(crate) fn bind(&self, eq: &Rc<EventQueueImpl>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, eq: &Rc<AsyncEventQueueImpl>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), eq.as_fid().as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
 
         if err != 0 {

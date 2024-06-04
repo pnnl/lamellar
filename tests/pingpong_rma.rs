@@ -57,7 +57,7 @@ fn pp_server_rma() {
                 common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
             }
 
-            common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
         }
         common::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
@@ -72,7 +72,7 @@ fn pp_server_rma() {
                 common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
             }
 
-            common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
         }
     }
 }
@@ -130,7 +130,7 @@ fn pp_client_rma() {
                 common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
             }
 
-            common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
         }
         common::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
@@ -144,7 +144,7 @@ fn pp_client_rma() {
                 common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
             }
 
-            common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
             // drop(domain);
         }
     }

@@ -75,14 +75,12 @@ impl<WRITE, WAITFD> crate::Waitable for Options<WRITE, WaitRetrieve, WAITFD> {}
 impl<WRITE, WAITFD> crate::WaitRetrievable for Options<WRITE, WaitRetrieve, WAITFD> {}
 
 
-impl<WAIT, WAITFD> Options<Off, WAIT, WAITFD> {
-
-}
+impl<WAIT, WAITFD> Options<Off, WAIT, WAITFD> {}
 
 impl<WAIT, WAITFD> EqWritable for Options<On, WAIT, WAITFD> {}
 
 // impl<WRITE> Options<WRITE, WaitRetrieve, Off> {}
 
-// impl<WRITE> crate::FdRetrievable for Options<WRITE, WaitRetrieve, On> {}
+impl<WRITE> crate::FdRetrievable for Options<WRITE, WaitRetrieve, On> {}
 
 impl<WRITE, WAIT, WAITFD> EqConfig for Options<WRITE, WAIT, WAITFD> {}

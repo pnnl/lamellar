@@ -1,9 +1,10 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::{Rc, Weak}, cell::RefCell, collections::HashMap};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::{Rc, Weak}, cell::RefCell, collections::HashMap, ops::Deref};
 
+use async_io::Async;
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector, fabric::Fabric, domain::Domain};
+use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector, fabric::Fabric, domain::Domain, error::Error};
 use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, self, Fid}, mr::MemoryRegionImpl, av::AddressVectorImpl, comm::collective::MulticastGroupCollectiveImpl};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
@@ -96,6 +97,48 @@ impl<T> Event<T>{
 
 }
 
+struct EqAsyncRead<'a>{
+    buf: *mut std::ffi::c_void,
+    event: &'a mut u32,
+    eq: &'a AsyncEventQueueImpl,
+}
+
+impl<'a> Unpin for EqAsyncRead<'a>{}
+
+impl<'a> async_std::future::Future for EqAsyncRead<'a>{
+    type Output=Result<isize, Error>;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        // let mut buff = vec![1u8];
+        // self.poll_read(cx, &mut buff[..])
+        // let ev = self.event;
+        let fid = self.eq.handle();
+        let buf = self.buf;
+        let ev = self.get_mut();
+        loop {
+            let err = unsafe { libfabric_sys::inlined_fi_eq_read(fid, ev.event , buf, std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
+
+            // let err = read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, self.cq.0.as_ref().handle(), self.num_entries, self.buf,);
+            if err < 0 {
+                let err = Error::from_err_code(-err as u32);
+                if !matches!(err.kind, crate::error::ErrorKind::TryAgain) 
+                {
+                    return std::task::Poll::Ready(Err(err));
+                }
+                else if ev.eq.0.poll_readable(cx).is_ready() {
+                    continue;
+                 }
+                else {
+                    return std::task::Poll::Pending;
+                }
+            }
+            else {
+                return std::task::Poll::Ready(Ok(err));
+            }
+        }
+    }
+}
+
 //================== EventQueue (fi_eq) ==================//
 pub(crate) struct EventQueueImpl {
     c_eq: *mut libfabric_sys::fid_eq,
@@ -112,12 +155,37 @@ pub(crate) struct EventQueueImpl {
     _fabric_rc: Rc<FabricImpl>,
 }
 
+pub(crate) struct AsyncEventQueueImpl(pub(crate) Async<EventQueueImpl>);
+
+impl AsyncEventQueueImpl {
+    pub(crate) fn new<T0>(fabric: &Rc<crate::fabric::FabricImpl>, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+        Ok(Self(Async::new(EventQueueImpl::new(fabric, attr, context)?).unwrap()))
+    }
+}
+
+impl Deref for  AsyncEventQueueImpl {
+    type Target = EventQueueImpl;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
 
 pub struct EventQueue<T: EqConfig> {
-    pub(crate) inner: Rc<EventQueueImpl>,
+    pub(crate) inner: Rc<AsyncEventQueueImpl>,
     phantom: PhantomData<T>,
 }
 
+impl AsyncEventQueueImpl {
+    pub(crate) async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>{
+        let mut event = 0 ;
+        let mut buffer: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
+        let bytes = EqAsyncRead{buf: buffer.as_mut_ptr().cast(), event: &mut event, eq: self}.await?;
+
+        // println!("Done!");
+        Ok(self.read_eq_entry(bytes, &buffer, &event))
+    }
+}
 
 impl<'a> EventQueueImpl {
 
@@ -167,7 +235,7 @@ impl<'a> EventQueueImpl {
         self.mcs.borrow_mut().insert(mc.as_fid().as_raw_fid(), Rc::downgrade(mc));
     }
 
-    pub(crate) fn read(&self) -> Result<Event<usize>, crate::error::Error>{
+    pub(crate) fn read(&self) -> Result<Event<usize>, crate::error::Error>{ //[TODO] Use an "owned" buffer instead of allocating a new one for each attempt and copy it out
         let mut event = 0 ;
         let mut buffer = self.event_buffer.borrow_mut();
         let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
@@ -178,6 +246,8 @@ impl<'a> EventQueueImpl {
             Ok(self.read_eq_entry(ret, &buffer, &event))
         }
     }
+
+
 
     pub(crate) fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
         let mut event = 0 ;
@@ -373,7 +443,7 @@ impl<T: EqConfig> EventQueue<T> {
         Ok(
             Self {
                 inner: Rc::new(
-                    EventQueueImpl::new(&fabric.inner, attr, context)?
+                    AsyncEventQueueImpl::new(&fabric.inner, attr, context)?
                 ),
                 phantom: PhantomData, 
             })
@@ -401,6 +471,11 @@ impl<T: EqConfig> EventQueue<T> {
     
 }
 
+impl<T: EqConfig + WaitRetrievable + FdRetrievable> EventQueue<T> {
+    pub async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>{
+        self.inner.read_async().await
+    }
+}
 
 impl<T: EqWritable + EqConfig> EventQueue<T> {
 
@@ -441,6 +516,11 @@ impl AsFid for EventQueueImpl {
        self.fid.as_fid()
     }
 }
+impl AsFid for AsyncEventQueueImpl {
+    fn as_fid(&self) -> fid::BorrowedFid<'_> {
+       self.fid.as_fid()
+    }
+}
 
 impl<T: EqConfig + WaitRetrievable + FdRetrievable> AsFd for EventQueue<T> {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -453,7 +533,20 @@ impl<T: EqConfig + WaitRetrievable + FdRetrievable> AsFd for EventQueue<T> {
     }
 }
 
+impl AsFd for EventQueueImpl {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
+            fd
+        }
+        else {
+            panic!("Fabric object object type is not Fd")
+        }
+    }
+}
+
+
 impl crate::BindImpl for EventQueueImpl {}
+impl crate::BindImpl for AsyncEventQueueImpl {}
 impl<T: EqConfig + 'static> crate::Bind for EventQueue<T> {
     
     fn inner(&self) -> Rc<dyn crate::BindImpl> {
@@ -751,6 +844,10 @@ impl EventQueueCmEntry {
         Self { c_entry }
     }
 
+    pub fn get_fid(&self) -> libfabric_sys::fid_t {
+        self.c_entry.fid
+    }
+
     pub fn get_info<E: Caps>(&self, _caps: &InfoHints<E>) -> Result<InfoEntry<E>, crate::error::Error> { //[TODO] Should returen the proper type of info entry
         let caps = E::bitfield();
         if caps & unsafe{(*self.c_entry.info).caps} == caps {
@@ -767,6 +864,43 @@ impl Default for EventQueueCmEntry {
         Self::new()
     }
 }
+
+//================== Async Stuff ==============================//
+
+pub struct EventQueueFut<const E: libfabric_sys::_bindgen_ty_18>{
+    pub(crate) req_fid: libfabric_sys::fid_t,
+    pub(crate) eq: Rc<AsyncEventQueueImpl>,
+}
+
+impl<const E: libfabric_sys::_bindgen_ty_18> async_std::future::Future for EventQueueFut<E> {
+    type Output=Result<(), Error>;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        
+        loop {
+            let fut = self.eq.read_async();
+            let mut pinned = Box::pin(fut) ;
+            let res = match pinned.as_mut().poll(cx) {
+                std::task::Poll::Ready(res) => res,
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            }?;
+
+            if res.get_value() == E {
+                let found = match res {
+                    // crate::eq::Event::Notify(entry) | 
+                    crate::eq::Event::MrComplete(entry) => entry.c_entry.fid == self.req_fid,
+                    crate::eq::Event::AVComplete(entry) => entry.c_entry.fid == self.req_fid,
+                    crate::eq::Event::JoinComplete(entry) => entry.c_entry.fid == self.req_fid,
+                    crate::eq::Event::ConnReq(entry) => entry.c_entry.fid == self.req_fid,
+                    crate::eq::Event::Connected(entry) => entry.c_entry.fid == self.req_fid,
+                    crate::eq::Event::Shutdown(entry) => entry.c_entry.fid == self.req_fid,
+                };
+                if found {return std::task::Poll::Ready(Ok(()))}
+            }
+        }
+    }
+}
+
 
 //================== EventQueue related tests ==================//
 
@@ -785,7 +919,7 @@ mod tests {
     //     let eq = EventQueueBuilder::new(&fab)
     //         .size(32)
     //         .write()
-    //         .wait_none()
+    //         .wait_fd()
     //         .build().unwrap();
 
     //     for mut i in 0_usize ..5 {
@@ -841,7 +975,7 @@ mod tests {
     //     let eq = EventQueueBuilder::new(&fab)
     //         .size(32)
     //         .write()
-    //         .wait_none()
+    //         .wait_fd()
     //         .build().unwrap();
 
     //     for mut i in 0_usize .. 32 {

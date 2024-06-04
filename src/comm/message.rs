@@ -6,7 +6,6 @@ use crate::enums::RecvMsgOptions;
 use crate::enums::SendMsgOptions;
 use crate::ep::ActiveEndpointImpl;
 use crate::ep::Endpoint;
-use crate::ep::EndpointImpl;
 use crate::infocapsoptions::MsgCap;
 use crate::infocapsoptions::RecvMod;
 use crate::infocapsoptions::SendMod;
@@ -14,42 +13,6 @@ use crate::mr::DataDescriptor;
 use crate::utils::check_error;
 use crate::xcontext::ReceiveContext;
 use crate::xcontext::TransmitContext;
-
-struct LibfabricAsyncTransfer{
-    req: usize,
-    cq: Rc<CompletionQueueImpl>,
-}
-
-impl async_std::future::Future for LibfabricAsyncTransfer {
-    type Output=();
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        
-        match self.cq.read(1) {
-
-            Ok(_) => {
-
-                if  self.cq.completions() >= self.req {
-                    std::task::Poll::Ready(())
-                }
-                else {
-                    cx.waker().wake_by_ref(); 
-                    std::task::Poll::Pending
-                }
-            }
-            Err(ref err) => {
-                if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
-                    panic!("Could not read cq");
-                }
-                else {
-                    cx.waker().wake_by_ref(); 
-                    std::task::Poll::Pending
-                }
-            }
-
-        }
-    }
-}
 
 impl<E: MsgCap + RecvMod> Endpoint<E> {
 
@@ -88,17 +51,6 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
         check_error(err)
     }
     
-    pub async fn recv_connected_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_recv(self.handle(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, (context as *mut T0).cast() ) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-            let cq = self.inner.rx_cq.borrow().as_ref().unwrap().clone(); 
-            LibfabricAsyncTransfer{req, cq}.await;
-        }
-        
-        check_error(err)
-    }
-
 	pub fn recvv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), mapped_addr.raw_addr(), std::ptr::null_mut()) };
         if err == 0 {
@@ -195,17 +147,6 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
         check_error(err)
     }
 
-    pub async fn send_connected_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, context : &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_send(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, (context as *mut T0).cast()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-            let cq = self.inner.rx_cq.borrow().as_ref().unwrap().clone(); 
-            LibfabricAsyncTransfer{req, cq}.await;
-        }
-    
-        check_error(err)
-    }
-
     pub fn sendmsg(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
         let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
@@ -244,28 +185,28 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
     pub fn inject_connected<T>(&self, buf: &[T]) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC) };
-        let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+        // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
 
         check_error(err)
     }
 
     pub fn inject<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
-        let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+        // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
 
         check_error(err)
     }
 
     pub fn injectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
-        let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+        // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
 
         check_error(err)
     }
 
     pub fn injectdata_connected<T>(&self, buf: &[T], data: u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC) };
-        let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+        // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
 
         check_error(err)
     }

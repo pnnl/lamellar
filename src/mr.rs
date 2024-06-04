@@ -397,7 +397,7 @@ impl MemoryRegion {
     /// Corresponds to `fi_mr_bind` with a `fid_ep` 
     pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
         self.inner.bind_ep(&ep.inner)?;
-        ep.inner.bound_eq.get().unwrap().bind_mr(&self.inner);
+        ep.inner.eq.borrow().as_ref().unwrap().bind_mr(&self.inner);
         Ok(())
     }
 
@@ -736,6 +736,11 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
         MemoryRegion::from_attr(self.domain, self.mr_attr, self.flags)
     }
 }
+
+//=================== Async Stuff =========================//
+
+
+
 
 //================== Memory Region tests ==================//
 #[cfg(test)]
