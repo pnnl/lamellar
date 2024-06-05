@@ -510,7 +510,7 @@ impl<'a> TxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CqConfig + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: CqConfig + 'static, Format: crate::cq::EntryFormat + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T, Format>) -> Result<(), crate::error::Error> {
         self.ep.bind(&cq.inner, self.flags)
     }
 }
@@ -807,7 +807,7 @@ impl<'a> RxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CqConfig+ 'static>(&self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: CqConfig+ 'static, Format: crate::cq::EntryFormat + 'static>(&self, cq: &crate::cq::CompletionQueue<T, Format>) -> Result<(), crate::error::Error> {
         self.ep.bind(cq, self.flags)
     }
 }
