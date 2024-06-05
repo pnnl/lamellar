@@ -6,11 +6,6 @@ use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, 
 
 //================== CompletionQueue (fi_cq) ==================//
 
-macro_rules! read_no_cq_entry {
-    ($read_fn: expr, $cq: expr, $count: expr, $( $x:ident),*) => {
-        unsafe{ $read_fn($cq, std::ptr::null_mut(), $count, $($x,)*)}
-    }
-}
 macro_rules! read_cq_entry_ {
     ($read_fn: expr, $cq: expr, $count: expr, $entries: expr, $( $x:ident),*) => {
         {
@@ -31,7 +26,7 @@ macro_rules! read_cq_entry_ {
 macro_rules! read_cq_entry {
     ($read_fn: expr, $handle: expr, $count: expr, $entries: expr, $( $x:ident),*) => {
         match $entries {
-            CompletionFormat::Unspec => read_no_cq_entry!($read_fn,  $handle, $count, $( $x),*),  
+            CompletionFormat::Unspec(ref mut cv) => {read_cq_entry_!($read_fn,  $handle, $count, cv, $( $x),*)},  
             CompletionFormat::Ctx(ref mut cv) => read_cq_entry_!($read_fn,  $handle, $count, cv, $( $x),*),  
             CompletionFormat::Msg(ref mut mv) => read_cq_entry_!($read_fn,  $handle, $count, mv, $( $x),*), 
             CompletionFormat::Data(ref mut dv) => read_cq_entry_!($read_fn,  $handle, $count, dv, $( $x),*), 
@@ -65,7 +60,7 @@ pub type UnspecEntry = ();
 
 #[derive(Clone)]
 pub enum CompletionFormat {
-    Unspec,
+    Unspec(Vec<Completion<CtxEntry>>), // fi_cq_entry seems to be the bare minimum needed
     Ctx(Vec<Completion<CtxEntry>>),
     Msg(Vec<Completion<MsgEntry>>),
     Data(Vec<Completion<DataEntry>>),
@@ -127,8 +122,7 @@ impl<'a> CompletionQueueImpl {
                     _domain_rc: domain.clone(),
                     entry_buff: 
                         if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC {
-
-                            RefCell::new(CompletionFormat::Unspec)
+                            RefCell::new(CompletionFormat::Unspec(Vec::with_capacity(default_buff_size)))
                         }
                         else if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_CONTEXT {
                             RefCell::new(CompletionFormat::Ctx(Vec::with_capacity(default_buff_size)))
