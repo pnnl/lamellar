@@ -1,7 +1,6 @@
 use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, ops::Deref, collections::HashMap};
 
 use async_io::Async;
-use futures_io::AsyncRead;
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
@@ -185,8 +184,8 @@ impl AsyncCompletionQueueImpl {
         };
         let ret = fut.await?;
 
-        *self.0.as_ref().completions.borrow_mut() += ret;
-        println!("Complete: {}/{}", self.0.as_ref().completions.borrow(), self.0.as_ref().requests.borrow());
+        // *self.0.as_ref().completions.borrow_mut() += ret;
+        // println!("Complete: {}/{}", self.0.as_ref().completions.borrow(), self.0.as_ref().requests.borrow());
 
         match &mut buf {
             CompletionFormat::Unspec(data) => unsafe{data.set_len(ret)},
@@ -304,8 +303,8 @@ impl<'a> CompletionQueueImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
         else {
-            *self.completions.borrow_mut() += err as usize;
-            println!("Complete: {}/{}", self.completions.borrow(), self.requests.borrow());
+            // *self.completions.borrow_mut() += err as usize;
+            // println!("Complete: {}/{}", self.completions.borrow(), self.requests.borrow());
             Ok(())
         }
     }
@@ -466,8 +465,8 @@ impl<'a> CompletionQueueImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
         else {
-            *self.completions.borrow_mut() += err as usize;
-            println!("Complete: {}/{}", self.completions.borrow(), self.requests.borrow());
+            // *self.completions.borrow_mut() += err as usize;
+            // println!("Complete: {}/{}", self.completions.borrow(), self.requests.borrow());
 
             Ok(())
         }
@@ -552,15 +551,15 @@ impl<'a> CompletionQueueImpl {
         }
     }
 
-    pub(crate) fn completions(&self) -> usize {
-        *self.completions.borrow()
-    }
+    // pub(crate) fn completions(&self) -> usize {
+    //     *self.completions.borrow()
+    // }
 
-    pub(crate) fn request(&self) -> usize {
-        *self.requests.borrow_mut() += 1;
-        println!("Requests: {}", self.requests.borrow());
-        *self.requests.borrow()
-    }
+    // pub(crate) fn request(&self) -> usize {
+    //     *self.requests.borrow_mut() += 1;
+    //     println!("Requests: {}", self.requests.borrow());
+    //     *self.requests.borrow()
+    // }
 }
 
 
@@ -854,61 +853,6 @@ impl<T: CqConfig + WaitRetrievable + FdRetrievable> AsFd for CompletionQueue<T> 
         self.inner.as_fd()
     }
 }
-
-impl<T: CqConfig + WaitRetrievable + FdRetrievable>  AsyncRead for CompletionQueue<T> {
-    
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<futures_io::Result<usize>> {
-        
-        match self.read(1) {
-            Ok(_) => {
-                
-                std::task::Poll::Ready(Ok(1))
-            }
-            Err(ref err) => {
-                if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
-                    panic!("Could not read cq");
-                }
-                else {
-                    cx.waker().wake_by_ref(); 
-                    std::task::Poll::Pending
-                }
-            }
-            
-        }
-    }
-}
-
-
-impl  AsyncRead for CompletionQueueImpl {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<futures_io::Result<usize>> {
-        
-        match self.read(1) {
-            Ok(_) => {
-                
-                std::task::Poll::Ready(Ok(1))
-            }
-            Err(ref err) => {
-                if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
-                    panic!("Could not read cq");
-                }
-                else {
-                    cx.waker().wake_by_ref(); 
-                    std::task::Poll::Pending
-                }
-            }
-            
-        }
-    }
-}
-
 
 //================== CompletionQueue Builder ==================//
 
@@ -1696,7 +1640,7 @@ pub(crate) struct AsyncCtx {
 }
 
 pub(crate) struct AsyncTransferCq{
-    pub(crate) req: usize,
+    // pub(crate) req: usize,
     pub(crate) cq: Rc<AsyncCompletionQueueImpl>,
     pub(crate) ctx: usize
 }
@@ -1744,7 +1688,6 @@ impl async_std::future::Future for AsyncTransferCq {
 
 #[cfg(test)]
 mod tests {
-    use async_io::Async;
 
     use crate::{cq::*, domain::DomainBuilder, info::Info};
 
@@ -1758,9 +1701,7 @@ mod tests {
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         // let mut cqs = Vec::new();
         for _ in 0..count {
-            let cq = CompletionQueueBuilder::new(&domain).wait_fd().build().unwrap();
-            // let async_cq = Async::new(cq).unwrap();
-            // cqs.push(cq);
+            let _cq = CompletionQueueBuilder::new(&domain).wait_fd().build().unwrap();
         }
     }
 

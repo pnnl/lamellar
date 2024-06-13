@@ -17,9 +17,9 @@ impl<E: TagCap + RecvMod> Endpoint<E> {
 
 
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -53,9 +53,9 @@ impl<E: TagCap + RecvMod> Endpoint<E> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(),raw_addr, tag, ignore, (&mut async_ctx as *mut AsyncCtx).cast()) };
 
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -99,9 +99,9 @@ impl<E: TagCap + SendMod> Endpoint<E> {
         let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, (&mut async_ctx as *mut AsyncCtx).cast()) };
 
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -136,9 +136,9 @@ impl<E: TagCap + SendMod> Endpoint<E> {
         let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, (&mut async_ctx as *mut AsyncCtx).cast()) };
 
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -164,9 +164,9 @@ impl<E: TagCap + SendMod> Endpoint<E> {
     // pub async fn tsendmsg_async(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> {
     //     let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
     //     if err == 0 {
-    //         let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
     //         let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-    //         AsyncTransferCq{req, cq}.await?;
+    //         AsyncTransferCq{cq}.await?;
     //     } 
 
     //     check_error(err)
@@ -185,9 +185,9 @@ impl<E: TagCap + SendMod> Endpoint<E> {
 
 
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )

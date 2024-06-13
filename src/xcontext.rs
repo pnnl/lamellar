@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, EventQueueImpl, AsyncEventQueueImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, AsyncEventQueueImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
 
 pub struct Receive;
 pub struct Transmit;

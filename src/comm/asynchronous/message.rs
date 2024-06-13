@@ -13,9 +13,9 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_recv(self.handle(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return crate::cq::AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -48,9 +48,9 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return crate::cq::AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -95,9 +95,9 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return crate::cq::AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -130,9 +130,9 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_send(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return crate::cq::AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -160,7 +160,7 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
     //     if err == 0 {
     //         let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
     //         let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-    //         crate::cq::AsyncTransferCq{req, cq}.await?;
+    //         crate::cq::AsyncTransferCq{cq}.await?;
     //     }
 
     //     check_error(err)
@@ -177,9 +177,9 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
+            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
             let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
-            return crate::cq::AsyncTransferCq{req, cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )

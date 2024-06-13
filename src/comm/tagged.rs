@@ -18,76 +18,73 @@ impl<E: TagCap + RecvMod> Endpoint<E> {
 
     pub fn trecv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddress, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), mapped_addr.raw_addr(), tag, ignore, std::ptr::null_mut()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)
     }
 
     pub fn trecv_connected<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, tag, ignore, std::ptr::null_mut()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)
     }
     
     pub fn trecv_with_context<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddress, tag: u64, ignore:u64, context: &mut T0) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), mapped_addr.raw_addr(), tag, ignore, (context as *mut T0).cast()) };
-        if err == 0 {
-            println!("trecv_with_context");
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)
     }
     
     pub fn trecv_connected_with_context<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut T0) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, tag, ignore, (context as *mut T0).cast()) };
-        if err == 0 {
-            println!("trecv_connected_with_context");
-
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)
     }
 
 	pub fn trecvv<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_mapped_addr: &crate::MappedAddress, tag: u64, ignore:u64) -> Result<(), crate::error::Error> { //[TODO]
         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), src_mapped_addr.raw_addr(), tag, ignore, std::ptr::null_mut()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)   
     }
 
 	pub fn trecvv_connected<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> Result<(), crate::error::Error> { //[TODO]
         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), FI_ADDR_UNSPEC, tag, ignore, std::ptr::null_mut()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)   
     }
 
 	pub fn trecvv_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_mapped_addr: &crate::MappedAddress, tag: u64, ignore:u64, context : &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), src_mapped_addr.raw_addr(), tag, ignore, (context as *mut T0).cast()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)   
     }
 
 	pub fn trecvv_connected_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), FI_ADDR_UNSPEC, tag, ignore, (context as *mut T0).cast()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)   
     }
 
     pub fn trecvmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
-        if err == 0 {
-            let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
-        }
+        // if err == 0 {
+        //     let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+        // }
         check_error(err)
     }
 }

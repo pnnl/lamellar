@@ -4,7 +4,7 @@ use async_io::Async;
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector, fabric::Fabric, domain::Domain, error::Error};
+use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector, error::Error};
 use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, self, Fid}, mr::MemoryRegionImpl, av::AddressVectorImpl, comm::collective::MulticastGroupCollectiveImpl};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
@@ -158,7 +158,7 @@ pub(crate) struct EventQueueImpl {
 pub(crate) struct AsyncEventQueueImpl(pub(crate) Async<EventQueueImpl>);
 
 impl AsyncEventQueueImpl {
-    pub(crate) fn new<T0>(fabric: &Rc<crate::fabric::FabricImpl>, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(fabric: &Rc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(Self(Async::new(EventQueueImpl::new(fabric, attr, context)?).unwrap()))
     }
 }

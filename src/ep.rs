@@ -1,11 +1,11 @@
-use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::{RefCell, OnceCell}, marker::PhantomData};
+use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, marker::PhantomData};
 
-use async_io::Async;
+
 use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::{AddressVector}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, EventQueueImpl, AsyncEventQueueImpl}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::{CompletionQueueImpl, AsyncCompletionQueueImpl}, error::Error};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, AsyncEventQueueImpl}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::AsyncCompletionQueueImpl};
 
 #[repr(C)]
 pub struct Address {
