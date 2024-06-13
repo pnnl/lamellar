@@ -1,18 +1,5 @@
-use std::rc::Rc;
 
-use crate::FI_ADDR_UNSPEC;
-use crate::cq::CompletionQueueImpl;
-use crate::enums::RecvMsgOptions;
-use crate::enums::SendMsgOptions;
-use crate::ep::ActiveEndpointImpl;
-use crate::ep::Endpoint;
-use crate::infocapsoptions::MsgCap;
-use crate::infocapsoptions::RecvMod;
-use crate::infocapsoptions::SendMod;
-use crate::mr::DataDescriptor;
-use crate::utils::check_error;
-use crate::xcontext::ReceiveContext;
-use crate::xcontext::TransmitContext;
+use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::{ActiveEndpointImpl, Endpoint}, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, xcontext::{ReceiveContext, TransmitContext}};
 
 impl<E: MsgCap + RecvMod> Endpoint<E> {
 

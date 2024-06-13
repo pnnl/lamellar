@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, eq::{EventQueue, EventQueueImpl, AsyncEventQueueImpl}, eqoptions::EqConfig};
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, eq::{EventQueue, AsyncEventQueueImpl}, eqoptions::EqConfig};
 
 //================== Domain (fi_domain) ==================//
 

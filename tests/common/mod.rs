@@ -75,7 +75,7 @@ pub type MsgRma = libfabric::caps_type!(MSG, RMA);
 pub type MsgTagRma = libfabric::caps_type!(MSG, TAG, RMA);
 
 
-pub const IP: &str = "172.17.110.8"; 
+pub const IP: &str = "172.17.110.6"; 
 
 #[derive(Clone)]
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -822,6 +822,7 @@ pub async fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u
             ft_post!(sendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
         }
         SendOp::Send => {
+
             // let ctx = &mut tx_ctx;
             if let Some(fi_address) = remote_address {
 
@@ -933,7 +934,7 @@ pub async fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &
             let flag = libfabric::enums::TaggedSendMsgOptions::new().transmit_complete();
             
             // let var_name = ft_post!(tsendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
-            ep.tsendmsg_async(msg_ref, flag).await.unwrap();
+            // ep.tsendmsg_async(msg_ref, flag).await.unwrap();
         }
         TagSendOp::TagSend => {
             // let op_tag = if ft_tag != 0 {ft_tag} else {*tx_seq};

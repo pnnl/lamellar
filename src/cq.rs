@@ -1,11 +1,11 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::{RefCell, Ref}, ops::{DerefMut, Deref}, collections::HashMap};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, ops::Deref, collections::HashMap};
 
 use async_io::Async;
 use futures_io::AsyncRead;
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{CqFormat, WaitObjType, CompletionFlags}, MappedAddress, Context, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress, error::Error};
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress, error::Error};
 
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -110,7 +110,7 @@ pub enum CompletionFormat {
 }
 
 pub enum SingleCompletionFormat {
-    Unspec,
+    Unspec(Completion<CtxEntry>),
     Ctx(Completion<CtxEntry>),
     Msg(Completion<MsgEntry>),
     Data(Completion<DataEntry>),
@@ -1698,40 +1698,44 @@ pub(crate) struct AsyncCtx {
 pub(crate) struct AsyncTransferCq{
     pub(crate) req: usize,
     pub(crate) cq: Rc<AsyncCompletionQueueImpl>,
-    // pub(crate) ctx: usize
+    pub(crate) ctx: usize
 }
 
 
 
 impl async_std::future::Future for AsyncTransferCq {
-    type Output=Result<(), Error>;
+    type Output=Result<SingleCompletionFormat, Error>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         // let mut buff = vec![1u8];
         // self.poll_read(cx, &mut buff[..])
+        // let async_ctx_as_usize= &self.ctx as *const AsyncCtx as usize;
         
         loop {
-            // if let Some(entry) = self.cq.pending_entries.borrow_mut().remove(&self.ctx) {
-            //     return std::task::Poll::Ready(Ok(entry));
-            // }
-            if  self.cq.completions() >= self.req {
-                return std::task::Poll::Ready(Ok(()));
+            if let Some(mut entry) = self.cq.pending_entries.borrow_mut().remove(&self.ctx) {
+                match entry {
+                    SingleCompletionFormat::Unspec(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Ctx(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Msg(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Data(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Tagged(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                }
+                return std::task::Poll::Ready(Ok(entry));
             }
+
             let fut = self.cq.read_async(1);
             let mut pinned = Box::pin(fut) ;
             let res = match pinned.as_mut().poll(cx) {
                 std::task::Poll::Ready(res) => res,
                 std::task::Poll::Pending => return std::task::Poll::Pending,
             }?;
-            // match res {
-            //     Completion::Unspec(_) => todo!(),
-                // Completion::Context(entries) => for e in entries.iter() {if e.c_entry.op_context as usize != self.ctx {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, e)}},
-                // Completion::Message(entries) => for e in entries.iter() {if e.c_entry.op_context as usize != self.ctx {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, e)}},
-                // Completion::Data(entries) => for e in entries.iter() {if e.c_entry.op_context as usize != self.ctx {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, e)}},
-                // Completion::Tagged(entries) => for e in entries.iter() {if e.c_entry.op_context as usize != self.ctx {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, e)}},
-            // }
-            
-            
+            match res {
+                CompletionFormat::Unspec(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Unspec(e.clone()));},
+                CompletionFormat::Ctx(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Ctx(e.clone()));},
+                CompletionFormat::Msg(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Msg(e.clone()));},
+                CompletionFormat::Data(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Data(e.clone()));},
+                CompletionFormat::Tagged(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Tagged(e.clone()));},
+            }
         }
     }
 }

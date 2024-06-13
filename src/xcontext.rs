@@ -12,7 +12,7 @@ pub(crate) struct XContextBaseImpl<T> {
 }
 
 pub struct XContextBase<T> {
-    inner: Rc<XContextBaseImpl<T>>
+    pub(crate) inner: Rc<XContextBaseImpl<T>>
 }
 
 impl<T: 'static> XContextBase<T> {
