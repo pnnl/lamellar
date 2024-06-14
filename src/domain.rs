@@ -10,7 +10,7 @@ pub(crate) struct DomainImpl {
     pub(crate) c_domain: *mut libfabric_sys::fid_domain,
     fid: OwnedFid,
     pub(crate) domain_attr: DomainAttr,
-    _eq_rc: OnceCell<Rc<AsyncEventQueueImpl>>,
+    pub(crate) _eq_rc: OnceCell<(Rc<AsyncEventQueueImpl>, bool)>,
     _fabric_rc: Rc<FabricImpl>,
 }
 
@@ -64,7 +64,7 @@ impl DomainImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            if self._eq_rc.set(eq.clone()).is_err() {
+            if self._eq_rc.set((eq.clone(), async_mem_reg)).is_err() {
                 panic!("Domain is alread bound to an EventQueue");
             }
             Ok(())

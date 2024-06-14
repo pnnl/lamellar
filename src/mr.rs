@@ -1,6 +1,6 @@
-use std::rc::Rc;
+use std::{rc::Rc, cell::OnceCell};
 
-use crate::{domain::DomainImpl, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error};
+use crate::{domain::DomainImpl, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error, eq::AsyncEventQueueImpl};
 #[allow(unused_imports)]
 use crate::fid::{AsFid, OwnedFid};
 
@@ -133,6 +133,7 @@ pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: *mut libfabric_sys::fid_mr,
     fid: OwnedFid,
     _domain_rc: Rc<DomainImpl>,
+    eq: Option<Rc<AsyncEventQueueImpl>>
 }
 
 /// Owned wrapper around a libfabric `fid_mr`.
@@ -158,24 +159,35 @@ impl MemoryRegionImpl {
     fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = 
-        if let Some(ctx) = context {
-            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast() ) }
-        } 
-        else {
-            unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
-        };
+        let err = if let Some(ctx) = context {
+                unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast() ) }
+            } 
+            else {
+                unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
+            };
         
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
+            let eq = if let Some((eq, mem_reg)) = domain._eq_rc.get() {
+                if *mem_reg {
+                    Some(eq.clone())
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            };
             Ok(
                 Self {
                     c_mr, 
                     fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
                     _domain_rc: domain.clone(),
+                    eq,
                 })
         }
     }
@@ -189,11 +201,23 @@ impl MemoryRegionImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
+            let eq = if let Some((eq, mem_reg)) = domain._eq_rc.get() {
+                if *mem_reg {
+                    Some(eq.clone())
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            };
             Ok(
                 Self {
                     c_mr, 
                     fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
                     _domain_rc: domain.clone(),
+                    eq,
                 })
         }
     }
@@ -214,11 +238,23 @@ impl MemoryRegionImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
+            let eq = if let Some((eq, mem_reg)) = domain._eq_rc.get() {
+                if *mem_reg {
+                    Some(eq.clone())
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            };
             Ok(
                 Self {
                     c_mr, 
                     fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
                     _domain_rc: domain.clone(),
+                    eq,
                 })
         }
     
@@ -429,6 +465,11 @@ impl MemoryRegion {
         self.inner.description()
     }
 }
+
+//==================== Async stuff ================================//
+
+
+
 
 /// An opaque wrapper for the descriptor of a [MemoryRegion] as obtained from
 /// `fi_mr_desc`.

@@ -73,7 +73,7 @@ pub type MsgRma = libfabric::caps_type!(MSG, RMA);
 pub type MsgTagRma = libfabric::caps_type!(MSG, TAG, RMA);
 
 
-pub const IP: &str = "172.17.110.6"; 
+pub const IP: &str = "172.17.110.21"; 
 
 #[derive(Clone)]
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -441,24 +441,29 @@ pub fn ft_complete_connect<T: EqConfig + libfabric::Waitable + libfabric::WaitRe
 }
 
 pub fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable, M:MsgDefaultCap, T:TagDefaultCap>(ep: &EndpointCaps<M, T>, eq: &libfabric::eq::EventQueue<EQ>) {
+    // match ep {
+    //     EndpointCaps::Msg(ep) => ep.accept().unwrap(),
+    //     EndpointCaps::Tagged(ep) => ep.accept().unwrap(),
+    // }
+
+    // ft_complete_connect(eq);
+
     match ep {
-        EndpointCaps::Msg(ep) => ep.accept().unwrap(),
-        EndpointCaps::Tagged(ep) => ep.accept().unwrap(),
+        EndpointCaps::Msg(ep) => {async_std::task::block_on( async {ep.accept_async().await}).unwrap();},
+        EndpointCaps::Tagged(ep) => {async_std::task::block_on( async {ep.accept_async().await}).unwrap();},
     }
-    
-    
-    ft_complete_connect(eq);
 }
 
-pub fn ft_retrieve_conn_req<T: EqConfig + libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable, E: infocapsoptions::Caps>(eq: &libfabric::eq::EventQueue<T>, caps: &InfoHints<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
+pub fn ft_retrieve_conn_req<E: infocapsoptions::Caps>(pep: &PassiveEndpoint<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
     
     println!("Checking for Connection Request");
-    let event: libfabric::eq::Event<usize> = async_std::task::block_on( async {eq.read_async().await}).unwrap();
+    // let event: libfabric::eq::Event<usize> = async_std::task::block_on( async {eq.read_async().await}).unwrap();
+    let event = async_std::task::block_on( async {pep.listen_async().await}).unwrap();
     println!("Done!");
     
     if let libfabric::eq::Event::ConnReq(entry) = event {
         println!("Retrieve Connection Request");
-        entry.get_info(caps).unwrap()
+        entry.get_info::<E>().unwrap()
     } 
     else {
         panic!("Unexpected EventQueueEntry type");
@@ -477,12 +482,13 @@ pub enum PassiveEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
 
 
 #[allow(clippy::type_complexity)]
-pub fn ft_server_connect<T: EqConfig + libfabric::WaitRetrievable + libfabric::FdRetrievable + libfabric::Waitable + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(caps: &HintsCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (libfabric::domain::Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_server_connect<T: EqConfig + libfabric::WaitRetrievable + libfabric::FdRetrievable + libfabric::Waitable + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(pep: &PassiveEndpointCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (libfabric::domain::Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
-    match caps {
+    match pep {
 
-        HintsCaps::Msg(caps) => {
-            let new_info = ft_retrieve_conn_req(eq, caps);
+        
+        PassiveEndpointCaps::Msg(pep) => {
+            let new_info =   ft_retrieve_conn_req(pep);
             let domain = ft_open_domain_res(&new_info, fab);
             let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
             let mut ep = EndpointCaps::Msg(ep);
@@ -490,8 +496,8 @@ pub fn ft_server_connect<T: EqConfig + libfabric::WaitRetrievable + libfabric::F
             ft_accept_connection(&ep, eq);
             (domain, tx_cq, rx_cq, tx_cntr, rx_cntr, ep,  mr, mr_desc)
         }
-        HintsCaps::Tagged(caps) => {
-            let new_info = ft_retrieve_conn_req(eq, caps);
+        PassiveEndpointCaps::Tagged(pep) => {
+            let new_info = ft_retrieve_conn_req(pep);
             let domain = ft_open_domain_res(&new_info, fab);
             let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
             let mut ep = EndpointCaps::Tagged(ep);
@@ -1499,7 +1505,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
                 .unwrap();
         
             pep.bind(&eq, 0).unwrap();
-            pep.listen().unwrap();
+            // pep.listen().unwrap();
 
 
             (InfoWithCaps::Msg(info), fab, eq, PassiveEndpointCaps::Msg(pep))
@@ -1524,7 +1530,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
                 .unwrap();
         
             pep.bind(&eq, 0).unwrap();
-            pep.listen().unwrap();
+            // pep.listen().unwrap();
 
 
             (InfoWithCaps::Tagged(info), fab, eq, PassiveEndpointCaps::Tagged(pep))

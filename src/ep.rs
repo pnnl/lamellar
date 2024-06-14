@@ -1,11 +1,11 @@
-use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, marker::PhantomData};
+use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::{RefCell, OnceCell}, marker::PhantomData};
 
 
 use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, AsyncEventQueueImpl}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::AsyncCompletionQueueImpl};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, AsyncEventQueueImpl, Event}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::AsyncCompletionQueueImpl};
 
 #[repr(C)]
 pub struct Address {
@@ -880,6 +880,7 @@ pub(crate) struct PassiveEndpointImpl<E> {
     pub(crate) c_pep: *mut libfabric_sys::fid_pep,
     fid: OwnedFid,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
+    pub(crate) eq: OnceCell<Rc<AsyncEventQueueImpl>>,
     phantom: PhantomData<E>,
     _fabric_rc: Rc<FabricImpl>,
 }
@@ -920,6 +921,7 @@ impl PassiveEndpointImpl<()> {
                 PassiveEndpointImpl::<E> { 
                     c_pep, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_pep).fid }),
+                    eq: OnceCell::new(),
                     _sync_rcs: RefCell::new(Vec::new()),
                     _fabric_rc: fabric.clone(),
                     phantom: PhantomData,
@@ -941,7 +943,8 @@ impl<E> PassiveEndpointImpl<E> {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            self._sync_rcs.borrow_mut().push(res.clone()); 
+            // self._sync_rcs.borrow_mut().push(res.clone()); 
+            if self.eq.set(res.clone()).is_err() {panic!("Could not set oncecell")}
             Ok(())
         }
     }
@@ -1355,7 +1358,7 @@ impl EndpointImpl {
                 *self.rx_cq.borrow_mut() = Some(cq.clone());
             }
 
-            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do this with inner mutability.
+            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for cq?
             Ok(())
         }
     } 
@@ -1383,7 +1386,7 @@ impl EndpointImpl {
         else {
             *self.eq.borrow_mut() = Some(eq.clone());
 
-            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do this with inner mutability.
+            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for eq?
             Ok(())
         }
     }
@@ -1855,15 +1858,31 @@ impl<'a, E> EndpointBuilder<'a, (), E> {
 
 impl<T> Endpoint<T> {
 
-    pub async fn connect_async(&self, addr: &Address) -> Result<(), crate::error::Error> {
+    pub async fn connect_async(&self, addr: &Address) -> Result<Event<usize>, crate::error::Error> {
         ActiveEndpointImpl::connect(self, addr)?;
         
         let eq = self.inner.eq.borrow().as_ref().unwrap().clone();
-        println!("Connecting async");
-        crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid()}.await?;
-        println!("Done Connecting async");
+        let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
+        Ok(res)
+    }
 
-        Ok(())
+    pub async fn accept_async(&self) -> Result<Event<usize>, crate::error::Error> {
+        self.accept()?;
+
+        let eq = self.inner.eq.borrow().as_ref().unwrap().clone();
+        let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
+        Ok(res)
     }
 }
 
+impl<T> PassiveEndpoint<T> {
+
+    pub async fn listen_async(&self) -> Result<Event<usize>, crate::error::Error> {
+        self.listen()?;
+
+        let eq = self.inner.eq.get().unwrap().clone();
+        let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNREQ}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
+
+        Ok(res)
+    }
+}
