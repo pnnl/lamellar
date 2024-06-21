@@ -393,6 +393,12 @@ impl InfoHints<()> {
     }
 }
 
+impl Default for InfoHints<()> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Caps> Caps for InfoHints<T> {
     fn bitfield() -> u64 {
         T::bitfield()

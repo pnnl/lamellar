@@ -203,6 +203,7 @@ pub(crate) struct CompletionQueueImpl {
     entry_buff: RefCell<CompletionFormat>,
     error_buff: RefCell<CompletionError>,
     fid: OwnedFid,
+    #[allow(dead_code)]
     requests: RefCell<usize>,
     completions: RefCell<usize>,
     pending_entries: RefCell<HashMap<usize, SingleCompletionFormat>>,

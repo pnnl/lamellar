@@ -1,8 +1,8 @@
-use std::{rc::Rc, cell::OnceCell};
+use std::rc::Rc;
 
-use async_io::Async;
 
-use crate::{domain::DomainImpl, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error, eq::{AsyncEventQueueImpl, Event}, cq::AsyncCtx};
+
+use crate::{domain::DomainImpl, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error, eq::Event, cq::AsyncCtx};
 #[allow(unused_imports)]
 use crate::fid::{AsFid, OwnedFid};
 
@@ -335,6 +335,7 @@ impl MemoryRegion {
         self.inner.handle()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_impl(mr_impl: &Rc<MemoryRegionImpl>)  -> Self {
         MemoryRegion {
             inner: mr_impl.clone()
@@ -435,6 +436,8 @@ impl MemoryRegion {
 //==================== Async stuff ================================//
 
 impl MemoryRegionImpl {
+
+    #[allow(dead_code)]
     pub(crate) async fn from_buffer_async<T>(domain: &Rc<crate::domain::DomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Self), crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
 
@@ -546,6 +549,8 @@ impl MemoryRegionImpl {
 }
 
 impl MemoryRegion {
+    
+    #[allow(dead_code)]
     pub(crate) async fn from_buffer_async<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event<usize>,Self), crate::error::Error> {
         let ctx = user_ctx.map(|ctx| (ctx as *mut T0).cast());
         let (event, mr) = MemoryRegionImpl::from_buffer_async(&domain.inner, buf, access, requested_key, flags, ctx).await?;
@@ -894,7 +899,7 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
     /// 
     /// Corresponds to creating a `fi_mr_attr`, setting its fields to the requested ones,
     /// and passign it to `fi_mr_regattr`.
-    pub async fn build_async(mut self) -> Result<(Event<usize>,MemoryRegion), crate::error::Error> {
+    pub async fn build_async(self) -> Result<(Event<usize>,MemoryRegion), crate::error::Error> {
         panic!("Async memory registration is currently not supported due to a potential bug in libfabric");
         self.mr_attr.iov(&self.iovs);
         MemoryRegion::from_attr_async(self.domain, self.mr_attr, self.flags).await

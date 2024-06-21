@@ -460,26 +460,17 @@ pub fn ft_retrieve_conn_req<E: infocapsoptions::Caps>(pep: &PassiveEndpoint<E>) 
     let listener = pep.listen_async().unwrap();
     // let event: libfabric::eq::Event<usize> = async_std::task::block_on( async {eq.read_async().await}).unwrap();
     println!("Checking for Connection Request");
-    let client0 = listener.next();
-    let client1 = listener.next();
-    // let event = async_std::task::block_on( async {listener.next().await}).unwrap();
-    let (event0, event1) = async_std::task::block_on( async {futures::join!(client0, client1)});
+    // let client0 = listener.next();
+    let event = async_std::task::block_on( async {listener.next().await});
+    // let (event0, event1) = async_std::task::block_on( async {futures::join!(client0, client1)});
     println!("Done!");
     
-    let entry = if let libfabric::eq::Event::ConnReq(entry) = event0.unwrap() {
+    if let libfabric::eq::Event::ConnReq(entry) = event.unwrap() {
         println!("Retrieve Connection Request");
         entry.get_info::<E>().unwrap()
     } 
     else {
-        panic!("Unexpected EventQueueEntry type");
-    };
-
-    if let libfabric::eq::Event::ConnReq(entry) = event1.unwrap() {
-        println!("Retrieve Connection Request");
-        entry.get_info::<E>().unwrap()
-    } 
-    else {
-        panic!("Unexpected EventQueueEntry type");
+        panic!("Unexpected EventQueueEntry type")
     }
 }
 

@@ -33,13 +33,11 @@ impl DomainImpl {
                     unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, (ctx as *mut T0).cast()) }
                 }
             }
+            else if flags == 0 {
+                unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) }
+            }
             else {
-                if flags == 0 {
-                    unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) }
-                }
-                else {
-                    unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
-                }
+                unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
             };
 
         if err != 0 {

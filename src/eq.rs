@@ -1,10 +1,10 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::{Rc, Weak}, cell::RefCell, collections::{HashMap, btree_map::Entry}, ops::Deref, borrow::BorrowMut};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::{Rc, Weak}, cell::RefCell, collections::HashMap, ops::Deref};
 
 use async_io::Async;
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::AsRawFid, mr::MemoryRegion, comm::collective::MulticastGroupCollective, av::AddressVector, error::Error, cq::AsyncCtx};
+use crate::{fid::AsRawFid, comm::collective::MulticastGroupCollective, av::AddressVector, error::Error, cq::AsyncCtx};
 use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, self, Fid}, mr::MemoryRegionImpl, av::AddressVectorImpl, comm::collective::MulticastGroupCollectiveImpl};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
@@ -760,6 +760,7 @@ impl EventError {
         &self.c_err
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_eq_err_entry {
         &mut self.c_err
     }       

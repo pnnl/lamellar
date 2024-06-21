@@ -93,7 +93,7 @@ pub enum CqFormat {
 }
 
 impl CqFormat {
-
+    #[allow(dead_code)]
     pub(crate) fn from_value(value: libfabric_sys::fi_cq_format) -> Self {
         
         if value == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC {
@@ -479,6 +479,12 @@ impl Mode {
 
     pub fn get_value(&self) -> u64 {
         self.c_flags
+    }
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

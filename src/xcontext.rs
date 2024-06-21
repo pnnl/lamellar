@@ -205,12 +205,12 @@ impl TransmitContextImpl {
 
     pub(crate) fn bind_eq(&self, eq: &Rc<AsyncEventQueueImpl>) -> Result<(), crate::error::Error>  {
         
-        self.bind(&eq, 0)
+        self.bind(eq, 0)
     }
 
     pub(crate) fn bind_av(&self, av: &Rc<AddressVectorImpl>) -> Result<(), crate::error::Error> {
     
-        self.bind(&av, 0)
+        self.bind(av, 0)
     }
 }
 
