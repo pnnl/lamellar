@@ -5,7 +5,7 @@ use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_G
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, AsyncEventQueueImpl, Event}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, cq::AsyncCompletionQueueImpl};
+use crate::{av::AddressVector, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueue, AsyncEventQueueImpl, Event}, eqoptions::EqConfig, domain::DomainImpl, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid, Fid}, cq::AsyncCompletionQueueImpl};
 
 #[repr(C)]
 pub struct Address {
@@ -1877,11 +1877,32 @@ impl<T> Endpoint<T> {
 
 impl<T> PassiveEndpoint<T> {
 
-    pub async fn listen_async(&self) -> Result<Event<usize>, crate::error::Error> {
+    pub fn listen_async(&self) -> Result<ConnectionListener, crate::error::Error> {
         self.listen()?;
 
-        let eq = self.inner.eq.get().unwrap().clone();
-        let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNREQ}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
+        // let eq = self.inner.eq.get().unwrap().clone();
+        Ok(ConnectionListener::new(self.as_raw_fid(), self.inner.eq.get().unwrap()))
+    }
+}
+
+
+pub struct ConnectionListener {
+    eq:  Rc<AsyncEventQueueImpl>,
+    ep_fid: Fid,
+}
+
+impl ConnectionListener {
+    fn new(ep_fid: Fid, eq: &Rc<AsyncEventQueueImpl>) -> Self {
+        
+        Self {
+            ep_fid,
+            eq: eq.clone(),
+        }
+    }
+
+    pub async fn next(&self) -> Result<Event<usize>, crate::error::Error> {
+        
+        let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNREQ}>{eq: self.eq.clone(), req_fid: self.ep_fid, ctx: Rc::strong_count(&self.eq)}.await?;
 
         Ok(res)
     }

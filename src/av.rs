@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::{EventQueue, AsyncEventQueueImpl}, enums::{AVOptions, AVSetOptions}, RawMappedAddress};
+use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::{EventQueue, AsyncEventQueueImpl, Event}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, cq::AsyncCtx};
 
 
 // impl Drop for AddressVector {
@@ -174,6 +174,40 @@ impl AddressVectorImpl {
     }
 }
 
+impl AddressVectorImpl {
+    pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Vec<RawMappedAddress>), crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+        let mut async_ctx = AsyncCtx{user_ctx};
+        let mut fi_addresses = vec![0u64; addr.len()];
+        let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len() );
+        let mut serialized: Vec<u8> = Vec::with_capacity(total_size);
+        for a in addr {
+            serialized.extend(a.as_bytes().iter())
+        }
+
+        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.handle(), serialized.as_ptr().cast(), fi_addresses.len(), fi_addresses.as_mut_ptr().cast(), flags, &mut async_ctx as *mut AsyncCtx as *mut std::ffi::c_void) };
+
+        
+        
+        if err < 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            let eq = if let Some(eq) = self._eq_rc.get() {
+                eq
+            }
+            else {
+                panic!("Calling insert_async on unbound AV");
+            };
+
+            let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_AV_COMPLETE}>{eq: eq.clone(), req_fid: self.as_raw_fid(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
+            if let Event::AVComplete(ref entry) = res {
+                fi_addresses.truncate(entry.data() as usize);
+            }
+            Ok((res, fi_addresses))
+        }
+    } 
+}
+
 /// Owned wrapper around a libfabric `fid_av`.
 /// 
 /// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
@@ -268,6 +302,19 @@ impl AddressVector {
     /// Directly corresponds to `fi_av_straddr`
     pub fn straddr(&self, addr: &Address) -> String {
         self.inner.straddr(addr)
+    }
+    
+}
+
+impl AddressVector {
+    pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] handle async
+        let (event, fi_addresses) = self.inner.insert_async(addr, options.get_value(), None).await?;
+        Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
+    }
+    
+    pub async fn insert_with_context_async<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] handle async
+        let (event, fi_addresses) =self.inner.insert_async(addr, options.get_value(), Some((ctx as *mut T).cast())).await?;
+        Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
     }
     
 }

@@ -27,7 +27,7 @@ pub enum Event<T> {
     ConnReq(EventQueueCmEntry),
     Connected(EventQueueCmEntry),
     Shutdown(EventQueueCmEntry),
-    MrComplete(EventQueueEntry<T, MemoryRegion>),
+    MrComplete(EventQueueEntry<T, *mut libfabric_sys::fid>),
     AVComplete(EventQueueEntry<T, AddressVector>),
     JoinComplete(EventQueueEntry<T, MulticastGroupCollective>),
 }
@@ -151,8 +151,8 @@ pub(crate) struct EventQueueImpl {
                                                                             // of the two sides drop. 
     avs: RefCell<std::collections::HashMap<Fid, Weak<AddressVectorImpl>>>,
     mcs: RefCell<std::collections::HashMap<Fid, Weak<MulticastGroupCollectiveImpl>>>,
-    pending_entries: RefCell<HashMap<(u32 , libfabric_sys::fid_t, usize), Event<usize>>>,
-    pending_conn_req: RefCell<HashMap<libfabric_sys::fid_t, Vec::<Event<usize>> >>,
+    pending_entries: RefCell<HashMap<(u32, usize), Event<usize>>>,
+    pending_cm_entries: RefCell<HashMap<(u32,libfabric_sys::fid_t), Vec::<Event<usize>> >>,
     event_buffer: RefCell<Vec<u8>>,
     _fabric_rc: Rc<FabricImpl>,
 }
@@ -216,7 +216,7 @@ impl<'a> EventQueueImpl {
                     avs: RefCell::new(HashMap::new()),
                     mcs: RefCell::new(HashMap::new()),
                     pending_entries: RefCell::new(HashMap::new()),
-                    pending_conn_req: RefCell::new(HashMap::new()),
+                    pending_cm_entries: RefCell::new(HashMap::new()),
                     event_buffer: RefCell::new(vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()]),
                     _fabric_rc: fabric.clone(),
                 })
@@ -362,12 +362,13 @@ impl<'a> EventQueueImpl {
             //     self.
             //     Event::Notify(entry)
             }
+            
             if event == &libfabric_sys::FI_MR_COMPLETE {
-                let event_fid = self.mrs.borrow().get(&c_entry.fid).unwrap().clone();
+                // let event_fid = self.mrs.borrow().get(&c_entry.fid).unwrap().clone();
                 Event::MrComplete(
-                    EventQueueEntry::<usize, MemoryRegion> {
+                    EventQueueEntry::<usize, *mut libfabric_sys::fid> {
                         c_entry,
-                        event_fid: MemoryRegion::from_impl(&event_fid.upgrade().unwrap()),
+                        event_fid: c_entry.fid, //MemoryRegion::from_impl(&event_fid.upgrade().unwrap()),
                         phantom: PhantomData,
                 })
             }
@@ -811,6 +812,10 @@ impl<T, F: AsFid> EventQueueEntry<T, F> {
         self
     }
 
+    pub fn data(&self) -> u64 {
+        self.c_entry.data
+    }
+
     pub fn context(&self) -> T {
         let context_ptr:*mut *mut T = &mut (self.c_entry.context as *mut T);
         unsafe { std::mem::transmute_copy::<T,T>(&*(context_ptr as *const T)) }
@@ -890,21 +895,23 @@ impl<const E: libfabric_sys::_bindgen_ty_18> async_std::future::Future for Event
     type Output=Result<Event<usize>, Error>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        
         loop {
-            if E == libfabric_sys::FI_CONNREQ {
-                if let Some(mut entries) = self.eq.pending_conn_req.borrow_mut().remove(&self.req_fid) {
+            if E == libfabric_sys::FI_CONNREQ || E == libfabric_sys::FI_CONNECTED || E == libfabric_sys::FI_SHUTDOWN {
+                if let Some(mut entries) = self.eq.pending_cm_entries.borrow_mut().remove(&(E, self.req_fid)) {
                     if !entries.is_empty() {
                         let entry = entries.pop().unwrap();
                         return std::task::Poll::Ready(Ok(entry))
                     }
                 }
             }
-            else if let Some(mut entry) = self.eq.pending_entries.borrow_mut().remove(&(E, self.req_fid, self.ctx)) {
+            else if let Some(mut entry) = self.eq.pending_entries.borrow_mut().remove(&(E, self.ctx)) {
+                if E == libfabric_sys::FI_MR_COMPLETE {
+                    println!("Got MrComplete: {}", self.ctx);
+                }
                 if self.ctx != 0 {
                     match entry {
-                        crate::eq::Event::MrComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
-                        crate::eq::Event::AVComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
+                        crate::eq::Event::MrComplete(ref mut e) => {println!("Got MrComplete!"); e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
+                        crate::eq::Event::AVComplete(ref mut e) => {println!("Got AvComplete!"); e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
                         crate::eq::Event::JoinComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
                         _ => panic!("Unexpected!"),
                     }
@@ -914,30 +921,49 @@ impl<const E: libfabric_sys::_bindgen_ty_18> async_std::future::Future for Event
                     return std::task::Poll::Ready(Ok(entry))
                 }
             }
+            println!("About to block, waiting for connreq");
             let fut = self.eq.read_async();
             let mut pinned = Box::pin(fut) ;
             let res = match pinned.as_mut().poll(cx) {
-                std::task::Poll::Ready(res) => res,
-                std::task::Poll::Pending => return std::task::Poll::Pending,
+                std::task::Poll::Ready(res) => {println!("Continuing!"); res},
+                std::task::Poll::Pending => {println!("Returng pending"); return std::task::Poll::Pending},
             }?;
             
             match &res {
                     // crate::eq::Event::Notify(entry) | 
-                crate::eq::Event::MrComplete(e) => {self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_MR_COMPLETE, e.c_entry.fid, e.c_entry.context as usize),res);},
-                crate::eq::Event::AVComplete(e) => {self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_AV_COMPLETE, e.c_entry.fid, e.c_entry.context as usize),res);},
-                crate::eq::Event::JoinComplete(e) => {self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_JOIN_COMPLETE, e.c_entry.fid, e.c_entry.context as usize),res);},
+                crate::eq::Event::MrComplete(e) => {println!("Inserting MrComplete: {}", e.c_entry.context as usize); self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_MR_COMPLETE, e.c_entry.context as usize),res);},
+                crate::eq::Event::AVComplete(e) => {println!("Inserting AVComplete");self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_AV_COMPLETE, e.c_entry.context as usize),res);},
+                crate::eq::Event::JoinComplete(e) => {self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_JOIN_COMPLETE, e.c_entry.context as usize),res);},
                 crate::eq::Event::ConnReq(_) => {
-                    println!("Got connection request!");
-                    let mut map = self.eq.pending_conn_req.borrow_mut();
-                    if let Some(entries) = map.get_mut(&self.req_fid){
+                    println!("Got ConnReq!");
+                    let mut map = self.eq.pending_cm_entries.borrow_mut();
+                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_CONNREQ, self.req_fid)){
                         entries.push(res);
                     }
                     else {
-                        map.insert(self.req_fid, vec![res]);
+                        map.insert((libfabric_sys::FI_CONNREQ, self.req_fid), vec![res]);
                     }
                 },
-                crate::eq::Event::Connected(e) => {self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_CONNECTED,  e.c_entry.fid, 0), res);},
-                crate::eq::Event::Shutdown(e) => {self.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_SHUTDOWN,  e.c_entry.fid, 0), res);},
+                crate::eq::Event::Connected(_) => {
+                    println!("Got Connected!");
+                    let mut map = self.eq.pending_cm_entries.borrow_mut();
+                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_CONNECTED, self.req_fid)){
+                        entries.push(res);
+                    }
+                    else {
+                        map.insert((libfabric_sys::FI_CONNECTED, self.req_fid), vec![res]);
+                    }
+                },
+                crate::eq::Event::Shutdown(_) => { // [TODO] No one will explcitly look for shutdown requests, should probably store it somewhere else
+                    println!("Got Shutdown!");
+                    let mut map = self.eq.pending_cm_entries.borrow_mut();
+                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_SHUTDOWN, self.req_fid)){
+                        entries.push(res);
+                    }
+                    else {
+                        map.insert((libfabric_sys::FI_SHUTDOWN, self.req_fid), vec![res]);
+                    }
+                },
             }
 
         }

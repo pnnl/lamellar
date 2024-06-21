@@ -73,7 +73,7 @@ pub type MsgRma = libfabric::caps_type!(MSG, RMA);
 pub type MsgTagRma = libfabric::caps_type!(MSG, TAG, RMA);
 
 
-pub const IP: &str = "172.17.110.21"; 
+pub const IP: &str = "172.17.110.5"; 
 
 #[derive(Clone)]
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -203,7 +203,7 @@ pub fn ft_open_fabric_res<E>(info: &InfoEntry<E>) -> (libfabric::fabric::Fabric,
         .build().
         unwrap();
     let domain = ft_open_domain_res(info, &fab);
-
+    // domain.bind_eq(&eq, true).unwrap();
     (fab, eq, domain)
 }
 
@@ -213,7 +213,7 @@ pub fn ft_open_domain_res<E>(info: &InfoEntry<E>, fab: &fabric::Fabric) -> libfa
 }
 
 
-pub fn ft_alloc_ep_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::Domain) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::av::AddressVector>){
+pub fn ft_alloc_ep_res<E, EQ: EqConfig + 'static>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::Domain, eq: &libfabric::eq::EventQueue<EQ>) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::av::AddressVector>){
 
     let format = if info.get_caps().is_tagged() {
         enums::CqFormat::TAGGED
@@ -278,8 +278,8 @@ pub fn ft_alloc_ep_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, doma
                 
                 
                 let av = match info.get_domain_attr().get_av_type() {
-                    libfabric::enums::AddressVectorType::Unspec => libfabric::av::AddressVectorBuilder::new(domain),
-                    _ => libfabric::av::AddressVectorBuilder::new(domain).type_(info.get_domain_attr().get_av_type()),
+                    libfabric::enums::AddressVectorType::Unspec => libfabric::av::AddressVectorBuilder::new(domain).async_(eq),
+                    _ => libfabric::av::AddressVectorBuilder::new(domain).type_(info.get_domain_attr().get_av_type()).async_(eq),
                 }.count(1)
                 .build()
                 .unwrap();
@@ -293,9 +293,9 @@ pub fn ft_alloc_ep_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, doma
 }
 
 #[allow(clippy::type_complexity)]
-pub fn ft_alloc_active_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::Domain) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, libfabric::ep::Endpoint<E>, Option<libfabric::av::AddressVector>) {
+pub fn ft_alloc_active_res<E, EQ: EqConfig + 'static>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::Domain, eq: &libfabric::eq::EventQueue<EQ>) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, libfabric::ep::Endpoint<E>, Option<libfabric::av::AddressVector>) {
     
-    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain);
+    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain, eq);
 
 
     let ep = EndpointBuilder::new(info).build(domain).unwrap();
@@ -447,21 +447,34 @@ pub fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable + libfabric::WaitR
     // }
 
     // ft_complete_connect(eq);
-
+    println!("Accepting connection");
     match ep {
         EndpointCaps::Msg(ep) => {async_std::task::block_on( async {ep.accept_async().await}).unwrap();},
         EndpointCaps::Tagged(ep) => {async_std::task::block_on( async {ep.accept_async().await}).unwrap();},
     }
+    println!("Done Accepting connection");
 }
 
 pub fn ft_retrieve_conn_req<E: infocapsoptions::Caps>(pep: &PassiveEndpoint<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
     
-    println!("Checking for Connection Request");
+    let listener = pep.listen_async().unwrap();
     // let event: libfabric::eq::Event<usize> = async_std::task::block_on( async {eq.read_async().await}).unwrap();
-    let event = async_std::task::block_on( async {pep.listen_async().await}).unwrap();
+    println!("Checking for Connection Request");
+    let client0 = listener.next();
+    let client1 = listener.next();
+    // let event = async_std::task::block_on( async {listener.next().await}).unwrap();
+    let (event0, event1) = async_std::task::block_on( async {futures::join!(client0, client1)});
     println!("Done!");
     
-    if let libfabric::eq::Event::ConnReq(entry) = event {
+    let entry = if let libfabric::eq::Event::ConnReq(entry) = event0.unwrap() {
+        println!("Retrieve Connection Request");
+        entry.get_info::<E>().unwrap()
+    } 
+    else {
+        panic!("Unexpected EventQueueEntry type");
+    };
+
+    if let libfabric::eq::Event::ConnReq(entry) = event1.unwrap() {
         println!("Retrieve Connection Request");
         entry.get_info::<E>().unwrap()
     } 
@@ -490,7 +503,7 @@ pub fn ft_server_connect<T: EqConfig + libfabric::WaitRetrievable + libfabric::F
         PassiveEndpointCaps::Msg(pep) => {
             let new_info =   ft_retrieve_conn_req(pep);
             let domain = ft_open_domain_res(&new_info, fab);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
+            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain, eq);
             let mut ep = EndpointCaps::Msg(ep);
             let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             ft_accept_connection(&ep, eq);
@@ -499,7 +512,7 @@ pub fn ft_server_connect<T: EqConfig + libfabric::WaitRetrievable + libfabric::F
         PassiveEndpointCaps::Tagged(pep) => {
             let new_info = ft_retrieve_conn_req(pep);
             let domain = ft_open_domain_res(&new_info, fab);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
+            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain, eq);
             let mut ep = EndpointCaps::Tagged(ep);
             let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             ft_accept_connection(&ep, eq);
@@ -609,7 +622,6 @@ pub fn ft_enable_ep_recv<EQ: EqConfig + 'static, CNTR: CntrConfig + 'static, E, 
             ft_alloc_msgs(info, gl_ctx, domain, ep)
         }
     };
-
     match rx_cq {
         CqType::Spin(rx_cq) => {ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)},
         CqType::Sread(rx_cq) => {ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)},
@@ -635,7 +647,7 @@ pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>
             let info = ft_getinfo(hints, node.clone(), service.clone(), source);
             let entries = info.get();
             let (fabric, eq, domain) = ft_open_fabric_res(&entries[0]);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain);
+            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain, &eq);
             let mut ep =  EndpointCaps::Msg(ep);
             let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
             let av = av.unwrap();
@@ -646,7 +658,7 @@ pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>
             let info =ft_getinfo(hints, node.clone(), service.clone(), source);
             let entries = info.get();
             let (fabric, eq, domain) = ft_open_fabric_res(&entries[0]);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain);
+            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entries[0], gl_ctx, &domain, &eq);
             let mut ep = EndpointCaps::Tagged(ep);
             
             let (mr, mut mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
@@ -660,8 +672,10 @@ pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>
 
 pub fn ft_av_insert(av: &libfabric::av::AddressVector, addr: &Address, options: AVOptions) -> MappedAddress {
 
-    let mut added = av.insert(std::slice::from_ref(addr), options).unwrap();
-    added.pop().unwrap().expect("Could not add address to address vector")
+    // let mut added = av.insert(std::slice::from_ref(addr), options).unwrap();
+    // added.pop().unwrap().expect("Could not add address to address vector")
+    let (event, mut added) = async_std::task::block_on( async { av.insert_async(std::slice::from_ref(addr), options).await}).unwrap();
+    added.pop().expect("Could not add address to address vector")
 }
 
 pub const NO_CQ_DATA: u64 = 0;
@@ -1380,6 +1394,7 @@ pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &libfabric::domain::Domain, e
     // let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
     
     let mr = ft_info_to_mr_builder(domain, buf, info).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM).build().unwrap();
+    // let (_event, mr) = async_std::task::block_on(async {mr_buidler.build_async().await}).unwrap();
 
     let desc = mr.description();
 
@@ -1552,7 +1567,7 @@ pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M,
             }
 
             let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entries[0], gl_ctx,&domain);
+            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entries[0], gl_ctx,&domain, &eq);
             
             let mut ep = EndpointCaps::Msg(ep);
             let (mr, mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
@@ -1574,7 +1589,7 @@ pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M,
             }
 
             let (fab, eq, domain) = ft_open_fabric_res(&entries[0]);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entries[0], gl_ctx,&domain);
+            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entries[0], gl_ctx,&domain, &eq);
             
             let mut ep = EndpointCaps::Tagged(ep);
             let (mr, mr_desc)  = ft_enable_ep_recv(&entries[0], gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
