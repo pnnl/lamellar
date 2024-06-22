@@ -717,7 +717,6 @@ pub enum RmaOp {
 pub enum SendOp {
     Send,
     MsgSend,
-    Inject,
 }
 pub enum RecvOp {
     Recv,
@@ -727,7 +726,6 @@ pub enum RecvOp {
 pub enum TagSendOp {
     TagSend,
     TagMsgSend,
-    TagInject,
 }
 
 pub enum TagRecvOp {
@@ -805,6 +803,15 @@ pub fn ft_post_rma<CQ: CqConfig, E: RmaDefaultCap>(gl_ctx: &mut TestsGlobalCtx, 
     }
 }
 
+pub fn msg_post_inject<CQ: CqConfig, E: MsgDefaultCap>(tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
+    if let Some(fi_address) = remote_address {
+        ft_post!(inject, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, fi_address);
+    }
+    else {
+        ft_post!(inject_connected, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base);
+    }
+}
+
 pub async fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
     match op {
         SendOp::MsgSend => {
@@ -876,14 +883,6 @@ pub async fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u
                  ep.send_connected_with_context_async(base, mr_desc, ctx).await.unwrap();
                  // ft_post!(send_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, ctx);
              }
-        }
-        SendOp::Inject => {
-            if let Some(fi_address) = remote_address {
-                ft_post!(inject, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, fi_address);
-            }
-            else {
-                ft_post!(inject_connected, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base);
-            }
         },
     }
 }
@@ -918,6 +917,17 @@ pub fn msg_post_recv<CQ: CqConfig, E: MsgDefaultCap>(op: RecvOp, rx_seq: &mut u6
     }
 }
 
+
+pub fn tagged_post_inject<CQ: CqConfig,E: TagDefaultCap>(tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>,  ft_tag: u64, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
+    let tag = *tx_seq;
+    if let Some(fi_address) = remote_address {
+
+        ft_post!(tinject, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, fi_address, tag);  
+    }
+    else {
+        ft_post!(tinject_connected, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, tag);  
+    }
+}
 
 pub async fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>,  ft_tag: u64, tx_cq: &CompletionQueue<CQ>, ep: &libfabric::ep::Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
     match op {
@@ -993,18 +1003,6 @@ pub async fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &
                 let mr_desc = &mut default_desc();
                 // ft_post!(tsend_connected_with_context, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "transmit", ep, base, mr_desc, op_tag, ctx);
                 ep.tsenddata_connected_with_context_async(base, mr_desc, data, op_tag, ctx).await.unwrap();
-            }
-        },
-        TagSendOp::TagInject => {
-            let tag = *tx_seq;
-            if let Some(fi_address) = remote_address {
-
-                // ft_post!(tinject, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, fi_address, tag);  
-                ep.tinject_async(base, fi_address, tag).await.unwrap();
-            }
-            else {
-                // ft_post!(tinject_connected, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "inject", ep, base, tag);  
-                ep.tinject_connected_async(base,  tag).await.unwrap();
             }
         },
     }
@@ -1102,30 +1100,30 @@ pub fn ft_rx<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: TagDef
     }
 }
 
-pub async fn ft_post_inject<CQ: CqConfig, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &libfabric::cq::CompletionQueue<CQ>) {
+pub fn ft_post_inject<CQ: CqConfig, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &libfabric::cq::CompletionQueue<CQ>) {
     // size += ft_tx_prefix_size(info);
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+size];
     let fi_addr = &gl_ctx.remote_address;
     
     match ep {
         EndpointCaps::Msg(ep) => {
-            msg_post(SendOp::Inject, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, &mut None, buf, NO_CQ_DATA).await;
+            msg_post_inject(&mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, &mut None, buf, NO_CQ_DATA);
         }
         EndpointCaps::Tagged(ep) => {
-            tagged_post(TagSendOp::TagInject, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, &mut None, buf, NO_CQ_DATA).await;
+            tagged_post_inject(&mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, &mut None, buf, NO_CQ_DATA);
         }
     }
     // gl_ctx.tx_cq_cntr += 1;
 }
 
-pub async fn ft_inject<M: MsgDefaultCap, T:TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &CqType) {
+pub fn ft_inject<M: MsgDefaultCap, T:TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &CqType) {
     
     match tx_cq{
-        CqType::Spin(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
-        CqType::Sread(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
-        CqType::WaitSet(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
-        CqType::WaitFd(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
-        CqType::WaitYield(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq).await},
+        CqType::Spin(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
+        CqType::Sread(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
+        CqType::WaitSet(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
+        CqType::WaitFd(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
+        CqType::WaitYield(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
     }
 }
 
@@ -1648,7 +1646,7 @@ pub fn pingpong<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: Tag
             }
 
             if size < inject_size {
-                async_std::task::block_on(async {ft_inject(gl_ctx, ep, size, tx_cq).await}); // Should return immediately
+                ft_inject(gl_ctx, ep, size, tx_cq); 
             }
             else {
                 async_std::task::block_on(async {ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr).await});
@@ -1667,7 +1665,7 @@ pub fn pingpong<CNTR: CntrConfig + libfabric::Waitable, M: MsgDefaultCap, T: Tag
 
 
             if size < inject_size {
-                async_std::task::block_on(async {ft_inject(gl_ctx, ep, size, tx_cq).await}); // Should return immediately
+                ft_inject(gl_ctx, ep, size, tx_cq); // Should return immediately
             }
             else {
                 async_std::task::block_on(async {ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr).await});

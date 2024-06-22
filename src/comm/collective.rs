@@ -25,7 +25,7 @@ impl<E: CollCap> Endpoint<E> {
 
     pub(crate) fn join_impl<T>(&self, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<MulticastGroupCollective, crate::error::Error> {
         let mc = MulticastGroupCollective::new(self, addr, options.get_value(), context)?;
-        self.inner.eq.borrow().as_ref().unwrap().bind_mc(&mc.inner);
+        self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner); 
         Ok(mc)
     }
 
@@ -39,7 +39,7 @@ impl<E: CollCap> Endpoint<E> {
 
     fn join_collective_impl<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context : Option<&mut T>) -> Result<MulticastGroupCollective, crate::error::Error> {
         let mc = MulticastGroupCollective::new_collective::<E, T>(self, coll_mapped_addr, set, options.get_value(), context)?;
-        self.inner.eq.borrow().as_ref().unwrap().bind_mc(&mc.inner);
+        self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner);
         Ok(mc)
     }
 

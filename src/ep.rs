@@ -32,9 +32,9 @@ impl Address {
 pub(crate) struct EndpointImpl {
     pub(crate) c_ep: *mut libfabric_sys::fid_ep,
     fid: OwnedFid,
-    pub(crate) tx_cq: RefCell<Option<Rc<AsyncCompletionQueueImpl>>>,
-    pub(crate) rx_cq: RefCell<Option<Rc<AsyncCompletionQueueImpl>>>,
-    pub(crate) eq: RefCell<Option<Rc<AsyncEventQueueImpl>>>,
+    pub(crate) tx_cq: OnceCell<Rc<AsyncCompletionQueueImpl>>,
+    pub(crate) rx_cq: OnceCell<Rc<AsyncCompletionQueueImpl>>,
+    pub(crate) eq: OnceCell<Rc<AsyncEventQueueImpl>>,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
     _domain_rc:  Rc<DomainImpl>,
 }
@@ -1279,9 +1279,9 @@ impl EndpointImpl {
                     c_ep, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
                     _sync_rcs: RefCell::new(Vec::new()),
-                    rx_cq: RefCell::new(None),
-                    tx_cq: RefCell::new(None),
-                    eq: RefCell::new(None),
+                    rx_cq: OnceCell::new(),
+                    tx_cq: OnceCell::new(),
+                    eq: OnceCell::new(),
                     _domain_rc: domain.clone(),
                 })
         }
@@ -1351,11 +1351,27 @@ impl EndpointImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            if flags & libfabric_sys::FI_TRANSMIT as u64 != 0 {
-                *self.tx_cq.borrow_mut() = Some(cq.clone());
+
+            if (flags & libfabric_sys::FI_TRANSMIT as u64) != 0 && (flags & libfabric_sys::FI_RECV as u64) != 0{
+                if self.tx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
+                if self.rx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
+            }
+            else if flags & libfabric_sys::FI_TRANSMIT as u64 != 0 {
+                if self.tx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
+            }
+            else if flags & libfabric_sys::FI_RECV as u64 != 0{
+                if self.rx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
             }
             else {
-                *self.rx_cq.borrow_mut() = Some(cq.clone());
+                panic!("Binding to Endpoint without specifying direction");
             }
 
             // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for cq?
@@ -1384,7 +1400,10 @@ impl EndpointImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            *self.eq.borrow_mut() = Some(eq.clone());
+            if self.eq.set(eq.clone()).is_err() {
+                panic!("Endpoint is already bound to another EventQueue"); // Should never reach this since inlined_fi_ep_bind will throw an error ealier
+                                                                           // but keep it here to satisfy the compiler.
+            }
 
             // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for eq?
             Ok(())
@@ -1410,9 +1429,9 @@ impl EndpointImpl {
                     c_ep, 
                     fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }),
                     _sync_rcs: RefCell::new(Vec::new()),
-                    rx_cq: RefCell::new(None),
-                    tx_cq: RefCell::new(None),
-                    eq: RefCell::new(None),
+                    rx_cq: OnceCell::new(),
+                    tx_cq: OnceCell::new(),
+                    eq: OnceCell::new(),
                     _domain_rc: self._domain_rc.clone(),
                 })
         }
@@ -1861,7 +1880,7 @@ impl<T> Endpoint<T> {
     pub async fn connect_async(&self, addr: &Address) -> Result<Event<usize>, crate::error::Error> {
         ActiveEndpointImpl::connect(self, addr)?;
         
-        let eq = self.inner.eq.borrow().as_ref().unwrap().clone();
+        let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue").clone();
         let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
         Ok(res)
     }
@@ -1869,7 +1888,7 @@ impl<T> Endpoint<T> {
     pub async fn accept_async(&self) -> Result<Event<usize>, crate::error::Error> {
         self.accept()?;
 
-        let eq = self.inner.eq.borrow().as_ref().unwrap().clone();
+        let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue").clone();
         let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
         Ok(res)
     }

@@ -400,7 +400,10 @@ impl MemoryRegion {
     /// Corresponds to `fi_mr_bind` with a `fid_ep` 
     pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
         self.inner.bind_ep(&ep.inner)?;
-        ep.inner.eq.borrow().as_ref().unwrap().bind_mr(&self.inner);
+        ep.inner.eq
+            .get()
+            .expect("Endpoint is to bound to an Event Queue")
+            .bind_mr(&self.inner);
         Ok(())
     }
 

@@ -13,8 +13,8 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_recv(self.handle(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-            let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
+            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
+            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
             return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
@@ -48,8 +48,8 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-            let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
+            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
+            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
             return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
@@ -76,7 +76,7 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
 //         let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
         
 //         if err == 0 {
-//             let req = self.inner.rx_cq.borrow().as_ref().unwrap().request();
+//             let req = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
 //         }
 //         check_error(err)
 //     }
@@ -95,8 +95,8 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-            let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
+            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
             return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
@@ -130,8 +130,8 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_send(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-            let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
+            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
             return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
@@ -158,8 +158,8 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
     // pub async fn sendmsg_async(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
     //     let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
     //     if err == 0 {
-    //         let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-    //         let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
+    //         let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
+    //         let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
     //         crate::cq::AsyncTransferCq{cq}.await?;
     //     }
 
@@ -177,8 +177,8 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
         let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
-            // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-            let cq = self.inner.tx_cq.borrow().as_ref().unwrap().clone(); 
+            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
             return crate::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
         }
         
@@ -200,33 +200,6 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
 
     pub async fn senddata_connected_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, context : &mut T0) -> Result<SingleCompletionFormat, crate::error::Error> {
         self.senddata_async_impl(buf, desc, data, None, Some((context as *mut T0).cast())).await
-    }
-
-    pub async fn inject_connected_async<T>(&self, buf: &[T]) -> Result<(), crate::error::Error> { // Inject does not generate completions
-        let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC) };
-
-        check_error(err)
-    }
-
-    pub async fn inject_async<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> { // Inject does not generate completions
-        let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
-        // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-
-        check_error(err)
-    }
-
-    pub async fn injectdata_async<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> { // Inject does not generate completions
-        let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
-        // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-
-        check_error(err)
-    }
-
-    pub async fn injectdata_connected_async<T>(&self, buf: &[T], data: u64) -> Result<(), crate::error::Error> { // Inject does not generate completions
-        let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC) };
-        // let req = self.inner.tx_cq.borrow().as_ref().unwrap().request();
-
-        check_error(err)
     }
 }
 
