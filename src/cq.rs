@@ -1,52 +1,12 @@
 use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, ops::Deref, collections::HashMap};
 
-use async_io::Async;
-
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress, error::Error};
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl, DomainImplBase}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress, error::Error, eq::EventQueueImpl};
 
 //================== CompletionQueue (fi_cq) ==================//
 
-macro_rules! alloc_cq_entry {
-    ($format: expr, $count: expr) => {
-        match $format {
-            CompletionFormat::Ctx(_) => {
-                let entries: Vec<Completion<CtxEntry>> = Vec::with_capacity($count);
-                // for _ in 0..$count {
-                //     entries.push(CqEntry::new())
-                // }
-                CompletionFormat::Ctx(entries)
-            }
-            CompletionFormat::Data(_) => {
-                let entries: Vec<Completion<DataEntry>> = Vec::with_capacity($count);
-                // for _ in 0..$count {
-                //     entries.push(CqDataEntry::new())
-                // }
-                CompletionFormat::Data(entries)
-            }
-            CompletionFormat::Tagged(_) => {
-                let entries: Vec<Completion<TaggedEntry>> = Vec::with_capacity($count);
-                // for _ in 0..$count {
-                //     entries.push(CqTaggedEntry::new())
-                // }
-                CompletionFormat::Tagged(entries)
-            }
-            CompletionFormat::Msg(_) => {
-                let entries: Vec<Completion<MsgEntry>> = Vec::with_capacity($count);
-                // for _ in 0..$count {
-                //     entries.push(CqMsgEntry::new())
-                // }
-                CompletionFormat::Msg(entries)
-            }
-            CompletionFormat::Unspec(_) => {
-                let entries: Vec<Completion<CtxEntry>> = Vec::with_capacity($count);
 
-                CompletionFormat::Unspec(entries)
-            }
-        }
-    };
-}
 macro_rules! read_cq_entry_ {
     ($read_fn: expr, $cq: expr, $count: expr, $entries: expr, $( $x:ident),*) => {
         {
@@ -116,99 +76,21 @@ pub enum SingleCompletionFormat {
     Tagged(Completion<TaggedEntry>),
 }
 
-macro_rules! read_cq_entry_into {
-    ($read_fn: expr, $cq: expr, $count: expr, $buff: expr, $( $x:ident),*) => {
-        unsafe{ $read_fn($cq, $buff, $count, $($x,)*)}
-    }
-}
-
-struct CqAsyncRead<'a>{
-    num_entries: usize,
-    buf: *mut std::ffi::c_void,
-    cq: &'a AsyncCompletionQueueImpl,
-}
 
 
-impl<'a> async_std::future::Future for CqAsyncRead<'a>{
-    type Output=Result<usize, Error>;
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        // let mut buff = vec![1u8];
-        // self.poll_read(cx, &mut buff[..])
-        loop {
-            let err = read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, self.cq.0.as_ref().handle(), self.num_entries, self.buf,);
-            if err < 0 {
-                let err = Error::from_err_code(-err as u32);
-                if !matches!(err.kind, crate::error::ErrorKind::TryAgain) 
-                {
-                    return std::task::Poll::Ready(Err(err));
-                }
-                else if self.cq.0.poll_readable(cx).is_ready() {
-                    continue;
-                 }
-                else {
-                    return std::task::Poll::Pending;
-                }
-            }
-            else {
-                return std::task::Poll::Ready(Ok(err as usize));
-            }
-        }
-    }
-}
 
-pub(crate) struct AsyncCompletionQueueImpl(pub(crate) Async<CompletionQueueImpl>);
-impl Deref for  AsyncCompletionQueueImpl {
-    type Target = CompletionQueueImpl;
-
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
-    }
-}
-
-impl AsyncCompletionQueueImpl {
-
-    pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImpl>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-        Ok(Self (Async::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?).unwrap()))
-    }
-
-    pub(crate) async fn read_async(&self, count: usize) -> Result<CompletionFormat, crate::error::Error> {
-
-        let mut buf = alloc_cq_entry!(*self.0.as_ref().entry_buff.borrow(), count);
-        let fut = match &mut buf {
-            CompletionFormat::Unspec(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-            CompletionFormat::Ctx(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-            CompletionFormat::Msg(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-            CompletionFormat::Data(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-            CompletionFormat::Tagged(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-        };
-        let ret = fut.await?;
-
-        // *self.0.as_ref().completions.borrow_mut() += ret;
-        // println!("Complete: {}/{}", self.0.as_ref().completions.borrow(), self.0.as_ref().requests.borrow());
-
-        match &mut buf {
-            CompletionFormat::Unspec(data) => unsafe{data.set_len(ret)},
-            CompletionFormat::Ctx(data) => unsafe{data.set_len(ret)},
-            CompletionFormat::Msg(data) => unsafe{data.set_len(ret)},
-            CompletionFormat::Data(data) => unsafe{data.set_len(ret)},
-            CompletionFormat::Tagged(data) => unsafe{data.set_len(ret)},
-        }
-        Ok(buf)
-    }
-}
-
-pub(crate) struct CompletionQueueImpl {
+pub struct CompletionQueueImpl<EQ> {
     c_cq: *mut libfabric_sys::fid_cq,
-    entry_buff: RefCell<CompletionFormat>,
+    pub(crate) entry_buff: RefCell<CompletionFormat>,
     error_buff: RefCell<CompletionError>,
-    fid: OwnedFid,
+    pub(crate) fid: OwnedFid,
     #[allow(dead_code)]
     requests: RefCell<usize>,
     completions: RefCell<usize>,
-    pending_entries: RefCell<HashMap<usize, SingleCompletionFormat>>,
+    pub(crate) pending_entries: RefCell<HashMap<usize, SingleCompletionFormat>>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    _domain_rc: Rc<DomainImpl>,
+    pub(crate) _domain_rc: Rc<DomainImplBase<EQ>>,
 }
 
 
@@ -221,18 +103,20 @@ pub(crate) struct CompletionQueueImpl {
 /// 
 /// Note that other objects that rely on a CompletQueue (e.g., an [crate::ep::Endpoint] bound to it) will extend its lifetime until they
 /// are also dropped.
-pub struct CompletionQueue<T: CqConfig> {
-    pub(crate) inner: Rc<AsyncCompletionQueueImpl>,
-    phantom: PhantomData<T>,
+pub type CompletionQueue<T>  = CompletionQueueBase<T, CompletionQueueImpl<EventQueueImpl>>;
+
+pub struct CompletionQueueBase<T: CqConfig, CQ> {
+    pub(crate) inner: Rc<CQ>,
+    pub(crate) phantom: PhantomData<T>,
 }
 
-impl<'a> CompletionQueueImpl {
+impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cq {
         self.c_cq
     }
 
-    pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImpl>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
         let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
@@ -573,7 +457,7 @@ impl<T: CqConfig> CompletionQueue<T> {
     pub(crate) fn new<T0>(_options: T, domain: &crate::domain::Domain, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(AsyncCompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
+                inner: Rc::new(CompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
                 phantom: PhantomData,
             }
         )
@@ -759,9 +643,9 @@ impl<T: CqConfig + Waitable> CompletionQueue<T> {
         self.inner.sreadfrom(count, cond, timeout)
     }
 
-    pub async fn sreadfrom_with_cond_async(&self, count: usize, cond: usize, timeout: i32) -> Result<(CompletionFormat, Option<MappedAddress>), crate::error::Error> {
-        self.inner.sreadfrom(count, cond, timeout)
-    }
+    // pub async fn sreadfrom_with_cond_async(&self, count: usize, cond: usize, timeout: i32) -> Result<(CompletionFormat, Option<MappedAddress>), crate::error::Error> {
+    //     self.inner.sreadfrom(count, cond, timeout)
+    // }
 
     // /// Similar to  [Self::sreadfrom] with the ability to set a condition to unblock
     // /// 
@@ -807,26 +691,15 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> { //[TODO] Make this 
     }
 }
 
-impl<'a, T: CqConfig + FdRetrievable> CompletionQueue<T> {
-    pub async fn read_async(&self, count: usize) -> Result<CompletionFormat, crate::error::Error> {
-        self.inner.read_async(count).await
-    }
-}
+impl<EQ> crate::BindImpl for CompletionQueueImpl<EQ> {}
 
-impl crate::BindImpl for CompletionQueueImpl {}
-impl crate::BindImpl for AsyncCompletionQueueImpl {}
 impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
     fn inner(&self) -> Rc<dyn crate::BindImpl> {
         self.inner.clone()
     }
 }
 
-impl AsFid for AsyncCompletionQueueImpl {
-    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.fid.as_fid()
-    }
-}
-impl AsFid for CompletionQueueImpl {
+impl<EQ> AsFid for CompletionQueueImpl<EQ> {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
         self.fid.as_fid()
     }
@@ -838,7 +711,7 @@ impl<T: CqConfig> AsFid for CompletionQueue<T> {
     }
 }
 
-impl AsFd for CompletionQueueImpl {
+impl<EQ: AsFid> AsFd for CompletionQueueImpl<EQ> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
             fd
@@ -1636,54 +1509,6 @@ impl Default for CompletionError {
 
 
 //================== Async Stuff ============================//
-pub(crate) struct AsyncCtx {
-    pub(crate) user_ctx: Option<*mut std::ffi::c_void>,
-}
-
-pub(crate) struct AsyncTransferCq{
-    // pub(crate) req: usize,
-    pub(crate) cq: Rc<AsyncCompletionQueueImpl>,
-    pub(crate) ctx: usize
-}
-
-
-
-impl async_std::future::Future for AsyncTransferCq {
-    type Output=Result<SingleCompletionFormat, Error>;
-
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        // let mut buff = vec![1u8];
-        // self.poll_read(cx, &mut buff[..])
-        // let async_ctx_as_usize= &self.ctx as *const AsyncCtx as usize;
-        
-        loop {
-            if let Some(mut entry) = self.cq.pending_entries.borrow_mut().remove(&self.ctx) {
-                match entry {
-                    SingleCompletionFormat::Unspec(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-                    SingleCompletionFormat::Ctx(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-                    SingleCompletionFormat::Msg(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-                    SingleCompletionFormat::Data(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-                    SingleCompletionFormat::Tagged(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-                }
-                return std::task::Poll::Ready(Ok(entry));
-            }
-
-            let fut = self.cq.read_async(1);
-            let mut pinned = Box::pin(fut) ;
-            let res = match pinned.as_mut().poll(cx) {
-                std::task::Poll::Ready(res) => res,
-                std::task::Poll::Pending => return std::task::Poll::Pending,
-            }?;
-            match res {
-                CompletionFormat::Unspec(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Unspec(e.clone()));},
-                CompletionFormat::Ctx(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Ctx(e.clone()));},
-                CompletionFormat::Msg(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Msg(e.clone()));},
-                CompletionFormat::Data(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Data(e.clone()));},
-                CompletionFormat::Tagged(entries) => for e in entries.iter() {self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Tagged(e.clone()));},
-            }
-        }
-    }
-}
 
 //================== CompletionQueue Tests ==================//
 

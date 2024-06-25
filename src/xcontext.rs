@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, AsyncEventQueueImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}, BindImpl};
 
 pub struct Receive;
 pub struct Transmit;
@@ -203,7 +203,7 @@ impl TransmitContextImpl {
         TxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_eq(&self, eq: &Rc<AsyncEventQueueImpl>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<EQ: BindImpl + fid::AsFid + 'static>(&self, eq: &Rc<EQ>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }

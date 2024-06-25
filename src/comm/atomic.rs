@@ -2,7 +2,7 @@ use crate::FI_ADDR_UNSPEC;
 use crate::enums::AtomicFetchMsgOptions;
 use crate::enums::AtomicMsgOptions;
 use crate::ep::ActiveEndpointImpl;
-use crate::ep::Endpoint;
+use crate::ep::EndpointBase;
 use crate::infocapsoptions::AtomicCap;
 use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::WriteMod;
@@ -16,7 +16,7 @@ use crate::xcontext::TransmitContext;
 use super::message::extract_raw_addr_and_ctx;
 
 
-impl<E: AtomicCap+ WriteMod> Endpoint<E> {
+impl<E: AtomicCap+ WriteMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
 
     fn atomic_impl<T: 'static, T0>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -89,7 +89,7 @@ impl<E: AtomicCap+ WriteMod> Endpoint<E> {
     }
 }
 
-impl<E: AtomicCap+ ReadMod + WriteMod> Endpoint<E> {
+impl<E: AtomicCap+ ReadMod + WriteMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
 
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomic_impl<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{

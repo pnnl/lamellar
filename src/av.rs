@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::{EventQueue, AsyncEventQueueImpl, Event}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, cq::AsyncCtx};
+use crate::{domain::{Domain, DomainImpl, DomainImplBase}, eqoptions::EqConfig, fid::{OwnedFid, AsRawFid, self}, FI_ADDR_NOTAVAIL, MappedAddress, ep::Address, eq::{EventQueue, Event, EventQueueImpl}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, cq::{CompletionQueueImpl}, MappedAddressBase};
 
 
 // impl Drop for AddressVector {
@@ -13,21 +13,23 @@ use crate::{domain::{Domain, DomainImpl}, eqoptions::EqConfig, fid::{OwnedFid, A
 //================== AddressVector ==================//
 
 
-pub(crate) struct AddressVectorImpl {
+pub(crate) struct AddressVectorImplBase<EQ> {
     pub(crate) c_av: *mut libfabric_sys::fid_av, 
-    fid: OwnedFid,
-    _eq_rc: OnceCell<Rc<AsyncEventQueueImpl>>,
-    _domain_rc: Rc<DomainImpl>,
+    pub(crate) fid: OwnedFid,
+    pub(crate) _eq_rc: OnceCell<Rc<EQ>>,
+    pub(crate) _domain_rc: Rc<DomainImplBase<EQ>>,
 }
+pub(crate) type AddressVectorImpl = AddressVectorImplBase<EventQueueImpl>;
 
 
-impl AddressVectorImpl {
+
+impl<EQ: AsFid> AddressVectorImplBase<EQ> {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av {
         self.c_av
     }
 
-    pub(crate) fn new<T>(domain: &Rc<crate::domain::DomainImpl>, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         let mut c_av:   *mut libfabric_sys::fid_av =  std::ptr::null_mut();
         let c_av_ptr: *mut *mut libfabric_sys::fid_av = &mut c_av;
 
@@ -61,7 +63,7 @@ impl AddressVectorImpl {
     /// # Errors
     ///
     /// This function will return an error if the underlying library call fails.
-    pub(crate) fn bind(&self, eq: &Rc<crate::eq::AsyncEventQueueImpl>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, eq: &Rc<EQ>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_bind(self.handle(), eq.as_raw_fid(), 0) };
 
         if err != 0 {
@@ -174,39 +176,7 @@ impl AddressVectorImpl {
     }
 }
 
-impl AddressVectorImpl {
-    pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Vec<RawMappedAddress>), crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
-        let mut async_ctx = AsyncCtx{user_ctx};
-        let mut fi_addresses = vec![0u64; addr.len()];
-        let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len() );
-        let mut serialized: Vec<u8> = Vec::with_capacity(total_size);
-        for a in addr {
-            serialized.extend(a.as_bytes().iter())
-        }
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.handle(), serialized.as_ptr().cast(), fi_addresses.len(), fi_addresses.as_mut_ptr().cast(), flags, &mut async_ctx as *mut AsyncCtx as *mut std::ffi::c_void) };
-
-        
-        
-        if err < 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            let eq = if let Some(eq) = self._eq_rc.get() {
-                eq
-            }
-            else {
-                panic!("Calling insert_async on unbound AV");
-            };
-
-            let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_AV_COMPLETE}>{eq: eq.clone(), req_fid: self.as_raw_fid(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
-            if let Event::AVComplete(ref entry) = res {
-                fi_addresses.truncate(entry.data() as usize);
-            }
-            Ok((res, fi_addresses))
-        }
-    } 
-}
 
 /// Owned wrapper around a libfabric `fid_av`.
 /// 
@@ -215,23 +185,24 @@ impl AddressVectorImpl {
 /// 
 /// Note that other objects that rely on an AddressVector (e.g., [MappedAddress]) will extend its lifetime until they
 /// are also dropped.
-pub struct AddressVector {
-    pub(crate) inner: Rc<AddressVectorImpl>,
+pub type AddressVector = AddressVectorBase<EventQueueImpl>;
+pub struct AddressVectorBase<EQ> {
+    pub(crate) inner: Rc<AddressVectorImplBase<EQ>>,
 }
 
-impl AddressVector {
+impl<EQ: AsFid> AddressVectorBase<EQ> {
 
-    pub(crate) fn from_impl(av_impl: &Rc<AddressVectorImpl>) -> Self {
+    pub(crate) fn from_impl(av_impl: &Rc<AddressVectorImplBase<EQ>>) -> Self {
         Self {
             inner: av_impl.clone(),
         }
     }
 
-    pub(crate) fn new<T>(domain: &crate::domain::Domain, attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T>(domain: &crate::domain::DomainBase<EQ>, attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         
         Ok(
             Self {
-                inner: Rc::new (AddressVectorImpl::new(&domain.inner, attr, context)?)
+                inner: Rc::new (AddressVectorImplBase::new(&domain.inner, attr, context)?)
             }
         )
     }
@@ -247,25 +218,25 @@ impl AddressVector {
     /// For address(es) that could not be mapped a [None] value will be returned at the respective index.
     /// 
     /// This method directly corresponds to a call to `fi_av_insert`
-    pub fn insert(&self, addr: &[Address], options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
+    pub fn insert(&self, addr: &[Address], options: AVOptions) -> Result<Vec<Option<MappedAddressBase<EQ>>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = self.inner.insert::<()>(addr, options.get_value(), None)?;
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddressBase::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
     }
     
     /// Same as [Self::insert] but with an extra argument to provide a context
     ///
-    pub fn insert_with_context<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
+    pub fn insert_with_context<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddressBase<EQ>>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = self.inner.insert(addr, options.get_value(), Some(ctx))?;
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddressBase::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
     }
 
     /// Similar to [Self::insert] but with address formatted as node, service [String]s
     ///
     /// Directly corrsponds to `fi_av_insertsvc`
-    pub fn insertsvc(&self, node: &str, service: &str, options: AVOptions) -> Result<Option<MappedAddress>, crate::error::Error> {
+    pub fn insertsvc(&self, node: &str, service: &str, options: AVOptions) -> Result<Option<MappedAddressBase<EQ>>, crate::error::Error> {
         let fi_addr = self.inner.insertsvc(node, service, options.get_value())?;
         if fi_addr != FI_ADDR_NOTAVAIL {
-            Ok(Some(MappedAddress::from_raw_addr(fi_addr, &self.inner)))
+            Ok(Some(MappedAddressBase::from_raw_addr(fi_addr, &self.inner)))
         }
         else {
             Ok(None)
@@ -276,9 +247,9 @@ impl AddressVector {
     /// Similar to [Self::insert] but with address(es) formatted as a base `node` + increments up to `nodecnt`, base `service`  + increments up to `svccnt`
     ///
     /// Directly corresponds to `fi_av_insertsym`
-    pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
+    pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, options: AVOptions) -> Result<Vec<Option<MappedAddressBase<EQ>>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
         let fi_addresses = self.inner.insertsym(node, nodecnt, service, svccnt, options.get_value())?;
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddressBase::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
     }
 
     /// Removes the given [MappedAddress]es from the AddressVector. 
@@ -306,18 +277,7 @@ impl AddressVector {
     
 }
 
-impl AddressVector {
-    pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] handle async
-        let (event, fi_addresses) = self.inner.insert_async(addr, options.get_value(), None).await?;
-        Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
-    }
-    
-    pub async fn insert_with_context_async<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] handle async
-        let (event, fi_addresses) =self.inner.insert_async(addr, options.get_value(), Some((ctx as *mut T).cast())).await?;
-        Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
-    }
-    
-}
+
 
 /// Builder for the [`AddressVector`] type.
 /// 
@@ -326,7 +286,7 @@ impl AddressVector {
 /// followed by a call to `fi_av_open`  
 pub struct AddressVectorBuilder<'a, T> {
     av_attr: AddressVectorAttr,
-    eq: Option<&'a Rc<AsyncEventQueueImpl>>,
+    eq: Option<&'a Rc<EventQueueImpl>>,
     ctx: Option<&'a mut T>,
     domain: &'a Domain,
 }
@@ -459,15 +419,15 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
 
 //================== AddressVectorSet ==================//
 
-pub(crate) struct AddressVectorSetImpl {
+pub(crate) struct AddressVectorSetImplBase<EQ> {
     pub(crate) c_set : *mut libfabric_sys::fid_av_set,
     fid: OwnedFid,
-    _av_rc: Rc<AddressVectorImpl>,
+    _av_rc: Rc<AddressVectorImplBase<EQ>>,
 }
 
 
 
-impl AddressVectorSetImpl {
+impl<EQ: AsFid> AddressVectorSetImplBase<EQ> {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av_set {
         self.c_set
@@ -481,7 +441,7 @@ impl AddressVectorSetImpl {
     //     Self::new_(av, attr, Some(context))
     // }
 
-    fn new<T>(av: &AddressVector, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    fn new<T>(av: &AddressVectorBase<EQ>, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         let mut c_set: *mut libfabric_sys::fid_av_set = std::ptr::null_mut();
         let c_set_ptr: *mut *mut libfabric_sys::fid_av_set = &mut c_set;
 
@@ -506,7 +466,7 @@ impl AddressVectorSetImpl {
         }
     }
 
-    pub(crate) fn union(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
+    pub(crate) fn union(&self, other: &AddressVectorSetImplBase<EQ>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_union(self.handle(), other.handle()) };
 
         if err != 0 {
@@ -517,7 +477,7 @@ impl AddressVectorSetImpl {
         }
     }
 
-    pub(crate) fn intersect(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
+    pub(crate) fn intersect(&self, other: &AddressVectorSetImplBase<EQ>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_intersect(self.handle(), other.handle()) };
 
         if err != 0 {
@@ -528,7 +488,7 @@ impl AddressVectorSetImpl {
         }
     }
     
-    pub(crate) fn diff(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
+    pub(crate) fn diff(&self, other: &AddressVectorSetImplBase<EQ>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_av_set_diff(self.handle(), other.handle()) };
 
         if err != 0 {
@@ -582,21 +542,23 @@ impl AddressVectorSetImpl {
 /// 
 /// Note that other objects that rely on an AddressVectorSet (e.g., [crate::comm::collective::MulticastGroupCollective]) will extend its lifetime until they
 /// are also dropped.
-pub struct AddressVectorSet {
-    inner: Rc<AddressVectorSetImpl>,
+
+pub type AddressVectorSet = AddressVectorSetBase<EventQueueImpl>; 
+pub struct AddressVectorSetBase<EQ> {
+    inner: Rc<AddressVectorSetImplBase<EQ>>,
 }
 
-impl AddressVectorSet {
+impl<EQ: AsFid> AddressVectorSetBase<EQ> {
 
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_av_set {
         self.inner.c_set
     }
 
-    pub(crate) fn new<T>(av: &AddressVector, attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T>(av: &AddressVectorBase<EQ>, attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: 
-                    Rc::new(AddressVectorSetImpl::new(av, attr, context)?)
+                    Rc::new(AddressVectorSetImplBase::new(av, attr, context)?)
             }
         )
     }
@@ -606,7 +568,7 @@ impl AddressVectorSet {
     /// The result is stored in `Self`, which is modified.
     /// 
     /// Corresponds to `fi_av_set_union`
-    pub fn union(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    pub fn union(&mut self, other: &AddressVectorSetBase<EQ>) -> Result<(), crate::error::Error> {
         self.inner.union(&other.inner)
     }
 
@@ -615,7 +577,7 @@ impl AddressVectorSet {
     /// The result is stored in `Self`, which is modified.
     /// 
     /// Corresponds to `fi_av_set_intersect`
-    pub fn intersect(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    pub fn intersect(&mut self, other: &AddressVectorSetBase<EQ>) -> Result<(), crate::error::Error> {
         self.inner.intersect(&other.inner)
     }
     
@@ -624,7 +586,7 @@ impl AddressVectorSet {
     /// The result is stored in `Self`, which is modified.
     /// 
     /// Corresponds to `fi_av_set_diff`
-    pub fn diff(&mut self, other: &AddressVectorSet) -> Result<(), crate::error::Error> {
+    pub fn diff(&mut self, other: &AddressVectorSetBase<EQ>) -> Result<(), crate::error::Error> {
         self.inner.diff(&other.inner)
     }
     
@@ -918,26 +880,26 @@ impl AsFid for AddressVectorSet {
     }
 }
 
-impl AsFid for AddressVector {
+impl<EQ> AsFid for AddressVectorBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid {
         self.inner.as_fid()
     }
 }
 
-impl AsFid for AddressVectorImpl {
+impl<EQ> AsFid for AddressVectorImplBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid {
         self.fid.as_fid()
     }
 }
-impl AsFid for Rc<AddressVectorImpl> {
+impl<EQ> AsFid for Rc<AddressVectorImplBase<EQ>> {
     fn as_fid(&self) -> fid::BorrowedFid {
         self.fid.as_fid()
     }
 }
 
-impl crate::BindImpl for AddressVectorImpl {}
+impl<EQ> crate::BindImpl for AddressVectorImplBase<EQ> {}
 
-impl crate::Bind for AddressVector {
+impl<EQ: 'static> crate::Bind for AddressVectorBase<EQ> {
     fn inner(&self) -> Rc<dyn crate::BindImpl> {
         self.inner.clone()
     }

@@ -1,6 +1,7 @@
 use std::{rc::Rc, cell::OnceCell};
 
-use av::AddressVectorImpl;
+use av::{AddressVectorImpl, AddressVectorImplBase};
+use eq::EventQueueImpl;
 use mr::DataDescriptor;
 
 pub mod ep;
@@ -26,6 +27,7 @@ mod utils;
 mod fid;
 pub mod iovec;
 pub mod msg;
+pub mod async_;
 
 pub type RawMappedAddress = libfabric_sys::fi_addr_t; 
 
@@ -37,15 +39,16 @@ pub type RawMappedAddress = libfabric_sys::fi_addr_t;
 /// 
 /// Note that other objects that it will extend the respective [`crate::av::AddressVector`]'s (if any) lifetime until they
 /// it is dropped.
+pub type MappedAddress = MappedAddressBase<EventQueueImpl>;
 #[repr(C)]
-pub struct MappedAddress {
+pub struct MappedAddressBase<EQ> {
     addr: libfabric_sys::fi_addr_t,
-    av: OnceCell<Rc<AddressVectorImpl>>,
+    av: OnceCell<Rc<AddressVectorImplBase<EQ>>>,
 }
 
-impl MappedAddress {
+impl<EQ> MappedAddressBase<EQ> {
 
-    pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: &Rc<AddressVectorImpl>) -> Self {
+    pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: &Rc<AddressVectorImplBase<EQ>>) -> Self {
         let avcell = OnceCell::new();
         
         if avcell.set(av.clone()).is_err() {

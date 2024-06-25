@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 
 
-use crate::{domain::DomainImpl, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error, eq::Event, cq::AsyncCtx};
+use crate::{domain::{DomainImpl, DomainImplBase}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error, eq::{Event, EventQueueImpl, BindEqImpl}};
 #[allow(unused_imports)]
 use crate::fid::{AsFid, OwnedFid};
 
@@ -28,7 +28,7 @@ impl MemoryRegionKey {
     //     Self::RawKey(raw_key)
     // }
 
-    pub unsafe fn from_bytes(raw: &[u8], domain: &crate::domain::Domain) -> Self {
+    pub unsafe fn from_bytes<EQ>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
         MemoryRegionKey::from_bytes_impl(raw, &domain.inner)
     }
 
@@ -46,7 +46,7 @@ impl MemoryRegionKey {
         }
     }
 
-    unsafe fn from_bytes_impl(raw: &[u8], domain: &crate::domain::DomainImpl) -> Self {
+    unsafe fn from_bytes_impl<EQ>(raw: &[u8], domain: &crate::domain::DomainImplBase<EQ>) -> Self {
         if domain.domain_attr.get_mr_mode().is_raw() {
             assert!(raw.len() == domain.domain_attr.get_mr_key_size());
             let base_addr = *(raw[raw.len()-std::mem::size_of::<u64>()..].as_ptr() as *const u64);
@@ -63,43 +63,46 @@ impl MemoryRegionKey {
         MemoryRegionKey::Key(key) 
     }
 
-    pub fn into_mapped(mut self, domain: &crate::domain::Domain) -> Result<MappedMemoryRegionKey, crate::error::Error> {
+    pub fn into_mapped<EQ: AsFid>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKeyBase<EQ>, crate::error::Error> {
         match self {
             MemoryRegionKey::Key(mapped_key) => {
-                Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::Key(mapped_key)})
+                Ok(MappedMemoryRegionKeyBase{inner: MappedMemoryRegionKeyImplBase::Key(mapped_key)})
             }
             MemoryRegionKey::RawKey(_) => {
                 let mapped_key = domain.map_raw( &mut self, 0)?;
-                Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::MappedRawKey((mapped_key, domain.inner.clone()))})
+                Ok(MappedMemoryRegionKeyBase{inner: MappedMemoryRegionKeyImplBase::MappedRawKey((mapped_key, domain.inner.clone()))})
             }
         }
     }
 }
-enum MappedMemoryRegionKeyImpl {
+enum MappedMemoryRegionKeyImplBase<EQ> {
     Key(u64),
-    MappedRawKey((u64, Rc<DomainImpl>)),
+    MappedRawKey((u64, Rc<DomainImplBase<EQ>>)),
 }
+
+pub(crate) type MappedMemoryRegionKeyImpl =  MappedMemoryRegionKeyImplBase<EventQueueImpl>;
 
 /// Uniformly represents a (mapped if raw) memory region  key that can be used to
 /// access remote [MemoryRegion]s. This struct will automatically unmap the key
 /// if needed when it is dropped.
-pub struct MappedMemoryRegionKey {
-    inner: MappedMemoryRegionKeyImpl,
+pub type MappedMemoryRegionKey = MappedMemoryRegionKeyBase<EventQueueImpl>;
+pub struct MappedMemoryRegionKeyBase<EQ: AsFid> {
+    inner: MappedMemoryRegionKeyImplBase<EQ>,
 }
 
-impl MappedMemoryRegionKey {
+impl<EQ: AsFid> MappedMemoryRegionKeyBase<EQ> {
     pub(crate) fn get_key(&self) -> u64 {
         match self.inner {
-            MappedMemoryRegionKeyImpl::Key(key) | MappedMemoryRegionKeyImpl::MappedRawKey((key, _)) => key 
+            MappedMemoryRegionKeyImplBase::Key(key) | MappedMemoryRegionKeyImplBase::MappedRawKey((key, _)) => key 
         }
     }
 }
 
-impl Drop for MappedMemoryRegionKey {
+impl<EQ: AsFid> Drop for MappedMemoryRegionKeyBase<EQ> {
     fn drop(&mut self) {
         match self.inner {
-            MappedMemoryRegionKeyImpl::Key(_) => {}
-            MappedMemoryRegionKeyImpl::MappedRawKey((key, ref domain_impl)) => { 
+            MappedMemoryRegionKeyImplBase::Key(_) => {}
+            MappedMemoryRegionKeyImplBase::MappedRawKey((key, ref domain_impl)) => { 
                 domain_impl.unmap_key(key).unwrap();
             }
         }
@@ -131,10 +134,12 @@ impl DataDescriptor for DefaultMemDesc {
 // }
 
 //================== Memory Region (fi_mr) ==================//
-pub(crate) struct MemoryRegionImpl {
+pub type MemoryRegionImpl = MemoryRegionImplBase<EventQueueImpl>;
+
+pub(crate) struct MemoryRegionImplBase<EQ> {
     pub(crate) c_mr: *mut libfabric_sys::fid_mr,
-    fid: OwnedFid,
-    _domain_rc: Rc<DomainImpl>,
+    pub(crate) fid: OwnedFid,
+    pub(crate) _domain_rc: Rc<DomainImplBase<EQ>>,
 }
 
 /// Owned wrapper around a libfabric `fid_mr`.
@@ -144,11 +149,12 @@ pub(crate) struct MemoryRegionImpl {
 /// 
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
 /// are also dropped.
-pub struct MemoryRegion {
-    inner: Rc<MemoryRegionImpl>
+pub type MemoryRegion  = MemoryRegionBase<EventQueueImpl>;
+pub struct MemoryRegionBase<EQ> {
+    pub(crate) inner: Rc<MemoryRegionImplBase<EQ>>,
 }
 
-impl MemoryRegionImpl {
+impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
     
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
         self.c_mr
@@ -157,7 +163,7 @@ impl MemoryRegionImpl {
 
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = if let Some(ctx) = context {
@@ -182,7 +188,7 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn from_attr(domain: &Rc<crate::domain::DomainImpl>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr(domain: &Rc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
@@ -201,7 +207,7 @@ impl MemoryRegionImpl {
     }
             
     #[allow(dead_code)]
-    fn from_iovec<T, T0>(domain: &Rc<crate::domain::DomainImpl>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =
@@ -263,7 +269,7 @@ impl MemoryRegionImpl {
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn bind_ep(&self, ep: &Rc<crate::ep::EndpointImpl>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep<CQ>(&self, ep: &Rc<crate::ep::EndpointImplBase<EQ, CQ>>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_raw_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())
@@ -328,7 +334,7 @@ impl MemoryRegionImpl {
     }
 }
 
-impl MemoryRegion {
+impl<EQ: AsFid> MemoryRegionBase<EQ> {
     
     #[allow(dead_code)]
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
@@ -336,37 +342,37 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn from_impl(mr_impl: &Rc<MemoryRegionImpl>)  -> Self {
-        MemoryRegion {
+    pub(crate) fn from_impl(mr_impl: &Rc<MemoryRegionImplBase<EQ>>)  -> Self {
+        MemoryRegionBase {
             inner: mr_impl.clone()
         }
     }
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0>(domain: &crate::domain::DomainBase<EQ>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner:
-                    Rc::new(MemoryRegionImpl::from_buffer(&domain.inner, buf, access, requested_key, flags, context)?)
+                    Rc::new(MemoryRegionImplBase::from_buffer(&domain.inner, buf, access, requested_key, flags, context)?)
             }
         )
     }
     
-    pub(crate) fn from_attr(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr(domain: &crate::domain::DomainBase<EQ>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImpl::from_attr(&domain.inner, attr, flags)?)
+                    Rc::new(MemoryRegionImplBase::from_attr(&domain.inner, attr, flags)?)
             }
         )
     }
 
     #[allow(dead_code)]
-    fn from_iovec<T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T, T0>(domain: &crate::domain::DomainBase<EQ>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImpl::from_iovec(&domain.inner, iov, access, requested_key, flags, context)?)
+                    Rc::new(MemoryRegionImplBase::from_iovec(&domain.inner, iov, access, requested_key, flags, context)?)
             }
         )
     }
@@ -393,19 +399,19 @@ impl MemoryRegion {
         self.inner.bind_cntr(&cntr.inner, remote_write_event)
     }
 
-    /// Associates the memory region with an endpoint
-    /// 
-    /// Bind the memory region to `ep`.
-    /// 
-    /// Corresponds to `fi_mr_bind` with a `fid_ep` 
-    pub fn bind_ep<E>(&self, ep: &crate::ep::Endpoint<E>) -> Result<(), crate::error::Error> {
-        self.inner.bind_ep(&ep.inner)?;
-        ep.inner.eq
-            .get()
-            .expect("Endpoint is to bound to an Event Queue")
-            .bind_mr(&self.inner);
-        Ok(())
-    }
+    // /// Associates the memory region with an endpoint
+    // /// 
+    // /// Bind the memory region to `ep`.
+    // /// 
+    // /// Corresponds to `fi_mr_bind` with a `fid_ep` 
+    // pub fn bind_ep<E>(&self, ep: &crate::ep::EndpointBase<E, EQ, CQ>) -> Result<(), crate::error::Error> {
+    //     self.inner.bind_ep(&ep.inner)?;
+    //     ep.inner.eq
+    //         .get()
+    //         .expect("Endpoint is to bound to an Event Queue")
+    //         .bind_mr(&self.inner);
+    //     Ok(())
+    // }
 
     /// Notify the provider of any change to the physical pages backing a registered memory region.
     /// 
@@ -438,158 +444,8 @@ impl MemoryRegion {
 
 //==================== Async stuff ================================//
 
-impl MemoryRegionImpl {
-
-    #[allow(dead_code)]
-    pub(crate) async fn from_buffer_async<T>(domain: &Rc<crate::domain::DomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Self), crate::error::Error> {
-        let mut async_ctx = AsyncCtx{user_ctx};
-
-        let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
-        let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast() ) };
-        
-        if err == 0 {
-            
-            if let Some((eq, mem_reg)) = domain._eq_rc.get() {
-                if !mem_reg {
-                    panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
-                }
-                else {
-                    let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
-                    return Ok( (res,
-                        Self {
-                            c_mr,
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                            _domain_rc: domain.clone(),
-                        }
-                    ));
-                }
-            }
-            else {
-                panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
-            }
-        }
-        
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-    } 
-    
 
 
-    pub(crate) async fn from_attr_async(domain: &Rc<crate::domain::DomainImpl>, mut attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event<usize>,Self), crate::error::Error> { // [TODO] Add context version
-        
-        let mut async_ctx = 
-            if attr.c_attr.context.is_null() {
-                AsyncCtx{user_ctx: None}
-            }
-            else {
-                AsyncCtx{user_ctx: Some(attr.c_attr.context)}
-            };
-        attr.c_attr.context = (&mut async_ctx as *mut AsyncCtx).cast();
-
-        let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
-        let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
-    
-        if err == 0 {
-            
-            if let Some((eq, mem_reg)) = domain._eq_rc.get() {
-                if !mem_reg {
-                    panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
-                }
-                else {
-                    println!("Creating mr_from_attr: {}", attr.c_attr.context as usize);
-                    let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: attr.c_attr.context as usize}.await?;
-                    return Ok((res,
-                        Self {
-                            c_mr,
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                            _domain_rc: domain.clone(),
-                        }
-                    ));
-                }
-            }
-            else {
-                panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
-            }
-        }
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-
-    }
-            
-    #[allow(dead_code)]
-    pub(crate) async fn from_iovec_async<'a, T>(domain: &Rc<crate::domain::DomainImpl>,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Self), crate::error::Error> {
-        let mut async_ctx = AsyncCtx{user_ctx};
-        let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
-        let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast())};
-    
-        if err == 0 {
-            
-            if let Some((eq, mem_reg)) = domain._eq_rc.get() {
-                if !mem_reg {
-                    panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
-                }
-                else {
-                    let res = crate::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
-                    return Ok((res,
-                        Self {
-                            c_mr,
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
-                            _domain_rc: domain.clone(),
-                        }
-                    ));
-                }
-            }
-            else {
-                panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
-            }
-        }
-        
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-    
-    }
-}
-
-impl MemoryRegion {
-    
-    #[allow(dead_code)]
-    pub(crate) async fn from_buffer_async<T, T0>(domain: &crate::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event<usize>,Self), crate::error::Error> {
-        let ctx = user_ctx.map(|ctx| (ctx as *mut T0).cast());
-        let (event, mr) = MemoryRegionImpl::from_buffer_async(&domain.inner, buf, access, requested_key, flags, ctx).await?;
-        Ok((event,
-            Self {
-                inner:
-                    Rc::new(mr)
-            }
-        ))
-
-    }
-
-        
-    pub(crate) async fn from_attr_async(domain: &crate::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event<usize>, Self), crate::error::Error> { // [TODO] Add context version
-        let (event, mr) = MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags).await?;
-        Ok((event,
-            Self {
-                inner: 
-                    Rc::new(mr)
-            }
-        ))
-    }
-
-    #[allow(dead_code)]
-    async fn from_iovec_async<'a, T, T0>(domain: &crate::domain::Domain,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event<usize>, Self), crate::error::Error> {
-        let ctx = user_ctx.map(|ctx| (ctx as *mut T0).cast());
-        let (event, mr) = MemoryRegionImpl::from_iovec_async(&domain.inner, iov, access, requested_key, flags, ctx).await?;
-        Ok((event,
-            Self {
-                inner: 
-                    Rc::new(mr)
-            }
-        ))
-    }
-    
-}
 
 
 /// An opaque wrapper for the descriptor of a [MemoryRegion] as obtained from
@@ -611,13 +467,13 @@ impl crate::DataDescriptor for MemoryRegionDesc {
     }
 }
 
-impl AsFid for MemoryRegion{
+impl<EQ> AsFid for MemoryRegionBase<EQ>{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.as_fid()
     }
 }
 
-impl AsFid for MemoryRegionImpl{
+impl<EQ> AsFid for MemoryRegionImplBase<EQ>{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.fid.as_fid()
     }
@@ -898,15 +754,15 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
         MemoryRegion::from_attr(self.domain, self.mr_attr, self.flags)
     }
 
-    /// Constructs a new [MemoryRegion] with the configurations requested so far.
-    /// 
-    /// Corresponds to creating a `fi_mr_attr`, setting its fields to the requested ones,
-    /// and passign it to `fi_mr_regattr`.
-    pub async fn build_async(self) -> Result<(Event<usize>,MemoryRegion), crate::error::Error> {
-        panic!("Async memory registration is currently not supported due to a potential bug in libfabric");
-        self.mr_attr.iov(&self.iovs);
-        MemoryRegion::from_attr_async(self.domain, self.mr_attr, self.flags).await
-    }
+    // /// Constructs a new [MemoryRegion] with the configurations requested so far.
+    // /// 
+    // /// Corresponds to creating a `fi_mr_attr`, setting its fields to the requested ones,
+    // /// and passign it to `fi_mr_regattr`.
+    // pub async fn build_async(self) -> Result<(Event<usize>,MemoryRegion), crate::error::Error> {
+    //     panic!("Async memory registration is currently not supported due to a potential bug in libfabric");
+    //     self.mr_attr.iov(&self.iovs);
+    //     MemoryRegion::from_attr_async(self.domain, self.mr_attr, self.flags).await
+    // }
 }
 
 //=================== Async Stuff =========================//

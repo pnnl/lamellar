@@ -2,13 +2,17 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::RawMappedAddress;
+use crate::cq::CompletionQueueImpl;
 use crate::enums;
 use crate::enums::CollectiveOptions;
 use crate::enums::JoinOptions;
 use crate::ep::ActiveEndpointImpl;
 use crate::ep::Address;
-use crate::ep::Endpoint;
+use crate::ep::EndpointBase;
 use crate::ep::EndpointImpl;
+use crate::ep::EndpointImplBase;
+use crate::eq::BindEqImpl;
+use crate::eq::EventQueueImpl;
 use crate::error::Error;
 use crate::MappedAddress;
 use crate::fid;
@@ -21,52 +25,57 @@ use crate::utils::to_fi_datatype;
 
 use super::message::extract_raw_addr_and_ctx;
 
-impl<E: CollCap> Endpoint<E> {
+impl<E, EQ, CQ> EndpointBase<E, EQ, CQ> where E: CollCap, EQ: AsFid + BindEqImpl<EQ, CQ> {
 
-    pub(crate) fn join_impl<T>(&self, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<MulticastGroupCollective, crate::error::Error> {
-        let mc = MulticastGroupCollective::new(self, addr, options.get_value(), context)?;
+    pub(crate) fn join_impl<T>(&self, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
+        let mc = MulticastGroupCollectiveBase::new(self, addr, options.get_value(), context)?;
         self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner); 
         Ok(mc)
     }
 
-    pub fn join(&self, addr: &Address, options: JoinOptions) -> Result<MulticastGroupCollective, crate::error::Error> { // [TODO]
+    pub fn join(&self, addr: &Address, options: JoinOptions) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> { // [TODO]
         self.join_impl::<()>(addr, options, None)
     }
 
-    pub fn join_with_context<T>(&self, addr: &Address, options: JoinOptions, context: &mut T) -> Result<MulticastGroupCollective, crate::error::Error> {
+    pub fn join_with_context<T>(&self, addr: &Address, options: JoinOptions, context: &mut T) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
         self.join_impl(addr, options, Some(context))        
     }
 
-    fn join_collective_impl<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context : Option<&mut T>) -> Result<MulticastGroupCollective, crate::error::Error> {
-        let mc = MulticastGroupCollective::new_collective::<E, T>(self, coll_mapped_addr, set, options.get_value(), context)?;
+    fn join_collective_impl<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSetBase<EQ>, options: JoinOptions, context : Option<&mut T>) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
+        let mc = MulticastGroupCollectiveBase::new_collective::<E, T>(self, coll_mapped_addr, set, options.get_value(), context)?;
         self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner);
         Ok(mc)
     }
 
-    pub fn join_collective(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<MulticastGroupCollective, crate::error::Error> {
+    pub fn join_collective(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSetBase<EQ>, options: JoinOptions) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
         self.join_collective_impl::<()>(coll_mapped_addr, set, options, None)
     }
 
-    pub fn join_collective_with_context<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context : &mut T) -> Result<MulticastGroupCollective, crate::error::Error> {
+    pub fn join_collective_with_context<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSetBase<EQ>, options: JoinOptions, context : &mut T) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
         self.join_collective_impl(coll_mapped_addr, set, options, Some(context))
     }
 }
 
-pub struct MulticastGroupCollective {
-    pub(crate) inner: Rc<MulticastGroupCollectiveImpl>,
+// pub struct MulticastGroupCollectiveBase<EQ> {
+pub type MulticastGroupCollective = MulticastGroupCollectiveBase<EventQueueImpl, CompletionQueueImpl<EventQueueImpl>>;
+
+pub struct MulticastGroupCollectiveBase<EQ, CQ> {
+    pub(crate) inner: Rc<MulticastGroupCollectiveImplBase<EQ, CQ>>,
 }
 
-pub struct MulticastGroupCollectiveImpl  {
+pub type MulticastGroupCollectiveImpl  = MulticastGroupCollectiveImplBase<EventQueueImpl, CompletionQueueImpl<EventQueueImpl>>;
+
+pub struct MulticastGroupCollectiveImplBase<EQ, CQ>  {
     #[allow(dead_code)]
     c_mc: *mut libfabric_sys::fid_mc,
     addr: RawMappedAddress,
     fid: OwnedFid,
-    pub(crate) ep: Rc<EndpointImpl>,
+    pub(crate) ep: Rc<EndpointImplBase<EQ, CQ>>,
 }
 
-impl MulticastGroupCollective {
+impl<EQ: AsFid, CQ> MulticastGroupCollectiveBase<EQ, CQ> {
 
-    pub(crate) fn from_impl(mc_impl: &Rc<MulticastGroupCollectiveImpl>) -> Self {
+    pub(crate) fn from_impl(mc_impl: &Rc<MulticastGroupCollectiveImplBase<EQ, CQ>>) -> Self {
         Self {
             inner: mc_impl.clone(),
         }
@@ -77,7 +86,7 @@ impl MulticastGroupCollective {
         self.inner.c_mc
     }
 
-    pub(crate) fn new<E: CollCap, T>(ep: &Endpoint<E>, addr: &Address, flags: u64, context: Option<&mut T>) -> Result<MulticastGroupCollective, Error> {
+    pub(crate) fn new<E: CollCap, T>(ep: &EndpointBase<E, EQ, CQ>, addr: &Address, flags: u64, context: Option<&mut T>) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
         let err = 
@@ -94,7 +103,7 @@ impl MulticastGroupCollective {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(MulticastGroupCollectiveImpl {
+                    inner: Rc::new(MulticastGroupCollectiveImplBase {
                         c_mc, 
                         addr: unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc)},
                         fid: OwnedFid::from(unsafe { &mut (*c_mc).fid }), 
@@ -105,7 +114,7 @@ impl MulticastGroupCollective {
 
     }
 
-    pub(crate) fn new_collective<E: CollCap,T0>(ep: &Endpoint<E>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, flags: u64, context: Option<&mut T0>) -> Result<MulticastGroupCollective, Error> {
+    pub(crate) fn new_collective<E: CollCap,T0>(ep: &EndpointBase<E, EQ, CQ>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSetBase<EQ>, flags: u64, context: Option<&mut T0>) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, Error> {
         let mut c_mc: *mut libfabric_sys::fid_mc = std::ptr::null_mut();
         let c_mc_ptr: *mut *mut libfabric_sys::fid_mc = &mut c_mc;
         let err = 
@@ -122,7 +131,7 @@ impl MulticastGroupCollective {
         else {
             Ok(
                 Self {
-                    inner: Rc::new(MulticastGroupCollectiveImpl {
+                    inner: Rc::new(MulticastGroupCollectiveImplBase {
                         c_mc, 
                         addr: unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc)},
                         fid: OwnedFid::from(unsafe { &mut (*c_mc).fid }), 
@@ -326,13 +335,13 @@ impl MulticastGroupCollective {
     }
 }
 
-impl AsFid for MulticastGroupCollective {
+impl<EQ, CQ> AsFid for MulticastGroupCollectiveBase<EQ, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.as_fid()
     }
 }
 
-impl AsFid for MulticastGroupCollectiveImpl {
+impl<EQ, CQ> AsFid for MulticastGroupCollectiveImplBase<EQ, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.fid.as_fid()
     }
