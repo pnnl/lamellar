@@ -5,6 +5,7 @@ use crate::enums::TaggedSendMsgOptions;
 use crate::ep::ActiveEndpointImpl;
 use crate::ep::Endpoint;
 use crate::ep::EndpointBase;
+use crate::eq::EventQueueImplT;
 use crate::infocapsoptions::RecvMod;
 use crate::infocapsoptions::SendMod;
 use crate::infocapsoptions::TagCap;
@@ -18,7 +19,7 @@ use super::message::extract_raw_addr_and_ctx;
 
 
 
-impl<E: TagCap + RecvMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     fn trecv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddressBase<EQ>>, tag: u64, ignore:u64, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
@@ -70,7 +71,7 @@ impl<E: TagCap + RecvMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
     }
 }
 
-impl<E: TagCap + SendMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     fn tsend_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddressBase<EQ>>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);

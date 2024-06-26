@@ -2,7 +2,7 @@ use std::{rc::{Rc, Weak}, collections::HashMap, cell::RefCell, ops::Deref, marke
 
 use async_io::Async;
 
-use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, BindEqImpl}, error::Error, fid::{AsFid, self, Fid, AsRawFid}, eqoptions::{self, Options}, FdRetrievable, WaitRetrievable, mr::MemoryRegionImplBase, av::AddressVectorImplBase, comm::collective::MulticastGroupCollectiveImplBase, async_::AsyncCtx};
+use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, BindEqImpl, EventQueueImplT}, error::Error, fid::{AsFid, self, Fid, AsRawFid}, eqoptions::{self, Options}, FdRetrievable, WaitRetrievable, mr::MemoryRegionImplBase, av::AddressVectorImplBase, comm::collective::MulticastGroupCollectiveImplBase, async_::AsyncCtx};
 use super::{mr::AsyncMemoryRegionImpl, av::AsyncAddressVectorImpl, comm::collective::AsyncMulticastGroupCollectiveImpl, cq::AsyncCompletionQueueImpl};
 
 pub type EventQueue<T> = EventQueueBase<T, AsyncEventQueueImpl>;
@@ -125,6 +125,40 @@ impl Deref for  AsyncEventQueueImpl {
 
     fn deref(&self) -> &Self::Target {
         self.base.as_ref()
+    }
+}
+
+
+impl EventQueueImplT for AsyncEventQueueImpl {
+    fn read(&self) -> Result<Event<usize>, crate::error::Error> {
+        self.base.as_ref().read()
+    }
+
+    fn peek(&self) -> Result<Event<usize>, crate::error::Error> {
+        self.base.as_ref().peek()
+    }
+
+    fn readerr(&self) -> Result<crate::eq::EventError, crate::error::Error> {
+        self.base.as_ref().readerr()
+    }
+
+    fn peekerr(&self) -> Result<crate::eq::EventError, crate::error::Error> {
+        self.base.as_ref().peekerr()
+    }
+
+    fn strerror(&self, entry: &crate::eq::EventError) -> &str {
+        self.base.as_ref().strerror(entry)
+    }
+}
+
+pub(crate) trait AsyncEventQueueImplT {
+    async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>;
+}
+
+impl AsyncEventQueueImplT for AsyncEventQueueImpl {
+    
+    async fn read_async(&self) -> Result<Event<usize>, crate::error::Error> {
+        self.read_async().await
     }
 }
 

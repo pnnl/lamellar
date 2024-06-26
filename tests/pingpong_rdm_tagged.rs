@@ -1,7 +1,12 @@
-use common::{HintsCaps, IP};
-use libfabric::{domain, enums, ep, xcontext::TxAttr, info::InfoHints};
-
+pub mod sync_; // Public to supress lint warnings (unused function)
+pub mod async_;
 pub mod common; // Public to supress lint warnings (unused function)
+use common::IP;
+
+use prefix::HintsCaps;
+
+use sync_ as prefix;
+
 
 // To run the following tests do:
 // 1. export FI_LOG_LEVEL="info" . 
@@ -14,24 +19,24 @@ pub mod common; // Public to supress lint warnings (unused function)
 #[ignore]
 #[test]
 fn pp_server_rdm_tagged() {
-    let mut gl_ctx = common::TestsGlobalCtx::new();
+    let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let mut ep_attr = ep::EndpointAttr::new();
-        ep_attr.ep_type(enums::EndpointType::Rdm);
+    let mut ep_attr = libfabric::ep::EndpointAttr::new();
+        ep_attr.ep_type(libfabric::enums::EndpointType::Rdm);
 
-    let mut dom_attr = domain::DomainAttr::new();
+    let mut dom_attr = libfabric::domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::Domain)
-        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
-    let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(enums::TClass::LowLatency);
+    let mut tx_attr = libfabric::xcontext::TxAttr::new();
+        tx_attr.tclass(libfabric::enums::TClass::LowLatency);
 
 
 
     let hintscaps = if false {
         HintsCaps::Msg(
-            InfoHints::new()
+            libfabric::info::InfoHints::new()
             .mode(libfabric::enums::Mode::new().context())
             .ep_attr(ep_attr)
             .caps(
@@ -40,12 +45,12 @@ fn pp_server_rdm_tagged() {
             )
             .domain_attr(dom_attr)
             .tx_attr(tx_attr)
-            .addr_format(enums::AddressFormat::Unspec)
+            .addr_format(libfabric::enums::AddressFormat::Unspec)
         )
     }
     else {
         HintsCaps::Tagged(
-            InfoHints::new()
+            libfabric::info::InfoHints::new()
             .mode(libfabric::enums::Mode::new().context())
             .ep_attr(ep_attr)
             .caps(
@@ -54,15 +59,15 @@ fn pp_server_rdm_tagged() {
             )
             .domain_attr(dom_attr)
             .tx_attr(tx_attr)
-            .addr_format(enums::AddressFormat::Unspec)
+            .addr_format(libfabric::enums::AddressFormat::Unspec)
         )
     };
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
+        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
     
     match info {
-        common::InfoWithCaps::Msg(info) => {
+        prefix::InfoWithCaps::Msg(info) => {
             let entries = info.get();
 
             if entries.is_empty() {
@@ -72,13 +77,13 @@ fn pp_server_rdm_tagged() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
+                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             
         }
-        common::InfoWithCaps::Tagged(info) => {
+        prefix::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
 
             if entries.is_empty() {
@@ -88,10 +93,10 @@ fn pp_server_rdm_tagged() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
+                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 }
@@ -101,23 +106,23 @@ fn pp_server_rdm_tagged() {
 #[ignore]
 #[test]
 fn pp_client_rdm_tagged() {
-    let mut gl_ctx = common::TestsGlobalCtx::new();
+    let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let mut ep_attr = ep::EndpointAttr::new();
-        ep_attr.ep_type(enums::EndpointType::Rdm);
+    let mut ep_attr = libfabric::ep::EndpointAttr::new();
+        ep_attr.ep_type(libfabric::enums::EndpointType::Rdm);
 
-    let mut dom_attr = domain::DomainAttr::new();
+    let mut dom_attr = libfabric::domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::Domain)
-        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
     
 
-    let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(enums::TClass::LowLatency);
+    let mut tx_attr = libfabric::xcontext::TxAttr::new();
+        tx_attr.tclass(libfabric::enums::TClass::LowLatency);
     
     let hintscaps = if false {
             HintsCaps::Msg(
-                InfoHints::new()
+                libfabric::info::InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -126,12 +131,12 @@ fn pp_client_rdm_tagged() {
                 )
                 .domain_attr(dom_attr)
                 .tx_attr(tx_attr)
-                .addr_format(enums::AddressFormat::Unspec)
+                .addr_format(libfabric::enums::AddressFormat::Unspec)
             )
         }
         else {
             HintsCaps::Tagged(
-                InfoHints::new()
+                libfabric::info::InfoHints::new()
                 .mode(libfabric::enums::Mode::new().context())
                 .ep_attr(ep_attr)
                 .caps(
@@ -140,15 +145,15 @@ fn pp_client_rdm_tagged() {
                 )
                 .domain_attr(dom_attr)
                 .tx_attr(tx_attr)
-                .addr_format(enums::AddressFormat::Unspec)
+                .addr_format(libfabric::enums::AddressFormat::Unspec)
             )
         };
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
+        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
 
     match info {
-        common::InfoWithCaps::Msg(info) => {
+        prefix::InfoWithCaps::Msg(info) => {
             let entries = info.get();
 
             if entries.is_empty() {
@@ -158,13 +163,13 @@ fn pp_client_rdm_tagged() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
+                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             
         }
-        common::InfoWithCaps::Tagged(info) => {
+        prefix::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
 
             if entries.is_empty() {
@@ -174,10 +179,10 @@ fn pp_client_rdm_tagged() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                common::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
+                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 }

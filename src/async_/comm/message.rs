@@ -15,7 +15,7 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
             let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            return crate::async_::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -50,7 +50,7 @@ impl<E: MsgCap + RecvMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
             let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            return crate::async_::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -97,7 +97,7 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            return crate::async_::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -132,7 +132,7 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            return crate::async_::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -160,7 +160,7 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
     //     if err == 0 {
     //         let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
     //         let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-    //         crate::async_::cq::AsyncTransferCq{cq}.await?;
+    //         crate::async_::cq::AsyncTransferCq::new()q}.
     //     }
 
     //     check_error(err)
@@ -179,7 +179,7 @@ impl<E: MsgCap + SendMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            return crate::async_::cq::AsyncTransferCq{cq, ctx: &mut async_ctx as *mut AsyncCtx as usize}.await;
+            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
         }
         
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )

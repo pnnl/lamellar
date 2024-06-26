@@ -182,7 +182,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         }
     }
 
-    pub(crate) fn read_in(&self, count: usize, buffer: &mut CompletionFormat) -> Result<(), crate::error::Error> {
+    pub(crate) fn read_in(&self, count: usize, buffer: &mut CompletionFormat) -> Result<usize, crate::error::Error> {
         let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.handle(), count, buffer, );
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -190,7 +190,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         else {
             // *self.completions.borrow_mut() += err as usize;
             // println!("Complete: {}/{}", self.completions.borrow(), self.requests.borrow());
-            Ok(())
+            Ok(err as usize)
         }
     }
 
@@ -491,7 +491,7 @@ impl<T: CqConfig> CompletionQueue<T> {
     /// The call will read up to `count` completion entries which will be stored in a [Completion]
     /// 
     /// Corresponds to `fi_cq_read` with the `buf` maintained and casted automatically
-    pub unsafe fn read_in_unchecked(&self, count: usize, buff: &mut CompletionFormat) -> Result<(), crate::error::Error> {
+    pub unsafe fn read_in_unchecked(&self, count: usize, buff: &mut CompletionFormat) -> Result<usize, crate::error::Error> {
         self.inner.read_in(count, buff)
     }
 

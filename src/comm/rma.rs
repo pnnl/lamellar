@@ -4,6 +4,7 @@ use crate::enums::WriteMsgOptions;
 use crate::ep::ActiveEndpointImpl;
 use crate::ep::Endpoint;
 use crate::ep::EndpointBase;
+use crate::eq::EventQueueImplT;
 use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::RmaCap;
 use crate::infocapsoptions::WriteMod;
@@ -16,7 +17,7 @@ use crate::xcontext::TransmitContext;
 use super::message::extract_raw_addr_and_ctx;
 
 
-impl<E: RmaCap + ReadMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: RmaCap + ReadMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     unsafe fn read_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_addr: Option<&crate::MappedAddress>, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
@@ -70,7 +71,7 @@ impl<E: RmaCap + ReadMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
     }
 }
 
-impl<E: RmaCap + WriteMod, EQ, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: RmaCap + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     unsafe fn write_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error>  {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);

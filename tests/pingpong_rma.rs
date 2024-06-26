@@ -1,26 +1,32 @@
-use common::{HintsCaps, IP};
-use libfabric::{enums, xcontext::TxAttr, info::InfoHints};
-
 pub mod common; // Public to supress lint warnings (unused function)
+use common::IP;
+
+use sync_::{HintsCaps};
+
+pub mod sync_; // Public to supress lint warnings (unused function)
+pub mod async_;
+
+use sync_ as prefix;
+
 #[ignore]
 #[test]
 fn pp_server_rma() {
-    let mut gl_ctx = common::TestsGlobalCtx::new();
+    let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
     let mut dom_attr = libfabric::domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::Domain)
-        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
-        .resource_mgmt(enums::ResourceMgmt::Enabled);
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
+        .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled);
     
 
-    let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(libfabric::enums::TClass::BulkData); //.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
+    let mut tx_attr = libfabric::xcontext::TxAttr::new();
+        tx_attr.tclass(libfabric::enums::TClass::BulkData); //.op_flags(libfabric::enums::TransferOptions::DELIVERY_COMPLETE);
 
    
     let hintscaps = if true {
             HintsCaps::Msg(
-                InfoHints::new()
+                libfabric::info::InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -30,7 +36,7 @@ fn pp_server_rma() {
         }
         else {
             HintsCaps::Tagged(
-                InfoHints::new()
+                libfabric::info::InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -41,38 +47,38 @@ fn pp_server_rma() {
 
     
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, mut mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
+        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
 
     match info {
-        common::InfoWithCaps::Msg(info) => {
+        prefix::InfoWithCaps::Msg(info) => {
             let entries = info.get();
             
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote = prefix::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
-                common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
+                prefix::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, prefix::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
-        common::InfoWithCaps::Tagged(info) => {
+        prefix::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
             
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote = prefix::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
-                common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
+                prefix::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, prefix::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, true);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 }
@@ -80,20 +86,20 @@ fn pp_server_rma() {
 #[ignore]
 #[test]
 fn pp_client_rma() {
-    let mut gl_ctx = common::TestsGlobalCtx::new();
+    let mut gl_ctx = prefix::TestsGlobalCtx::new();
     let mut dom_attr = libfabric::domain::DomainAttr::new();
         dom_attr
-        .threading(enums::Threading::Domain)
-        .mr_mode(enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
-        .resource_mgmt(enums::ResourceMgmt::Enabled);
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
+        .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled);
     
 
-    let mut tx_attr = TxAttr::new();
-        tx_attr.tclass(libfabric::enums::TClass::BulkData);//.op_flags(enums::TransferOptions::DELIVERY_COMPLETE);
+    let mut tx_attr = libfabric::xcontext::TxAttr::new();
+        tx_attr.tclass(libfabric::enums::TClass::BulkData);//.op_flags(libfabric::enums::TransferOptions::DELIVERY_COMPLETE);
     
     let hintscaps = if true {
             HintsCaps::Msg(
-                InfoHints::new()
+                libfabric::info::InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -103,7 +109,7 @@ fn pp_client_rma() {
         }
         else {
             HintsCaps::Tagged(
-                InfoHints::new()
+                libfabric::info::InfoHints::new()
                 .caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma())
                 .tx_attr(tx_attr)
                 .mode(libfabric::enums::Mode::new().context())
@@ -114,37 +120,37 @@ fn pp_client_rma() {
     
     
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr,_eqq, mut mr, _av, mut mr_desc) = 
-        common::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
+        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
     
     match info {
-        common::InfoWithCaps::Msg(info) => {
+        prefix::InfoWithCaps::Msg(info) => {
             let entries = info.get();
             
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote = prefix::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
 
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
-                common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
+                prefix::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, prefix::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
-        common::InfoWithCaps::Tagged(info) => {
+        prefix::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
             
             if entries.is_empty() {
                 panic!("No entires in fi_info");
             }
-            let remote = common::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
+            let remote = prefix::ft_exchange_keys(&entries[0], &mut gl_ctx, mr.as_mut().unwrap(), &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&domain, &ep, &mut mr_desc);
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
-                common::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, common::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
+                prefix::pingpong_rma(&entries[0], &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, prefix::RmaOp::RMA_WRITE, &remote, 100, 10, msg_size, false);
             }
 
-            async_std::task::block_on(async {common::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc).await});
+            prefix::ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             // drop(domain);
         }
     }

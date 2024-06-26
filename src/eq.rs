@@ -114,6 +114,96 @@ pub struct EventQueueImpl {
     pub(crate) _fabric_rc: Rc<FabricImpl>,
 }
 
+pub(crate) trait EventQueueImplT {
+    fn read(&self) -> Result<Event<usize>, crate::error::Error>;
+
+    fn peek(&self) -> Result<Event<usize>, crate::error::Error>;
+        
+    fn readerr(&self) -> Result<EventError, crate::error::Error>;
+
+    fn peekerr(&self) -> Result<EventError, crate::error::Error>;
+
+    fn strerror(&self, entry: &EventError) -> &str;
+}
+
+// trait WaitableEventQueueImpl : EventQueueImplT {
+//     fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error>;
+//     fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error>;
+// }
+
+// pub struct WaitableEventQueueImpl {
+
+// }
+
+// pub struct EventQueueImplStrict<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD : bool> {
+    
+// }
+
+impl EventQueueImplT for EventQueueImpl {
+    
+    fn read(&self) -> Result<Event<usize>, crate::error::Error>{ //[TODO] Use an "owned" buffer instead of allocating a new one for each attempt and copy it out
+        let mut event = 0 ;
+        let mut buffer = self.event_buffer.borrow_mut();
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            Ok(self.read_eq_entry(ret, &buffer, &event))
+        }
+    }
+
+    fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
+        let mut event = 0 ;
+        let mut buffer = self.event_buffer.borrow_mut();
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            Ok(self.read_eq_entry(ret, &buffer, &event))
+        }
+    }
+
+    fn readerr(&self) -> Result<EventError, crate::error::Error> {
+
+        let mut buffer = self.event_buffer.borrow_mut();
+
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), 0) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            let mut err_event = EventError::new();
+            err_event.c_err = unsafe { std::ptr::read(buffer.as_ptr().cast()) };
+            Ok(err_event)
+        }
+    }
+
+    fn peekerr(&self) -> Result<EventError, crate::error::Error> {
+        
+        let mut buffer = self.event_buffer.borrow_mut();
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), libfabric_sys::FI_PEEK.into()) };
+
+        if ret < 0 {
+            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+        }
+        else {
+            let mut err_event = EventError::new();
+            err_event.c_err = unsafe { std::ptr::read(buffer.as_ptr().cast()) };
+            Ok(err_event)
+        }
+    }
+    
+    fn strerror(&self, entry: &EventError) -> &str {
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
+    
+        unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
+    }
+}
+
 
 pub type EventQueue<T> = EventQueueBase<T, EventQueueImpl>;
 
@@ -193,67 +283,67 @@ impl<'a> EventQueueImpl {
         self.mcs.borrow_mut().insert(mc.as_fid().as_raw_fid(), Rc::downgrade(mc));
     }
 
-    pub(crate) fn read(&self) -> Result<Event<usize>, crate::error::Error>{ //[TODO] Use an "owned" buffer instead of allocating a new one for each attempt and copy it out
-        let mut event = 0 ;
-        let mut buffer = self.event_buffer.borrow_mut();
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
-        if ret < 0 {
-            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
-        }
-        else {
-            Ok(self.read_eq_entry(ret, &buffer, &event))
-        }
-    }
+    // pub(crate) fn read(&self) -> Result<Event<usize>, crate::error::Error>{ //[TODO] Use an "owned" buffer instead of allocating a new one for each attempt and copy it out
+    //     let mut event = 0 ;
+    //     let mut buffer = self.event_buffer.borrow_mut();
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
+    //     if ret < 0 {
+    //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+    //     }
+    //     else {
+    //         Ok(self.read_eq_entry(ret, &buffer, &event))
+    //     }
+    // }
 
-    pub(crate) fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
-        let mut event = 0 ;
-        let mut buffer = self.event_buffer.borrow_mut();
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
+    // pub(crate) fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
+    //     let mut event = 0 ;
+    //     let mut buffer = self.event_buffer.borrow_mut();
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
 
-        if ret < 0 {
-            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
-        }
-        else {
-            Ok(self.read_eq_entry(ret, &buffer, &event))
-        }
-    }
+    //     if ret < 0 {
+    //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+    //     }
+    //     else {
+    //         Ok(self.read_eq_entry(ret, &buffer, &event))
+    //     }
+    // }
 
-    pub(crate) fn readerr(&self) -> Result<EventError, crate::error::Error> {
+    // pub(crate) fn readerr(&self) -> Result<EventError, crate::error::Error> {
 
-        let mut buffer = self.event_buffer.borrow_mut();
+    //     let mut buffer = self.event_buffer.borrow_mut();
 
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), 0) };
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), 0) };
 
-        if ret < 0 {
-            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
-        }
-        else {
-            let mut err_event = EventError::new();
-            err_event.c_err = unsafe { std::ptr::read(buffer.as_ptr().cast()) };
-            Ok(err_event)
-        }
-    }
+    //     if ret < 0 {
+    //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+    //     }
+    //     else {
+    //         let mut err_event = EventError::new();
+    //         err_event.c_err = unsafe { std::ptr::read(buffer.as_ptr().cast()) };
+    //         Ok(err_event)
+    //     }
+    // }
 
-    pub(crate) fn peekerr(&self) -> Result<EventError, crate::error::Error> {
+    // pub(crate) fn peekerr(&self) -> Result<EventError, crate::error::Error> {
         
-        let mut buffer = self.event_buffer.borrow_mut();
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), libfabric_sys::FI_PEEK.into()) };
+    //     let mut buffer = self.event_buffer.borrow_mut();
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), libfabric_sys::FI_PEEK.into()) };
 
-        if ret < 0 {
-            Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
-        }
-        else {
-            let mut err_event = EventError::new();
-            err_event.c_err = unsafe { std::ptr::read(buffer.as_ptr().cast()) };
-            Ok(err_event)
-        }
-    }
+    //     if ret < 0 {
+    //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
+    //     }
+    //     else {
+    //         let mut err_event = EventError::new();
+    //         err_event.c_err = unsafe { std::ptr::read(buffer.as_ptr().cast()) };
+    //         Ok(err_event)
+    //     }
+    // }
 
-    pub(crate) fn strerror(&self, entry: &EventError) -> &str {
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
+    // pub(crate) fn strerror(&self, entry: &EventError) -> &str {
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
     
-            unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
-    }
+    //         unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
+    // }
 
     pub(crate) fn write(&self, event: Event<usize>, flags: u64) -> Result<(), crate::error::Error>{
         let event_val = event.get_value();
