@@ -1,4 +1,4 @@
-use crate::{ep::Address, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::{MulticastGroupCollectiveBase, MulticastGroupCollectiveImplBase}, cq::{SingleCompletionFormat}, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::{EventQueueFut, AsyncEventQueueImpl}, ep::Endpoint, cq::AsyncCompletionQueueImpl, AsyncCtx}};
+use crate::{ep::Address, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::{MulticastGroupCollectiveBase, MulticastGroupCollectiveImplBase}, cq::SingleCompletionFormat, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::{EventQueueFut, AsyncEventQueueImpl}, ep::Endpoint, cq::AsyncCompletionQueueImpl, AsyncCtx}};
 
 pub type AsyncMulticastGroupCollective = MulticastGroupCollectiveBase<AsyncEventQueueImpl, AsyncCompletionQueueImpl>;
 pub(crate) type AsyncMulticastGroupCollectiveImpl = MulticastGroupCollectiveImplBase<AsyncEventQueueImpl, AsyncCompletionQueueImpl>;
@@ -49,7 +49,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.barrier_impl(Some(&mut async_ctx), options)?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     } 
 
 
@@ -73,7 +73,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.broadcast_impl(buf, desc, root_mapped_addr, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     pub async fn broadcast_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<SingleCompletionFormat, crate::error::Error> {
@@ -89,7 +89,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.alltoall_impl(buf, desc, result, result_desc, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -107,7 +107,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.allreduce_impl(buf, desc, result, result_desc, op, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -124,7 +124,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.allgather_impl(buf, desc, result, result_desc, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     pub async fn allgather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, options: CollectiveOptions) -> Result<SingleCompletionFormat, crate::error::Error> {
@@ -141,7 +141,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.reduce_scatter_impl(buf, desc, result, result_desc, op, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -159,7 +159,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.reduce_impl(buf, desc, result, result_desc, root_mapped_addr, op, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -177,7 +177,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.scatter_impl(buf, desc, result, result_desc, root_mapped_addr, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -195,7 +195,7 @@ impl AsyncMulticastGroupCollective {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.gather_impl(buf, desc, result, result_desc, root_mapped_addr, options, Some(&mut async_ctx))?;
         let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+        crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     #[allow(clippy::too_many_arguments)]

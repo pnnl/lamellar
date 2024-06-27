@@ -1,19 +1,16 @@
 use std::rc::Rc;
 
-use crate::{ep::{EndpointImplBase, Address, ActiveEndpointImpl, PassiveEndpointImplBase, PassiveEndpointBase, EndpointBase, EndpointAttr}, fid::{Fid, AsRawFid}, eq::Event, info::InfoEntry};
+use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr}, fid::{RawFid, AsRawFid}, eq::Event, info::InfoEntry};
 
 use super::{eq::AsyncEventQueueImpl, cq::AsyncCompletionQueueImpl, domain::Domain};
 
-
-pub(crate) type AsyncEndpointImpl = EndpointImplBase<AsyncEventQueueImpl, AsyncCompletionQueueImpl>;
-
 pub struct ConnectionListener {
     eq:  Rc<AsyncEventQueueImpl>,
-    ep_fid: Fid,
+    ep_fid: RawFid,
 }
 
 impl ConnectionListener {
-    fn new(ep_fid: Fid, eq: &Rc<AsyncEventQueueImpl>) -> Self {
+    fn new(ep_fid: RawFid, eq: &Rc<AsyncEventQueueImpl>) -> Self {
         
         Self {
             ep_fid,
@@ -56,7 +53,6 @@ impl<T> Endpoint<T> {
 
 
 // ============== Async stuff ======================= //
-pub(crate) type AsyncPassiveEndpointImpl<E> = PassiveEndpointImplBase<E, AsyncEventQueueImpl>;
 pub type PassiveEndpoint<T> = PassiveEndpointBase<T, AsyncEventQueueImpl>;
 
 

@@ -1,10 +1,9 @@
 use crate::FI_ADDR_UNSPEC;
 use crate::enums::ReadMsgOptions;
 use crate::enums::WriteMsgOptions;
-use crate::ep::ActiveEndpointImpl;
-use crate::ep::Endpoint;
 use crate::ep::EndpointBase;
 use crate::eq::EventQueueImplT;
+use crate::fid::AsRawTypedFid;
 use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::RmaCap;
 use crate::infocapsoptions::WriteMod;
@@ -21,7 +20,7 @@ impl<E: RmaCap + ReadMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     unsafe fn read_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_addr: Option<&crate::MappedAddress>, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -43,7 +42,7 @@ impl<E: RmaCap + ReadMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     
     unsafe fn readv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -65,7 +64,7 @@ impl<E: RmaCap + ReadMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     
     
     pub unsafe fn readmsg(&self, msg: &crate::msg::MsgRma, options: ReadMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
         
         check_error(err)
     }
@@ -75,7 +74,7 @@ impl<E: RmaCap + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     unsafe fn write_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error>  {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -97,7 +96,7 @@ impl<E: RmaCap + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     unsafe fn writev_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> { 
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_writev(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writev(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -118,13 +117,13 @@ impl<E: RmaCap + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub unsafe fn writemsg(&self, msg: &crate::msg::MsgRma, options: WriteMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
         check_error(err)
     }
     
     unsafe fn writedata_impl<T,T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  ctx) };
         check_error(err)
     }
 
@@ -145,22 +144,22 @@ impl<E: RmaCap + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub unsafe fn inject_write<T>(&self, buf: &[T], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
         check_error(err)
     }     
 
     pub unsafe fn inject_writedata<T>(&self, buf: &[T], data: u64, dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
         check_error(err)
     }
 
     pub unsafe fn inject_write_connected<T>(&self, buf: &[T], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
         check_error(err)
     }     
 
     pub unsafe fn inject_writedata_connected<T>(&self, buf: &[T], data: u64, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
         check_error(err)
     }
 }
@@ -169,7 +168,7 @@ impl TransmitContext {
 
     unsafe fn write_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error>  {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -191,7 +190,7 @@ impl TransmitContext {
 
     unsafe fn writev_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> { 
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_writev(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writev(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -212,13 +211,13 @@ impl TransmitContext {
     }
 
     pub unsafe fn writemsg(&self, msg: &crate::msg::MsgRma, options: WriteMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
         check_error(err)
     }
     
     unsafe fn writedata_impl<T,T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  ctx) };
         check_error(err)
     }
 
@@ -239,22 +238,22 @@ impl TransmitContext {
     }
 
     pub unsafe fn inject_write<T>(&self, buf: &[T], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
         check_error(err)
     }     
 
     pub unsafe fn inject_writedata<T>(&self, buf: &[T], data: u64, dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
         check_error(err)
     }
 
     pub unsafe fn inject_write_connected<T>(&self, buf: &[T], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
         check_error(err)
     }     
 
     pub unsafe fn inject_writedata_connected<T>(&self, buf: &[T], data: u64, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
         check_error(err)
     }
 }
@@ -263,7 +262,7 @@ impl ReceiveContext {
 
     unsafe fn read_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_addr: Option<&crate::MappedAddress>, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -285,7 +284,7 @@ impl ReceiveContext {
     
     unsafe fn readv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
 
@@ -307,7 +306,7 @@ impl ReceiveContext {
     
     
     pub unsafe fn readmsg(&self, msg: &crate::msg::MsgRma, options: ReadMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
         
         check_error(err)
     }

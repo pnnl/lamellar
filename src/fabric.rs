@@ -5,17 +5,10 @@ use std::{ffi::CString, rc::Rc};
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{utils::check_error, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}};
-
-// impl Drop for FabricImpl {
-//     fn drop(&mut self) {
-//        println!("Dropping FabricImpl\n");
-//     }
-// }
+use crate::{utils::check_error, info::InfoEntry, fid::{AsRawFid, FabricRawFid, OwnedFabricFid, RawFid, AsTypedFid, AsRawTypedFid, BorrowedFid, BorrowedTypedFid}};
 
 pub(crate) struct FabricImpl {
-    pub(crate) c_fabric: *mut libfabric_sys::fid_fabric,
-    fid: OwnedFid,
+    pub(crate) c_fabric: OwnedFabricFid,
 }
 
 /// Owned wrapper around a libfabric `fid_fabric`.
@@ -31,20 +24,15 @@ pub struct Fabric {
 
 impl FabricImpl {
 
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_fabric {
-        self.c_fabric
-    }
-
     pub(crate) fn new<T0>(mut attr: FabricAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
-        let mut c_fabric: *mut libfabric_sys::fid_fabric  = std::ptr::null_mut();
-        let c_fabric_ptr: *mut *mut libfabric_sys::fid_fabric = &mut c_fabric;
+        let mut c_fabric: FabricRawFid  = std::ptr::null_mut();
 
         let err = 
             if let Some(ctx) = context {
-                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, (ctx as *mut T0).cast())}
+                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), &mut c_fabric, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), c_fabric_ptr, std::ptr::null_mut())}
+                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), &mut c_fabric, std::ptr::null_mut())}
             };
         
         if err != 0 || c_fabric.is_null() {
@@ -53,15 +41,14 @@ impl FabricImpl {
         else {
             Ok(
                 Self { 
-                        c_fabric, 
-                        fid: OwnedFid::from(unsafe{ &mut (*c_fabric).fid }), 
+                    c_fabric: OwnedFabricFid::from(c_fabric), 
                 })
         }
     }
 
     pub(crate) fn trywait(&self, fids: &[&impl AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
         let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.as_fid().as_raw_fid()).collect();
-        let err = unsafe { libfabric_sys::inlined_fi_trywait(self.c_fabric, raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
+        let err = unsafe { libfabric_sys::inlined_fi_trywait(self.as_raw_typed_fid(), raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
         
         check_error(err.try_into().unwrap())
     }
@@ -69,10 +56,6 @@ impl FabricImpl {
 
 impl Fabric {
     
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_fabric {
-        self.inner.handle()
-    }
-
     pub(crate) fn new<T0>(attr: FabricAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self { inner: 
@@ -87,14 +70,54 @@ impl Fabric {
 }
 
 impl AsFid for FabricImpl {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.fid.as_fid()
+    fn as_fid(&self) -> BorrowedFid<'_> {
+        self.c_fabric.as_fid()
+    }
+}
+
+impl AsRawFid for FabricImpl {
+    fn as_raw_fid(&self) -> RawFid {
+        self.c_fabric.as_raw_fid()
+    }
+}
+
+impl AsTypedFid<FabricRawFid> for FabricImpl {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<FabricRawFid> {
+        self.c_fabric.as_typed_fid()
+    }
+}
+
+impl AsRawTypedFid for FabricImpl {
+    type Output = FabricRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.c_fabric.as_raw_typed_fid()
     }
 }
 
 impl AsFid for Fabric{
-    fn as_fid(&self) -> fid::BorrowedFid {
+    fn as_fid(&self) -> BorrowedFid {
         self.inner.as_fid()
+    }
+}
+
+impl AsRawFid for Fabric{
+    fn as_raw_fid(&self) -> RawFid {
+        self.inner.as_raw_fid()
+    }
+}
+
+impl AsTypedFid<FabricRawFid> for Fabric {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<FabricRawFid> {
+        self.inner.as_typed_fid()
+    }
+}
+
+impl AsRawTypedFid for Fabric {
+    type Output = FabricRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.inner.as_raw_typed_fid()
     }
 }
 

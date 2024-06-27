@@ -2,16 +2,18 @@ use std::{ffi::CString, rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{OwnedFid, self, AsRawFid}, eq::{EventQueue, EventQueueImpl, EventQueueBase}, eqoptions::EqConfig};
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueue, EventQueueImpl, EventQueueBase}, eqoptions::EqConfig};
+
 
 
 pub(crate) struct DomainImplBase<EQ> {
-    pub(crate) c_domain: *mut libfabric_sys::fid_domain,
-    fid: OwnedFid,
+    pub(crate) c_domain: OwnedDomainFid,
     pub(crate) domain_attr: DomainAttr,
     pub(crate) _eq_rc: OnceCell<(Rc<EQ>, bool)>,
     _fabric_rc: Rc<FabricImpl>,
 }
+
+
 
 //================== Domain (fi_domain) ==================//
 pub(crate) type DomainImpl = DomainImplBase<EventQueueImpl>;
@@ -25,28 +27,27 @@ pub(crate) type DomainImpl = DomainImplBase<EventQueueImpl>;
 
 impl<EQ: AsFid> DomainImplBase<EQ> {
 
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_domain {
-        self.c_domain
-    }
+    // pub(crate) fn handle(&self) -> DomainRawFid {
+    //     self.c_domain.as_raw_typed_fid()
+    // }
 
     pub(crate) fn new<T0, E>(fabric: &Rc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
-        let mut c_domain: *mut libfabric_sys::fid_domain = std::ptr::null_mut();
-        let c_domain_ptr: *mut *mut libfabric_sys::fid_domain = &mut c_domain;
+        let mut c_domain: DomainRawFid = std::ptr::null_mut();
         let err =
             if let Some(ctx) = context {
                 if flags == 0 {
-                    unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, (ctx as *mut T0).cast()) }
+                    unsafe { libfabric_sys::inlined_fi_domain(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, (ctx as *mut T0).cast()) }
                     
                 }
                 else {
-                    unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, (ctx as *mut T0).cast()) }
+                    unsafe { libfabric_sys::inlined_fi_domain2(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, flags, (ctx as *mut T0).cast()) }
                 }
             }
             else if flags == 0 {
-                unsafe { libfabric_sys::inlined_fi_domain(fabric.c_fabric, info.c_info, c_domain_ptr, std::ptr::null_mut()) }
+                unsafe { libfabric_sys::inlined_fi_domain(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, std::ptr::null_mut()) }
             }
             else {
-                unsafe { libfabric_sys::inlined_fi_domain2(fabric.c_fabric, info.c_info, c_domain_ptr, flags, std::ptr::null_mut()) }
+                unsafe { libfabric_sys::inlined_fi_domain2(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, flags, std::ptr::null_mut()) }
             };
 
         if err != 0 {
@@ -55,17 +56,16 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
         else {
             Ok(
                 Self { 
-                    c_domain, 
+                    c_domain: OwnedDomainFid::from(c_domain), 
                     domain_attr,
                     _fabric_rc: fabric.clone(), 
                     _eq_rc: OnceCell::new(),
-                    fid: OwnedFid::from(unsafe { &mut (*c_domain).fid } ), 
                 })
         }
     }
     
     pub(crate) fn bind(&self, eq: &Rc<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.handle(), eq.as_fid().as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
+        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.as_raw_typed_fid(), eq.as_fid().as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -87,7 +87,7 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
     // }
 
     pub(crate) fn query_atomic<T: 'static>(&self, op: crate::enums::Op, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.handle(), to_fi_datatype::<T>(), op.get_value(), attr.get_mut(), flags )};
+        let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.as_raw_typed_fid(), to_fi_datatype::<T>(), op.get_value(), attr.get_mut(), flags )};
 
         check_error(err.try_into().unwrap())
     }
@@ -100,7 +100,7 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
                 // unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, simple_key as *mut u64 as *mut u8, std::mem::size_of::<u64>(), &mut mapped_key, flags) }
             }
             crate::mr::MemoryRegionKey::RawKey(raw_key) => {
-                unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), raw_key.1 , raw_key.0.as_mut_ptr().cast(), raw_key.0.len(), &mut mapped_key, flags) }
+                unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.as_raw_typed_fid(), raw_key.1 , raw_key.0.as_mut_ptr().cast(), raw_key.0.len(), &mut mapped_key, flags) }
             }
         };
         
@@ -113,13 +113,13 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
     }
 
     // pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
-    //     let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, raw_key, key_size, key, flags) };
+    //     let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.as_raw_typed_fid(), base_addr, raw_key, key_size, key, flags) };
         
     //     check_error(err.try_into().unwrap())
     // }
 
     pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.handle(), key) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.as_raw_typed_fid(), key) };
 
 
         check_error(err.try_into().unwrap())
@@ -134,7 +134,7 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
     // }
 
     pub(crate) fn query_collective<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), 0) };
+        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.as_raw_typed_fid(), coll.get_value(), attr.get_mut(), 0) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -145,7 +145,7 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
     }
 
     pub(crate) fn query_collective_scatter<T: 'static>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.handle(), coll.get_value(), attr.get_mut(), libfabric_sys::fi_collective_op_FI_SCATTER.into()) };
+        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.as_raw_typed_fid(), coll.get_value(), attr.get_mut(), libfabric_sys::fi_collective_op_FI_SCATTER.into()) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -172,10 +172,6 @@ pub struct DomainBase<EQ> {
 
 impl<EQ: fid::AsFid> DomainBase<EQ> {
 
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_domain {
-        self.inner.handle()
-    }
-    
     pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self{
@@ -231,7 +227,21 @@ impl<EQ: fid::AsFid> DomainBase<EQ> {
 
 impl<EQ> AsFid for DomainImplBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.fid.as_fid()
+       self.c_domain.as_fid()
+    }
+}
+
+impl<EQ> AsTypedFid<DomainRawFid> for DomainImplBase<EQ> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
+       self.c_domain.as_typed_fid()
+    }
+}
+
+impl<EQ> AsRawTypedFid for DomainImplBase<EQ> {
+    type Output = DomainRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.c_domain.as_raw_typed_fid()
     }
 }
 
@@ -241,6 +251,19 @@ impl<EQ> AsFid for DomainBase<EQ> {
     }
 }
 
+impl<EQ> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
+       self.inner.as_typed_fid()
+    }
+}
+
+impl<EQ> AsRawTypedFid for DomainBase<EQ> {
+    type Output = DomainRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.inner.as_raw_typed_fid()
+    }
+}
 
 //================== Domain attribute ==================//
 
@@ -286,7 +309,7 @@ impl DomainAttr {
     }
 
     pub fn domain(&mut self, domain: &Domain) -> &mut Self {
-        self.c_attr.domain = domain.handle();
+        self.c_attr.domain = domain.as_raw_typed_fid();
         self
     }
 
@@ -555,7 +578,7 @@ impl PeerDomainCtx {
         Self {
             c_ctx : {
                 libfabric_sys::fi_peer_domain_context {
-                    domain: domain.handle(),
+                    domain: domain.as_raw_typed_fid(),
                     size,
                 }
             }

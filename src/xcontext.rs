@@ -1,12 +1,11 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{OwnedFid, AsFid, self, AsRawFid}, BindImpl};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, BindImpl};
 
 pub struct Receive;
 pub struct Transmit;
 
 pub(crate) struct XContextBaseImpl<T> {
-    pub(crate) c_ep: *mut libfabric_sys::fid_ep,
-    fid: OwnedFid,
+    pub(crate) c_ep: OwnedEpFid,
     phantom: PhantomData<T>,
     _sync_rcs: RefCell<Vec<Rc<dyn crate::BindImpl>>>,
 }
@@ -16,9 +15,6 @@ pub struct XContextBase<T> {
 }
 
 impl<T: 'static> XContextBase<T> {
-    pub fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.inner.c_ep
-    }
 
     pub fn getname<T0>(&self) -> Result<Address, crate::error::Error> {
         BaseEndpointImpl::getname(self)
@@ -118,15 +114,15 @@ impl<T: 'static> XContextBase<T> {
 }
 
 impl<T> ActiveEndpointImpl for XContextBase<T> {
-    fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.inner.handle()
-    }
+    // fn as_raw_typed_fid(&self) -> *mut libfabric_sys::fid_ep {
+    //     self.inner.as_raw_typed_fid()
+    // }
 }
 
 impl<T> ActiveEndpointImpl for XContextBaseImpl<T> {
-    fn handle(&self) -> *mut libfabric_sys::fid_ep {
-        self.c_ep
-    }
+    // fn as_raw_typed_fid(&self) -> *mut libfabric_sys::fid_ep {
+    //     self.as_raw_typed_fid()
+    // }
 }
 // impl<T> ActiveEndpointImpl for XContextBaseImpl<T> {}
 
@@ -150,8 +146,48 @@ impl<T> AsFid for XContextBase<T> {
 
 impl<T> AsFid for XContextBaseImpl<T> {
     fn as_fid(&self) -> fid::BorrowedFid {
-        self.fid.as_fid()
+        self.c_ep.as_fid()
     }    
+}
+
+impl<T> AsRawFid for XContextBase<T> {
+    fn as_raw_fid(&self) -> RawFid {
+        self.inner.as_raw_fid()
+    }    
+}
+
+impl<T> AsRawFid for XContextBaseImpl<T> {
+    fn as_raw_fid(&self) -> RawFid {
+        self.c_ep.as_raw_fid()
+    }    
+}
+
+impl<T> AsTypedFid<EpRawFid> for XContextBase<T> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid>{
+        self.inner.as_typed_fid()
+    }
+}
+
+impl<T> AsTypedFid<EpRawFid> for XContextBaseImpl<T> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
+        self.c_ep.as_typed_fid()
+    }
+}
+
+impl<T> AsRawTypedFid for XContextBase<T> {
+    type Output = EpRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.inner.as_raw_typed_fid()
+    }
+}
+
+impl<T> AsRawTypedFid for XContextBaseImpl<T> {
+    type Output = EpRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.c_ep.as_raw_typed_fid()
+    }  
 }
 
 pub type TransmitContext = XContextBase<Transmit>; 
@@ -163,10 +199,10 @@ impl TransmitContextImpl {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = 
             if let Some(ctx) = context {
-                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
+                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
+                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
             };
         
         if err != 0 {
@@ -175,8 +211,7 @@ impl TransmitContextImpl {
         else {
             Ok(
                 Self {
-                    c_ep, 
-                    fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
+                    c_ep: OwnedEpFid::from(c_ep), 
                     phantom: PhantomData,
                     _sync_rcs: RefCell::new(Vec::new()),
                 })
@@ -184,7 +219,7 @@ impl TransmitContextImpl {
     }
 
     pub(crate) fn bind<T: crate::BindImpl + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_fid().as_raw_fid(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -335,10 +370,10 @@ impl ReceiveContextImpl {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = 
             if let Some(ctx) = context {
-                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
+                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.handle(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
+                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
             };
         
         if err != 0 {
@@ -347,16 +382,15 @@ impl ReceiveContextImpl {
         else {
             Ok(
                 Self {
-                    c_ep, 
-                    fid: OwnedFid::from(unsafe{ &mut (*c_ep).fid }), 
+                    c_ep: OwnedEpFid::from(c_ep), 
                     phantom: PhantomData,
                     _sync_rcs: RefCell::new(Vec::new()),
                 })
         }
     }
 
-    pub(crate) fn bind<T: crate::Bind + AsFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.handle(), res.as_raw_fid(), flags) };
+    pub(crate) fn bind<T: crate::Bind + AsRawFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))

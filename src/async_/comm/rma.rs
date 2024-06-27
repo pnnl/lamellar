@@ -1,4 +1,4 @@
-use crate::{FI_ADDR_UNSPEC, infocapsoptions::{RmaCap, WriteMod, ReadMod}, mr::DataDescriptor, utils::check_error, cq::SingleCompletionFormat, enums::ReadMsgOptions, async_::{ep::Endpoint, AsyncCtx, cq::AsyncTransferCq, mr::{MappedAddress, MappedMemoryRegionKey}}, ep::ActiveEndpointImpl};
+use crate::{FI_ADDR_UNSPEC, infocapsoptions::{RmaCap, WriteMod, ReadMod}, mr::DataDescriptor, cq::SingleCompletionFormat, enums::ReadMsgOptions, async_::{ep::Endpoint, AsyncCtx, mr::{MappedAddress, MappedMemoryRegionKey}}, fid::AsRawTypedFid};
 
 impl<E: RmaCap + ReadMod> Endpoint<E> {
 
@@ -11,7 +11,7 @@ impl<E: RmaCap + ReadMod> Endpoint<E> {
             FI_ADDR_UNSPEC
         };
 
-        let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
 
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
@@ -47,7 +47,7 @@ impl<E: RmaCap + ReadMod> Endpoint<E> {
             FI_ADDR_UNSPEC
         };
 
-        let err = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
 
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
@@ -86,7 +86,7 @@ impl<E: RmaCap + ReadMod> Endpoint<E> {
         };
         let mut async_ctx = AsyncCtx{user_ctx};
         
-        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -108,7 +108,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
             FI_ADDR_UNSPEC
         };
 
-        let err = unsafe{ libfabric_sys::inlined_fi_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -146,7 +146,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
             FI_ADDR_UNSPEC
         };
 
-        let err = unsafe{ libfabric_sys::inlined_fi_writev(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writev(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -174,7 +174,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
     }
 
     // pub async unsafe  fn writemsg_async(&self, msg: &crate::msg::MsgRma, options: WriteMsgOptions) -> Result<(), crate::error::Error> {
-    //     let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+    //     let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
     //     if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
     //         let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -192,7 +192,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
             FI_ADDR_UNSPEC
         };
 
-        let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  (&mut async_ctx as *mut AsyncCtx).cast()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  (&mut async_ctx as *mut AsyncCtx).cast()) };
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -229,7 +229,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
 //             FI_ADDR_UNSPEC
 //         };
 
-//         let err = unsafe{ libfabric_sys::inlined_fi_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
 //         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
 //             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -267,7 +267,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
 //             FI_ADDR_UNSPEC
 //         };
 
-//         let err = unsafe{ libfabric_sys::inlined_fi_writev(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_writev(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
 //         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
 //             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -296,7 +296,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
 
 //     /// [TODO]
 //     // pub async unsafe  fn writemsg_async(&self, msg: &crate::msg::MsgRma, options: WriteMsgOptions) -> Result<(), crate::error::Error> {
-//     //     let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+//     //     let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
 //     //     if err == 0 {
     //         let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
 //     //         let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -314,7 +314,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
 //             FI_ADDR_UNSPEC
 //         };
 
-//         let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  (&mut async_ctx as *mut AsyncCtx).cast()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  (&mut async_ctx as *mut AsyncCtx).cast()) };
 //         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
 //             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
@@ -341,22 +341,22 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
 //     }
 
 //     pub async unsafe  fn inject_write_async<T>(&self, buf: &[T], dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {  // Inject does not generate completions
-//         let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
 //         check_error(err)
 //     }     
 
 //     pub async unsafe  fn inject_writedata_async<T>(&self, buf: &[T], data: u64, dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { // Inject does not generate completions
-//         let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, dest_addr.raw_addr(), mem_addr, mapped_key.get_key()) };
 //         check_error(err)
 //     }
 
 //     pub async unsafe  fn inject_write_connected_async<T>(&self, buf: &[T], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_inject_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
 //         check_error(err)
 //     }     
 
 //     pub async unsafe  fn inject_writedata_connected_async<T>(&self, buf: &[T], data: u64, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_inject_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key()) };
 //         check_error(err)
 //     }
 // }
@@ -364,56 +364,56 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
 // impl ReceiveContext {
 
 //     pub async unsafe  fn read_async<T0>(&self, buf: &mut [T0], desc: &mut impl DataDescriptor, src_addr: &MappedAddress, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
         
 //         check_error(err)
 //     }
     
 //     pub async unsafe  fn read_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_addr: &MappedAddress, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
         
 //         check_error(err)
 //     }
     
 //     pub async unsafe  fn readv_asyn'a, c<T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], src_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
-//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
         
 //         check_error(err)
 //     }
     
 //     pub async unsafe   fn readv_with_context_asyn'a, c<T, T0>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], src_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
-//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), src_addr.raw_addr(), mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
 
 //         check_error(err)
 //     }
 
 //     pub async unsafe  fn read_connected_async<T0>(&self, buf: &mut [T0], desc: &mut impl DataDescriptor, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
         
 //         check_error(err)
 //     }
     
 //     pub async unsafe  fn read_connected_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
         
 //         check_error(err)
 //     }
     
 //     pub async unsafe  fn readv_connected_asyn'a, c<T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
-//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), std::ptr::null_mut()) };
         
 //         check_error(err)
 //     }
     
 //     pub async unsafe   fn readv_connected_with_context_asyn'a, c<T, T0>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
-//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), FI_ADDR_UNSPEC, mem_addr, mapped_key.get_key(), (context as *mut T0).cast()) };
 
 //         check_error(err)
 //     }
     
     
 //     pub async unsafe  fn readmsg_async(&self, msg: &crate::msg::MsgRma, options: ReadMsgOptions) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.handle(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
         
 //         check_error(err)
 //     }

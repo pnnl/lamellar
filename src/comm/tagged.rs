@@ -2,17 +2,14 @@ use crate::FI_ADDR_UNSPEC;
 use crate::MappedAddressBase;
 use crate::enums::TaggedRecvMsgOptions;
 use crate::enums::TaggedSendMsgOptions;
-use crate::ep::ActiveEndpointImpl;
-use crate::ep::Endpoint;
 use crate::ep::EndpointBase;
 use crate::eq::EventQueueImplT;
+use crate::fid::AsRawTypedFid;
 use crate::infocapsoptions::RecvMod;
 use crate::infocapsoptions::SendMod;
 use crate::infocapsoptions::TagCap;
 use crate::mr::DataDescriptor;
 use crate::utils::check_error;
-use crate::xcontext::ReceiveContext;
-use crate::xcontext::TransmitContext;
 
 use super::message::extract_raw_addr_and_ctx;
 
@@ -23,7 +20,7 @@ impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     fn trecv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddressBase<EQ>>, tag: u64, ignore:u64, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ignore, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ignore, ctx) };
         check_error(err)
     }
 
@@ -45,7 +42,7 @@ impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     fn trecvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_mapped_addr: Option<&MappedAddressBase<EQ>>, tag: u64, ignore:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ignore, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ignore, ctx) };
         check_error(err) 
     }
 
@@ -66,7 +63,7 @@ impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub fn trecvmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
         check_error(err)
     }
 }
@@ -75,7 +72,7 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     fn tsend_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddressBase<EQ>>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ctx) };
         check_error(err) 
     }
 
@@ -97,7 +94,7 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     
     fn tsendv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_mapped_addr: Option<&MappedAddressBase<EQ>>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ctx) };
         check_error(err) 
     }
 
@@ -118,13 +115,13 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub fn tsendmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
         check_error(err)
     }
 
     fn tsenddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&MappedAddressBase<EQ>>, tag: u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_tsenddata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, tag, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tsenddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, tag, ctx) };
         check_error(err) 
     }
 
@@ -145,22 +142,22 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub fn tinject<T>(&self, buf: &[T], mapped_addr: &MappedAddressBase<EQ>, tag:u64 ) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr(), tag) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr(), tag) };
         check_error(err)
     }
 
     pub fn tinject_connected<T>(&self, buf: &[T], tag:u64 ) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC, tag) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC, tag) };
         check_error(err)
     }
 
     pub fn tinjectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &MappedAddressBase<EQ>, tag: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr(), tag) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr(), tag) };
         check_error(err)
     }
 
     pub fn tinjectdata_connected<T>(&self, buf: &[T], data: u64, tag: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, tag) };
+        let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, tag) };
         check_error(err)
     }
 }
@@ -170,7 +167,7 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 //     fn tsend_impl<T, T0, EQ>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddressBase<EQ>>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ctx) };
 //         check_error(err) 
 //     }
 
@@ -192,7 +189,7 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     
 //     fn tsendv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_mapped_addr: Option<&MappedAddressBase<EQ>>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ctx) };
 //         check_error(err) 
 //     }
 
@@ -213,13 +210,13 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //     }
 
 //     pub fn tsendmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
 //         check_error(err)
 //     }
 
 //     fn tsenddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&MappedAddressBase<EQ>>, tag: u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_tsenddata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, tag, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tsenddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, tag, ctx) };
 //         check_error(err) 
 //     }
 
@@ -240,22 +237,22 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //     }
 
 //     pub fn tinject<T>(&self, buf: &[T], mapped_addr: &MappedAddressBase<EQ>, tag:u64 ) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr(), tag) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr(), tag) };
 //         check_error(err)
 //     }
 
 //     pub fn tinject_connected<T>(&self, buf: &[T], tag:u64 ) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC, tag) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tinject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC, tag) };
 //         check_error(err)
 //     }
 
 //     pub fn tinjectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &MappedAddressBase<EQ>, tag: u64) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr(), tag) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr(), tag) };
 //         check_error(err)
 //     }
 
 //     pub fn tinjectdata_connected<T>(&self, buf: &[T], data: u64, tag: u64) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, tag) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_tinjectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC, tag) };
 //         check_error(err)
 //     }
 // }
@@ -264,7 +261,7 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 //     fn trecv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddressBase<EQ>>, tag: u64, ignore:u64, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.handle(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ignore, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ignore, ctx) };
 //         check_error(err)
 //     }
 
@@ -286,7 +283,7 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 //     fn trecvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_mapped_addr: Option<&MappedAddressBase<EQ>>, tag: u64, ignore:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ignore, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ignore, ctx) };
 //         check_error(err) 
 //     }
 
@@ -307,7 +304,7 @@ impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //     }
 
 //     pub fn trecvmsg(&self, msg: &crate::msg::MsgTagged, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.handle(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
 //         check_error(err)
 //     }
 // }

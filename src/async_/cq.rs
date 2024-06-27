@@ -1,9 +1,8 @@
-use std::{ops::Deref, rc::Rc, marker::PhantomData, pin::Pin};
+use std::{ops::Deref, rc::Rc, marker::PhantomData};
 
 use async_io::Async;
-use futures::Future;
 
-use crate::{cq::{CompletionQueueImpl, SingleCompletionFormat, CompletionFormat, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::AsFid, cqoptions::{CqConfig, self, Options}, FdRetrievable, MappedAddress, Waitable, WaitRetrievable, enums::WaitObjType};
+use crate::{cq::{CompletionQueueImpl, SingleCompletionFormat, CompletionFormat, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, AsRawTypedFid, RawFid, AsRawFid}, cqoptions::{CqConfig, self, Options}, FdRetrievable, MappedAddress, Waitable, WaitRetrievable, enums::WaitObjType};
 
 use super::{AsyncCtx, eq::AsyncEventQueueImpl, domain::{AsyncDomainImpl, Domain}};
 macro_rules! alloc_cq_entry {
@@ -320,7 +319,6 @@ impl Deref for  AsyncCompletionQueueImpl {
         self.base.as_ref()
     }
 }
-use std::backtrace::Backtrace;
 impl AsyncCompletionQueueImpl {
 
     pub(crate) fn new<T0>(domain: &Rc<AsyncDomainImpl>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
@@ -488,11 +486,11 @@ impl<'a> async_std::future::Future for CqAsyncRead<'a>{
         loop {
 
             let ret = match &mut mut_self.buf {
-                CompletionFormat::Unspec(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().handle(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Ctx(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().handle(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Msg(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().handle(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Data(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().handle(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Tagged(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().handle(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
+                CompletionFormat::Unspec(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
+                CompletionFormat::Ctx(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
+                CompletionFormat::Msg(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
+                CompletionFormat::Data(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
+                CompletionFormat::Tagged(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
             };
             if ret < 0 {
                 let err: Error = Error::from_err_code(-ret as u32);
@@ -531,7 +529,14 @@ impl<'a> async_std::future::Future for CqAsyncRead<'a>{
 
 impl AsFid for AsyncCompletionQueueImpl {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.fid.as_fid()
+        self.c_cq.as_fid()
+    }
+}
+
+
+impl AsRawFid for AsyncCompletionQueueImpl {
+    fn as_raw_fid(&self) -> RawFid {
+        self.c_cq.as_raw_fid()
     }
 }
 

@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 
 
-use crate::{domain::{DomainImpl, DomainImplBase}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid}, iovec::IoVec, utils::check_error, eq::{Event, EventQueueImpl, BindEqImpl}};
+use crate::{domain::DomainImplBase, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImpl};
 #[allow(unused_imports)]
-use crate::fid::{AsFid, OwnedFid};
+use crate::fid::AsFid;
 
 #[repr(C)]
 pub struct DefaultMemDesc {
@@ -80,8 +80,6 @@ enum MappedMemoryRegionKeyImplBase<EQ> {
     MappedRawKey((u64, Rc<DomainImplBase<EQ>>)),
 }
 
-pub(crate) type MappedMemoryRegionKeyImpl =  MappedMemoryRegionKeyImplBase<EventQueueImpl>;
-
 /// Uniformly represents a (mapped if raw) memory region  key that can be used to
 /// access remote [MemoryRegion]s. This struct will automatically unmap the key
 /// if needed when it is dropped.
@@ -134,11 +132,10 @@ impl DataDescriptor for DefaultMemDesc {
 // }
 
 //================== Memory Region (fi_mr) ==================//
-pub type MemoryRegionImpl = MemoryRegionImplBase<EventQueueImpl>;
+pub(crate) type MemoryRegionImpl = MemoryRegionImplBase<EventQueueImpl>;
 
 pub(crate) struct MemoryRegionImplBase<EQ> {
-    pub(crate) c_mr: *mut libfabric_sys::fid_mr,
-    pub(crate) fid: OwnedFid,
+    pub(crate) c_mr: OwnedMrFid,
     pub(crate) _domain_rc: Rc<DomainImplBase<EQ>>,
 }
 
@@ -154,23 +151,16 @@ pub struct MemoryRegionBase<EQ> {
     pub(crate) inner: Rc<MemoryRegionImplBase<EQ>>,
 }
 
-impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
-    
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
-        self.c_mr
-    }
-    
-
+impl<EQ: AsRawFid> MemoryRegionImplBase<EQ> {
 
     #[allow(dead_code)]
     fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
-        let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast() ) }
+                unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, &mut c_mr, (ctx as *mut T0).cast() ) }
             } 
             else {
-                unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
+                unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, &mut c_mr, std::ptr::null_mut()) }
             };
         
         
@@ -181,8 +171,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
 
             Ok(
                 Self {
-                    c_mr, 
-                    fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                    c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
                 })
         }
@@ -191,7 +180,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
     pub(crate) fn from_attr(domain: &Rc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.as_raw_typed_fid(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
     
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -199,8 +188,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
         else {
             Ok(
                 Self {
-                    c_mr, 
-                    fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                    c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
                 })
         }
@@ -212,10 +200,10 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =
         if let Some(ctx) = context {
-            unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast()) }
+            unsafe { libfabric_sys::inlined_fi_mr_regv(domain.as_raw_typed_fid(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (ctx as *mut T0).cast()) }
         }
         else {
-            unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
+            unsafe { libfabric_sys::inlined_fi_mr_regv(domain.as_raw_typed_fid(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, std::ptr::null_mut()) }
         };
     
         if err != 0 {
@@ -224,8 +212,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
         else {
             Ok(
                 Self {
-                    c_mr, 
-                    fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                    c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
                 })
         }
@@ -239,7 +226,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
             self.raw_key(0)
         }
         else {
-            let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.handle()) };
+            let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.as_raw_typed_fid()) };
             if ret == crate::FI_KEY_NOTAVAIL {
                 Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
             }
@@ -253,7 +240,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
         let mut base_addr = 0u64;
         let mut key_size = self._domain_rc.domain_attr.get_mr_key_size();
         let mut raw_key = vec![0u8; key_size];
-        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), &mut base_addr, raw_key.as_mut_ptr().cast(), &mut key_size, flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.as_raw_typed_fid(), &mut base_addr, raw_key.as_mut_ptr().cast(), &mut key_size, flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -264,25 +251,25 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
     }
 
     pub(crate) fn bind_cntr(&self, cntr: &Rc<crate::cntr::CounterImpl>, remote_write_event: bool) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), cntr.as_raw_fid(), if remote_write_event {libfabric_sys::FI_REMOTE_WRITE as u64} else {0}) } ;
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), cntr.as_raw_fid(), if remote_write_event {libfabric_sys::FI_REMOTE_WRITE as u64} else {0}) } ;
         
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn bind_ep<CQ>(&self, ep: &Rc<crate::ep::EndpointImplBase<EQ, CQ>>) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.handle(), ep.as_raw_fid(), 0) } ;
+    pub(crate) fn bind_ep<CQ: AsRawFid>(&self, ep: &Rc<crate::ep::EndpointImplBase<EQ, CQ>>) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())
     }
 
     pub(crate) fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.handle(), iov.as_ptr().cast(), iov.len(), flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.as_raw_typed_fid(), iov.as_ptr().cast(), iov.len(), flags) };
 
         check_error(err.try_into().unwrap())
     }
 
     pub(crate) fn enable(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.handle()) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.as_raw_typed_fid()) };
 
         check_error(err.try_into().unwrap())
     }
@@ -290,7 +277,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
     pub(crate) fn address(&self, flags: u64) -> Result<u64, crate::error::Error>  {
         let mut base_addr = 0u64;
         let mut key_size = 0usize;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), &mut base_addr, std::ptr::null_mut(), &mut key_size, flags) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.as_raw_typed_fid(), &mut base_addr, std::ptr::null_mut(), &mut key_size, flags) };
         
         if err != 0 && -err as u32 != libfabric_sys::FI_ETOOSMALL {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -303,7 +290,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
 
 
     // pub(crate) fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Return the key as it should be returned
-    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, std::ptr::null_mut(), key_size, flags) };
+    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.as_raw_typed_fid(), base_addr, std::ptr::null_mut(), key_size, flags) };
 
     //     if err != 0 {
     //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -314,7 +301,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
     // }
 
     // pub(crate) fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
-    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.handle(), base_addr, raw_key, key_size, flags) };
+    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.as_raw_typed_fid(), base_addr, raw_key, key_size, flags) };
 
     //     if err != 0 {
     //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -325,7 +312,7 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
     // }
 
     pub(crate) fn description(&self) -> MemoryRegionDesc {
-        let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.handle())};
+        let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.as_raw_typed_fid())};
         if c_desc.is_null() {
             panic!("fi_mr_desc returned NULL");
         }
@@ -334,11 +321,11 @@ impl<EQ: AsFid> MemoryRegionImplBase<EQ> {
     }
 }
 
-impl<EQ: AsFid> MemoryRegionBase<EQ> {
+impl<EQ: AsRawFid> MemoryRegionBase<EQ> {
     
     #[allow(dead_code)]
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
-        self.inner.handle()
+        self.inner.as_raw_typed_fid()
     }
 
     #[allow(dead_code)]
@@ -475,7 +462,47 @@ impl<EQ> AsFid for MemoryRegionBase<EQ>{
 
 impl<EQ> AsFid for MemoryRegionImplBase<EQ>{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.fid.as_fid()
+        self.c_mr.as_fid()
+    }
+}
+
+impl<EQ> AsRawFid for MemoryRegionBase<EQ>{
+    fn as_raw_fid(&self) -> RawFid {
+        self.inner.as_raw_fid()
+    }
+}
+
+impl<EQ> AsRawFid for MemoryRegionImplBase<EQ>{
+    fn as_raw_fid(&self) -> RawFid {
+        self.c_mr.as_raw_fid()
+    }
+}
+
+impl<EQ> AsTypedFid<MrRawFid> for MemoryRegionBase<EQ>{
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<MrRawFid> {
+        self.inner.as_typed_fid()
+    }
+}
+
+impl<EQ> AsTypedFid<MrRawFid> for MemoryRegionImplBase<EQ>{
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<MrRawFid> {
+        self.c_mr.as_typed_fid()
+    }
+}
+
+impl<EQ> AsRawTypedFid for MemoryRegionBase<EQ>{
+    type Output = MrRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.inner.as_raw_typed_fid()
+    }
+}
+
+impl<EQ> AsRawTypedFid for MemoryRegionImplBase<EQ>{
+    type Output = MrRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.c_mr.as_raw_typed_fid()
     }
 }
 

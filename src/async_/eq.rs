@@ -2,7 +2,7 @@ use std::{rc::{Rc, Weak}, collections::HashMap, cell::RefCell, ops::Deref, marke
 
 use async_io::Async;
 
-use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, BindEqImpl, EventQueueImplT}, error::Error, fid::{AsFid, self, Fid, AsRawFid}, eqoptions::{self, Options}, FdRetrievable, WaitRetrievable, mr::MemoryRegionImplBase, av::AddressVectorImplBase, comm::collective::MulticastGroupCollectiveImplBase, async_::AsyncCtx};
+use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, BindEqImpl, EventQueueImplT}, error::Error, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid}, eqoptions::{self, Options}, FdRetrievable, WaitRetrievable, mr::MemoryRegionImplBase, av::AddressVectorImplBase, comm::collective::MulticastGroupCollectiveImplBase, async_::AsyncCtx};
 use super::{mr::AsyncMemoryRegionImpl, av::AsyncAddressVectorImpl, comm::collective::AsyncMulticastGroupCollectiveImpl, cq::AsyncCompletionQueueImpl};
 
 pub type EventQueue<T> = EventQueueBase<T, AsyncEventQueueImpl>;
@@ -22,7 +22,7 @@ impl<'a> async_std::future::Future for EqAsyncRead<'a>{
         // let mut buff = vec![1u8];
         // self.poll_read(cx, &mut buff[..])
         // let ev = self.event;
-        let fid = self.eq.handle();
+        let fid = self.eq.as_raw_typed_fid();
         let buf = self.buf;
         let ev = self.get_mut();
         loop {
@@ -54,11 +54,6 @@ impl<T: eqoptions::EqConfig + WaitRetrievable + FdRetrievable> EventQueue<T> {
         self.inner.read_async().await
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_eq {
-        self.inner.handle()
-    }
-
     pub(crate) fn new<T0>(_options: T,fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
 
         Ok(
@@ -87,13 +82,13 @@ pub struct AsyncEventQueueImpl {
     pub(crate) base: Async<EventQueueImpl>,
     pending_entries: RefCell<HashMap<(u32, usize), Event<usize>>>,
     pending_cm_entries: RefCell<HashMap<(u32,libfabric_sys::fid_t), Vec::<Event<usize>> >>,
-    pub(crate) mrs: RefCell<std::collections::HashMap<Fid, Weak<AsyncMemoryRegionImpl>>>,   // We neep maps Fid -> MemoryRegionImpl/AddressVectorImpl/MulticastGroupCollectiveImpl, however, we don't want to extend 
+    pub(crate) mrs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncMemoryRegionImpl>>>,   // We neep maps Fid -> MemoryRegionImpl/AddressVectorImpl/MulticastGroupCollectiveImpl, however, we don't want to extend 
     // the lifetime of any of these objects just because of the maps.
     // Moreover, these objects will keep references to the EQ to keep it from dropping while
     // they are still bound, thus, we would have cyclic references that wouldn't let any 
     // of the two sides drop. 
-    pub(crate) avs: RefCell<std::collections::HashMap<Fid, Weak<AsyncAddressVectorImpl>>>,
-    pub(crate) mcs: RefCell<std::collections::HashMap<Fid, Weak<AsyncMulticastGroupCollectiveImpl>>>,
+    pub(crate) avs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncAddressVectorImpl>>>,
+    pub(crate) mcs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncMulticastGroupCollectiveImpl>>>,
 }
 impl AsyncEventQueueImpl {
     pub(crate) fn new<T0>(fabric: &Rc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
@@ -250,7 +245,13 @@ impl<const E: libfabric_sys::_bindgen_ty_18> async_std::future::Future for Event
 
 impl AsFid for AsyncEventQueueImpl {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.fid.as_fid()
+       self.c_eq.as_fid()
+    }
+}
+
+impl AsRawFid for AsyncEventQueueImpl {
+    fn as_raw_fid(&self) -> RawFid {
+       self.c_eq.as_raw_fid()
     }
 }
 

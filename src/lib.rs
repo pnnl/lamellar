@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::OnceCell};
 
-use av::{AddressVectorImpl, AddressVectorImplBase};
+use av::AddressVectorImplBase;
 use eq::EventQueueImpl;
 use mr::DataDescriptor;
 

@@ -1,5 +1,5 @@
 
-use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::{ActiveEndpointImpl, EndpointBase}, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, xcontext::{ReceiveContext, TransmitContext}, MappedAddressBase, eq::EventQueueImplT};
+use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::EndpointBase, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, MappedAddressBase, eq::EventQueueImplT, fid::AsRawTypedFid};
 pub(crate) fn extract_raw_addr_and_ctx<T0, EQ: EventQueueImplT>(mapped_addr: Option<&MappedAddressBase<EQ>>, context: Option<*mut T0>) -> (u64, *mut std::ffi::c_void) {
             
     let ctx = if let Some(ctx) = context {
@@ -25,7 +25,7 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 
-        let err = unsafe{ libfabric_sys::inlined_fi_recv(self.handle(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_recv(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
         check_error(err)
     }
 
@@ -47,7 +47,7 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     
     fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
         check_error(err)    
     }
 
@@ -68,7 +68,7 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub fn recvmsg(&self, msg: &crate::msg::Msg, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
         check_error(err)
     }
 }
@@ -77,7 +77,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
         check_error(err)
     }
 
@@ -99,7 +99,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
     fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_send(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_send(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
         check_error(err)
     }
 
@@ -120,13 +120,13 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub fn sendmsg(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
         check_error(err)
     }
 
     fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-        let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, ctx) };
+        let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, ctx) };
         check_error(err)
     }
 
@@ -147,22 +147,22 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 
     pub fn inject_connected<T>(&self, buf: &[T]) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC) };
         check_error(err)
     }
 
     pub fn inject<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_inject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
         check_error(err)
     }
 
     pub fn injectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
         check_error(err)
     }
 
     pub fn injectdata_connected<T>(&self, buf: &[T], data: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC) };
+        let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC) };
         check_error(err)
     }
 }
@@ -171,7 +171,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 //     fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.handle(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
 //         check_error(err)
 //     }
 
@@ -193,7 +193,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 //     fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_send(self.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_send(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
 //         check_error(err)
 //     }
 
@@ -214,13 +214,13 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //     }
 
 //     pub fn sendmsg(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
 //         check_error(err)
 //     }
 
 //     fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, ctx) };
 //         check_error(err)
 //     }
 
@@ -241,22 +241,22 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //     }
 
 //     pub fn inject_connected<T>(&self, buf: &[T]) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), FI_ADDR_UNSPEC) };
 //         check_error(err)
 //     }
 
 //     pub fn inject<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
 //         check_error(err)
 //     }
 
 //     pub fn injectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
 //         check_error(err)
 //     }
 
 //     pub fn injectdata_connected<T>(&self, buf: &[T], data: u64) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.handle(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, FI_ADDR_UNSPEC) };
 //         check_error(err)
 //     }
 // }
@@ -267,7 +267,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 
-//         let err = unsafe{ libfabric_sys::inlined_fi_recv(self.handle(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_recv(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
 //         check_error(err)
 //     }
 
@@ -289,7 +289,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     
 //     fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
-//         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.handle(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
 //         check_error(err)    
 //     }
 
@@ -310,7 +310,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //     }
 
 //     pub fn recvmsg(&self, msg: &crate::msg::Msg, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.handle(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
+//         let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
 //         check_error(err)
 //     }
 // }

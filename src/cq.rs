@@ -1,8 +1,7 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, ops::Deref, collections::HashMap};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, collections::HashMap};
 
-#[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImpl, DomainImplBase}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{OwnedFid, AsRawFid}, RawMappedAddress, error::Error, eq::EventQueueImpl};
+use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImplBase}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error, eq::EventQueueImpl};
 
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -81,10 +80,9 @@ pub enum SingleCompletionFormat {
 
 
 pub struct CompletionQueueImpl<EQ> {
-    c_cq: *mut libfabric_sys::fid_cq,
+    pub(crate) c_cq: OwnedCqFid,
     pub(crate) entry_buff: RefCell<CompletionFormat>,
     error_buff: RefCell<CompletionError>,
-    pub(crate) fid: OwnedFid,
     #[allow(dead_code)]
     requests: RefCell<usize>,
     completions: RefCell<usize>,
@@ -112,22 +110,17 @@ pub struct CompletionQueueBase<T: CqConfig, CQ> {
 
 impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
 
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cq {
-        self.c_cq
-    }
-
     pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
-        let mut c_cq: *mut libfabric_sys::fid_cq  = std::ptr::null_mut();
-        let c_cq_ptr: *mut *mut libfabric_sys::fid_cq = &mut c_cq;
+        let mut c_cq: CqRawFid  = std::ptr::null_mut();
         // let mut entries: Vec<$t> = Vec::with_capacity(std::mem::size_of::<$t>() * $count);
 
         let err = 
             if let Some(ctx) = context {
-                unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, (ctx as *mut T0).cast())}
+                unsafe {libfabric_sys::inlined_fi_cq_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_cq, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe {libfabric_sys::inlined_fi_cq_open(domain.handle(), attr.get_mut(), c_cq_ptr, std::ptr::null_mut())}
+                unsafe {libfabric_sys::inlined_fi_cq_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_cq, std::ptr::null_mut())}
             };
         
         if err != 0 {
@@ -136,8 +129,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         else {
             Ok(
                 Self {
-                    c_cq, 
-                    fid: OwnedFid::from(unsafe{&mut (*c_cq).fid }), 
+                    c_cq: OwnedCqFid::from(c_cq), 
                     wait_obj: Some(attr.c_attr.wait_obj),
                     completions: RefCell::new(0),
                     pending_entries: RefCell::new(HashMap::new()),
@@ -172,7 +164,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
     pub(crate) fn read(&self, count: usize) -> Result<CompletionFormat, crate::error::Error> {
         let err = {
             let mut borrowed_entries = self.entry_buff.borrow_mut();
-            read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.handle(), count,  *borrowed_entries, )
+            read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.as_raw_typed_fid(), count,  *borrowed_entries, )
         };
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -183,7 +175,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
     }
 
     pub(crate) fn read_in(&self, count: usize, buffer: &mut CompletionFormat) -> Result<usize, crate::error::Error> {
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.handle(), count, buffer, );
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.as_raw_typed_fid(), count, buffer, );
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
@@ -201,7 +193,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
         let err = {
             let mut borrowed_entries = self.entry_buff.borrow_mut();
-            read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.handle(), count, *borrowed_entries, p_address)
+            read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.as_raw_typed_fid(), count, *borrowed_entries, p_address)
         };
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
@@ -222,7 +214,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
        
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.handle(), count, buffer, p_address);
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.as_raw_typed_fid(), count, buffer, p_address);
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
         }
@@ -241,7 +233,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         
         let ret = {
             let mut entry = self.error_buff.borrow_mut();
-            unsafe { libfabric_sys::inlined_fi_cq_readerr(self.handle(), entry.get_mut(), flags) }
+            unsafe { libfabric_sys::inlined_fi_cq_readerr(self.as_raw_typed_fid(), entry.get_mut(), flags) }
         };
 
         if ret < 0 {
@@ -255,7 +247,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
     pub(crate) fn readerr_in(&self, err_buff: &mut CompletionError, flags: u64) -> Result<(), crate::error::Error> {
         
         let ret = {
-            unsafe { libfabric_sys::inlined_fi_cq_readerr(self.handle(), err_buff.get_mut(), flags) }
+            unsafe { libfabric_sys::inlined_fi_cq_readerr(self.as_raw_typed_fid(), err_buff.get_mut(), flags) }
         };
 
         if ret < 0 {
@@ -272,7 +264,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
 
     unsafe fn strerror(&self, prov_errno: i32, err_data: *const std::ffi::c_void, err_data_size: usize) -> &str {
 
-        let ret = unsafe { libfabric_sys::inlined_fi_cq_strerror(self.handle(), prov_errno, err_data, std::ptr::null_mut() , err_data_size) };
+        let ret = unsafe { libfabric_sys::inlined_fi_cq_strerror(self.as_raw_typed_fid(), prov_errno, err_data, std::ptr::null_mut() , err_data_size) };
     
             unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     }
@@ -319,7 +311,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
 
     // pub(crate) fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
     //     let p_cond = cond as *const usize as *const std::ffi::c_void;
-    //     let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.format, self.handle(), count, p_cond, timeout);
+    //     let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.format, self.as_raw_typed_fid(), count, p_cond, timeout);
     //     if err < 0 {
     //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
     //     }
@@ -332,7 +324,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         let p_cond = cond as *const usize as *const std::ffi::c_void;
         let err =  {
             let mut borrowed_entries = self.entry_buff.borrow_mut();
-            read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.handle(), count, *borrowed_entries, p_cond, timeout)
+            read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.as_raw_typed_fid(), count, *borrowed_entries, p_cond, timeout)
         };
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -344,7 +336,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
 
     pub(crate) fn sread_in(&self, count: usize, buffer: &mut CompletionFormat, cond: usize, timeout: i32) -> Result<(), crate::error::Error> {
         let p_cond = cond as *const usize as *const std::ffi::c_void;
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.handle(), count, buffer, p_cond, timeout);
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.as_raw_typed_fid(), count, buffer, p_cond, timeout);
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -362,7 +354,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
     //     let mut address = 0;
     //     let p_address = &mut address as *mut RawMappedAddress;   
     //     let p_cond = std::ptr::null_mut();
-    //     let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.format, self.handle(), count, p_address, p_cond, timeout);
+    //     let (err, ret) = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.format, self.as_raw_typed_fid(), count, p_address, p_cond, timeout);
     //     let address = if address == crate::FI_ADDR_NOTAVAIL {
     //         None
     //     }
@@ -385,7 +377,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         let p_address = &mut address as *mut RawMappedAddress;   
         let err = {
             let mut borrowed_entries = self.entry_buff.borrow_mut();
-            read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.handle(), count, *borrowed_entries, p_address, p_cond, timeout)
+            read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.as_raw_typed_fid(), count, *borrowed_entries, p_address, p_cond, timeout)
         };
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
@@ -407,7 +399,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
         let p_cond = cond as *const usize as *const std::ffi::c_void;
         let mut address = 0;
         let p_address = &mut address as *mut RawMappedAddress;   
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.handle(), count, buffer, p_address, p_cond, timeout);
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.as_raw_typed_fid(), count, buffer, p_address, p_cond, timeout);
 
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
@@ -426,7 +418,7 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
 
     pub(crate) fn signal(&self) -> Result<(), crate::error::Error>{
         
-        let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.handle()) };
+        let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.as_raw_typed_fid()) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -450,8 +442,8 @@ impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
 
 impl<T: CqConfig> CompletionQueue<T> {
     #[allow(dead_code)]
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_cq {
-        self.inner.handle()
+    pub(crate) fn handle(&self) -> CqRawFid {
+        self.inner.as_raw_typed_fid()
     }
 
     pub(crate) fn new<T0>(_options: T, domain: &crate::domain::Domain, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
@@ -701,13 +693,56 @@ impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
 
 impl<EQ> AsFid for CompletionQueueImpl<EQ> {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.fid.as_fid()
+        self.c_cq.as_fid()
     }
 }
+
+impl<EQ> AsRawFid for CompletionQueueImpl<EQ> {
+    fn as_raw_fid(&self) -> RawFid {
+        self.c_cq.as_raw_fid()
+    }
+}
+
+
+impl<EQ> AsTypedFid<CqRawFid> for CompletionQueueImpl<EQ> {
+    fn as_typed_fid(&self) -> crate::fid::BorrowedTypedFid<CqRawFid> {
+        self.c_cq.as_typed_fid()
+    }
+}
+
+impl<EQ> AsRawTypedFid for CompletionQueueImpl<EQ> {
+    type Output = CqRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.c_cq.as_raw_typed_fid()
+    }
+}
+
 
 impl<T: CqConfig> AsFid for CompletionQueue<T> {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
         self.inner.as_fid()
+    }
+}
+
+
+impl<T: CqConfig> AsRawFid for CompletionQueue<T> {
+    fn as_raw_fid(&self) -> RawFid {
+        self.inner.as_raw_fid()
+    }
+}
+
+impl<T: CqConfig> AsTypedFid<CqRawFid> for CompletionQueue<T> {
+    fn as_typed_fid(&self) -> crate::fid::BorrowedTypedFid<CqRawFid> {
+        self.inner.as_typed_fid()
+    }
+}
+
+impl<T: CqConfig> AsRawTypedFid for CompletionQueue<T> {
+    type Output = CqRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.inner.as_raw_typed_fid()
     }
 }
 
@@ -989,7 +1024,7 @@ impl CompletionQueueAttr {
     
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
         if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
-            self.c_attr.wait_set = wait_set.handle();
+            self.c_attr.wait_set = wait_set.as_raw_typed_fid();
         }
         self.c_attr.wait_obj = wait_obj.get_value();
         self

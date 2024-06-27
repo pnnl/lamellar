@@ -1,8 +1,8 @@
 use crate::MappedAddressBase;
+use crate::fid::{AsRawTypedFid, OwnedMrFid};
 use crate::iovec::IoVec;
 use crate::mr::MappedMemoryRegionKeyBase;
-use crate::{fid::OwnedFid, mr::MemoryRegionAttr};
-use crate::async_::eq::EventQueueFut;
+use crate::mr::MemoryRegionAttr;
 use crate::eq::Event;
 use crate::enums::MrMode;
 use std::rc::Rc;
@@ -13,9 +13,9 @@ use super::eq::AsyncEventQueueImpl;
 
 
 pub type MemoryRegion = MemoryRegionBase<AsyncEventQueueImpl>;
-pub type AsyncMemoryRegionImpl = MemoryRegionImplBase<AsyncEventQueueImpl>;
 pub type MappedAddress = MappedAddressBase<AsyncEventQueueImpl>;
 pub type MappedMemoryRegionKey = MappedMemoryRegionKeyBase<AsyncEventQueueImpl>;
+pub(crate) type AsyncMemoryRegionImpl = MemoryRegionImplBase<AsyncEventQueueImpl>;
 
 impl AsyncMemoryRegionImpl {
 
@@ -25,7 +25,7 @@ impl AsyncMemoryRegionImpl {
 
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.handle(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast() ) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast() ) };
         
         if err == 0 {
             
@@ -37,8 +37,7 @@ impl AsyncMemoryRegionImpl {
                     let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
                     return Ok( (res,
                         Self {
-                            c_mr,
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                            c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
                         }
                     ));
@@ -67,7 +66,7 @@ impl AsyncMemoryRegionImpl {
 
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.handle(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.as_raw_typed_fid(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
     
         if err == 0 {
             
@@ -80,8 +79,7 @@ impl AsyncMemoryRegionImpl {
                     let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: attr.c_attr.context as usize}.await?;
                     return Ok((res,
                         Self {
-                            c_mr,
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                            c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
                         }
                     ));
@@ -101,7 +99,7 @@ impl AsyncMemoryRegionImpl {
         let mut async_ctx = AsyncCtx{user_ctx};
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.handle(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast())};
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.as_raw_typed_fid(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast())};
     
         if err == 0 {
             
@@ -113,8 +111,7 @@ impl AsyncMemoryRegionImpl {
                     let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
                     return Ok((res,
                         Self {
-                            c_mr,
-                            fid: OwnedFid::from(unsafe {&mut (*c_mr).fid }),
+                            c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
                         }
                     ));

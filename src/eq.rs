@@ -3,8 +3,8 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::{Rc, Weak}, cell:
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::AsRawFid, comm::collective::{MulticastGroupCollective, MulticastGroupCollectiveImpl, MulticastGroupCollectiveImplBase}, av::{AddressVector, AddressVectorImplBase}, mr::MemoryRegionImplBase, cq::CompletionQueueImpl};
-use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{OwnedFid, self, Fid}, mr::MemoryRegionImpl, av::AddressVectorImpl};
+use crate::{fid::{AsRawFid, AsRawTypedFid, OwnedEqFid, AsTypedFid, EqRawFid}, comm::collective::{MulticastGroupCollective, MulticastGroupCollectiveImpl, MulticastGroupCollectiveImplBase}, av::{AddressVector, AddressVectorImplBase}, mr::MemoryRegionImplBase, cq::CompletionQueueImpl};
+use crate::{enums::WaitObjType, eqoptions::{self, EqConfig,  EqWritable, Off, On, Options, WaitNoRetrieve, WaitNone, WaitRetrieve}, FdRetrievable, WaitRetrievable, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{self, RawFid}, mr::MemoryRegionImpl, av::AddressVectorImpl};
 
 // impl<T: EqConfig> Drop for EventQueue<T> {
 //     fn drop(&mut self) {
@@ -99,22 +99,21 @@ impl<T> Event<T>{
 
 //================== EventQueue (fi_eq) ==================//
 pub struct EventQueueImpl {
-    c_eq: *mut libfabric_sys::fid_eq,
-    pub(crate) fid: OwnedFid,
+    pub(crate) c_eq: OwnedEqFid,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    pub(crate) mrs: RefCell<std::collections::HashMap<Fid, Weak<MemoryRegionImpl>>>,   // We neep maps Fid -> MemoryRegionImpl/AddressVectorImpl/MulticastGroupCollectiveImpl, however, we don't want to extend 
+    pub(crate) mrs: RefCell<std::collections::HashMap<RawFid, Weak<MemoryRegionImpl>>>,   // We neep maps Fid -> MemoryRegionImpl/AddressVectorImpl/MulticastGroupCollectiveImpl, however, we don't want to extend 
                                                                             // the lifetime of any of these objects just because of the maps.
                                                                             // Moreover, these objects will keep references to the EQ to keep it from dropping while
                                                                             // they are still bound, thus, we would have cyclic references that wouldn't let any 
                                                                             // of the two sides drop. 
-    pub(crate) avs: RefCell<std::collections::HashMap<Fid, Weak<AddressVectorImpl>>>,
-    pub(crate) mcs: RefCell<std::collections::HashMap<Fid, Weak<MulticastGroupCollectiveImpl>>>,
+    pub(crate) avs: RefCell<std::collections::HashMap<RawFid, Weak<AddressVectorImpl>>>,
+    pub(crate) mcs: RefCell<std::collections::HashMap<RawFid, Weak<MulticastGroupCollectiveImpl>>>,
 
     event_buffer: RefCell<Vec<u8>>,
     pub(crate) _fabric_rc: Rc<FabricImpl>,
 }
 
-pub(crate) trait EventQueueImplT {
+pub trait EventQueueImplT {
     fn read(&self) -> Result<Event<usize>, crate::error::Error>;
 
     fn peek(&self) -> Result<Event<usize>, crate::error::Error>;
@@ -144,7 +143,7 @@ impl EventQueueImplT for EventQueueImpl {
     fn read(&self) -> Result<Event<usize>, crate::error::Error>{ //[TODO] Use an "owned" buffer instead of allocating a new one for each attempt and copy it out
         let mut event = 0 ;
         let mut buffer = self.event_buffer.borrow_mut();
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.as_raw_typed_fid(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
@@ -156,7 +155,7 @@ impl EventQueueImplT for EventQueueImpl {
     fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
         let mut event = 0 ;
         let mut buffer = self.event_buffer.borrow_mut();
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.as_raw_typed_fid(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -170,7 +169,7 @@ impl EventQueueImplT for EventQueueImpl {
 
         let mut buffer = self.event_buffer.borrow_mut();
 
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), 0) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.as_raw_typed_fid(), buffer.as_mut_ptr().cast(), 0) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -185,7 +184,7 @@ impl EventQueueImplT for EventQueueImpl {
     fn peekerr(&self) -> Result<EventError, crate::error::Error> {
         
         let mut buffer = self.event_buffer.borrow_mut();
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), libfabric_sys::FI_PEEK.into()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.as_raw_typed_fid(), buffer.as_mut_ptr().cast(), libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -198,7 +197,7 @@ impl EventQueueImplT for EventQueueImpl {
     }
     
     fn strerror(&self, entry: &EventError) -> &str {
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.as_raw_typed_fid(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
     
         unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     }
@@ -242,10 +241,10 @@ impl<'a> EventQueueImpl {
 
         let err = 
             if let Some(ctx) = context {
-                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.c_fabric, attr.get_mut(), c_eq_ptr, (ctx as *mut T0).cast())}
+                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.as_raw_typed_fid(), attr.get_mut(), c_eq_ptr, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.c_fabric, attr.get_mut(), c_eq_ptr, std::ptr::null_mut())}
+                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.as_raw_typed_fid(), attr.get_mut(), c_eq_ptr, std::ptr::null_mut())}
             };
 
         if err != 0 {
@@ -254,8 +253,7 @@ impl<'a> EventQueueImpl {
         else {
             Ok(
                 Self {
-                    c_eq, 
-                    fid: OwnedFid::from(unsafe{ &mut (*c_eq).fid }), 
+                    c_eq: OwnedEqFid::from(c_eq), 
                     wait_obj:  Some(attr.c_attr.wait_obj),
                     mrs: RefCell::new(HashMap::new()),
                     avs: RefCell::new(HashMap::new()),
@@ -267,26 +265,22 @@ impl<'a> EventQueueImpl {
         }
     }
 
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_eq {
-        self.c_eq
-    }
-
     pub(crate) fn bind_mr(&self, mr: &Rc<MemoryRegionImpl>) {
-        self.mrs.borrow_mut().insert(mr.as_fid().as_raw_fid(), Rc::downgrade(mr));
+        self.mrs.borrow_mut().insert(mr.as_raw_fid(), Rc::downgrade(mr));
     }
 
     pub(crate) fn bind_av(&self, av: &Rc<AddressVectorImpl>) {
-        self.avs.borrow_mut().insert(av.as_fid().as_raw_fid(), Rc::downgrade(av));
+        self.avs.borrow_mut().insert(av.as_raw_fid(), Rc::downgrade(av));
     }
 
     pub(crate) fn bind_mc(&self, mc: &Rc<MulticastGroupCollectiveImpl>) {
-        self.mcs.borrow_mut().insert(mc.as_fid().as_raw_fid(), Rc::downgrade(mc));
+        self.mcs.borrow_mut().insert(mc.as_raw_fid(), Rc::downgrade(mc));
     }
 
     // pub(crate) fn read(&self) -> Result<Event<usize>, crate::error::Error>{ //[TODO] Use an "owned" buffer instead of allocating a new one for each attempt and copy it out
     //     let mut event = 0 ;
     //     let mut buffer = self.event_buffer.borrow_mut();
-    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.as_raw_typed_fid(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), 0) };
     //     if ret < 0 {
     //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
     //     }
@@ -298,7 +292,7 @@ impl<'a> EventQueueImpl {
     // pub(crate) fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
     //     let mut event = 0 ;
     //     let mut buffer = self.event_buffer.borrow_mut();
-    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.handle(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.as_raw_typed_fid(), &mut event, buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), libfabric_sys::FI_PEEK.into()) };
 
     //     if ret < 0 {
     //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -312,7 +306,7 @@ impl<'a> EventQueueImpl {
 
     //     let mut buffer = self.event_buffer.borrow_mut();
 
-    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), 0) };
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.as_raw_typed_fid(), buffer.as_mut_ptr().cast(), 0) };
 
     //     if ret < 0 {
     //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -327,7 +321,7 @@ impl<'a> EventQueueImpl {
     // pub(crate) fn peekerr(&self) -> Result<EventError, crate::error::Error> {
         
     //     let mut buffer = self.event_buffer.borrow_mut();
-    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.handle(), buffer.as_mut_ptr().cast(), libfabric_sys::FI_PEEK.into()) };
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_readerr(self.as_raw_typed_fid(), buffer.as_mut_ptr().cast(), libfabric_sys::FI_PEEK.into()) };
 
     //     if ret < 0 {
     //         Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -340,7 +334,7 @@ impl<'a> EventQueueImpl {
     // }
 
     // pub(crate) fn strerror(&self, entry: &EventError) -> &str {
-    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.handle(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
+    //     let ret = unsafe { libfabric_sys::inlined_fi_eq_strerror(self.as_raw_typed_fid(), -entry.c_err.prov_errno, entry.c_err.err_data, std::ptr::null_mut(), 0) };
     
     //         unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     // }
@@ -349,7 +343,7 @@ impl<'a> EventQueueImpl {
         let event_val = event.get_value();
         let (event_entry, event_entry_size) = event.get_entry();
 
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_write(self.handle(), event_val, event_entry, event_entry_size, flags) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_write(self.as_raw_typed_fid(), event_val, event_entry, event_entry_size, flags) };
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
         }
@@ -363,7 +357,7 @@ impl<'a> EventQueueImpl {
         let mut event = 0;
         let mut buffer = self.event_buffer.borrow_mut();
 
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.handle(), &mut event,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, flags) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.as_raw_typed_fid(), &mut event,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, flags) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -378,7 +372,7 @@ impl<'a> EventQueueImpl {
         let mut buffer = self.event_buffer.borrow_mut();
 
 
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.handle(), &mut event,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, libfabric_sys::FI_PEEK.into()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.as_raw_typed_fid(), &mut event,  buffer.as_mut_ptr().cast(), std::mem::size_of::<libfabric_sys::fi_eq_err_entry>(), timeout, libfabric_sys::FI_PEEK.into()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -479,11 +473,6 @@ impl<'a> EventQueueImpl {
 }
 
 impl<T: EqConfig> EventQueue<T> {
-    
-    #[allow(dead_code)]
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_eq {
-        self.inner.handle()
-    }
 
     pub(crate) fn new<T0>(_options: T,fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
 
@@ -546,17 +535,57 @@ impl<'a, T: crate::WaitRetrievable + EqConfig> EventQueue<T> {
     }
 }
 
-
-
 impl<T: EqConfig, EQ: AsFid> AsFid for EventQueueBase<T, EQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
        self.inner.as_fid()
     }
 }
 
+impl<T: EqConfig, EQ: AsRawFid> AsRawFid for EventQueueBase<T, EQ> {
+    fn as_raw_fid(&self) -> RawFid {
+       self.inner.as_raw_fid()
+    }
+}
+
 impl AsFid for EventQueueImpl {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.fid.as_fid()
+       self.c_eq.as_fid()
+    }
+}
+
+impl AsRawFid for EventQueueImpl {
+    
+    fn as_raw_fid(&self) -> RawFid {
+        self.c_eq.as_raw_fid()
+    }
+}
+
+impl<T: EqConfig, EQ: AsTypedFid<EqRawFid>> AsTypedFid<EqRawFid> for EventQueueBase<T, EQ> {
+    
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EqRawFid> {
+        self.inner.as_typed_fid()
+    }
+}
+
+impl<T: EqConfig, EQ: AsRawTypedFid<Output = EqRawFid>> AsRawTypedFid for EventQueueBase<T, EQ> {
+    type Output = EqRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.inner.as_raw_typed_fid()
+    }
+}
+
+impl AsTypedFid<EqRawFid> for EventQueueImpl {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EqRawFid> {
+       self.c_eq.as_typed_fid()
+    }
+}
+
+impl AsRawTypedFid for EventQueueImpl {
+    type Output = EqRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        self.c_eq.as_raw_typed_fid()
     }
 }
 
@@ -739,7 +768,7 @@ impl EventQueueAttr {
     pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
         
         if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
-            self.c_attr.wait_set = wait_set.handle();
+            self.c_attr.wait_set = wait_set.as_raw_typed_fid();
         }
         self.c_attr.wait_obj = wait_obj.get_value();
         self
@@ -815,7 +844,7 @@ pub struct EventQueueEntry<T, F> {
     phantom: std::marker::PhantomData<T>,
 }
 
-impl<T, F: AsFid> EventQueueEntry<T, F> {
+impl<T, F: AsRawFid> EventQueueEntry<T, F> {
     // const SIZE_OK: () = assert!(std::mem::size_of::<T>() == std::mem::size_of::<usize>(), 
     // "The context of an EventQueueEntry must always be of size equal to usize datatype.");
 

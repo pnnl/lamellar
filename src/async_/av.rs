@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorSetBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid}, eqoptions::EqConfig, WaitRetrievable, FdRetrievable};
+use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorSetBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, eqoptions::EqConfig, WaitRetrievable, FdRetrievable};
 
 use super::{eq::{AsyncEventQueueImpl, EventQueue}, domain::Domain, AsyncCtx, mr::MappedAddress};
 
@@ -8,7 +8,7 @@ pub(crate) type AsyncAddressVectorImpl = AddressVectorImplBase<AsyncEventQueueIm
 pub type AsyncAddressVectorSet = AddressVectorSetBase<AsyncEventQueueImpl>;
 
 impl AsyncAddressVectorImpl {
-    pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Vec<RawMappedAddress>), crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+    pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Vec<RawMappedAddress>), crate::error::Error> { // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async
         let mut async_ctx = AsyncCtx{user_ctx};
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len() );
@@ -17,7 +17,7 @@ impl AsyncAddressVectorImpl {
             serialized.extend(a.as_bytes().iter())
         }
 
-        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.handle(), serialized.as_ptr().cast(), fi_addresses.len(), fi_addresses.as_mut_ptr().cast(), flags, &mut async_ctx as *mut AsyncCtx as *mut std::ffi::c_void) };
+        let err = unsafe { libfabric_sys::inlined_fi_av_insert(self.as_raw_typed_fid(), serialized.as_ptr().cast(), fi_addresses.len(), fi_addresses.as_mut_ptr().cast(), flags, &mut async_ctx as *mut AsyncCtx as *mut std::ffi::c_void) };
 
         
         
@@ -44,12 +44,12 @@ impl AsyncAddressVectorImpl {
 pub type AddressVector = AddressVectorBase<AsyncEventQueueImpl>;
 
 impl AddressVector {
-    pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] handle async
+    pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
         let (event, fi_addresses) = self.inner.insert_async(addr, options.get_value(), None).await?;
         Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
     }
     
-    pub async fn insert_with_context_async<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] handle async
+    pub async fn insert_with_context_async<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
         let (event, fi_addresses) =self.inner.insert_async(addr, options.get_value(), Some((ctx as *mut T).cast())).await?;
         Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
     }
