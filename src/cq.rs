@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, collections::HashMap};
 
-use crate::fid::AsFid;
-use crate::{cqoptions::{self, CqConfig, Options}, domain::{Domain, DomainImplBase}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error, eq::EventQueueImpl};
+use crate::{fid::AsFid, domain::{DomainBase, DomainImplT}};
+use crate::{cqoptions::{self, CqConfig, Options}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error, eq::EventQueueImpl};
 
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -79,7 +79,7 @@ pub enum SingleCompletionFormat {
 
 
 
-pub struct CompletionQueueImpl<EQ> {
+pub struct CompletionQueueImpl {
     pub(crate) c_cq: OwnedCqFid,
     pub(crate) entry_buff: RefCell<CompletionFormat>,
     error_buff: RefCell<CompletionError>,
@@ -88,7 +88,7 @@ pub struct CompletionQueueImpl<EQ> {
     completions: RefCell<usize>,
     pub(crate) pending_entries: RefCell<HashMap<usize, SingleCompletionFormat>>,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    pub(crate) _domain_rc: Rc<DomainImplBase<EQ>>,
+    pub(crate) _domain_rc: Rc<dyn DomainImplT>,
 }
 
 
@@ -101,16 +101,16 @@ pub struct CompletionQueueImpl<EQ> {
 /// 
 /// Note that other objects that rely on a CompletQueue (e.g., an [crate::ep::Endpoint] bound to it) will extend its lifetime until they
 /// are also dropped.
-pub type CompletionQueue<T>  = CompletionQueueBase<T, CompletionQueueImpl<EventQueueImpl>>;
+pub type CompletionQueue<T>  = CompletionQueueBase<T, CompletionQueueImpl>;
 
 pub struct CompletionQueueBase<T: CqConfig, CQ> {
     pub(crate) inner: Rc<CQ>,
     pub(crate) phantom: PhantomData<T>,
 }
 
-impl<'a, EQ: AsFid> CompletionQueueImpl<EQ> {
+impl<'a> CompletionQueueImpl {
 
-    pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: AsFid + 'static, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: CqRawFid  = std::ptr::null_mut();
         // let mut entries: Vec<$t> = Vec::with_capacity(std::mem::size_of::<$t>() * $count);
@@ -446,7 +446,7 @@ impl<T: CqConfig> CompletionQueue<T> {
         self.inner.as_raw_typed_fid()
     }
 
-    pub(crate) fn new<T0>(_options: T, domain: &crate::domain::Domain, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: AsFid + 'static, T0>(_options: T, domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: Rc::new(CompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
@@ -683,7 +683,7 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> { //[TODO] Make this 
     }
 }
 
-impl<EQ> crate::BindImpl for CompletionQueueImpl<EQ> {}
+impl crate::BindImpl for CompletionQueueImpl {}
 
 impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
     fn inner(&self) -> Rc<dyn crate::BindImpl> {
@@ -691,26 +691,26 @@ impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
     }
 }
 
-impl<EQ> AsFid for CompletionQueueImpl<EQ> {
+impl AsFid for CompletionQueueImpl {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
         self.c_cq.as_fid()
     }
 }
 
-impl<EQ> AsRawFid for CompletionQueueImpl<EQ> {
+impl AsRawFid for CompletionQueueImpl {
     fn as_raw_fid(&self) -> RawFid {
         self.c_cq.as_raw_fid()
     }
 }
 
 
-impl<EQ> AsTypedFid<CqRawFid> for CompletionQueueImpl<EQ> {
+impl AsTypedFid<CqRawFid> for CompletionQueueImpl {
     fn as_typed_fid(&self) -> crate::fid::BorrowedTypedFid<CqRawFid> {
         self.c_cq.as_typed_fid()
     }
 }
 
-impl<EQ> AsRawTypedFid for CompletionQueueImpl<EQ> {
+impl AsRawTypedFid for CompletionQueueImpl {
     type Output = CqRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -746,7 +746,7 @@ impl<T: CqConfig> AsRawTypedFid for CompletionQueue<T> {
     }
 }
 
-impl<EQ: AsFid> AsFd for CompletionQueueImpl<EQ> {
+impl AsFd for CompletionQueueImpl {
     fn as_fd(&self) -> BorrowedFd<'_> {
         if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
             fd
@@ -771,22 +771,22 @@ impl<T: CqConfig + WaitRetrievable + FdRetrievable> AsFd for CompletionQueue<T> 
 /// `CompletionQueueBuilder` is used to configure and build a new `CompletionQueue`.
 /// It encapsulates an incremental configuration of the address vector, as provided by a `fi_cq_attr`,
 /// followed by a call to `fi_cq_open`  
-pub struct CompletionQueueBuilder<'a, T, WAIT, WAITFD> {
+pub struct CompletionQueueBuilder<'a, T, EQ, WAIT, WAITFD> {
     cq_attr: CompletionQueueAttr,
-    domain: &'a Domain,
+    domain: &'a DomainBase<EQ>,
     ctx: Option<&'a mut T>,
     options: Options<WAIT, WAITFD>,
     default_buff_size: usize,
 }
 
     
-impl<'a> CompletionQueueBuilder<'a, (), cqoptions::WaitNoRetrieve, cqoptions::Off> {
+impl<'a, EQ: AsFid + 'static> CompletionQueueBuilder<'a, (), EQ, cqoptions::WaitNoRetrieve, cqoptions::Off> {
     
     /// Initiates the creation of a new [CompletionQueue] on `domain`.
     /// 
     /// The initial configuration is what would be set if no `fi_cq_attr` or `context` was provided to 
     /// the `fi_cq_open` call. 
-    pub fn new(domain: &'a Domain) -> CompletionQueueBuilder<(), cqoptions::WaitNoRetrieve, cqoptions::Off> {
+    pub fn new(domain: &'a DomainBase<EQ>) -> CompletionQueueBuilder<(), EQ, cqoptions::WaitNoRetrieve, cqoptions::Off> {
         Self  {
             cq_attr: CompletionQueueAttr::new(),
             domain,
@@ -797,7 +797,7 @@ impl<'a> CompletionQueueBuilder<'a, (), cqoptions::WaitNoRetrieve, cqoptions::Of
     }
 }
 
-impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
+impl<'a, T, EQ: AsFid +'static, WAIT, WAITFD> CompletionQueueBuilder<'a, T, EQ, WAIT,  WAITFD> {
 
     /// Specifies the minimum size of a completion queue.
     /// 
@@ -829,7 +829,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     /// Sets the underlying low-level waiting object to none.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_NONE`.
-    pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNone, cqoptions::Off> {
+    pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, T, EQ, cqoptions::WaitNone, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::None);
 
         CompletionQueueBuilder {
@@ -844,7 +844,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     /// Sets the underlying low-level waiting object to FD.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_FD`.
-    pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitRetrieve, cqoptions::On> {
+    pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, T, EQ, cqoptions::WaitRetrieve, cqoptions::On> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         CompletionQueueBuilder {
@@ -860,7 +860,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     /// Sets the underlying low-level waiting object to [crate::sync::WaitSet] `set`.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_SET` and `fi_cq_attr::wait_set` to `set`.
-    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNoRetrieve, cqoptions::Off> {
+    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, T, EQ, cqoptions::WaitNoRetrieve, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         
@@ -876,7 +876,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     /// Sets the underlying low-level waiting object to Mutex+Conditional.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_MUTEX_COND`.
-    pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitRetrieve, cqoptions::Off> {
+    pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, T, EQ, cqoptions::WaitRetrieve, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         
@@ -892,7 +892,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     /// Indicates that the counter will wait without a wait object but instead yield on every wait.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_YIELD`.
-    pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, T, cqoptions::WaitNoRetrieve, cqoptions::Off> {
+    pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, T, EQ, cqoptions::WaitNoRetrieve, cqoptions::Off> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         CompletionQueueBuilder {
@@ -971,7 +971,7 @@ impl<'a, T, WAIT, WAITFD> CompletionQueueBuilder<'a, T, WAIT,  WAITFD> {
     /// Sets the context to be passed to the `CompletionQueue`.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_cq_open`.
-    pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T, WAIT, WAITFD> {
+    pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T, EQ, WAIT, WAITFD> {
         CompletionQueueBuilder {
             ctx: Some(ctx),
             cq_attr: self.cq_attr,

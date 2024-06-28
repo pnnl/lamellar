@@ -309,11 +309,11 @@ impl<'a, T: CqConfig + WaitRetrievable> CompletionQueue<T> { //[TODO] Make this 
 }
 
 pub struct AsyncCompletionQueueImpl {
-    base: Async<CompletionQueueImpl<AsyncEventQueueImpl>>,
+    base: Async<CompletionQueueImpl>,
 }
 
 impl Deref for  AsyncCompletionQueueImpl {
-    type Target = CompletionQueueImpl<AsyncEventQueueImpl>;
+    type Target = CompletionQueueImpl;
 
     fn deref(&self) -> &Self::Target {
         self.base.as_ref()

@@ -1,6 +1,6 @@
 
-use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::EndpointBase, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, MappedAddressBase, eq::EventQueueImplT, fid::AsRawTypedFid};
-pub(crate) fn extract_raw_addr_and_ctx<T0, EQ: EventQueueImplT>(mapped_addr: Option<&MappedAddressBase<EQ>>, context: Option<*mut T0>) -> (u64, *mut std::ffi::c_void) {
+use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::EndpointBase, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::EventQueueImplT, fid::AsRawTypedFid};
+pub(crate) fn extract_raw_addr_and_ctx<T0>(mapped_addr: Option<&MappedAddress>, context: Option<*mut T0>) -> (u64, *mut std::ffi::c_void) {
             
     let ctx = if let Some(ctx) = context {
         ctx.cast()
@@ -21,7 +21,8 @@ pub(crate) fn extract_raw_addr_and_ctx<T0, EQ: EventQueueImplT>(mapped_addr: Opt
 
 impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
-    fn recv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    #[inline]
+    fn recv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 
@@ -29,7 +30,7 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         check_error(err)
     }
 
-    pub fn recv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+    pub fn recv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.recv_impl::<T,()>(buf, desc, Some(mapped_addr), None)
     }
 
@@ -37,7 +38,7 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.recv_impl::<T,()>(buf, desc, None, None)
     }
     
-    pub fn recv_with_context<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>, context: &mut T0) -> Result<(), crate::error::Error> {
+    pub fn recv_with_context<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddress, context: &mut T0) -> Result<(), crate::error::Error> {
         self.recv_impl(buf, desc, Some(mapped_addr), Some(context))
     }
     
@@ -45,13 +46,14 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.recv_impl(buf, desc, None, Some(context))
     }
     
-    fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    #[inline]
+    fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
         check_error(err)    
     }
 
-	pub fn recvv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+	pub fn recvv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.recvv_impl::<T, ()>(iov, desc, Some(mapped_addr), None)
     }
 
@@ -59,7 +61,7 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.recvv_impl::<T, ()>(iov, desc, None, None)
     }
     
-	pub fn recvv_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>,  context: &mut T0) -> Result<(), crate::error::Error> {
+	pub fn recvv_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddress,  context: &mut T0) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, Some(mapped_addr), Some(context))
     }
     
@@ -75,13 +77,14 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
-    fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    #[inline]
+    fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
         check_error(err)
     }
 
-	pub fn sendv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+	pub fn sendv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.sendv_impl::<T, ()>(iov, desc, Some(mapped_addr), None)
     }
 
@@ -89,7 +92,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.sendv_impl::<T,()>(iov, desc, None, None)
     }
     
-	pub fn sendv_with_context<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
+	pub fn sendv_with_context<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddress, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
         self.sendv_impl(iov, desc, Some(mapped_addr), Some(context))
     }
     
@@ -97,13 +100,14 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.sendv_impl(iov, desc, None, Some(context))
     }
 
-    fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    #[inline]
+    fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_send(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
         check_error(err)
     }
 
-    pub fn send<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+    pub fn send<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.send_impl::<T, ()>(buf, desc, Some(mapped_addr), None)
     }
 
@@ -111,7 +115,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.send_impl::<T,()>(buf, desc, None, None)
     }
 
-    pub fn send_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>, context : &mut T0) -> Result<(), crate::error::Error> {
+    pub fn send_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddress, context : &mut T0) -> Result<(), crate::error::Error> {
         self.send_impl(buf, desc, Some(mapped_addr), Some(context))
     }
 
@@ -124,13 +128,14 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         check_error(err)
     }
 
-    fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    #[inline]
+    fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, ctx) };
         check_error(err)
     }
 
-    pub fn senddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+    pub fn senddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.senddata_impl::<T,()>(buf, desc, data, Some(mapped_addr), None)
     }
 
@@ -138,7 +143,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.senddata_impl::<T,()>(buf, desc, data, None, None)
     }
 
-    pub fn senddata_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddressBase<EQ>, context : &mut T0) -> Result<(), crate::error::Error> {
+    pub fn senddata_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddress, context : &mut T0) -> Result<(), crate::error::Error> {
         self.senddata_impl(buf, desc, data, Some(mapped_addr), Some(context))
     }
 
@@ -151,12 +156,12 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         check_error(err)
     }
 
-    pub fn inject<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+    pub fn inject<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
         check_error(err)
     }
 
-    pub fn injectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+    pub fn injectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
         check_error(err)
     }
@@ -169,13 +174,13 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 // impl TransmitContext {
 
-//     fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+//     fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 //         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
 //         check_error(err)
 //     }
 
-// 	pub fn sendv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+// 	pub fn sendv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase) -> Result<(), crate::error::Error> {
 //         self.sendv_impl::<T, ()>(iov, desc, Some(mapped_addr), None)
 //     }
 
@@ -183,7 +188,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         self.sendv_impl::<T,()>(iov, desc, None, None)
 //     }
     
-// 	pub fn sendv_with_context<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
+// 	pub fn sendv_with_context<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase, context : &mut T0) -> Result<(), crate::error::Error> { // [TODO]
 //         self.sendv_impl(iov, desc, Some(mapped_addr), Some(context))
 //     }
     
@@ -191,13 +196,13 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         self.sendv_impl(iov, desc, None, Some(context))
 //     }
 
-//     fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+//     fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 //         let err = unsafe{ libfabric_sys::inlined_fi_send(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
 //         check_error(err)
 //     }
 
-//     pub fn send<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+//     pub fn send<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase) -> Result<(), crate::error::Error> {
 //         self.send_impl::<T, ()>(buf, desc, Some(mapped_addr), None)
 //     }
 
@@ -205,7 +210,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         self.send_impl::<T,()>(buf, desc, None, None)
 //     }
 
-//     pub fn send_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>, context : &mut T0) -> Result<(), crate::error::Error> {
+//     pub fn send_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase, context : &mut T0) -> Result<(), crate::error::Error> {
 //         self.send_impl(buf, desc, Some(mapped_addr), Some(context))
 //     }
 
@@ -218,13 +223,13 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         check_error(err)
 //     }
 
-//     fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+//     fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddressBase>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 //         let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, ctx) };
 //         check_error(err)
 //     }
 
-//     pub fn senddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+//     pub fn senddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddressBase) -> Result<(), crate::error::Error> {
 //         self.senddata_impl::<T,()>(buf, desc, data, Some(mapped_addr), None)
 //     }
 
@@ -232,7 +237,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         self.senddata_impl::<T,()>(buf, desc, data, None, None)
 //     }
 
-//     pub fn senddata_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddressBase<EQ>, context : &mut T0) -> Result<(), crate::error::Error> {
+//     pub fn senddata_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddressBase, context : &mut T0) -> Result<(), crate::error::Error> {
 //         self.senddata_impl(buf, desc, data, Some(mapped_addr), Some(context))
 //     }
 
@@ -245,12 +250,12 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         check_error(err)
 //     }
 
-//     pub fn inject<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+//     pub fn inject<T>(&self, buf: &[T], mapped_addr: &crate::MappedAddressBase) -> Result<(), crate::error::Error> {
 //         let err = unsafe{ libfabric_sys::inlined_fi_inject(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), mapped_addr.raw_addr()) };
 //         check_error(err)
 //     }
 
-//     pub fn injectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+//     pub fn injectdata<T>(&self, buf: &[T], data: u64, mapped_addr: &crate::MappedAddressBase) -> Result<(), crate::error::Error> {
 //         let err = unsafe{ libfabric_sys::inlined_fi_injectdata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), data, mapped_addr.raw_addr()) };
 //         check_error(err)
 //     }
@@ -263,7 +268,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 // impl ReceiveContext {
 
-//     fn recv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase<EQ>>, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+//     fn recv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddressBase>, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 
@@ -271,7 +276,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         check_error(err)
 //     }
 
-//     pub fn recv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+//     pub fn recv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase) -> Result<(), crate::error::Error> {
 //         self.recv_impl::<T,()>(buf, desc, Some(mapped_addr), None)
 //     }
 
@@ -279,7 +284,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         self.recv_impl::<T,()>(buf, desc, None, None)
 //     }
     
-//     pub fn recv_with_context<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase<EQ>, context: &mut T0) -> Result<(), crate::error::Error> {
+//     pub fn recv_with_context<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddressBase, context: &mut T0) -> Result<(), crate::error::Error> {
 //         self.recv_impl(buf, desc, Some(mapped_addr), Some(context))
 //     }
     
@@ -287,13 +292,13 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         self.recv_impl(buf, desc, None, Some(context))
 //     }
     
-//     fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase<EQ>>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+//     fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddressBase>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
 //         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 //         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
 //         check_error(err)    
 //     }
 
-// 	pub fn recvv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>) -> Result<(), crate::error::Error> {
+// 	pub fn recvv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase) -> Result<(), crate::error::Error> {
 //         self.recvv_impl::<T, ()>(iov, desc, Some(mapped_addr), None)
 //     }
 
@@ -301,7 +306,7 @@ impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 //         self.recvv_impl::<T, ()>(iov, desc, None, None)
 //     }
     
-// 	pub fn recvv_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase<EQ>,  context: &mut T0) -> Result<(), crate::error::Error> {
+// 	pub fn recvv_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddressBase,  context: &mut T0) -> Result<(), crate::error::Error> {
 //         self.recvv_impl(iov, desc, Some(mapped_addr), Some(context))
 //     }
     

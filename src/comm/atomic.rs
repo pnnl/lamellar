@@ -19,11 +19,13 @@ use super::message::extract_raw_addr_and_ctx;
 
 impl<E: AtomicCap+ WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
+    #[inline]
     fn atomic_impl<T: 'static, T0>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.as_raw_typed_fid(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), to_fi_datatype::<T>(), op.get_value(), ctx)};
         check_error(err)
     }
+    
     #[allow(clippy::too_many_arguments)]
     pub fn atomic<T: 'static>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op) -> Result<(), crate::error::Error> {
         self.atomic_impl::<T, ()>(buf, desc, Some(dest_addr), mem_addr, mapped_key, op, None)
@@ -44,6 +46,7 @@ impl<E: AtomicCap+ WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
         self.atomic_impl(buf, desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -92,6 +95,7 @@ impl<E: AtomicCap+ WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
 impl<E: AtomicCap+ ReadMod + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomic_impl<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -120,6 +124,7 @@ impl<E: AtomicCap+ ReadMod + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, 
         self.fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -152,6 +157,7 @@ impl<E: AtomicCap+ ReadMod + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, 
         check_error(err)
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn compare_atomic_impl<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
         result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -189,6 +195,7 @@ impl<E: AtomicCap+ ReadMod + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, 
         self.compare_atomic_impl(buf, desc, compare, compare_desc, result, result_desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn compare_atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor],
         resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -273,6 +280,7 @@ impl<E: AtomicCap+ ReadMod + WriteMod, EQ: EventQueueImplT, CQ> EndpointBase<E, 
 
 impl TransmitContext {
 
+    #[inline]
     fn atomic_impl<T: 'static, T0>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.as_raw_typed_fid(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), to_fi_datatype::<T>(), op.get_value(), ctx)};
@@ -298,6 +306,7 @@ impl TransmitContext {
         self.atomic_impl(buf, desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -343,6 +352,7 @@ impl TransmitContext {
         check_error(err)
     }
     
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomic_impl<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -371,6 +381,7 @@ impl TransmitContext {
         self.fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -403,6 +414,7 @@ impl TransmitContext {
         check_error(err)
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn compare_atomic_impl<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
         result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -440,6 +452,7 @@ impl TransmitContext {
         self.compare_atomic_impl(buf, desc, compare, compare_desc, result, result_desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn compare_atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor],
         resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -524,6 +537,7 @@ impl TransmitContext {
 
 impl ReceiveContext {
 
+    #[inline]
     fn atomic_impl<T: 'static, T0>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_atomic(self.as_raw_typed_fid(), buf.as_ptr().cast(), buf.len(), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), to_fi_datatype::<T>(), op.get_value(), ctx)};
@@ -549,6 +563,7 @@ impl ReceiveContext {
         self.atomic_impl(buf, desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -594,6 +609,7 @@ impl ReceiveContext {
         check_error(err)
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomic_impl<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -622,6 +638,7 @@ impl ReceiveContext {
         self.fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -654,6 +671,7 @@ impl ReceiveContext {
         check_error(err)
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn compare_atomic_impl<T: 'static, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &mut [T], compare_desc: &mut impl DataDescriptor, 
         result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -691,6 +709,7 @@ impl ReceiveContext {
         self.compare_atomic_impl(buf, desc, compare, compare_desc, result, result_desc, None, mem_addr, mapped_key, op, Some(context))
     }
 
+    #[inline]
     #[allow(clippy::too_many_arguments)]
     fn compare_atomicv_impl<T: 'static, T0>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &mut [crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor],
         resultv: &mut [crate::iovec::Ioc<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context : Option<*mut T0>) -> Result<(), crate::error::Error> {

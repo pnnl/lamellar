@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 
 
-use crate::{domain::DomainImplBase, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImpl};
+use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImpl};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -63,44 +63,43 @@ impl MemoryRegionKey {
         MemoryRegionKey::Key(key) 
     }
 
-    pub fn into_mapped<EQ: AsFid>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKeyBase<EQ>, crate::error::Error> {
+    pub fn into_mapped<EQ: AsFid + 'static>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
             MemoryRegionKey::Key(mapped_key) => {
-                Ok(MappedMemoryRegionKeyBase{inner: MappedMemoryRegionKeyImplBase::Key(mapped_key)})
+                Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::Key(mapped_key)})
             }
             MemoryRegionKey::RawKey(_) => {
                 let mapped_key = domain.map_raw( &mut self, 0)?;
-                Ok(MappedMemoryRegionKeyBase{inner: MappedMemoryRegionKeyImplBase::MappedRawKey((mapped_key, domain.inner.clone()))})
+                Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::MappedRawKey((mapped_key, domain.inner.clone()))})
             }
         }
     }
 }
-enum MappedMemoryRegionKeyImplBase<EQ> {
+enum MappedMemoryRegionKeyImpl {
     Key(u64),
-    MappedRawKey((u64, Rc<DomainImplBase<EQ>>)),
+    MappedRawKey((u64, Rc<dyn DomainImplT>)),
 }
 
 /// Uniformly represents a (mapped if raw) memory region  key that can be used to
 /// access remote [MemoryRegion]s. This struct will automatically unmap the key
 /// if needed when it is dropped.
-pub type MappedMemoryRegionKey = MappedMemoryRegionKeyBase<EventQueueImpl>;
-pub struct MappedMemoryRegionKeyBase<EQ: AsFid> {
-    inner: MappedMemoryRegionKeyImplBase<EQ>,
+pub struct MappedMemoryRegionKey {
+    inner: MappedMemoryRegionKeyImpl,
 }
 
-impl<EQ: AsFid> MappedMemoryRegionKeyBase<EQ> {
+impl MappedMemoryRegionKey {
     pub(crate) fn get_key(&self) -> u64 {
         match self.inner {
-            MappedMemoryRegionKeyImplBase::Key(key) | MappedMemoryRegionKeyImplBase::MappedRawKey((key, _)) => key 
+            MappedMemoryRegionKeyImpl::Key(key) | MappedMemoryRegionKeyImpl::MappedRawKey((key, _)) => key 
         }
     }
 }
 
-impl<EQ: AsFid> Drop for MappedMemoryRegionKeyBase<EQ> {
+impl Drop for MappedMemoryRegionKey {
     fn drop(&mut self) {
         match self.inner {
-            MappedMemoryRegionKeyImplBase::Key(_) => {}
-            MappedMemoryRegionKeyImplBase::MappedRawKey((key, ref domain_impl)) => { 
+            MappedMemoryRegionKeyImpl::Key(_) => {}
+            MappedMemoryRegionKeyImpl::MappedRawKey((key, ref domain_impl)) => { 
                 domain_impl.unmap_key(key).unwrap();
             }
         }
@@ -642,6 +641,9 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
     /// 
     /// The initial configuration is what would be set if ony the field `fi_mr_attr::mr_iov` was set.
     pub fn new(domain: &'a crate::domain::Domain, buff: &'b [T]) -> Self {
+        if domain.inner._eq_rc.get().is_some() {
+            panic!("Manual async memory registration is not supported. Use the ::async_::mr::MemoryRegionBuilder for that.")
+        }
         Self {
             mr_attr: MemoryRegionAttr::new(),
             domain,

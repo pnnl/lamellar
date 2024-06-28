@@ -4,7 +4,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImpl, BindImpl, utils::check_error, fid::{self, AsRawFid, OwnedCntrFid, CntrRawFid, AsRawTypedFid, RawFid, AsTypedFid}};
+use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImplT, BindImpl, utils::check_error, fid::{self, AsRawFid, OwnedCntrFid, CntrRawFid, AsRawTypedFid, RawFid, AsTypedFid}};
 
 /// Owned wrapper around a libfabric `fi_cntr`.
 /// 
@@ -23,14 +23,14 @@ pub struct Counter<T: CntrConfig> {
 pub(crate) struct CounterImpl {
     pub(crate) c_cntr: OwnedCntrFid,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    _domain_rc: Rc<DomainImpl>,
+    _domain_rc: Rc<dyn DomainImplT>,
 }
 
 
 
 impl CounterImpl {
 
-    pub(crate) fn new<T0>(domain: &Rc<crate::domain::DomainImpl>, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: AsFid + 'static, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_cntr: CntrRawFid = std::ptr::null_mut();
 
         let err = 
@@ -49,7 +49,7 @@ impl CounterImpl {
                 Self {
                     c_cntr: OwnedCntrFid::from(c_cntr), 
                     wait_obj: Some(attr.c_attr.wait_obj),
-                    _domain_rc: domain.clone(),
+                    _domain_rc: domain.clone() as Rc<dyn DomainImplT>,
                 })
         }
     }
@@ -135,7 +135,7 @@ impl CounterImpl {
 impl<T: CntrConfig> Counter<T> {
     #[allow(dead_code)]
 
-    pub(crate) fn new<T0>(domain: &crate::domain::Domain, attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: AsFid + 'static, T0>(domain: &crate::domain::DomainBase<EQ>, attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: Rc::new(CounterImpl::new(&domain.inner, attr, context)?),
@@ -220,20 +220,20 @@ impl<T: CntrConfig + crate::Waitable> Counter<T> {
 /// `CounterBuilder` is used to configure and build a new `Counter`.
 /// It encapsulates an incremental configuration of the counter, as provided by a `fi_cntr_attr`,
 /// followed by a call to `fi_cntr_open`  
-pub struct CounterBuilder<'a, T, WAIT, WAITFD> {
+pub struct CounterBuilder<'a, T, EQ, WAIT, WAITFD> {
     cntr_attr: CounterAttr,
-    domain: &'a crate::domain::Domain,
+    domain: &'a crate::domain::DomainBase<EQ>,
     ctx: Option<&'a mut T>,
     options: cntroptions::Options<WAIT, WAITFD>,
 }
 
-impl<'a> CounterBuilder<'a, (), cntroptions::WaitNoRetrieve, cntroptions::Off> {
+impl<'a, EQ> CounterBuilder<'a, (), EQ, cntroptions::WaitNoRetrieve, cntroptions::Off> {
 
     /// Initiates the creation of new [Counter] on `domain`.
     /// 
     /// The initial configuration is what would be set if no `fi_cntr_attr` or `context` was provided to 
     /// the `fi_cntr_open` call. 
-    pub fn new(domain: &'a crate::domain::Domain) -> Self {
+    pub fn new(domain: &'a crate::domain::DomainBase<EQ>) -> Self {
         Self {
             cntr_attr: CounterAttr::new(),
             domain,
@@ -243,7 +243,7 @@ impl<'a> CounterBuilder<'a, (), cntroptions::WaitNoRetrieve, cntroptions::Off> {
     }
 }
 
-impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
+impl<'a, T, EQ: AsFid + 'static, WAIT, WAITFD> CounterBuilder<'a, T, EQ, WAIT, WAITFD> {
     
     /// Sets the type of events to count
     /// 
@@ -257,7 +257,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     /// Sets the underlying low-level waiting object to none.
     /// 
     /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_NONE`.
-    pub fn wait_none(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNone, cntroptions::Off> {
+    pub fn wait_none(mut self) -> CounterBuilder<'a, T, EQ, cntroptions::WaitNone, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::None);
 
         CounterBuilder {
@@ -271,7 +271,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     /// Sets the underlying low-level waiting object to FD.
     /// 
     /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_FD`.
-    pub fn wait_fd(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::On> {
+    pub fn wait_fd(mut self) -> CounterBuilder<'a, T, EQ, cntroptions::WaitRetrieve, cntroptions::On> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         CounterBuilder {
@@ -285,7 +285,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     /// Sets the underlying low-level waiting object to [crate::sync::WaitSet] `set`.
     /// 
     /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_SET` and `fi_cntr_attr::wait_set` to `set`.
-    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
+    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CounterBuilder<'a, T, EQ, cntroptions::WaitNoRetrieve, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         CounterBuilder {
@@ -299,7 +299,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     /// Sets the underlying low-level waiting object to Mutex+Conditional.
     /// 
     /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_MUTEX_COND`.
-    pub fn wait_mutex(mut self) -> CounterBuilder<'a, T, cntroptions::WaitRetrieve, cntroptions::Off> {
+    pub fn wait_mutex(mut self) -> CounterBuilder<'a, T, EQ, cntroptions::WaitRetrieve, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         CounterBuilder {
@@ -313,7 +313,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     /// Indicates that the counter will wait without a wait object but instead yield on every wait.
     /// 
     /// Corresponds to setting `fi_cntr_attr::wait_obj` to `FI_WAIT_YIELD`.
-    pub fn wait_yield(mut self) -> CounterBuilder<'a, T, cntroptions::WaitNoRetrieve, cntroptions::Off> {
+    pub fn wait_yield(mut self) -> CounterBuilder<'a, T, EQ, cntroptions::WaitNoRetrieve, cntroptions::Off> {
         self.cntr_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         CounterBuilder {
@@ -327,7 +327,7 @@ impl<'a, T, WAIT, WAITFD> CounterBuilder<'a, T, WAIT, WAITFD> {
     /// Sets the context to be passed to the `Counter`.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_cntr_open`.
-    pub fn context(self, ctx: &'a mut T) -> CounterBuilder::<'a, T, WAIT, WAITFD> {
+    pub fn context(self, ctx: &'a mut T) -> CounterBuilder::<'a, T, EQ, WAIT, WAITFD> {
         CounterBuilder {
             cntr_attr: self.cntr_attr,
             domain: self.domain,

@@ -15,21 +15,20 @@ pub(crate) struct DomainImplBase<EQ> {
 
 
 
+pub(crate) trait DomainImplT {
+    fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error>;
+}
+
+impl<EQ: AsFid> DomainImplT for DomainImplBase<EQ> {
+    fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
+       self.unmap_key(key) 
+    }
+}
+
 //================== Domain (fi_domain) ==================//
 pub(crate) type DomainImpl = DomainImplBase<EventQueueImpl>;
-// pub(crate) struct DomainImpl {
-//     pub(crate) c_domain: *mut libfabric_sys::fid_domain,
-//     fid: OwnedFid,
-//     pub(crate) domain_attr: DomainAttr,
-//     pub(crate) _eq_rc: OnceCell<(Rc<AsyncEventQueueImpl>, bool)>,
-//     _fabric_rc: Rc<FabricImpl>,
-// }
 
 impl<EQ: AsFid> DomainImplBase<EQ> {
-
-    // pub(crate) fn handle(&self) -> DomainRawFid {
-    //     self.c_domain.as_raw_typed_fid()
-    // }
 
     pub(crate) fn new<T0, E>(fabric: &Rc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_domain: DomainRawFid = std::ptr::null_mut();

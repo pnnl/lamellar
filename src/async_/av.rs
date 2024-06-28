@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
-use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorSetBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, eqoptions::EqConfig, WaitRetrievable, FdRetrievable};
+use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, eqoptions::EqConfig, WaitRetrievable, FdRetrievable, MappedAddress};
+use crate::av::AddressVectorImplT;
+use super::{eq::{AsyncEventQueueImpl, EventQueue}, domain::Domain, AsyncCtx};
 
-use super::{eq::{AsyncEventQueueImpl, EventQueue}, domain::Domain, AsyncCtx, mr::MappedAddress};
 
 pub(crate) type AsyncAddressVectorImpl = AddressVectorImplBase<AsyncEventQueueImpl>;
-pub type AsyncAddressVectorSet = AddressVectorSetBase<AsyncEventQueueImpl>;
 
 impl AsyncAddressVectorImpl {
     pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Vec<RawMappedAddress>), crate::error::Error> { // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async

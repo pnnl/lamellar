@@ -113,6 +113,7 @@ pub struct EventQueueImpl {
     pub(crate) _fabric_rc: Rc<FabricImpl>,
 }
 
+
 pub trait EventQueueImplT {
     fn read(&self) -> Result<Event<usize>, crate::error::Error>;
 
@@ -219,7 +220,7 @@ pub(crate) trait BindEqImpl<EQ, CQ> {
     fn bind_mc(&self, mc: &Rc<MulticastGroupCollectiveImplBase<EQ, CQ>>);
 }
 
-impl BindEqImpl<EventQueueImpl, CompletionQueueImpl<EventQueueImpl>> for EventQueueImpl {
+impl BindEqImpl<EventQueueImpl, CompletionQueueImpl> for EventQueueImpl {
     fn bind_mr(&self, mr: &Rc<MemoryRegionImplBase<EventQueueImpl>>) {
         self.bind_mr(mr);
     }
@@ -228,7 +229,7 @@ impl BindEqImpl<EventQueueImpl, CompletionQueueImpl<EventQueueImpl>> for EventQu
         self.bind_av(av);
     }
 
-    fn bind_mc(&self, mc: &Rc<MulticastGroupCollectiveImplBase<EventQueueImpl, CompletionQueueImpl<EventQueueImpl>>>) {
+    fn bind_mc(&self, mc: &Rc<MulticastGroupCollectiveImplBase<EventQueueImpl, CompletionQueueImpl>>) {
         self.bind_mc(mc);
     }
 }

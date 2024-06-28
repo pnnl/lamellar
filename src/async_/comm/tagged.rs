@@ -1,9 +1,10 @@
 
 
-use crate::{FI_ADDR_UNSPEC, infocapsoptions::{SendMod, TagCap, RecvMod}, cq::SingleCompletionFormat, mr::DataDescriptor, async_::{ep::Endpoint, AsyncCtx, mr::MappedAddress}, fid::AsRawTypedFid};
+use crate::{FI_ADDR_UNSPEC, infocapsoptions::{SendMod, TagCap, RecvMod}, cq::SingleCompletionFormat, mr::DataDescriptor, async_::{ep::Endpoint, AsyncCtx}, fid::AsRawTypedFid, enums::{TaggedSendMsgOptions, TaggedRecvMsgOptions}, MappedAddress};
 
 impl<E: TagCap + RecvMod> Endpoint<E> {
-
+    
+    #[inline]
     async fn trecv_async_impl<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletionFormat, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         let raw_addr = if let Some(addr) = mapped_addr {
@@ -41,6 +42,7 @@ impl<E: TagCap + RecvMod> Endpoint<E> {
         self.trecv_async_impl(buf, desc, None, tag, ignore, Some((context as *mut T0).cast())).await
     }
 
+    #[inline]
 	async fn trecvv_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], src_mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletionFormat, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
         let raw_addr = if let Some(addr) = src_mapped_addr {
@@ -78,15 +80,35 @@ impl<E: TagCap + RecvMod> Endpoint<E> {
         self.trecvv_async_impl(iov, desc, None, tag, ignore, Some((context as *mut T0).cast())).await
     }
 
-//     pub async fn trecvmsg_async(&self, msg: &crate::msg::MsgTagged, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> {
-//         let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
-    
-//         check_error(err)
-//     }
+    pub async fn trecvmsg_async(&self, msg: &mut crate::msg::MsgTagged, options: TaggedRecvMsgOptions) -> Result<SingleCompletionFormat, crate::error::Error> {
+        let real_user_ctx = msg.c_msg_tagged.context;
+        let mut async_ctx = AsyncCtx{user_ctx: 
+            if real_user_ctx.is_null() {
+                None
+            }
+            else {
+                Some(real_user_ctx)
+            }
+        };
+
+        msg.c_msg_tagged.context = (&mut async_ctx as *mut AsyncCtx).cast();
+        
+        let err = unsafe{ libfabric_sys::inlined_fi_trecvmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
+        
+        if err == 0 {
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+            let res =  crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            msg.c_msg_tagged.context = real_user_ctx;
+            return res;
+        } 
+
+        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+    }
 }
 
 impl<E: TagCap + SendMod> Endpoint<E> {
 
+    #[inline]
     async fn tsend_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag:u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletionFormat, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         let raw_addr = if let Some(addr) = mapped_addr {
@@ -160,18 +182,31 @@ impl<E: TagCap + SendMod> Endpoint<E> {
         self.tsendv_async_impl(iov, desc, None, tag, Some((context as *mut T0).cast())).await
     }
 
-    //// [TODO]
-    // pub async fn tsendmsg_async(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> {
-    //     let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
-    //     if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-    //         let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-    //         AsyncTransferCq{cq}.await?;
-    //     } 
+    pub async fn tsendmsg_async(&self, msg: &mut crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<SingleCompletionFormat, crate::error::Error> {
+        let real_user_ctx = msg.c_msg_tagged.context;
+        let mut async_ctx = AsyncCtx{user_ctx: 
+            if real_user_ctx.is_null() {
+                None
+            }
+            else {
+                Some(real_user_ctx)
+            }
+        };
 
-    //     check_error(err)
-    // }
+        msg.c_msg_tagged.context = (&mut async_ctx as *mut AsyncCtx).cast();
 
+        let err = unsafe{ libfabric_sys::inlined_fi_tsendmsg(self.as_raw_typed_fid(), &msg.c_msg_tagged as *const libfabric_sys::fi_msg_tagged, options.get_value()) };
+        if err == 0 {
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+            let res =  crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            msg.c_msg_tagged.context = real_user_ctx;
+            return res;
+        } 
+
+        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+    }
+
+    #[inline]
     async fn tsenddata_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&MappedAddress>, tag: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletionFormat, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         let raw_addr = if let Some(addr) = mapped_addr {

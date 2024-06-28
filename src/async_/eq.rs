@@ -2,7 +2,7 @@ use std::{rc::{Rc, Weak}, collections::HashMap, cell::RefCell, ops::Deref, marke
 
 use async_io::Async;
 
-use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, BindEqImpl, EventQueueImplT}, error::Error, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid}, eqoptions::{self, Options}, FdRetrievable, WaitRetrievable, mr::MemoryRegionImplBase, av::AddressVectorImplBase, comm::collective::MulticastGroupCollectiveImplBase, async_::AsyncCtx};
+use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, BindEqImpl, EventQueueImplT}, error::Error, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, eqoptions::{self, Options}, FdRetrievable, WaitRetrievable, mr::MemoryRegionImplBase, av::AddressVectorImplBase, comm::collective::MulticastGroupCollectiveImplBase, async_::AsyncCtx};
 use super::{mr::AsyncMemoryRegionImpl, av::AsyncAddressVectorImpl, comm::collective::AsyncMulticastGroupCollectiveImpl, cq::AsyncCompletionQueueImpl};
 
 pub type EventQueue<T> = EventQueueBase<T, AsyncEventQueueImpl>;
@@ -103,15 +103,15 @@ impl AsyncEventQueueImpl {
     }
 
     pub(crate) fn bind_mr(&self, mr: &Rc<AsyncMemoryRegionImpl>) {
-        self.mrs.borrow_mut().insert(mr.as_fid().as_raw_fid(), Rc::downgrade(mr));
+        self.mrs.borrow_mut().insert(mr.as_raw_fid(), Rc::downgrade(mr));
     }
 
     pub(crate) fn bind_av(&self, av: &Rc<AsyncAddressVectorImpl>) {
-        self.avs.borrow_mut().insert(av.as_fid().as_raw_fid(), Rc::downgrade(av));
+        self.avs.borrow_mut().insert(av.as_raw_fid(), Rc::downgrade(av));
     }
 
     pub(crate) fn bind_mc(&self, mc: &Rc<AsyncMulticastGroupCollectiveImpl>) {
-        self.mcs.borrow_mut().insert(mc.as_fid().as_raw_fid(), Rc::downgrade(mc));
+        self.mcs.borrow_mut().insert(mc.as_raw_fid(), Rc::downgrade(mc));
     }
 }
 
@@ -253,6 +253,15 @@ impl AsRawFid for AsyncEventQueueImpl {
     fn as_raw_fid(&self) -> RawFid {
        self.c_eq.as_raw_fid()
     }
+}
+
+impl AsRawTypedFid for AsyncEventQueueImpl {
+    type Output = EqRawFid;
+
+    fn as_raw_typed_fid(&self) -> Self::Output {
+       self.c_eq.as_raw_typed_fid()
+    }
+    
 }
 
 impl crate::BindImpl for AsyncEventQueueImpl {}

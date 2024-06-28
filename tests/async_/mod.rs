@@ -1,7 +1,7 @@
 use core::panic;
 use std::time::Instant;
 
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cqoptions::{CqConfig,Options}, domain, ep::Address, eqoptions::EqConfig, fabric::{self, Fabric}, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder}, domain::{Domain, DomainBuilder}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, mr::{MemoryRegion, MemoryRegionBuilder, MappedAddress}}, WaitRetrievable, FdRetrievable};
+use libfabric::{cntr::Counter, cntroptions::CntrConfig, cqoptions::{CqConfig,Options}, ep::Address, eqoptions::EqConfig, fabric::{self, Fabric}, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder}, domain::{Domain, DomainBuilder}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, mr::{MemoryRegion, MemoryRegionBuilder}}, WaitRetrievable, FdRetrievable, MappedAddress};
 pub enum CompMeth {
     // Spin,
     // Sread,
@@ -279,8 +279,8 @@ pub fn ft_alloc_ep_res<E, EQ: EqConfig + WaitRetrievable + FdRetrievable +'stati
                 
                 
                 let av = match info.get_domain_attr().get_av_type() {
-                    libfabric::enums::AddressVectorType::Unspec => AddressVectorBuilder::new(domain, &eq),
-                    _ => AddressVectorBuilder::new(domain, &eq).type_(info.get_domain_attr().get_av_type()),
+                    libfabric::enums::AddressVectorType::Unspec => AddressVectorBuilder::new(domain, eq),
+                    _ => AddressVectorBuilder::new(domain, eq).type_(info.get_domain_attr().get_av_type()),
                 }.count(1)
                 .build()
                 .unwrap();
@@ -745,28 +745,27 @@ pub fn ft_init_cq_data<E>(info: &InfoEntry<E>) -> u64 {
 
 #[allow(clippy::too_many_arguments)]
 pub fn ft_post_rma_inject<CQ: CqConfig, E: RmaWriteOnlyCap>(gl_ctx: &mut TestsGlobalCtx, rma_op: &RmaOp, offset: usize, size: usize, remote: &RmaInfo, ep: &Endpoint<E>, tx_cq: &CompletionQueue<CQ>) {
-    todo!();
-    // let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
-    // match rma_op {
+    let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
+    match rma_op {
         
-    //     RmaOp::RMA_WRITE => {
-    //         let addr = remote.mem_address() + offset as u64;
-    //         let key = remote.key();
-    //         let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
-    //         unsafe{ ft_post!(inject_write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, fi_addr, addr, key); }
-    //     }
+        RmaOp::RMA_WRITE => {
+            let addr = remote.mem_address() + offset as u64;
+            let key = remote.key();
+            let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
+            unsafe{ ft_post!(inject_write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, fi_addr, addr, key); }
+        }
 
-    //     RmaOp::RMA_WRITEDATA => {
-    //         let addr = remote.mem_address() + offset as u64;
-    //         let key = remote.key();
-    //         let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
-    //         let remote_cq_data = gl_ctx.remote_cq_data;
-    //         unsafe{ ft_post!(inject_writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, remote_cq_data, fi_addr, addr, key); }
-    //     }
-    //     RmaOp::RMA_READ => {
-    //         panic!("ft_post_rma_inject does not support read");
-    //     }
-    // }
+        RmaOp::RMA_WRITEDATA => {
+            let addr = remote.mem_address() + offset as u64;
+            let key = remote.key();
+            let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
+            let remote_cq_data = gl_ctx.remote_cq_data;
+            unsafe{ ft_post!(inject_writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, remote_cq_data, fi_addr, addr, key); }
+        }
+        RmaOp::RMA_READ => {
+            panic!("ft_post_rma_inject does not support read");
+        }
+    }
 
     gl_ctx.tx_cq_cntr+=1;
 }
@@ -775,33 +774,32 @@ pub fn ft_post_rma_inject<CQ: CqConfig, E: RmaWriteOnlyCap>(gl_ctx: &mut TestsGl
 pub fn ft_post_rma<CQ: CqConfig, E: RmaDefaultCap>(gl_ctx: &mut TestsGlobalCtx, rma_op: &RmaOp, offset: usize, size: usize, remote: &RmaInfo, ep: &Endpoint<E>, data_desc: &mut impl libfabric::mr::DataDescriptor, tx_cq: &CompletionQueue<CQ>) {
     
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
-    todo!();
-    // match rma_op {
-    //     RmaOp::RMA_WRITE => {
-    //         let addr = remote.mem_address() + offset as u64;
-    //         let key = remote.key();
-    //         let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
-    //         // unsafe{ ft_post!(write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
-    //         unsafe{ async_std::task::block_on(async {ep.write_async(buf, data_desc, fi_addr, addr, key).await.unwrap();}) }
-    //     }
+    match rma_op {
+        RmaOp::RMA_WRITE => {
+            let addr = remote.mem_address() + offset as u64;
+            let key = remote.key();
+            let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
+            // unsafe{ ft_post!(write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
+            unsafe{ async_std::task::block_on(async {ep.write_async(buf, data_desc, fi_addr, addr, key).await.unwrap();}) }
+        }
 
-    //     RmaOp::RMA_WRITEDATA => {
-    //         let addr = remote.mem_address() + offset as u64;
-    //         let key = remote.key();
-    //         let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
-    //         let remote_cq_data = gl_ctx.remote_cq_data;
-    //         // unsafe{ ft_post!(writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, remote_cq_data, fi_addr, addr, key); }
-    //         unsafe{ async_std::task::block_on(async {ep.writedata_async(buf, data_desc, remote_cq_data, fi_addr, addr, key).await.unwrap();}) }
-    //     }
+        RmaOp::RMA_WRITEDATA => {
+            let addr = remote.mem_address() + offset as u64;
+            let key = remote.key();
+            let buf = &gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
+            let remote_cq_data = gl_ctx.remote_cq_data;
+            // unsafe{ ft_post!(writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, remote_cq_data, fi_addr, addr, key); }
+            unsafe{ async_std::task::block_on(async {ep.writedata_async(buf, data_desc, remote_cq_data, fi_addr, addr, key).await.unwrap();}) }
+        }
         
-    //     RmaOp::RMA_READ => {
-    //         let addr = remote.mem_address() + offset as u64;
-    //         let key = remote.key();
-    //         let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
-    //         let _remote_cq_data = gl_ctx.remote_cq_data;
-    //         unsafe{ ft_post!(read, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
-    //     }
-    // }
+        RmaOp::RMA_READ => {
+            let addr = remote.mem_address() + offset as u64;
+            let key = remote.key();
+            let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index+offset..gl_ctx.tx_buf_index+offset+size];
+            let _remote_cq_data = gl_ctx.remote_cq_data;
+            unsafe{ ft_post!(read, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
+        }
+    }
 }
 
 pub fn msg_post_inject<CQ: CqConfig, E: MsgDefaultCap>(tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
@@ -816,28 +814,28 @@ pub fn msg_post_inject<CQ: CqConfig, E: MsgDefaultCap>(tx_seq: &mut u64, tx_cq_c
 pub async fn msg_post<CQ: CqConfig, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
     match op {
         SendOp::MsgSend => {
-            todo!()
-            // let iov = libfabric::iovec::IoVec::from_slice(base);
-            // let msg = 
-            //     if let Some(fi_addr) = remote_address {
+            let iov = libfabric::iovec::IoVec::from_slice(base);
+            let mut msg = 
+                if let Some(fi_addr) = remote_address {
 
-            //         if let Some(mr_desc) = data_desc.as_mut() {
-            //             libfabric::msg::Msg::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_addr)
-            //         }
-            //         else {
-            //             libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_addr)
-            //         }
-            //     }
-            //     else if let Some(mr_desc) = data_desc.as_mut() {
-            //         libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc))
-            //     }
-            //     else {
-            //         libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut [default_desc()])
-            //     };
-            // let msg_ref = &msg;
-            // let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
+                    if let Some(mr_desc) = data_desc.as_mut() {
+                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_addr)
+                    }
+                    else {
+                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_addr)
+                    }
+                }
+                else if let Some(mr_desc) = data_desc.as_mut() {
+                    libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc))
+                }
+                else {
+                    libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut [default_desc()])
+                };
+            let msg_ref = &mut msg;
+            let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
             
             // ft_post!(sendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
+            ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag);
         }
         SendOp::Send => {
 
@@ -934,29 +932,28 @@ pub fn tagged_post_inject<CQ: CqConfig,E: TagDefaultCap>(tx_seq: &mut u64, tx_cq
 pub async fn tagged_post<CQ: CqConfig,E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>,  ft_tag: u64, tx_cq: &CompletionQueue<CQ>, ep: &Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
     match op {
         TagSendOp::TagMsgSend => {
-            todo!();
-            // let iov = libfabric::iovec::IoVec::from_slice(base);
-            // let msg = 
-            //     if let Some(fi_address) = remote_address {
+            let iov = libfabric::iovec::IoVec::from_slice(base);
+            let mut msg = 
+                if let Some(fi_address) = remote_address {
 
-            //         if let Some(mr_desc) = data_desc.as_mut() {
-            //             libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_address, 0, *tx_seq, 0)
-            //         }
-            //         else {
-            //             libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_address, 0, *tx_seq, 0)
-            //         }
-            //     }
-            //     else if let Some(mr_desc) = data_desc.as_mut() {
-            //         libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), 0, *tx_seq, 0)
-            //     }
-            //     else {
-            //         libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), &mut [default_desc()], 0, *tx_seq, 0)
-            //     };
-            // let msg_ref = &msg;
-            // let flag = libfabric::enums::TaggedSendMsgOptions::new().transmit_complete();
+                    if let Some(mr_desc) = data_desc.as_mut() {
+                        libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_address, 0, *tx_seq, 0)
+                    }
+                    else {
+                        libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_address, 0, *tx_seq, 0)
+                    }
+                }
+                else if let Some(mr_desc) = data_desc.as_mut() {
+                    libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), 0, *tx_seq, 0)
+                }
+                else {
+                    libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), &mut [default_desc()], 0, *tx_seq, 0)
+                };
+            let msg_ref = &mut msg;
+            let flag = libfabric::enums::TaggedSendMsgOptions::new().transmit_complete();
             
             // let var_name = ft_post!(tsendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
-            // ep.tsendmsg_async(msg_ref, flag).await.unwrap();
+            ep.tsendmsg_async(msg_ref, flag).await.unwrap();
         }
         TagSendOp::TagSend => {
             // let op_tag = if ft_tag != 0 {ft_tag} else {*tx_seq};
@@ -1055,7 +1052,6 @@ pub async fn ft_post_tx<CQ: CqConfig, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx
             msg_post(SendOp::Send, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, data_desc, buf, data).await;
         }
         EndpointCaps::Tagged(ep) => {
-            // todo!();
             tagged_post(TagSendOp::TagSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, data_desc, buf, data).await;
         }
     }
@@ -1474,8 +1470,7 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
     unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut libfabric::iovec::RmaIoVec as *mut u8,std::mem::size_of::<libfabric::iovec::RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
     let mr_key = unsafe{MemoryRegionKey::from_bytes(&gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index+len], domain)};
     let mapped_key = mr_key.into_mapped(domain).unwrap();
-    todo!();
-    // let peer_info = RmaInfo::new(rma_iov.get_address(), rma_iov.get_len(), mapped_key);
+    let peer_info = RmaInfo::new(rma_iov.get_address(), rma_iov.get_len(), mapped_key);
 
     match rx_cq {
         // CqType::Spin(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),
@@ -1486,8 +1481,7 @@ pub fn ft_exchange_keys<CNTR: CntrConfig + libfabric::Waitable, E, M:MsgDefaultC
     }
     
     ft_sync(ep, gl_ctx,  tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc);
-    todo!();
-    // peer_info
+    peer_info
 }
 
 pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, node: String, service: String) -> (InfoWithCaps<M, T>, fabric::Fabric, EventQueue<EventQueueOptions>, PassiveEndpointCaps<M, T>) {
@@ -1600,7 +1594,7 @@ pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M,
 #[allow(clippy::too_many_arguments)]
 pub async fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>) {
 
-    
+    println!("Finalizing {}", gl_ctx.rx_seq);
     let base = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
 
     match ep {
@@ -1626,6 +1620,8 @@ pub async fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDef
 
     // ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
     ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
+    println!("Done Finalizing");
+
 
 }
 

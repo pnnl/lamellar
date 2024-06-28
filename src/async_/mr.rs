@@ -1,7 +1,6 @@
-use crate::MappedAddressBase;
+use crate::MappedAddress;
 use crate::fid::{AsRawTypedFid, OwnedMrFid};
 use crate::iovec::IoVec;
-use crate::mr::MappedMemoryRegionKeyBase;
 use crate::mr::MemoryRegionAttr;
 use crate::eq::Event;
 use crate::enums::MrMode;
@@ -13,8 +12,6 @@ use super::eq::AsyncEventQueueImpl;
 
 
 pub type MemoryRegion = MemoryRegionBase<AsyncEventQueueImpl>;
-pub type MappedAddress = MappedAddressBase<AsyncEventQueueImpl>;
-pub type MappedMemoryRegionKey = MappedMemoryRegionKeyBase<AsyncEventQueueImpl>;
 pub(crate) type AsyncMemoryRegionImpl = MemoryRegionImplBase<AsyncEventQueueImpl>;
 
 impl AsyncMemoryRegionImpl {

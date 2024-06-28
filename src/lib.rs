@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::OnceCell};
 
-use av::AddressVectorImplBase;
+use av::{AddressVectorImplBase, AddressVectorImplT};
 use eq::EventQueueImpl;
 use mr::DataDescriptor;
 
@@ -39,19 +39,31 @@ pub type RawMappedAddress = libfabric_sys::fi_addr_t;
 /// 
 /// Note that other objects that it will extend the respective [`crate::av::AddressVector`]'s (if any) lifetime until they
 /// it is dropped.
-pub type MappedAddress = MappedAddressBase<EventQueueImpl>;
 #[repr(C)]
-pub struct MappedAddressBase<EQ> {
+pub struct MappedAddress {
     addr: libfabric_sys::fi_addr_t,
-    av: OnceCell<Rc<AddressVectorImplBase<EQ>>>,
+    av: OnceCell<Rc<dyn AddressVectorImplT>>,
 }
 
-impl<EQ> MappedAddressBase<EQ> {
+impl MappedAddress {
 
-    pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: &Rc<AddressVectorImplBase<EQ>>) -> Self {
+    pub(crate) fn from_raw_addr_trait(addr: RawMappedAddress, av: &Rc<dyn AddressVectorImplT>) -> Self {
         let avcell = OnceCell::new();
         
         if avcell.set(av.clone()).is_err() {
+            panic!("MappedAddress is already set");
+        } 
+        
+        Self {
+            addr,
+            av: avcell,
+        }
+    }
+    
+    pub(crate) fn from_raw_addr<EQ: 'static>(addr: RawMappedAddress, av: &Rc<AddressVectorImplBase<EQ>>) -> Self {
+        let avcell = OnceCell::new();
+        
+        if avcell.set(av.clone() as Rc<dyn AddressVectorImplT>).is_err() {
             panic!("MappedAddress is already set");
         } 
         
@@ -129,7 +141,7 @@ pub fn rx_addr(addr: &MappedAddress, rx_index: i32, rx_ctx_bits: i32) -> Option<
         None
     }
     else {
-        Some(MappedAddress::from_raw_addr(ret, addr.av.get().unwrap()))
+        Some(MappedAddress::from_raw_addr_trait(ret, addr.av.get().unwrap()))
     }
 }
 
