@@ -17,7 +17,8 @@ impl<E: RmaCap + ReadMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            return cq.async_transfer_wait(&mut async_ctx).await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -54,7 +55,8 @@ impl<E: RmaCap + ReadMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            return cq.async_transfer_wait(&mut async_ctx).await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -97,7 +99,7 @@ impl<E: RmaCap + ReadMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            let res =  crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            let res =  cq.async_transfer_wait(&mut async_ctx).await;
             msg.c_msg_rma.context = real_user_ctx;
             return res;
         } 
@@ -122,7 +124,8 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            return cq.async_transfer_wait(&mut async_ctx).await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -158,7 +161,8 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            return cq.async_transfer_wait(&mut async_ctx).await;
+            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -199,7 +203,7 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            let res =  crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            let res =  cq.async_transfer_wait(&mut async_ctx).await;
             msg.c_msg_rma.context = real_user_ctx;
             return res;
         } 
@@ -221,7 +225,8 @@ impl<E: RmaCap + WriteMod> Endpoint<E> {
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
             let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
+            return cq.async_transfer_wait(&mut async_ctx).await;
         } 
 
         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )

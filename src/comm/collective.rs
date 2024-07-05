@@ -9,7 +9,7 @@ use crate::enums::JoinOptions;
 use crate::ep::Address;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
-use crate::eq::BindEqImpl;
+// use crate::eq::BindEqImpl;
 use crate::eq::EventQueueImpl;
 use crate::error::Error;
 use crate::MappedAddress;
@@ -27,12 +27,12 @@ use crate::utils::to_fi_datatype;
 
 use super::message::extract_raw_addr_and_ctx;
 
-impl<E, EQ, CQ> EndpointBase<E, EQ, CQ> where E: CollCap, EQ: AsRawFid + BindEqImpl<EQ, CQ>, CQ: AsRawFid {
+impl<E, EQ, CQ> EndpointBase<E, EQ, CQ> where E: CollCap, EQ: AsRawFid, CQ: AsRawFid {
 
     #[inline]
     pub(crate) fn join_impl<T>(&self, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
         let mc = MulticastGroupCollectiveBase::new(self, addr, options.get_value(), context)?;
-        self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner); 
+        // self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner); 
         Ok(mc)
     }
 
@@ -47,7 +47,7 @@ impl<E, EQ, CQ> EndpointBase<E, EQ, CQ> where E: CollCap, EQ: AsRawFid + BindEqI
     #[inline]
     fn join_collective_impl<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context : Option<&mut T>) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
         let mc = MulticastGroupCollectiveBase::new_collective::<E, T>(self, coll_mapped_addr, set, options.get_value(), context)?;
-        self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner);
+        // self.inner.eq.get().expect("Endpoint is not bound to an Event Queue").bind_mc(&mc.inner);
         Ok(mc)
     }
 
@@ -76,6 +76,7 @@ pub struct MulticastGroupCollectiveImplBase<EQ, CQ>  {
 
 impl<EQ: AsRawFid, CQ: AsRawFid> MulticastGroupCollectiveBase<EQ, CQ> {
 
+    #[allow(dead_code)]
     pub(crate) fn from_impl(mc_impl: &Rc<MulticastGroupCollectiveImplBase<EQ, CQ>>) -> Self {
         Self {
             inner: mc_impl.clone(),

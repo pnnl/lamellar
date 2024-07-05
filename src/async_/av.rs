@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, eqoptions::EqConfig, WaitRetrievable, FdRetrievable, MappedAddress};
-use crate::av::AddressVectorImplT;
 use super::{eq::{AsyncEventQueueImpl, EventQueue}, domain::Domain, AsyncCtx};
 
 
@@ -32,7 +31,8 @@ impl AsyncAddressVectorImpl {
                 panic!("Calling insert_async on unbound AV");
             };
 
-            let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_AV_COMPLETE}>{eq: eq.clone(), req_fid: self.as_raw_fid(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
+            // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_AV_COMPLETE}>::new(self.as_raw_fid(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
+            let res = eq.async_event_wait::<{libfabric_sys::FI_AV_COMPLETE}>(self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
             if let Event::AVComplete(ref entry) = res {
                 fi_addresses.truncate(entry.data() as usize);
             }
@@ -183,7 +183,8 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
     /// the selected [EventQueue].
     pub fn build(self) -> Result<AddressVector, crate::error::Error> {
         let av = AddressVector::new(self.domain, self.av_attr, self.ctx)?;
-        av.inner.bind(&self.eq)?; self.eq.bind_av(&av.inner); Ok(av)
+        av.inner.bind(&self.eq)?; 
+        Ok(av)
     }
     
 }

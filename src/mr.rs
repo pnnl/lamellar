@@ -131,7 +131,6 @@ impl DataDescriptor for DefaultMemDesc {
 // }
 
 //================== Memory Region (fi_mr) ==================//
-pub(crate) type MemoryRegionImpl = MemoryRegionImplBase<EventQueueImpl>;
 
 pub(crate) struct MemoryRegionImplBase<EQ> {
     pub(crate) c_mr: OwnedMrFid,
@@ -255,6 +254,7 @@ impl<EQ: AsRawFid> MemoryRegionImplBase<EQ> {
         check_error(err.try_into().unwrap())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn bind_ep<CQ: AsRawFid>(&self, ep: &Rc<crate::ep::EndpointImplBase<EQ, CQ>>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0) } ;
         

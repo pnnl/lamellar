@@ -1,4 +1,5 @@
 pub mod sync_; // Public to supress lint warnings (unused function)
+#[cfg(any(feature="use-async-std", feature="use-tokio"))]
 pub mod async_; // Public to supress lint warnings (unused function)
 
 pub mod common; // Public to supress lint warnings (unused function)
@@ -6,7 +7,7 @@ pub mod common; // Public to supress lint warnings (unused function)
 // Public to supress lint warnings (unused function)
 use common::IP;
 
-use prefix::{ft_finalize, CompMeth, HintsCaps};
+use prefix::{ft_finalize, CompMeth, HintsCaps, define_test, call};
 
 use sync_ as prefix;
 
@@ -19,12 +20,11 @@ use sync_ as prefix;
 // 4. On the client (e.g. pp_client_msg) change  ft_client_connect node(<ip>) and service(<port>) to service and port of the copied ones
 // 5. Run client (e.g. cargo test pp_client_msg -- --ignored --nocapture) 
 
-#[ignore]
-#[test]
-fn pp_server_rdm_cntr() {
+
+define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
     gl_ctx.options = prefix::FT_OPT_RX_CNTR | prefix::FT_OPT_TX_CNTR;
-    todo!();
+    // todo!();
     // gl_ctx.comp_method = CompMeth::Sread;
 
     let mut ep_attr = libfabric::ep::EndpointAttr::new();
@@ -103,16 +103,14 @@ fn pp_server_rdm_cntr() {
             ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
-}
+});
     
 
 
-#[ignore]
-#[test]
-fn pp_client_rdm_cntr() {
+define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
     gl_ctx.options = prefix::FT_OPT_RX_CNTR | prefix::FT_OPT_TX_CNTR;
-    todo!();
+    // todo!();
     // gl_ctx.comp_method = CompMeth::Sread;
 
     let mut ep_attr = libfabric::ep::EndpointAttr::new();
@@ -191,4 +189,4 @@ fn pp_client_rdm_cntr() {
             ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
-}
+});

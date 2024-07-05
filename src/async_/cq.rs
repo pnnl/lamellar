@@ -1,10 +1,13 @@
-use std::{ops::Deref, rc::Rc, marker::PhantomData};
+use std::{ops::Deref, rc::Rc, marker::PhantomData, future::Future, task::ready};
 
-use async_io::Async;
+#[cfg(feature="use-async-std")]
+use async_io::Async as Async;
+#[cfg(feature="use-tokio")]
+use tokio::io::unix::AsyncFd as Async;
 
-use crate::{cq::{CompletionQueueImpl, SingleCompletionFormat, CompletionFormat, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, AsRawTypedFid, RawFid, AsRawFid}, cqoptions::{CqConfig, self, Options}, FdRetrievable, MappedAddress, Waitable, WaitRetrievable, enums::WaitObjType};
+use crate::{cq::{CompletionQueueImpl, SingleCompletionFormat, CompletionFormat, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, RawFid, AsRawFid}, cqoptions::{CqConfig, self, Options}, FdRetrievable, MappedAddress, Waitable, WaitRetrievable, enums::WaitObjType};
 
-use super::{AsyncCtx, eq::AsyncEventQueueImpl, domain::{AsyncDomainImpl, Domain}};
+use super::{AsyncCtx, domain::{AsyncDomainImpl, Domain}};
 macro_rules! alloc_cq_entry {
     ($format: expr, $count: expr) => {
         match $format {
@@ -45,11 +48,11 @@ macro_rules! alloc_cq_entry {
     };
 }
 
-macro_rules! read_cq_entry_into {
-    ($read_fn: expr, $cq: expr, $count: expr, $buff: expr, $( $x:ident),*) => {
-        unsafe{ $read_fn($cq, $buff, $count, $($x,)*)}
-    }
-}
+// macro_rules! read_cq_entry_into {
+//     ($read_fn: expr, $cq: expr, $count: expr, $buff: expr, $( $x:ident),*) => {
+//         unsafe{ $read_fn($cq, $buff, $count, $($x,)*)}
+//     }
+// }
 
 pub type CompletionQueue<T>  = CompletionQueueBase<T, AsyncCompletionQueueImpl>;
 
@@ -316,73 +319,124 @@ impl Deref for  AsyncCompletionQueueImpl {
     type Target = CompletionQueueImpl;
 
     fn deref(&self) -> &Self::Target {
-        self.base.as_ref()
+        self.get_inner()
     }
 }
 impl AsyncCompletionQueueImpl {
+
+    pub(crate) fn get_inner(&self) -> &CompletionQueueImpl {
+        self.base.get_ref()
+    }
 
     pub(crate) fn new<T0>(domain: &Rc<AsyncDomainImpl>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(Self {base:Async::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?).unwrap()})
     }
 
-    pub(crate) fn read_async<'a>(&'a self, buf: &'a mut CompletionFormat, count: usize) -> CqAsyncRead {
-        println!("Calling read async");
-        // println!("Custom backtrace: {}", Backtrace::force_capture());
-        CqAsyncRead{num_entries: count, buf, cq: self}
-        // let fut = match &mut buf {
-        //     CompletionFormat::Unspec(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-        //     CompletionFormat::Ctx(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-        //     CompletionFormat::Msg(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-        //     CompletionFormat::Data(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-        //     CompletionFormat::Tagged(data) => {CqAsyncRead{num_entries: count, buf: data.as_mut_ptr().cast(), cq: self}},
-        // };
-        // let ret = fut.await?;
+    pub(crate) async fn read_async<'a>(&'a self, buf: &'a mut CompletionFormat, count: usize) -> Result<(), crate::error::Error>  {
+        // println!("Calling read async");
+        // CqAsyncRead{num_entries: count, buf, cq: self}
+        loop {
 
-        // *self.0.as_ref().completions.borrow_mut() += ret;
-        // println!("Complete: {}/{}", self.0.as_ref().completions.borrow(), self.0.as_ref().requests.borrow());
-
-        // match &mut buf {
-        //     CompletionFormat::Unspec(data) => unsafe{data.set_len(ret)},
-        //     CompletionFormat::Ctx(data) => unsafe{data.set_len(ret)},
-        //     CompletionFormat::Msg(data) => unsafe{data.set_len(ret)},
-        //     CompletionFormat::Data(data) => unsafe{data.set_len(ret)},
-        //     CompletionFormat::Tagged(data) => unsafe{data.set_len(ret)},
-        // }
-        // Ok(buf)
+            let (err, _guard) = if self._domain_rc.get_fabric_impl().trywait(&[&self]).is_err() {
+                // println!("Cannot block");
+                (self.read_in(count, buf), None)
+            }
+            else {
+                let _guard = self.base.readable().await.unwrap();
+                (self.read_in(count, buf), Some(_guard))
+            };
+            
+            match err {
+                Err(error) => {
+                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+                        return Err(error);
+                    }
+                    else {
+                        // println!("Will continue");
+                        #[cfg(feature = "use-tokio")]
+                        match _guard {
+                            Some(mut guard) => {if self.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                            None => {}
+                        }
+                        continue;
+                    }
+                },
+                Ok(len) => {      
+                    // println!("Actually read something {}", len);          
+                    match buf {
+                        CompletionFormat::Unspec(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Ctx(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Msg(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Data(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Tagged(data) => unsafe{data.set_len(len)},
+                    }
+                    return Ok(())
+                },
+            }
+        }
     }
 
-    // pub(crate) async fn async_transfer_cq_wait(&self, async_ctx: &mut AsyncCtx) -> Result<SingleCompletionFormat, crate::error::Error> {
-    //     loop {
-    //         if let Some(mut entry) = self.pending_entries.borrow_mut().remove(&(async_ctx as *mut AsyncCtx  as usize)) {
-    //             match entry {
-    //                 SingleCompletionFormat::Unspec(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-    //                 SingleCompletionFormat::Ctx(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-    //                 SingleCompletionFormat::Msg(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-    //                 SingleCompletionFormat::Data(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-    //                 SingleCompletionFormat::Tagged(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
-    //             }
-    //             return Ok(entry);
-    //         }
-
-    //         let mut buf = alloc_cq_entry!(*self.entry_buff.borrow(), 1);
-    //         self.read_async(&mut buf, 1).await?; 
+    pub(crate) async fn async_transfer_wait(&self, async_ctx: &mut AsyncCtx) -> Result<SingleCompletionFormat, crate::error::Error> {
+        let mut buf = alloc_cq_entry!(*self.entry_buff.borrow(), 1);
+        loop {
+            if let Some(mut entry) = self.pending_entries.borrow_mut().remove(&((async_ctx as *mut AsyncCtx) as usize)) {
+                match entry {
+                    SingleCompletionFormat::Unspec(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Ctx(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Msg(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Data(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                    SingleCompletionFormat::Tagged(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
+                }
+                // println!("Returning!");
+                return Ok(entry);
+            }
             
-    //         // let fut = self.cq.read_async(1);
-    //         // let fut = self.fut.get_or_insert_with(|| {Box::new(self.cq.read_async(1))});
-    //         // let mut pinned =  Box::pin(fut) ;
-    //         // let res = match pinned.as_mut().poll(cx) {
-    //         //     std::task::Poll::Ready(res) => res,
-    //         //     std::task::Poll::Pending => return std::task::Poll::Pending,
-    //         // }?;
-    //         match buf {
-    //             CompletionFormat::Unspec(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Unspec(e.clone()));},
-    //             CompletionFormat::Ctx(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Ctx(e.clone()));},
-    //             CompletionFormat::Msg(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Msg(e.clone()));},
-    //             CompletionFormat::Data(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Data(e.clone()));},
-    //             CompletionFormat::Tagged(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Tagged(e.clone()));},
-    //         }
-    //     }
-    // }
+            // println!("About to block, waiting for transfer");
+            
+            let (err, mut _guard) = if self._domain_rc.get_fabric_impl().trywait(&[&self]).is_err() {
+                // println!("Cannot block");
+                (self.read_in(1, &mut buf), None)
+            }
+            else {
+                let _guard = self.base.readable().await.unwrap();
+                (self.read_in(1, &mut buf), Some(_guard))
+            };
+                
+            match err {
+                Err(error) => {
+                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+                        return Err(error);
+                    }
+                    else {
+                        // println!("Will continue");
+                        #[cfg(feature = "use-tokio")]
+                        match _guard {
+                            Some(mut _guard) => {if self.pending_entries.borrow().is_empty() {_guard.clear_ready()}},
+                            None => {}
+                        }
+                        continue;
+                    }
+                },
+                Ok(len) => {      
+                    // println!("Actually read something {}", len);          
+                    match &mut buf {
+                        CompletionFormat::Unspec(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Ctx(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Msg(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Data(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Tagged(data) => unsafe{data.set_len(len)},
+                    }
+                },
+            }
+            match &buf {
+                CompletionFormat::Unspec(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Unspec(e.clone()));},
+                CompletionFormat::Ctx(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Ctx(e.clone()));},
+                CompletionFormat::Msg(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Msg(e.clone()));},
+                CompletionFormat::Data(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Data(e.clone()));},
+                CompletionFormat::Tagged(entries) => for e in entries.iter() {self.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Tagged(e.clone()));},
+            }
+        }
+    }
 }
 
 
@@ -394,6 +448,7 @@ pub(crate) struct AsyncTransferCq{
 }
 
 impl AsyncTransferCq {
+    #[allow(dead_code)]
     pub(crate) fn new(cq: Rc<AsyncCompletionQueueImpl>, ctx: usize) -> Self {
         let buf = alloc_cq_entry!(*cq.entry_buff.borrow(), 1); 
         Self {
@@ -405,13 +460,10 @@ impl AsyncTransferCq {
 }
 
 
-impl async_std::future::Future for AsyncTransferCq {
+impl Future for AsyncTransferCq {
     type Output=Result<SingleCompletionFormat, Error>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        // let mut buff = vec![1u8];
-        // self.poll_read(cx, &mut buff[..])
-        // let async_ctx_as_usize= &self.ctx as *const AsyncCtx as usize;
         let mut_self = self.get_mut();
         loop {
             if let Some(mut entry) = mut_self.cq.pending_entries.borrow_mut().remove(&mut_self.ctx) {
@@ -422,40 +474,52 @@ impl async_std::future::Future for AsyncTransferCq {
                     SingleCompletionFormat::Data(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
                     SingleCompletionFormat::Tagged(ref mut e) => {e.c_entry.op_context = unsafe{ ( *(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())} },
                 }
+                // println!("Returning!");
                 return std::task::Poll::Ready(Ok(entry));
             }
-
             
-            let ret = mut_self.cq.base.get_ref().read_in(1, &mut mut_self.buf);
-            match ret {
-                Err(err) => {
-                    if !matches!(err.kind, crate::error::ErrorKind::TryAgain) 
-                    {
-                        // println!("Other error");
-                        return std::task::Poll::Ready(Err(err));
-                    }
-                    else if mut_self.cq.base.poll_readable(cx).is_ready() {
-                        // println!("Read again");
-                        // return std::task::Poll::Pending;
-                        continue;
+            // println!("About to block, waiting for transfer");
+            
+            let (err, _guard) = if mut_self.cq._domain_rc.get_fabric_impl().trywait(&[&mut_self.cq]).is_err() {
+                // println!("Cannot block");
+                (mut_self.cq.read_in(1, &mut mut_self.buf), None)
+            }
+            else {
+
+                #[cfg(feature = "use-tokio")]
+                let _guard = ready!(mut_self.cq.base.poll_read_ready(cx)).unwrap();
+                #[cfg(feature = "use-async-std")]
+                let _guard = ready!(mut_self.cq.base.poll_readable(cx)).unwrap();
+                // println!("Did not block");
+                (mut_self.cq.read_in(1, &mut mut_self.buf), Some(_guard))
+            };
+                
+            match err {
+                Err(error) => {
+                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+                        return std::task::Poll::Ready(Err(error));
                     }
                     else {
-                        // println!("Not ready, sleeping");
-                        return std::task::Poll::Pending;
+                        // println!("Will continue");
+                        #[cfg(feature = "use-tokio")]
+                        match _guard {
+                            Some(mut guard) => {if mut_self.cq.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                            None => {}
+                        }
+                        continue;
                     }
-                }
-                Ok(count) => {
+                },
+                Ok(len) => {      
+                    // println!("Actually read something {}", len);          
                     match &mut mut_self.buf {
-                        CompletionFormat::Unspec(data) => unsafe{data.set_len(count)},
-                        CompletionFormat::Ctx(data) => unsafe{data.set_len(count)},
-                        CompletionFormat::Msg(data) => unsafe{data.set_len(count)},
-                        CompletionFormat::Data(data) => unsafe{data.set_len(count)},
-                        CompletionFormat::Tagged(data) => unsafe{data.set_len(count)},
+                        CompletionFormat::Unspec(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Ctx(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Msg(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Data(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Tagged(data) => unsafe{data.set_len(len)},
                     }
-                }
+                },
             }
-            // let fut = ;
-            // let fut = mut_self.fut.get_or_insert_with(|| {Box::new(mut_self.cq.read_async(1))});
             match &mut_self.buf {
                 CompletionFormat::Unspec(entries) => for e in entries.iter() {mut_self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Unspec(e.clone()));},
                 CompletionFormat::Ctx(entries) => for e in entries.iter() {mut_self.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, SingleCompletionFormat::Ctx(e.clone()));},
@@ -474,53 +538,58 @@ pub struct CqAsyncRead<'a>{
 }
 
 
-impl<'a> async_std::future::Future for CqAsyncRead<'a>{
+impl<'a> Future for CqAsyncRead<'a>{
     type Output=Result<(), Error>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-        // println!("ERROR, READING ASYNC");
-        // let mut buff = vec![1u8];
-        // self.poll_read(cx, &mut buff[..])
-        // println!("Calling CqAsyncRead fut");
         let mut_self = self.get_mut();
         loop {
-
-            let ret = match &mut mut_self.buf {
-                CompletionFormat::Unspec(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Ctx(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Msg(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Data(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-                CompletionFormat::Tagged(data) => read_cq_entry_into!(libfabric_sys::inlined_fi_cq_read, mut_self.cq.base.as_ref().as_raw_typed_fid(), mut_self.num_entries, data.as_mut_ptr().cast() ,),
-            };
-            if ret < 0 {
-                let err: Error = Error::from_err_code(-ret as u32);
-                if !matches!(err.kind, crate::error::ErrorKind::TryAgain) 
-                {
-                    // println!("Other error");
-                    return std::task::Poll::Ready(Err(err));
-                }
-                else if mut_self.cq.base.poll_readable(cx).is_ready() {
-                    // println!("Read again");
-                    // return std::task::Poll::Pending;
-                    continue;
-                }
-                else {
-                    // println!("Not ready, sleeping");
-                    return std::task::Poll::Pending;
-                }
+            let (err, _guard) = if mut_self.cq._domain_rc.get_fabric_impl().trywait(&[&mut_self.cq]).is_err() {
+                // println!("Cannot block");
+                (mut_self.cq.read_in(1, &mut mut_self.buf), None)
             }
             else {
-                println!("Done");
-                match &mut mut_self.buf {
-                    CompletionFormat::Unspec(data) => unsafe{data.set_len(ret.try_into().unwrap())},
-                    CompletionFormat::Ctx(data) => unsafe{data.set_len(ret.try_into().unwrap())},
-                    CompletionFormat::Msg(data) => unsafe{data.set_len(ret.try_into().unwrap())},
-                    CompletionFormat::Data(data) => unsafe{data.set_len(ret.try_into().unwrap())},
-                    CompletionFormat::Tagged(data) => unsafe{data.set_len(ret.try_into().unwrap())},
-                }
-                // Ok(buf)
-                return std::task::Poll::Ready(Ok(()));
+
+                #[cfg(feature = "use-tokio")]
+                let _guard = ready!(mut_self.cq.base.poll_read_ready(cx)).unwrap();
+                #[cfg(feature = "use-async-std")]
+                let _guard = ready!(mut_self.cq.base.poll_readable(cx)).unwrap();
+                // println!("Did not block");
+                (mut_self.cq.read_in(1, &mut mut_self.buf), Some(_guard))
+            };
+                
+            match err {
+                Err(error) => {
+                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+                        return std::task::Poll::Ready(Err(error));
+                    }
+                    else {
+                        // println!("Will continue");
+                        #[cfg(feature = "use-tokio")]
+                        match _guard {
+                            Some(mut guard) => {if mut_self.cq.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                            None => {}
+                        }
+                        continue;
+                    }
+                },
+                Ok(len) => {      
+                    // println!("Actually read something {}", len);          
+                    match &mut mut_self.buf {
+                        CompletionFormat::Unspec(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Ctx(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Msg(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Data(data) => unsafe{data.set_len(len)},
+                        CompletionFormat::Tagged(data) => unsafe{data.set_len(len)},
+                    }
+                },
             }
+            //         CompletionFormat::Data(data) => unsafe{data.set_len(ret.try_into().unwrap())},
+            //         CompletionFormat::Tagged(data) => unsafe{data.set_len(ret.try_into().unwrap())},
+            //     }
+            //     // Ok(buf)
+            //     return std::task::Poll::Ready(Ok(()));
+            // }
         }
     }
 }
@@ -528,6 +597,16 @@ impl<'a> async_std::future::Future for CqAsyncRead<'a>{
 
 
 impl AsFid for AsyncCompletionQueueImpl {
+    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+        self.c_cq.as_fid()
+    }
+}
+impl AsFid for &AsyncCompletionQueueImpl {
+    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+        self.c_cq.as_fid()
+    }
+}
+impl AsFid for Rc<AsyncCompletionQueueImpl> {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
         self.c_cq.as_fid()
     }

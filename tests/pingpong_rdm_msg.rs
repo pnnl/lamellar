@@ -1,11 +1,12 @@
 pub mod sync_; // Public to supress lint warnings (unused function)
+#[cfg(any(feature="use-async-std", feature="use-tokio"))]
 pub mod async_; // Public to supress lint warnings (unused function)
 
 pub mod common; // Public to supress lint warnings (unused function)
 use common::IP;
 
-use prefix::{ft_finalize, HintsCaps};
-use sync_ as prefix;
+use async_ as prefix;
+use prefix::{ft_finalize, HintsCaps, define_test, call};
 
 // To run the following tests do:
 // 1. export FI_LOG_LEVEL="info" . 
@@ -15,9 +16,7 @@ use sync_ as prefix;
 // 4. On the client (e.g. pp_client_msg) change  ft_client_connect node(<ip>) and service(<port>) to service and port of the copied ones
 // 5. Run client (e.g. cargo test pp_client_msg -- --ignored --nocapture) 
 
-#[ignore]
-#[test]
-fn pp_server_rdm_msg() {
+define_test!(pp_server_rdm_msg, async_pp_server_rdm_msg, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
     let mut ep_attr = libfabric::ep::EndpointAttr::new();
@@ -64,7 +63,7 @@ fn pp_server_rdm_msg() {
     
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
-        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
+        call!(prefix::ft_init_fabric,hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
     
     match info {
         prefix::InfoWithCaps::Msg(info) => {
@@ -77,10 +76,10 @@ fn pp_server_rdm_msg() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
+                call!(prefix::pingpong, inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
             }
 
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             
         }
         prefix::InfoWithCaps::Tagged(info) => {
@@ -93,19 +92,17 @@ fn pp_server_rdm_msg() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
+                call!(prefix::pingpong, inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
             }
 
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
-}
+});
 
 
 
-#[ignore]
-#[test]
-fn pp_client_rdm_msg() {
+define_test!(pp_client_rdm_msg, async_pp_client_rdm_msg, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
     let mut ep_attr = libfabric::ep::EndpointAttr::new();
@@ -150,7 +147,7 @@ fn pp_client_rdm_msg() {
         };
 
     let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
-        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
+        call!(prefix::ft_init_fabric,hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
 
     match info {
         prefix::InfoWithCaps::Msg(info) => {
@@ -163,10 +160,10 @@ fn pp_client_rdm_msg() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
+                call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
 
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             
         }
         prefix::InfoWithCaps::Tagged(info) => {
@@ -179,10 +176,10 @@ fn pp_client_rdm_msg() {
             let test_sizes = gl_ctx.test_sizes.clone();
             let inject_size = entries[0].get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
-                prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
+                call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
 
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
-}
+});

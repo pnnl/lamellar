@@ -156,10 +156,10 @@ impl AsRawFid for DomainRawFid {
 }
 
 
-pub(crate) type AVRawFid = *mut libfabric_sys::fid_av;
+pub(crate) type AvRawFid = *mut libfabric_sys::fid_av;
 
-impl AsRawTypedFid for AVRawFid {
-    type Output = AVRawFid;
+impl AsRawTypedFid for AvRawFid {
+    type Output = AvRawFid;
 
     #[inline]
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -167,14 +167,14 @@ impl AsRawTypedFid for AVRawFid {
     }
 }
 
-impl AsRawFid for AVRawFid {
+impl AsRawFid for AvRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
         unsafe{&mut (**self).fid}
     }
 }
 
-pub(crate) type OwnedAVFid = OwnedTypedFid<AVRawFid>;
+pub(crate) type OwnedAVFid = OwnedTypedFid<AvRawFid>;
 
 
 pub(crate) type AVSetRawFid = *mut libfabric_sys::fid_av_set;

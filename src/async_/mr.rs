@@ -1,4 +1,3 @@
-use crate::MappedAddress;
 use crate::fid::{AsRawTypedFid, OwnedMrFid};
 use crate::iovec::IoVec;
 use crate::mr::MemoryRegionAttr;
@@ -31,7 +30,9 @@ impl AsyncMemoryRegionImpl {
                     panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
                 }
                 else {
-                    let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
+                    // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(),&mut async_ctx as *mut AsyncCtx as usize).await?;
+                    let res = eq.async_event_wait::<{libfabric_sys::FI_MR_COMPLETE}>(std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+                    
                     return Ok( (res,
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
@@ -50,6 +51,7 @@ impl AsyncMemoryRegionImpl {
     
 
 
+    #[allow(dead_code)]
     pub(crate) async fn from_attr_async(domain: &Rc<crate::async_::domain::AsyncDomainImpl>, mut attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event<usize>,Self), crate::error::Error> { // [TODO] Add context version
         
         let mut async_ctx = 
@@ -72,8 +74,9 @@ impl AsyncMemoryRegionImpl {
                     panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
                 }
                 else {
-                    println!("Creating mr_from_attr: {}", attr.c_attr.context as usize);
-                    let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: attr.c_attr.context as usize}.await?;
+                    // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), attr.c_attr.context as usize).await?;
+                    let res = eq.async_event_wait::<{libfabric_sys::FI_MR_COMPLETE}>(std::ptr::null_mut(),  attr.c_attr.context as usize).await?;
+
                     return Ok((res,
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
@@ -92,7 +95,7 @@ impl AsyncMemoryRegionImpl {
     }
             
     #[allow(dead_code)]
-    pub(crate) async fn from_iovec_async<'a, T>(domain: &Rc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Self), crate::error::Error> {
+    pub(crate) async fn from_iovec_async<'a, T>(domain: &'a Rc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Self), crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
@@ -105,7 +108,9 @@ impl AsyncMemoryRegionImpl {
                     panic!("Domain has to be bound with async_mem_reg to an event queue to use async memory registration");
                 }
                 else {
-                    let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>{eq: eq.clone(), req_fid: std::ptr::null_mut(), ctx: &mut async_ctx as *mut AsyncCtx as usize}.await?;
+                    // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
+                    let res = eq.async_event_wait::<{libfabric_sys::FI_MR_COMPLETE}>(std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+
                     return Ok((res,
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
@@ -139,7 +144,7 @@ impl MemoryRegion {
 
     }
 
-        
+    #[allow(dead_code)]
     pub(crate) async fn from_attr_async(domain: &crate::async_::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event<usize>, Self), crate::error::Error> { // [TODO] Add context version
         let (event, mr) = AsyncMemoryRegionImpl::from_attr_async(&domain.inner, attr, flags).await?;
         Ok((event,
@@ -151,7 +156,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    async fn from_iovec_async<'a, T, T0>(domain: &crate::async_::domain::Domain,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event<usize>, Self), crate::error::Error> {
+    async fn from_iovec_async<'a, T, T0>(domain: &'a crate::async_::domain::Domain,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event<usize>, Self), crate::error::Error> {
         let ctx = user_ctx.map(|ctx| (ctx as *mut T0).cast());
         let (event, mr) = AsyncMemoryRegionImpl::from_iovec_async(&domain.inner, iov, access, requested_key, flags, ctx).await?;
         Ok((event,

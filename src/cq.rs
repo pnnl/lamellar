@@ -1,7 +1,7 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc, cell::RefCell, collections::HashMap};
+use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd}, rc::Rc, cell::RefCell, collections::HashMap};
 
 use crate::{fid::AsFid, domain::{DomainBase, DomainImplT}};
-use crate::{cqoptions::{self, CqConfig, Options}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error, eq::EventQueueImpl};
+use crate::{cqoptions::{self, CqConfig, Options}, enums::{WaitObjType, CompletionFlags}, MappedAddress, FdRetrievable, WaitRetrievable, Waitable, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error};
 
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -750,6 +750,17 @@ impl AsFd for CompletionQueueImpl {
     fn as_fd(&self) -> BorrowedFd<'_> {
         if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
             fd
+        }
+        else {
+            panic!("Fabric object object type is not Fd")
+        }
+    }
+}
+
+impl AsRawFd for CompletionQueueImpl {
+    fn as_raw_fd(&self) -> RawFd {
+        if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
+            fd.as_raw_fd()
         }
         else {
             panic!("Fabric object object type is not Fd")

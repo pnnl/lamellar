@@ -1,7 +1,6 @@
 use std::{rc::Rc, cell::OnceCell};
 
 use av::{AddressVectorImplBase, AddressVectorImplT};
-use eq::EventQueueImpl;
 use mr::DataDescriptor;
 
 pub mod ep;
@@ -27,6 +26,7 @@ mod utils;
 mod fid;
 pub mod iovec;
 pub mod msg;
+#[cfg(any(feature="use-async-std", feature = "use-tokio"))]
 pub mod async_;
 
 pub type RawMappedAddress = libfabric_sys::fi_addr_t; 

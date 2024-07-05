@@ -1,6 +1,6 @@
 use core::panic;
 use std::time::Instant;
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder, EntryFormat, UnspecEntry}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::AVOptions, MappedAddress};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::EventQueueBuilder, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::AVOptions, MappedAddress};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -182,7 +182,7 @@ impl TestsGlobalCtx {
             1 << 23,
         ],
         window_size: 64,
-        comp_method: CompMeth::Spin, 
+        comp_method: CompMeth::WaitFd, 
         tx_ctx: Context::new(),
         rx_ctx: Context::new(),
         options: FT_OPT_RX_CQ | FT_OPT_TX_CQ}
@@ -454,7 +454,7 @@ pub fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable, M:MsgDefaultCap, 
     ft_complete_connect(eq);
 }
 
-pub fn ft_retrieve_conn_req<T: EqConfig + libfabric::Waitable, E: infocapsoptions::Caps>(eq: &libfabric::eq::EventQueue<T>, pep: &PassiveEndpoint<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
+pub fn ft_retrieve_conn_req<T: EqConfig + libfabric::Waitable, E: infocapsoptions::Caps>(eq: &libfabric::eq::EventQueue<T>, _pep: &PassiveEndpoint<E>) -> InfoEntry<E> { // [TODO] Do not panic, return errors
     
     let event = eq.sread(-1).unwrap();
     
@@ -1356,10 +1356,10 @@ pub fn ft_info_to_mr_builder<'a, 'b, E>(domain: &'a libfabric::domain::Domain, b
     mr_builder
 }
 
-pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &libfabric::domain::Domain, ep: &libfabric::ep::Endpoint<E>, buf: &mut [u8], key: u64) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &libfabric::domain::Domain, _ep: &libfabric::ep::Endpoint<E>, buf: &mut [u8], key: u64) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     if ! ft_need_mr_reg(info) {
-        println!("MR not needed");
+        // println!("MR not needed");
         return (None, None)
     }
     // let iov = libfabric::iovec::IoVec::from_slice(buf);
@@ -1601,7 +1601,7 @@ pub fn ft_finalize_ep<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCa
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_finalize<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_finalize<CNTR: CntrConfig + libfabric::Waitable, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, _domain: &libfabric::domain::Domain, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
 
     // if info.get_domain_attr().get_mr_mode().is_raw() { 
     //     domain.unmap_key(0xC0DE).unwrap();
@@ -1796,3 +1796,23 @@ pub fn pingpong_rma<CNTR: CntrConfig + libfabric::Waitable, E: RmaCap, M: MsgDef
     println!("{} {} {} {} s {} {} {}", size, iters, bytes, elapsed.as_secs(), bytes as f64 /elapsed.as_micros() as f64, usec_per_xfer, 1.0/usec_per_xfer);
     // print perf data
 }
+
+
+macro_rules! define_test {
+    ($func_name:ident, $async_fname:ident, $body: block) => {
+        
+        #[test]
+        #[ignore]
+        fn $func_name() $body
+    };
+}
+
+pub(crate) use define_test;
+
+macro_rules! call {
+    ($func_name:path, $( $x:expr),* ) => {
+        $func_name($($x,)*)
+    }
+}
+
+pub(crate) use call;

@@ -20,8 +20,8 @@ impl ConnectionListener {
 
     pub async fn next(&self) -> Result<Event<usize>, crate::error::Error> {
         
-        let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNREQ}>{eq: self.eq.clone(), req_fid: self.ep_fid, ctx: Rc::strong_count(&self.eq)}.await?;
-
+        // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNREQ}>::new(self.ep_fid, self.eq.clone(), Rc::strong_count(&self.eq)).await?;
+        let res = self.eq.async_event_wait::<{libfabric_sys::FI_CONNREQ}>(self.ep_fid,  Rc::strong_count(&self.eq)).await?;
         Ok(res)
     }
 }
@@ -37,16 +37,21 @@ impl<T> Endpoint<T> {
     pub async fn connect_async(&self, addr: &Address) -> Result<Event<usize>, crate::error::Error> {
         ActiveEndpointImpl::connect(self, addr)?;
         
-        let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue").clone();
-        let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
+        let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
+        // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>::new(self.as_raw_fid(), eq, 0).await?;
+        let res = eq.async_event_wait::<{libfabric_sys::FI_CONNECTED}>(self.as_raw_fid(),  0).await?;
+
+        
         Ok(res)
     }
 
     pub async fn accept_async(&self) -> Result<Event<usize>, crate::error::Error> {
         self.accept()?;
 
-        let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue").clone();
-        let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>{eq, req_fid: self.as_raw_fid(), ctx: 0}.await?;
+        let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
+        let res = eq.async_event_wait::<{libfabric_sys::FI_CONNECTED}>(self.as_raw_fid(),  0).await?;
+
+        // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>::new(self.as_raw_fid(), eq, 0).await?;
         Ok(res)
     }
 }

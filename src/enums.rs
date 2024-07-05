@@ -905,6 +905,7 @@ impl TransferOptions {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_value(val: u32) -> Self {
         Self {
             c_flags: val,

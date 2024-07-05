@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImplBase, DomainImplT}, eqoptions::EqConfig, fid::{AsRawFid, self, AVRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, EventQueueImpl}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress};
+use crate::{domain::{Domain, DomainImplT}, eqoptions::EqConfig, fid::{AsRawFid, self, AvRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, EventQueueImpl}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress};
 
 
 // impl Drop for AddressVector {
@@ -27,7 +27,7 @@ pub(crate) type AddressVectorImpl = AddressVectorImplBase<EventQueueImpl>;
 impl<EQ: AsRawFid> AddressVectorImplBase<EQ> {
 
     pub(crate) fn new<DEQ: AsFid + 'static, T>(domain: &Rc<crate::domain::DomainImplBase<DEQ>>, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
-        let mut c_av:   AVRawFid =  std::ptr::null_mut();
+        let mut c_av:   AvRawFid =  std::ptr::null_mut();
 
         let err = 
         if let Some(ctx) = context {
@@ -187,6 +187,7 @@ pub struct AddressVectorBase<EQ: AsRawFid> {
 
 impl<EQ: AsFid + AsRawFid + 'static> AddressVectorBase<EQ> {
 
+    #[allow(dead_code)]
     pub(crate) fn from_impl(av_impl: &Rc<AddressVectorImplBase<EQ>>) -> Self {
         Self {
             inner: av_impl.clone(),
@@ -401,7 +402,7 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
         let av = AddressVector::new(self.domain, self.av_attr, self.ctx)?;
         match self.eq {
             None => Ok(av),
-            Some(eq) => {av.inner.bind(eq)?; eq.bind_av(&av.inner); Ok(av)}
+            Some(eq) => {av.inner.bind(eq)?; Ok(av)}
         }
     }
     
@@ -908,16 +909,16 @@ impl AsFid for Rc<AddressVectorSetImpl> {
 
 
 
-impl<EQ: AsRawFid> AsTypedFid<AVRawFid> for AddressVectorBase<EQ> {
+impl<EQ: AsRawFid> AsTypedFid<AvRawFid> for AddressVectorBase<EQ> {
     
     #[inline]
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AVRawFid> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AvRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
 impl<EQ: AsRawFid> AsRawTypedFid for AddressVectorBase<EQ> {
-    type Output = AVRawFid;
+    type Output = AvRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
         self.inner.as_raw_typed_fid()
@@ -925,16 +926,16 @@ impl<EQ: AsRawFid> AsRawTypedFid for AddressVectorBase<EQ> {
 }
 
 
-impl<EQ> AsTypedFid<AVRawFid> for AddressVectorImplBase<EQ> {
+impl<EQ> AsTypedFid<AvRawFid> for AddressVectorImplBase<EQ> {
     
     #[inline]
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AVRawFid> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AvRawFid> {
         self.c_av.as_typed_fid()
     }
 }
 
 impl<EQ> AsRawTypedFid for AddressVectorImplBase<EQ> {
-    type Output = AVRawFid;
+    type Output = AvRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
         self.c_av.as_raw_typed_fid()

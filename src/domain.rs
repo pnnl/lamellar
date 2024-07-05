@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueue, EventQueueImpl, EventQueueBase}, eqoptions::EqConfig};
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueueImpl, EventQueueBase}, eqoptions::EqConfig};
 
 
 
@@ -17,11 +17,16 @@ pub(crate) struct DomainImplBase<EQ> {
 
 pub(crate) trait DomainImplT {
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error>;
+    fn get_fabric_impl(&self) -> Rc<FabricImpl>;
 }
 
 impl<EQ: AsFid> DomainImplT for DomainImplBase<EQ> {
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
        self.unmap_key(key) 
+    }
+
+    fn get_fabric_impl(&self) -> Rc<FabricImpl> {
+        self._fabric_rc.clone()
     }
 }
 
