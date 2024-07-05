@@ -7,7 +7,7 @@ pub mod common; // Public to supress lint warnings (unused function)
 // Public to supress lint warnings (unused function)
 use common::IP;
 
-use prefix::{ft_finalize, CompMeth, HintsCaps, define_test, call};
+use prefix::{ft_finalize, HintsCaps, define_test, call};
 
 use sync_ as prefix;
 

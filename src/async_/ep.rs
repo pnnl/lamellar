@@ -35,7 +35,7 @@ pub type Endpoint<T> = EndpointBase<T, AsyncEventQueueImpl, AsyncCompletionQueue
 impl<T> Endpoint<T> {
 
     pub async fn connect_async(&self, addr: &Address) -> Result<Event<usize>, crate::error::Error> {
-        ActiveEndpointImpl::connect(self, addr)?;
+        self.inner.connect(addr)?;
         
         let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
         // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>::new(self.as_raw_fid(), eq, 0).await?;
