@@ -129,59 +129,47 @@ int rofi_transport_fini(rofi_transport_t *rofi) {
     return 0;
 }
 
-void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi, rofi_names_t *names) {
+void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi, rofi_names_t *prov_names, rofi_names_t *domain_names) {
+    DEBUG_MSG("Selecting Provider: %p %p", prov_names, domain_names);
     struct fi_info *prov_cur = prov;
-    if (names == NULL) {
+    if (prov_names == NULL && domain_names == NULL) {
         rofi->info = fi_dupinfo(prov_cur);
-        WARN_MSG("No matches for the specified provider and/or domain, using Provider:  %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
-                 prov_cur->fabric_attr->prov_name,
-                 FI_MAJOR(prov_cur->fabric_attr->prov_version),
-                 FI_MINOR(prov_cur->fabric_attr->prov_version),
-                 prov_cur->fabric_attr->name,
-                 prov_cur->domain_attr->name,
-                 prov_cur->tx_attr->inject_size,
-                 prov_cur->ep_attr->max_msg_size,
-                 prov_cur->domain_attr->max_ep_stx_ctx == 0 ? "no" : "yes",
-                 prov_cur->domain_attr->mr_mode & FI_MR_RMA_EVENT ? "yes" : " no",
-                 prov_cur->caps & FI_MSG ? "yes" : "no",
-                 prov_cur->caps & FI_RMA ? "yes" : "no",
-                 prov_cur->caps & FI_READ ? "yes" : "no",
-                 prov_cur->caps & FI_WRITE ? "yes" : "no",
-                 prov_cur->caps & FI_REMOTE_READ ? "yes" : "no",
-                 prov_cur->caps & FI_REMOTE_WRITE ? "yes" : "no",
-                 prov_cur->caps & FI_RMA_EVENT ? "yes" : "no",
-                 prov_cur->caps & FI_ATOMIC ? "yes" : "no",
-                 prov_cur->caps & FI_COLLECTIVE ? "yes" : "no");
+        WARN_MSG("No matches for the specified provider and/or domain");
+        return;
     }
     else {
-        for (int i = 0; i < names->num; i++) {
-            while (prov_cur != NULL) {
-
-                if (strncmp(prov_cur->fabric_attr->prov_name, names->names[i], strlen(names->names[i])) == 0 || strncmp(prov_cur->domain_attr->name, names->names[i], strlen(names->names[i])) == 0) {
-                    DEBUG_MSG("Selected Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
-                              prov_cur->fabric_attr->prov_name,
-                              FI_MAJOR(prov_cur->fabric_attr->prov_version),
-                              FI_MINOR(prov_cur->fabric_attr->prov_version),
-                              prov_cur->fabric_attr->name,
-                              prov_cur->domain_attr->name,
-                              prov_cur->tx_attr->inject_size,
-                              prov_cur->ep_attr->max_msg_size,
-                              prov_cur->domain_attr->max_ep_stx_ctx == 0 ? "no" : "yes",
-                              prov_cur->domain_attr->mr_mode & FI_MR_RMA_EVENT ? "yes" : " no",
-                              prov_cur->caps & FI_MSG ? "yes" : "no",
-                              prov_cur->caps & FI_RMA ? "yes" : "no",
-                              prov_cur->caps & FI_READ ? "yes" : "no",
-                              prov_cur->caps & FI_WRITE ? "yes" : "no",
-                              prov_cur->caps & FI_REMOTE_READ ? "yes" : "no",
-                              prov_cur->caps & FI_REMOTE_WRITE ? "yes" : "no",
-                              prov_cur->caps & FI_RMA_EVENT ? "yes" : "no",
-                              prov_cur->caps & FI_ATOMIC ? "yes" : "no",
-                              prov_cur->caps & FI_COLLECTIVE ? "yes" : "no");
-                    rofi->info = fi_dupinfo(prov_cur);
-                    break;
+        while (prov_cur != NULL) {
+            DEBUG_MSG("checking Provider: %s", prov_names->names[i]);
+            if (prov_names != NULL) {
+                for (int i = 0; i < prov_names->num; i++) {
+                    DEBUG_MSG("checking Provider: %s %s %s", prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name, prov_names->names[i]);
+                    if (strncmp(prov_cur->fabric_attr->prov_name, prov_names->names[i], strlen(prov_names->names[i])) == 0) {
+                        if (domain_names == NULL) {
+                            rofi->info = fi_dupinfo(prov_cur);
+                            return;
+                        }
+                        else {
+                            for (int j = 0; j < domain_names->num; j++) {
+                                if (strncmp(prov_cur->domain_attr->name, domain_names->names[j], strlen(domain_names->names[j])) == 0) {
+                                    rofi->info = fi_dupinfo(prov_cur);
+                                    return;
+                                }
+                            }
+                        }
+                    }
                 }
-                prov_cur = prov_cur->next;
             }
+            else {
+                if (domain_names) {
+                    for (int j = 0; j < domain_names->num; j++) {
+                        if (strncmp(prov_cur->domain_attr->name, domain_names->names[j], strlen(domain_names->names[j])) == 0) {
+                            rofi->info = fi_dupinfo(prov_cur);
+                            return;
+                        }
+                    }
+                }
+            }
+            prov_cur = prov_cur->next;
         }
     }
 }
@@ -220,17 +208,31 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         prov_cur = prov_cur->next;
     }
 #endif
-    if (prov_names != NULL) {
-        rofi_transport_select_provider(prov, rofi, prov_names);
-    }
+
+    rofi_transport_select_provider(prov, rofi, prov_names, domain_names);
+
     if (rofi->info == NULL) {
-        if (domain_names != NULL) {
-            rofi_transport_select_provider(prov, rofi, domain_names);
-        }
+        rofi_transport_select_provider(prov, rofi, NULL, NULL);
     }
-    if (rofi->info == NULL) {
-        rofi_transport_select_provider(prov, rofi, NULL);
-    }
+    DEBUG_MSG("Selected Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
+              rofi->info->fabric_attr->prov_name,
+              FI_MAJOR(rofi->info->fabric_attr->prov_version),
+              FI_MINOR(rofi->info->fabric_attr->prov_version),
+              rofi->info->fabric_attr->name,
+              rofi->info->domain_attr->name,
+              rofi->info->tx_attr->inject_size,
+              rofi->info->ep_attr->max_msg_size,
+              rofi->info->domain_attr->max_ep_stx_ctx == 0 ? "no" : "yes",
+              rofi->info->domain_attr->mr_mode & FI_MR_RMA_EVENT ? "yes" : " no",
+              rofi->info->caps & FI_MSG ? "yes" : "no",
+              rofi->info->caps & FI_RMA ? "yes" : "no",
+              rofi->info->caps & FI_READ ? "yes" : "no",
+              rofi->info->caps & FI_WRITE ? "yes" : "no",
+              rofi->info->caps & FI_REMOTE_READ ? "yes" : "no",
+              rofi->info->caps & FI_REMOTE_WRITE ? "yes" : "no",
+              rofi->info->caps & FI_RMA_EVENT ? "yes" : "no",
+              rofi->info->caps & FI_ATOMIC ? "yes" : "no",
+              rofi->info->caps & FI_COLLECTIVE ? "yes" : "no");
     fi_freeinfo(prov);
     if (rofi->info == NULL) {
         ERR_MSG("Error initializing ROFI. No matching provider found. Aborting.");
@@ -266,8 +268,6 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         rofi->fi_collective = FI_COLLECTIVE;
         DEBUG_MSG("fi_query_collective: FI_ALLGATHER supported");
     }
-
-    rofi->fi_collective = 0;
 
     ret = rofi_transport_init_endpoint_resources(rofi);
     if (ret) {
@@ -888,45 +888,46 @@ int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr) {
 
 // for use when FI_COLLECTIVE not available
 int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes) {
-    int me = rofi->desc.nid;
+    int global_me = rofi->desc.nid;
+    int team_me = global_me;
     if (pes != NULL) { // doing sub barrier, figure out team pe id
         for (int i = 0; i < num_pes; i++) {
-            if (pes[i] == me) {
-                me = i;
+            if (pes[i] == global_me) {
+                team_me = i;
                 break;
             }
         }
     }
     struct fi_rma_iov *sub_alloc_buf = rofi->sub_alloc_buf;
-    sub_alloc_buf[me].addr = (uint64_t)mr->start;
-    sub_alloc_buf[me].key = fi_mr_key(mr->fid);
-    DEBUG_MSG("Placing mr info (key: 0x%lx, addr: 0x%lx)....", sub_alloc_buf[me].key, sub_alloc_buf[me].addr);
+    sub_alloc_buf[global_me].addr = (uint64_t)mr->start;
+    sub_alloc_buf[global_me].key = fi_mr_key(mr->fid);
+    DEBUG_MSG("Placing mr info (key: 0x%lx, addr: 0x%lx)... at local address: %p", sub_alloc_buf[global_me].key, sub_alloc_buf[global_me].addr, &sub_alloc_buf[global_me]);
     uint64_t sub_alloc_barrier_id = 0;
-    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, me, num_pes);
+    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, team_me, num_pes);
 
-    for (int pe = me + 1; pe < num_pes; pe++) {
-        uint64_t actual_pe = pes[pe];
-        void *src = (void *)&sub_alloc_buf[actual_pe]; // this will be translated to the remote PE
+    for (int pe = team_me + 1; pe < num_pes; pe++) {
+        uint64_t global_pe = pes[pe];
+        void *src = (void *)&sub_alloc_buf[global_pe]; // this will be translated to the remote PE
         void *dst = src;                               // this will be our local data
 
-        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), actual_pe, 0);
+        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
     }
-    for (int pe = 0; pe < me; pe++) {
-        uint64_t actual_pe = pes[pe];
-        void *src = (void *)&sub_alloc_buf[actual_pe]; // this will be translated to the remote PE
+    for (int pe = 0; pe < team_me; pe++) {
+        uint64_t global_pe = pes[pe];
+        void *src = (void *)&sub_alloc_buf[global_pe]; // this will be translated to the remote PE
         void *dst = src;                               // this will be our local data
 
-        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), actual_pe, 0);
+        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
     }
     if (rofi_transport_get_wait_all(rofi)) {
         ERR_MSG("\t Error waiting for get");
     }
     for (int pe = 0; pe < num_pes; pe++) {
-        uint64_t actual_pe = pes[pe];
-        mr->iov[actual_pe] = sub_alloc_buf[actual_pe];
-        DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", pe, actual_pe, sub_alloc_buf[actual_pe].addr, sub_alloc_buf[actual_pe].key);
+        uint64_t global_pe = pes[pe];
+        mr->iov[global_pe] = sub_alloc_buf[global_pe];
+        DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", pe, global_pe, sub_alloc_buf[global_pe].addr, sub_alloc_buf[global_pe].key);
     }
-    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, me, num_pes);
+    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, team_me, num_pes);
 
     return 0;
 }
