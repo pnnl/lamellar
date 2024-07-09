@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, BindImpl};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, BindImpl, cq::CompletionQueueImplT, Bind};
 
 pub struct Receive;
 pub struct Transmit;
@@ -525,7 +525,7 @@ impl<'a> TxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CqConfig + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: CompletionQueueImplT + BindImpl + AsFid + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(&cq.inner, self.flags)
     }
 }
@@ -822,7 +822,7 @@ impl<'a> RxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CqConfig+ 'static>(&self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: CompletionQueueImplT + BindImpl + AsRawFid + 'static>(&self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cq, self.flags)
     }
 }

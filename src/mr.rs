@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 
 
-use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImpl};
+use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImpl, cq::CompletionQueueImplT};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -255,7 +255,7 @@ impl<EQ: AsRawFid> MemoryRegionImplBase<EQ> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn bind_ep<CQ: AsRawFid>(&self, ep: &Rc<crate::ep::EndpointImplBase<EQ, CQ>>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep<CQ: ?Sized + AsRawFid + CompletionQueueImplT>(&self, ep: &Rc<crate::ep::EndpointImplBase<EQ, CQ>>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())

@@ -5,7 +5,7 @@ use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_G
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::{AddressVector, AddressVectorBase}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueueImpl, EventQueueBase}, eqoptions::EqConfig, domain::{DomainImpl, DomainImplBase}, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, EpRawFid, OwnedEpFid, RawFid, PepRawFid, OwnedPepFid, AsTypedFid}, cq::CompletionQueueImpl};
+use crate::{av::{AddressVector, AddressVectorBase}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, eq::{EventQueueImpl, EventQueueBase}, eqoptions::EqConfig, domain::{DomainImpl, DomainImplBase}, fabric::FabricImpl, utils::check_error, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, EpRawFid, OwnedEpFid, RawFid, PepRawFid, OwnedPepFid, AsTypedFid}, cq::{CompletionQueueImpl, CompletionQueueImplT}};
 
 #[repr(C)]
 pub struct Address {
@@ -29,7 +29,7 @@ impl Address {
     } 
 }
 
-pub(crate) struct EndpointImplBase<EQ, CQ> {
+pub(crate) struct EndpointImplBase<EQ, CQ: ?Sized + CompletionQueueImplT> {
     pub(crate) c_ep: OwnedEpFid,
     pub(crate) tx_cq: OnceCell<Rc<CQ>>,
     pub(crate) rx_cq: OnceCell<Rc<CQ>>,
@@ -38,8 +38,8 @@ pub(crate) struct EndpointImplBase<EQ, CQ> {
     _domain_rc:  Rc<DomainImplBase<EQ>>,
 }
 
-pub type  Endpoint<T>  = EndpointBase<T, EventQueueImpl, CompletionQueueImpl>;
-pub struct EndpointBase<T, EQ, CQ> {
+pub type  Endpoint<T>  = EndpointBase<T, EventQueueImpl, dyn CompletionQueueImplT>;
+pub struct EndpointBase<T, EQ, CQ: ?Sized + CompletionQueueImplT> {
     pub(crate) inner: Rc<EndpointImplBase<EQ, CQ>>,
     phantom: PhantomData<T>,
 }
@@ -228,13 +228,13 @@ pub(crate) trait BaseEndpointImpl : AsRawFid {
 }
 
 
-impl<T, EQ: AsFid, CQ> BaseEndpointImpl for EndpointBase<T, EQ, CQ> {}
+impl<T, EQ: AsFid, CQ: ? Sized + CompletionQueueImplT> BaseEndpointImpl for EndpointBase<T, EQ, CQ> {}
 
-impl<EQ, CQ> BaseEndpointImpl for EndpointImplBase<EQ, CQ> {}
+impl<EQ, CQ: ?Sized+ CompletionQueueImplT> BaseEndpointImpl for EndpointImplBase<EQ, CQ> {}
 
-impl<T, EQ, CQ> ActiveEndpointImpl for EndpointBase<T, EQ, CQ> {}
+impl<T, EQ, CQ:?Sized + CompletionQueueImplT> ActiveEndpointImpl for EndpointBase<T, EQ, CQ> {}
 
-impl<T, EQ: AsFid, CQ> EndpointBase<T, EQ, CQ> {
+impl<T, EQ: AsFid, CQ: ? Sized+ CompletionQueueImplT> EndpointBase<T, EQ, CQ> {
     
     pub fn getname(&self) -> Result<Address, crate::error::Error> {
         self.inner.getname()
@@ -339,13 +339,13 @@ impl<T, EQ: AsFid, CQ> EndpointBase<T, EQ, CQ> {
 
 
 
-impl<E, EQ: AsFid, CQ> AsFd for EndpointBase<E, EQ, CQ> {
+impl<E, EQ: AsFid, CQ: ?Sized + CompletionQueueImplT> AsFd for EndpointBase<E, EQ, CQ> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.wait_fd().unwrap()
     }
 }
 
-impl<EQ, CQ> AsFd for EndpointImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsFd for EndpointImplBase<EQ, CQ> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.wait_fd().unwrap()
     }
@@ -738,12 +738,12 @@ impl<E> AsFd for PassiveEndpoint<E> {
 
 //================== Endpoint (fi_endpoint) ==================//
 
-pub struct IncompleteBindCq<'a, EQ, CQ> {
-    pub(crate) ep: &'a EndpointImplBase<EQ, CQ>,
+pub struct IncompleteBindCq<'a, EQ> {
+    pub(crate) ep: &'a EndpointImplBase<EQ, dyn CompletionQueueImplT>,
     pub(crate) flags: u64,
 }
 
-impl<'a, EQ: AsRawFid + 'static, CQ: AsRawFid> IncompleteBindCq<'a, EQ, CQ> {
+impl<'a, EQ: AsRawFid + 'static > IncompleteBindCq<'a, EQ> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
@@ -770,17 +770,17 @@ impl<'a, EQ: AsRawFid + 'static, CQ: AsRawFid> IncompleteBindCq<'a, EQ, CQ> {
         }
     }
 
-    pub fn cq<T: CqConfig + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T, CQ>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: AsRawFid+ CompletionQueueImplT + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
         self.ep.bind_cq_(&cq.inner, self.flags)
     }
 }
 
-pub struct IncompleteBindCntr<'a, EQ, CQ> {
+pub struct IncompleteBindCntr<'a, EQ, CQ: ?Sized + CompletionQueueImplT> {
     pub(crate) ep: &'a EndpointImplBase<EQ, CQ>,
     pub(crate) flags: u64,
 }
 
-impl<'a, EQ: AsRawFid + 'static, CQ: AsRawFid> IncompleteBindCntr<'a, EQ, CQ> {
+impl<'a, EQ: AsRawFid + 'static, CQ: ?Sized + CompletionQueueImplT> IncompleteBindCntr<'a, EQ, CQ> {
 
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
@@ -823,7 +823,7 @@ impl<'a, EQ: AsRawFid + 'static, CQ: AsRawFid> IncompleteBindCntr<'a, EQ, CQ> {
     }
 }
 
-impl<EQ: AsFid, CQ> EndpointImplBase<EQ, CQ> {
+impl<EQ: AsFid, CQ: ?Sized + CompletionQueueImplT> EndpointImplBase<EQ, CQ> {
 
     pub fn new<T0, E>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Self, crate::error::Error> {
         let mut c_ep: EpRawFid = std::ptr::null_mut();
@@ -852,7 +852,7 @@ impl<EQ: AsFid, CQ> EndpointImplBase<EQ, CQ> {
     }
 }
 
-impl<EQ: fid::AsFid, CQ> EndpointBase<(), EQ, CQ> {
+impl<EQ: fid::AsFid, CQ: ?Sized + CompletionQueueImplT> EndpointBase<(), EQ, CQ> {
     pub fn new<T0, E>(domain: &crate::domain::DomainBase<EQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< EndpointBase<E, EQ, CQ>, crate::error::Error> {
         Ok(
             EndpointBase::<E, EQ, CQ> {
@@ -894,8 +894,8 @@ impl<EQ: fid::AsFid, CQ> EndpointBase<(), EQ, CQ> {
     //     }
 
     // }
-impl<EQ: AsRawFid + 'static, CQ: AsRawFid> EndpointImplBase<EQ, CQ> {
-
+impl<EQ: AsRawFid + 'static, CQ: ?Sized + CompletionQueueImplT> EndpointImplBase<EQ, CQ> {
+    
     pub(crate) fn bind<T: crate::Bind + AsRawFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
         
@@ -907,8 +907,10 @@ impl<EQ: AsRawFid + 'static, CQ: AsRawFid> EndpointImplBase<EQ, CQ> {
             Ok(())
         }
     } 
+}
 
-    pub(crate) fn bind_cq_(&self, cq: &Rc<CQ>, flags: u64) -> Result<(), crate::error::Error> {
+impl<EQ: AsRawFid + 'static> EndpointImplBase<EQ, dyn CompletionQueueImplT> {
+    pub(crate) fn bind_cq_<T: AsRawFid + CompletionQueueImplT + 'static>(&self, cq: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
         
         if err != 0 {
@@ -943,9 +945,12 @@ impl<EQ: AsRawFid + 'static, CQ: AsRawFid> EndpointImplBase<EQ, CQ> {
         }
     } 
 
-    pub(crate) fn bind_cq(&self) -> IncompleteBindCq<EQ, CQ> {
+    pub(crate) fn bind_cq(&self) -> IncompleteBindCq<EQ> {
         IncompleteBindCq { ep: self, flags: 0}
     }
+}
+
+impl<EQ: AsRawFid + 'static, CQ: ?Sized + CompletionQueueImplT> EndpointImplBase<EQ, CQ> {
 
     pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<EQ, CQ> {
         IncompleteBindCntr { ep: self, flags: 0}
@@ -1000,11 +1005,13 @@ impl<EQ: AsRawFid + 'static, CQ: AsRawFid> EndpointImplBase<EQ, CQ> {
     }
 }
 
-impl<E, EQ: AsRawFid + 'static, CQ: AsRawFid> EndpointBase<E, EQ, CQ> {
-    pub fn bind_cq(&self) -> IncompleteBindCq<EQ, CQ> {
+impl<E, EQ: AsRawFid + 'static> EndpointBase<E, EQ, dyn CompletionQueueImplT> {
+    pub fn bind_cq(&self) -> IncompleteBindCq<EQ> {
         self.inner.bind_cq()
     }
+}
 
+impl<E, EQ: AsRawFid + 'static, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
     pub fn bind_cntr(&self) -> IncompleteBindCntr<EQ, CQ> {
         self.inner.bind_cntr()
     }
@@ -1028,25 +1035,25 @@ impl<E, EQ: AsRawFid + 'static, CQ: AsRawFid> EndpointBase<E, EQ, CQ> {
 }
 
 
-impl<E, EQ, CQ> AsFid for EndpointBase<E, EQ, CQ> {
+impl<E, EQ, CQ: ?Sized + CompletionQueueImplT> AsFid for EndpointBase<E, EQ, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.as_fid()
     }
 }
 
-impl<E, EQ, CQ> AsRawFid for EndpointBase<E, EQ, CQ> {
+impl<E, EQ, CQ: ?Sized + CompletionQueueImplT> AsRawFid for EndpointBase<E, EQ, CQ> {
     fn as_raw_fid(&self) -> RawFid {
         self.inner.as_raw_fid()
     }
 }
 
-impl<E, EQ, CQ> AsTypedFid<EpRawFid> for EndpointBase<E, EQ, CQ> {
+impl<E, EQ, CQ: ?Sized + CompletionQueueImplT> AsTypedFid<EpRawFid> for EndpointBase<E, EQ, CQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<E, EQ, CQ> AsRawTypedFid for EndpointBase<E, EQ, CQ> {
+impl<E, EQ, CQ: ?Sized + CompletionQueueImplT> AsRawTypedFid for EndpointBase<E, EQ, CQ> {
     type Output = EpRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -1054,25 +1061,25 @@ impl<E, EQ, CQ> AsRawTypedFid for EndpointBase<E, EQ, CQ> {
     }
 }
 
-impl<EQ, CQ> AsFid for EndpointImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsFid for EndpointImplBase<EQ, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.c_ep.as_fid()
     }
 }
 
-impl<EQ, CQ> AsRawFid for EndpointImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsRawFid for EndpointImplBase<EQ, CQ> {
     fn as_raw_fid(&self) -> RawFid {
         self.c_ep.as_raw_fid()
     }
 }
 
-impl<EQ, CQ> AsTypedFid<EpRawFid> for EndpointImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsTypedFid<EpRawFid> for EndpointImplBase<EQ, CQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
         self.c_ep.as_typed_fid()
     }
 }
 
-impl<EQ, CQ> AsRawTypedFid for EndpointImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsRawTypedFid for EndpointImplBase<EQ, CQ> {
     type Output = EpRawFid;
     
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -1080,7 +1087,7 @@ impl<EQ, CQ> AsRawTypedFid for EndpointImplBase<EQ, CQ> {
     }
 }
 
-impl<EQ, CQ> ActiveEndpointImpl for EndpointImplBase<EQ, CQ> {}
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> ActiveEndpointImpl for EndpointImplBase<EQ, CQ> {}
 
 pub(crate) trait ActiveEndpointImpl: AsRawTypedFid<Output = EpRawFid>{
 

@@ -115,7 +115,7 @@ pub trait AsTypedFid<FID: AsRawFid + Copy> {
 }
 
 
-pub(crate) trait AsRawTypedFid {
+pub trait AsRawTypedFid {
     type Output: AsRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output;

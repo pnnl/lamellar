@@ -1,5 +1,5 @@
 
-use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::EndpointBase, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::EventQueueImplT, fid::AsRawTypedFid};
+use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::EndpointBase, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::EventQueueImplT, fid::AsRawTypedFid, cq::CompletionQueueImplT};
 pub(crate) fn extract_raw_addr_and_ctx<T0>(mapped_addr: Option<&MappedAddress>, context: Option<*mut T0>) -> (u64, *mut std::ffi::c_void) {
             
     let ctx = if let Some(ctx) = context {
@@ -19,7 +19,7 @@ pub(crate) fn extract_raw_addr_and_ctx<T0>(mapped_addr: Option<&MappedAddress>, 
     (raw_addr, ctx)
 }
 
-impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     fn recv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -75,7 +75,7 @@ impl<E: MsgCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 }
 
-impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + SendMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {

@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use crate::RawMappedAddress;
 use crate::cq::CompletionQueueImpl;
+use crate::cq::CompletionQueueImplT;
 use crate::enums;
 use crate::enums::CollectiveOptions;
 use crate::enums::JoinOptions;
@@ -27,7 +28,7 @@ use crate::utils::to_fi_datatype;
 
 use super::message::extract_raw_addr_and_ctx;
 
-impl<E, EQ, CQ> EndpointBase<E, EQ, CQ> where E: CollCap, EQ: AsRawFid, CQ: AsRawFid {
+impl<E, EQ, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> where E: CollCap, EQ: AsRawFid {
 
     #[inline]
     pub(crate) fn join_impl<T>(&self, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<MulticastGroupCollectiveBase<EQ, CQ>, crate::error::Error> {
@@ -60,21 +61,21 @@ impl<E, EQ, CQ> EndpointBase<E, EQ, CQ> where E: CollCap, EQ: AsRawFid, CQ: AsRa
     }
 }
 
-pub type MulticastGroupCollective = MulticastGroupCollectiveBase<EventQueueImpl, CompletionQueueImpl>;
+pub type MulticastGroupCollective<CQ> = MulticastGroupCollectiveBase<EventQueueImpl, CQ>;
 
-pub struct MulticastGroupCollectiveBase<EQ, CQ> {
+pub struct MulticastGroupCollectiveBase<EQ, CQ: ?Sized + CompletionQueueImplT> {
     pub(crate) inner: Rc<MulticastGroupCollectiveImplBase<EQ, CQ>>,
 }
 
-pub type MulticastGroupCollectiveImpl  = MulticastGroupCollectiveImplBase<EventQueueImpl, CompletionQueueImpl>;
+pub type MulticastGroupCollectiveImpl<CQ>  = MulticastGroupCollectiveImplBase<EventQueueImpl, CQ>;
 
-pub struct MulticastGroupCollectiveImplBase<EQ, CQ>  {
+pub struct MulticastGroupCollectiveImplBase<EQ, CQ: ?Sized + CompletionQueueImplT>  {
     c_mc: OwnedMcFid,
     addr: RawMappedAddress,
     pub(crate) ep: Rc<EndpointImplBase<EQ, CQ>>,
 }
 
-impl<EQ: AsRawFid, CQ: AsRawFid> MulticastGroupCollectiveBase<EQ, CQ> {
+impl<EQ: AsRawFid, CQ: ?Sized + CompletionQueueImplT> MulticastGroupCollectiveBase<EQ, CQ> {
 
     #[allow(dead_code)]
     pub(crate) fn from_impl(mc_impl: &Rc<MulticastGroupCollectiveImplBase<EQ, CQ>>) -> Self {
@@ -336,43 +337,43 @@ impl<EQ: AsRawFid, CQ: AsRawFid> MulticastGroupCollectiveBase<EQ, CQ> {
     }
 }
 
-impl<EQ, CQ> AsFid for MulticastGroupCollectiveBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsFid for MulticastGroupCollectiveBase<EQ, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.as_fid()
     }
 }
 
-impl<EQ, CQ> AsFid for MulticastGroupCollectiveImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsFid for MulticastGroupCollectiveImplBase<EQ, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.c_mc.as_fid()
     }
 }
 
-impl<EQ, CQ> AsRawFid for MulticastGroupCollectiveBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsRawFid for MulticastGroupCollectiveBase<EQ, CQ> {
     fn as_raw_fid(&self) -> RawFid {
         self.inner.as_raw_fid()
     }
 }
 
-impl<EQ, CQ> AsRawFid for MulticastGroupCollectiveImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsRawFid for MulticastGroupCollectiveImplBase<EQ, CQ> {
     fn as_raw_fid(&self) -> RawFid {
         self.c_mc.as_raw_fid()
     }
 }
-impl<EQ, CQ> AsTypedFid<McRawFid> for MulticastGroupCollectiveBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsTypedFid<McRawFid> for MulticastGroupCollectiveBase<EQ, CQ> {
     
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<McRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<EQ, CQ> AsTypedFid<McRawFid> for MulticastGroupCollectiveImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsTypedFid<McRawFid> for MulticastGroupCollectiveImplBase<EQ, CQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<McRawFid> {
         self.c_mc.as_typed_fid()
     }
 }
 
-impl<EQ, CQ> AsRawTypedFid for MulticastGroupCollectiveBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsRawTypedFid for MulticastGroupCollectiveBase<EQ, CQ> {
     type Output = McRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -380,7 +381,7 @@ impl<EQ, CQ> AsRawTypedFid for MulticastGroupCollectiveBase<EQ, CQ> {
     }
 }
 
-impl<EQ, CQ> AsRawTypedFid for MulticastGroupCollectiveImplBase<EQ, CQ> {
+impl<EQ, CQ: ?Sized + CompletionQueueImplT> AsRawTypedFid for MulticastGroupCollectiveImplBase<EQ, CQ> {
     type Output = McRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {

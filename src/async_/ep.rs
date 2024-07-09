@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr}, fid::{RawFid, AsRawFid}, eq::Event, info::InfoEntry};
+use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::Event, info::InfoEntry, cq::CompletionQueueImplT};
 
-use super::{eq::AsyncEventQueueImpl, cq::AsyncCompletionQueueImpl, domain::Domain};
+use super::{eq::AsyncEventQueueImpl, cq::{AsyncCompletionQueueImpl, AsyncCompletionQueueImplT}, domain::Domain};
 
 pub struct ConnectionListener {
     eq:  Rc<AsyncEventQueueImpl>,
@@ -26,7 +26,7 @@ impl ConnectionListener {
     }
 }
 
-pub type Endpoint<T> = EndpointBase<T, AsyncEventQueueImpl, AsyncCompletionQueueImpl>;
+pub type Endpoint<T> = EndpointBase<T, AsyncEventQueueImpl, dyn AsyncCompletionQueueImplT>;
 // pub struct AsyncEndpoint<T> {
 //     pub(crate) inner: Rc<AsyncEndpointImpl>,
 //     phantom: PhantomData<T>,
@@ -56,6 +56,90 @@ impl<T> Endpoint<T> {
     }
 }
 
+pub struct IncompleteBindCq<'a, EQ> {
+    pub(crate) ep: &'a EndpointImplBase<EQ, dyn AsyncCompletionQueueImplT>,
+    pub(crate) flags: u64,
+}
+
+impl<EQ: AsRawFid + 'static> EndpointImplBase<EQ, dyn AsyncCompletionQueueImplT> {
+    pub(crate) fn bind_cq_<T: AsyncCompletionQueueImplT + 'static>(&self, cq: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+
+            if (flags & libfabric_sys::FI_TRANSMIT as u64) != 0 && (flags & libfabric_sys::FI_RECV as u64) != 0{
+                if self.tx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
+                if self.rx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
+            }
+            else if flags & libfabric_sys::FI_TRANSMIT as u64 != 0 {
+                if self.tx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
+            }
+            else if flags & libfabric_sys::FI_RECV as u64 != 0{
+                if self.rx_cq.set(cq.clone()).is_err() {
+                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
+                }
+            }
+            else {
+                panic!("Binding to Endpoint without specifying direction");
+            }
+
+            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for cq?
+            Ok(())
+        }
+    } 
+
+    pub(crate) fn bind_cq(&self) -> IncompleteBindCq<EQ> {
+        IncompleteBindCq { ep: self, flags: 0}
+    }
+}
+
+impl<E, EQ: AsRawFid + 'static> EndpointBase<E, EQ, dyn AsyncCompletionQueueImplT> {
+    pub fn bind_cq(&self) -> IncompleteBindCq<EQ> {
+        self.inner.bind_cq()
+    }
+}
+
+
+impl<'a, EQ: AsRawFid + 'static > IncompleteBindCq<'a, EQ> {
+    pub fn recv(&mut self, selective: bool) -> &mut Self {
+        if selective {
+            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
+        
+            self
+        }
+        else {
+            self.flags |= libfabric_sys::FI_RECV as u64;
+
+            self
+        }
+    }
+
+    pub fn transmit(&mut self, selective: bool) -> &mut Self {
+        if selective {
+            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_TRANSMIT as u64;
+
+            self
+        }
+        else {
+            self.flags |= libfabric_sys::FI_TRANSMIT as u64;
+
+            self
+        }
+    }
+
+    pub fn cq<T: AsyncCompletionQueueImplT + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
+        self.ep.bind_cq_(&cq.inner, self.flags)
+    }
+}
 
 // ============== Async stuff ======================= //
 pub type PassiveEndpoint<T> = PassiveEndpointBase<T, AsyncEventQueueImpl>;

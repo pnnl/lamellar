@@ -24,7 +24,7 @@ impl<'a> Future for EqAsyncRead<'a>{
         let ev = self.get_mut();
         loop {
             // println!("About to block waiting for event");
-            let (err, _guard) = if ev.eq._fabric_rc.trywait(&[&ev.eq]).is_err() {
+            let (err, _guard) = if ev.eq._fabric_rc.trywait_slice(&[&ev.eq]).is_err() {
                 (ev.eq.read_in( &mut ev.buf,  &mut ev.event), None)
             }
             else {
@@ -80,7 +80,7 @@ impl AsyncEventQueueImpl {
         loop {
 
             // println!("About to block waiting for event");
-            let (err, _guard) = if self._fabric_rc.trywait(&[&self]).is_err() {
+            let (err, _guard) = if self._fabric_rc.trywait_slice(&[&self]).is_err() {
                 (self.read_in( &mut buf,  &mut event), None)
             }
             else {
@@ -142,7 +142,7 @@ impl AsyncEventQueueImpl {
             }
             // println!("About to block waiting for event");
             let res;
-            let (err, _guard) = if self._fabric_rc.trywait(&[&self]).is_err() {
+            let (err, _guard) = if self._fabric_rc.trywait_slice(&[&self]).is_err() {
                 (self.read_in( &mut buf,  &mut event), None)
             }
             else {
@@ -348,7 +348,7 @@ impl<const E: libfabric_sys::_bindgen_ty_18> Future for EventQueueFut<E> {
             }
             // println!("About to block waiting for event");
             let res;
-            let (err, _guard) = if ev.eq._fabric_rc.trywait(&[&ev.eq]).is_err() {
+            let (err, _guard) = if ev.eq._fabric_rc.trywait_slice(&[&ev.eq]).is_err() {
                 (ev.eq.read_in( &mut ev.buf,  &mut ev.event), None)
             }
             else {

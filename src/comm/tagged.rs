@@ -1,5 +1,6 @@
 use crate::FI_ADDR_UNSPEC;
 use crate::MappedAddress;
+use crate::cq::CompletionQueueImplT;
 use crate::enums::TaggedRecvMsgOptions;
 use crate::enums::TaggedSendMsgOptions;
 use crate::ep::EndpointBase;
@@ -16,7 +17,7 @@ use super::message::extract_raw_addr_and_ctx;
 
 
 
-impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     fn trecv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -70,7 +71,7 @@ impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
     }
 }
 
-impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     fn tsend_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {

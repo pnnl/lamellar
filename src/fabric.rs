@@ -46,9 +46,16 @@ impl FabricImpl {
         }
     }
 
-    pub(crate) fn trywait(&self, fids: &[&impl AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
+    pub(crate) fn trywait_slice(&self, fids: &[&impl AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
         let mut raw_fids: Vec<*mut libfabric_sys::fid> = fids.iter().map(|x| x.as_fid().as_raw_fid()).collect();
         let err = unsafe { libfabric_sys::inlined_fi_trywait(self.as_raw_typed_fid(), raw_fids.as_mut_ptr(), raw_fids.len() as i32) } ;
+        
+        check_error(err.try_into().unwrap())
+    }
+
+    pub(crate) fn trywait(&self, fid: &impl AsFid) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
+        let mut raw_fid = fid.as_fid().as_raw_fid();
+        let err = unsafe { libfabric_sys::inlined_fi_trywait(self.as_raw_typed_fid(), &mut raw_fid, 1) } ;
         
         check_error(err.try_into().unwrap())
     }
@@ -64,8 +71,12 @@ impl Fabric {
         )
     }
     
-    pub fn trywait(&self, fids: &[&impl AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
-        self.inner.trywait(fids)
+    pub fn trywait_slice(&self, fids: &[&impl AsFid]) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
+        self.inner.trywait_slice(fids)
+    }
+    
+    pub fn trywait(&self, fid: &impl AsFid) -> Result<(), crate::error::Error> { // [TODO] Move this into the WaitSet struct
+        self.inner.trywait(fid)
     }
 }
 
