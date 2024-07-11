@@ -7,11 +7,11 @@ use std::rc::Rc;
 use crate::{mr::{MemoryRegionBase, MemoryRegionImplBase}, enums::MrAccess};
 use super::AsyncCtx;
 use super::domain::Domain;
-use super::eq::AsyncEventQueueImpl;
+use super::eq::AsyncEventQueueImplT;
 
 
-pub type MemoryRegion = MemoryRegionBase<AsyncEventQueueImpl>;
-pub(crate) type AsyncMemoryRegionImpl = MemoryRegionImplBase<AsyncEventQueueImpl>;
+pub type MemoryRegion = MemoryRegionBase<dyn AsyncEventQueueImplT>;
+pub(crate) type AsyncMemoryRegionImpl = MemoryRegionImplBase<dyn AsyncEventQueueImplT>;
 
 impl AsyncMemoryRegionImpl {
 
@@ -31,7 +31,7 @@ impl AsyncMemoryRegionImpl {
                 }
                 else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(),&mut async_ctx as *mut AsyncCtx as usize).await?;
-                    let res = eq.async_event_wait::<{libfabric_sys::FI_MR_COMPLETE}>(std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
                     
                     return Ok( (res,
                         Self {
@@ -75,7 +75,7 @@ impl AsyncMemoryRegionImpl {
                 }
                 else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), attr.c_attr.context as usize).await?;
-                    let res = eq.async_event_wait::<{libfabric_sys::FI_MR_COMPLETE}>(std::ptr::null_mut(),  attr.c_attr.context as usize).await?;
+                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, std::ptr::null_mut(),  attr.c_attr.context as usize).await?;
 
                     return Ok((res,
                         Self {
@@ -109,7 +109,7 @@ impl AsyncMemoryRegionImpl {
                 }
                 else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
-                    let res = eq.async_event_wait::<{libfabric_sys::FI_MR_COMPLETE}>(std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
 
                     return Ok((res,
                         Self {

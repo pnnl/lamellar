@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 
 
-use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImpl, cq::CompletionQueueImplT};
+use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::{EventQueueImpl, EventQueueImplT}, cq::CompletionQueueImplT};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -28,7 +28,7 @@ impl MemoryRegionKey {
     //     Self::RawKey(raw_key)
     // }
 
-    pub unsafe fn from_bytes<EQ>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
+    pub unsafe fn from_bytes<EQ: ?Sized + EventQueueImplT>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
         MemoryRegionKey::from_bytes_impl(raw, &domain.inner)
     }
 
@@ -46,7 +46,7 @@ impl MemoryRegionKey {
         }
     }
 
-    unsafe fn from_bytes_impl<EQ>(raw: &[u8], domain: &crate::domain::DomainImplBase<EQ>) -> Self {
+    unsafe fn from_bytes_impl<EQ: ?Sized>(raw: &[u8], domain: &crate::domain::DomainImplBase<EQ>) -> Self {
         if domain.domain_attr.get_mr_mode().is_raw() {
             assert!(raw.len() == domain.domain_attr.get_mr_key_size());
             let base_addr = *(raw[raw.len()-std::mem::size_of::<u64>()..].as_ptr() as *const u64);
@@ -63,7 +63,7 @@ impl MemoryRegionKey {
         MemoryRegionKey::Key(key) 
     }
 
-    pub fn into_mapped<EQ: AsFid + 'static>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
+    pub fn into_mapped<EQ: ?Sized + EventQueueImplT + 'static>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
             MemoryRegionKey::Key(mapped_key) => {
                 Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::Key(mapped_key)})
@@ -132,7 +132,7 @@ impl DataDescriptor for DefaultMemDesc {
 
 //================== Memory Region (fi_mr) ==================//
 
-pub(crate) struct MemoryRegionImplBase<EQ> {
+pub(crate) struct MemoryRegionImplBase<EQ: ?Sized + EventQueueImplT> {
     pub(crate) c_mr: OwnedMrFid,
     pub(crate) _domain_rc: Rc<DomainImplBase<EQ>>,
 }
@@ -144,12 +144,12 @@ pub(crate) struct MemoryRegionImplBase<EQ> {
 /// 
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
 /// are also dropped.
-pub type MemoryRegion  = MemoryRegionBase<EventQueueImpl>;
-pub struct MemoryRegionBase<EQ> {
+pub type MemoryRegion  = MemoryRegionBase<dyn EventQueueImplT>;
+pub struct MemoryRegionBase<EQ: ?Sized + EventQueueImplT> {
     pub(crate) inner: Rc<MemoryRegionImplBase<EQ>>,
 }
 
-impl<EQ: AsRawFid> MemoryRegionImplBase<EQ> {
+impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
 
     #[allow(dead_code)]
     fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
@@ -320,7 +320,7 @@ impl<EQ: AsRawFid> MemoryRegionImplBase<EQ> {
     }
 }
 
-impl<EQ: AsRawFid> MemoryRegionBase<EQ> {
+impl<EQ: ?Sized + EventQueueImplT, > MemoryRegionBase<EQ> {
     
     #[allow(dead_code)]
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
@@ -453,43 +453,43 @@ impl crate::DataDescriptor for MemoryRegionDesc {
     }
 }
 
-impl<EQ> AsFid for MemoryRegionBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT> AsFid for MemoryRegionBase<EQ>{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.as_fid()
     }
 }
 
-impl<EQ> AsFid for MemoryRegionImplBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT> AsFid for MemoryRegionImplBase<EQ>{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.c_mr.as_fid()
     }
 }
 
-impl<EQ> AsRawFid for MemoryRegionBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT> AsRawFid for MemoryRegionBase<EQ>{
     fn as_raw_fid(&self) -> RawFid {
         self.inner.as_raw_fid()
     }
 }
 
-impl<EQ> AsRawFid for MemoryRegionImplBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT> AsRawFid for MemoryRegionImplBase<EQ>{
     fn as_raw_fid(&self) -> RawFid {
         self.c_mr.as_raw_fid()
     }
 }
 
-impl<EQ> AsTypedFid<MrRawFid> for MemoryRegionBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT> AsTypedFid<MrRawFid> for MemoryRegionBase<EQ>{
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<MrRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<EQ> AsTypedFid<MrRawFid> for MemoryRegionImplBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT> AsTypedFid<MrRawFid> for MemoryRegionImplBase<EQ>{
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<MrRawFid> {
         self.c_mr.as_typed_fid()
     }
 }
 
-impl<EQ> AsRawTypedFid for MemoryRegionBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT> AsRawTypedFid for MemoryRegionBase<EQ>{
     type Output = MrRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -497,7 +497,7 @@ impl<EQ> AsRawTypedFid for MemoryRegionBase<EQ>{
     }
 }
 
-impl<EQ> AsRawTypedFid for MemoryRegionImplBase<EQ>{
+impl<EQ: ?Sized + EventQueueImplT,> AsRawTypedFid for MemoryRegionImplBase<EQ>{
     type Output = MrRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {

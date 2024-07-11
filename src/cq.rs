@@ -308,7 +308,7 @@ pub(crate) trait WaitObjectRetrievable<'a> {
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImpl<WAIT, RETRIEVE, FD>  {
 
-    pub(crate) fn new<EQ: AsFid + 'static, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: ?Sized + 'static, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: CqRawFid  = std::ptr::null_mut();
         // let mut entries: Vec<$t> = Vec::with_capacity(std::mem::size_of::<$t>() * $count);
@@ -361,7 +361,7 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>> {
 
     // pub(crate) fn new<EQ: AsFid + 'static, T0>(_options: T, domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-    pub(crate) fn new<EQ: AsFid + 'static, T0>(domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: ?Sized + 'static, T0>(domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: Rc::new(CompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
@@ -698,7 +698,7 @@ impl<T: AsFd> AsFd for CompletionQueue<T> {
 /// `CompletionQueueBuilder` is used to configure and build a new `CompletionQueue`.
 /// It encapsulates an incremental configuration of the address vector, as provided by a `fi_cq_attr`,
 /// followed by a call to `fi_cq_open`  
-pub struct CompletionQueueBuilder<'a, T, EQ, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
+pub struct CompletionQueueBuilder<'a, T, EQ: ?Sized, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     cq_attr: CompletionQueueAttr,
     domain: &'a DomainBase<EQ>,
     ctx: Option<&'a mut T>,
@@ -707,7 +707,7 @@ pub struct CompletionQueueBuilder<'a, T, EQ, const WAIT: bool, const RETRIEVE: b
 }
 
     
-impl<'a, EQ: AsFid + 'static> CompletionQueueBuilder<'a, (), EQ, true, false, false> {
+impl<'a, EQ: ?Sized> CompletionQueueBuilder<'a, (), EQ, true, false, false> {
     
     /// Initiates the creation of a new [CompletionQueue] on `domain`.
     /// 
@@ -723,7 +723,7 @@ impl<'a, EQ: AsFid + 'static> CompletionQueueBuilder<'a, (), EQ, true, false, fa
     }
 }
 
-impl<'a, T, EQ: AsFid +'static, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQueueBuilder<'a, T, EQ, WAIT, RETRIEVE, FD> {
+impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQueueBuilder<'a, T, EQ, WAIT, RETRIEVE, FD> {
 
     /// Specifies the minimum size of a completion queue.
     /// 

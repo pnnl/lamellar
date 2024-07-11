@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
-use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, eqoptions::EqConfig, WaitRetrievable, FdRetrievable, MappedAddress};
-use super::{eq::{AsyncEventQueueImpl, EventQueue}, domain::Domain, AsyncCtx};
+use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, MappedAddress};
+use super::{eq::{EventQueue, AsyncEventQueueImplT}, domain::Domain, AsyncCtx};
 
 
-pub(crate) type AsyncAddressVectorImpl = AddressVectorImplBase<AsyncEventQueueImpl>;
+pub(crate) type AsyncAddressVectorImpl = AddressVectorImplBase<dyn AsyncEventQueueImplT>;
 
 impl AsyncAddressVectorImpl {
     pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,Vec<RawMappedAddress>), crate::error::Error> { // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async
@@ -32,7 +32,7 @@ impl AsyncAddressVectorImpl {
             };
 
             // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_AV_COMPLETE}>::new(self.as_raw_fid(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
-            let res = eq.async_event_wait::<{libfabric_sys::FI_AV_COMPLETE}>(self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+            let res = eq.async_event_wait(libfabric_sys::FI_AV_COMPLETE, self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
             if let Event::AVComplete(ref entry) = res {
                 fi_addresses.truncate(entry.data() as usize);
             }
@@ -41,7 +41,7 @@ impl AsyncAddressVectorImpl {
     } 
 }
 
-pub type AddressVector = AddressVectorBase<AsyncEventQueueImpl>;
+pub type AddressVector = AddressVectorBase<dyn AsyncEventQueueImplT>;
 
 impl AddressVector {
     pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
@@ -58,7 +58,7 @@ impl AddressVector {
 
 pub struct AddressVectorBuilder<'a, T> {
     av_attr: AddressVectorAttr,
-    eq: Rc<AsyncEventQueueImpl>,
+    eq: Rc<dyn AsyncEventQueueImplT>,
     ctx: Option<&'a mut T>,
     domain: &'a Domain,
 }
@@ -70,7 +70,7 @@ impl<'a> AddressVectorBuilder<'a, ()> {
     /// 
     /// The initial configuration is what would be set if no `fi_av_attr` or `context` was provided to 
     /// the `fi_av_open` call. 
-    pub fn new<EQ: EqConfig + WaitRetrievable+FdRetrievable>(domain: &'a Domain, eq: &EventQueue<EQ>) -> AddressVectorBuilder<'a, ()> {
+    pub fn new<EQ: AsyncEventQueueImplT + 'static>(domain: &'a Domain, eq: &EventQueue<EQ>) -> AddressVectorBuilder<'a, ()> {
         let mut av_attr = AddressVectorAttr::new();
             av_attr.async_();
         AddressVectorBuilder {
@@ -216,7 +216,7 @@ mod tests {
         
             let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
             let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-            let eq = EventQueueBuilder::new(&fab).build().unwrap();
+            let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
         
             for i in 0..17 {
                 let count = 1 << i;
@@ -254,7 +254,7 @@ mod tests {
         if !entries.is_empty() {
             let fab: crate::fabric::Fabric = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
             let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-            let eq = EventQueueBuilder::new(&fab).build().unwrap();
+            let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
             let _av = AddressVectorBuilder::new(&domain, &eq)
                 .type_(crate::enums::AddressVectorType::Map)
                 .count(32)
@@ -294,7 +294,7 @@ mod libfabric_lifetime_tests {
         
             let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
             let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-            let eq = EventQueueBuilder::new(&fab).build().unwrap();
+            let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
         
             let mut avs = Vec::new();
             for i in 0..17 {

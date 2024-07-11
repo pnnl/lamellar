@@ -17,7 +17,7 @@ use super::message::extract_raw_addr_and_ctx;
 
 
 
-impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + RecvMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     fn trecv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -71,7 +71,7 @@ impl<E: TagCap + RecvMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT
     }
 }
 
-impl<E: TagCap + SendMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + SendMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     fn tsend_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {

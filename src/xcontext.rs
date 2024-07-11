@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, cqoptions::CqConfig, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::EventQueue, eqoptions::EqConfig, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, BindImpl, cq::CompletionQueueImplT, Bind};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, EventQueueImplT}, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, BindImpl, cq::CompletionQueueImplT, Bind};
 
 pub struct Receive;
 pub struct Transmit;
@@ -247,7 +247,7 @@ impl TransmitContext {
         self.inner.bind_cntr()
     }
 
-    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub fn bind_eq<T: CompletionQueueImplT + BindImpl + 'static + fid::AsFid>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         self.inner.bind_eq(&eq.inner)
     }
 
@@ -370,7 +370,7 @@ impl ReceiveContextImpl {
         }
     }
 
-    pub(crate) fn bind<T: crate::Bind + AsRawFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T:?Sized + crate::Bind + AsRawFid>(&self, res: &T, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
         
         if err != 0 {
@@ -389,7 +389,7 @@ impl ReceiveContextImpl {
         RxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: EventQueueImplT + BindImpl + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }
@@ -417,7 +417,7 @@ impl ReceiveContext {
         self.inner.bind_cntr()
     }
 
-    pub fn bind_eq<T: EqConfig + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub fn bind_eq<T: EventQueueImplT + BindImpl + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         self.inner.bind_eq(eq)
     }
 

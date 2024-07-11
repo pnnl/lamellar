@@ -1,6 +1,8 @@
 use std::{rc::Rc, cell::OnceCell};
 
 use av::{AddressVectorImplBase, AddressVectorImplT};
+use cq::CompletionQueueImplT;
+use eq::EventQueueImplT;
 use mr::DataDescriptor;
 
 pub mod ep;
@@ -60,7 +62,7 @@ impl MappedAddress {
         }
     }
     
-    pub(crate) fn from_raw_addr<EQ: 'static>(addr: RawMappedAddress, av: &Rc<AddressVectorImplBase<EQ>>) -> Self {
+    pub(crate) fn from_raw_addr<EQ: EventQueueImplT + ?Sized + 'static>(addr: RawMappedAddress, av: &Rc<AddressVectorImplBase<EQ>>) -> Self {
         let avcell = OnceCell::new();
         
         if avcell.set(av.clone() as Rc<dyn AddressVectorImplT>).is_err() {

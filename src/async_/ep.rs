@@ -1,16 +1,16 @@
 use std::rc::Rc;
 
-use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::Event, info::InfoEntry, cq::CompletionQueueImplT};
+use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase, PassiveEndpointImplBase}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::{Event, EventQueueBase}, info::InfoEntry, cq::CompletionQueueImplT};
 
-use super::{eq::AsyncEventQueueImpl, cq::{AsyncCompletionQueueImpl, AsyncCompletionQueueImplT}, domain::Domain};
+use super::{eq::AsyncEventQueueImplT, cq::AsyncCompletionQueueImplT, domain::Domain};
 
 pub struct ConnectionListener {
-    eq:  Rc<AsyncEventQueueImpl>,
+    eq:  Rc<dyn AsyncEventQueueImplT>,
     ep_fid: RawFid,
 }
 
 impl ConnectionListener {
-    fn new(ep_fid: RawFid, eq: &Rc<AsyncEventQueueImpl>) -> Self {
+    fn new(ep_fid: RawFid, eq: &Rc<dyn AsyncEventQueueImplT>) -> Self {
         
         Self {
             ep_fid,
@@ -21,12 +21,12 @@ impl ConnectionListener {
     pub async fn next(&self) -> Result<Event<usize>, crate::error::Error> {
         
         // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNREQ}>::new(self.ep_fid, self.eq.clone(), Rc::strong_count(&self.eq)).await?;
-        let res = self.eq.async_event_wait::<{libfabric_sys::FI_CONNREQ}>(self.ep_fid,  Rc::strong_count(&self.eq)).await?;
+        let res = self.eq.async_event_wait(libfabric_sys::FI_CONNREQ, self.ep_fid,  Rc::strong_count(&self.eq)).await?;
         Ok(res)
     }
 }
 
-pub type Endpoint<T> = EndpointBase<T, AsyncEventQueueImpl, dyn AsyncCompletionQueueImplT>;
+pub type Endpoint<T> = EndpointBase<T, dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT>;
 // pub struct AsyncEndpoint<T> {
 //     pub(crate) inner: Rc<AsyncEndpointImpl>,
 //     phantom: PhantomData<T>,
@@ -39,7 +39,7 @@ impl<T> Endpoint<T> {
         
         let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
         // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>::new(self.as_raw_fid(), eq, 0).await?;
-        let res = eq.async_event_wait::<{libfabric_sys::FI_CONNECTED}>(self.as_raw_fid(),  0).await?;
+        let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, self.as_raw_fid(),  0).await?;
 
         
         Ok(res)
@@ -49,19 +49,19 @@ impl<T> Endpoint<T> {
         self.accept()?;
 
         let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
-        let res = eq.async_event_wait::<{libfabric_sys::FI_CONNECTED}>(self.as_raw_fid(),  0).await?;
+        let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, self.as_raw_fid(),  0).await?;
 
         // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>::new(self.as_raw_fid(), eq, 0).await?;
         Ok(res)
     }
 }
 
-pub struct IncompleteBindCq<'a, EQ> {
-    pub(crate) ep: &'a EndpointImplBase<EQ, dyn AsyncCompletionQueueImplT>,
+pub struct IncompleteBindCq<'a> {
+    pub(crate) ep: &'a EndpointImplBase<dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT>,
     pub(crate) flags: u64,
 }
 
-impl<EQ: AsRawFid + 'static> EndpointImplBase<EQ, dyn AsyncCompletionQueueImplT> {
+impl EndpointImplBase<dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT> {
     pub(crate) fn bind_cq_<T: AsyncCompletionQueueImplT + 'static>(&self, cq: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
         
@@ -97,19 +97,51 @@ impl<EQ: AsRawFid + 'static> EndpointImplBase<EQ, dyn AsyncCompletionQueueImplT>
         }
     } 
 
-    pub(crate) fn bind_cq(&self) -> IncompleteBindCq<EQ> {
+    pub(crate) fn bind_cq(&self) -> IncompleteBindCq {
         IncompleteBindCq { ep: self, flags: 0}
     }
 }
 
-impl<E, EQ: AsRawFid + 'static> EndpointBase<E, EQ, dyn AsyncCompletionQueueImplT> {
-    pub fn bind_cq(&self) -> IncompleteBindCq<EQ> {
+impl<CQ: ?Sized + CompletionQueueImplT> EndpointImplBase<dyn AsyncEventQueueImplT, CQ> {
+
+    pub(crate) fn bind_eq<T: AsyncEventQueueImplT + 'static>(&self, eq: &Rc<T>) -> Result<(), crate::error::Error>  {
+            
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), 0) };
+        
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            if self.eq.set(eq.clone()).is_err() {
+                panic!("Endpoint is already bound to another EventQueue"); // Should never reach this since inlined_fi_ep_bind will throw an error ealier
+                                                                        // but keep it here to satisfy the compiler.
+            }
+
+            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for eq?
+            Ok(())
+        }
+    }
+}
+
+impl<E> EndpointBase<E, dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT> {
+    pub fn bind_cq(&self) -> IncompleteBindCq {
         self.inner.bind_cq()
     }
 }
 
+impl<E, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, dyn AsyncEventQueueImplT, CQ> {
+    pub fn bind_eq<T: AsyncEventQueueImplT + 'static>(&self, eq: &EventQueueBase<T>) -> Result<(), crate::error::Error>  {
+        self.inner.bind_eq(&eq.inner)
+    }
+}
 
-impl<'a, EQ: AsRawFid + 'static > IncompleteBindCq<'a, EQ> {
+// impl<E, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, dyn EventQueueImplT, CQ> {
+//     pub fn bind_eq<T: EventQueueImplT + 'static>(&self, eq: &EventQueueBase<T>) -> Result<(), crate::error::Error>  {
+//         self.inner.bind_eq(&eq.inner)
+//     }
+// }
+
+impl<'a> IncompleteBindCq<'a> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
@@ -142,7 +174,7 @@ impl<'a, EQ: AsRawFid + 'static > IncompleteBindCq<'a, EQ> {
 }
 
 // ============== Async stuff ======================= //
-pub type PassiveEndpoint<T> = PassiveEndpointBase<T, AsyncEventQueueImpl>;
+pub type PassiveEndpoint<T> = PassiveEndpointBase<T, dyn AsyncEventQueueImplT>;
 
 
 impl<T> PassiveEndpoint<T> {
@@ -153,7 +185,34 @@ impl<T> PassiveEndpoint<T> {
         // let eq = self.inner.eq.get().unwrap().clone();
         Ok(ConnectionListener::new(self.as_raw_fid(), self.inner.eq.get().unwrap()))
     }
+    
 }
+
+impl<E> PassiveEndpointImplBase<E, dyn AsyncEventQueueImplT> {
+
+
+    pub(crate) fn bind<T: AsyncEventQueueImplT + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            // self._sync_rcs.borrow_mut().push(res.clone()); 
+            if self.eq.set(res.clone()).is_err() {panic!("Could not set oncecell")}
+            Ok(())
+        }
+    }
+}
+
+
+impl<E> PassiveEndpointBase<E, dyn AsyncEventQueueImplT> {
+
+    pub fn bind<T: AsyncEventQueueImplT + 'static>(&self, res: &EventQueueBase<T>, flags: u64) -> Result<(), crate::error::Error> {
+        self.inner.bind(&res.inner, flags)
+    }
+}
+
+
 
 pub struct EndpointBuilder<'a, T, E> {
     ep_attr: EndpointAttr,

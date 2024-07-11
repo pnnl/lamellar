@@ -1,8 +1,8 @@
-use crate::{ep::{Address, EndpointBase}, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::MulticastGroupCollectiveBase, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncEventQueueImpl, cq::AsyncCompletionQueueImplT, AsyncCtx}, av::AddressVectorSet, cq::{SingleCompletion, CompletionQueueImplT}};
+use crate::{ep::{Address, EndpointBase}, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::MulticastGroupCollectiveBase, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncEventQueueImplT, cq::AsyncCompletionQueueImplT, AsyncCtx}, av::AddressVectorSet, cq::{SingleCompletion, CompletionQueueImplT}};
 
-pub type MulticastGroupCollective<CQ> = MulticastGroupCollectiveBase<AsyncEventQueueImpl, CQ>;
+pub type MulticastGroupCollective<CQ> = MulticastGroupCollectiveBase<dyn AsyncEventQueueImplT, CQ>;
 
-impl<E: CollCap, CQ: CompletionQueueImplT> EndpointBase<E, AsyncEventQueueImpl, CQ> {
+impl<E: CollCap, CQ: CompletionQueueImplT> EndpointBase<E, dyn AsyncEventQueueImplT, CQ> {
 
     #[inline]
     async fn join_impl_async(&self, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
@@ -10,7 +10,7 @@ impl<E: CollCap, CQ: CompletionQueueImplT> EndpointBase<E, AsyncEventQueueImpl, 
         let mc = self.join_with_context(addr, options, &mut async_ctx)?;
         let eq = self.inner.eq.get().expect("Endpoint not bound to an Event Queue");
         // let res = EventQueueFut::<{libfabric_sys::FI_JOIN_COMPLETE}>::new(mc.as_raw_fid(), eq, &mut async_ctx as *mut AsyncCtx as usize).await?;
-        let res = eq.async_event_wait::<{libfabric_sys::FI_JOIN_COMPLETE}>(mc.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+        let res = eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, mc.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
 
         
         Ok((res, mc))
@@ -30,7 +30,7 @@ impl<E: CollCap, CQ: CompletionQueueImplT> EndpointBase<E, AsyncEventQueueImpl, 
         let mc = self.join_collective_with_context(coll_mapped_addr, set, options, &mut async_ctx)?;
         let eq = self.inner.eq.get().expect("Endpoint not bound to an Event Queue");
         // let res = EventQueueFut::<{libfabric_sys::FI_JOIN_COMPLETE}>::new(mc.as_raw_fid(), eq, &mut async_ctx as *mut AsyncCtx as usize).await?;
-        let res = eq.async_event_wait::<{libfabric_sys::FI_JOIN_COMPLETE}>(mc.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+        let res = eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, mc.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
 
         
         Ok((res,mc))
@@ -46,7 +46,7 @@ impl<E: CollCap, CQ: CompletionQueueImplT> EndpointBase<E, AsyncEventQueueImpl, 
 }
 
 
-impl<CQ: AsyncCompletionQueueImplT + ?Sized> MulticastGroupCollective<CQ> {
+impl MulticastGroupCollective<dyn AsyncCompletionQueueImplT> {
 
     #[inline]
     async fn barrier_impl_async(&self, user_ctx: Option<*mut std::ffi::c_void>, options: Option<CollectiveOptions>) -> Result<SingleCompletion, crate::error::Error> { 

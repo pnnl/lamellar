@@ -1,9 +1,11 @@
 use crate::{domain::{DomainImplBase, DomainBase, PeerDomainCtx}, info::InfoEntry};
 
-use super::eq::AsyncEventQueueImpl;
+use super::eq::AsyncEventQueueImplT;
 
-pub(crate) type AsyncDomainImpl = DomainImplBase<AsyncEventQueueImpl>;
-pub type Domain = DomainBase<AsyncEventQueueImpl>;
+
+
+pub(crate) type AsyncDomainImpl = DomainImplBase<dyn AsyncEventQueueImplT>;
+pub type Domain = DomainBase<dyn AsyncEventQueueImplT>;
 
 /// Builder for the [Domain] type.
 /// 

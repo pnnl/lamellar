@@ -12,7 +12,7 @@ use async_io::{Async as Async, Readable};
 use tokio::io::unix::AsyncFd as Async;
 use crate::cq::WaitObjectRetrievable;     
 use crate::cq::WaitableCompletionQueueImplT;    
-use crate::{cq::{CompletionQueueImpl, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, RawFid, AsRawFid}, cqoptions::{CqConfig, self, Options}, FdRetrievable, MappedAddress, Waitable, WaitRetrievable, enums::WaitObjType};
+use crate::{cq::{CompletionQueueImpl, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, RawFid, AsRawFid}, cqoptions::{self, Options},  MappedAddress, enums::WaitObjType};
 
 use super::AsyncFid;
 use super::{AsyncCtx, domain::{AsyncDomainImpl, Domain}};
@@ -158,10 +158,6 @@ impl<T: AsyncCompletionQueueImplT> CompletionQueue<T> {
         self.inner.read_in_async(buf, count).await
     }
 
-    pub async fn async_transfer_wait(&self, async_ctx: &mut AsyncCtx) -> Result<SingleCompletion, crate::error::Error>  {
-        self.inner.wait_for_ctx_async(async_ctx).await
-    }
-
     // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
     //     self.inner.read_async(count).await
     // }
@@ -243,7 +239,7 @@ impl<'a> Future for CqAsyncRead<'a>{
         let mut_self = self.get_mut();
         loop {
             let (err, _guard) = if mut_self.cq.trywait().is_err() {
-                (mut_self.cq.read_in(1, mut_self.buf), None)
+                (mut_self.cq.read_in(mut_self.num_entries, mut_self.buf), None)
             }
             else {
                 if mut_self.fut.is_none() {
@@ -289,7 +285,7 @@ impl<'a>  CqAsyncReadOwned<'a> {
     pub(crate) fn new( num_entries: usize, cq: &'a AsyncCompletionQueueImpl) -> Self {
 
         Self {
-            buf:  alloc_cq_entry!(*cq.base.get_ref().entry_buff.borrow(), 1),
+            buf:  alloc_cq_entry!(*cq.base.get_ref().entry_buff.borrow(), num_entries),
             num_entries,
             cq,
             fut: None,
@@ -316,7 +312,7 @@ impl<'a> Future for CqAsyncReadOwned<'a>{
             // println!("About to block");
             let (err, _guard) = if mut_self.cq.trywait().is_err() {
                 // println!("Cannot block");
-                (mut_self.cq.read_in(1, &mut mut_self.buf), None)
+                (mut_self.cq.read_in(mut_self.num_entries, &mut mut_self.buf), None)
             }
             else {
                 if mut_self.fut.is_none() {

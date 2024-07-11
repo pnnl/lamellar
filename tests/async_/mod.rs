@@ -6,7 +6,7 @@ use async_std::task;
 #[cfg(feature="use-tokio")]
 use tokio::task;
 
-use libfabric::{cntr::Counter, cntroptions::CntrConfig, cqoptions::{CqConfig,Options}, ep::Address, eqoptions::EqConfig, fabric::{self, Fabric}, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder}, domain::{Domain, DomainBuilder}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder, AsyncCompletionQueueImplT, AsyncCompletionQueueImpl}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, mr::{MemoryRegion, MemoryRegionBuilder}}, WaitRetrievable, FdRetrievable, MappedAddress, cq::{CompletionQueueImplT, WaitableCompletionQueueImplT}};
+use libfabric::{cntr::Counter, cntroptions::CntrConfig, cqoptions::{CqConfig,Options}, ep::Address, eqoptions::EqConfig, fabric::{self, Fabric}, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder, AsyncEventQueueImplT}, domain::{Domain, DomainBuilder}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder, AsyncCompletionQueueImplT, AsyncCompletionQueueImpl}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, mr::{MemoryRegion, MemoryRegionBuilder}}, WaitRetrievable, FdRetrievable, MappedAddress, cq::{CompletionQueueImplT, WaitableCompletionQueueImplT}};
 pub enum CompMeth {
     // Spin,
     // Sread,
@@ -14,7 +14,7 @@ pub enum CompMeth {
     // Yield,
     WaitFd,
 }
-pub type EventQueueOptions = libfabric::eqoptions::Options<libfabric::eqoptions::Off, libfabric::eqoptions::WaitRetrieve, libfabric::eqoptions::On>;
+pub type EventQueueOptions = libfabric::async_::eq::AsyncEventQueueImpl<false>;
 pub type CounterOptions = libfabric::cntroptions::Options<libfabric::cntroptions::WaitNoRetrieve, libfabric::cntroptions::Off>;
 
 pub const FT_OPT_ACTIVE: u64			= 1 << 0;
@@ -203,8 +203,8 @@ pub fn ft_open_fabric_res<E>(info: &InfoEntry<E>) -> (Fabric, EventQueue<EventQu
     
     let fab = libfabric::fabric::FabricBuilder::new(info).build().unwrap();
     let eq = EventQueueBuilder::new(&fab)
-        .build().
-        unwrap();
+        .build()
+        .unwrap();
     let domain = ft_open_domain_res(info, &fab);
     // domain.bind_eq(&eq, true).unwrap();
     (fab, eq, domain)
@@ -216,7 +216,7 @@ pub fn ft_open_domain_res<E>(info: &InfoEntry<E>, fab: &fabric::Fabric) -> Domai
 }
 
 
-pub fn ft_alloc_ep_res<E, EQ: EqConfig + WaitRetrievable + FdRetrievable +'static>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &Domain, eq: &EventQueue<EQ>) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, Option<AddressVector>){
+pub fn ft_alloc_ep_res<E, EQ: AsyncEventQueueImplT +'static>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &Domain, eq: &EventQueue<EQ>) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, Option<AddressVector>){
 
     let format = if info.get_caps().is_tagged() {
         enums::CqFormat::TAGGED
@@ -299,7 +299,7 @@ pub fn ft_alloc_ep_res<E, EQ: EqConfig + WaitRetrievable + FdRetrievable +'stati
 }
 
 #[allow(clippy::type_complexity)]
-pub fn ft_alloc_active_res<E, EQ: EqConfig + 'static + WaitRetrievable + FdRetrievable>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &Domain, eq: &EventQueue<EQ>) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, Endpoint<E>, Option<AddressVector>) {
+pub fn ft_alloc_active_res<E, EQ: AsyncEventQueueImplT + 'static>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &Domain, eq: &EventQueue<EQ>) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, Endpoint<E>, Option<AddressVector>) {
     
     let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain, eq);
 
@@ -310,7 +310,7 @@ pub fn ft_alloc_active_res<E, EQ: EqConfig + 'static + WaitRetrievable + FdRetri
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep<T: EqConfig + 'static, CNTR: libfabric::cntroptions::CntrConfig + 'static, I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, ep: &mut Endpoint<E>, tx_cq: &CqType, rx_cq: &CqType, eq: &EventQueue<T>, av: &Option<AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) {
+pub fn ft_enable_ep<T: AsyncEventQueueImplT + 'static, CNTR: libfabric::cntroptions::CntrConfig + 'static, I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, ep: &mut Endpoint<E>, tx_cq: &CqType, rx_cq: &CqType, eq: &EventQueue<T>, av: &Option<AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) {
     
     match info.get_ep_attr().get_type() {
         libfabric::enums::EndpointType::Msg => ep.bind_eq(eq).unwrap(),
@@ -446,7 +446,7 @@ fn bind_tx_cq<E>(tx_cq: &CqType, ep: &mut Endpoint<E>, gl_ctx: &mut TestsGlobalC
 //     }
 // }
 
-pub async fn ft_accept_connection<EQ: EqConfig+ libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable, M:MsgDefaultCap, T:TagDefaultCap>(ep: &EndpointCaps<M, T>, eq: &EventQueue<EQ>) {
+pub async fn ft_accept_connection<EQ: AsyncEventQueueImplT, M:MsgDefaultCap, T:TagDefaultCap>(ep: &EndpointCaps<M, T>, eq: &EventQueue<EQ>) {
     // match ep {
     //     EndpointCaps::Msg(ep) => ep.accept().unwrap(),
     //     EndpointCaps::Tagged(ep) => ep.accept().unwrap(),
@@ -484,7 +484,7 @@ pub enum PassiveEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
 
 
 #[allow(clippy::type_complexity)]
-pub async fn ft_server_connect<T: EqConfig + libfabric::WaitRetrievable + libfabric::FdRetrievable + libfabric::Waitable + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(pep: &PassiveEndpointCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &EventQueue<T>, fab: &fabric::Fabric) -> (Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub async fn ft_server_connect<T: AsyncEventQueueImplT + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(pep: &PassiveEndpointCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &EventQueue<T>, fab: &fabric::Fabric) -> (Domain, CqType, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     match pep {
 
@@ -531,7 +531,7 @@ pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, source:
 
 }
 
-pub async fn ft_connect_ep<T: EqConfig + libfabric::Waitable + libfabric::WaitRetrievable + libfabric::FdRetrievable, E>(ep: &Endpoint<E>, eq: &EventQueue<T>, addr: &libfabric::ep::Address) {
+pub async fn ft_connect_ep<T: AsyncEventQueueImplT, E>(ep: &Endpoint<E>, eq: &EventQueue<T>, addr: &libfabric::ep::Address) {
     
     ep.connect_async(addr).await.unwrap();
 }
@@ -599,7 +599,7 @@ pub fn ft_alloc_msgs<I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, dom
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep_recv<EQ: EqConfig + 'static, CNTR: CntrConfig + 'static, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &mut EndpointCaps<M, T>, domain: &Domain, tx_cq: &CqType, rx_cq: &CqType, eq: &EventQueue<EQ>, av: &Option<AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_enable_ep_recv<EQ: AsyncEventQueueImplT + 'static, CNTR: CntrConfig + 'static, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &mut EndpointCaps<M, T>, domain: &Domain, tx_cq: &CqType, rx_cq: &CqType, eq: &EventQueue<EQ>, av: &Option<AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     
     let (mr, mut data_desc)  = match ep {
         EndpointCaps::Msg(ep) => {
@@ -1517,7 +1517,6 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
             let fab = libfabric::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
 
             let eq = EventQueueBuilder::new(&fab)
-                // .wait_fd()
                 .build()
                 .unwrap();
 

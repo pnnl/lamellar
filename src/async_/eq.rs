@@ -1,21 +1,141 @@
-use std::{rc::Rc, collections::HashMap, cell::RefCell, ops::Deref, marker::PhantomData, future::Future, task::ready};
+use std::{rc::Rc, collections::HashMap, cell::RefCell, future::Future, task::ready, pin::Pin, os::fd::AsRawFd};
 
 #[cfg(feature="use-async-std")]
 use async_io::Async as Async;
 #[cfg(feature="use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
-use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, EventQueueImplT}, error::Error, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, eqoptions::{self, Options}, FdRetrievable, WaitRetrievable, async_::AsyncCtx};
+use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, EventQueueImplT, WritableEventQueueImplT}, error::Error, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, async_::AsyncCtx, cq::WaitObjectRetrievable};
 
-pub type EventQueue<T> = EventQueueBase<T, AsyncEventQueueImpl>;
+use super::AsyncFid;
 
-struct EqAsyncRead<'a>{
-    buf: &'a mut [u8],
-    event: &'a mut u32,
-    eq: &'a AsyncEventQueueImpl,
+pub type EventQueue<T> = EventQueueBase<T>;
+
+pub(crate) trait  FdEq: EventQueueImplT + AsRawFd{
+    
 }
 
-impl<'a> Unpin for EqAsyncRead<'a>{}
+impl<const WRITE: bool> AsyncFid for AsyncEventQueueImpl<WRITE> {
+    fn trywait(&self) -> Result<(), Error> {
+        self.base.get_ref()._fabric_rc.trywait(self.base.get_ref())
+    }
+}
+
+enum EqType<'a>{
+    Write(&'a AsyncEventQueueImpl<true>),
+    NoWrite(&'a AsyncEventQueueImpl<false>),
+}
+
+impl<'a>  EqType<'a> {
+    #[inline]
+    pub(crate) fn trywait(&self) -> Result<(), Error> {
+        match self {
+            EqType::Write(e) => e.trywait(),
+            EqType::NoWrite(e) => e.trywait(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, Error>{
+        match self {
+            EqType::Write(e) => e.read_in(buff, event),
+            EqType::NoWrite(e) => e.read_in(buff, event),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn remove_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid) -> Option<Event<usize>>{
+        match self {
+            EqType::Write(e) =>  e.remove_cm_entry(event_type, req_fid),
+            EqType::NoWrite(e) =>  e.remove_cm_entry(event_type, req_fid),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn insert_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, entry: Event<usize>) {
+        match self {
+            EqType::Write(e) =>  e.insert_cm_entry(event_type, req_fid, entry),
+            EqType::NoWrite(e) =>  e.insert_cm_entry(event_type, req_fid, entry),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn remove_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, ctx: usize) -> Option<Event<usize>>{
+        match self {
+            EqType::Write(e) => e.remove_entry(event_type, ctx),
+            EqType::NoWrite(e) => e.remove_entry(event_type, ctx),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn insert_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, ctx: usize, entry: Event<usize>){
+        match self {
+            EqType::Write(e) => e.insert_entry(event_type, ctx, entry),
+            EqType::NoWrite(e) => e.insert_entry(event_type, ctx, entry),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn read_eq_entry(&self, bytes_read: usize, buffer: &[u8], event: &u32) -> Event<usize> {
+        match self {
+            EqType::Write(e) => e.base.get_ref().read_eq_entry(bytes_read, buffer, event),
+            EqType::NoWrite(e) => e.base.get_ref().read_eq_entry(bytes_read, buffer, event),
+        }
+    }
+}
+
+
+#[cfg(feature = "use-tokio")]
+pub(crate) enum FutType<'a> {
+    Write(Pin<Box<dyn Future<Output = Result<tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<true,true,true,true>>, std::io::Error>> + 'a>>),
+    NoWrite(Pin<Box<dyn Future<Output = Result<tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<false,true,true,true>>, std::io::Error>> + 'a>>),
+}
+
+#[cfg(feature = "use-async-std")]
+pub(crate) enum FutType<'a> {
+    Write(Pin<Box<async_io::Readable<'a, EventQueueImpl<true,true,true,true>>>>),
+    NoWrite(Pin<Box<async_io::Readable<'a, EventQueueImpl<false,true,true,true>>>>),
+}
+
+pub struct EqAsyncRead<'a>{
+    buf: &'a mut [u8],
+    event: &'a mut u32,
+    eq: EqType<'a>,
+    fut: Option<FutType<'a>>,
+}
+
+impl<'a> EqAsyncRead<'a> {
+    fn new(buf: &'a mut [u8], event: &'a mut u32, eq: EqType<'a>,) -> Self {
+        Self {
+            buf,
+            event,
+            eq,
+            fut: None,
+        }
+    }
+} 
+#[cfg(feature="use-tokio")]
+enum Guard<'a> {
+    Write(tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<true, true, true, true>>),
+    NoWrite(tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<false, true, true, true>>),
+}
+
+#[cfg(feature="use-async-std")]
+enum Guard {
+    Write(()),
+    NoWrite(()),
+}
+
+
+#[cfg(feature="use-tokio")]
+impl<'a> Guard<'a> {
+    fn clear_ready(&mut self) {
+        match self{
+            Guard::Write(g) => g.clear_ready(),
+            Guard::NoWrite(g) => g.clear_ready(),
+        }
+    }
+}
 
 impl<'a> Future for EqAsyncRead<'a>{
     type Output=Result<usize, Error>;
@@ -24,15 +144,29 @@ impl<'a> Future for EqAsyncRead<'a>{
         let ev = self.get_mut();
         loop {
             // println!("About to block waiting for event");
-            let (err, _guard) = if ev.eq._fabric_rc.trywait_slice(&[&ev.eq]).is_err() {
-                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), None)
+            let (err, _guard) = if ev.eq.trywait().is_err() {
+                (ev.eq.read_in( ev.buf,  ev.event), None)
             }
             else {
-                #[cfg(feature = "use-tokio")]
-                let _guard = ready!(ev.eq.base.poll_read_ready(cx)).unwrap();
-                #[cfg(feature = "use-async-std")]
-                let _guard = ready!(ev.eq.base.poll_readable(cx)).unwrap();
-                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), Some(_guard))
+                if ev.fut.is_none() {
+                    ev.fut = Some(
+                        match ev.eq {
+                            EqType::Write(e) => FutType::Write(Box::pin(e.base.readable())),
+                            EqType::NoWrite(e) => FutType::NoWrite(Box::pin(e.base.readable())),
+                        })
+                }
+
+                // Tokio returns something we need, async_std returns ()
+                #[allow(clippy::unit_arg)]
+                let _guard = match ev.fut.as_mut().unwrap() {
+                    FutType::Write(e) => Guard::Write(ready!(e.as_mut().poll(cx)).unwrap()),
+                    FutType::NoWrite(e) => Guard::NoWrite(ready!(e.as_mut().poll(cx)).unwrap()),
+                };
+                
+                // We only need to reset the option to none
+                #[allow(clippy::let_underscore_future)]
+                let _ = ev.fut.take().unwrap();
+                (ev.eq.read_in( ev.buf,  ev.event), Some(_guard))
             };
             match err {
                 Err(error) => {
@@ -43,7 +177,12 @@ impl<'a> Future for EqAsyncRead<'a>{
                         // println!("Will continue");
                         #[cfg(feature = "use-tokio")]
                         match _guard {
-                            Some(mut guard) => {guard.clear_ready()},
+                            Some(mut guard) => {
+                                match ev.eq {
+                                    EqType::Write(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                    EqType::NoWrite(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                }
+                            },
                             None => {}
                         }
                         continue;
@@ -55,160 +194,142 @@ impl<'a> Future for EqAsyncRead<'a>{
     }
 }
 
-impl<T: eqoptions::EqConfig + WaitRetrievable + FdRetrievable> EventQueue<T> {
-    pub async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>{
-        self.inner.read_async().await
-    }
+struct EqAsyncReadOwned<'a> {
+    buf: Vec<u8>,
+    event: u32,
+    eq: EqType<'a>,
+    fut: Option<FutType<'a>>,
+}
 
-    pub(crate) fn new<T0>(_options: T,fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+impl<'a> EqAsyncReadOwned<'a> {
+    pub(crate) fn new(eq: EqType<'a>) -> Self {
+        Self {
+            buf: vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()],
+            event: 0,
+            eq,
+            fut: None,
+        }
+    }
+}
+
+impl<'a> Future for EqAsyncReadOwned<'a>{
+    type Output=Result<usize, Error>;
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        let ev = self.get_mut();
+        loop {
+            // println!("About to block waiting for event");
+            let (err, _guard) = if ev.eq.trywait().is_err() {
+                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), None)
+            }
+            else {
+                if ev.fut.is_none() {
+                    ev.fut = Some(
+                        match ev.eq {
+                            EqType::Write(e) => FutType::Write(Box::pin(e.base.readable())),
+                            EqType::NoWrite(e) => FutType::NoWrite(Box::pin(e.base.readable())),
+                        })
+                }
+
+                // Tokio returns something we need, async_std returns ()
+                #[allow(clippy::unit_arg)]
+                let _guard = match ev.fut.as_mut().unwrap() {
+                    FutType::Write(e) => Guard::Write(ready!(e.as_mut().poll(cx)).unwrap()),
+                    FutType::NoWrite(e) => Guard::NoWrite(ready!(e.as_mut().poll(cx)).unwrap()),
+                };
+                
+                // We only need to reset the option to none
+                #[allow(clippy::let_underscore_future)]
+                let _ = ev.fut.take().unwrap();
+                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), Some(_guard))
+            };
+            match err {
+                Err(error) => {
+                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+                        return std::task::Poll::Ready(Err(error));
+                    }
+                    else {
+                        // println!("Will continue");
+                        #[cfg(feature = "use-tokio")]
+                        match _guard {
+                            Some(mut guard) => {
+                                match ev.eq {
+                                    EqType::Write(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                    EqType::NoWrite(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                }
+                            },
+                            None => {}
+                        }
+                        continue;
+                    }
+                },
+                Ok(len) => return std::task::Poll::Ready(Ok(len)),
+            }
+        }
+    }
+}
+
+impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
+
+    pub(crate) fn new<T0>(fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
 
         Ok(
             Self {
                 inner: Rc::new(
                     AsyncEventQueueImpl::new(&fabric.inner, attr, context)?
                 ),
-                phantom: PhantomData, 
             })
     }
 }
 
-impl AsyncEventQueueImpl {
+
+pub trait AsyncEventQueueImplT: EventQueueImplT {
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead ;
+    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, ctx: usize) -> AsyncEventEq ;
+}
+
+impl AsyncEventQueueImpl<true> {
     pub(crate) async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>{
-        let mut event = 0 ;
-        let mut buf: Vec<u8> = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
-
-        loop {
-
-            // println!("About to block waiting for event");
-            let (err, _guard) = if self._fabric_rc.trywait_slice(&[&self]).is_err() {
-                (self.read_in( &mut buf,  &mut event), None)
-            }
-            else {
-                let _guard = self.base.readable().await.unwrap();
-                (self.read_in( &mut buf,  &mut event), Some(_guard))
-            };
-            match err {
-                Err(error) => {
-                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                        return Err(error);
-                    }
-                    else {
-                        // println!("Will continue");
-                        #[cfg(feature = "use-tokio")]
-                        match _guard {
-                            Some(mut guard) => {if self.pending_cm_entries.borrow().is_empty() && self.pending_entries.borrow().is_empty() {guard.clear_ready()}},
-                            None => {}
-                        }
-                        continue;
-                    }
-                },
-                Ok(len) => {return Ok(self.read_eq_entry(len, &mut buf, &mut event));},
-            }
-        }
-    }
-        // req_fid,
-        // eq,
-    // buf: vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()],
-    // event : 0,
-    // ctx,
-    pub(crate) async fn async_event_wait<const E: libfabric_sys::_bindgen_ty_18>(&self, req_fid: RawFid, ctx: usize) -> Result<Event<usize>, crate::error::Error> {
         let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
         let mut event = 0;
-        loop {
-            if E == libfabric_sys::FI_CONNREQ || E == libfabric_sys::FI_CONNECTED || E == libfabric_sys::FI_SHUTDOWN {
-                if let Some(mut entries) = self.pending_cm_entries.borrow_mut().remove(&(E, req_fid)) {
-                    if !entries.is_empty() {
-                        let entry = entries.pop().unwrap();
-                        return Ok(entry)
-                    }
-                }
-            }
-            else if let Some(mut entry) = self.pending_entries.borrow_mut().remove(&(E, ctx)) {
-                if E == libfabric_sys::FI_MR_COMPLETE {
-                    // println!("Got MrComplete: {}", ctx);
-                }
-                if ctx != 0 {
-                    match entry {
-                        crate::eq::Event::MrComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
-                        crate::eq::Event::AVComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
-                        crate::eq::Event::JoinComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
-                        _ => panic!("Unexpected!"),
-                    }
-                    return Ok(entry)
-                }
-                else {
-                    return Ok(entry)
-                }
-            }
-            // println!("About to block waiting for event");
-            let res;
-            let (err, _guard) = if self._fabric_rc.trywait_slice(&[&self]).is_err() {
-                (self.read_in( &mut buf,  &mut event), None)
-            }
-            else {
-                let _guard = self.base.readable().await.unwrap();
-                (self.read_in( &mut buf,  &mut event), Some(_guard))
-            };
-            match err {
-                Err(error) => {
-                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                        return Err(error);
-                    }
-                    else {
-                        // println!("Will continue");
-                        #[cfg(feature = "use-tokio")]
-                        match _guard {
-                            Some(mut guard) => {if self.pending_cm_entries.borrow().is_empty() && self.pending_entries.borrow().is_empty() {guard.clear_ready()}},
-                            None => {}
-                        }
-                        continue;
-                    }
-                },
-                Ok(len) => {res = self.read_eq_entry(len, &mut buf, &mut event);},
-            }
-            match &res {
-                    // crate::eq::Event::Notify(entry) | 
-                crate::eq::Event::MrComplete(e) => {self.pending_entries.borrow_mut().insert((libfabric_sys::FI_MR_COMPLETE, e.c_entry.context as usize),res);},
-                crate::eq::Event::AVComplete(e) => {self.pending_entries.borrow_mut().insert((libfabric_sys::FI_AV_COMPLETE, e.c_entry.context as usize),res);},
-                crate::eq::Event::JoinComplete(e) => {self.pending_entries.borrow_mut().insert((libfabric_sys::FI_JOIN_COMPLETE, e.c_entry.context as usize),res);},
-                crate::eq::Event::ConnReq(_) => {
-                    // println!("Got ConnReq!");
-                    let mut map = self.pending_cm_entries.borrow_mut();
-                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_CONNREQ, req_fid)){
-                        entries.push(res);
-                    }
-                    else {
-                        map.insert((libfabric_sys::FI_CONNREQ, req_fid), vec![res]);
-                    }
-                },
-                crate::eq::Event::Connected(_) => {
-                    // println!("Got Connected!");
-                    let mut map = self.pending_cm_entries.borrow_mut();
-                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_CONNECTED, req_fid)){
-                        entries.push(res);
-                    }
-                    else {
-                        map.insert((libfabric_sys::FI_CONNECTED, req_fid), vec![res]);
-                    }
-                },
-                crate::eq::Event::Shutdown(_) => { // [TODO] No one will explcitly look for shutdown requests, should probably store it somewhere else
-                    // println!("Got Shutdown!");
-                    let mut map = self.pending_cm_entries.borrow_mut();
-                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_SHUTDOWN, req_fid)){
-                        entries.push(res);
-                    }
-                    else {
-                        map.insert((libfabric_sys::FI_SHUTDOWN, req_fid), vec![res]);
-                    }
-                },
-            }
+        let len = self.read_in_async(&mut buf, &mut event).await?;
+        Ok(self.base.get_ref().read_eq_entry(len, &buf, &event))
+    }
+}
 
-        }
+impl AsyncEventQueueImpl<false> {
+    pub(crate) async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>{
+        let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
+        let mut event = 0;
+        let len = self.read_in_async(&mut buf, &mut event).await?;
+        Ok(self.base.get_ref().read_eq_entry(len, &buf, &event))
+    }
+}
+
+impl AsyncEventQueueImplT for AsyncEventQueueImpl<true> {
+
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
+        EqAsyncRead::new(buf, event, EqType::Write(self) )
+    }
+
+    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, ctx: usize) -> AsyncEventEq {
+        AsyncEventEq::new(event_type, req_fid, EqType::Write(self), ctx)
     } 
 }
 
-pub struct AsyncEventQueueImpl {
-    pub(crate) base: Async<EventQueueImpl>,
+impl AsyncEventQueueImplT for AsyncEventQueueImpl<false> {
+
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
+        EqAsyncRead::new(buf, event, EqType::NoWrite(self) )
+    }
+
+    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, ctx: usize) -> AsyncEventEq {
+        AsyncEventEq::new(event_type, req_fid, EqType::NoWrite(self), ctx)
+    } 
+}
+
+pub struct AsyncEventQueueImpl<const WRITE: bool> {
+    pub(crate) base: Async<EventQueueImpl<WRITE, true, true, true>>,
     pending_entries: RefCell<HashMap<(u32, usize), Event<usize>>>,
     pending_cm_entries: RefCell<HashMap<(u32,libfabric_sys::fid_t), Vec::<Event<usize>> >>,
     // pub(crate) mrs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncMemoryRegionImpl>>>,   // We neep maps Fid -> MemoryRegionImpl/AddressVectorImpl/MulticastGroupCollectiveImpl, however, we don't want to extend 
@@ -219,7 +340,9 @@ pub struct AsyncEventQueueImpl {
     // pub(crate) avs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncAddressVectorImpl>>>,
     // pub(crate) mcs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncMulticastGroupCollectiveImpl>>>,
 }
-impl AsyncEventQueueImpl {
+
+
+impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
     pub(crate) fn new<T0>(fabric: &Rc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         
         Ok(Self {
@@ -231,6 +354,35 @@ impl AsyncEventQueueImpl {
             // mcs: RefCell::new(HashMap::new()),
         })
     }
+    // if let Some(mut entries) = ev.fut.eq.pending_cm_entries.borrow_mut().remove(&(ev.event_type, ev.req_fid)) {
+
+    #[inline]
+    pub(crate) fn insert_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, entry: Event<usize>) {
+        if let Some(vec) =  self.pending_cm_entries.borrow_mut().get_mut(&(event_type, req_fid)) {
+            vec.push(entry);
+        }
+        else {
+            self.pending_cm_entries.borrow_mut().insert((event_type, req_fid), vec![entry]);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn insert_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, ctx: usize, entry: Event<usize>) {
+        self.pending_entries.borrow_mut().insert((event_type, ctx), entry);
+    }
+
+    #[inline]
+    pub(crate) fn remove_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid) -> Option<Event<usize>>{
+        match self.pending_cm_entries.borrow_mut().get_mut(&(event_type, req_fid)) {
+            None => None, Some(vec) => vec.pop()
+        }
+    }
+
+    #[inline]
+    pub(crate) fn remove_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, ctx: usize) -> Option<Event<usize>>{
+        self.pending_entries.borrow_mut().remove(&(event_type, ctx))
+    }
+
 
     // pub(crate) fn bind_mr(&self, mr: &Rc<AsyncMemoryRegionImpl>) {
     //     self.mrs.borrow_mut().insert(mr.as_raw_fid(), Rc::downgrade(mr));
@@ -244,27 +396,14 @@ impl AsyncEventQueueImpl {
     //     self.mcs.borrow_mut().insert(mc.as_raw_fid(), Rc::downgrade(mc));
     // }
 
-    pub(crate) fn get_inner(&self) -> &EventQueueImpl {
+    pub(crate) fn get_inner(&self) -> &EventQueueImpl<WRITE, true, true, true> {
         self.base.get_ref()
     }
 }
 
-impl Deref for  AsyncEventQueueImpl {
-    type Target = EventQueueImpl;
-
-    fn deref(&self) -> &Self::Target {
-        self.get_inner()
-    }
-}
-
-
-impl EventQueueImplT for AsyncEventQueueImpl {
+impl<const WRITE: bool> EventQueueImplT for AsyncEventQueueImpl<WRITE> {
     fn read(&self) -> Result<Event<usize>, crate::error::Error> {
         self.get_inner().read()
-    }
-
-    fn read_in(&self, buffer: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
-        self.get_inner().read_in(buffer, event)
     }
 
     fn peek(&self) -> Result<Event<usize>, crate::error::Error> {
@@ -284,55 +423,56 @@ impl EventQueueImplT for AsyncEventQueueImpl {
     }
 }
 
-pub(crate) trait AsyncEventQueueImplT {
-    async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>;
-}
-
-impl AsyncEventQueueImplT for AsyncEventQueueImpl {
-    
-    async fn read_async(&self) -> Result<Event<usize>, crate::error::Error> {
-        self.read_async().await
+impl WritableEventQueueImplT for AsyncEventQueueImpl<true> {}
+impl<'a, const WRITE: bool> WaitObjectRetrievable<'a> for AsyncEventQueueImpl<WRITE> {
+    fn wait_object(&self) -> Result<crate::enums::WaitObjType<'a>, crate::error::Error> {
+        self.get_inner().wait_object()
     }
 }
 
+// pub(crate) trait AsyncEventQueueImplT {
+//     async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>;
+// }
 
-pub struct EventQueueFut<const E: libfabric_sys::_bindgen_ty_18>{
+// impl AsyncEventQueueImplT for AsyncEventQueueImpl {
+    
+//     async fn read_async(&self) -> Result<Event<usize>, crate::error::Error> {
+//         self.read_async().await
+//     }
+// }
+
+
+pub struct AsyncEventEq<'a>{
     pub(crate) req_fid: libfabric_sys::fid_t,
-    pub(crate) eq: Rc<AsyncEventQueueImpl>,
-    pub(crate) buf: Vec<u8>,
-    pub(crate) event: u32,
     pub(crate) ctx: usize,
+    event_type: libfabric_sys::_bindgen_ty_18,
+    fut: Pin<Box<EqAsyncReadOwned<'a>>>,
 }
 
-impl<const E: libfabric_sys::_bindgen_ty_18> EventQueueFut<{E}> {
-    pub fn new(req_fid: libfabric_sys::fid_t, eq: Rc<AsyncEventQueueImpl>, ctx: usize) -> Self {
+impl<'a> AsyncEventEq<'a> {
+    fn new(event_type: libfabric_sys::_bindgen_ty_18, req_fid: libfabric_sys::fid_t, eq: EqType<'a>, ctx: usize) -> Self {
         Self {
+            event_type,
+            fut: Box::pin(EqAsyncReadOwned::new(eq)),
             req_fid,
-            eq,
-            buf: vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()],
-            event : 0,
             ctx,
         }
     }
 }
 
-impl<const E: libfabric_sys::_bindgen_ty_18> Future for EventQueueFut<E> {
+impl<'a> Future for AsyncEventEq<'a> {
     type Output=Result<Event<usize>, Error>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         let ev = self.get_mut();
-        loop {
-            if E == libfabric_sys::FI_CONNREQ || E == libfabric_sys::FI_CONNECTED || E == libfabric_sys::FI_SHUTDOWN {
-                if let Some(mut entries) = ev.eq.pending_cm_entries.borrow_mut().remove(&(E, ev.req_fid)) {
-                    if !entries.is_empty() {
-                        let entry = entries.pop().unwrap();
-                        return std::task::Poll::Ready(Ok(entry))
-                    }
+
+        loop{
+            if ev.event_type == libfabric_sys::FI_CONNREQ || ev.event_type == libfabric_sys::FI_CONNECTED || ev.event_type == libfabric_sys::FI_SHUTDOWN {
+                if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, ev.req_fid) {
+                    return std::task::Poll::Ready(Ok(entry));
                 }
             }
-            else if let Some(mut entry) = ev.eq.pending_entries.borrow_mut().remove(&(E, ev.ctx)) {
-                if E == libfabric_sys::FI_MR_COMPLETE {
-                }
+            else if let Some(mut entry) = ev.fut.eq.remove_entry(ev.event_type, ev.ctx) {
                 if ev.ctx != 0 {
                     match entry {
                         crate::eq::Event::MrComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
@@ -340,113 +480,84 @@ impl<const E: libfabric_sys::_bindgen_ty_18> Future for EventQueueFut<E> {
                         crate::eq::Event::JoinComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
                         _ => panic!("Unexpected!"),
                     }
-                    return std::task::Poll::Ready(Ok(entry))
+                    return std::task::Poll::Ready(Ok(entry));
                 }
                 else {
-                    return std::task::Poll::Ready(Ok(entry))
+                    return std::task::Poll::Ready(Ok(entry));
                 }
             }
-            // println!("About to block waiting for event");
-            let res;
-            let (err, _guard) = if ev.eq._fabric_rc.trywait_slice(&[&ev.eq]).is_err() {
-                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), None)
-            }
-            else {
-                #[cfg(feature = "use-async-std")]
-                let _guard = ready!(ev.eq.base.poll_readable(cx)).unwrap();
-                #[cfg(feature = "use-tokio")]
-                let _guard = ready!(ev.eq.base.poll_read_ready(cx)).unwrap();
-                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), Some(_guard))
-            };
-            match err {
-                Err(error) => {
-                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                        return std::task::Poll::Ready(Err(error));
-                    }
-                    else {
-                        // println!("Will continue");
-                        #[cfg(feature = "use-tokio")]
-                        match _guard {
-                            Some(mut guard) => {if ev.eq.pending_cm_entries.borrow().is_empty() && ev.eq.pending_entries.borrow().is_empty() {guard.clear_ready()}},
-                            None => {}
-                        }
-                        continue;
-                    }
-                },
-                Ok(len) => {res = ev.eq.read_eq_entry(len, &mut ev.buf, &mut ev.event);},
-            }
-            match &res {
+
+            let len = ready!(ev.fut.as_mut().poll(cx))?;
+
+            let mut res = ev.fut.eq.read_eq_entry(len, &ev.fut.buf, &ev.fut.event);
+            match &mut res {
                     // crate::eq::Event::Notify(entry) | 
-                crate::eq::Event::MrComplete(e) => {ev.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_MR_COMPLETE, e.c_entry.context as usize),res);},
-                crate::eq::Event::AVComplete(e) => {ev.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_AV_COMPLETE, e.c_entry.context as usize),res);},
-                crate::eq::Event::JoinComplete(e) => {ev.eq.pending_entries.borrow_mut().insert((libfabric_sys::FI_JOIN_COMPLETE, e.c_entry.context as usize),res);},
+                crate::eq::Event::MrComplete(e) => { if e.c_entry.context as usize == ev.ctx  { if ev.ctx != 0 {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}}; return std::task::Poll::Ready(Ok(res));  } else {ev.fut.eq.insert_entry(libfabric_sys::FI_MR_COMPLETE, e.c_entry.context as usize,res);}},
+                crate::eq::Event::AVComplete(e) => { if e.c_entry.context as usize == ev.ctx  { if ev.ctx != 0 {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}}; return std::task::Poll::Ready(Ok(res));  } else {ev.fut.eq.insert_entry(libfabric_sys::FI_AV_COMPLETE, e.c_entry.context as usize,res);}},
+                crate::eq::Event::JoinComplete(e) => { if e.c_entry.context as usize == ev.ctx  { if ev.ctx != 0 {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}}; return std::task::Poll::Ready(Ok(res));  } else {ev.fut.eq.insert_entry(libfabric_sys::FI_JOIN_COMPLETE, e.c_entry.context as usize,res);}},
                 crate::eq::Event::ConnReq(_) => {
-                    let mut map = ev.eq.pending_cm_entries.borrow_mut();
-                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_CONNREQ, ev.req_fid)){
-                        entries.push(res);
+                    if ev.event_type == libfabric_sys::FI_CONNREQ {
+                        return std::task::Poll::Ready(Ok(res));
                     }
                     else {
-                        map.insert((libfabric_sys::FI_CONNREQ, ev.req_fid), vec![res]);
+                        ev.fut.eq.insert_cm_entry(libfabric_sys::FI_CONNREQ, ev.req_fid, res);
                     }
                 },
                 crate::eq::Event::Connected(_) => {
-                    let mut map = ev.eq.pending_cm_entries.borrow_mut();
-                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_CONNECTED, ev.req_fid)){
-                        entries.push(res);
+                    if ev.event_type == libfabric_sys::FI_CONNECTED {
+                        return std::task::Poll::Ready(Ok(res));
                     }
                     else {
-                        map.insert((libfabric_sys::FI_CONNECTED, ev.req_fid), vec![res]);
+                        ev.fut.eq.insert_cm_entry(libfabric_sys::FI_CONNECTED, ev.req_fid, res);
                     }
                 },
                 crate::eq::Event::Shutdown(_) => { // [TODO] No one will explcitly look for shutdown requests, should probably store it somewhere else
-                    println!("Got Shutdown!");
-                    let mut map = ev.eq.pending_cm_entries.borrow_mut();
-                    if let Some(entries) = map.get_mut(&(libfabric_sys::FI_SHUTDOWN, ev.req_fid)){
-                        entries.push(res);
+                    if ev.event_type == libfabric_sys::FI_SHUTDOWN {
+                        return std::task::Poll::Ready(Ok(res));
                     }
                     else {
-                        map.insert((libfabric_sys::FI_SHUTDOWN, ev.req_fid), vec![res]);
+                        ev.fut.eq.insert_cm_entry(libfabric_sys::FI_SHUTDOWN, ev.req_fid, res);
                     }
                 },
             }
-
         }
+
     }
 }
 
-impl AsFid for AsyncEventQueueImpl {
+impl<const WRITE: bool> AsFid for AsyncEventQueueImpl<WRITE> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.c_eq.as_fid()
+       self.base.get_ref().c_eq.as_fid()
     }
 }
 
-impl AsFid for &AsyncEventQueueImpl {
+impl<const WRITE: bool> AsFid for &AsyncEventQueueImpl<WRITE> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.c_eq.as_fid()
+       self.base.get_ref().as_fid()
     }
 }
-impl AsFid for Rc<AsyncEventQueueImpl> {
+impl<const WRITE: bool> AsFid for Rc<AsyncEventQueueImpl<WRITE>> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.c_eq.as_fid()
+       self.base.get_ref().as_fid()
     }
 }
 
-impl AsRawFid for AsyncEventQueueImpl {
+impl<const WRITE: bool> AsRawFid for AsyncEventQueueImpl<WRITE> {
     fn as_raw_fid(&self) -> RawFid {
-       self.c_eq.as_raw_fid()
+       self.base.get_ref().as_raw_fid()
     }
 }
 
-impl AsRawTypedFid for AsyncEventQueueImpl {
+impl<const WRITE: bool> AsRawTypedFid for AsyncEventQueueImpl<WRITE> {
     type Output = EqRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
-       self.c_eq.as_raw_typed_fid()
+       self.base.get_ref().as_raw_typed_fid()
     }
     
 }
 
-impl crate::BindImpl for AsyncEventQueueImpl {}
+impl<const WRITE: bool> crate::BindImpl for AsyncEventQueueImpl<WRITE> {}
 
 // impl BindEqImpl<AsyncEventQueueImpl, AsyncCompletionQueueImpl> for AsyncEventQueueImpl {
 //     fn bind_mr(&self, mr: &Rc<MemoryRegionImplBase<AsyncEventQueueImpl>>) {
@@ -462,36 +573,33 @@ impl crate::BindImpl for AsyncEventQueueImpl {}
 //     }
 // }
 
-pub struct EventQueueBuilder<'a, T, WRITE> {
+pub struct EventQueueBuilder<'a, T, const WRITE: bool> {
     eq_attr: EventQueueAttr,
     fabric: &'a crate::fabric::Fabric,
     ctx: Option<&'a mut T>,
-    options: eqoptions::Options<WRITE, eqoptions::WaitRetrieve, eqoptions::On>,
 }
 
-impl<'a> EventQueueBuilder<'a, (), eqoptions::Off> {
+impl<'a> EventQueueBuilder<'a, (), false> {
     pub fn new(fabric: &'a crate::fabric::Fabric) -> Self {
        Self {
             eq_attr: EventQueueAttr::new(),
             fabric,
             ctx: None,
-            options: Options::new().wait_fd(),
         }
     }
 }
 
-impl <'a, T, WRITE> EventQueueBuilder<'a, T, WRITE> {
+impl <'a, T, const WRITE: bool> EventQueueBuilder<'a, T, WRITE> {
     
     pub fn size(mut self, size: usize) -> Self {
         self.eq_attr.size(size);
         self
     }
 
-    pub fn write(mut self) -> EventQueueBuilder<'a, T, eqoptions::On> {
+    pub fn write(mut self) -> EventQueueBuilder<'a, T, true> {
         self.eq_attr.write();
 
         EventQueueBuilder {
-            options: self.options.writable(),
             eq_attr: self.eq_attr,
             fabric: self.fabric,
             ctx: self.ctx,
@@ -508,14 +616,13 @@ impl <'a, T, WRITE> EventQueueBuilder<'a, T, WRITE> {
             eq_attr: self.eq_attr,
             fabric: self.fabric,
             ctx: Some(ctx),
-            options: self.options,
         }
     }
 
-    pub fn build(mut self) ->  Result<EventQueue<Options<WRITE, eqoptions::WaitRetrieve, eqoptions::On>>, crate::error::Error> {
+    pub fn build(mut self) ->  Result<EventQueue<AsyncEventQueueImpl<WRITE>>, crate::error::Error> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
-        EventQueue::new(self.options, self.fabric, self.eq_attr, self.ctx)   
+        EventQueue::<AsyncEventQueueImpl<WRITE>>::new(self.fabric, self.eq_attr, self.ctx)   
     }
 }
 
@@ -742,6 +849,6 @@ mod libfabric_lifetime_tests {
         }
 
         drop(fab);
-        println!("Count = {} After dropping fab\n", std::rc::Rc::strong_count(&eqs[0].inner._fabric_rc));
+        println!("Count = {} After dropping fab\n", std::rc::Rc::strong_count(&eqs[0].inner.base.get_ref()._fabric_rc));
     }
 }

@@ -2,11 +2,11 @@ use std::{ffi::CString, rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueueImpl, EventQueueBase}, eqoptions::EqConfig};
+use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueueBase, EventQueueImplT}};
 
 
 
-pub(crate) struct DomainImplBase<EQ> {
+pub(crate) struct DomainImplBase<EQ: ?Sized> {
     pub(crate) c_domain: OwnedDomainFid,
     pub(crate) domain_attr: DomainAttr,
     pub(crate) _eq_rc: OnceCell<(Rc<EQ>, bool)>,
@@ -20,7 +20,7 @@ pub(crate) trait DomainImplT {
     fn get_fabric_impl(&self) -> Rc<FabricImpl>;
 }
 
-impl<EQ: AsFid> DomainImplT for DomainImplBase<EQ> {
+impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
        self.unmap_key(key) 
     }
@@ -31,9 +31,9 @@ impl<EQ: AsFid> DomainImplT for DomainImplBase<EQ> {
 }
 
 //================== Domain (fi_domain) ==================//
-pub(crate) type DomainImpl = DomainImplBase<EventQueueImpl>;
+pub(crate) type DomainImpl = DomainImplBase<dyn EventQueueImplT>;
 
-impl<EQ: AsFid> DomainImplBase<EQ> {
+impl<EQ: ?Sized > DomainImplBase<EQ> {
 
     pub(crate) fn new<T0, E>(fabric: &Rc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_domain: DomainRawFid = std::ptr::null_mut();
@@ -67,9 +67,13 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
                 })
         }
     }
+}
+
+impl<EQ: ?Sized + EventQueueImplT> DomainImplBase<EQ> {
+
     
     pub(crate) fn bind(&self, eq: &Rc<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.as_raw_typed_fid(), eq.as_fid().as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
+        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -81,6 +85,9 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
             Ok(())
         }
     } 
+}
+
+impl<EQ: ?Sized > DomainImplBase<EQ> {
 
     // pub(crate) fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
     //     crate::ep::Endpoint::from_attr(self, rx_attr)
@@ -168,29 +175,31 @@ impl<EQ: AsFid> DomainImplBase<EQ> {
 /// 
 /// Note that other objects that rely on a Domain (e.g., [`Endpoint`](crate::ep::Endpoint)) will extend its lifetime until they
 /// are also dropped.
-pub type Domain = DomainBase<EventQueueImpl>;
+pub type Domain = DomainBase<dyn EventQueueImplT>;
 
-pub struct DomainBase<EQ> {
+pub struct DomainBase<EQ: ?Sized> {
     pub(crate) inner: Rc<DomainImplBase<EQ>>,
 }
 
-impl<EQ: fid::AsFid> DomainBase<EQ> {
-
+impl<EQ: ?Sized> DomainBase<EQ> {
+    
     pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self{
                 inner: 
-                    Rc::new(DomainImplBase::new(&fabric.inner, info, flags, domain_attr, context)?)
+                Rc::new(DomainImplBase::new(&fabric.inner, info, flags, domain_attr, context)?)
             }
         )    
     }
-    
+}
+
+impl<EQ: ?Sized + EventQueueImplT> DomainBase<EQ> {
     /// Associates an [crate::eq::EventQueue] with the domain.
     /// 
     /// If `async_mem_reg` is true, the provider should perform all memory registration operations asynchronously, with the completion reported through the event queue
     /// 
     /// Corresponds to `fi_domain_bind`, with flag `FI_REG_MR` if `async_mem_reg` is true. 
-    pub fn bind_eq<T: EqConfig>(&self, eq: &EventQueueBase<T, EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+    pub fn bind_eq(&self, eq: &EventQueueBase<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
         self.inner.bind(&eq.inner, async_mem_reg)
     }
 
@@ -229,19 +238,19 @@ impl<EQ: fid::AsFid> DomainBase<EQ> {
                                 
 }
 
-impl<EQ> AsFid for DomainImplBase<EQ> {
+impl<EQ: ?Sized> AsFid for DomainImplBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
        self.c_domain.as_fid()
     }
 }
 
-impl<EQ> AsTypedFid<DomainRawFid> for DomainImplBase<EQ> {
+impl<EQ: ?Sized> AsTypedFid<DomainRawFid> for DomainImplBase<EQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
        self.c_domain.as_typed_fid()
     }
 }
 
-impl<EQ> AsRawTypedFid for DomainImplBase<EQ> {
+impl<EQ: ?Sized> AsRawTypedFid for DomainImplBase<EQ> {
     type Output = DomainRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -261,7 +270,7 @@ impl<EQ> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
     }
 }
 
-impl<EQ> AsRawTypedFid for DomainBase<EQ> {
+impl<EQ: ?Sized> AsRawTypedFid for DomainBase<EQ> {
     type Output = DomainRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {

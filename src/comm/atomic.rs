@@ -18,7 +18,7 @@ use crate::xcontext::TransmitContext;
 use super::message::extract_raw_addr_and_ctx;
 
 
-impl<E: AtomicCap+ WriteMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: AtomicCap+ WriteMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     fn atomic_impl<T: 'static, T0>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::Op, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -94,7 +94,7 @@ impl<E: AtomicCap+ WriteMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueIm
     }
 }
 
-impl<E: AtomicCap+ ReadMod + WriteMod, EQ: EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: AtomicCap+ ReadMod + WriteMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     #[allow(clippy::too_many_arguments)]

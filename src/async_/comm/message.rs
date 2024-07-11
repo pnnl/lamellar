@@ -1,6 +1,6 @@
-use crate::{FI_ADDR_UNSPEC, cq::SingleCompletion, infocapsoptions::{MsgCap, SendMod, RecvMod}, mr::DataDescriptor, async_::{AsyncCtx, cq::AsyncCompletionQueueImplT}, fid::AsRawTypedFid, enums::{SendMsgOptions, RecvMsgOptions}, MappedAddress, ep::EndpointBase};
+use crate::{FI_ADDR_UNSPEC, cq::SingleCompletion, infocapsoptions::{MsgCap, SendMod, RecvMod}, mr::DataDescriptor, async_::{AsyncCtx, cq::AsyncCompletionQueueImplT, eq::AsyncEventQueueImplT}, fid::AsRawTypedFid, enums::{SendMsgOptions, RecvMsgOptions}, MappedAddress, ep::EndpointBase};
 
-impl<E: MsgCap + RecvMod, EQ, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + RecvMod, EQ: ?Sized + AsyncEventQueueImplT, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     async fn recv_async_imp<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
@@ -103,7 +103,7 @@ impl<E: MsgCap + RecvMod, EQ, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointB
     }
 }
 
-impl<E: MsgCap + SendMod, EQ, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + SendMod, EQ: ?Sized +  AsyncEventQueueImplT,  CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
 	async fn sendv_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&MappedAddress>, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 

@@ -1,8 +1,8 @@
 
 
-use crate::{FI_ADDR_UNSPEC, infocapsoptions::{SendMod, TagCap, RecvMod}, cq::SingleCompletion, mr::DataDescriptor, async_::{ep::Endpoint, AsyncCtx, cq::AsyncCompletionQueueImplT}, fid::AsRawTypedFid, enums::{TaggedSendMsgOptions, TaggedRecvMsgOptions}, MappedAddress, ep::EndpointBase};
+use crate::{FI_ADDR_UNSPEC, infocapsoptions::{SendMod, TagCap, RecvMod}, cq::SingleCompletion, mr::DataDescriptor, async_::{AsyncCtx, cq::AsyncCompletionQueueImplT, eq::AsyncEventQueueImplT}, fid::AsRawTypedFid, enums::{TaggedSendMsgOptions, TaggedRecvMsgOptions}, MappedAddress, ep::EndpointBase};
 
-impl<E: TagCap + RecvMod, EQ, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + RecvMod, EQ: ?Sized + AsyncEventQueueImplT, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
     
     #[inline]
     async fn trecv_async_impl<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
@@ -109,7 +109,7 @@ impl<E: TagCap + RecvMod, EQ, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointB
     }
 }
 
-impl<E: TagCap + SendMod, EQ, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + SendMod, EQ: ?Sized + AsyncEventQueueImplT, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     async fn tsend_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag:u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {

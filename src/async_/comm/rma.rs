@@ -1,6 +1,6 @@
-use crate::{FI_ADDR_UNSPEC, infocapsoptions::{RmaCap, WriteMod, ReadMod}, mr::{DataDescriptor, MappedMemoryRegionKey}, cq::SingleCompletion, enums::{ReadMsgOptions, WriteMsgOptions}, async_::{ep::Endpoint, AsyncCtx, cq::AsyncCompletionQueueImplT}, fid::AsRawTypedFid, MappedAddress, ep::EndpointBase};
+use crate::{FI_ADDR_UNSPEC, infocapsoptions::{RmaCap, WriteMod, ReadMod}, mr::{DataDescriptor, MappedMemoryRegionKey}, cq::SingleCompletion, enums::{ReadMsgOptions, WriteMsgOptions}, async_::{AsyncCtx, cq::AsyncCompletionQueueImplT, eq::AsyncEventQueueImplT}, fid::AsRawTypedFid, MappedAddress, ep::EndpointBase};
 
-impl<E: RmaCap + ReadMod, EQ, CQ: AsyncCompletionQueueImplT  + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletionQueueImplT  + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     async unsafe  fn read_async_impl<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_mapped_addr: Option<&MappedAddress>, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
@@ -108,7 +108,7 @@ impl<E: RmaCap + ReadMod, EQ, CQ: AsyncCompletionQueueImplT  + ? Sized> Endpoint
     }
 }
 
-impl<E: RmaCap + WriteMod, EQ, CQ: AsyncCompletionQueueImplT  + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: RmaCap + WriteMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletionQueueImplT  + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     async unsafe fn write_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_mapped_addr: Option<&MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error>  {
