@@ -468,6 +468,29 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
     }
 }
 
+impl<T: EventQueueImplT>  EventQueueImplT for EventQueue<T> {
+
+    fn read(&self) -> Result<Event<usize>, crate::error::Error>{
+        self.inner.read()
+    }
+
+    fn peek(&self) -> Result<Event<usize>, crate::error::Error>{
+        self.inner.peek()
+    }
+        
+    fn readerr(&self) -> Result<EventError, crate::error::Error> {
+        self.inner.readerr()
+    }
+
+    fn peekerr(&self) -> Result<EventError, crate::error::Error> {
+        self.inner.peekerr()
+    }
+
+    fn strerror(&self, entry: &EventError) -> &str {
+        self.inner.strerror(entry)
+    }
+}
+
 impl<T: EventQueueImplT> EventQueue<T> {
 
     pub fn read(&self) -> Result<Event<usize>, crate::error::Error>{
@@ -489,7 +512,6 @@ impl<T: EventQueueImplT> EventQueue<T> {
     pub fn strerror(&self, entry: &EventError) -> &str {
         self.inner.strerror(entry)
     }
-    
 }
 
 

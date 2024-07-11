@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::OnceCell};
 
-use av::{AddressVectorImplBase, AddressVectorImplT};
+use av::{AddressVectorImplBase, AddressVectorImplT, AddressVectorSetImpl};
 use cq::CompletionQueueImplT;
 use eq::EventQueueImplT;
 use mr::DataDescriptor;
@@ -33,6 +33,12 @@ pub mod async_;
 
 pub type RawMappedAddress = libfabric_sys::fi_addr_t; 
 
+#[derive(Clone)]
+pub(crate) enum AddressSource {
+    Av(Rc<dyn AddressVectorImplT>),
+    AvSet(Rc<AddressVectorSetImpl>)
+}
+
 /// Owned wrapper around a libfabric `fi_addr_t`.
 /// 
 /// This type wraps an instance of a `fi_addr_t`, in order to prevent modification and to monitor its lifetime.
@@ -44,28 +50,28 @@ pub type RawMappedAddress = libfabric_sys::fi_addr_t;
 #[repr(C)]
 pub struct MappedAddress {
     addr: libfabric_sys::fi_addr_t,
-    av: OnceCell<Rc<dyn AddressVectorImplT>>,
+    av: OnceCell<AddressSource>,
 }
 
 impl MappedAddress {
 
-    pub(crate) fn from_raw_addr_trait(addr: RawMappedAddress, av: &Rc<dyn AddressVectorImplT>) -> Self {
-        let avcell = OnceCell::new();
+    // pub(crate) fn from_raw_addr_trait(addr: RawMappedAddress, av: &Rc<dyn AddressVectorImplT>) -> Self {
+    //     let avcell = OnceCell::new();
         
-        if avcell.set(av.clone()).is_err() {
-            panic!("MappedAddress is already set");
-        } 
+    //     if avcell.set(AddressSource::Av(av.clone())).is_err() {
+    //         panic!("MappedAddress is already set");
+    //     } 
         
-        Self {
-            addr,
-            av: avcell,
-        }
-    }
+    //     Self {
+    //         addr,
+    //         av: avcell,
+    //     }
+    // }
     
-    pub(crate) fn from_raw_addr<EQ: EventQueueImplT + ?Sized + 'static>(addr: RawMappedAddress, av: &Rc<AddressVectorImplBase<EQ>>) -> Self {
+    pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: AddressSource) -> Self {
         let avcell = OnceCell::new();
         
-        if avcell.set(av.clone() as Rc<dyn AddressVectorImplT>).is_err() {
+        if avcell.set(av).is_err() {
             panic!("MappedAddress is already set");
         } 
         
@@ -143,7 +149,7 @@ pub fn rx_addr(addr: &MappedAddress, rx_index: i32, rx_ctx_bits: i32) -> Option<
         None
     }
     else {
-        Some(MappedAddress::from_raw_addr_trait(ret, addr.av.get().unwrap()))
+        Some(MappedAddress::from_raw_addr(ret, addr.av.get().unwrap().clone()))
     }
 }
 

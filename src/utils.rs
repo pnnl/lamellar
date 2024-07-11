@@ -26,6 +26,7 @@ pub(crate) fn to_fi_datatype<T: 'static>() -> DataType {
     let u128_t: TypeId = TypeId::of::<u128>();
     let f32_t: TypeId = TypeId::of::<f32>();
     let f64_t: TypeId = TypeId::of::<f64>();
+    let void_t: TypeId = TypeId::of::<()>();
 
     if TypeId::of::<T>()  == isize_t{
         if std::mem::size_of::<isize>() == 8 {libfabric_sys::fi_datatype_FI_INT64}
@@ -41,6 +42,7 @@ pub(crate) fn to_fi_datatype<T: 'static>() -> DataType {
         else if std::mem::size_of::<usize>() == 1 {libfabric_sys::fi_datatype_FI_UINT8}
         else {panic!("Unhandled usize datatype size")}
     }
+    else if TypeId::of::<T>() == void_t {libfabric_sys::fi_datatype_FI_VOID}
     else if TypeId::of::<T>() == i8_t {libfabric_sys::fi_datatype_FI_INT8}
     else if TypeId::of::<T>() == i16_t {libfabric_sys::fi_datatype_FI_INT16}
     else if TypeId::of::<T>() == i32_t {libfabric_sys::fi_datatype_FI_INT32}

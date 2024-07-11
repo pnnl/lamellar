@@ -46,12 +46,12 @@ pub type AddressVector = AddressVectorBase<dyn AsyncEventQueueImplT>;
 impl AddressVector {
     pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
         let (event, fi_addresses) = self.inner.insert_async(addr, options.get_value(), None).await?;
-        Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
+        Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
     }
     
     pub async fn insert_with_context_async<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<(Event<usize>, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
         let (event, fi_addresses) =self.inner.insert_async(addr, options.get_value(), Some((ctx as *mut T).cast())).await?;
-        Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, &self.inner)).collect::<Vec<_>>()))
+        Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
     }
     
 }

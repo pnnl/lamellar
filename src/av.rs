@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImplT}, eqoptions::EqConfig, fid::{AsRawFid, self, AvRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, EventQueueImpl, EventQueueImplT}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress, cq::CompletionQueueImplT};
+use crate::{domain::{Domain, DomainImplT}, eqoptions::EqConfig, fid::{AsRawFid, self, AvRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, EventQueueImpl, EventQueueImplT}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress, cq::CompletionQueueImplT, AddressSource};
 
 
 // impl Drop for AddressVector {
@@ -214,14 +214,14 @@ impl<EQ: EventQueueImplT + ?Sized + 'static> AddressVectorBase<EQ> {
     /// This method directly corresponds to a call to `fi_av_insert`
     pub fn insert(&self, addr: &[Address], options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = self.inner.insert::<()>(addr, options.get_value(), None)?;
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone())))}).collect::<Vec<_>>())
     }
     
     /// Same as [Self::insert] but with an extra argument to provide a context
     ///
     pub fn insert_with_context<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = self.inner.insert(addr, options.get_value(), Some(ctx))?;
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone())))}).collect::<Vec<_>>())
     }
 
     /// Similar to [Self::insert] but with address formatted as node, service [String]s
@@ -230,7 +230,7 @@ impl<EQ: EventQueueImplT + ?Sized + 'static> AddressVectorBase<EQ> {
     pub fn insertsvc(&self, node: &str, service: &str, options: AVOptions) -> Result<Option<MappedAddress>, crate::error::Error> {
         let fi_addr = self.inner.insertsvc(node, service, options.get_value())?;
         if fi_addr != FI_ADDR_NOTAVAIL {
-            Ok(Some(MappedAddress::from_raw_addr(fi_addr, &self.inner)))
+            Ok(Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone()))))
         }
         else {
             Ok(None)
@@ -243,7 +243,7 @@ impl<EQ: EventQueueImplT + ?Sized + 'static> AddressVectorBase<EQ> {
     /// Directly corresponds to `fi_av_insertsym`
     pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
         let fi_addresses = self.inner.insertsym(node, nodecnt, service, svccnt, options.get_value())?;
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, &self.inner))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone())))}).collect::<Vec<_>>())
     }
 
     /// Removes the given [MappedAddress]es from the AddressVector. 
@@ -525,18 +525,18 @@ impl AddressVectorSetImpl {
         }
     }
 
-    // pub(crate) fn get_addr(&self) -> Result<crate::MappedAddress, crate::error::Error> {
-    //     let mut addr = 0u64;
-    //     // let addr_ptr: *mut crate::MappedAddress = &mut addr;
-    //     let err = unsafe { libfabric_sys::inlined_fi_av_set_addr(self.handle(), &mut addr) };
+    pub(crate) fn get_addr(&self) -> Result<RawMappedAddress, crate::error::Error> {
+        let mut addr = 0u64;
+        // let addr_ptr: *mut crate::MappedAddress = &mut addr;
+        let err = unsafe { libfabric_sys::inlined_fi_av_set_addr(self.as_raw_typed_fid(), &mut addr) };
 
-    //     if err != 0 {
-    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-    //     }
-    //     else {
-    //         Ok(MappedAddress::from_raw_addr(addr))
-    //     }
-    // }
+        if err != 0 {
+            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        }
+        else {
+            Ok(addr)
+        }
+    }
 }
 
 /// Owned wrapper around a libfabric `fid_av_set`.
@@ -607,9 +607,10 @@ impl AddressVectorSet {
         self.inner.remove(mapped_addr)
     }
     
-    // pub fn get_addr(&self) -> Result<crate::MappedAddress, crate::error::Error> {
-    //     self.inner.get_addr()
-    // }    
+    pub fn get_addr(&self) -> Result<crate::MappedAddress, crate::error::Error> {
+        let raw_addr = self.inner.get_addr()?;
+        Ok(MappedAddress::from_raw_addr(raw_addr, AddressSource::AvSet(self.inner.clone())))
+    }    
 }
 
 /// Builder for the AddressVectorSet type.
@@ -673,7 +674,7 @@ impl<'a, T> AddressVectorSetBuilder<'a, T> {
 
     /// If supported by the fabric, this represents a key associated with the AV set. 
     /// 
-    /// Corresponds to setting the `fi_av_set_addr::comm_key` and `fi_av_set_addr::comm_key_size` fields. 
+    /// Corresponds to setting the `fi_av_set_attr::comm_key` and `fi_av_set_attr::comm_key_size` fields. 
     pub fn comm_key(mut self, key: &mut [u8]) -> Self {
         
         self.avset_attr.comm_key(key);
@@ -684,7 +685,7 @@ impl<'a, T> AddressVectorSetBuilder<'a, T> {
     /// 
     /// `options` captures the [flags](AVSetOptions) that can be possibly set for an AV set.
     /// 
-    /// Corresponds to setting the `fi_av_set_addr::flags` field.
+    /// Corresponds to setting the `fi_av_set_attr::flags` field.
     pub fn options(mut self, options: AVSetOptions) -> Self { //[TODO] We should provide different function for each bitflag. 
 
         self.avset_attr.options(options);

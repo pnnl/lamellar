@@ -370,6 +370,32 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueue<Co
     }
 }
 
+impl<T: CompletionQueueImplT>  CompletionQueueImplT for CompletionQueue<T> {
+    /// Reads one or more completions from a completion queue
+    /// 
+    /// The call will read up to `count` completion entries which will be stored in a [Completion]
+    /// 
+    /// Corresponds to `fi_cq_read` with the `buf` maintained and casted automatically
+    fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
+        self.inner.read(count)
+    }
+    /// Similar to [Self::read] with the exception that it allows the CQ to return source address information to the user for any received data
+    /// 
+    /// If there is no source address to return it will return None as the second parameter
+    /// 
+    /// Corresponds to `fi_cq_readfrom`
+    fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        self.inner.readfrom(count)
+    }
+    
+    /// Reads one error completion from the queue
+    /// 
+    /// Corresponds to `fi_cq_readerr`
+    fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> {
+        self.inner.readerr(flags)
+    }
+}
+
 impl<T: CompletionQueueImplT> CompletionQueue<T> {
 
     /// Reads one or more completions from a completion queue
