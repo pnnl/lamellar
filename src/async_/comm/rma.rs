@@ -16,7 +16,7 @@ impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletio
 
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
             // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
             return cq.wait_for_ctx_async(&mut async_ctx).await;
         } 
@@ -54,7 +54,7 @@ impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletio
 
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
             // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
             return cq.wait_for_ctx_async(&mut async_ctx).await;
         } 
@@ -98,7 +98,7 @@ impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletio
         
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
             let res =  cq.wait_for_ctx_async(&mut async_ctx).await;
             msg.c_msg_rma.context = real_user_ctx;
             return res;
@@ -202,7 +202,7 @@ impl<E: RmaCap + WriteMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompleti
        
         if err == 0 {
             // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
             let res =  cq.wait_for_ctx_async(&mut async_ctx).await;
             msg.c_msg_rma.context = real_user_ctx;
             return res;
