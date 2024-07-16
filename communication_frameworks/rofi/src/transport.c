@@ -139,7 +139,6 @@ void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi
     }
     else {
         while (prov_cur != NULL) {
-            DEBUG_MSG("checking Provider: %s", prov_names->names[i]);
             if (prov_names != NULL) {
                 for (int i = 0; i < prov_names->num; i++) {
                     DEBUG_MSG("checking Provider: %s %s %s", prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name, prov_names->names[i]);
@@ -1077,6 +1076,9 @@ int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, u
 
     *barrier_id += 1;
     void *src = (void *)barrier_id;
+    pthread_mutex_lock(&rofi->lock);
+    ret = rofi_transport_progress(rofi);
+    pthread_mutex_unlock(&rofi->lock);
     for (int round = 0; round < num_rounds; round++) {
         for (int i = 1; i <= n; i++) {
             int send_pe = euclid_rem((int)(me + i * pow(n + 1, round)), num_pes);
