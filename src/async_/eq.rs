@@ -208,6 +208,9 @@ impl<'a> Future for EqAsyncRead<'a>{
                     }
                     else {
                         // println!("Will continue");
+
+                        #[cfg(feature="use-tokio")]
+
                         if let Some(mut guard) = _guard {
                             match ev.eq {
                                 EqType::Write(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
