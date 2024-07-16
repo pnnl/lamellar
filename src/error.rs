@@ -1,3 +1,5 @@
+use crate::{eq::EventError, cq::CompletionError};
+
  
  
 pub struct Error {
@@ -9,9 +11,14 @@ impl std::fmt::Display for Error {
 
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 
-        if matches!(self.kind, ErrorKind::CapabilitiesNotMet)
-        {
+        if matches!(self.kind, ErrorKind::CapabilitiesNotMet){
             write!(f, "Capabilities requested not met")
+        }
+        else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
+            match t {
+                QueueError::Completion(_) => write!(f, "Error found in CompletionQueue"),
+                QueueError::Event(_) => write!(f, "Error found in EventQueue"),
+            }
         }
         else {
             write!(f, "{} (Error {})", crate::utils::error_to_string(self.c_err.into()), self.c_err)
@@ -22,17 +29,31 @@ impl std::fmt::Debug for Error {
 
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 
-        if matches!(self.kind, ErrorKind::CapabilitiesNotMet)
-        {
+        if matches!(self.kind, ErrorKind::CapabilitiesNotMet) {
             write!(f, "Capabilities requested not met")
+        }
+        else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
+            match t {
+                QueueError::Completion(_) => write!(f, "Error found in CompletionQueue"),
+                QueueError::Event(_) => write!(f, "Error found in EventQueue"),
+            }
         }
         else {
             write!(f, "{} (Error {})", crate::utils::error_to_string(self.c_err.into()), self.c_err)
         }
     }
 }
+pub enum QueueError {
+    Event(EventError),
+    Completion(CompletionError),
+}
+
 
 impl Error {
+    pub(crate) fn from_queue_err(queue_error: QueueError) -> Self{
+        Self{c_err: libfabric_sys::FI_EAVAIL, kind: ErrorKind::ErrorInQueue(queue_error)}
+    }
+
     pub(crate) fn from_err_code(c_err: u32) -> Self {
         
         let kind = match c_err {
@@ -169,6 +190,7 @@ pub enum ErrorKind {
     QueueOverrun,
     ReceiverNotReady,
 
+    ErrorInQueue(QueueError),
     CapabilitiesNotMet,
     Other,
 }

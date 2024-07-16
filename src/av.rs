@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImplT}, eqoptions::EqConfig, fid::{AsRawFid, self, AvRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, EventQueueImpl, EventQueueImplT}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress, cq::CompletionQueueImplT, AddressSource};
+use crate::{domain::{Domain, DomainImplT}, fid::{AsRawFid, self, AvRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, EventQueueImplT}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress, AddressSource};
 
 
 // impl Drop for AddressVector {
@@ -618,23 +618,23 @@ impl AddressVectorSet {
 /// `AddressVectorSetBuilder` is used to configure and build a new [AddressVectorSet].
 /// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_av_set_attr`,
 /// followed by a call to `fi_av_set`  
-pub struct AddressVectorSetBuilder<'a, T> {
+pub struct AddressVectorSetBuilder<'a, T, EQ: EventQueueImplT + ?Sized> {
     avset_attr: AddressVectorSetAttr,
     ctx: Option<&'a mut T>,
-    av: &'a AddressVector,
+    av: &'a AddressVectorBase<EQ>,
 }
 
-impl<'a> AddressVectorSetBuilder<'a, ()> {
-    pub fn new(av: &'a AddressVector) -> AddressVectorSetBuilder<'a, ()> {
+impl<'a, EQ: ?Sized + EventQueueImplT> AddressVectorSetBuilder<'a, (), EQ> {
+    pub fn new(av: &'a AddressVectorBase<EQ>) -> AddressVectorSetBuilder<'a, (), EQ> {
         AddressVectorSetBuilder {
             avset_attr: AddressVectorSetAttr::new(),
             ctx: None,
-            av,
+            av ,
         }
     }
 }
 
-impl<'a, T> AddressVectorSetBuilder<'a, T> {
+impl<'a, T, EQ: ?Sized +  EventQueueImplT + 'static> AddressVectorSetBuilder<'a, T, EQ> {
 
     /// Indicates the expected the number of members that will be a part of the AV set.
     /// 
@@ -695,7 +695,7 @@ impl<'a, T> AddressVectorSetBuilder<'a, T> {
     /// Sets the context to be passed to the AV set.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_av_set`.
-    pub fn context(self, ctx: &'a mut T) -> AddressVectorSetBuilder<'a, T> {
+    pub fn context(self, ctx: &'a mut T) -> AddressVectorSetBuilder<'a, T, EQ> {
         AddressVectorSetBuilder {
             avset_attr: self.avset_attr,
             av: self.av,

@@ -1,6 +1,6 @@
 use core::panic;
 use std::time::Instant;
-use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder, CompletionQueueImpl, WaitableCompletionQueueImplT, CompletionQueueImplT}, cqoptions::{CqConfig,Options}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::{EventQueueBuilder, EventQueueImplT, WaitableEventQueueImplT}, eqoptions::EqConfig, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::AVOptions, MappedAddress};
+use libfabric::{cntr::{Counter, CounterBuilder}, cntroptions::CntrConfig, cq::{CompletionQueue, CompletionQueueBuilder, CompletionQueueImpl, WaitableCompletionQueueImplT, CompletionQueueImplT}, domain, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint}, eq::{EventQueueBuilder, EventQueueImplT, WaitableEventQueueImplT}, fabric, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::AVOptions, MappedAddress};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -10,7 +10,7 @@ pub enum CompMeth {
     Yield,
 }
 pub type EventQueueOptions = libfabric::eq::EventQueueImpl<false, true, false, false>;
-pub type CompletionQueueOptions = libfabric::cqoptions::Options<libfabric::cqoptions::WaitNoRetrieve, libfabric::cqoptions::Off>;
+pub type CompletionQueueOptions = libfabric::cq::CompletionQueueImpl<true, false, false>;
 pub type CounterOptions = libfabric::cntroptions::Options<libfabric::cntroptions::WaitNoRetrieve, libfabric::cntroptions::Off>;
 
 pub const FT_OPT_ACTIVE: u64			= 1 << 0;
@@ -432,9 +432,7 @@ pub fn ft_complete_connect<T: EventQueueImplT + WaitableEventQueueImplT>(eq: &li
         }
     }
     else {
-        let err_entry = eq.readerr().unwrap();
-        panic!("{}\n", eq.strerror(&err_entry));
-
+        let _err_entry = eq.readerr().unwrap();
     }
 }
 

@@ -3,23 +3,9 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd, AsRawFd, RawFd}, rc::R
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::{AsRawFid, AsRawTypedFid, OwnedEqFid, AsTypedFid, EqRawFid}, cq::WaitObjectRetrievable, BindImpl};
+use crate::{fid::{AsRawFid, AsRawTypedFid, OwnedEqFid, AsTypedFid, EqRawFid, BorrowedFid}, cq::WaitObjectRetrievable, BindImpl};
 use crate::{enums::WaitObjType, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{self, RawFid}};
 
-// impl<T: EqConfig> Drop for EventQueue<T> {
-//     fn drop(&mut self) {
-//        println!("Dropping EventQueue\n");
-//     }
-// }
-
-// enum NotifyEventFid {
-//     Fabric(Fabric),
-//     Domain(Domain),
-//     Mr(MemoryRegion),
-// }
-
-
-// pub struct 
 
 pub enum Event<T> {
     // Notify(EventQueueEntry<T, NotifyEventFid>),
@@ -802,6 +788,7 @@ impl Default for EventQueueAttr {
 
 //================== EqErrEntry (fi_eq_err_entry) ==================//
 #[repr(C)]
+#[derive(Debug)]
 pub struct EventError {
     pub(crate) c_err: libfabric_sys::fi_eq_err_entry,
 }
@@ -830,6 +817,22 @@ impl EventError {
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_eq_err_entry {
         &mut self.c_err
     }       
+
+    pub fn get_fid(&self) -> BorrowedFid<'_> {
+        unsafe {BorrowedFid::borrow_raw(self.c_err.fid)}
+    }
+
+    pub fn get_data(&self) -> u64 {
+        self.c_err.data
+    }
+
+    pub fn get_error(&self) -> crate::error::Error {
+        crate::error::Error::from_err_code(self.c_err.err as u32)
+    }
+
+    pub fn get_prov_errno(&self) -> i32 {
+        self.c_err.prov_errno
+    }
 }
 
 impl Default for EventError {
@@ -889,7 +892,6 @@ impl<T, F: AsRawFid> EventQueueEntry<T, F> {
     }
 
     pub fn is_context_equal(&self, ctx: &crate::Context) -> bool {
-
         std::ptr::eq(self.c_entry.context, ctx as *const crate::Context as *const std::ffi::c_void)
     }
 
@@ -904,7 +906,7 @@ impl<T, F: AsRawFid> EventQueueEntry<T, F> {
 //================== EventQueueCmEntry (fi_eq_cm_entry) ==================//
 #[repr(C)]
 pub struct EventQueueCmEntry {
-    c_entry: libfabric_sys::fi_eq_cm_entry,
+    pub(crate) c_entry: libfabric_sys::fi_eq_cm_entry,
 }
 
 impl EventQueueCmEntry {

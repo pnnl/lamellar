@@ -1,9 +1,8 @@
+#[cfg(all(feature="use-tokio", feature="use-async-std"))]
+compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive");
 use std::{rc::Rc, cell::OnceCell};
 
-use av::{AddressVectorImplBase, AddressVectorImplT, AddressVectorSetImpl};
-use cq::CompletionQueueImplT;
-use eq::EventQueueImplT;
-use mr::DataDescriptor;
+use av::{AddressVectorImplT, AddressVectorSetImpl};
 
 pub mod ep;
 pub mod domain;

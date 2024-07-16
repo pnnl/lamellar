@@ -1,8 +1,8 @@
-use crate::{ep::{Address, EndpointBase}, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::MulticastGroupCollectiveBase, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncEventQueueImplT, cq::AsyncCompletionQueueImplT, AsyncCtx}, av::AddressVectorSet, cq::{SingleCompletion, CompletionQueueImplT}};
+use crate::{ep::{Address, EndpointBase}, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::MulticastGroupCollectiveBase, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncEventQueueImplT, cq::AsyncCompletionQueueImplT, AsyncCtx, AsyncFid}, av::AddressVectorSet, cq::SingleCompletion};
 
 pub type MulticastGroupCollective<CQ> = MulticastGroupCollectiveBase<dyn AsyncEventQueueImplT, CQ>;
 
-impl<E: CollCap, CQ: CompletionQueueImplT> EndpointBase<E, dyn AsyncEventQueueImplT, CQ> {
+impl<E: CollCap, CQ: ?Sized + AsyncCompletionQueueImplT + AsyncFid> EndpointBase<E, dyn AsyncEventQueueImplT, CQ> {
 
     #[inline]
     async fn join_impl_async(&self, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
@@ -30,7 +30,7 @@ impl<E: CollCap, CQ: CompletionQueueImplT> EndpointBase<E, dyn AsyncEventQueueIm
         let mc = self.join_collective_with_context(coll_mapped_addr, set, options, &mut async_ctx)?;
         let eq = self.inner.eq.get().expect("Endpoint not bound to an Event Queue");
         // let res = EventQueueFut::<{libfabric_sys::FI_JOIN_COMPLETE}>::new(mc.as_raw_fid(), eq, &mut async_ctx as *mut AsyncCtx as usize).await?;
-        let res = eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, mc.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+        let res = eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, mc.as_raw_fid(), &mut async_ctx as *mut AsyncCtx as usize).await?;
 
         
         Ok((res,mc))
@@ -135,9 +135,13 @@ impl MulticastGroupCollective<dyn AsyncCompletionQueueImplT> {
     async fn allgather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.allgather_impl(buf, desc, result, result_desc, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        let tx_cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        // while tx_cq.trywait().is_err() {tx_cq.read(0);}
+        // while rx_cq.trywait().is_err() {rx_cq.read(0);}
+        // while cq.read(1).is_err() {}
+        // while rxcq.read(1).is_err() {}
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
-        cq.wait_for_ctx_async(&mut async_ctx).await
+        tx_cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
     pub async fn allgather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {

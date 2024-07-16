@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd}, rc::Rc, cell::RefCell};
+use std::{os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd}, rc::Rc, cell::RefCell};
 
 use crate::{fid::AsFid, domain::{DomainBase, DomainImplT}, BindImpl};
 use crate::{enums::{WaitObjType, CompletionFlags}, MappedAddress, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error};
@@ -1393,7 +1393,7 @@ pub struct CompletionError {
 
 impl CompletionError {
 
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             c_err: libfabric_sys::fi_cq_err_entry {
                 op_context: std::ptr::null_mut(),
@@ -1466,6 +1466,9 @@ impl CompletionError {
         self.c_err.olen
     }
 
+    /// Returns the generic error related to this CompletionError
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::err` field.
     pub fn error(&self) -> Error {
         Error::from_err_code(self.c_err.err as u32)
     }

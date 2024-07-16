@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 
 
-use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::{EventQueueImpl, EventQueueImplT}, cq::CompletionQueueImplT};
+use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImplT, cq::CompletionQueueImplT};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -442,7 +442,7 @@ pub struct MemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
 }
 
-impl crate::DataDescriptor for MemoryRegionDesc {
+impl DataDescriptor for MemoryRegionDesc {
     
     fn get_desc(&mut self) -> *mut std::ffi::c_void {
         self.c_desc

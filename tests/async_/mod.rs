@@ -1,12 +1,8 @@
 use core::panic;
 use std::time::Instant;
 
-#[cfg(feature="use-async-std")]
-use async_std::task;
-#[cfg(feature="use-tokio")]
-use tokio::task;
 
-use libfabric::{cntr::Counter, cntroptions::CntrConfig, cqoptions::{CqConfig,Options}, ep::Address, eqoptions::EqConfig, fabric::{self, Fabric}, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder, AsyncEventQueueImplT}, domain::{Domain, DomainBuilder}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder, AsyncCompletionQueueImplT, AsyncCompletionQueueImpl}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, mr::{MemoryRegion, MemoryRegionBuilder}}, WaitRetrievable, FdRetrievable, MappedAddress, cq::{CompletionQueueImplT, WaitableCompletionQueueImplT}};
+use libfabric::{cntr::Counter, cntroptions::CntrConfig, ep::Address, fabric::{self, Fabric}, Context, Waitable, infocapsoptions::{RmaCap, TagDefaultCap, MsgDefaultCap, RmaDefaultCap, RmaWriteOnlyCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder, AsyncEventQueueImplT}, domain::{Domain, DomainBuilder}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder, AsyncCompletionQueueImpl}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, mr::{MemoryRegion, MemoryRegionBuilder}}, MappedAddress, cq::{CompletionQueueImplT, WaitableCompletionQueueImplT}};
 pub enum CompMeth {
     // Spin,
     // Sread,
@@ -533,7 +529,20 @@ pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, source:
 
 pub async fn ft_connect_ep<T: AsyncEventQueueImplT, E>(ep: &Endpoint<E>, eq: &EventQueue<T>, addr: &libfabric::ep::Address) {
     
-    ep.connect_async(addr).await.unwrap();
+    if let Err(error) =  ep.connect_async(addr).await {
+        match error.kind {
+            libfabric::error::ErrorKind::ErrorInQueue(err_entry) => {
+                match err_entry {
+                    libfabric::error::QueueError::Event(event_error) => {
+                        println!("Event Queue error: {}", event_error.get_error());
+                        panic!("Provider error: {}", eq.strerror(&event_error));
+                    }
+                    libfabric::error::QueueError::Completion(_) => todo!(),
+                }
+            },
+            _ => panic!("{:?}", error),
+        }
+    }
 }
 
 pub fn ft_rx_prefix_size<E>(info: &InfoEntry<E>) -> usize {
@@ -663,7 +672,7 @@ pub async fn ft_av_insert(av: &AddressVector, addr: &Address, options: AVOptions
 
     // let mut added = av.insert(std::slice::from_ref(addr), options).unwrap();
     // added.pop().unwrap().expect("Could not add address to address vector")
-    let (event, mut added) = av.insert_async(std::slice::from_ref(addr), options).await.unwrap();
+    let (_, mut added) = av.insert_async(std::slice::from_ref(addr), options).await.unwrap();
     added.pop().expect("Could not add address to address vector")
 }
 
@@ -698,6 +707,7 @@ macro_rules!  ft_post_async{
             }
             else if let Err(ref err) = ret {
                 if !matches!(err.kind, libfabric::error::ErrorKind::TryAgain) {
+                    ret.unwrap();
                     panic!("Unexpected error!")
                 }
             }
@@ -808,7 +818,7 @@ pub fn msg_post_inject<CQ: CompletionQueueImplT, E: MsgDefaultCap>(tx_seq: &mut 
     }
 }
 
-pub async fn msg_post<CQ: CompletionQueueImplT, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
+pub async fn msg_post<CQ: CompletionQueueImplT, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, _tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &Option<MappedAddress>, tx_cq: &CompletionQueue<CQ>, ep: &Endpoint<E>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
     match op {
         SendOp::MsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
