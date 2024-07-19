@@ -7,7 +7,7 @@ pub mod sync_; // Public to supress lint warnings (unused function)
 #[cfg(any(feature="use-async-std", feature="use-tokio"))]
 pub mod async_; // Public to supress lint warnings (unused function)
 
-use async_ as prefix;
+use sync_ as prefix;
 
 define_test!(pp_server_rma, async_pp_server_rma, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();

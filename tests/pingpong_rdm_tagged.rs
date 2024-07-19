@@ -4,7 +4,7 @@ pub mod async_; // Public to supress lint warnings (unused function)
 pub mod common; // Public to supress lint warnings (unused function)
 use common::IP;
 
-use async_ as prefix;
+use sync_ as prefix;
 use prefix::{HintsCaps, define_test, call};
 
 
