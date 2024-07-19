@@ -2,7 +2,7 @@ use std::{ffi::CString, rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueueBase, EventQueueImplT}};
+use crate::{enums::{DomainCaps, TClass, MrMode}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueueBase, ReadEq}, cq::CompletionQueueBase, async_::eq::{EventQueue, AsyncReadEq}};
 
 
 
@@ -15,9 +15,11 @@ pub(crate) struct DomainImplBase<EQ: ?Sized> {
 
 
 
-pub(crate) trait DomainImplT {
+pub(crate) trait DomainImplT: AsRawFid + AsRawTypedFid<Output = DomainRawFid>{
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error>;
     fn get_fabric_impl(&self) -> Rc<FabricImpl>;
+    fn get_mr_mode(&self) -> MrMode;
+    fn get_mr_key_size(&self) -> usize;
 }
 
 impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
@@ -28,10 +30,17 @@ impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
     fn get_fabric_impl(&self) -> Rc<FabricImpl> {
         self._fabric_rc.clone()
     }
+
+    fn get_mr_mode(&self) -> MrMode {
+        self.domain_attr.get_mr_mode()
+    }
+
+    fn get_mr_key_size(&self) -> usize {
+        self.domain_attr.get_mr_key_size()
+    }
 }
 
 //================== Domain (fi_domain) ==================//
-pub(crate) type DomainImpl = DomainImplBase<dyn EventQueueImplT>;
 
 impl<EQ: ?Sized > DomainImplBase<EQ> {
 
@@ -69,17 +78,17 @@ impl<EQ: ?Sized > DomainImplBase<EQ> {
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> DomainImplBase<EQ> {
+impl DomainImplBase<dyn ReadEq> {
 
     
-    pub(crate) fn bind(&self, eq: &Rc<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, eq: Rc<dyn ReadEq>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            if self._eq_rc.set((eq.clone(), async_mem_reg)).is_err() {
+            if self._eq_rc.set((eq, async_mem_reg)).is_err() {
                 panic!("Domain is alread bound to an EventQueue");
             }
             Ok(())
@@ -175,10 +184,28 @@ impl<EQ: ?Sized > DomainImplBase<EQ> {
 /// 
 /// Note that other objects that rely on a Domain (e.g., [`Endpoint`](crate::ep::Endpoint)) will extend its lifetime until they
 /// are also dropped.
-pub type Domain = DomainBase<dyn EventQueueImplT>;
+// pub type Domain = DomainBase<dyn EventQueueImplT>;
 
 pub struct DomainBase<EQ: ?Sized> {
     pub(crate) inner: Rc<DomainImplBase<EQ>>,
+}
+
+impl<EQ: ?Sized> DomainImplT for DomainBase<EQ> {
+    fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
+        self.inner.unmap_key(key)
+    }
+
+    fn get_fabric_impl(&self) -> Rc<FabricImpl> {
+        self.inner.get_fabric_impl()
+    }
+
+    fn get_mr_mode(&self) -> MrMode {
+        self.inner.get_mr_mode()
+    }
+
+    fn get_mr_key_size(&self) -> usize {
+        self.inner.get_mr_key_size()
+    }
 }
 
 impl<EQ: ?Sized> DomainBase<EQ> {
@@ -193,15 +220,18 @@ impl<EQ: ?Sized> DomainBase<EQ> {
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> DomainBase<EQ> {
+impl DomainBase<dyn ReadEq> {
     /// Associates an [crate::eq::EventQueue] with the domain.
     /// 
     /// If `async_mem_reg` is true, the provider should perform all memory registration operations asynchronously, with the completion reported through the event queue
     /// 
     /// Corresponds to `fi_domain_bind`, with flag `FI_REG_MR` if `async_mem_reg` is true. 
-    pub fn bind_eq(&self, eq: &EventQueueBase<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
-        self.inner.bind(&eq.inner, async_mem_reg)
+    pub(crate) fn bind_eq<EQ: ReadEq + 'static>(&self, eq: &EventQueueBase<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+        self.inner.bind(eq.inner.clone(), async_mem_reg)
     }
+}
+
+impl<EQ: ?Sized> DomainBase<EQ> {
 
     /// Indicates if a provider supports a specific atomic operation
     /// 
@@ -264,6 +294,18 @@ impl<EQ> AsFid for DomainBase<EQ> {
     }
 }
 
+impl<EQ: ?Sized> AsRawFid for DomainImplBase<EQ> {
+    fn as_raw_fid(&self) -> fid::RawFid {
+        self.c_domain.as_raw_fid()
+    }
+}
+
+impl<EQ: ?Sized> AsRawFid for DomainBase<EQ> {
+    fn as_raw_fid(&self) -> fid::RawFid {
+        self.inner.as_raw_fid()
+    }
+}
+
 impl<EQ> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
        self.inner.as_typed_fid()
@@ -321,10 +363,10 @@ impl DomainAttr {
         Self { c_attr , f_name: CString::new("").unwrap()}
     }
 
-    pub fn domain(&mut self, domain: &Domain) -> &mut Self {
-        self.c_attr.domain = domain.as_raw_typed_fid();
-        self
-    }
+    // pub fn domain(&mut self, domain: &Domain) -> &mut Self {
+    //     self.c_attr.domain = domain.as_raw_typed_fid();
+    //     self
+    // }
 
     pub fn name(&mut self, name: String) -> &mut Self { //[TODO] Possible memory leak
         let name = std::ffi::CString::new(name).unwrap();
@@ -510,10 +552,10 @@ impl Default for DomainAttr {
 /// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_domain_attr`,
 /// followed by a call to `fi_domain_open`  
 pub struct DomainBuilder<'a, T, E> {
-    fabric: &'a crate::fabric::Fabric,
-    info: &'a InfoEntry<E>,
-    ctx: Option<&'a mut T>,
-    flags: u64,
+    pub(crate) fabric: &'a crate::fabric::Fabric,
+    pub(crate) info: &'a InfoEntry<E>,
+    pub(crate) ctx: Option<&'a mut T>,
+    pub(crate) flags: u64,
 }
 
 impl<'a> DomainBuilder<'a, (), ()> {
@@ -545,8 +587,9 @@ impl<'a> DomainBuilder<'a, (), ()> {
             ctx: Some(peer_ctx),
         }
     }
-}
 
+
+}
 
 impl<'a, E> DomainBuilder<'a, (), E> {
     
@@ -557,29 +600,41 @@ impl<'a, E> DomainBuilder<'a, (), E> {
         DomainBuilder {
             fabric: self.fabric,
             info: self.info,
-            flags: 0,
+            flags: self.flags,
             ctx: Some(ctx),
         }
     }
 }
 
 impl<'a, T, E> DomainBuilder<'a, T, E> {
+    /// Constructs a new [Domain] with the configurations requested so far.
+    /// 
+    /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
+    /// and passing it to a `fi_domain` call with an optional `context` (set by [Self::context]).
+    /// Or a call to `fi_domain2` with `context` of type `fi_peer_context` and `flags` equal to `FI_PEER`
+    pub fn build_and_bind<EQ: ReadEq + 'static>(self, eq: &EventQueue<EQ>, async_mem_reg: bool) -> Result<DomainBase<dyn ReadEq>, crate::error::Error> {
+        let domain = DomainBase::<dyn ReadEq>::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)?;
+        domain.bind_eq(eq, async_mem_reg)?;
+        Ok(domain)
+    }
 
-    // pub fn flags(mut self, flags: u64) -> Self {
-    //     self.flags = flags;
-    //     self
-    // }
+}
 
-
+impl<'a, T, E> DomainBuilder<'a, T, E> {
     /// Constructs a new [Domain] with the configurations requested so far.
     /// 
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
     /// and passing it to a `fi_domain` call with an optional `context` (set by [Self::context]).
     /// Or a call to `fi_domain2` with `context` of type `fi_peer_context` and `flags` equal to `FI_PEER`
     pub fn build(self) -> Result<Domain, crate::error::Error> {
-        Domain::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)
+        let domain = DomainBase::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)?;
+        Ok(domain)
     }
 }
+
+pub type Domain = DomainBase<()>;
+pub type BoundDomain = DomainBase<dyn ReadEq>;
+
 
 #[repr(C)]
 pub struct PeerDomainCtx {
@@ -587,7 +642,7 @@ pub struct PeerDomainCtx {
 }
 
 impl PeerDomainCtx {
-    pub fn new(size: usize, domain: &Domain) -> Self {
+    pub fn new<EQ>(size: usize, domain: &DomainBase<EQ>) -> Self {
         Self {
             c_ctx : {
                 libfabric_sys::fi_peer_domain_context {

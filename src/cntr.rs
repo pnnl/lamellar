@@ -4,7 +4,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImplT, BindImpl, utils::check_error, fid::{self, AsRawFid, OwnedCntrFid, CntrRawFid, AsRawTypedFid, RawFid, AsTypedFid}, eq::EventQueueImplT};
+use crate::{cntroptions::{self, CntrConfig, Options}, enums::WaitObjType, FdRetrievable, WaitRetrievable, domain::DomainImplT, BindImpl, utils::check_error, fid::{self, AsRawFid, OwnedCntrFid, CntrRawFid, AsRawTypedFid, RawFid, AsTypedFid}, eq::ReadEq};
 
 /// Owned wrapper around a libfabric `fi_cntr`.
 /// 
@@ -220,14 +220,14 @@ impl<T: CntrConfig + crate::Waitable> Counter<T> {
 /// `CounterBuilder` is used to configure and build a new `Counter`.
 /// It encapsulates an incremental configuration of the counter, as provided by a `fi_cntr_attr`,
 /// followed by a call to `fi_cntr_open`  
-pub struct CounterBuilder<'a, T, WAIT, WAITFD, EQ: ?Sized + EventQueueImplT> {
+pub struct CounterBuilder<'a, T, WAIT, WAITFD, EQ: ?Sized> {
     cntr_attr: CounterAttr,
     domain: &'a crate::domain::DomainBase<EQ>,
     ctx: Option<&'a mut T>,
     options: cntroptions::Options<WAIT, WAITFD>,
 }
 
-impl<'a, EQ: ?Sized + EventQueueImplT> CounterBuilder<'a, (), cntroptions::WaitNoRetrieve, cntroptions::Off, EQ> {
+impl<'a, EQ: ?Sized> CounterBuilder<'a, (), cntroptions::WaitNoRetrieve, cntroptions::Off, EQ> {
 
     /// Initiates the creation of new [Counter] on `domain`.
     /// 
@@ -243,7 +243,7 @@ impl<'a, EQ: ?Sized + EventQueueImplT> CounterBuilder<'a, (), cntroptions::WaitN
     }
 }
 
-impl<'a, T, WAIT, WAITFD, EQ: ?Sized + EventQueueImplT + 'static> CounterBuilder<'a, T, WAIT, WAITFD, EQ> {
+impl<'a, T, WAIT, WAITFD, EQ: ?Sized + 'static> CounterBuilder<'a, T, WAIT, WAITFD, EQ> {
     
     /// Sets the type of events to count
     /// 

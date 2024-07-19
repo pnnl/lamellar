@@ -6,7 +6,7 @@ pub mod common; // Public to supress lint warnings (unused function)
 
 use common::IP;
 use prefix::{HintsCaps, EndpointCaps, define_test, call};
-use sync_ as prefix; 
+use async_ as prefix; 
 
 
 // To run the following tests do:
@@ -59,7 +59,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
     let (info, fab, eq, pep) = prefix::start_server(hintscaps.clone(), IP.to_owned(), "9222".to_owned());
 
 
-        let (domain, tx_cq, rx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = call!(prefix::ft_server_connect,&pep, &mut gl_ctx, &eq, &fab);
+        let (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = call!(prefix::ft_server_connect,&pep, &mut gl_ctx, &eq, &fab);
         match info {
             prefix::InfoWithCaps::Msg(info) => {
                 let entries = info.get();
@@ -69,7 +69,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                     call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
                 }
                 
-                call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+                call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
                 
                 match ep {
                     EndpointCaps::Msg(ep) => {
@@ -88,7 +88,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                     call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
                 }
                 
-                call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+                call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
                 
                 match ep {
                     EndpointCaps::Msg(ep) => {
@@ -142,7 +142,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
     // match hintscaps {
         // HintsCaps::Msg(hints) => {
 
-    let (info, _fab, domain, _eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = 
+    let (info, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = 
         call!(prefix::ft_client_connect,hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned());
         
     match info {
@@ -154,7 +154,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
                 call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
                 EndpointCaps::Msg(ep) => {
                     ep.shutdown().unwrap();
@@ -172,7 +172,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
                 call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
                 EndpointCaps::Msg(ep) => {
                     ep.shutdown().unwrap();

@@ -5,13 +5,13 @@ use async_io::Async as Async;
 #[cfg(feature="use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
-use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, EventQueueImplT, WritableEventQueueImplT, EventError}, error::{Error, ErrorKind}, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, async_::AsyncCtx, cq::WaitObjectRetrievable};
+use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, ReadEq, WritableEventQueueImplT, EventError}, error::{Error, ErrorKind}, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, async_::AsyncCtx, cq::WaitObjectRetrievable};
 
 use super::AsyncFid;
 
 pub type EventQueue<T> = EventQueueBase<T>;
 
-pub(crate) trait  FdEq: EventQueueImplT + AsRawFd{
+pub(crate) trait  FdEq: ReadEq + AsRawFd{
     
 }
 
@@ -328,10 +328,11 @@ impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
 }
 
 
-pub trait AsyncEventQueueImplT: EventQueueImplT + AsyncFid{
+pub trait AsyncReadEq: ReadEq + AsyncFid{
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead ;
     fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, ctx: usize) -> AsyncEventEq ;
 }
+
 
 impl AsyncEventQueueImpl<true> {
     pub(crate) async fn read_async(&self) -> Result<Event<usize>, crate::error::Error>{
@@ -351,7 +352,7 @@ impl AsyncEventQueueImpl<false> {
     }
 }
 
-impl AsyncEventQueueImplT for AsyncEventQueueImpl<true> {
+impl AsyncReadEq for AsyncEventQueueImpl<true> {
 
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
         EqAsyncRead::new(buf, event, EqType::Write(self) )
@@ -362,7 +363,7 @@ impl AsyncEventQueueImplT for AsyncEventQueueImpl<true> {
     } 
 }
 
-impl AsyncEventQueueImplT for AsyncEventQueueImpl<false> {
+impl AsyncReadEq for AsyncEventQueueImpl<false> {
 
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
         EqAsyncRead::new(buf, event, EqType::NoWrite(self) )
@@ -467,7 +468,7 @@ impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
     }
 }
 
-impl<const WRITE: bool> EventQueueImplT for AsyncEventQueueImpl<WRITE> {
+impl<const WRITE: bool> ReadEq for AsyncEventQueueImpl<WRITE> {
     fn read(&self) -> Result<Event<usize>, crate::error::Error> {
         self.get_inner().read()
     }

@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 
 
-use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::EventQueueImplT, cq::CompletionQueueImplT};
+use crate::{domain::{DomainImplBase, DomainImplT}, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::ReadEq, cq::ReadCq};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -28,8 +28,8 @@ impl MemoryRegionKey {
     //     Self::RawKey(raw_key)
     // }
 
-    pub unsafe fn from_bytes<EQ: ?Sized + EventQueueImplT>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
-        MemoryRegionKey::from_bytes_impl(raw, &domain.inner)
+    pub unsafe fn from_bytes<EQ: ?Sized>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
+        MemoryRegionKey::from_bytes_impl(raw, &*domain.inner)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -46,9 +46,9 @@ impl MemoryRegionKey {
         }
     }
 
-    unsafe fn from_bytes_impl<EQ: ?Sized>(raw: &[u8], domain: &crate::domain::DomainImplBase<EQ>) -> Self {
-        if domain.domain_attr.get_mr_mode().is_raw() {
-            assert!(raw.len() == domain.domain_attr.get_mr_key_size());
+    unsafe fn from_bytes_impl(raw: &[u8], domain: &(impl DomainImplT + ?Sized)) -> Self {
+        if domain.get_mr_mode().is_raw() {
+            assert!(raw.len() == domain.get_mr_key_size());
             let base_addr = *(raw[raw.len()-std::mem::size_of::<u64>()..].as_ptr() as *const u64);
             Self::RawKey((raw[0..raw.len()-std::mem::size_of::<u64>()].to_vec(), base_addr))
         }
@@ -63,7 +63,7 @@ impl MemoryRegionKey {
         MemoryRegionKey::Key(key) 
     }
 
-    pub fn into_mapped<EQ: ?Sized + EventQueueImplT + 'static>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
+    pub fn into_mapped<EQ: ?Sized + 'static>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
             MemoryRegionKey::Key(mapped_key) => {
                 Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::Key(mapped_key)})
@@ -132,9 +132,9 @@ impl DataDescriptor for DefaultMemDesc {
 
 //================== Memory Region (fi_mr) ==================//
 
-pub(crate) struct MemoryRegionImplBase<EQ: ?Sized + EventQueueImplT> {
+pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: OwnedMrFid,
-    pub(crate) _domain_rc: Rc<DomainImplBase<EQ>>,
+    pub(crate) _domain_rc: Rc<dyn DomainImplT>,
 }
 
 /// Owned wrapper around a libfabric `fid_mr`.
@@ -144,15 +144,14 @@ pub(crate) struct MemoryRegionImplBase<EQ: ?Sized + EventQueueImplT> {
 /// 
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
 /// are also dropped.
-pub type MemoryRegion  = MemoryRegionBase<dyn EventQueueImplT>;
-pub struct MemoryRegionBase<EQ: ?Sized + EventQueueImplT> {
-    pub(crate) inner: Rc<MemoryRegionImplBase<EQ>>,
+pub struct MemoryRegion {
+    pub(crate) inner: Rc<MemoryRegionImpl>,
 }
 
-impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
+impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0, EQ: 'static>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let err = if let Some(ctx) = context {
                 unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, &mut c_mr, (ctx as *mut T0).cast() ) }
@@ -175,7 +174,7 @@ impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
         }
     }
 
-    pub(crate) fn from_attr(domain: &Rc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr<EQ: ?Sized + 'static>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.as_raw_typed_fid(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
@@ -193,7 +192,7 @@ impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
     }
             
     #[allow(dead_code)]
-    fn from_iovec<T, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T, T0, EQ: 'static>(domain: &Rc<crate::domain::DomainImplBase<EQ>>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =
@@ -219,7 +218,7 @@ impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
 
     pub(crate) fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
         
-        if self._domain_rc.domain_attr.get_mr_mode().is_raw()
+        if self._domain_rc.get_mr_mode().is_raw()
         {
             self.raw_key(0)
         }
@@ -236,7 +235,7 @@ impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
 
     fn raw_key(&self, flags: u64) -> Result<MemoryRegionKey, crate::error::Error>  {
         let mut base_addr = 0u64;
-        let mut key_size = self._domain_rc.domain_attr.get_mr_key_size();
+        let mut key_size = self._domain_rc.get_mr_key_size();
         let mut raw_key = vec![0u8; key_size];
         let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.as_raw_typed_fid(), &mut base_addr, raw_key.as_mut_ptr().cast(), &mut key_size, flags) };
         
@@ -244,7 +243,7 @@ impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(unsafe {MemoryRegionKey::from_bytes_impl(&raw_key, &self._domain_rc)})
+            Ok(unsafe {MemoryRegionKey::from_bytes_impl(&raw_key, &*self._domain_rc)})
         }
     }
 
@@ -253,15 +252,21 @@ impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
         
         check_error(err.try_into().unwrap())
     }
+}
+
+impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    pub(crate) fn bind_ep<CQ: ?Sized + AsRawFid + CompletionQueueImplT>(&self, ep: &Rc<crate::ep::EndpointImplBase<EQ, CQ>>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep<CQ: ?Sized + AsRawFid + ReadCq>(&self, ep: &Rc<crate::ep::EndpointImplBase<impl ReadEq, CQ>>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0) } ;
         
         check_error(err.try_into().unwrap())
     }
+}
 
-    pub(crate) fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
+impl MemoryRegionImpl {
+
+pub(crate) fn refresh<T>(&self, iov: &[crate::iovec::IoVec<T>], flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_refresh(self.as_raw_typed_fid(), iov.as_ptr().cast(), iov.len(), flags) };
 
         check_error(err.try_into().unwrap())
@@ -320,7 +325,7 @@ impl<EQ: ?Sized + EventQueueImplT> MemoryRegionImplBase<EQ> {
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT, > MemoryRegionBase<EQ> {
+impl MemoryRegion {
     
     #[allow(dead_code)]
     pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
@@ -328,37 +333,37 @@ impl<EQ: ?Sized + EventQueueImplT, > MemoryRegionBase<EQ> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn from_impl(mr_impl: &Rc<MemoryRegionImplBase<EQ>>)  -> Self {
-        MemoryRegionBase {
+    pub(crate) fn from_impl(mr_impl: &Rc<MemoryRegionImpl>)  -> Self {
+        MemoryRegion {
             inner: mr_impl.clone()
         }
     }
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0>(domain: &crate::domain::DomainBase<EQ>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner:
-                    Rc::new(MemoryRegionImplBase::from_buffer(&domain.inner, buf, access, requested_key, flags, context)?)
+                    Rc::new(MemoryRegionImpl::from_buffer(&domain.inner, buf, access, requested_key, flags, context)?)
             }
         )
     }
     
-    pub(crate) fn from_attr(domain: &crate::domain::DomainBase<EQ>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr<EQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<EQ>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImplBase::from_attr(&domain.inner, attr, flags)?)
+                    Rc::new(MemoryRegionImpl::from_attr(&domain.inner, attr, flags)?)
             }
         )
     }
 
     #[allow(dead_code)]
-    fn from_iovec<T, T0>(domain: &crate::domain::DomainBase<EQ>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T, T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImplBase::from_iovec(&domain.inner, iov, access, requested_key, flags, context)?)
+                    Rc::new(MemoryRegionImpl::from_iovec(&domain.inner, iov, access, requested_key, flags, context)?)
             }
         )
     }
@@ -453,43 +458,43 @@ impl DataDescriptor for MemoryRegionDesc {
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> AsFid for MemoryRegionBase<EQ>{
+impl AsFid for MemoryRegion{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.as_fid()
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> AsFid for MemoryRegionImplBase<EQ>{
+impl AsFid for MemoryRegionImpl{
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.c_mr.as_fid()
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> AsRawFid for MemoryRegionBase<EQ>{
+impl AsRawFid for MemoryRegion{
     fn as_raw_fid(&self) -> RawFid {
         self.inner.as_raw_fid()
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> AsRawFid for MemoryRegionImplBase<EQ>{
+impl AsRawFid for MemoryRegionImpl{
     fn as_raw_fid(&self) -> RawFid {
         self.c_mr.as_raw_fid()
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> AsTypedFid<MrRawFid> for MemoryRegionBase<EQ>{
+impl AsTypedFid<MrRawFid> for MemoryRegion{
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<MrRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> AsTypedFid<MrRawFid> for MemoryRegionImplBase<EQ>{
+impl AsTypedFid<MrRawFid> for MemoryRegionImpl{
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<MrRawFid> {
         self.c_mr.as_typed_fid()
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT> AsRawTypedFid for MemoryRegionBase<EQ>{
+impl AsRawTypedFid for MemoryRegion{
     type Output = MrRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -497,7 +502,7 @@ impl<EQ: ?Sized + EventQueueImplT> AsRawTypedFid for MemoryRegionBase<EQ>{
     }
 }
 
-impl<EQ: ?Sized + EventQueueImplT,> AsRawTypedFid for MemoryRegionImplBase<EQ>{
+impl AsRawTypedFid for MemoryRegionImpl{
     type Output = MrRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -627,26 +632,22 @@ impl Default for MemoryRegionAttr {
 /// `MemoryRegionBuilder` is used to configure and build a new [MemoryRegion].
 /// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_mr_attr`,
 /// followed by a call to `fi_mr_regattr.  
-pub struct MemoryRegionBuilder<'a, 'b, T> {
-    mr_attr: MemoryRegionAttr,
-    domain: &'a crate::domain::Domain,
-    iovs: Vec<IoVec<'b, T>>,
-    flags: MrMode,
+pub struct MemoryRegionBuilder<'a, T> {
+    pub(crate) mr_attr: MemoryRegionAttr,
+    pub(crate) iovs: Vec<IoVec<'a, T>>,
+    pub(crate) flags: MrMode,
 }
 
-impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
+impl<'a, T> MemoryRegionBuilder<'a, T> {
 
 
     /// Initiates the creation of new [MemoryRegion] on `domain`, with backing memory `buff`.
     /// 
     /// The initial configuration is what would be set if ony the field `fi_mr_attr::mr_iov` was set.
-    pub fn new(domain: &'a crate::domain::Domain, buff: &'b [T]) -> Self {
-        if domain.inner._eq_rc.get().is_some() {
-            panic!("Manual async memory registration is not supported. Use the ::async_::mr::MemoryRegionBuilder for that.")
-        }
+    pub fn new(buff: &'a [T]) -> Self {
+
         Self {
             mr_attr: MemoryRegionAttr::new(),
-            domain,
             flags: MrMode::new(),
             iovs: vec![IoVec::from_slice(buff)],
         }
@@ -655,7 +656,7 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
     /// Add another backing buffer to the memory region
     /// 
     /// Corresponds to 'pusing' another value to the `fi_mr_attr::mr_iov` field.
-    pub fn add_buffer(mut self, buff: &'b [T]) -> Self {
+    pub fn add_buffer(mut self, buff: &'a [T]) -> Self {
         self.iovs.push(IoVec::from_slice(buff));
 
         self
@@ -778,9 +779,15 @@ impl<'a, 'b, T> MemoryRegionBuilder<'a, 'b, T> {
     /// 
     /// Corresponds to creating a `fi_mr_attr`, setting its fields to the requested ones,
     /// and passign it to `fi_mr_regattr`.
-    pub fn build(mut self) -> Result<MemoryRegion, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static>(mut self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<MemoryRegion, crate::error::Error> {
+        if domain.inner._eq_rc.get().is_some() {
+            let (eq, async_reg) = domain.inner._eq_rc.get().unwrap();
+            if *async_reg {
+                panic!("Manual async memory registration is not supported. Use the ::async_::mr::MemoryRegionBuilder for that.")
+            }
+        }
         self.mr_attr.iov(&self.iovs);
-        MemoryRegion::from_attr(self.domain, self.mr_attr, self.flags)
+        MemoryRegion::from_attr(domain, self.mr_attr, self.flags)
     }
 
     // /// Constructs a new [MemoryRegion] with the configurations requested so far.
@@ -889,12 +896,12 @@ mod tests {
                 let buff_size = test.0;
                 let buf = vec![0_u64; buff_size as usize];
                 for combo in &combos {
-                    let _mr = MemoryRegionBuilder::new(&domain, &buf)
+                    let _mr = MemoryRegionBuilder::new(&buf)
                         // .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
                         .access(&MrAccess::from_value(*combo as u32))
                         .requested_key(0xC0DE)
                         
-                        .build()
+                        .build(&domain)
                         .unwrap();
                     // mr.close().unwrap();
                 }
@@ -1049,10 +1056,10 @@ mod libfabric_lifetime_tests {
                 let buff_size = test.0;
                 let buf = vec![0_u64; buff_size as usize ];
                 for combo in &combos {
-                    let mr = MemoryRegionBuilder::new(&domain, &buf)
+                    let mr = MemoryRegionBuilder::new(&buf)
                         .access(&MrAccess::from_value(*combo as u32))
                         .requested_key(0xC0DE)
-                        .build()
+                        .build(&domain)
                         .unwrap();
                     mrs.push(mr);
                     println!("Count = {} \n", std::rc::Rc::strong_count(&domain.inner));

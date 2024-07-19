@@ -1,10 +1,10 @@
 use crate::FI_ADDR_UNSPEC;
 use crate::MappedAddress;
-use crate::cq::CompletionQueueImplT;
+use crate::cq::ReadCq;
 use crate::enums::TaggedRecvMsgOptions;
 use crate::enums::TaggedSendMsgOptions;
 use crate::ep::EndpointBase;
-use crate::eq::EventQueueImplT;
+use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::infocapsoptions::RecvMod;
 use crate::infocapsoptions::SendMod;
@@ -17,10 +17,10 @@ use super::message::extract_raw_addr_and_ctx;
 
 
 
-impl<E: TagCap + RecvMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
 
     #[inline]
-    fn trecv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn trecv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ignore, ctx) };
         check_error(err)
@@ -43,7 +43,7 @@ impl<E: TagCap + RecvMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
 
     #[inline]
-    fn trecvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn trecvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_trecvv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ignore, ctx) };
         check_error(err) 
@@ -71,10 +71,10 @@ impl<E: TagCap + RecvMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
 }
 
-impl<E: TagCap + SendMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: TagCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
 
     #[inline]
-    fn tsend_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn tsend_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ctx) };
         check_error(err) 
@@ -97,7 +97,7 @@ impl<E: TagCap + SendMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
     
     #[inline]
-    fn tsendv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_mapped_addr: Option<&MappedAddress>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn tsendv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_mapped_addr: Option<&MappedAddress>, tag:u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_tsendv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, tag, ctx) };
         check_error(err) 
@@ -125,7 +125,7 @@ impl<E: TagCap + SendMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
 
     #[inline]
-    fn tsenddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&MappedAddress>, tag: u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn tsenddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&MappedAddress>, tag: u64, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_tsenddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, tag, ctx) };
         check_error(err) 

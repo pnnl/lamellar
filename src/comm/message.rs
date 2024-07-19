@@ -1,5 +1,5 @@
 
-use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::EndpointBase, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::EventQueueImplT, fid::AsRawTypedFid, cq::CompletionQueueImplT};
+use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::EndpointBase, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::ReadEq, fid::AsRawTypedFid, cq::ReadCq};
 pub(crate) fn extract_raw_addr_and_ctx<T0>(mapped_addr: Option<&MappedAddress>, context: Option<*mut T0>) -> (u64, *mut std::ffi::c_void) {
             
     let ctx = if let Some(ctx) = context {
@@ -19,10 +19,10 @@ pub(crate) fn extract_raw_addr_and_ctx<T0>(mapped_addr: Option<&MappedAddress>, 
     (raw_addr, ctx)
 }
 
-impl<E: MsgCap + RecvMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
 
     #[inline]
-    fn recv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn recv_impl<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
 
@@ -47,7 +47,7 @@ impl<E: MsgCap + RecvMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
     
     #[inline]
-    fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn recvv_impl<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>,  context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
         check_error(err)    
@@ -75,10 +75,10 @@ impl<E: MsgCap + RecvMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
 }
 
-impl<E: MsgCap + SendMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
 
     #[inline]
-    fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
         check_error(err)
@@ -101,7 +101,7 @@ impl<E: MsgCap + SendMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
 
     #[inline]
-    fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn send_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_send(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
         check_error(err)
@@ -129,7 +129,7 @@ impl<E: MsgCap + SendMod, EQ: ?Sized + EventQueueImplT, CQ: ?Sized + CompletionQ
     }
 
     #[inline]
-    fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    pub(crate) fn senddata_impl<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, ctx) };
         check_error(err)

@@ -1,16 +1,16 @@
 use std::rc::Rc;
 
-use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase, PassiveEndpointImplBase}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::{Event, EventQueueBase}, info::InfoEntry, cq::CompletionQueueImplT};
+use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase, PassiveEndpointImplBase}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::{Event, EventQueueBase}, info::InfoEntry, cq::ReadCq, domain::DomainBase};
 
-use super::{eq::AsyncEventQueueImplT, cq::AsyncCompletionQueueImplT, domain::Domain};
+use super::{eq::AsyncReadEq, cq::AsyncReadCq, domain::Domain};
 
 pub struct ConnectionListener {
-    eq:  Rc<dyn AsyncEventQueueImplT>,
+    eq:  Rc<dyn AsyncReadEq>,
     ep_fid: RawFid,
 }
 
 impl ConnectionListener {
-    fn new(ep_fid: RawFid, eq: &Rc<dyn AsyncEventQueueImplT>) -> Self {
+    fn new(ep_fid: RawFid, eq: &Rc<dyn AsyncReadEq>) -> Self {
         
         Self {
             ep_fid,
@@ -26,7 +26,7 @@ impl ConnectionListener {
     }
 }
 
-pub type Endpoint<T> = EndpointBase<T, dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT>;
+pub type Endpoint<T> = EndpointBase<T, dyn AsyncReadEq, dyn AsyncReadCq>;
 // pub struct AsyncEndpoint<T> {
 //     pub(crate) inner: Rc<AsyncEndpointImpl>,
 //     phantom: PhantomData<T>,
@@ -57,12 +57,12 @@ impl<T> Endpoint<T> {
 }
 
 pub struct IncompleteBindCq<'a> {
-    pub(crate) ep: &'a EndpointImplBase<dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT>,
+    pub(crate) ep: &'a EndpointImplBase<dyn AsyncReadEq, dyn AsyncReadCq>,
     pub(crate) flags: u64,
 }
 
-impl EndpointImplBase<dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT> {
-    pub(crate) fn bind_cq_<T: AsyncCompletionQueueImplT + 'static>(&self, cq: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+impl EndpointImplBase<dyn AsyncReadEq, dyn AsyncReadCq> {
+    pub(crate) fn bind_cq_<T: AsyncReadCq + 'static>(&self, cq: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
         
         if err != 0 {
@@ -102,9 +102,9 @@ impl EndpointImplBase<dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT> {
     }
 }
 
-impl<CQ: ?Sized + CompletionQueueImplT> EndpointImplBase<dyn AsyncEventQueueImplT, CQ> {
+impl<CQ: ?Sized + ReadCq> EndpointImplBase<dyn AsyncReadEq, CQ> {
 
-    pub(crate) fn bind_eq<T: AsyncEventQueueImplT + 'static>(&self, eq: &Rc<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: AsyncReadEq + 'static>(&self, eq: &Rc<T>) -> Result<(), crate::error::Error>  {
             
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), 0) };
         
@@ -123,14 +123,14 @@ impl<CQ: ?Sized + CompletionQueueImplT> EndpointImplBase<dyn AsyncEventQueueImpl
     }
 }
 
-impl<E> EndpointBase<E, dyn AsyncEventQueueImplT, dyn AsyncCompletionQueueImplT> {
+impl<E> EndpointBase<E, dyn AsyncReadEq, dyn AsyncReadCq> {
     pub fn bind_cq(&self) -> IncompleteBindCq {
         self.inner.bind_cq()
     }
 }
 
-impl<E, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, dyn AsyncEventQueueImplT, CQ> {
-    pub fn bind_eq<T: AsyncEventQueueImplT + 'static>(&self, eq: &EventQueueBase<T>) -> Result<(), crate::error::Error>  {
+impl<E, CQ: ?Sized + ReadCq> EndpointBase<E, dyn AsyncReadEq, CQ> {
+    pub fn bind_eq<T: AsyncReadEq + 'static>(&self, eq: &EventQueueBase<T>) -> Result<(), crate::error::Error>  {
         self.inner.bind_eq(&eq.inner)
     }
 }
@@ -168,13 +168,13 @@ impl<'a> IncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: AsyncCompletionQueueImplT + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: AsyncReadCq + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
         self.ep.bind_cq_(&cq.inner, self.flags)
     }
 }
 
 // ============== Async stuff ======================= //
-pub type PassiveEndpoint<T> = PassiveEndpointBase<T, dyn AsyncEventQueueImplT>;
+pub type PassiveEndpoint<T> = PassiveEndpointBase<T, dyn AsyncReadEq>;
 
 
 impl<T> PassiveEndpoint<T> {
@@ -188,10 +188,10 @@ impl<T> PassiveEndpoint<T> {
     
 }
 
-impl<E> PassiveEndpointImplBase<E, dyn AsyncEventQueueImplT> {
+impl<E> PassiveEndpointImplBase<E, dyn AsyncReadEq> {
 
 
-    pub(crate) fn bind<T: AsyncEventQueueImplT + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T: AsyncReadEq + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -205,9 +205,9 @@ impl<E> PassiveEndpointImplBase<E, dyn AsyncEventQueueImplT> {
 }
 
 
-impl<E> PassiveEndpointBase<E, dyn AsyncEventQueueImplT> {
+impl<E> PassiveEndpointBase<E, dyn AsyncReadEq> {
 
-    pub fn bind<T: AsyncEventQueueImplT + 'static>(&self, res: &EventQueueBase<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub fn bind<T: AsyncReadEq + 'static>(&self, res: &EventQueueBase<T>, flags: u64) -> Result<(), crate::error::Error> {
         self.inner.bind(&res.inner, flags)
     }
 }
@@ -235,7 +235,7 @@ impl<'a> EndpointBuilder<'a, (), ()> {
 
 impl<'a, E> EndpointBuilder<'a, (), E> {
 
-    pub fn build(self, domain: &Domain) -> Result<Endpoint<E>, crate::error::Error> {
+    pub fn build<DEQ: 'static>(self, domain: &DomainBase<DEQ>) -> Result<Endpoint<E>, crate::error::Error> {
         Endpoint::new(domain, self.info, self.flags, self.ctx)
     }
 

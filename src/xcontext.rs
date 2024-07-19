@@ -1,5 +1,5 @@
 use std::{marker::PhantomData, os::fd::BorrowedFd, rc::Rc, cell::RefCell};
-use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, EventQueueImplT}, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, BindImpl, cq::CompletionQueueImplT};
+use crate::{av::{AddressVector, AddressVectorImpl}, cntr::Counter, enums::{HmemP2p, TransferOptions}, ep::{BaseEndpointImpl, Endpoint, ActiveEndpointImpl, Address}, eq::{EventQueue, ReadEq}, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, BindImpl, cq::ReadCq};
 
 pub struct Receive;
 pub struct Transmit;
@@ -247,7 +247,7 @@ impl TransmitContext {
         self.inner.bind_cntr()
     }
 
-    pub fn bind_eq<T: CompletionQueueImplT + BindImpl + 'static + fid::AsFid>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub fn bind_eq<T: ReadCq + BindImpl + 'static + fid::AsFid>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         self.inner.bind_eq(&eq.inner)
     }
 
@@ -389,7 +389,7 @@ impl ReceiveContextImpl {
         RxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_eq<T: EventQueueImplT + BindImpl + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: ReadEq + BindImpl + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         
         self.bind(eq, 0)
     }
@@ -417,7 +417,7 @@ impl ReceiveContext {
         self.inner.bind_cntr()
     }
 
-    pub fn bind_eq<T: EventQueueImplT + BindImpl + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
+    pub fn bind_eq<T: ReadEq + BindImpl + 'static>(&self, eq: &EventQueue<T>) -> Result<(), crate::error::Error>  {
         self.inner.bind_eq(eq)
     }
 
@@ -525,7 +525,7 @@ impl<'a> TxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CompletionQueueImplT + BindImpl + AsFid + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: ReadCq + BindImpl + AsFid + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(&cq.inner, self.flags)
     }
 }
@@ -822,7 +822,7 @@ impl<'a> RxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: CompletionQueueImplT + BindImpl + AsRawFid + 'static>(&self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: ReadCq + BindImpl + AsRawFid + 'static>(&self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
         self.ep.bind(cq, self.flags)
     }
 }

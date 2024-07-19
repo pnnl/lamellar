@@ -5,7 +5,7 @@ pub mod async_; // Public to supress lint warnings (unused function)
 pub mod common; // Public to supress lint warnings (unused function)
 use common::IP;
 
-use sync_ as prefix;
+use async_ as prefix;
 use prefix::{ft_finalize, HintsCaps, define_test, call};
 
 // To run the following tests do:
@@ -62,7 +62,7 @@ define_test!(pp_server_rdm_msg, async_pp_server_rdm_msg, {
         };
     
 
-    let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
+    let (info, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
         call!(prefix::ft_init_fabric,hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
     
     match info {
@@ -79,7 +79,7 @@ define_test!(pp_server_rdm_msg, async_pp_server_rdm_msg, {
                 call!(prefix::pingpong, inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
             }
 
-            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             
         }
         prefix::InfoWithCaps::Tagged(info) => {
@@ -95,7 +95,7 @@ define_test!(pp_server_rdm_msg, async_pp_server_rdm_msg, {
                 call!(prefix::pingpong, inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
             }
 
-            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 });
@@ -146,7 +146,7 @@ define_test!(pp_client_rdm_msg, async_pp_client_rdm_msg, {
             )
         };
 
-    let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
+    let (info, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
         call!(prefix::ft_init_fabric,hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
 
     match info {
@@ -163,7 +163,7 @@ define_test!(pp_client_rdm_msg, async_pp_client_rdm_msg, {
                 call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
 
-            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             
         }
         prefix::InfoWithCaps::Tagged(info) => {
@@ -179,7 +179,7 @@ define_test!(pp_client_rdm_msg, async_pp_client_rdm_msg, {
                 call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
 
-            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 });

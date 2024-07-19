@@ -1,8 +1,8 @@
-use crate::{ep::{Address, EndpointBase}, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::MulticastGroupCollectiveBase, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncEventQueueImplT, cq::AsyncCompletionQueueImplT, AsyncCtx, AsyncFid}, av::AddressVectorSet, cq::SingleCompletion};
+use crate::{ep::{Address, EndpointBase}, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::MulticastGroupCollectiveBase, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncReadEq, cq::AsyncReadCq, AsyncCtx, AsyncFid}, av::AddressVectorSet, cq::SingleCompletion};
 
-pub type MulticastGroupCollective<CQ> = MulticastGroupCollectiveBase<dyn AsyncEventQueueImplT, CQ>;
+pub type MulticastGroupCollective<CQ> = MulticastGroupCollectiveBase<dyn AsyncReadEq, CQ>;
 
-impl<E: CollCap, CQ: ?Sized + AsyncCompletionQueueImplT + AsyncFid> EndpointBase<E, dyn AsyncEventQueueImplT, CQ> {
+impl<E: CollCap, CQ: ?Sized + AsyncReadCq + AsyncFid> EndpointBase<E, dyn AsyncReadEq, CQ> {
 
     #[inline]
     async fn join_impl_async(&self, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
@@ -46,7 +46,7 @@ impl<E: CollCap, CQ: ?Sized + AsyncCompletionQueueImplT + AsyncFid> EndpointBase
 }
 
 
-impl MulticastGroupCollective<dyn AsyncCompletionQueueImplT> {
+impl MulticastGroupCollective<dyn AsyncReadCq> {
 
     #[inline]
     async fn barrier_impl_async(&self, user_ctx: Option<*mut std::ffi::c_void>, options: Option<CollectiveOptions>) -> Result<SingleCompletion, crate::error::Error> { 

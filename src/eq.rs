@@ -114,7 +114,7 @@ pub struct EventQueueImpl<const WRITE: bool, const WAIT: bool, const RETRIEVE: b
 // }
 
 
-pub trait EventQueueImplT: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
+pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
 
     fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
         let ret = unsafe { libfabric_sys::inlined_fi_eq_read(self.as_raw_typed_fid(), event, buff.as_mut_ptr().cast(), buff.len(), 0) };
@@ -227,7 +227,7 @@ pub trait WritableEventQueueImplT : AsRawTypedFid<Output = EqRawFid> {
         }
     }
 }
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> EventQueueImplT for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {
+impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> ReadEq for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {
     
     fn read(&self) -> Result<Event<usize>, crate::error::Error>{
         let mut event = 0 ;
@@ -454,7 +454,7 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
     }
 }
 
-impl<T: EventQueueImplT>  EventQueueImplT for EventQueue<T> {
+impl<T: ReadEq>  ReadEq for EventQueue<T> {
 
     fn read(&self) -> Result<Event<usize>, crate::error::Error>{
         self.inner.read()
@@ -477,7 +477,7 @@ impl<T: EventQueueImplT>  EventQueueImplT for EventQueue<T> {
     }
 }
 
-impl<T: EventQueueImplT> EventQueue<T> {
+impl<T: ReadEq> EventQueue<T> {
 
     pub fn read(&self) -> Result<Event<usize>, crate::error::Error>{
         self.inner.read()

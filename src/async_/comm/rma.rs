@@ -1,27 +1,13 @@
-use crate::{FI_ADDR_UNSPEC, infocapsoptions::{RmaCap, WriteMod, ReadMod}, mr::{DataDescriptor, MappedMemoryRegionKey}, cq::SingleCompletion, enums::{ReadMsgOptions, WriteMsgOptions}, async_::{AsyncCtx, cq::AsyncCompletionQueueImplT, eq::AsyncEventQueueImplT}, fid::AsRawTypedFid, MappedAddress, ep::EndpointBase};
+use crate::{FI_ADDR_UNSPEC, infocapsoptions::{RmaCap, WriteMod, ReadMod}, mr::{DataDescriptor, MappedMemoryRegionKey}, cq::SingleCompletion, enums::{ReadMsgOptions, WriteMsgOptions}, async_::{AsyncCtx, cq::AsyncReadCq, eq::AsyncReadEq}, fid::AsRawTypedFid, MappedAddress, ep::EndpointBase};
 
-impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletionQueueImplT  + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     async unsafe  fn read_async_impl<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_mapped_addr: Option<&MappedAddress>, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = src_mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
-
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-        } 
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.read_impl(buf, desc, src_mapped_addr, mem_addr, mapped_key, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
     pub async unsafe  fn read_async<T0>(&self, buf: &mut [T0], desc: &mut impl DataDescriptor, src_addr: &MappedAddress, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey) -> Result<SingleCompletion, crate::error::Error> {
@@ -43,23 +29,9 @@ impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletio
     #[inline]
     async unsafe fn readv_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], src_mapped_addr: Option<&MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = src_mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
-
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-        } 
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.readv_impl(iov, desc, src_mapped_addr, mem_addr, mapped_key, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
     pub async unsafe  fn readv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], src_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<SingleCompletion, crate::error::Error> { //[TODO]
@@ -94,41 +66,26 @@ impl<E: RmaCap + ReadMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletio
 
         msg.c_msg_rma.context = (&mut async_ctx as *mut AsyncCtx).cast();
         
-        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
-        
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            let res =  cq.wait_for_ctx_async(&mut async_ctx).await;
+        if let Err(err) = self.readmsg(msg, options) {
             msg.c_msg_rma.context = real_user_ctx;
-            return res;
-        } 
+            return Err(err);
+        }
 
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+        let res =  cq.wait_for_ctx_async(&mut async_ctx).await;
+        msg.c_msg_rma.context = real_user_ctx;
+        res
     }
 }
 
-impl<E: RmaCap + WriteMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompletionQueueImplT  + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: RmaCap + WriteMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     async unsafe fn write_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_mapped_addr: Option<&MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error>  {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = dest_mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-        } 
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.write_impl(buf, desc, dest_mapped_addr, mem_addr, mapped_key, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
     pub async unsafe  fn write_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<SingleCompletion, crate::error::Error>  {
@@ -150,22 +107,9 @@ impl<E: RmaCap + WriteMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompleti
     #[inline]
     async unsafe fn writev_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], dest_mapped_addr: Option<&MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey,  user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = dest_mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_writev(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-        } 
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.writev_impl(iov, desc, dest_mapped_addr, mem_addr, mapped_key, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
 
@@ -195,41 +139,23 @@ impl<E: RmaCap + WriteMod, EQ: ?Sized + AsyncEventQueueImplT,  CQ: AsyncCompleti
                 Some(real_user_ctx)
             }
         };
-
         msg.c_msg_rma.context = (&mut async_ctx as *mut AsyncCtx).cast();
-
-        let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
-       
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            let res =  cq.wait_for_ctx_async(&mut async_ctx).await;
+        if let Err(err) = self.writemsg(msg, options) {
             msg.c_msg_rma.context = real_user_ctx;
-            return res;
-        } 
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+            return Err(err);
+        }
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+        let res =  cq.wait_for_ctx_async(&mut async_ctx).await;
+        msg.c_msg_rma.context = real_user_ctx;
+        res
     }
     
     #[inline]
     async unsafe  fn writedata_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, dest_mapped_addr: Option<&MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = dest_mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_writedata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, mem_addr, mapped_key.get_key(),  (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-        } 
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.writedata_impl(buf, desc, data, dest_mapped_addr, mem_addr, mapped_key, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
     pub async unsafe  fn writedata_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<SingleCompletion, crate::error::Error> {

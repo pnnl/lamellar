@@ -68,7 +68,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
         };
 
 
-    let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
+    let (info, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
         prefix::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
     
     match info {
@@ -85,7 +85,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
         prefix::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
@@ -100,7 +100,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 });
@@ -154,7 +154,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
             )
         };
 
-    let (info, _fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _eq, _mr, _av, mut mr_desc) = 
+    let (info, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
         prefix::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
 
     match info {
@@ -171,7 +171,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
         prefix::InfoWithCaps::Tagged(info) => {
             let entries = info.get();
@@ -186,7 +186,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &domain, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 });

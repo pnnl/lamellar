@@ -1,5 +1,6 @@
 
 use crate::cq::{CompletionEntry, SingleCompletion};
+use crate::domain::{DomainBase, DomainImplBase};
 use crate::error::ErrorKind;
 use crate::fid::{AsRawTypedFid, CqRawFid};
 use std::cell::RefCell;
@@ -7,13 +8,13 @@ use std::collections::HashMap;
 use std::os::fd::BorrowedFd;
 use std::pin::Pin;
 use std::{rc::Rc, future::Future, task::ready};
-use crate::cq::CompletionQueueImplT; 
+use crate::cq::ReadCq; 
 #[cfg(feature="use-async-std")]
 use async_io::{Async as Async, Readable};
 #[cfg(feature="use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 use crate::cq::WaitObjectRetrievable;     
-use crate::cq::WaitableCompletionQueueImplT;    
+use crate::cq::WaitCq;    
 use crate::{cq::{CompletionQueueImpl, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, RawFid, AsRawFid}, MappedAddress, enums::WaitObjType};
 
 use super::AsyncFid;
@@ -48,15 +49,14 @@ macro_rules! alloc_cq_entry {
 
 pub type CompletionQueue<T>  = CompletionQueueBase<T>;
 
-pub trait AsyncCompletionQueueImplT: CompletionQueueImplT {
+pub trait AsyncReadCq: ReadCq {
     fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead;
-    // fn async_transfer_wait(&self, async_ctx: &mut AsyncCtx) -> impl Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    fn wait_for_ctx_async(&self, async_ctx: &mut AsyncCtx) -> AsyncTransferCq;
     fn read_async(&self, count: usize) -> CqAsyncReadOwned;
+    fn wait_for_ctx_async(&self, async_ctx: &mut AsyncCtx) -> AsyncTransferCq;
 }
 
 impl CompletionQueue<AsyncCompletionQueueImpl> {
-    pub(crate) fn new<T0>(domain: &Domain, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0, EQ: ?Sized + 'static>(domain: &DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: Rc::new(AsyncCompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
@@ -65,7 +65,7 @@ impl CompletionQueue<AsyncCompletionQueueImpl> {
     }
 }
 
-impl CompletionQueueImplT for AsyncCompletionQueueImpl {
+impl ReadCq for AsyncCompletionQueueImpl {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
         let mut borrowed_entries = self.base.get_ref().entry_buff.borrow_mut();
         self.read_in(count, &mut borrowed_entries)?;
@@ -124,7 +124,7 @@ pub struct AsyncCompletionQueueImpl {
     pub(crate) pending_entries: RefCell<HashMap<usize, Result<SingleCompletion, Error>>>,
 }
 
-impl WaitableCompletionQueueImplT for AsyncCompletionQueueImpl {
+impl WaitCq for AsyncCompletionQueueImpl {
     fn sread(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error>  {
         self.base.get_ref().sread(count, cond, timeout)
     }
@@ -134,7 +134,7 @@ impl WaitableCompletionQueueImplT for AsyncCompletionQueueImpl {
     }
 }
 
-impl AsyncCompletionQueueImplT for AsyncCompletionQueueImpl {
+impl AsyncReadCq for AsyncCompletionQueueImpl {
 
     fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead  {
         CqAsyncRead{num_entries: count, buf, cq: self, fut: None}
@@ -155,7 +155,7 @@ impl AsyncFid for AsyncCompletionQueueImpl {
     }
 }
 
-impl<T: AsyncCompletionQueueImplT> CompletionQueue<T> {
+impl<T: AsyncReadCq> CompletionQueue<T> {
     pub async fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> Result<(), crate::error::Error>  {
         self.inner.read_in_async(buf, count).await
     }
@@ -167,13 +167,13 @@ impl<T: AsyncCompletionQueueImplT> CompletionQueue<T> {
 
 impl AsyncCompletionQueueImpl {
 
-    pub(crate) fn new<T0>(domain: &Rc<AsyncDomainImpl>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-        Ok(Self {base:Async::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?).unwrap(), pending_entries: RefCell::new(HashMap::new())})
+    pub(crate) fn new<T0, EQ: ?Sized + 'static>(domain: &Rc<DomainImplBase<EQ>>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+        Ok(Self {base:Async::new(CompletionQueueImpl::new(domain.clone(), attr, context, default_buff_size)?).unwrap(), pending_entries: RefCell::new(HashMap::new())})
     }
 }
 
 
-pub(crate) struct AsyncTransferCq<'a>{
+pub struct AsyncTransferCq<'a>{
     pub(crate) ctx: usize,
     fut: Pin<Box<CqAsyncReadOwned<'a>>>,
 }
@@ -442,7 +442,6 @@ impl crate::BindImpl for AsyncCompletionQueueImpl {}
 
 pub struct CompletionQueueBuilder<'a, T> {
     cq_attr: CompletionQueueAttr,
-    domain: &'a Domain,
     ctx: Option<&'a mut T>,
     default_buff_size: usize,
 }
@@ -454,10 +453,9 @@ impl<'a> CompletionQueueBuilder<'a, ()> {
     /// 
     /// The initial configuration is what would be set if no `fi_cq_attr` or `context` was provided to 
     /// the `fi_cq_open` call. 
-    pub fn new(domain: &'a Domain) -> CompletionQueueBuilder<()> {
+    pub fn new() -> CompletionQueueBuilder<'a, ()> {
         Self  {
             cq_attr: CompletionQueueAttr::new(),
-            domain,
             ctx: None,
             default_buff_size: 10,
         }
@@ -500,7 +498,6 @@ impl<'a, T> CompletionQueueBuilder<'a, T> {
         CompletionQueueBuilder {
             ctx: Some(ctx),
             cq_attr: self.cq_attr,
-            domain: self.domain,
             default_buff_size: self.default_buff_size,
         }
     }
@@ -509,16 +506,17 @@ impl<'a, T> CompletionQueueBuilder<'a, T> {
     /// 
     /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cq_open` call with an optional `context`.
-    pub fn build(mut self) ->  Result<CompletionQueue<AsyncCompletionQueueImpl>, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static>(mut self, domain: &'a DomainBase<EQ>) ->  Result<CompletionQueue<AsyncCompletionQueueImpl>, crate::error::Error> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Fd);
-        CompletionQueue::<AsyncCompletionQueueImpl>::new(self.domain, self.cq_attr, self.ctx, self.default_buff_size)   
+        CompletionQueue::<AsyncCompletionQueueImpl>::new(domain, self.cq_attr, self.ctx, self.default_buff_size)   
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use crate::async_::{cq::*, domain::DomainBuilder};
+    use crate::async_::{cq::*};
+    use crate::domain::DomainBuilder;
     use crate::info::Info;
 
     #[test]
@@ -531,7 +529,7 @@ mod tests {
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         // let mut cqs = Vec::new();
         for _ in 0..count {
-            let _cq = CompletionQueueBuilder::new(&domain).build().unwrap();
+            let _cq = CompletionQueueBuilder::new().build(&domain).unwrap();
         }
     }
 
@@ -544,8 +542,8 @@ mod tests {
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
-            let _cq = CompletionQueueBuilder::new(&domain).size(size)
-                .build()
+            let _cq = CompletionQueueBuilder::new().size(size)
+                .build(&domain)
                 .unwrap();
         }
     }
@@ -553,7 +551,8 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::async_::{cq::*, domain::DomainBuilder};
+    use crate::async_::{cq::*};
+    use crate::domain::DomainBuilder;
     use crate::info::Info;
 
     #[test]
@@ -566,8 +565,8 @@ mod libfabric_lifetime_tests {
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         let mut cqs = Vec::new();
         for _ in 0..count {
-            let cq = CompletionQueueBuilder::new(&domain)
-                .build()
+            let cq = CompletionQueueBuilder::new()
+                .build(&domain)
                 .unwrap();
             println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
             cqs.push(cq);

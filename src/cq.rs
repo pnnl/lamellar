@@ -84,19 +84,6 @@ pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD:
     pub(crate) _domain_rc: Rc<dyn DomainImplT>,
 }
 
-// pub struct CompletionQueueImpl {
-//     pub(crate) c_cq: OwnedCqFid,
-//     pub(crate) entry_buff: RefCell<CompletionFormat>,
-//     error_buff: RefCell<CompletionError>,
-//     #[allow(dead_code)]
-//     requests: RefCell<usize>,
-//     completions: RefCell<usize>,
-//     pub(crate) pending_entries: RefCell<HashMap<usize, SingleCompletionFormat>>,
-//     wait_obj: Option<libfabric_sys::fi_wait_obj>,
-//     pub(crate) _domain_rc: Rc<dyn DomainImplT>,
-// }
-
-
 /// Owned wrapper around a libfabric `fid_cq`.
 /// 
 /// This type wraps an instance of a `fid_cq`, monitoring its lifetime and closing it when it goes out of scope.
@@ -112,7 +99,7 @@ pub struct CompletionQueueBase<CQ: ?Sized> {
     pub(crate) inner: Rc<CQ>,
 }
 
-pub trait WaitableCompletionQueueImplT: AsRawTypedFid<Output = CqRawFid> {
+pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
     fn sread_in(&self, count: usize, buffer: &mut Completion, cond: usize, timeout: i32) -> Result<(), crate::error::Error> {
         let p_cond = cond as *const usize as *const std::ffi::c_void;
         let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.as_raw_typed_fid(), count, buffer, p_cond, timeout);
@@ -162,7 +149,7 @@ pub trait WaitableCompletionQueueImplT: AsRawTypedFid<Output = CqRawFid> {
         }
     }
 }
-pub trait CompletionQueueImplT: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
+pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
 
     fn read_in(&self, count: usize, buffer: &mut Completion) -> Result<usize, crate::error::Error> {
         let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.as_raw_typed_fid(), count, buffer, );
@@ -224,7 +211,7 @@ pub trait CompletionQueueImplT: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
     fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> ;
 }
 
-impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImplT for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
+impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> ReadCq for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
         let mut borrowed_entries = self.entry_buff.borrow_mut();
         self.read_in(count, &mut borrowed_entries)?;
@@ -244,7 +231,7 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
     }
 }
 
-impl<const RETRIEVE: bool, const FD: bool> WaitableCompletionQueueImplT for CompletionQueueImpl<true, RETRIEVE, FD> {
+impl<const RETRIEVE: bool, const FD: bool> WaitCq for CompletionQueueImpl<true, RETRIEVE, FD> {
 
     fn sread(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
         let mut borrowed_entries = self.entry_buff.borrow_mut();
@@ -302,13 +289,13 @@ impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrievable<'a> for Complet
     }
 }
 
-pub(crate) trait WaitObjectRetrievable<'a> {
+pub trait WaitObjectRetrievable<'a> {
     fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error>;
 }
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImpl<WAIT, RETRIEVE, FD>  {
 
-    pub(crate) fn new<EQ: ?Sized + 'static, T0>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: Rc<dyn DomainImplT>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: CqRawFid  = std::ptr::null_mut();
         // let mut entries: Vec<$t> = Vec::with_capacity(std::mem::size_of::<$t>() * $count);
@@ -330,7 +317,7 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
                     c_cq: OwnedCqFid::from(c_cq), 
                     wait_obj: Some(attr.c_attr.wait_obj),
 
-                    _domain_rc: domain.clone(),
+                    _domain_rc: domain,
                     entry_buff: 
                         if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC {
                             RefCell::new(Completion::Unspec(Vec::with_capacity(default_buff_size)))
@@ -361,16 +348,16 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>> {
 
     // pub(crate) fn new<EQ: AsFid + 'static, T0>(_options: T, domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-    pub(crate) fn new<EQ: ?Sized + 'static, T0>(domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: Rc<dyn DomainImplT>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(CompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
+                inner: Rc::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?),
             }
         )
     }
 }
 
-impl<T: CompletionQueueImplT>  CompletionQueueImplT for CompletionQueue<T> {
+impl<T: ReadCq>  ReadCq for CompletionQueue<T> {
     /// Reads one or more completions from a completion queue
     /// 
     /// The call will read up to `count` completion entries which will be stored in a [Completion]
@@ -396,7 +383,7 @@ impl<T: CompletionQueueImplT>  CompletionQueueImplT for CompletionQueue<T> {
     }
 }
 
-impl<T: CompletionQueueImplT> CompletionQueue<T> {
+impl<T: ReadCq> CompletionQueue<T> {
 
     /// Reads one or more completions from a completion queue
     /// 
@@ -481,7 +468,7 @@ impl<T: CompletionQueueImplT> CompletionQueue<T> {
 
 }
 
-impl<T: WaitableCompletionQueueImplT> CompletionQueue<T> {
+impl<T: WaitCq> CompletionQueue<T> {
 
 
     /// Blocking version of [Self::read]
@@ -724,32 +711,30 @@ impl<T: AsFd> AsFd for CompletionQueue<T> {
 /// `CompletionQueueBuilder` is used to configure and build a new `CompletionQueue`.
 /// It encapsulates an incremental configuration of the address vector, as provided by a `fi_cq_attr`,
 /// followed by a call to `fi_cq_open`  
-pub struct CompletionQueueBuilder<'a, T, EQ: ?Sized, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
+pub struct CompletionQueueBuilder<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     cq_attr: CompletionQueueAttr,
-    domain: &'a DomainBase<EQ>,
     ctx: Option<&'a mut T>,
     // options: Options<WAIT, WAITFD>,
     default_buff_size: usize,
 }
 
     
-impl<'a, EQ: ?Sized> CompletionQueueBuilder<'a, (), EQ, true, false, false> {
+impl<'a> CompletionQueueBuilder<'a, (), true, false, false> {
     
     /// Initiates the creation of a new [CompletionQueue] on `domain`.
     /// 
     /// The initial configuration is what would be set if no `fi_cq_attr` or `context` was provided to 
     /// the `fi_cq_open` call. 
-    pub fn new(domain: &'a DomainBase<EQ>) -> CompletionQueueBuilder<(), EQ, true, false, false> {
+    pub fn new() -> CompletionQueueBuilder<'a, (), true, false, false> {
         Self  {
             cq_attr: CompletionQueueAttr::new(),
-            domain,
             ctx: None,
             default_buff_size: 10,
         }
     }
 }
 
-impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQueueBuilder<'a, T, EQ, WAIT, RETRIEVE, FD> {
+impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQueueBuilder<'a, T, WAIT, RETRIEVE, FD> {
 
     /// Specifies the minimum size of a completion queue.
     /// 
@@ -781,12 +766,11 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     /// Sets the underlying low-level waiting object to none.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_NONE`.
-    pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, T, EQ, false, false, false> {
+    pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, T, false, false, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::None);
 
         CompletionQueueBuilder {
             cq_attr: self.cq_attr,
-            domain: self.domain,
             ctx: self.ctx,
             default_buff_size: self.default_buff_size,
         }
@@ -795,12 +779,11 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     /// Sets the underlying low-level waiting object to FD.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_FD`.
-    pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, T, EQ,  true,  true, true> {
+    pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, T,  true,  true, true> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         CompletionQueueBuilder {
             cq_attr: self.cq_attr,
-            domain: self.domain,
             ctx: self.ctx,
             default_buff_size: self.default_buff_size,
         }
@@ -810,13 +793,12 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     /// Sets the underlying low-level waiting object to [crate::sync::WaitSet] `set`.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_SET` and `fi_cq_attr::wait_set` to `set`.
-    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, T, EQ, true, false, false> {
+    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, T, true, false, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         
         CompletionQueueBuilder {
             cq_attr: self.cq_attr,
-            domain: self.domain,
             ctx: self.ctx,
             default_buff_size: self.default_buff_size,
         }
@@ -825,13 +807,12 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     /// Sets the underlying low-level waiting object to Mutex+Conditional.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_MUTEX_COND`.
-    pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, T, EQ,  true, true, false> {
+    pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, T,  true, true, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         
         CompletionQueueBuilder {
             cq_attr: self.cq_attr,
-            domain: self.domain,
             ctx: self.ctx,
             default_buff_size: self.default_buff_size,
         }
@@ -840,12 +821,11 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     /// Indicates that the counter will wait without a wait object but instead yield on every wait.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_YIELD`.
-    pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, T, EQ,  true, false, false> {
+    pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, T,  true, false, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         CompletionQueueBuilder {
             cq_attr: self.cq_attr,
-            domain: self.domain,
             ctx: self.ctx,
             default_buff_size: self.default_buff_size,
         }
@@ -858,7 +838,6 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     //     CompletionQueueBuilder {
     //         options: self.options,
     //         cq_attr: self.cq_attr,
-    //         domain: self.domain,
     //         ctx: self.ctx,
     //         default_buff_size: self.default_buff_size,
     //     }
@@ -871,7 +850,6 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     //     CompletionQueueBuilder {
     //         options: self.options,
     //         cq_attr: self.cq_attr,
-    //         domain: self.domain,
     //         ctx: self.ctx,
     //         phantom: PhantomData,
     //         default_buff_size: self.default_buff_size,
@@ -885,7 +863,6 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     //     CompletionQueueBuilder {
     //         options: self.options,
     //         cq_attr: self.cq_attr,
-    //         domain: self.domain,
     //         ctx: self.ctx,
     //         phantom: PhantomData,
     //         default_buff_size: self.default_buff_size,
@@ -899,7 +876,6 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     //     CompletionQueueBuilder {
     //         options: self.options,
     //         cq_attr: self.cq_attr,
-    //         domain: self.domain,
     //         ctx: self.ctx,
     //         phantom: PhantomData,
     //         default_buff_size: self.default_buff_size,
@@ -918,11 +894,10 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     /// Sets the context to be passed to the `CompletionQueue`.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_cq_open`.
-    pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T, EQ, WAIT, RETRIEVE, FD> {
+    pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T, WAIT, RETRIEVE, FD> {
         CompletionQueueBuilder {
             ctx: Some(ctx),
             cq_attr: self.cq_attr,
-            domain: self.domain,
             default_buff_size: self.default_buff_size,
         }
     }
@@ -931,9 +906,9 @@ impl<'a, T, EQ: ?Sized + 'static, const WAIT: bool, const RETRIEVE: bool, const 
     /// 
     /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cq_open` call with an optional `context`.
-    pub fn build(self) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static>(self, domain: &DomainBase<EQ>) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
         // CompletionQueue::new(self.options, self.domain, self.cq_attr, self.ctx, self.default_buff_size)   
-        CompletionQueue::<CompletionQueueImpl<WAIT, RETRIEVE, FD>>::new(self.domain, self.cq_attr, self.ctx, self.default_buff_size)   
+        CompletionQueue::<CompletionQueueImpl<WAIT, RETRIEVE, FD>>::new(domain.inner.clone(), self.cq_attr, self.ctx, self.default_buff_size)   
     }
 }
 
@@ -1512,7 +1487,7 @@ mod tests {
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         // let mut cqs = Vec::new();
         for _ in 0..count {
-            let _cq = CompletionQueueBuilder::new(&domain).wait_fd().build().unwrap();
+            let _cq = CompletionQueueBuilder::new().wait_fd().build(&domain).unwrap();
         }
     }
 
@@ -1523,10 +1498,10 @@ mod tests {
         
         let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-        let cq = CompletionQueueBuilder::new(&domain)
+        let cq = CompletionQueueBuilder::new()
             .size(1)
             .wait_fd()
-            .build()
+            .build(&domain)
             .unwrap();
 
         cq.signal().unwrap();
@@ -1547,9 +1522,9 @@ mod tests {
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
-            let _cq = CompletionQueueBuilder::new(&domain).size(size)
+            let _cq = CompletionQueueBuilder::new().size(size)
                 .wait_fd()
-                .build()
+                .build(&domain)
                 .unwrap();
         }
     }
@@ -1569,9 +1544,9 @@ mod libfabric_lifetime_tests {
         let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
         let mut cqs = Vec::new();
         for _ in 0..count {
-            let cq = CompletionQueueBuilder::new(&domain)
+            let cq = CompletionQueueBuilder::new()
                 .wait_fd()
-                .build()
+                .build(&domain)
                 .unwrap();
             println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
             cqs.push(cq);

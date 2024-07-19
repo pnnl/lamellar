@@ -1,26 +1,13 @@
-use crate::{FI_ADDR_UNSPEC, cq::SingleCompletion, infocapsoptions::{MsgCap, SendMod, RecvMod}, mr::DataDescriptor, async_::{AsyncCtx, cq::AsyncCompletionQueueImplT, eq::AsyncEventQueueImplT}, fid::AsRawTypedFid, enums::{SendMsgOptions, RecvMsgOptions}, MappedAddress, ep::EndpointBase};
+use crate::{FI_ADDR_UNSPEC, cq::SingleCompletion, infocapsoptions::{MsgCap, SendMod, RecvMod}, mr::DataDescriptor, async_::{AsyncCtx, cq::AsyncReadCq, eq::AsyncReadEq}, fid::AsRawTypedFid, enums::{SendMsgOptions, RecvMsgOptions}, MappedAddress, ep::EndpointBase};
 
-impl<E: MsgCap + RecvMod, EQ: ?Sized + AsyncEventQueueImplT, CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
     async fn recv_async_imp<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_recv(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-        }
-        
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.recv_impl(buf, desc, mapped_addr, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
     pub async fn recv_async<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress) -> Result<SingleCompletion, crate::error::Error> {
@@ -42,22 +29,9 @@ impl<E: MsgCap + RecvMod, EQ: ?Sized + AsyncEventQueueImplT, CQ: AsyncCompletion
     #[inline]
 	async fn recvv_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&MappedAddress>, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_recvv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-        }
-        
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.recvv_impl(iov, desc, mapped_addr, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
 	pub async fn recvv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> Result<SingleCompletion, crate::error::Error> {
@@ -88,42 +62,25 @@ impl<E: MsgCap + RecvMod, EQ: ?Sized + AsyncEventQueueImplT, CQ: AsyncCompletion
         };
         msg.c_msg.context = (&mut async_ctx as *mut AsyncCtx).cast();
 
-        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
-        
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-            let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            // let res = crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            let res = cq.wait_for_ctx_async(&mut async_ctx).await;
+        if let Err(err) = self.recvmsg(msg, options) {
             msg.c_msg.context = real_user_ctx;
-            return res;
+            return Err(err);
         }
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        let cq = self.inner.rx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        let res = cq.wait_for_ctx_async(&mut async_ctx).await;
+        msg.c_msg.context = real_user_ctx;
+        res
     }
 }
 
-impl<E: MsgCap + SendMod, EQ: ?Sized +  AsyncEventQueueImplT,  CQ: AsyncCompletionQueueImplT + ? Sized> EndpointBase<E, EQ, CQ> {
+impl<E: MsgCap + SendMod, EQ: ?Sized +  AsyncReadEq,  CQ: AsyncReadCq + ? Sized> EndpointBase<E, EQ, CQ> {
 
     #[inline]
 	async fn sendv_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&MappedAddress>, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-        }
-        
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.sendv_impl(iov, desc, mapped_addr, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
 	pub async fn sendv_async<'a, T>(&self, iov: & [crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> Result<SingleCompletion, crate::error::Error> { 
@@ -145,22 +102,9 @@ impl<E: MsgCap + SendMod, EQ: ?Sized +  AsyncEventQueueImplT,  CQ: AsyncCompleti
     #[inline]
     async fn send_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_send(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-        }
-        
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.send_impl(buf, desc, mapped_addr, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
     pub async fn send_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress) -> Result<SingleCompletion, crate::error::Error> {
@@ -179,52 +123,36 @@ impl<E: MsgCap + SendMod, EQ: ?Sized +  AsyncEventQueueImplT,  CQ: AsyncCompleti
         self.send_async_impl(buf, desc, None, Some((context as *mut T0).cast())).await
     }
 
-    //// [TODO]
     pub async fn sendmsg_async(&self, msg: &mut crate::msg::Msg, options: SendMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
         let real_user_ctx = msg.c_msg.context;
-        let mut async_ctx = AsyncCtx{user_ctx: 
-            if real_user_ctx.is_null() {
-                None
-            }
-            else {
-                Some(real_user_ctx)
-            }
-        };
-
-        msg.c_msg.context = (&mut async_ctx as *mut AsyncCtx).cast();
+        let mut async_ctx = 
+            AsyncCtx {
+                user_ctx: if real_user_ctx.is_null() {
+                    None
+                }
+                else {
+                    Some(real_user_ctx)
+                }
+            };
         
-        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.get_value()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            // let res = crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            let res = cq.wait_for_ctx_async(&mut async_ctx).await;
+        msg.c_msg.context = (&mut async_ctx as *mut AsyncCtx).cast();
+        if let Err(err) = self.sendmsg(msg, options) {
             msg.c_msg.context = real_user_ctx;
-            return res;
+            return Err(err);
         }
-
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        let res = cq.wait_for_ctx_async(&mut async_ctx).await;
+        msg.c_msg.context = real_user_ctx;
+        res
     }
 
     #[inline]
     async fn senddata_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: Option<&MappedAddress>, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let raw_addr = if let Some(addr) = mapped_addr {
-            addr.raw_addr()
-        }
-        else {
-            FI_ADDR_UNSPEC
-        };
-
-        let err = unsafe{ libfabric_sys::inlined_fi_senddata(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), data, raw_addr, (&mut async_ctx as *mut AsyncCtx).cast()) };
-        if err == 0 {
-            // let req = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").request();
-            let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-            // return crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await;
-            return cq.wait_for_ctx_async(&mut async_ctx).await;
-        }
-        
-        Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
+        self.senddata_impl(buf, desc, data, mapped_addr, Some(&mut async_ctx as *mut AsyncCtx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
 

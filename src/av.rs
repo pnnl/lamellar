@@ -2,7 +2,7 @@ use std::{rc::Rc, cell::OnceCell};
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{Domain, DomainImplT}, fid::{AsRawFid, self, AvRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, EventQueueImplT}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress, AddressSource};
+use crate::{domain::{DomainImplT, DomainBase}, fid::{AsRawFid, self, AvRawFid, OwnedAVFid, AsRawTypedFid, AsTypedFid, OwnedAVSetFid, AVSetRawFid, RawFid}, FI_ADDR_NOTAVAIL, ep::Address, eq::{EventQueue, ReadEq}, enums::{AVOptions, AVSetOptions}, RawMappedAddress, MappedAddress, AddressSource};
 
 
 // impl Drop for AddressVector {
@@ -20,11 +20,11 @@ pub(crate) struct AddressVectorImplBase<EQ: ?Sized> {
     pub(crate) _eq_rc: OnceCell<Rc<EQ>>,
     pub(crate) _domain_rc: Rc<dyn DomainImplT>,
 }
-pub(crate) type AddressVectorImpl = AddressVectorImplBase<dyn EventQueueImplT>;
+pub(crate) type AddressVectorImpl = AddressVectorImplBase<dyn ReadEq>;
 
 
 
-impl<EQ: ?Sized + EventQueueImplT> AddressVectorImplBase<EQ> {
+impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
     pub(crate) fn new<DEQ: ?Sized + 'static, T>(domain: &Rc<crate::domain::DomainImplBase<DEQ>>, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         let mut c_av:   AvRawFid =  std::ptr::null_mut();
@@ -51,7 +51,7 @@ impl<EQ: ?Sized + EventQueueImplT> AddressVectorImplBase<EQ> {
         }
     }
 }
-impl<EQ: ?Sized + EventQueueImplT> AddressVectorImplBase<EQ> {
+impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
     /// Associates an [EventQueue](crate::eq::EventQueue) with the AddressVector.
     /// 
@@ -183,12 +183,12 @@ impl<EQ: ?Sized> AddressVectorImplBase<EQ> {
 /// 
 /// Note that other objects that rely on an AddressVector (e.g., [MappedAddress]) will extend its lifetime until they
 /// are also dropped.
-pub type AddressVector = AddressVectorBase<dyn EventQueueImplT>;
-pub struct AddressVectorBase<EQ: ?Sized + EventQueueImplT> {
+pub type AddressVector = AddressVectorBase<dyn ReadEq>;
+pub struct AddressVectorBase<EQ: ?Sized + ReadEq> {
     pub(crate) inner: Rc<AddressVectorImplBase<EQ>>,
 }
 
-impl<EQ: EventQueueImplT + ?Sized + 'static> AddressVectorBase<EQ> {
+impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
 
     #[allow(dead_code)]
     pub(crate) fn from_impl(av_impl: &Rc<AddressVectorImplBase<EQ>>) -> Self {
@@ -282,7 +282,6 @@ pub struct AddressVectorBuilder<'a, T, EQ: ?Sized> {
     av_attr: AddressVectorAttr,
     eq: Option<&'a Rc<EQ>>,
     ctx: Option<&'a mut T>,
-    domain: &'a Domain,
 }
 
 
@@ -292,12 +291,11 @@ impl<'a> AddressVectorBuilder<'a, (), ()> {
     /// 
     /// The initial configuration is what would be set if no `fi_av_attr` or `context` was provided to 
     /// the `fi_av_open` call. 
-    pub fn new(domain: &'a Domain) -> AddressVectorBuilder<'a, (), ()> {
+    pub fn new() -> AddressVectorBuilder<'a, (), ()> {
         AddressVectorBuilder {
             av_attr: AddressVectorAttr::new(),
             eq: None,
             ctx: None,
-            domain,
         }
     }
 }
@@ -363,7 +361,7 @@ impl<'a, T, EQ> AddressVectorBuilder<'a, T, EQ> {
     }
 }
 
-impl<'a, T, EQ: EventQueueImplT> AddressVectorBuilder<'a, T, EQ> {
+impl<'a, T, EQ: ReadEq> AddressVectorBuilder<'a, T, EQ> {
 
     /// Requests that insertions to [AddressVector] be done asynchronously.
     /// 
@@ -396,7 +394,6 @@ impl<'a, T, EQ> AddressVectorBuilder<'a, T, EQ> {
     pub fn context(self, ctx: &'a mut T) -> AddressVectorBuilder<'a, T, EQ> {
         AddressVectorBuilder {
             av_attr: self.av_attr,
-            domain: self.domain,
             eq: self.eq,
             ctx: Some(ctx),
         }
@@ -409,8 +406,8 @@ impl<'a, T> AddressVectorBuilder<'a, T, ()> {
     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
     /// calling `fi_av_open` with an optional `context`, and, if asynchronous, binding with
     /// the selected [EventQueue].
-    pub fn build(self) -> Result<AddressVector, crate::error::Error> {
-        let av = AddressVector::new(self.domain, self.av_attr, self.ctx)?;
+    pub fn build<DEQ: ?Sized + 'static>(self, domain: &DomainBase<DEQ>) -> Result<AddressVector, crate::error::Error> {
+        let av = AddressVector::new(domain, self.av_attr, self.ctx)?;
         Ok(av)
         // match self.eq {
         //     None => Ok(av),
@@ -419,15 +416,15 @@ impl<'a, T> AddressVectorBuilder<'a, T, ()> {
     }
     
 }
-impl<'a, T, EQ: ?Sized + EventQueueImplT + 'static> AddressVectorBuilder<'a, T, EQ> {
+impl<'a, T, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, T, EQ> {
 
     /// Constructs a new [AddressVector] with the configurations requested so far.
     /// 
     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
     /// calling `fi_av_open` with an optional `context`, and, if asynchronous, binding with
     /// the selected [EventQueue].
-    pub fn build(self) -> Result<AddressVectorBase<EQ>, crate::error::Error> {
-        let av = AddressVectorBase::new(self.domain, self.av_attr, self.ctx)?;
+    pub fn build<DEQ: 'static>(self, domain: &DomainBase<DEQ>) -> Result<AddressVectorBase<EQ>, crate::error::Error> {
+        let av = AddressVectorBase::new(domain, self.av_attr, self.ctx)?;
         match self.eq {
             None => Ok(av),
             Some(eq) => {av.inner.bind(eq)?; Ok(av)}
@@ -447,7 +444,7 @@ pub(crate) struct AddressVectorSetImpl {
 
 impl AddressVectorSetImpl {
 
-    fn new<EQ: AsRawFid + 'static + ?Sized + EventQueueImplT, T>(av: &AddressVectorBase<EQ>, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    fn new<EQ: AsRawFid + 'static + ?Sized + ReadEq, T>(av: &AddressVectorBase<EQ>, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         let mut c_set: AVSetRawFid = std::ptr::null_mut();
 
         let err = 
@@ -553,7 +550,7 @@ pub struct AddressVectorSet {
 
 impl AddressVectorSet {
 
-    pub(crate) fn new<EQ: AsRawFid + 'static + ?Sized + EventQueueImplT, T>(av: &AddressVectorBase<EQ>, attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: AsRawFid + 'static + ?Sized + ReadEq, T>(av: &AddressVectorBase<EQ>, attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: 
@@ -618,13 +615,13 @@ impl AddressVectorSet {
 /// `AddressVectorSetBuilder` is used to configure and build a new [AddressVectorSet].
 /// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_av_set_attr`,
 /// followed by a call to `fi_av_set`  
-pub struct AddressVectorSetBuilder<'a, T, EQ: EventQueueImplT + ?Sized> {
+pub struct AddressVectorSetBuilder<'a, T, EQ: ReadEq + ?Sized> {
     avset_attr: AddressVectorSetAttr,
     ctx: Option<&'a mut T>,
     av: &'a AddressVectorBase<EQ>,
 }
 
-impl<'a, EQ: ?Sized + EventQueueImplT> AddressVectorSetBuilder<'a, (), EQ> {
+impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, (), EQ> {
     pub fn new(av: &'a AddressVectorBase<EQ>) -> AddressVectorSetBuilder<'a, (), EQ> {
         AddressVectorSetBuilder {
             avset_attr: AddressVectorSetAttr::new(),
@@ -634,7 +631,7 @@ impl<'a, EQ: ?Sized + EventQueueImplT> AddressVectorSetBuilder<'a, (), EQ> {
     }
 }
 
-impl<'a, T, EQ: ?Sized +  EventQueueImplT + 'static> AddressVectorSetBuilder<'a, T, EQ> {
+impl<'a, T, EQ: ?Sized +  ReadEq + 'static> AddressVectorSetBuilder<'a, T, EQ> {
 
     /// Indicates the expected the number of members that will be a part of the AV set.
     /// 
@@ -872,13 +869,13 @@ impl Default for AddressVectorSetAttr {
 
 
 //================== Trait Impls ==================//
-impl<EQ: ?Sized + AsRawFid + EventQueueImplT> AsFid for AddressVectorBase<EQ> {
+impl<EQ: ?Sized + AsRawFid + ReadEq> AsFid for AddressVectorBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid {
         self.inner.as_fid()
     }
 }
 
-impl<EQ: ?Sized + AsRawFid + EventQueueImplT> AsRawFid for AddressVectorBase<EQ> {
+impl<EQ: ?Sized + AsRawFid + ReadEq> AsRawFid for AddressVectorBase<EQ> {
     fn as_raw_fid(&self) -> RawFid {
         self.inner.as_raw_fid()
     }
@@ -938,7 +935,7 @@ impl AsFid for Rc<AddressVectorSetImpl> {
 
 
 
-impl<EQ: AsRawFid + EventQueueImplT> AsTypedFid<AvRawFid> for AddressVectorBase<EQ> {
+impl<EQ: AsRawFid + ReadEq> AsTypedFid<AvRawFid> for AddressVectorBase<EQ> {
     
     #[inline]
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AvRawFid> {
@@ -946,7 +943,7 @@ impl<EQ: AsRawFid + EventQueueImplT> AsTypedFid<AvRawFid> for AddressVectorBase<
     }
 }
 
-impl<EQ: ?Sized + AsRawFid + EventQueueImplT> AsRawTypedFid for AddressVectorBase<EQ> {
+impl<EQ: ?Sized + AsRawFid + ReadEq> AsRawTypedFid for AddressVectorBase<EQ> {
     type Output = AvRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -991,7 +988,7 @@ impl<EQ: ?Sized> AsFid for Rc<AddressVectorImplBase<EQ>> {
 
 impl<EQ: ?Sized> crate::BindImpl for AddressVectorImplBase<EQ> {}
 
-impl<EQ: ?Sized + 'static + AsRawFid + EventQueueImplT> crate::Bind for AddressVectorBase<EQ> {
+impl<EQ: ?Sized + 'static + AsRawFid + ReadEq> crate::Bind for AddressVectorBase<EQ> {
     fn inner(&self) -> Rc<dyn crate::BindImpl> {
         self.inner.clone()
     }
@@ -1029,10 +1026,10 @@ mod tests {
         
             for i in 0..17 {
                 let count = 1 << i;
-                let _av = AddressVectorBuilder::new(&domain)
+                let _av = AddressVectorBuilder::new()
                     .type_(crate::enums::AddressVectorType::Map)
                     .count(count)
-                    .build()
+                    .build(&domain)
                     .unwrap();
             }
         }
@@ -1063,10 +1060,10 @@ mod tests {
         if !entries.is_empty() {
             let fab: crate::fabric::Fabric = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
             let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-            let _av = AddressVectorBuilder::new(&domain)
+            let _av = AddressVectorBuilder::new()
                 .type_(crate::enums::AddressVectorType::Map)
                 .count(32)
-                .build()
+                .build(&domain)
                 .unwrap();
         }
         else {
@@ -1106,10 +1103,10 @@ mod libfabric_lifetime_tests {
             let mut avs = Vec::new();
             for i in 0..17 {
                 let count = 1 << i;
-                let av = AddressVectorBuilder::new(&domain)
+                let av = AddressVectorBuilder::new()
                     .type_(crate::enums::AddressVectorType::Map)
                     .count(count)
-                    .build()
+                    .build(&domain)
                     .unwrap();
                 avs.push(av);
                 println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));

@@ -8,10 +8,10 @@ pub mod mr;
 pub mod comm;
 pub mod cq;
 
-pub(crate) struct AsyncCtx {
+pub struct AsyncCtx {
     pub(crate) user_ctx: Option<*mut std::ffi::c_void>,
 }
 
-pub(crate) trait AsyncFid {
+pub trait AsyncFid {
     fn trywait(&self) -> Result<(), Error>;
 }
