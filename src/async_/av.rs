@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, MappedAddress, domain::DomainBase};
-use super::{eq::{EventQueue, AsyncReadEq}, domain::Domain, AsyncCtx};
+use super::{eq::{EventQueue, AsyncReadEq}, AsyncCtx};
 
 
 pub(crate) type AsyncAddressVectorImpl = AddressVectorImplBase<dyn AsyncReadEq>;

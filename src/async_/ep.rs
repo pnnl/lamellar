@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{ep::{Address, ActiveEndpointImpl, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase, PassiveEndpointImplBase}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::{Event, EventQueueBase}, info::InfoEntry, cq::ReadCq, domain::DomainBase};
 
-use super::{eq::AsyncReadEq, cq::AsyncReadCq, domain::Domain};
+use super::{eq::AsyncReadEq, cq::AsyncReadCq};
 
 pub struct ConnectionListener {
     eq:  Rc<dyn AsyncReadEq>,
@@ -56,12 +56,12 @@ impl<T> Endpoint<T> {
     }
 }
 
-pub struct IncompleteBindCq<'a> {
-    pub(crate) ep: &'a EndpointImplBase<dyn AsyncReadEq, dyn AsyncReadCq>,
+pub struct IncompleteBindCq<'a, EP> {
+    pub(crate) ep: &'a EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>,
     pub(crate) flags: u64,
 }
 
-impl EndpointImplBase<dyn AsyncReadEq, dyn AsyncReadCq> {
+impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
     pub(crate) fn bind_cq_<T: AsyncReadCq + 'static>(&self, cq: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
         
@@ -97,12 +97,12 @@ impl EndpointImplBase<dyn AsyncReadEq, dyn AsyncReadCq> {
         }
     } 
 
-    pub(crate) fn bind_cq(&self) -> IncompleteBindCq {
+    pub(crate) fn bind_cq(&self) -> IncompleteBindCq<EP> {
         IncompleteBindCq { ep: self, flags: 0}
     }
 }
 
-impl<CQ: ?Sized + ReadCq> EndpointImplBase<dyn AsyncReadEq, CQ> {
+impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
 
     pub(crate) fn bind_eq<T: AsyncReadEq + 'static>(&self, eq: &Rc<T>) -> Result<(), crate::error::Error>  {
             
@@ -124,7 +124,7 @@ impl<CQ: ?Sized + ReadCq> EndpointImplBase<dyn AsyncReadEq, CQ> {
 }
 
 impl<E> EndpointBase<E, dyn AsyncReadEq, dyn AsyncReadCq> {
-    pub fn bind_cq(&self) -> IncompleteBindCq {
+    pub fn bind_cq(&self) -> IncompleteBindCq<E> {
         self.inner.bind_cq()
     }
 }
@@ -141,7 +141,7 @@ impl<E, CQ: ?Sized + ReadCq> EndpointBase<E, dyn AsyncReadEq, CQ> {
 //     }
 // }
 
-impl<'a> IncompleteBindCq<'a> {
+impl<'a, EP> IncompleteBindCq<'a, EP> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;

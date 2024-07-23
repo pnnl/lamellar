@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{domain::{DomainImplBase, DomainBase, PeerDomainCtx, DomainBuilder}, info::InfoEntry, eq::EventQueueBase, fid::AsRawTypedFid};
+use crate::{domain::{DomainImplBase, DomainBase, DomainBuilder}, eq::EventQueueBase, fid::AsRawTypedFid};
 
 use super::eq::{AsyncReadEq, EventQueue};
 

@@ -16,9 +16,9 @@ use tokio::io::unix::AsyncFd as Async;
 use crate::cq::WaitObjectRetrievable;     
 use crate::cq::WaitCq;    
 use crate::{cq::{CompletionQueueImpl, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, RawFid, AsRawFid}, MappedAddress, enums::WaitObjType};
+use super::AsyncCtx;
 
 use super::AsyncFid;
-use super::{AsyncCtx, domain::{AsyncDomainImpl, Domain}};
 macro_rules! alloc_cq_entry {
     ($format: expr, $count: expr) => {
         match $format {
@@ -462,6 +462,12 @@ impl<'a> CompletionQueueBuilder<'a, ()> {
     }
 }
 
+impl<'a> Default for CompletionQueueBuilder<'a, ()> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a, T> CompletionQueueBuilder<'a, T> {
 
     /// Specifies the minimum size of a completion queue.
@@ -515,9 +521,10 @@ impl<'a, T> CompletionQueueBuilder<'a, T> {
 #[cfg(test)]
 mod tests {
 
-    use crate::async_::{cq::*};
     use crate::domain::DomainBuilder;
     use crate::info::Info;
+
+    use super::CompletionQueueBuilder;
 
     #[test]
     fn cq_open_close_simultaneous() {
@@ -551,7 +558,7 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::async_::{cq::*};
+    use crate::async_::cq::CompletionQueueBuilder;
     use crate::domain::DomainBuilder;
     use crate::info::Info;
 

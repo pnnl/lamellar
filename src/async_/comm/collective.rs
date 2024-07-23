@@ -1,141 +1,159 @@
-use crate::{ep::{Address, EndpointBase}, infocapsoptions::CollCap, enums::{JoinOptions, CollectiveOptions}, comm::collective::MulticastGroupCollectiveBase, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncReadEq, cq::AsyncReadCq, AsyncCtx, AsyncFid}, av::AddressVectorSet, cq::SingleCompletion};
+use std::rc::Rc;
 
-pub type MulticastGroupCollective<CQ> = MulticastGroupCollectiveBase<dyn AsyncReadEq, CQ>;
+use crate::{ep::{Address, EndpointBase, EndpointImplBase}, enums::{JoinOptions, CollectiveOptions}, comm::collective::{MulticastGroupCollective, MulticastGroupCollectiveImpl, CollectiveEpImpl}, fid::AsRawFid, eq::Event, mr::DataDescriptor, async_::{eq::AsyncReadEq, cq::AsyncReadCq, AsyncCtx}, cq::{SingleCompletion, ReadCq}, error::Error, MappedAddress, infocapsoptions::CollCap};
 
-impl<E: CollCap, CQ: ?Sized + AsyncReadCq + AsyncFid> EndpointBase<E, dyn AsyncReadEq, CQ> {
-
+impl MulticastGroupCollectiveImpl {
     #[inline]
-    async fn join_impl_async(&self, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
+    pub(crate) async fn join_async_impl(&self, ep: &Rc<EndpointImplBase<impl CollCap + 'static, impl AsyncReadEq + 'static, impl ReadCq + 'static>>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event<usize>, Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let mc = self.join_with_context(addr, options, &mut async_ctx)?;
-        let eq = self.inner.eq.get().expect("Endpoint not bound to an Event Queue");
-        // let res = EventQueueFut::<{libfabric_sys::FI_JOIN_COMPLETE}>::new(mc.as_raw_fid(), eq, &mut async_ctx as *mut AsyncCtx as usize).await?;
-        let res = eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, mc.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
-
-        
-        Ok((res, mc))
-    }
-
-    pub async fn join_async(&self, addr: &Address, options: JoinOptions) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> { // [TODO]
-        self.join_impl_async(addr, options, None).await
-    }
-
-    pub async fn join_with_context_async<T>(&self, addr: &Address, options: JoinOptions, context: &mut T) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
-        self.join_impl_async(addr, options, Some((context as *mut T).cast())).await
+        self.join_impl(ep, addr, options, Some(&mut async_ctx))?;
+        let eq = ep.eq.get().expect("Endpoint not bound to an Event Queue");
+        eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await
     }
 
     #[inline]
-    async fn join_collective_impl_async(&self, coll_mapped_addr: &crate::MappedAddress, set: &AddressVectorSet, options: JoinOptions, user_ctx : Option<*mut std::ffi::c_void>) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
+    pub(crate) async fn join_collective_async_impl(&self, ep: &Rc<EndpointImplBase<impl CollCap + 'static, impl AsyncReadEq + 'static, impl ReadCq + 'static>>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event<usize>, Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        let mc = self.join_collective_with_context(coll_mapped_addr, set, options, &mut async_ctx)?;
-        let eq = self.inner.eq.get().expect("Endpoint not bound to an Event Queue");
-        // let res = EventQueueFut::<{libfabric_sys::FI_JOIN_COMPLETE}>::new(mc.as_raw_fid(), eq, &mut async_ctx as *mut AsyncCtx as usize).await?;
-        let res = eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, mc.as_raw_fid(), &mut async_ctx as *mut AsyncCtx as usize).await?;
-
-        
-        Ok((res,mc))
-    }
-
-    pub async fn join_collective_async(&self, coll_mapped_addr: &crate::MappedAddress, set: &AddressVectorSet, options: JoinOptions) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
-        self.join_collective_impl_async(coll_mapped_addr, set, options, None).await
-    }
-
-    pub async fn join_collective_with_context_async<T>(&self, coll_mapped_addr: &crate::MappedAddress, set: &AddressVectorSet, options: JoinOptions, context : &mut T) -> Result<(Event<usize>,MulticastGroupCollective<CQ>), crate::error::Error> {
-        self.join_collective_impl_async(coll_mapped_addr, set, options, Some((context as *mut T).cast())).await
+        self.join_collective_impl(ep, mapped_addr, set, options, Some(&mut async_ctx))?;
+        let eq = ep.eq.get().expect("Endpoint not bound to an Event Queue");
+        eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await
     }
 }
 
+impl MulticastGroupCollective {
+    pub async fn join_async(&self, ep: &EndpointBase<impl CollCap + 'static, impl AsyncReadEq + 'static, impl ReadCq + 'static>, addr: &Address, options: JoinOptions) -> Result<Event<usize>, Error> {
+        self.inner.join_async_impl(&ep.inner, addr, options, None).await
+    }
 
-impl MulticastGroupCollective<dyn AsyncReadCq> {
+    pub async fn join_async_with_context<T>(&self, ep: &EndpointBase<impl CollCap + 'static, impl AsyncReadEq + 'static, impl ReadCq + 'static>, addr: &Address, options: JoinOptions, context: &mut T) -> Result<Event<usize>, Error> {
+        self.inner.join_async_impl(&ep.inner, addr, options, Some((context as *mut T) as *mut std::ffi::c_void)).await
+    }
+
+    pub async fn join_collective_async(&self, ep: &EndpointBase<impl CollCap + 'static, impl AsyncReadEq + 'static, impl ReadCq + 'static>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<Event<usize>, Error> {
+        self.inner.join_collective_async_impl(&ep.inner, mapped_addr, set, options, None).await
+    }
+
+    pub async fn join_collective_async_with_context<T>(&self, ep: &EndpointBase<impl CollCap + 'static, impl AsyncReadEq + 'static, impl ReadCq + 'static>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: &mut T) -> Result<Event<usize>, Error> {
+        self.inner.join_collective_async_impl(&ep.inner, mapped_addr, set, options, Some((context as *mut T) as *mut std::ffi::c_void)).await
+    }
+}
+
+trait AsyncCollectiveEpImpl: CollectiveEpImpl {
+    async fn barrier_impl_async(&self, mc_group: &MulticastGroupCollective, user_ctx: Option<*mut std::ffi::c_void>, options: Option<CollectiveOptions>) -> Result<SingleCompletion, crate::error::Error> ;
+    #[allow(clippy::too_many_arguments)]
+    async fn broadcast_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;
+    #[allow(clippy::too_many_arguments)]
+    async fn alltoall_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;
+    #[allow(clippy::too_many_arguments)]
+    async fn allreduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;
+    #[allow(clippy::too_many_arguments)]
+    async fn allgather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;    
+    #[allow(clippy::too_many_arguments)]
+    async fn reduce_scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        op: crate::enums::Op,  options: CollectiveOptions,  user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;
+    #[allow(clippy::too_many_arguments)]
+    async fn reduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        root_mapped_addr: Option<&crate::MappedAddress>,op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;
+    #[allow(clippy::too_many_arguments)]
+    async fn scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;
+    #[allow(clippy::too_many_arguments)]
+    async fn gather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, 
+        root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> ;
+} 
+
+pub trait AsyncCollectiveEp {
+    fn barrier_async(&self, mc_group: &MulticastGroupCollective) ->  impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn barrier_with_context_async<T>(&self, mc_group: &MulticastGroupCollective, context: &mut T) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn barrier_with_options_async(&self, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn barrier_with_context_with_options_async<T>(&self, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context : &mut T) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn broadcast_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn broadcast_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn alltoall_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn alltoall_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn allreduce_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn allreduce_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn allgather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn allgather_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_scatter_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_scatter_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;    
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn scatter_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn scatter_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn gather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    #[allow(clippy::too_many_arguments)]
+    fn gather_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+}
+
+
+// impl<E, EQ: ?Sized + AsyncReadEq,  CQ: ?Sized + AsyncReadCq> EndpointBase<E, EQ, CQ> {
+
+impl<EP: CollCap, EQ: ?Sized + AsyncReadEq,  CQ: ?Sized + AsyncReadCq> AsyncCollectiveEpImpl for EndpointImplBase<EP, EQ, CQ> {
 
     #[inline]
-    async fn barrier_impl_async(&self, user_ctx: Option<*mut std::ffi::c_void>, options: Option<CollectiveOptions>) -> Result<SingleCompletion, crate::error::Error> { 
+    async fn barrier_impl_async(&self, mc_group: &MulticastGroupCollective, user_ctx: Option<*mut std::ffi::c_void>, options: Option<CollectiveOptions>) -> Result<SingleCompletion, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
-        self.barrier_impl(Some(&mut async_ctx), options)?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        self.barrier_impl(mc_group, Some(&mut async_ctx), options)?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(&mut async_ctx).await
     } 
 
-
-    pub async fn barrier_async(&self) -> Result<SingleCompletion, crate::error::Error> {
-        self.barrier_impl_async(None, None).await
-    }
-
-    pub async fn barrier_with_context_async<T>(&self, context: &mut T) -> Result<SingleCompletion, crate::error::Error> {
-        self.barrier_impl_async(Some((context as *mut T).cast()), None).await
-    }
-
-    pub async fn barrier_with_options_async(&self, options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.barrier_impl_async(None, Some(options)).await
-    }
-
-    pub async fn barrier_with_context_with_options_async<T>(&self, options: CollectiveOptions, context : &mut T) -> Result<SingleCompletion, crate::error::Error> {
-        self.barrier_impl_async(Some((context as *mut T).cast()), Some(options)).await
-    }
-
     #[inline]
-    async fn broadcast_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+    async fn broadcast_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        self.broadcast_impl(buf, desc, root_mapped_addr, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        self.broadcast_impl(buf, desc, mc_group, root_mapped_addr, options, Some(&mut async_ctx))?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
-    pub async fn broadcast_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.broadcast_impl_async(buf, desc, Some(root_mapped_addr), options, None).await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn broadcast_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.broadcast_impl_async(buf, desc, Some(root_mapped_addr), options, Some((context as *mut T0).cast())).await
-    }
-
     #[inline]
-    async fn alltoall_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+    #[allow(clippy::too_many_arguments)]
+    async fn alltoall_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        self.alltoall_impl(buf, desc, result, result_desc, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        self.alltoall_impl(buf, desc, result, result_desc, mc_group, options, Some(&mut async_ctx))?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn alltoall_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.alltoall_impl_async(buf, desc, result, result_desc, options, None).await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn alltoall_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, options: CollectiveOptions, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.alltoall_impl_async(buf, desc, result, result_desc, options, Some((context as *mut T0).cast())).await
-    }
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    async fn allreduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+    async fn allreduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        self.allreduce_impl(buf, desc, result, result_desc, op, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        self.allreduce_impl(buf, desc, result, result_desc, mc_group, op, options, Some(&mut async_ctx))?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn allreduce_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.allreduce_impl_async(buf, desc, result, result_desc, op, options, None).await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn allreduce_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.allreduce_impl_async(buf, desc, result, result_desc, op, options, Some((context as *mut T0).cast())).await
-    }
-    
     #[inline]
-    async fn allgather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+    #[allow(clippy::too_many_arguments)]
+    async fn allgather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        self.allgather_impl(buf, desc, result, result_desc, options, Some(&mut async_ctx))?;
-        let tx_cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        self.allgather_impl(buf, desc, result, result_desc, mc_group, options, Some(&mut async_ctx))?;
+        let tx_cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
         // while tx_cq.trywait().is_err() {tx_cq.read(0);}
         // while rx_cq.trywait().is_err() {rx_cq.read(0);}
         // while cq.read(1).is_err() {}
@@ -143,93 +161,202 @@ impl MulticastGroupCollective<dyn AsyncReadCq> {
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         tx_cq.wait_for_ctx_async(&mut async_ctx).await
     }
-
-    pub async fn allgather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.allgather_impl_async(buf, desc, result, result_desc, options, None).await
-    }
-    
-    #[allow(clippy::too_many_arguments)]
-    pub async fn allgather_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, options: CollectiveOptions, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.allgather_impl_async(buf, desc, result, result_desc, options, Some((context as *mut T0).cast())).await
-    }
-    
+   
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    async fn reduce_scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  options: CollectiveOptions,  user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+    async fn reduce_scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions,  user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        self.reduce_scatter_impl(buf, desc, result, result_desc, op, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        self.reduce_scatter_impl(buf, desc, result, result_desc, mc_group, op, options, Some(&mut async_ctx))?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
+        cq.wait_for_ctx_async(&mut async_ctx).await
+    }
+        
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    async fn reduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>,op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        let mut async_ctx = AsyncCtx{user_ctx};
+        self.reduce_impl(buf, desc, result, result_desc, mc_group, root_mapped_addr, op, options, Some(&mut async_ctx))?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn reduce_scatter_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.reduce_scatter_impl_async(buf, desc, result, result_desc, op, options, None).await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn reduce_scatter_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.reduce_scatter_impl_async(buf, desc, result, result_desc, op, options, Some((context as *mut T0).cast())).await
-    }
-    
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    async fn reduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: Option<&crate::MappedAddress>,op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+    async fn scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
-        self.reduce_impl(buf, desc, result, result_desc, root_mapped_addr, op, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        self.scatter_impl(buf, desc, result, result_desc, mc_group, root_mapped_addr, options, Some(&mut async_ctx))?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
+        cq.wait_for_ctx_async(&mut async_ctx).await
+    }
+        
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    async fn gather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        let mut async_ctx = AsyncCtx{user_ctx};
+        self.gather_impl(buf, desc, result, result_desc, mc_group, root_mapped_addr, options, Some(&mut async_ctx))?;
+        let cq = self.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
+        // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
+        cq.wait_for_ctx_async(&mut async_ctx).await
+    }
+}
+
+impl<E: CollCap, EQ: ?Sized + AsyncReadEq,  CQ: ?Sized + AsyncReadCq> AsyncCollectiveEpImpl for EndpointBase<E, EQ, CQ> {
+
+    #[inline]
+    async fn barrier_impl_async(&self, mc_group: &MulticastGroupCollective, user_ctx: Option<*mut std::ffi::c_void>, options: Option<CollectiveOptions>) -> Result<SingleCompletion, crate::error::Error> { 
+        self.inner.barrier_impl_async(mc_group, user_ctx, options).await
+    } 
+
+    #[inline]
+    async fn broadcast_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.broadcast_impl_async(buf, desc, mc_group, root_mapped_addr, options, user_ctx).await
+    }
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    async fn alltoall_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.alltoall_impl_async(buf, desc, result, result_desc, mc_group, options, user_ctx).await
+    }
+
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    async fn allreduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.allreduce_impl_async(buf, desc, result, result_desc, mc_group, op, options, user_ctx).await
+    }
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    async fn allgather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.allgather_impl_async(buf, desc, result, result_desc, mc_group, options, user_ctx).await
+    }
+   
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    async fn reduce_scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions,  user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.reduce_scatter_impl_async(buf, desc, result, result_desc, mc_group, op, options, user_ctx).await
+    }
+        
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    async fn reduce_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>,op: crate::enums::Op,  options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        let mut async_ctx = AsyncCtx{user_ctx};
+        self.reduce_impl(buf, desc, result, result_desc, mc_group, root_mapped_addr, op, options, Some(&mut async_ctx))?;
+        let cq = self.inner.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn reduce_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.reduce_impl_async(buf, desc, result, result_desc, Some(root_mapped_addr), op, options, None).await
-    }
-    
-    #[allow(clippy::too_many_arguments)]
-    pub async fn reduce_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.reduce_impl_async(buf, desc, result, result_desc, Some(root_mapped_addr), op, options, Some((context as *mut T0).cast())).await
-    }
-
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    async fn scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
-        let mut async_ctx = AsyncCtx{user_ctx};
-        self.scatter_impl(buf, desc, result, result_desc, root_mapped_addr, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
-        cq.wait_for_ctx_async(&mut async_ctx).await
+    async fn scatter_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.scatter_impl_async(buf, desc, result, result_desc, mc_group, root_mapped_addr, options, user_ctx).await
     }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn scatter_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.scatter_impl_async(buf, desc, result, result_desc, Some(root_mapped_addr), options, None).await
-    }
-    
-    #[allow(clippy::too_many_arguments)]
-    pub async fn scatter_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.scatter_impl_async(buf, desc, result, result_desc, Some(root_mapped_addr), options, Some((context as *mut T0).cast())).await
-    }
-    
+        
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    async fn gather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
-        let mut async_ctx = AsyncCtx{user_ctx};
-        self.gather_impl(buf, desc, result, result_desc, root_mapped_addr, options, Some(&mut async_ctx))?;
-        let cq = self.inner.ep.tx_cq.get().expect("Endpoint not bound to a Completion Queue").clone(); 
-        // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
-        cq.wait_for_ctx_async(&mut async_ctx).await
+    async fn gather_impl_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.gather_impl_async(buf, desc, result, result_desc, mc_group, root_mapped_addr, options, user_ctx).await
+    }
+}
+
+
+impl<EP: AsyncCollectiveEpImpl> AsyncCollectiveEp for EP {
+    #[inline]
+    fn barrier_async(&self, mc_group: &MulticastGroupCollective) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.barrier_impl_async(mc_group, None, None)
+    }
+
+    fn barrier_with_context_async<T>(&self, mc_group: &MulticastGroupCollective, context: &mut T) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.barrier_impl_async(mc_group, Some((context as *mut T).cast()), None)
+    }
+
+    fn barrier_with_options_async(&self, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.barrier_impl_async(mc_group, None, Some(options))
+    }
+
+    fn barrier_with_context_with_options_async<T>(&self, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context : &mut T) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.barrier_impl_async(mc_group, Some((context as *mut T).cast()), Some(options))
+    }
+
+    fn broadcast_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.broadcast_impl_async(buf, desc, mc_group, Some(root_mapped_addr), options, None)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn gather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.gather_impl_async(buf, desc, result, result_desc, Some(root_mapped_addr), options, None).await
+    fn broadcast_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.broadcast_impl_async(buf, desc, mc_group, Some(root_mapped_addr), options, Some((context as *mut T0).cast()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn alltoall_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.alltoall_impl_async(buf, desc, result, result_desc, mc_group, options, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn alltoall_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.alltoall_impl_async(buf, desc, result, result_desc, mc_group, options, Some((context as *mut T0).cast()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn allreduce_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.allreduce_impl_async(buf, desc, result, result_desc, mc_group, op, options, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn allreduce_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.allreduce_impl_async(buf, desc, result, result_desc, mc_group, op, options, Some((context as *mut T0).cast()))
+    }
+
+    fn allgather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.allgather_impl_async(buf, desc, result, result_desc, mc_group, options, None)
     }
     
     #[allow(clippy::too_many_arguments)]
-    pub async fn gather_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.gather_impl_async(buf, desc, result, result_desc, Some(root_mapped_addr), options, Some((context as *mut T0).cast())).await
+    fn allgather_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.allgather_impl_async(buf, desc, result, result_desc, mc_group, options, Some((context as *mut T0).cast()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_scatter_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.reduce_scatter_impl_async(buf, desc, result, result_desc, mc_group, op, options, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_scatter_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.reduce_scatter_impl_async(buf, desc, result, result_desc, mc_group, op, options, Some((context as *mut T0).cast()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.reduce_impl_async(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), op, options, None)
+    }
+    
+    #[allow(clippy::too_many_arguments)]
+    fn reduce_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.reduce_impl_async(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), op, options, Some((context as *mut T0).cast()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn scatter_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.scatter_impl_async(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, None)
+    }
+    
+    #[allow(clippy::too_many_arguments)]
+    fn scatter_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.scatter_impl_async(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, Some((context as *mut T0).cast()))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gather_async<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.gather_impl_async(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, None)
+    }
+    
+    #[allow(clippy::too_many_arguments)]
+    fn gather_with_context_async<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.gather_impl_async(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, Some((context as *mut T0).cast()))
     }
 }

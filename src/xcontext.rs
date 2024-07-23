@@ -172,7 +172,7 @@ impl<T> AsRawTypedFid for XContextBaseImpl<T> {
 }
 
 pub type TransmitContext = XContextBase<Transmit>; 
-type TransmitContextImpl = XContextBaseImpl<Transmit>; 
+pub(crate) type TransmitContextImpl = XContextBaseImpl<Transmit>; 
 
 impl TransmitContextImpl {
 
@@ -343,7 +343,7 @@ impl <'a, T, E> TransmitContextBuilder<'a, T, E> {
 }
 
 pub type ReceiveContext = XContextBase<Receive>; 
-type ReceiveContextImpl = XContextBaseImpl<Receive>; 
+pub(crate) type ReceiveContextImpl = XContextBaseImpl<Receive>; 
 
 impl ReceiveContextImpl {
 

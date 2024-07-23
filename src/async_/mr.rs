@@ -1,6 +1,5 @@
 use crate::domain::DomainBase;
 use crate::fid::{AsRawTypedFid, OwnedMrFid};
-use crate::iovec::IoVec;
 use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder};
 use crate::eq::Event;
 use crate::enums::MrMode;
