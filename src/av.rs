@@ -20,9 +20,6 @@ pub(crate) struct AddressVectorImplBase<EQ: ?Sized> {
     pub(crate) _eq_rc: OnceCell<Rc<EQ>>,
     pub(crate) _domain_rc: Rc<dyn DomainImplT>,
 }
-pub(crate) type AddressVectorImpl = AddressVectorImplBase<dyn ReadEq>;
-
-
 
 impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
@@ -297,6 +294,12 @@ impl<'a> AddressVectorBuilder<'a, (), ()> {
             eq: None,
             ctx: None,
         }
+    }
+}
+
+impl<'a> Default for AddressVectorBuilder<'a, (), ()> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

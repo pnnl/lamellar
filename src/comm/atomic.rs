@@ -14,14 +14,10 @@ use crate::mr::DataDescriptor;
 use crate::mr::MappedMemoryRegionKey;
 use crate::utils::check_error;
 use crate::utils::to_fi_datatype;
-use crate::xcontext::ReceiveContext;
-use crate::xcontext::ReceiveContextBase;
-use crate::xcontext::ReceiveContextImpl;
-use crate::xcontext::ReceiveContextImplBase;
-use crate::xcontext::TransmitContext;
-use crate::xcontext::TransmitContextBase;
-use crate::xcontext::TransmitContextImpl;
-use crate::xcontext::TransmitContextImplBase;
+use crate::xcontext::RxContextBase;
+use crate::xcontext::RxContextImplBase;
+use crate::xcontext::TxContextBase;
+use crate::xcontext::TxContextImplBase;
 use super::message::extract_raw_addr_and_ctx;
 
 pub(crate) trait AtomicWriteEpImpl: AtomicWriteEp + AsRawTypedFid<Output = EpRawFid> + AtomicValidEp{
@@ -424,14 +420,14 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
 impl<E: AtomicValidEp> AtomicValidEp for EndpointBase<E> {}
 impl<EP: AtomicCap, EQ: ?Sized, CQ: ?Sized + ReadCq> AtomicValidEp for EndpointImplBase<EP, EQ, CQ> {}
 
-impl<CQ: ReadCq> AtomicWriteEpImpl for TransmitContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicWriteEpImpl for TransmitContextImplBase<CQ> {}
-impl<CQ: ReadCq> AtomicReadEpImpl for ReceiveContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicReadEpImpl for ReceiveContextImplBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for TransmitContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for TransmitContextImplBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for ReceiveContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for ReceiveContextImplBase<CQ> {}
+impl<CQ: ReadCq> AtomicWriteEpImpl for TxContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicWriteEpImpl for TxContextImplBase<CQ> {}
+impl<CQ: ReadCq> AtomicReadEpImpl for RxContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicReadEpImpl for RxContextImplBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for TxContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for TxContextImplBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for RxContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for RxContextImplBase<CQ> {}
 
 pub struct AtomicAttr {
     pub(crate) c_attr : libfabric_sys::fi_atomic_attr,

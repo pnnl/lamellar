@@ -70,8 +70,8 @@ pub struct TestsGlobalCtx {
 }
 
 
-pub type MsgRma = libfabric::caps_type!(MSG, RMA);
-pub type MsgTagRma = libfabric::caps_type!(MSG, TAG, RMA);
+pub type MsgRma = libfabric::info_caps_type!(MSG, RMA);
+pub type MsgTagRma = libfabric::info_caps_type!(MSG, TAG, RMA);
 
 
 #[derive(Clone)]
@@ -182,7 +182,7 @@ impl TestsGlobalCtx {
             1 << 23,
         ],
         window_size: 64,
-        comp_method: CompMeth::WaitFd, 
+        comp_method: CompMeth::Spin, 
         tx_ctx: Context::new(),
         rx_ctx: Context::new(),
         options: FT_OPT_RX_CQ | FT_OPT_TX_CQ}

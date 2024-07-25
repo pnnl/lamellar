@@ -28,6 +28,13 @@ impl MemoryRegionKey {
     //     Self::RawKey(raw_key)
     // }
 
+    /// Construct a new [MemoryRegionKey] from a slice of bytes, usually received
+    /// from remote node using raw keys.
+    ///
+    /// # Safety
+    /// This function is unsafe since there is not guarantee that the bytes read indeed represent
+    /// a key
+    ///
     pub unsafe fn from_bytes<EQ: ?Sized>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
         MemoryRegionKey::from_bytes_impl(raw, &*domain.inner)
     }
@@ -59,6 +66,12 @@ impl MemoryRegionKey {
         }
     }
 
+    /// Construct a new [MemoryRegionKey] from a u64 value as received from the a remote node.
+    ///
+    /// # Safety
+    /// This function is unsafe since there is not guarantee that the u64 value read represents
+    /// a valid key.
+    ///
     pub unsafe fn from_u64(key: u64) -> Self {
         MemoryRegionKey::Key(key) 
     }
@@ -789,7 +802,7 @@ impl<'a, T> MemoryRegionBuilder<'a, T> {
     /// and passign it to `fi_mr_regattr`.
     pub fn build<EQ: ?Sized + 'static>(mut self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<MemoryRegion, crate::error::Error> {
         if domain.inner._eq_rc.get().is_some() {
-            let (eq, async_reg) = domain.inner._eq_rc.get().unwrap();
+            let (_eq, async_reg) = domain.inner._eq_rc.get().unwrap();
             if *async_reg {
                 panic!("Manual async memory registration is not supported. Use the ::async_::mr::MemoryRegionBuilder for that.")
             }
@@ -922,85 +935,6 @@ mod tests {
             panic!("No capable fabric found!");
         }
     }
-
-    // fn mr_regv() {
-    //     let ep_attr = crate::ep::EndpointAttr::new();
-    //     let mut dom_attr = crate::domain::DomainAttr::new();
-    //         dom_attr
-    //         .mode(!0)
-    //         .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::SCALABLE.get_value() | crate::enums::MrMode::LOCAL.get_value() ) as i32 );
-    //     let mut hints = crate::InfoHints::new();
-    //         hints
-    //         .caps(crate::InfoCaps::new().msg().rma())
-    //         .ep_attr(ep_attr)
-    //         .domain_attr(dom_attr);
-    //     let info = crate::Info::with_hints(hints);
-    //     let entries: Vec<crate::InfoEntry> = info.get();
-    //     if entries.len() > 0 {
-
-    //         let mut eq_attr = crate::eq::EventQueueAttr::new();
-    //             eq_attr
-    //             .size(32)
-    //             .flags(libfabric_sys::FI_WRITE.into())
-    //             .wait_obj(crate::enums::WaitObj::FD);
-    //         let mut fab = crate::fabric::Fabric::new(entries[0].fabric_attr.clone());
-    //         let mut eq = fab.eq_open(eq_attr);
-    //         let mut domain = fab.domain(&entries[0]);
-
-    //         let mut mr_access: u64 = 0;
-    //         if entries[0].get_mode() & libfabric_sys::FI_LOCAL_MR == libfabric_sys::FI_LOCAL_MR || entries[0].get_domain_attr().get_mr_mode() as u32 & libfabric_sys::FI_MR_LOCAL == libfabric_sys::FI_MR_LOCAL {
-
-    //             if entries[0].caps.is_msg() || entries[0].caps.is_tagged() {
-    //                 let mut on = false;
-    //                 if entries[0].caps.is_send() {
-    //                     mr_access |= libfabric_sys::FI_SEND as u64;
-    //                     on = true;
-    //                 }
-    //                 if entries[0].caps.is_recv() {
-    //                     mr_access |= libfabric_sys::FI_RECV  as u64 ;
-    //                     on = true;
-    //                 }
-    //                 if !on {
-    //                     mr_access |= libfabric_sys::FI_SEND as u64 & libfabric_sys::FI_RECV as u64;
-    //                 }
-    //             }
-    //         }
-    //         else {
-    //             if entries[0].caps.is_rma() || entries[0].caps.is_atomic() {
-    //                 if entries[0].caps.is_remote_read() || !(entries[0].caps.is_read() || entries[0].caps.is_write() || entries[0].caps.is_remote_write()) {
-    //                     mr_access |= libfabric_sys::FI_REMOTE_READ as u64 ;
-    //                 }
-    //                 else {
-    //                     mr_access |= libfabric_sys::FI_REMOTE_WRITE as u64 ;
-    //                 }
-    //             }
-    //         }
-
-    //         let iovec = IoVec::new();
-    //         if mr_access != 0 {
-    //             let i = 0;
-    //             let buf = vec![0; DEF_TEST_SIZES[DEF_TEST_SIZES.len()-1].0 as usize];
-    //             while i < DEF_TEST_SIZES.len() && entries[0].get_domain_attr().get_mr_iov_limit() < DEF_TEST_SIZES[i].0 {
-    //                 let n = DEF_TEST_SIZES[i].0;
-    //                 let base = &buf[0..];
-                    
-    //             }
-    //         }
-    //         else {
-    //             domain.close().unwrap();
-    //             eq.close().unwrap();
-    //             fab.close().unwrap();
-    //             panic!("mr access == 0");            
-    //         }
-
-    //         domain.close().unwrap();
-    //         eq.close().unwrap();
-    //         fab.close().unwrap();
-    //     }
-    //     else {
-    //         panic!("No capable fabric found!");
-    //     }
-    // }
 }
 
 #[cfg(test)]

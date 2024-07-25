@@ -1,5 +1,4 @@
 use crate::async_::ep::AsyncTxEp;
-use crate::async_::xcontext::{TransmitContext, TransmitContextImpl, ReceiveContext, ReceiveContextImpl};
 use crate::comm::rma::{ReadEpImpl, WriteEpImpl};
 use crate::ep::EndpointImplBase;
 use crate::infocapsoptions::RmaCap;
@@ -46,14 +45,49 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
 }
 
 pub trait AsyncReadEp {
+    /// Async version of [crate::comm::rma::ReadEp::read_from]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::read_from]
     unsafe  fn read_from_async<T0>(&self, buf: &mut [T0], desc: &mut impl DataDescriptor, src_addr: &MappedAddress, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::ReadEp::read_from_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::read_from_with_context]
     unsafe  fn read_from_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_addr: &MappedAddress, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::ReadEp::read]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::read]
     unsafe  fn read_async<T0>(&self, buf: &mut [T0], desc: &mut impl DataDescriptor, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::ReadEp::read_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::read_with_context]
     unsafe  fn read_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::ReadEp::readv_from]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readv_from]
     unsafe  fn readv_from_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], src_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ; //[TODO]
+    
+    /// Async version of [crate::comm::rma::ReadEp::readv_from_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readv_from_with_context]
     unsafe  fn readv_from_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], src_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ; //[TODO]
+    
+    /// Async version of [crate::comm::rma::ReadEp::readv]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readv]
     unsafe  fn readv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+        
+    /// Async version of [crate::comm::rma::ReadEp::readv_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readv_with_context]
     unsafe  fn readv_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ; //[TODO]
+    
+    /// Async version of [crate::comm::rma::ReadEp::readmsg]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readmsg]
     unsafe  fn readmsg_async(&self, msg: &mut crate::msg::MsgRma, options: ReadMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
 }
 
@@ -116,6 +150,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async unsafe  fn writedata_async_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, dest_mapped_addr: Option<&MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
         self.writedata_impl(buf, desc, data, dest_mapped_addr, mem_addr, mapped_key, Some(&mut async_ctx as *mut AsyncCtx))?;
@@ -147,18 +182,72 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
 
 
 pub trait AsyncWriteEp {
+    /// Async version of [crate::comm::rma::WriteEp::write_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::write_to]
     unsafe fn write_to_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>  ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::write_to_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::write_to_with_context]
     unsafe fn write_to_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::write]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::write]
     unsafe fn write_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::write_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::write_with_context]
     unsafe fn write_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::writev_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writev_to]
     unsafe fn writev_to_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+        
+    /// Async version of [crate::comm::rma::WriteEp::writev_to_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writev_to_with_context]
     unsafe fn writev_to_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::writev]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writev]
     unsafe fn writev_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::writev_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writev_with_context]
     unsafe fn writev_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a,T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::writemsg]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writemsg]
     unsafe fn writemsg_async(&self, msg: &mut crate::msg::MsgRma, options: WriteMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+        
+    /// Async version of [crate::comm::rma::WriteEp::writedata_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writedata_to]
     unsafe fn writedata_to_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::writedata]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writedata]
     unsafe fn writedata_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+        
+    /// Async version of [crate::comm::rma::WriteEp::writedata_to_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writedata_to_with_context]
+    #[allow(clippy::too_many_arguments)]
     unsafe fn writedata_to_with_context_async<T,T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, dest_addr: &MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    
+    /// Async version of [crate::comm::rma::WriteEp::writedata_with_context]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writedata_with_context]
     unsafe fn writedata_with_context_async<T,T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
 }
 

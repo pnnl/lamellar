@@ -1,7 +1,5 @@
 use std::rc::Rc;
-
-use crate::{ep::{Address, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase, PassiveEndpointImplBase, BaseEndpoint, ActiveEndpoint, IncompleteBindCntr}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::{Event, EventQueueBase, ReadEq}, info::InfoEntry, cq::ReadCq, domain::DomainBase, av::AddressVectorBase};
-
+use crate::{ep::{Address, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase, PassiveEndpointImplBase, ActiveEndpoint, IncompleteBindCntr}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::{Event, EventQueueBase, ReadEq}, info::InfoEntry, cq::ReadCq, domain::DomainBase, av::AddressVectorBase};
 use super::{eq::AsyncReadEq, cq::AsyncReadCq};
 
 pub struct ConnectionListener {
@@ -18,22 +16,19 @@ impl ConnectionListener {
         }
     }
 
-    pub async fn next(&self) -> Result<Event<usize>, crate::error::Error> {
+    pub async fn next(&self) -> Result<Event, crate::error::Error> {
         
-        // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNREQ}>::new(self.ep_fid, self.eq.clone(), Rc::strong_count(&self.eq)).await?;
         let res = self.eq.async_event_wait(libfabric_sys::FI_CONNREQ, self.ep_fid,  0).await?;
         Ok(res)
     }
 }
 
 pub type Endpoint<T> = EndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
-// pub struct AsyncEndpoint<T> {
-//     pub(crate) inner: Rc<AsyncEndpointImpl>,
-//     phantom: PhantomData<T>,
-// }
+
 
 impl Endpoint<()> {
-    pub fn new<T0, E, DEQ:?Sized + 'static >(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< EndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>>, crate::error::Error> {
+
+    pub fn new<T0, E, DEQ:?Sized + 'static >(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
         Ok(
             EndpointBase::<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
                 inner:Rc::new(EndpointImplBase::new(&domain.inner, info, flags, context)?),
@@ -44,24 +39,19 @@ impl Endpoint<()> {
 
 impl<T> Endpoint<T> {
 
-    pub async fn connect_async(&self, addr: &Address) -> Result<Event<usize>, crate::error::Error> {
+    pub async fn connect_async(&self, addr: &Address) -> Result<Event, crate::error::Error> {
         self.inner.connect(addr)?;
         
         let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
-        // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>::new(self.as_raw_fid(), eq, 0).await?;
         let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, self.as_raw_fid(),  0).await?;
-
-        
         Ok(res)
     }
 
-    pub async fn accept_async(&self) -> Result<Event<usize>, crate::error::Error> {
+    pub async fn accept_async(&self) -> Result<Event, crate::error::Error> {
         self.accept()?;
 
         let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
         let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, self.as_raw_fid(),  0).await?;
-
-        // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_CONNECTED}>::new(self.as_raw_fid(), eq, 0).await?;
         Ok(res)
     }
 }
@@ -101,8 +91,6 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
             else {
                 panic!("Binding to Endpoint without specifying direction");
             }
-
-            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for cq?
             Ok(())
         }
     } 
@@ -126,8 +114,6 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
                 panic!("Endpoint is already bound to another EventQueue"); // Should never reach this since inlined_fi_ep_bind will throw an error ealier
                                                                         // but keep it here to satisfy the compiler.
             }
-
-            // self._sync_rcs.borrow_mut().push(cq.inner().clone()); //  [TODO] Do we need this for eq?
             Ok(())
         }
     }
@@ -139,6 +125,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
         //         }
         //     )
 }
+
 impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>> {
     pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
         self.inner.bind_cntr()
@@ -167,12 +154,6 @@ impl<E> Endpoint<E> {
         self.inner.bind_eq(&eq.inner)
     }
 }
-
-// impl<E, CQ: ?Sized + CompletionQueueImplT> EndpointBase<E, dyn EventQueueImplT, CQ> {
-//     pub fn bind_eq<T: EventQueueImplT + 'static>(&self, eq: &EventQueueBase<T>) -> Result<(), crate::error::Error>  {
-//         self.inner.bind_eq(&eq.inner)
-//     }
-// }
 
 impl<'a, EP> IncompleteBindCq<'a, EP> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
@@ -215,7 +196,6 @@ impl<T> PassiveEndpoint<T> {
     pub fn listen_async(&self) -> Result<ConnectionListener, crate::error::Error> {
         self.listen()?;
 
-        // let eq = self.inner.eq.get().unwrap().clone();
         Ok(ConnectionListener::new(self.as_raw_fid(), self.inner.eq.get().unwrap()))
     }
     

@@ -252,6 +252,12 @@ impl PollSetBuilder {
     }
 }
 
+impl Default for PollSetBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub(crate) struct PollSetImpl {
     pub(crate) c_poll: OwnedPollFid,
 }

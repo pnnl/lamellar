@@ -1,5 +1,5 @@
 
-use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, cq::ReadCq, xcontext::{TransmitContext, ReceiveContext, TransmitContextImpl, ReceiveContextImpl, TransmitContextBase, TransmitContextImplBase, ReceiveContextImplBase, ReceiveContextBase}, infocapsoptions::{MsgCap, RecvMod, SendMod}};
+use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, cq::ReadCq, xcontext::{TxContextBase, TxContextImplBase, RxContextImplBase, RxContextBase}, infocapsoptions::{MsgCap, RecvMod, SendMod}};
 
 pub(crate) fn extract_raw_ctx<T0>(context: Option<*mut T0>) -> *mut std::ffi::c_void {
     if let Some(ctx) = context {
@@ -272,7 +272,7 @@ impl<EP: SendEpImpl> SendEp for EP {
 impl<EP: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SendEpImpl for EndpointImplBase<EP, EQ, CQ> {}
 impl<E: SendEpImpl> SendEpImpl for EndpointBase<E> {}
 
-impl<CQ: ?Sized + ReadCq> SendEpImpl for TransmitContextBase<CQ>{}
-impl<CQ: ?Sized + ReadCq> SendEpImpl for TransmitContextImplBase<CQ>{}
-impl<CQ: ?Sized + ReadCq> RecvEpImpl for ReceiveContextBase<CQ>{}
-impl<CQ: ?Sized + ReadCq> RecvEpImpl for ReceiveContextImplBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> SendEpImpl for TxContextBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> SendEpImpl for TxContextImplBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> RecvEpImpl for RxContextBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> RecvEpImpl for RxContextImplBase<CQ>{}

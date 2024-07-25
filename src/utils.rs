@@ -10,7 +10,6 @@ pub(crate) fn check_error(err: isize) -> Result<(), crate::error::Error> {
     }
 }
 
-
 pub(crate) fn to_fi_datatype<T: 'static>() -> DataType {
     let isize_t: TypeId = TypeId::of::<isize>();
     let usize_t: TypeId = TypeId::of::<usize>();

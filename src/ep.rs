@@ -14,12 +14,20 @@ pub struct Address {
 
 impl Address {
 
+    /// Creates a new Address object from a raw pointer, usually received from the network.
+    /// 
+    /// # Safety
+    /// This function is unsafe since the contents of the pointer are not checked
     pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
         let mut address = vec![0u8; len];
         address.copy_from_slice(std::slice::from_raw_parts(raw, len));
         Self{address}
     }
 
+    /// Creates a new Address object from a slice of bytes, usually received from the network.
+    /// 
+    /// # Safety
+    /// This function is unsafe since the contents of the slice are not checked
     pub unsafe fn from_bytes(raw: &[u8]) -> Self {
         Address { address: raw.to_vec() }
     }
@@ -722,7 +730,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
 }
 
 impl Endpoint<()> {
-    pub fn new<T0, E, DEQ:?Sized + 'static >(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
+    pub fn new<T0, E, DEQ:?Sized + 'static >(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
         Ok(
             EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
                 inner:Rc::new(EndpointImplBase::new(&domain.inner, info, flags, context)?),
@@ -869,6 +877,7 @@ impl<EP, EQ: ?Sized +  AsRawFid + 'static + ReadEq, CQ: ?Sized + ReadCq> Endpoin
         self.bind(av, 0)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn alias(&self, flags: u64) -> Result<Self, crate::error::Error> {
         let mut c_ep: EpRawFid = std::ptr::null_mut();
         let err = unsafe { libfabric_sys::inlined_fi_ep_alias(self.as_raw_typed_fid(), &mut c_ep, flags) };
@@ -1254,7 +1263,7 @@ impl<'a> EndpointBuilder<'a, (), ()> {
 
 impl<'a, E> EndpointBuilder<'a, (), E> {
 
-    pub fn build<EQ: ?Sized + 'static>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<Endpoint<E>, crate::error::Error> {
         Endpoint::new(domain, self.info, self.flags, self.ctx)
     }
 

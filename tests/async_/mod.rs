@@ -1,8 +1,8 @@
-use libfabric::{async_::comm::rma::{AsyncWriteEp, AsyncReadWriteEp, AsyncReadEp}, comm::{rma::{WriteEp, ReadEp}, message::{SendEp, RecvEp}, tagged::TagRecvEp}, infocapsoptions::{RmaCap, RmaDefaultCap}, ep::{ActiveEndpoint, BaseEndpoint}, cntr::{WaitCntr, ReadCntr}};
+use libfabric::{async_::comm::rma::AsyncWriteEp, comm::{rma::{WriteEp, ReadEp}, message::{SendEp, RecvEp}, tagged::TagRecvEp}, infocapsoptions::RmaDefaultCap, ep::{ActiveEndpoint, BaseEndpoint}, cntr::{WaitCntr, ReadCntr}};
 use std::time::Instant;
 
 
-use libfabric::{cntr::Counter, ep::Address, fabric::{self, Fabric}, Context, Waitable, infocapsoptions::{TagDefaultCap, MsgDefaultCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder, AsyncReadEq}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder, AsyncCompletionQueueImpl}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, comm::{message::AsyncSendEp, tagged::AsyncTagSendEp}}, MappedAddress, cq::{ReadCq, WaitCq}, domain::{DomainBase, DomainBuilder}};
+use libfabric::{cntr::Counter, ep::Address, fabric::{self, Fabric}, Context, infocapsoptions::{TagDefaultCap, MsgDefaultCap, self}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder}, MSG, RMA, TAG, enums::{AVOptions, self}, async_::{eq::{EventQueue, EventQueueBuilder, AsyncReadEq}, av::{AddressVector, AddressVectorBuilder}, cq::{CompletionQueue, CompletionQueueBuilder, AsyncCompletionQueueImpl}, ep::{Endpoint, EndpointBuilder, PassiveEndpoint}, comm::{message::AsyncSendEp, tagged::AsyncTagSendEp}}, MappedAddress, cq::{ReadCq, WaitCq}, domain::{DomainBase, DomainBuilder}};
 
 pub enum CompMeth {
     // Spin,
@@ -71,8 +71,8 @@ pub struct TestsGlobalCtx {
 }
 
 
-pub type MsgRma = libfabric::caps_type!(MSG, RMA);
-pub type MsgTagRma = libfabric::caps_type!(MSG, TAG, RMA);
+pub type MsgRma = libfabric::info_caps_type!(MSG, RMA);
+pub type MsgTagRma = libfabric::info_caps_type!(MSG, TAG, RMA);
 
 
 

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{xcontext::{XContextBase, Transmit, Receive, XContextBaseImpl, ReceiveContextBuilder, TransmitContextBuilder}, fid::{AsRawTypedFid, EpRawFid, AsFid, AsRawFid}, cntr::{Counter, ReadCntr}};
+use crate::{xcontext::{XContextBase, Transmit, Receive, XContextBaseImpl, ReceiveContextBuilder, TxContextBuilder}, fid::{AsRawTypedFid, EpRawFid, AsFid, AsRawFid}, cntr::{Counter, ReadCntr}};
 use super::{cq::AsyncReadCq, ep::{AsyncRxEp, AsyncTxEp}};
 
 pub type TransmitContext = XContextBase<Transmit, dyn AsyncReadCq>; 
@@ -101,9 +101,9 @@ impl<'a> TxIncompleteBindCntr<'a> {
         self
     }
 
-    // pub fn cntr<T: crate::cntroptions::CntrConfig + 'static>(&self, cntr: &Counter<T>) -> Result<(), crate::error::Error> {
-    //     self.ep.bind(&cntr.inner, self.flags)
-    // }
+    pub fn cntr(&self, cntr: &Counter<impl AsFid + ReadCntr + 'static>) -> Result<(), crate::error::Error> {
+        self.ep.bind_cntr_(&cntr.inner, self.flags)
+    }
 }
 
 pub type ReceiveContext = XContextBase<Receive, dyn AsyncReadCq>; 
@@ -163,7 +163,7 @@ impl<'a, T, E> ReceiveContextBuilder<'a, T, E> {
 }
 
 
-impl <'a, T, E: AsRawTypedFid<Output = EpRawFid>> TransmitContextBuilder<'a, T, E> {
+impl <'a, T, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, T, E> {
     pub fn build_async(self) -> Result<TransmitContext, crate::error::Error> {
         TransmitContext::new(self.ep, self.index, self.tx_attr, self.ctx)
     }
@@ -221,7 +221,7 @@ impl<'a> RxIncompleteBindCntr<'a> {
         self
     }
 
-    pub fn cntr(&mut self, cntr: &Counter<impl  ReadCntr + 'static>) -> Result<(), crate::error::Error> {
-        self.ep.bind(cntr, self.flags)
+    pub fn cntr(&mut self, cntr: &Counter<impl  AsFid + ReadCntr + 'static>) -> Result<(), crate::error::Error> {
+        self.ep.bind_cntr_(&cntr.inner, self.flags)
     }
 }

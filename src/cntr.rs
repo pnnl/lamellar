@@ -1,6 +1,6 @@
 //================== Domain (fi_domain) ==================//
 
-use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd}, rc::Rc};
+use std::{os::fd::{AsFd, BorrowedFd}, rc::Rc};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
@@ -154,77 +154,8 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> Counter<CounterImpl
         )
     }
 }
-    // /// Returns the current value of the counter
-    // /// 
-    // /// Corresponds to `fi_cntr_read`
-    // pub fn read(&self) -> u64 {
-    //     self.inner.read()
-    // }
-    
-    // /// Returns the number of operations that completed in error and were unable to update the counter.
-    // /// 
-    // /// Corresponds to `fi_cntr_readerr`
-    // pub fn readerr(&self) -> u64 {
-    //     self.inner.readerr()
-    // }
-
-    // /// Adds value `val` to the Counter
-    // /// 
-    // /// Corresponds to `fi_cntr_add`
-    // pub fn add(&self, val: u64) -> Result<(), crate::error::Error> {
-    //     self.inner.add(val)
-    // }
-
-    // /// Adds value `val` to the error value of the Counter
-    // /// 
-    // /// Corresponds to `fi_cntr_adderr`
-    // pub fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
-    //     self.inner.adderr(val)
-    // }
-
-    // /// Sets the Counter value to `val`
-    // /// 
-    // /// Corresponds to `fi_cntr_set`
-    // pub fn set(&self, val: u64) -> Result<(), crate::error::Error> {
-    //     self.inner.set(val)
-    // }
-
-    // /// Sets the Counter error value to `val`
-    // /// 
-    // /// Corresponds to `fi_cntr_seterr`
-    // pub fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
-    //     self.inner.seterr(val)
-    // }
-// }
-
-// impl<T: CntrConfig + crate::WaitRetrievable> Counter<T> {
-    
-//     /// Retreives the low-level wait object associated with the counter.
-//     /// 
-//     /// This method is available only if the counter has been configured with a retrievable
-//     /// underlying wait object.
-//     /// 
-//     /// Corresponds to `fi_cntr_control` with command `FI_GETWAIT`.
-//     pub fn wait_object(&self) -> Result<WaitObjType<'_>, crate::error::Error> {
-//         self.inner.wait_object()
-//     }
-// }
-
-// impl<T: WaitCntr> WaitCntr for Counter<T> {
-
-//     /// Wait until the counter reaches the specified `threshold``, or until an error or `timeout` occurs.
-//     /// 
-//     /// This method is not available if the counter is configured with no wait object ([CounterBuilder::wait_none])
-//     /// 
-//     /// Corresponds to `fi_cntr_wait`
-//     fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> { // [TODO]
-//         self.inner.wait(threshold, timeout)
-//     }
-// }
-
 
 //================== Counter Builder ==================//
-
 /// Builder for the [`Counter`] type.
 /// 
 /// `CounterBuilder` is used to configure and build a new `Counter`.
@@ -246,6 +177,12 @@ impl<'a> CounterBuilder<'a, (), true, false, false> {
             cntr_attr: CounterAttr::new(),
             ctx: None,
         }
+    }
+}
+
+impl<'a> Default for CounterBuilder<'a, (), true, false, false> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -363,8 +300,6 @@ impl<T: AsRawTypedFid<Output = CntrRawFid>> AsRawTypedFid for Counter<T> {
     }
 }
 
-
-
 impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsFid for CounterImpl<WAIT, RETRIEVE, FD> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.c_cntr.as_fid()
@@ -390,9 +325,6 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawTypedFid for C
         self.c_cntr.as_raw_typed_fid()
     }
 }
-
-
-
 
 impl AsFd for CounterImpl<true, true, true> {
     fn as_fd(&self) -> BorrowedFd<'_> {

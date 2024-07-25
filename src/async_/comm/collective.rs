@@ -4,7 +4,7 @@ use crate::{ep::{Address, EndpointBase, EndpointImplBase}, enums::{JoinOptions, 
 
 impl MulticastGroupCollectiveImpl {
     #[inline]
-    pub(crate) async fn join_async_impl(&self, ep: &Rc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event<usize>, Error> {
+    pub(crate) async fn join_async_impl(&self, ep: &Rc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event, Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.join_impl(ep, addr, options, Some(&mut async_ctx))?;
         let eq = ep.retrieve_eq();
@@ -12,7 +12,7 @@ impl MulticastGroupCollectiveImpl {
     }
 
     #[inline]
-    pub(crate) async fn join_collective_async_impl(&self, ep: &Rc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event<usize>, Error> {
+    pub(crate) async fn join_collective_async_impl(&self, ep: &Rc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event, Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.join_collective_impl(ep, mapped_addr, set, options, Some(&mut async_ctx))?;
         let eq = ep.retrieve_eq();
@@ -21,19 +21,19 @@ impl MulticastGroupCollectiveImpl {
 }
 
 impl MulticastGroupCollective {
-    pub async fn join_async(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, addr: &Address, options: JoinOptions) -> Result<Event<usize>, Error> {
+    pub async fn join_async(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, addr: &Address, options: JoinOptions) -> Result<Event, Error> {
         self.inner.join_async_impl(&ep.inner, addr, options, None).await
     }
 
-    pub async fn join_async_with_context<T>(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, addr: &Address, options: JoinOptions, context: &mut T) -> Result<Event<usize>, Error> {
+    pub async fn join_async_with_context<T>(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, addr: &Address, options: JoinOptions, context: &mut T) -> Result<Event, Error> {
         self.inner.join_async_impl(&ep.inner, addr, options, Some((context as *mut T) as *mut std::ffi::c_void)).await
     }
 
-    pub async fn join_collective_async(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<Event<usize>, Error> {
+    pub async fn join_collective_async(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<Event, Error> {
         self.inner.join_collective_async_impl(&ep.inner, mapped_addr, set, options, None).await
     }
 
-    pub async fn join_collective_async_with_context<T>(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: &mut T) -> Result<Event<usize>, Error> {
+    pub async fn join_collective_async_with_context<T>(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: &mut T) -> Result<Event, Error> {
         self.inner.join_collective_async_impl(&ep.inner, mapped_addr, set, options, Some((context as *mut T) as *mut std::ffi::c_void)).await
     }
 }
