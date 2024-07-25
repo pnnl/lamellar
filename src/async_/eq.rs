@@ -5,7 +5,7 @@ use async_io::Async as Async;
 #[cfg(feature="use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
-use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, ReadEq, WritableEventQueueImplT, EventError}, error::{Error, ErrorKind}, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, async_::AsyncCtx, cq::WaitObjectRetrievable};
+use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, ReadEq, WriteEq, EventError}, error::{Error, ErrorKind}, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, async_::AsyncCtx, cq::WaitObjectRetrieve};
 
 use super::AsyncFid;
 
@@ -490,8 +490,8 @@ impl<const WRITE: bool> ReadEq for AsyncEventQueueImpl<WRITE> {
     }
 }
 
-impl WritableEventQueueImplT for AsyncEventQueueImpl<true> {}
-impl<'a, const WRITE: bool> WaitObjectRetrievable<'a> for AsyncEventQueueImpl<WRITE> {
+impl WriteEq for AsyncEventQueueImpl<true> {}
+impl<'a, const WRITE: bool> WaitObjectRetrieve<'a> for AsyncEventQueueImpl<WRITE> {
     fn wait_object(&self) -> Result<crate::enums::WaitObjType<'a>, crate::error::Error> {
         self.get_inner().wait_object()
     }
@@ -689,7 +689,7 @@ impl<const WRITE: bool> AsRawTypedFid for AsyncEventQueueImpl<WRITE> {
     
 }
 
-impl<const WRITE: bool> crate::BindImpl for AsyncEventQueueImpl<WRITE> {}
+// impl<const WRITE: bool> crate::BindImpl for AsyncEventQueueImpl<WRITE> {}
 
 // impl BindEqImpl<AsyncEventQueueImpl, AsyncCompletionQueueImpl> for AsyncEventQueueImpl {
 //     fn bind_mr(&self, mr: &Rc<MemoryRegionImplBase<AsyncEventQueueImpl>>) {

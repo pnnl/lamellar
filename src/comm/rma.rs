@@ -14,9 +14,13 @@ use crate::mr::DataDescriptor;
 use crate::mr::MappedMemoryRegionKey;
 use crate::utils::check_error;
 use crate::xcontext::ReceiveContext;
+use crate::xcontext::ReceiveContextBase;
 use crate::xcontext::ReceiveContextImpl;
+use crate::xcontext::ReceiveContextImplBase;
 use crate::xcontext::TransmitContext;
+use crate::xcontext::TransmitContextBase;
 use crate::xcontext::TransmitContextImpl;
+use crate::xcontext::TransmitContextImplBase;
 
 use super::message::extract_raw_addr_and_ctx;
 
@@ -94,7 +98,7 @@ impl<EP: ReadEpImpl> ReadEp for EP {
 
 
 impl<EP: RmaCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ReadEpImpl for EndpointImplBase<EP, EQ, CQ> { }
-impl<E: RmaCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ReadEpImpl for EndpointBase<E, EQ, CQ> {}
+impl<E: ReadEpImpl> ReadEpImpl for EndpointBase<E> {}
 
 
 pub(crate) trait WriteEpImpl: WriteEp + AsRawTypedFid<Output = EpRawFid>{
@@ -252,12 +256,12 @@ impl<EP: WriteEpImpl> WriteEp for EP {
 }
 
 impl<EP: RmaCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> WriteEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: RmaCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> WriteEpImpl for EndpointBase<E, EQ, CQ> {}
+impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E> {}
 
-impl WriteEpImpl  for TransmitContext {}
-impl WriteEpImpl  for TransmitContextImpl {}
-impl ReadEpImpl for ReceiveContext {}
-impl ReadEpImpl for ReceiveContextImpl {}
+impl<CQ: ?Sized + ReadCq> WriteEpImpl  for TransmitContextBase<CQ> {}
+impl<CQ: ?Sized + ReadCq> WriteEpImpl  for TransmitContextImplBase<CQ> {}
+impl<CQ: ?Sized + ReadCq> ReadEpImpl for ReceiveContextBase<CQ> {}
+impl<CQ: ?Sized + ReadCq> ReadEpImpl for ReceiveContextImplBase<CQ> {}
 
 pub trait ReadWriteEp: ReadEp + WriteEp {}
 impl<EP: ReadEp + WriteEp> ReadWriteEp for EP {} 

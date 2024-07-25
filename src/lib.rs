@@ -3,6 +3,7 @@ compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive
 use std::{rc::Rc, cell::OnceCell};
 
 use av::{AddressVectorImplT, AddressVectorSetImpl};
+use fid::AsRawFid;
 
 pub mod ep;
 pub mod domain;
@@ -260,9 +261,9 @@ impl Default for Context2 {
     }
 }
 
-pub trait BindImpl{}
+// pub trait BindImpl: AsRawFid {}
 pub trait Bind {
-    fn inner(&self) -> Rc<dyn BindImpl>;
+    fn inner(&self) -> Rc<dyn AsRawFid>;
 }
 
 

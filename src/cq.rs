@@ -1,6 +1,6 @@
 use std::{os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd}, rc::Rc, cell::RefCell};
 
-use crate::{fid::AsFid, domain::{DomainBase, DomainImplT}, BindImpl};
+use crate::{fid::AsFid, domain::{DomainBase, DomainImplT}};
 use crate::{enums::{WaitObjType, CompletionFlags}, MappedAddress, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error};
 
 //================== CompletionQueue (fi_cq) ==================//
@@ -134,8 +134,17 @@ pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
         }
     }
 
-    fn sread(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> ;
-    fn sreadfrom(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> ;
+    fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> ;
+    
+    fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+        self.sread_with_cond(count, 0, timeout)
+    }
+
+    fn sreadfrom_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> ;
+    
+    fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        self.sreadfrom_with_cond(count, 0, timeout)
+    }
     
     fn signal(&self) -> Result<(), crate::error::Error>{
         
@@ -233,13 +242,13 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> ReadCq for Complet
 
 impl<const RETRIEVE: bool, const FD: bool> WaitCq for CompletionQueueImpl<true, RETRIEVE, FD> {
 
-    fn sread(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+    fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
         let mut borrowed_entries = self.entry_buff.borrow_mut();
         self.sread_in(count, &mut borrowed_entries, cond, timeout)?;
         Ok(borrowed_entries.clone())
     }
 
-    fn sreadfrom(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+    fn sreadfrom_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
         
         let mut borrowed_entries = self.entry_buff.borrow_mut();
         let address = self.sreadfrom_in(count, &mut borrowed_entries, cond, timeout)?;
@@ -247,7 +256,7 @@ impl<const RETRIEVE: bool, const FD: bool> WaitCq for CompletionQueueImpl<true, 
     }
 }
 
-impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrievable<'a> for CompletionQueueImpl<WAIT, true, FD> {
+impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrieve<'a> for CompletionQueueImpl<WAIT, true, FD> {
     
     fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
 
@@ -289,7 +298,7 @@ impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrievable<'a> for Complet
     }
 }
 
-pub trait WaitObjectRetrievable<'a> {
+pub trait WaitObjectRetrieve<'a> {
     fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error>;
 }
 
@@ -468,6 +477,16 @@ impl<T: ReadCq> CompletionQueue<T> {
 
 }
 
+impl<T: WaitCq> WaitCq for CompletionQueue<T> {
+    fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error>  {
+        self.inner.sread(count, timeout)
+    }
+
+    fn sreadfrom_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error>  {
+        self.inner.sreadfrom_with_cond(count, cond, timeout)
+    }
+}
+
 impl<T: WaitCq> CompletionQueue<T> {
 
 
@@ -478,7 +497,7 @@ impl<T: WaitCq> CompletionQueue<T> {
     /// 
     /// Corresponds to `fi_cq_sread` with `cond` set to `NULL`.
     pub fn sread(&self, count: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
-        self.inner.sread(count, 0, timeout)
+        self.inner.sread(count, timeout)
     }
 
     // /// Blocking version of [Self::read]
@@ -509,7 +528,7 @@ impl<T: WaitCq> CompletionQueue<T> {
     /// 
     /// Corresponds to `fi_cq_sread`
     pub fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
-        self.inner.sread(count, cond, timeout)
+        self.inner.sread_with_cond(count, cond, timeout)
     }
 
     /// Similar to  [Self::sread] with the ability to set a condition to unblock
@@ -530,7 +549,7 @@ impl<T: WaitCq> CompletionQueue<T> {
     /// 
     /// Corresponds to `fi_cq_sreadfrom` with `cond` set to `NULL`.
     pub fn sreadfrom(&self, count: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
-        self.inner.sreadfrom(count, 0, timeout)
+        self.inner.sreadfrom(count, timeout)
     }
 
     // /// Blocking version of [Self::readfrom]
@@ -561,7 +580,7 @@ impl<T: WaitCq> CompletionQueue<T> {
     /// 
     /// Corresponds to `fi_cq_sreadfrom`
     pub fn sreadfrom_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
-        self.inner.sreadfrom(count, cond, timeout)
+        self.inner.sreadfrom_with_cond(count, cond, timeout)
     }
 
     // pub async fn sreadfrom_with_cond_async(&self, count: usize, cond: usize, timeout: i32) -> Result<(CompletionFormat, Option<MappedAddress>), crate::error::Error> {
@@ -599,7 +618,7 @@ impl<T: WaitCq> CompletionQueue<T> {
     }
 }
 
-impl<'a, T: WaitObjectRetrievable<'a>> CompletionQueue<T> { //[TODO] Make this a method of the trait ?
+impl<'a, T: WaitObjectRetrieve<'a>> CompletionQueue<T> { //[TODO] Make this a method of the trait ?
 
     /// Retreives the low-level wait object associated with the counter.
     /// 
@@ -612,10 +631,10 @@ impl<'a, T: WaitObjectRetrievable<'a>> CompletionQueue<T> { //[TODO] Make this a
     }
 }
 
-impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> crate::BindImpl for CompletionQueueImpl<WAIT, RETRIEVE, FD> {}
+// impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> crate::BindImpl for CompletionQueueImpl<WAIT, RETRIEVE, FD> {}
 
-impl<T: 'static + BindImpl> crate::Bind for CompletionQueue<T> {
-    fn inner(&self) -> Rc<dyn crate::BindImpl> {
+impl<T: ReadCq + 'static> crate::Bind for CompletionQueue<T> {
+    fn inner(&self) -> Rc<dyn AsRawFid> {
         self.inner.clone()
     }
 }

@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::{rc::Rc, cell::RefCell};
 
 
 
-use crate::{domain::DomainImplT, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::ReadEq, cq::ReadCq};
+use crate::{domain::DomainImplT, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::ReadEq, cq::ReadCq, cntr::ReadCntr};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -135,6 +135,7 @@ impl DataDescriptor for DefaultMemDesc {
 pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: OwnedMrFid,
     pub(crate) _domain_rc: Rc<dyn DomainImplT>,
+    pub(crate) _bind_rcs: RefCell<Vec<Rc<dyn AsRawFid>>>, 
 }
 
 /// Owned wrapper around a libfabric `fid_mr`.
@@ -170,6 +171,7 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
+                    _bind_rcs: RefCell::new(Vec::new()),
                 })
         }
     }
@@ -187,6 +189,7 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
+                    _bind_rcs: RefCell::new(Vec::new()),
                 })
         }
     }
@@ -211,6 +214,7 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
+                    _bind_rcs: RefCell::new(Vec::new()),
                 })
         }
     
@@ -247,9 +251,11 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn bind_cntr(&self, cntr: &Rc<crate::cntr::CounterImpl>, remote_write_event: bool) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cntr(&self, cntr: &Rc<impl ReadCntr + 'static>, remote_write_event: bool) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), cntr.as_raw_fid(), if remote_write_event {libfabric_sys::FI_REMOTE_WRITE as u64} else {0}) } ;
-        
+        if err != 0 {
+            self._bind_rcs.borrow_mut().push(cntr.clone())
+        }
         check_error(err.try_into().unwrap())
     }
 }
@@ -257,9 +263,11 @@ impl MemoryRegionImpl {
 impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    pub(crate) fn bind_ep<EP, CQ: ?Sized + AsRawFid + ReadCq>(&self, ep: &Rc<crate::ep::EndpointImplBase<EP, impl ReadEq, CQ>>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep<EP: 'static, CQ: ?Sized + AsRawFid + ReadCq + 'static>(&self, ep: &Rc<crate::ep::EndpointImplBase<EP, impl ReadEq + 'static, CQ>>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0) } ;
-        
+        if err != 0 {
+            self._bind_rcs.borrow_mut().push(ep.clone())
+        }
         check_error(err.try_into().unwrap())
     }
 }
@@ -386,7 +394,7 @@ impl MemoryRegion {
     /// Bind the memory region to `cntr` and request event generation for remote writes or atomics targeting this memory region.
     /// 
     /// Corresponds to `fi_mr_bind` with a `fid_cntr` 
-    pub fn bind_cntr<T: crate::cntroptions::CntrConfig>(&self, cntr: &crate::cntr::Counter<T>, remote_write_event: bool) -> Result<(), crate::error::Error> {
+    pub fn bind_cntr(&self, cntr: &crate::cntr::Counter<impl ReadCntr + 'static>, remote_write_event: bool) -> Result<(), crate::error::Error> {
         self.inner.bind_cntr(&cntr.inner, remote_write_event)
     }
 

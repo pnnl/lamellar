@@ -7,6 +7,7 @@ pub mod ep;
 pub mod mr;
 pub mod comm;
 pub mod cq;
+mod xcontext;
 
 pub struct AsyncCtx {
     pub(crate) user_ctx: Option<*mut std::ffi::c_void>,

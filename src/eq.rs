@@ -3,7 +3,7 @@ use std::{marker::PhantomData, os::fd::{AsFd, BorrowedFd, AsRawFd, RawFd}, rc::R
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::{AsRawFid, AsRawTypedFid, OwnedEqFid, AsTypedFid, EqRawFid, BorrowedFid}, cq::WaitObjectRetrievable, BindImpl};
+use crate::{fid::{AsRawFid, AsRawTypedFid, OwnedEqFid, AsTypedFid, EqRawFid, BorrowedFid}, cq::WaitObjectRetrieve};
 use crate::{enums::WaitObjType, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{self, RawFid}};
 
 
@@ -173,10 +173,10 @@ pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
 
 }
 
-pub trait WaitableEventQueueImplT: AsRawTypedFid<Output = EqRawFid> {
+pub trait WaitEq: ReadEq + AsRawTypedFid<Output = EqRawFid> {
 
-    fn sread_in(&self, buff: &mut [u8], event: &mut u32, timeout: i32, flags: u64) -> Result<usize, crate::error::Error> { 
-        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.as_raw_typed_fid(), event,  buff.as_mut_ptr().cast(), buff.len(), timeout, flags) };
+    fn sread_in(&self, buff: &mut [u8], event: &mut u32, timeout: i32) -> Result<usize, crate::error::Error> { 
+        let ret = unsafe { libfabric_sys::inlined_fi_eq_sread(self.as_raw_typed_fid(), event,  buff.as_mut_ptr().cast(), buff.len(), timeout, 0) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code((-ret).try_into().unwrap()) )
@@ -197,11 +197,11 @@ pub trait WaitableEventQueueImplT: AsRawTypedFid<Output = EqRawFid> {
         }
     }
 
-    fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error>; 
+    fn sread(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error>; 
     fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error>;    
 }
 
-pub trait WritableEventQueueImplT : AsRawTypedFid<Output = EqRawFid> {
+pub trait WriteEq : AsRawTypedFid<Output = EqRawFid> {
 
     fn write_raw(&self, buff: &[u8], event: u32, flags: u64) -> Result<usize, crate::error::Error>{
         let ret = unsafe { libfabric_sys::inlined_fi_eq_write(self.as_raw_typed_fid(), event, buff.as_ptr().cast(), buff.len(), flags) };
@@ -260,11 +260,11 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
     }
 }
 
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> WaitableEventQueueImplT for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {
-    fn sread(&self, timeout: i32, flags: u64) -> Result<Event<usize>, crate::error::Error> { 
+impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> WaitEq for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {
+    fn sread(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
         let mut event = 0;
         let mut buff = self.event_buffer.borrow_mut();
-        let len = self.sread_in(&mut buff, &mut event, timeout, flags)?;
+        let len = self.sread_in(&mut buff, &mut event, timeout)?;
         Ok(self.read_eq_entry(len, &buff, &event))
     }
 
@@ -276,7 +276,7 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
     }
 }
 
-impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> WaitObjectRetrievable<'a> for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {
+impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> WaitObjectRetrieve<'a> for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {
     fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
         if let Some(wait) = self.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
@@ -316,7 +316,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
     }
 }
 
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> WritableEventQueueImplT for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
+impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> WriteEq for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
 
 pub type EventQueue<T> = EventQueueBase<T>;
 
@@ -502,26 +502,37 @@ impl<T: ReadEq> EventQueue<T> {
 
 
 
-impl<T: WritableEventQueueImplT> EventQueue<T> {
+impl<T: WriteEq> EventQueue<T> {
 
     pub fn write(&self, event: Event<usize>) -> Result<(), crate::error::Error>{
         self.inner.write(event, 0)
     }
 }
 
-impl<T: WaitableEventQueueImplT> EventQueue<T> {
-
-    pub fn sread(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
-        self.inner.sread(timeout, 0)
+impl<T: WaitEq> WaitEq for EventQueue<T> {
+    fn sread(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> {
+        self.inner.sread(timeout)
     }
 
-    pub fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
+    fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> {
         self.inner.speek(timeout)
     }
 }
 
 
-impl<'a, T: WaitObjectRetrievable<'a>> EventQueue<T> {
+// impl<T: WaitEq> EventQueue<T> {
+
+//     pub fn sread(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
+//         self.inner.sread(timeout)
+//     }
+
+//     pub fn speek(&self, timeout: i32) -> Result<Event<usize>, crate::error::Error> { 
+//         self.inner.speek(timeout)
+//     }
+// }
+
+
+impl<'a, T: WaitObjectRetrieve<'a>> EventQueue<T> {
 
     pub fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
         self.inner.wait_object()
@@ -583,7 +594,7 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
 }
 
 
-impl<'a, T: WaitObjectRetrievable<'a> + AsFd> AsFd for EventQueue<T> {
+impl<'a, T: WaitObjectRetrieve<'a> + AsFd> AsFd for EventQueue<T> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
@@ -612,10 +623,10 @@ impl<const WRITE: bool> AsRawFd for EventQueueImpl<WRITE, true, true, true> {
 }
 
 
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> BindImpl for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
-impl<T: 'static + BindImpl> crate::Bind for EventQueue<T> {
+// impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> BindImpl for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
+impl<T: ReadEq + 'static> crate::Bind for EventQueue<T> {
     
-    fn inner(&self) -> Rc<dyn crate::BindImpl> {
+    fn inner(&self) -> Rc<dyn AsRawFid> {
         self.inner.clone()
     }
 }

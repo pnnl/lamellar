@@ -15,9 +15,13 @@ use crate::mr::MappedMemoryRegionKey;
 use crate::utils::check_error;
 use crate::utils::to_fi_datatype;
 use crate::xcontext::ReceiveContext;
+use crate::xcontext::ReceiveContextBase;
 use crate::xcontext::ReceiveContextImpl;
+use crate::xcontext::ReceiveContextImplBase;
 use crate::xcontext::TransmitContext;
+use crate::xcontext::TransmitContextBase;
 use crate::xcontext::TransmitContextImpl;
+use crate::xcontext::TransmitContextImplBase;
 use super::message::extract_raw_addr_and_ctx;
 
 pub(crate) trait AtomicWriteEpImpl: AtomicWriteEp + AsRawTypedFid<Output = EpRawFid> + AtomicValidEp{
@@ -143,9 +147,9 @@ impl<EP: AtomicWriteEpImpl> AtomicWriteEp for EP {
     }
 }
 
-// impl<E: AtomicCap+ WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
+// impl<E: AtomicCap+ WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
 impl<EP: AtomicCap + WriteMod, EQ: ?Sized, CQ: ?Sized + ReadCq>  AtomicWriteEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: AtomicCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq>  AtomicWriteEpImpl for EndpointBase<E, EQ, CQ> {}
+impl<E: AtomicWriteEpImpl>  AtomicWriteEpImpl for EndpointBase<E> {}
 
 
 
@@ -237,7 +241,7 @@ impl<EP: AtomicReadEpImpl> AtomicReadEp for EP {
 }
 
 impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicReadEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicReadEpImpl for EndpointBase<E, EQ, CQ> {}
+impl<E: AtomicReadEpImpl> AtomicReadEpImpl for EndpointBase<E> {}
 
 
 pub(crate) trait AtomicReadWriteEpImpl: AtomicReadWriteEp + AsRawTypedFid<Output = EpRawFid> + AtomicValidEp{
@@ -417,17 +421,17 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
     }
 }
 
-impl<E: AtomicCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicValidEp for EndpointBase<E, EQ, CQ> {}
+impl<E: AtomicValidEp> AtomicValidEp for EndpointBase<E> {}
 impl<EP: AtomicCap, EQ: ?Sized, CQ: ?Sized + ReadCq> AtomicValidEp for EndpointImplBase<EP, EQ, CQ> {}
 
-impl AtomicWriteEpImpl for TransmitContext {}
-impl AtomicWriteEpImpl for TransmitContextImpl {}
-impl AtomicReadEpImpl for ReceiveContext {}
-impl AtomicReadEpImpl for ReceiveContextImpl {}
-impl AtomicValidEp for TransmitContext {}
-impl AtomicValidEp for TransmitContextImpl {}
-impl AtomicValidEp for ReceiveContext {}
-impl AtomicValidEp for ReceiveContextImpl {}
+impl<CQ: ReadCq> AtomicWriteEpImpl for TransmitContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicWriteEpImpl for TransmitContextImplBase<CQ> {}
+impl<CQ: ReadCq> AtomicReadEpImpl for ReceiveContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicReadEpImpl for ReceiveContextImplBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for TransmitContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for TransmitContextImplBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for ReceiveContextBase<CQ> {}
+impl<CQ: ReadCq> AtomicValidEp for ReceiveContextImplBase<CQ> {}
 
 pub struct AtomicAttr {
     pub(crate) c_attr : libfabric_sys::fi_atomic_attr,

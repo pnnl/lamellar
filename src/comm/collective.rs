@@ -39,8 +39,8 @@ pub struct MulticastGroupCollectiveImpl  {
     eps: RefCell<Vec<Rc<dyn CollectiveValidEp>>>,
 }
 
-trait CollectiveValidEp {}
-impl<EP: CollectiveEpImpl> CollectiveValidEp for EP {}
+pub(crate) trait CollectiveValidEp {}
+impl<EP: CollectiveEp> CollectiveValidEp for EP {}
 
 impl MulticastGroupCollectiveImpl {
     pub(crate) fn new() -> Self  {
@@ -51,7 +51,7 @@ impl MulticastGroupCollectiveImpl {
         }
     }
 
-    pub(crate) fn join_impl<T, EP: CollectiveEpImpl + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &Rc<EP>, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
+    pub(crate) fn join_impl<T, EP: CollectiveValidEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &Rc<EP>, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
         let mut c_mc: McRawFid = std::ptr::null_mut();
         let err = 
             if let Some(ctx) = context {
@@ -76,7 +76,7 @@ impl MulticastGroupCollectiveImpl {
         }
     }
 
-    pub(crate) fn join_collective_impl<T, EP: CollectiveEpImpl + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &Rc<EP>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
+    pub(crate) fn join_collective_impl<T, EP: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &Rc<EP>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
         let mut c_mc: McRawFid = std::ptr::null_mut();
         let err = 
             if let Some(ctx) = context {
@@ -120,20 +120,20 @@ impl MulticastGroupCollective {
         *self.inner.addr.get().unwrap()
     }
 
-    pub fn join<E: CollCap + 'static, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq + 'static>(&self, ep: &EndpointBase<E, EQ, CQ>, addr: &Address, options: JoinOptions) -> Result<(), Error> {
-        self.inner.join_impl::<(), EndpointImplBase<E, EQ, CQ>>(&ep.inner, addr, options, None)
+    pub fn join<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, addr: &Address, options: JoinOptions) -> Result<(), Error> {
+        self.inner.join_impl::<(), E>(&ep.inner, addr, options, None)
     }
 
-    pub fn join_with_context<E: CollCap + 'static, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq + 'static, T>(&self, ep: &EndpointBase<E, EQ, CQ>, addr: &Address, options: JoinOptions, context: &mut T) -> Result<(), Error> {
+    pub fn join_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, addr: &Address, options: JoinOptions, context: &mut T) -> Result<(), Error> {
         self.inner.join_impl(&ep.inner, addr, options, Some(context))
     }
 
-    pub fn join_collective_with_context<E: CollCap + 'static, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq + 'static, T>(&self, ep: &EndpointBase<E, EQ, CQ>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: &mut T) -> Result<(), Error> {
+    pub fn join_collective_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: &mut T) -> Result<(), Error> {
         self.inner.join_collective_impl(&ep.inner, mapped_addr, set, options, Some(context))
         
     }
-    pub fn join_collective<E: CollCap + 'static, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq + 'static, T>(&self, ep: &EndpointBase<E, EQ, CQ>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<(), Error> {
-        self.inner.join_collective_impl::<(), EndpointImplBase<E, EQ, CQ>>(&ep.inner, mapped_addr, set, options, None)
+    pub fn join_collective<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<(), Error> {
+        self.inner.join_collective_impl::<(), E>(&ep.inner, mapped_addr, set, options, None)
     }
 }
 
@@ -342,7 +342,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
 
 impl<EP: CollCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> CollectiveEpImpl for EndpointImplBase<EP, EQ, CQ>  {}
 
-impl<E: CollCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> CollectiveEpImpl for EndpointBase<E, EQ, CQ>  {}
+impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E>  {}
 
 impl AsFid for MulticastGroupCollective {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {

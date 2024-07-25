@@ -13,7 +13,7 @@ use crate::cq::ReadCq;
 use async_io::{Async as Async, Readable};
 #[cfg(feature="use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
-use crate::cq::WaitObjectRetrievable;     
+use crate::cq::WaitObjectRetrieve;     
 use crate::cq::WaitCq;    
 use crate::{cq::{CompletionQueueImpl, CompletionQueueAttr, Completion, CtxEntry, DataEntry, TaggedEntry, MsgEntry, CompletionError, CompletionQueueBase}, error::Error, fid::{AsFid, RawFid, AsRawFid}, MappedAddress, enums::WaitObjType};
 use super::AsyncCtx;
@@ -85,7 +85,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
     }
 }
 
-impl<'a> WaitObjectRetrievable<'a> for AsyncCompletionQueueImpl {
+impl<'a> WaitObjectRetrieve<'a> for AsyncCompletionQueueImpl {
     fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
         
         if let Some(wait) = self.base.get_ref().wait_obj {
@@ -125,12 +125,12 @@ pub struct AsyncCompletionQueueImpl {
 }
 
 impl WaitCq for AsyncCompletionQueueImpl {
-    fn sread(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error>  {
-        self.base.get_ref().sread(count, cond, timeout)
+    fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error>  {
+        self.base.get_ref().sread_with_cond(count, cond, timeout)
     }
 
-    fn sreadfrom(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error>  {
-        self.base.get_ref().sreadfrom(count, cond, timeout)
+    fn sreadfrom_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error>  {
+        self.base.get_ref().sreadfrom_with_cond(count, cond, timeout)
     }
 }
 
@@ -432,7 +432,7 @@ impl AsRawFid for AsyncCompletionQueueImpl {
     }
 }
 
-impl crate::BindImpl for AsyncCompletionQueueImpl {}
+// impl crate::BindImpl for AsyncCompletionQueueImpl {}
 // impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
 //     fn inner(&self) -> Rc<dyn crate::BindImpl> {
 //         self.inner.clone()

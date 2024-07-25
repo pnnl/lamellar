@@ -430,7 +430,6 @@ impl<'a, T, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, T, EQ> {
             Some(eq) => {av.inner.bind(eq)?; Ok(av)}
         }
     }
-    
 }
 
 //================== AddressVectorSet ==================//
@@ -986,10 +985,10 @@ impl<EQ: ?Sized> AsFid for Rc<AddressVectorImplBase<EQ>> {
     }
 }
 
-impl<EQ: ?Sized> crate::BindImpl for AddressVectorImplBase<EQ> {}
+// impl<EQ: ?Sized> crate::BindImpl for AddressVectorImplBase<EQ> {}
 
 impl<EQ: ?Sized + 'static + AsRawFid + ReadEq> crate::Bind for AddressVectorBase<EQ> {
-    fn inner(&self) -> Rc<dyn crate::BindImpl> {
+    fn inner(&self) -> Rc<dyn AsRawFid> {
         self.inner.clone()
     }
 }

@@ -1,5 +1,5 @@
 
-use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, cq::ReadCq, xcontext::{TransmitContext, ReceiveContext, TransmitContextImpl, ReceiveContextImpl}, infocapsoptions::{MsgCap, RecvMod, SendMod}};
+use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, cq::ReadCq, xcontext::{TransmitContext, ReceiveContext, TransmitContextImpl, ReceiveContextImpl, TransmitContextBase, TransmitContextImplBase, ReceiveContextImplBase, ReceiveContextBase}, infocapsoptions::{MsgCap, RecvMod, SendMod}};
 
 pub(crate) fn extract_raw_ctx<T0>(context: Option<*mut T0>) -> *mut std::ffi::c_void {
     if let Some(ctx) = context {
@@ -111,8 +111,8 @@ impl<EP: RecvEpImpl> RecvEp for EP {
 
 impl<EP: MsgCap + RecvMod, EQ: ?Sized, CQ: ?Sized + ReadCq> RecvEpImpl for EndpointImplBase<EP, EQ, CQ> {}
 
-// impl<E: MsgCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
-impl<E: MsgCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> RecvEpImpl for EndpointBase<E, EQ, CQ> {}
+// impl<E: MsgCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
+impl<E: RecvEpImpl> RecvEpImpl for EndpointBase<E> {}
 
 pub(crate) trait SendEpImpl: SendEp + AsRawTypedFid<Output = EpRawFid> {
     fn sendv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
@@ -268,11 +268,11 @@ impl<EP: SendEpImpl> SendEp for EP {
     }
 }
 
-// impl<E: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
+// impl<E: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
 impl<EP: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SendEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SendEpImpl for EndpointBase<E, EQ, CQ> {}
+impl<E: SendEpImpl> SendEpImpl for EndpointBase<E> {}
 
-impl SendEpImpl for TransmitContext{}
-impl SendEpImpl for TransmitContextImpl{}
-impl RecvEpImpl for ReceiveContext{}
-impl RecvEpImpl for ReceiveContextImpl{}
+impl<CQ: ?Sized + ReadCq> SendEpImpl for TransmitContextBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> SendEpImpl for TransmitContextImplBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> RecvEpImpl for ReceiveContextBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> RecvEpImpl for ReceiveContextImplBase<CQ>{}

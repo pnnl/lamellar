@@ -5,6 +5,7 @@ pub mod async_; // Public to supress lint warnings (unused function)
 pub mod common; // Public to supress lint warnings (unused function)
 
 use common::IP;
+use libfabric::ep::ActiveEndpoint;
 use prefix::{HintsCaps, EndpointCaps, define_test, call};
 use sync_ as prefix; 
 

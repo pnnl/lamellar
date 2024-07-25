@@ -14,9 +14,13 @@ use crate::infocapsoptions::TagCap;
 use crate::mr::DataDescriptor;
 use crate::utils::check_error;
 use crate::xcontext::ReceiveContext;
+use crate::xcontext::ReceiveContextBase;
 use crate::xcontext::ReceiveContextImpl;
+use crate::xcontext::ReceiveContextImplBase;
 use crate::xcontext::TransmitContext;
+use crate::xcontext::TransmitContextBase;
 use crate::xcontext::TransmitContextImpl;
+use crate::xcontext::TransmitContextImplBase;
 use super::message::extract_raw_addr_and_ctx;
 
 
@@ -100,10 +104,10 @@ impl<EP: TagRecvEpImpl>  TagRecvEp for EP {
 }
 
 
-// impl<E: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E, EQ, CQ> {
+// impl<E: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
 impl<EP: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagRecvEpImpl for EndpointImplBase<EP, EQ, CQ> {}
 
-impl<E: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagRecvEpImpl for EndpointBase<E, EQ, CQ> {}
+impl<E: TagRecvEpImpl> TagRecvEpImpl for EndpointBase<E> {}
 
 
 
@@ -262,9 +266,9 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
 }
 
 impl<EP: TagCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagSendEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: TagCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagSendEpImpl for EndpointBase<E, EQ, CQ> {}
+impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E> {}
 
-impl TagSendEpImpl for TransmitContext {}
-impl TagSendEpImpl for TransmitContextImpl{}
-impl TagRecvEpImpl for ReceiveContext {}
-impl TagRecvEpImpl for ReceiveContextImpl {}
+impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TransmitContextBase<CQ> {}
+impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TransmitContextImplBase<CQ>{}
+impl<CQ: ?Sized + ReadCq> TagRecvEpImpl for ReceiveContextBase<CQ> {}
+impl<CQ: ?Sized + ReadCq> TagRecvEpImpl for ReceiveContextImplBase<CQ> {}

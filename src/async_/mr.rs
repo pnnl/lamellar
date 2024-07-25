@@ -3,6 +3,7 @@ use crate::fid::{AsRawTypedFid, OwnedMrFid};
 use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder};
 use crate::eq::Event;
 use crate::enums::MrMode;
+use std::cell::RefCell;
 use std::rc::Rc;
 use crate::{mr::{MemoryRegion, MemoryRegionImpl}, enums::MrAccess};
 use super::AsyncCtx;
@@ -36,6 +37,7 @@ impl MemoryRegionImpl {
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
+                            _bind_rcs: RefCell::new(Vec::new())
                         }
                     ));
                 }
@@ -80,6 +82,7 @@ impl MemoryRegionImpl {
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
+                            _bind_rcs: RefCell::new(Vec::new())
                         }
                     ));
                 }
@@ -114,6 +117,7 @@ impl MemoryRegionImpl {
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
+                            _bind_rcs: RefCell::new(Vec::new())
                         }
                     ));
                 }
