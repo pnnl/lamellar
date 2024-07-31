@@ -17,7 +17,7 @@ fn build_rofi(out_path: &PathBuf, ofi_lib_dir: &PathBuf, ofi_inc_dir: &PathBuf) 
     autotools::Config::new(dest)
         .reconf("-ivfWnone")
         .ldflag(format! {"-L{} -libverbs -pthread -ldl -lrdmacm -lrt",ofi_lib_dir.display()})
-        .cflag(format! {"-I{}",ofi_inc_dir.display()})
+        .cflag(format! {"-I{} -O3",ofi_inc_dir.display()})
         .build()
 }
 
