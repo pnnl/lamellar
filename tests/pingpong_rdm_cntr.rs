@@ -31,9 +31,8 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
         ep_attr.ep_type(libfabric::enums::EndpointType::Rdm);
 
     let mut dom_attr = libfabric::domain::DomainAttr::new();
-        dom_attr
-        .threading(libfabric::enums::Threading::Domain)
-        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
+    dom_attr.threading = libfabric::enums::Threading::Domain;
+    dom_attr.mr_mode = libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw();
 
     let mut tx_attr = libfabric::xcontext::TxAttr::new();
         tx_attr.tclass(libfabric::enums::TClass::LowLatency);
@@ -68,39 +67,29 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
         };
 
 
-    let (info, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
+    let (infocap, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
         prefix::ft_init_fabric(hintscaps, &mut gl_ctx, "".to_owned(), "9222".to_owned(), true);
     
-    match info {
-        prefix::InfoWithCaps::Msg(info) => {
-            let entries = info.get();
-            
-            if entries.is_empty() {
-                panic!("No entires in fi_info");
-            }
+    match infocap {
+        prefix::InfoWithCaps::Msg(entry) => {
             
             let test_sizes = gl_ctx.test_sizes.clone();
-            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            let inject_size = entry.get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
-        prefix::InfoWithCaps::Tagged(info) => {
-            let entries = info.get();
-            
-            if entries.is_empty() {
-                panic!("No entires in fi_info");
-            }
+        prefix::InfoWithCaps::Tagged(entry) => {
             
             let test_sizes = gl_ctx.test_sizes.clone();
-            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            let inject_size = entry.get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, true);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 });
@@ -117,9 +106,8 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
         ep_attr.ep_type(libfabric::enums::EndpointType::Rdm);
 
     let mut dom_attr = libfabric::domain::DomainAttr::new();
-        dom_attr
-        .threading(libfabric::enums::Threading::Domain)
-        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
+    dom_attr.threading = libfabric::enums::Threading::Domain;
+    dom_attr.mr_mode = libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw();
     
 
     let mut tx_attr = libfabric::xcontext::TxAttr::new();
@@ -154,39 +142,27 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
             )
         };
 
-    let (info, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
+    let (infocap, ep, _domain, tx_cq, rx_cq, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
         prefix::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
 
-    match info {
-        prefix::InfoWithCaps::Msg(info) => {
-            let entries = info.get();
-            
-            if entries.is_empty() {
-                panic!("No entires in fi_info");
-            }
-            
+    match infocap {
+        prefix::InfoWithCaps::Msg(entry) => {
             let test_sizes = gl_ctx.test_sizes.clone();
-            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            let inject_size = entry.get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
-        prefix::InfoWithCaps::Tagged(info) => {
-            let entries = info.get();
-            
-            if entries.is_empty() {
-                panic!("No entires in fi_info");
-            }
-            
+        prefix::InfoWithCaps::Tagged(entry) => {
             let test_sizes = gl_ctx.test_sizes.clone();
-            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            let inject_size = entry.get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
                 prefix::pingpong(inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            ft_finalize(&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            ft_finalize(&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
         }
     }
 });

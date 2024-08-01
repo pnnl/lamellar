@@ -92,7 +92,7 @@ pub trait AsyncReadEp {
 }
 
 // impl<E: ReadMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E> {
-impl<EP: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointImplBase<EP, EQ, CQ> {}
+impl<EP: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> AsyncReadEpImpl for EndpointImplBase<EP, EQ, CQ> {}
 
 impl<E: AsyncReadEpImpl> AsyncReadEpImpl for EndpointBase<E> {}
 

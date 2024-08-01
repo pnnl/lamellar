@@ -1,8 +1,7 @@
-use std::{os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd}, rc::Rc, cell::RefCell};
+use std::os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd};
 
-use crate::{fid::AsFid, domain::{DomainBase, DomainImplT}};
+use crate::{domain::{DomainBase, DomainImplT}, fid::AsFid, MyRc, MyRefCell};
 use crate::{enums::{WaitObjType, CompletionFlags}, MappedAddress, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error};
-
 //================== CompletionQueue (fi_cq) ==================//
 
 
@@ -16,7 +15,6 @@ macro_rules! read_cq_entry_ {
             let err = unsafe{ $read_fn($cq, $entries.as_mut_ptr().cast(), $count, $($x,)*)};
             if err >= 0 {
                 unsafe {$entries.set_len(err as usize)};
-                $entries.shrink_to_fit();
             }
             err
         }
@@ -68,11 +66,11 @@ pub enum SingleCompletion {
 
 pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     pub(crate) c_cq: OwnedCqFid,
-    pub(crate) entry_buff: RefCell<Completion>,
-    pub(crate) error_buff: RefCell<CompletionError>,
+    pub(crate) entry_buff: MyRefCell<Completion>,
+    pub(crate) error_buff: MyRefCell<CompletionError>,
     #[allow(dead_code)]
     pub(crate) wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    pub(crate) _domain_rc: Rc<dyn DomainImplT>,
+    pub(crate) _domain_rc: MyRc<dyn DomainImplT + Sync + Send>,
 }
 
 /// Owned wrapper around a libfabric `fid_cq`.
@@ -87,7 +85,7 @@ pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD:
 pub type CompletionQueue<T> = CompletionQueueBase<T>;
 
 pub struct CompletionQueueBase<CQ: ?Sized> {
-    pub(crate) inner: Rc<CQ>,
+    pub(crate) inner: MyRc<CQ>,
 }
 
 pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
@@ -271,18 +269,27 @@ pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> ReadCq for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
+        #[cfg(feature="thread-safe")]
+        let mut borrowed_entries = self.entry_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut borrowed_entries = self.entry_buff.borrow_mut();
         self.read_in(count, &mut borrowed_entries)?;
         Ok(borrowed_entries.clone())
     }
 
     fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        #[cfg(feature="thread-safe")]
+        let mut borrowed_entries = self.entry_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut borrowed_entries = self.entry_buff.borrow_mut();
         let address = self.readfrom_in(count, &mut borrowed_entries)?;
         Ok((borrowed_entries.clone(), address))
     }
 
     fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> {
+        #[cfg(feature="thread-safe")]
+        let mut entry = self.error_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut entry = self.error_buff.borrow_mut();
         self.readerr_in(&mut entry, flags)?;
         Ok(entry.clone())
@@ -291,6 +298,9 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> ReadCq for Complet
 
 impl<const RETRIEVE: bool, const FD: bool> WaitCq for CompletionQueueImpl<true, RETRIEVE, FD> {
     fn sread_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<Completion, crate::error::Error> {
+        #[cfg(feature="thread-safe")]
+        let mut borrowed_entries = self.entry_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut borrowed_entries = self.entry_buff.borrow_mut();
         self.sread_in(count, &mut borrowed_entries, cond, timeout)?;
         Ok(borrowed_entries.clone())
@@ -298,6 +308,9 @@ impl<const RETRIEVE: bool, const FD: bool> WaitCq for CompletionQueueImpl<true, 
 
     fn sreadfrom_with_cond(&self, count: usize, cond: usize, timeout: i32) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
         
+        #[cfg(feature="thread-safe")]
+        let mut borrowed_entries = self.entry_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut borrowed_entries = self.entry_buff.borrow_mut();
         let address = self.sreadfrom_in(count, &mut borrowed_entries, cond, timeout)?;
         Ok((borrowed_entries.clone(), address))
@@ -358,7 +371,7 @@ pub trait WaitObjectRetrieve<'a> {
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImpl<WAIT, RETRIEVE, FD>  {
 
-    pub(crate) fn new<T0>(domain: Rc<dyn DomainImplT>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT + Sync + Send>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: CqRawFid  = std::ptr::null_mut();
         // let mut entries: Vec<$t> = Vec::with_capacity(std::mem::size_of::<$t>() * $count);
@@ -383,25 +396,25 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
                     _domain_rc: domain,
                     entry_buff: 
                         if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC {
-                            RefCell::new(Completion::Unspec(Vec::with_capacity(default_buff_size)))
+                            MyRefCell::new(Completion::Unspec(Vec::with_capacity(default_buff_size)))
                         }
                         else if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_CONTEXT {
-                            RefCell::new(Completion::Ctx(Vec::with_capacity(default_buff_size)))
+                            MyRefCell::new(Completion::Ctx(Vec::with_capacity(default_buff_size)))
                         }
                         else if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_MSG {
-                            RefCell::new(Completion::Msg(Vec::with_capacity(default_buff_size)))
+                            MyRefCell::new(Completion::Msg(Vec::with_capacity(default_buff_size)))
                         }
                         else if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_TAGGED {
-                            RefCell::new(Completion::Tagged(Vec::with_capacity(default_buff_size)))
+                            MyRefCell::new(Completion::Tagged(Vec::with_capacity(default_buff_size)))
                         }
                         else if attr.c_attr.format == libfabric_sys::fi_cq_format_FI_CQ_FORMAT_DATA {
-                            RefCell::new(Completion::Data(Vec::with_capacity(default_buff_size)))
+                            MyRefCell::new(Completion::Data(Vec::with_capacity(default_buff_size)))
                         }
                         else {
                             panic!("Unexpected CompletionQueue type");
                         },
                     
-                    error_buff: RefCell::new(CompletionError::new()),
+                    error_buff: MyRefCell::new(CompletionError::new()),
                 })
         }
     }
@@ -411,10 +424,10 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>> {
 
     // pub(crate) fn new<EQ: AsFid + 'static, T0>(_options: T, domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-    pub(crate) fn new<T0>(domain: Rc<dyn DomainImplT>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT + Sync + Send>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?),
+                inner: MyRc::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?),
             }
         )
     }
@@ -452,7 +465,7 @@ impl<'a, T: WaitObjectRetrieve<'a>> CompletionQueue<T> { //[TODO] Make this a me
 }
 
 impl<T: ReadCq + 'static> crate::Bind for CompletionQueue<T> {
-    fn inner(&self) -> Rc<dyn AsRawFid> {
+    fn inner(&self) -> MyRc<dyn AsRawFid> {
         self.inner.clone()
     }
 }
@@ -747,7 +760,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// 
     /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cq_open` call with an optional `context`.
-    pub fn build<EQ: ?Sized + 'static>(self, domain: &DomainBase<EQ>) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static+ Sync + Send>(self, domain: &DomainBase<EQ>) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
         // CompletionQueue::new(self.options, self.domain, self.cq_attr, self.ctx, self.default_buff_size)   
         CompletionQueue::<CompletionQueueImpl<WAIT, RETRIEVE, FD>>::new(domain.inner.clone(), self.cq_attr, self.ctx, self.default_buff_size)   
     }
@@ -826,6 +839,9 @@ impl Default for CompletionQueueAttr {
 pub struct CompletionEntry<Format> {
     pub(crate) c_entry: Format,
 }
+
+unsafe impl<T> Sync for CompletionEntry<T> {}
+unsafe impl<T> Send for CompletionEntry<T> {}
 
 
 impl CompletionEntry<()> {
@@ -995,6 +1011,9 @@ pub struct CompletionError {
     pub(crate) c_err: libfabric_sys::fi_cq_err_entry,
 }
 
+//[TODO] Verify if true!
+
+
 impl CompletionError {
 
     pub fn new() -> Self {
@@ -1090,6 +1109,9 @@ impl CompletionError {
     }
 }
 
+unsafe impl Sync for CompletionError {}
+unsafe impl Send for CompletionError {}
+
 impl Default for CompletionError {
     fn default() -> Self {
         Self::new()
@@ -1108,12 +1130,12 @@ mod tests {
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
-        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
         // let mut cqs = Vec::new();
         for _ in 0..count {
             let _cq = CompletionQueueBuilder::new().wait_fd().build(&domain).unwrap();
@@ -1122,11 +1144,11 @@ mod tests {
 
     #[test]
     fn cq_signal() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
         let cq = CompletionQueueBuilder::new()
             .size(1)
             .wait_fd()
@@ -1144,11 +1166,11 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
             let _cq = CompletionQueueBuilder::new().size(size)
@@ -1165,23 +1187,21 @@ mod libfabric_lifetime_tests {
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
-        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
         let mut cqs = Vec::new();
         for _ in 0..count {
             let cq = CompletionQueueBuilder::new()
                 .wait_fd()
                 .build(&domain)
                 .unwrap();
-            println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
             cqs.push(cq);
         }
         drop(domain);
-        println!("Count = {} After dropping domain\n", std::rc::Rc::strong_count(&cqs[0].inner._domain_rc));
 
     }
 }

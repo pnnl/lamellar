@@ -1,8 +1,4 @@
-use std::{rc::Rc, cell::RefCell};
-
-
-
-use crate::{domain::DomainImplT, enums::{MrAccess, MrMode}, fid::{self, AsRawFid, AsRawTypedFid, OwnedMrFid, MrRawFid, RawFid, AsTypedFid}, iovec::IoVec, utils::check_error, eq::ReadEq, cq::ReadCq, cntr::ReadCntr};
+use crate::{cntr::ReadCntr, cq::ReadCq, domain::DomainImplT, enums::{MrAccess, MrMode}, eq::ReadEq, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, MrRawFid, OwnedMrFid, RawFid}, iovec::IoVec, utils::check_error, MyOnceCell, MyRc};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -35,7 +31,7 @@ impl MemoryRegionKey {
     /// This function is unsafe since there is not guarantee that the bytes read indeed represent
     /// a key
     ///
-    pub unsafe fn from_bytes<EQ: ?Sized>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
+    pub unsafe fn from_bytes<EQ: ?Sized+ Sync + Send>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Self {
         MemoryRegionKey::from_bytes_impl(raw, &*domain.inner)
     }
 
@@ -76,7 +72,7 @@ impl MemoryRegionKey {
         MemoryRegionKey::Key(key) 
     }
 
-    pub fn into_mapped<EQ: ?Sized + 'static>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
+    pub fn into_mapped<EQ: ?Sized + 'static+ Sync + Send>(mut self, domain: &crate::domain::DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
             MemoryRegionKey::Key(mapped_key) => {
                 Ok(MappedMemoryRegionKey{inner: MappedMemoryRegionKeyImpl::Key(mapped_key)})
@@ -88,14 +84,17 @@ impl MemoryRegionKey {
         }
     }
 }
+
+#[derive(Clone)]
 enum MappedMemoryRegionKeyImpl {
     Key(u64),
-    MappedRawKey((u64, Rc<dyn DomainImplT>)),
+    MappedRawKey((u64, MyRc<dyn DomainImplT  + Sync + Send>)),
 }
 
 /// Uniformly represents a (mapped if raw) memory region  key that can be used to
 /// access remote [MemoryRegion]s. This struct will automatically unmap the key
 /// if needed when it is dropped.
+#[derive(Clone)]
 pub struct MappedMemoryRegionKey {
     inner: MappedMemoryRegionKeyImpl,
 }
@@ -147,8 +146,9 @@ impl DataDescriptor for DefaultMemDesc {
 
 pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: OwnedMrFid,
-    pub(crate) _domain_rc: Rc<dyn DomainImplT>,
-    pub(crate) _bind_rcs: RefCell<Vec<Rc<dyn AsRawFid>>>, 
+    pub(crate) _domain_rc: MyRc<dyn DomainImplT  + Sync + Send>,
+    pub(crate) bound_cntr: MyOnceCell<MyRc<dyn ReadCntr  + Sync + Send>>, 
+    pub(crate) bound_ep: MyOnceCell<MyRc<dyn AsRawFid + Sync + Send>>, 
 }
 
 /// Owned wrapper around a libfabric `fid_mr`.
@@ -159,13 +159,13 @@ pub(crate) struct MemoryRegionImpl {
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
 /// are also dropped.
 pub struct MemoryRegion {
-    pub(crate) inner: Rc<MemoryRegionImpl>,
+    pub(crate) inner: MyRc<MemoryRegionImpl>,
 }
 
 impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0, EQ: 'static>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0, EQ: 'static + Sync + Send>(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let err = if let Some(ctx) = context {
                 unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, &mut c_mr, (ctx as *mut T0).cast() ) }
@@ -184,12 +184,13 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
-                    _bind_rcs: RefCell::new(Vec::new()),
+                    bound_cntr: MyOnceCell::new(),
+                    bound_ep: MyOnceCell::new(),
                 })
         }
     }
 
-    pub(crate) fn from_attr<EQ: ?Sized + 'static>(domain: &Rc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr<EQ: ?Sized + 'static + Sync + Send>(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.as_raw_typed_fid(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
@@ -202,13 +203,14 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
-                    _bind_rcs: RefCell::new(Vec::new()),
+                    bound_cntr: MyOnceCell::new(),
+                    bound_ep: MyOnceCell::new(),
                 })
         }
     }
             
     #[allow(dead_code)]
-    fn from_iovec<T, T0, EQ: 'static>(domain: &Rc<crate::domain::DomainImplBase<EQ>>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T, T0, EQ: 'static + Sync + Send>(domain: &MyRc<crate::domain::DomainImplBase<EQ>>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =
@@ -227,7 +229,8 @@ impl MemoryRegionImpl {
                 Self {
                     c_mr: OwnedMrFid::from(c_mr),
                     _domain_rc: domain.clone(),
-                    _bind_rcs: RefCell::new(Vec::new()),
+                    bound_cntr: MyOnceCell::new(),
+                    bound_ep: MyOnceCell::new(),
                 })
         }
     
@@ -264,10 +267,12 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn bind_cntr(&self, cntr: &Rc<impl ReadCntr + 'static>, remote_write_event: bool) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cntr(&self, cntr: &MyRc<impl ReadCntr + 'static + Sync + Send>, remote_write_event: bool) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), cntr.as_raw_fid(), if remote_write_event {libfabric_sys::FI_REMOTE_WRITE as u64} else {0}) } ;
         if err != 0 {
-            self._bind_rcs.borrow_mut().push(cntr.clone())
+            if self.bound_cntr.set(cntr.clone()).is_err() {
+                panic!("Memory Region already bound to an Endpoint");
+            }
         }
         check_error(err.try_into().unwrap())
     }
@@ -276,10 +281,12 @@ impl MemoryRegionImpl {
 impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    pub(crate) fn bind_ep<EP: 'static, CQ: ?Sized + AsRawFid + ReadCq + 'static>(&self, ep: &Rc<crate::ep::EndpointImplBase<EP, impl ReadEq + 'static, CQ>>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep<EP: 'static + Sync + Send, CQ: ?Sized + AsRawFid + ReadCq + 'static + Sync + Send>(&self, ep: &MyRc<crate::ep::EndpointImplBase<EP, impl ReadEq + 'static + Sync + Send, CQ>>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0) } ;
         if err != 0 {
-            self._bind_rcs.borrow_mut().push(ep.clone())
+            if self.bound_ep.set(ep.clone()).is_err() {
+                panic!("Memory Region already bound to an Endpoint");
+            }
         }
         check_error(err.try_into().unwrap())
     }
@@ -354,37 +361,37 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn from_impl(mr_impl: &Rc<MemoryRegionImpl>)  -> Self {
+    pub(crate) fn from_impl(mr_impl: &MyRc<MemoryRegionImpl>)  -> Self {
         MemoryRegion {
             inner: mr_impl.clone()
         }
     }
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0, EQ: 'static+ Sync + Send>(domain: &crate::domain::DomainBase<EQ>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner:
-                    Rc::new(MemoryRegionImpl::from_buffer(&domain.inner, buf, access, requested_key, flags, context)?)
+                    MyRc::new(MemoryRegionImpl::from_buffer(&domain.inner, buf, access, requested_key, flags, context)?)
             }
         )
     }
     
-    pub(crate) fn from_attr<EQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<EQ>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr<EQ: ?Sized + 'static+ Sync + Send>(domain: &crate::domain::DomainBase<EQ>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImpl::from_attr(&domain.inner, attr, flags)?)
+                    MyRc::new(MemoryRegionImpl::from_attr(&domain.inner, attr, flags)?)
             }
         )
     }
 
     #[allow(dead_code)]
-    fn from_iovec<T, T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T, T0, EQ: 'static+ Sync + Send>(domain: &crate::domain::DomainBase<EQ>,  iov : &[crate::iovec::IoVec<T>], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: 
-                    Rc::new(MemoryRegionImpl::from_iovec(&domain.inner, iov, access, requested_key, flags, context)?)
+                    MyRc::new(MemoryRegionImpl::from_iovec(&domain.inner, iov, access, requested_key, flags, context)?)
             }
         )
     }
@@ -407,7 +414,7 @@ impl MemoryRegion {
     /// Bind the memory region to `cntr` and request event generation for remote writes or atomics targeting this memory region.
     /// 
     /// Corresponds to `fi_mr_bind` with a `fid_cntr` 
-    pub fn bind_cntr(&self, cntr: &crate::cntr::Counter<impl ReadCntr + 'static>, remote_write_event: bool) -> Result<(), crate::error::Error> {
+    pub fn bind_cntr(&self, cntr: &crate::cntr::Counter<impl ReadCntr + 'static + Sync + Send>, remote_write_event: bool) -> Result<(), crate::error::Error> {
         self.inner.bind_cntr(&cntr.inner, remote_write_event)
     }
 
@@ -467,6 +474,8 @@ impl MemoryRegion {
 pub struct MemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
 }
+unsafe impl Send for MemoryRegionDesc {}
+unsafe impl Sync for MemoryRegionDesc {}
 
 impl DataDescriptor for MemoryRegionDesc {
     
@@ -800,7 +809,7 @@ impl<'a, T> MemoryRegionBuilder<'a, T> {
     /// 
     /// Corresponds to creating a `fi_mr_attr`, setting its fields to the requested ones,
     /// and passign it to `fi_mr_regattr`.
-    pub fn build<EQ: ?Sized + 'static>(mut self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<MemoryRegion, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static+ Sync + Send>(mut self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<MemoryRegion, crate::error::Error> {
         if domain.inner._eq_rc.get().is_some() {
             let (_eq, async_reg) = domain.inner._eq_rc.get().unwrap();
             if *async_reg {
@@ -860,40 +869,39 @@ mod tests {
 
         combos
     }
-    pub struct TestSizeParam(pub u64, pub u64);
-    pub const DEF_TEST_SIZES: [TestSizeParam; 6] = [TestSizeParam(1 << 0,0), TestSizeParam(1 << 1,0), TestSizeParam(1 << 2,0), TestSizeParam(1 << 3,0), TestSizeParam(1 << 4,0), TestSizeParam(1 << 5,0) ];
+    pub struct TestSizeParam(pub u64);
+    pub const DEF_TEST_SIZES: [TestSizeParam; 6] = [TestSizeParam(1 << 0), TestSizeParam(1 << 1), TestSizeParam(1 << 2), TestSizeParam(1 << 3), TestSizeParam(1 << 4), TestSizeParam(1 << 5) ];
 
     #[test]
     fn mr_reg() {
         let ep_attr = crate::ep::EndpointAttr::new();
         let mut dom_attr = crate::domain::DomainAttr::new();
-            dom_attr
-            .mode(crate::enums::Mode::all())
-            .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
+        dom_attr.mode = crate::enums::Mode::all();
+        dom_attr.mr_mode = crate::enums::MrMode::new().basic().scalable().local().inverse();
         
         let hints = InfoHints::new()
             .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = Info::new().hints(&hints).request().unwrap();
-        let entries = info.get();
+        let info = Info::new().hints(&hints).build().unwrap();
+        let entry = info.into_iter().next();
         
-        if !entries.is_empty() {
+        if let Some(entry) = entry {
 
-            let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+            let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entry).build().unwrap();
 
             let mut mr_access: u64 = 0;
-            if entries[0].get_mode().is_local_mr() || entries[0].get_domain_attr().get_mr_mode().is_local() {
+            if entry.get_mode().is_local_mr() || entry.get_domain_attr().mr_mode.is_local() {
 
-                if entries[0].get_caps().is_msg() || entries[0].get_caps().is_tagged() {
+                if entry.get_caps().is_msg() || entry.get_caps().is_tagged() {
                     let mut on = false;
-                    if entries[0].get_caps().is_send() {
+                    if entry.get_caps().is_send() {
                         mr_access |= libfabric_sys::FI_SEND as u64;
                         on = true;
                     }
-                    if entries[0].get_caps().is_recv() {
+                    if entry.get_caps().is_recv() {
                         mr_access |= libfabric_sys::FI_RECV  as u64 ;
                         on = true;
                     }
@@ -902,8 +910,8 @@ mod tests {
                     }
                 }
             }
-            else if entries[0].get_caps().is_rma() || entries[0].get_caps().is_atomic() {
-                if entries[0].get_caps().is_remote_read() || !(entries[0].get_caps().is_read() || entries[0].get_caps().is_write() || entries[0].get_caps().is_remote_write()) {
+            else if entry.get_caps().is_rma() || entry.get_caps().is_atomic() {
+                if entry.get_caps().is_remote_read() || !(entry.get_caps().is_read() || entry.get_caps().is_write() || entry.get_caps().is_remote_write()) {
                     mr_access |= libfabric_sys::FI_REMOTE_READ as u64 ;
                 }
                 else {
@@ -947,33 +955,37 @@ mod libfabric_lifetime_tests {
     fn mr_drops_before_domain() {
         let ep_attr = crate::ep::EndpointAttr::new();
         let mut dom_attr = crate::domain::DomainAttr::new();
-            dom_attr
-            .mode(crate::enums::Mode::all())
-            .mr_mode(crate::enums::MrMode::new().basic().scalable().local().inverse());
+            dom_attr.mode = crate::enums::Mode::all();
+            dom_attr.mr_mode = crate::enums::MrMode::new()
+                .basic()
+                .scalable()
+                .local()
+                .inverse();
         
         let hints = InfoHints::new()
             .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = Info::new().hints(&hints).request().unwrap();
-        let entries = info.get();
+        let info = Info::new().hints(&hints).build().unwrap();
+        let entry = info.into_iter().next();
         
-        if !entries.is_empty() {
+        if let Some(entry) = entry {
 
-            let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+            let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entry).build().unwrap();
 
             let mut mr_access: u64 = 0;
-            if entries[0].get_mode().is_local_mr() || entries[0].get_domain_attr().get_mr_mode().is_local() {
 
-                if entries[0].get_caps().is_msg() || entries[0].get_caps().is_tagged() {
+            if entry.get_mode().is_local_mr() || entry.get_domain_attr().mr_mode.is_local() {
+
+                if entry.get_caps().is_msg() || entry.get_caps().is_tagged() {
                     let mut on = false;
-                    if entries[0].get_caps().is_send() {
+                    if entry.get_caps().is_send() {
                         mr_access |= libfabric_sys::FI_SEND as u64;
                         on = true;
                     }
-                    if entries[0].get_caps().is_recv() {
+                    if entry.get_caps().is_recv() {
                         mr_access |= libfabric_sys::FI_RECV  as u64 ;
                         on = true;
                     }
@@ -982,8 +994,8 @@ mod libfabric_lifetime_tests {
                     }
                 }
             }
-            else if entries[0].get_caps().is_rma() || entries[0].get_caps().is_atomic() {
-                if entries[0].get_caps().is_remote_read() || !(entries[0].get_caps().is_read() || entries[0].get_caps().is_write() || entries[0].get_caps().is_remote_write()) {
+            else if entry.get_caps().is_rma() || entry.get_caps().is_atomic() {
+                if entry.get_caps().is_remote_read() || !(entry.get_caps().is_read() || entry.get_caps().is_write() || entry.get_caps().is_remote_write()) {
                     mr_access |= libfabric_sys::FI_REMOTE_READ as u64 ;
                 }
                 else {
@@ -1004,14 +1016,9 @@ mod libfabric_lifetime_tests {
                         .build(&domain)
                         .unwrap();
                     mrs.push(mr);
-                    println!("Count = {} \n", std::rc::Rc::strong_count(&domain.inner));
                 }
             }
             drop(domain);
-            // println!("Count = {} After dropping domain\n", std::rc::Rc::strong_count(&mrs[0].inner._domain_rc));
-            
-            // domain.close().unwrap();
-            // fab.close().unwrap();
         }
         else {
             panic!("No capable fabric found!");

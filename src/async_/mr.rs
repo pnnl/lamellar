@@ -3,8 +3,7 @@ use crate::fid::{AsRawTypedFid, OwnedMrFid};
 use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder};
 use crate::eq::Event;
 use crate::enums::MrMode;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::{MyOnceCell, MyRc};
 use crate::{mr::{MemoryRegion, MemoryRegionImpl}, enums::MrAccess};
 use super::AsyncCtx;
 
@@ -16,7 +15,7 @@ use super::eq::AsyncReadEq;
 impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    pub(crate) async fn from_buffer_async<T>(domain: &Rc<crate::async_::domain::AsyncDomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
+    pub(crate) async fn from_buffer_async<T>(domain: &MyRc<crate::async_::domain::AsyncDomainImpl>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
 
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
@@ -37,7 +36,8 @@ impl MemoryRegionImpl {
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
-                            _bind_rcs: RefCell::new(Vec::new())
+                            bound_cntr: MyOnceCell::new(),
+                            bound_ep: MyOnceCell::new(),
                         }
                     ));
                 }
@@ -53,7 +53,7 @@ impl MemoryRegionImpl {
 
 
     #[allow(dead_code)]
-    pub(crate) async fn from_attr_async(domain: &Rc<crate::async_::domain::AsyncDomainImpl>, mut attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event,Self), crate::error::Error> { // [TODO] Add context version
+    pub(crate) async fn from_attr_async(domain: &MyRc<crate::async_::domain::AsyncDomainImpl>, mut attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event,Self), crate::error::Error> { // [TODO] Add context version
         
         let mut async_ctx = 
             if attr.c_attr.context.is_null() {
@@ -82,7 +82,8 @@ impl MemoryRegionImpl {
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
-                            _bind_rcs: RefCell::new(Vec::new())
+                            bound_cntr: MyOnceCell::new(),
+                            bound_ep: MyOnceCell::new(),
                         }
                     ));
                 }
@@ -97,7 +98,7 @@ impl MemoryRegionImpl {
     }
             
     #[allow(dead_code)]
-    pub(crate) async fn from_iovec_async<'a, T>(domain: &'a Rc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
+    pub(crate) async fn from_iovec_async<'a, T>(domain: &'a MyRc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
@@ -117,7 +118,8 @@ impl MemoryRegionImpl {
                         Self {
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
-                            _bind_rcs: RefCell::new(Vec::new())
+                            bound_cntr: MyOnceCell::new(),
+                            bound_ep: MyOnceCell::new(),
                         }
                     ));
                 }
@@ -141,7 +143,7 @@ impl MemoryRegion {
         Ok((event,
             Self {
                 inner:
-                    Rc::new(mr)
+                    MyRc::new(mr)
             }
         ))
 
@@ -153,7 +155,7 @@ impl MemoryRegion {
         Ok((event,
             Self {
                 inner: 
-                    Rc::new(mr)
+                    MyRc::new(mr)
             }
         ))
     }
@@ -165,7 +167,7 @@ impl MemoryRegion {
         Ok((event,
             Self {
                 inner: 
-                    Rc::new(mr)
+                    MyRc::new(mr)
             }
         ))
     }
@@ -443,11 +445,11 @@ impl<'a, T> MemoryRegionBuilder<'a, T> {
 //                         .build_async(&domain).await
 //                         .unwrap();
 //                     mrs.push(mr);
-//                     println!("Count = {} \n", std::rc::Rc::strong_count(&domain.inner));
+//                     println!("Count = {} \n", std::rc::MyRc::strong_count(&domain.inner));
 //                 }
 //             }
 //             drop(domain);
-//             // println!("Count = {} After dropping domain\n", std::rc::Rc::strong_count(&mrs[0].inner._domain_rc));
+//             // println!("Count = {} After dropping domain\n", std::rc::MyRc::strong_count(&mrs[0].inner._domain_rc));
             
 //             // domain.close().unwrap();
 //             // fab.close().unwrap();

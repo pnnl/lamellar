@@ -3,11 +3,11 @@ use crate::cq::{CompletionEntry, SingleCompletion};
 use crate::domain::{DomainBase, DomainImplBase};
 use crate::error::ErrorKind;
 use crate::fid::{AsRawTypedFid, CqRawFid};
-use std::cell::RefCell;
+use crate::{MyRc, MyRefCell};
 use std::collections::HashMap;
 use std::os::fd::BorrowedFd;
 use std::pin::Pin;
-use std::{rc::Rc, future::Future, task::ready};
+use std::{future::Future, task::ready};
 use crate::cq::ReadCq; 
 #[cfg(feature="use-async-std")]
 use async_io::{Async as Async, Readable};
@@ -59,7 +59,7 @@ impl CompletionQueue<AsyncCompletionQueueImpl> {
     pub(crate) fn new<T0, EQ: ?Sized + 'static>(domain: &DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(AsyncCompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
+                inner: MyRc::new(AsyncCompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
             }
         )
     }
@@ -67,18 +67,27 @@ impl CompletionQueue<AsyncCompletionQueueImpl> {
 
 impl ReadCq for AsyncCompletionQueueImpl {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
+        #[cfg(feature="thread-safe")]
+        let mut borrowed_entries = self.base.get_ref().entry_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut borrowed_entries = self.base.get_ref().entry_buff.borrow_mut();
         self.read_in(count, &mut borrowed_entries)?;
         Ok(borrowed_entries.clone())
     }
 
     fn readfrom(&self, count: usize) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
+        #[cfg(feature="thread-safe")]
+        let mut borrowed_entries = self.base.get_ref().entry_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut borrowed_entries = self.base.get_ref().entry_buff.borrow_mut();
         let address = self.readfrom_in(count, &mut borrowed_entries)?;
         Ok((borrowed_entries.clone(), address))
     }
 
     fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> {
+        #[cfg(feature="thread-safe")]
+        let mut entry = self.base.get_ref().error_buff.write();
+        #[cfg(not(feature="thread-safe"))]
         let mut entry = self.base.get_ref().error_buff.borrow_mut();
         self.readerr_in(&mut entry, flags)?;
         Ok(entry.clone())
@@ -121,7 +130,7 @@ impl AsRawTypedFid for AsyncCompletionQueueImpl {
 
 pub struct AsyncCompletionQueueImpl {
     pub(crate) base: Async<CompletionQueueImpl<true, true, true>>,
-    pub(crate) pending_entries: RefCell<HashMap<usize, Result<SingleCompletion, Error>>>,
+    pub(crate) pending_entries: MyRefCell<HashMap<usize, Result<SingleCompletion, Error>>>,
 }
 
 impl WaitCq for AsyncCompletionQueueImpl {
@@ -155,11 +164,19 @@ impl AsyncFid for AsyncCompletionQueueImpl {
     }
 }
 
-impl<T: AsyncReadCq> CompletionQueue<T> {
-    pub async fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> Result<(), crate::error::Error>  {
-        self.inner.read_in_async(buf, count).await
+impl<T: AsyncReadCq> AsyncReadCq for CompletionQueue<T> {
+    fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead  {
+        self.inner.read_in_async(buf, count)
     }
 
+    fn read_async(&self, count: usize) -> CqAsyncReadOwned {
+        self.inner.read_async(count)
+    }
+    
+    fn wait_for_ctx_async(&self, async_ctx: &mut AsyncCtx) -> AsyncTransferCq {
+        self.inner.wait_for_ctx_async(async_ctx)
+    }
+    
     // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
     //     self.inner.read_async(count).await
     // }
@@ -167,8 +184,16 @@ impl<T: AsyncReadCq> CompletionQueue<T> {
 
 impl AsyncCompletionQueueImpl {
 
-    pub(crate) fn new<T0, EQ: ?Sized + 'static>(domain: &Rc<DomainImplBase<EQ>>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-        Ok(Self {base:Async::new(CompletionQueueImpl::new(domain.clone(), attr, context, default_buff_size)?).unwrap(), pending_entries: RefCell::new(HashMap::new())})
+    pub(crate) fn new<T0, EQ: ?Sized + 'static>(domain: &MyRc<DomainImplBase<EQ>>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+        Ok(
+            Self {
+                base:Async::new(CompletionQueueImpl::new(domain.clone(),
+                attr,
+                context,
+                default_buff_size)?).unwrap(),
+                pending_entries: MyRefCell::new(HashMap::new())
+            }
+        )
     }
 }
 
@@ -195,8 +220,11 @@ impl<'a> Future for AsyncTransferCq<'a> {
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         let mut_self = self.get_mut();
         loop {
-            // println!("Checking for completion");
-            if let Some(queue_entry) = mut_self.fut.cq.pending_entries.borrow_mut().remove(&mut_self.ctx) {
+            #[cfg(feature="thread-safe")]
+            let queue_entry =  mut_self.fut.cq.pending_entries.write().remove(&mut_self.ctx);
+            #[cfg(not(feature="thread-safe"))]
+            let queue_entry =  mut_self.fut.cq.pending_entries.borrow_mut().remove(&mut_self.ctx);
+            if let Some(queue_entry) = queue_entry { 
                 match queue_entry {
                     Ok(mut entry) => {
                         match entry {
@@ -229,6 +257,9 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                     return std::task::Poll::Ready(Err(error))
                                 }
                                 else {
+                                    #[cfg(feature="thread-safe")]
+                                    mut_self.fut.cq.pending_entries.write().insert(q_err_entry.c_err.op_context as usize, Err(error));
+                                    #[cfg(not(feature="thread-safe"))]
                                     mut_self.fut.cq.pending_entries.borrow_mut().insert(q_err_entry.c_err.op_context as usize, Err(error));
                                     mut_self.fut  = Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
                                     continue;
@@ -244,11 +275,71 @@ impl<'a> Future for AsyncTransferCq<'a> {
             // println!("Can read");
             let mut found = None;
             match &mut_self.fut.buf {
-                Completion::Unspec(entries) => for e in entries.iter() {if e.c_entry.op_context as usize == mut_self.ctx { unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; found = Some(SingleCompletion::Unspec(e.clone()));} else  {mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Unspec(e.clone())));}},
-                Completion::Ctx(entries) => for e in entries.iter() { if e.c_entry.op_context as usize == mut_self.ctx { unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; found = Some(SingleCompletion::Ctx(e.clone()));} else {mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Ctx(e.clone())));}},
-                Completion::Msg(entries) => for e in entries.iter() { if e.c_entry.op_context as usize == mut_self.ctx { unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; found = Some(SingleCompletion::Msg(e.clone()));} else {mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Msg(e.clone())));}},
-                Completion::Data(entries) => for e in entries.iter() { if e.c_entry.op_context as usize == mut_self.ctx { unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; found = Some(SingleCompletion::Data(e.clone()));} else {mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Data(e.clone())));}},
-                Completion::Tagged(entries) => for e in entries.iter() { if e.c_entry.op_context as usize == mut_self.ctx { unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; found = Some(SingleCompletion::Tagged(e.clone()));} else {mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Tagged(e.clone())));}},
+                Completion::Unspec(entries) => { 
+                    for e in entries.iter() {
+                        if e.c_entry.op_context as usize == mut_self.ctx { 
+                            unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; 
+                            found = Some(SingleCompletion::Unspec(e.clone()));
+                        } else  {
+                            #[cfg(feature="thread-safe")]
+                            mut_self.fut.cq.pending_entries.write().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Unspec(e.clone())));
+                            #[cfg(not(feature="thread-safe"))]
+                            mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Unspec(e.clone())));
+                        }
+                    }
+                },
+                Completion::Ctx(entries) => { 
+                    for e in entries.iter() {
+                         if e.c_entry.op_context as usize == mut_self.ctx { 
+                            unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; 
+                            found = Some(SingleCompletion::Ctx(e.clone()));
+                        } else {
+                            #[cfg(feature="thread-safe")]
+                            mut_self.fut.cq.pending_entries.write().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Ctx(e.clone())));
+                            #[cfg(not(feature="thread-safe"))]
+                            mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Ctx(e.clone())));
+                        }
+                    }
+                },
+                Completion::Msg(entries) => { 
+                    for e in entries.iter() {
+                         if e.c_entry.op_context as usize == mut_self.ctx { 
+                            unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; 
+                            found = Some(SingleCompletion::Msg(e.clone()));
+                        } else {
+                            #[cfg(feature="thread-safe")]
+                            mut_self.fut.cq.pending_entries.write().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Msg(e.clone())));
+                            #[cfg(not(feature="thread-safe"))]
+                            mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Msg(e.clone())));
+                        }
+                    }
+                },
+                Completion::Data(entries) => { 
+                    for e in entries.iter() {
+                         if e.c_entry.op_context as usize == mut_self.ctx { 
+                            unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; 
+                            found = Some(SingleCompletion::Data(e.clone()));
+                        } else {
+                            #[cfg(feature="thread-safe")]
+                            mut_self.fut.cq.pending_entries.write().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Data(e.clone()))); 
+                            #[cfg(not(feature="thread-safe"))]
+                            mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Data(e.clone())));
+                        }
+                    }
+                },
+                Completion::Tagged(entries) => { 
+                    for e in entries.iter() {
+                         if e.c_entry.op_context as usize == mut_self.ctx { 
+                            unsafe{ (*(e.c_entry.op_context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}; 
+                            found = Some(SingleCompletion::Tagged(e.clone()));
+                        } else {
+                            #[cfg(feature="thread-safe")]
+                            mut_self.fut.cq.pending_entries.write().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Tagged(e.clone())));
+                            #[cfg(not(feature="thread-safe"))]
+                            mut_self.fut.cq.pending_entries.borrow_mut().insert(e.c_entry.op_context as usize, Ok(SingleCompletion::Tagged(e.clone())));
+                        }
+                    }
+                },
             }
             match found {
                 Some(v) => {return std::task::Poll::Ready(Ok(v))},
@@ -304,7 +395,7 @@ impl<'a> Future for CqAsyncRead<'a>{
                     }
                     else {
                         #[cfg(feature = "use-tokio")]
-                        if let Some(mut guard) = _guard {if mut_self.cq.pending_entries.borrow().is_empty(){guard.clear_ready()}}
+                        if let Some(mut guard) = _guard {if mut_self.cq.pending_entries.read().is_empty(){guard.clear_ready()}}
                         continue;
                     }
                 },
@@ -327,6 +418,9 @@ impl<'a>  CqAsyncReadOwned<'a> {
     pub(crate) fn new( num_entries: usize, cq: &'a AsyncCompletionQueueImpl) -> Self {
 
         Self {
+            #[cfg(feature="thread-safe")]
+            buf:  alloc_cq_entry!(*cq.base.get_ref().entry_buff.read(), num_entries),
+            #[cfg(not(feature="thread-safe"))]
             buf:  alloc_cq_entry!(*cq.base.get_ref().entry_buff.borrow(), num_entries),
             num_entries,
             cq,
@@ -387,7 +481,7 @@ impl<'a> Future for CqAsyncReadOwned<'a>{
                     else {
                         // println!("Will continue");
                         #[cfg(feature = "use-tokio")]
-                        if let Some(mut guard) = _guard {if mut_self.cq.pending_entries.borrow().is_empty(){guard.clear_ready()}}
+                        if let Some(mut guard) = _guard {if mut_self.cq.pending_entries.read().is_empty(){guard.clear_ready()}}
                         continue;
                     }
                 },
@@ -419,7 +513,7 @@ impl AsFid for &AsyncCompletionQueueImpl {
         self.base.get_ref().as_fid()
     }
 }
-impl AsFid for Rc<AsyncCompletionQueueImpl> {
+impl AsFid for MyRc<AsyncCompletionQueueImpl> {
     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
         self.base.get_ref().as_fid()
     }
@@ -431,14 +525,6 @@ impl AsRawFid for AsyncCompletionQueueImpl {
         self.base.get_ref().as_raw_fid()
     }
 }
-
-// impl crate::BindImpl for AsyncCompletionQueueImpl {}
-// impl<T: CqConfig + 'static> crate::Bind for CompletionQueue<T> {
-//     fn inner(&self) -> Rc<dyn crate::BindImpl> {
-//         self.inner.clone()
-//     }
-// }
-
 
 pub struct CompletionQueueBuilder<'a, T> {
     cq_attr: CompletionQueueAttr,
@@ -528,12 +614,12 @@ mod tests {
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
-        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
         // let mut cqs = Vec::new();
         for _ in 0..count {
             let _cq = CompletionQueueBuilder::new().build(&domain).unwrap();
@@ -542,11 +628,11 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
             let _cq = CompletionQueueBuilder::new().size(size)
@@ -564,22 +650,20 @@ mod libfabric_lifetime_tests {
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
-        let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
         let mut cqs = Vec::new();
         for _ in 0..count {
             let cq = CompletionQueueBuilder::new()
                 .build(&domain)
                 .unwrap();
-            println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
             cqs.push(cq);
         }
         drop(domain);
-        println!("Count = {} After dropping domain\n", std::rc::Rc::strong_count(&cqs[0].inner.base.get_ref()._domain_rc));
 
     }
 }

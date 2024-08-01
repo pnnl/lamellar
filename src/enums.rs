@@ -192,11 +192,11 @@ impl WaitCond {
 }
 
 pub enum HmemIface {
-    SYSTEM,
-    CUDA,
-    ROCR,
-    ZE,
-    NEURON,
+    System,
+    Cuda,
+    Rocr,
+    Ze,
+    Neuron,
     SYNAPSEAI,
 }
 
@@ -204,11 +204,11 @@ pub enum HmemIface {
 impl HmemIface {
     pub fn get_value(&self) -> libfabric_sys::fi_hmem_iface {
         match self {
-            HmemIface::SYSTEM => libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM, 
-            HmemIface::CUDA => libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA, 
-            HmemIface::ROCR => libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR, 
-            HmemIface::ZE => libfabric_sys::fi_hmem_iface_FI_HMEM_ZE, 
-            HmemIface::NEURON => libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON, 
+            HmemIface::System => libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM, 
+            HmemIface::Cuda => libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA, 
+            HmemIface::Rocr => libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR, 
+            HmemIface::Ze => libfabric_sys::fi_hmem_iface_FI_HMEM_ZE, 
+            HmemIface::Neuron => libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON, 
             HmemIface::SYNAPSEAI => libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI, 
         }
     }
@@ -386,6 +386,7 @@ impl ControlOpt {
     }
 }
 
+#[derive(Clone)]
 pub enum AddressVectorType {
     Unspec,
     Map,
@@ -446,6 +447,7 @@ macro_rules! gen_get_flag {
 
 pub(crate) use gen_set_get_flag;
 
+#[derive(Clone)]
 pub struct Mode {
     c_flags: u64
 }
@@ -462,8 +464,10 @@ impl Mode {
         Self {c_flags: !0}
     }
 
-    pub(crate) fn from_value(value: u64) -> Self {
-        Self {c_flags: value}
+    pub(crate) fn from_value(val: u64) -> Self {
+        Self {
+            c_flags: val,
+        }
     }
 
     gen_set_get_flag!(context, is_context, libfabric_sys::FI_CONTEXT);
@@ -475,12 +479,14 @@ impl Mode {
     gen_set_get_flag!(restricted_comp, is_restricted_comp, libfabric_sys::FI_RESTRICTED_COMP);
     gen_set_get_flag!(context2, is_context2, libfabric_sys::FI_CONTEXT2);
     gen_set_get_flag!(buffered_recv, is_buffered_recv, libfabric_sys::FI_BUFFERED_RECV);
+}
 
-
-    pub fn get_value(&self) -> u64 {
+impl Into<u64> for Mode {
+    fn into(self) -> u64 {
         self.c_flags
     }
 }
+
 
 impl Default for Mode {
     fn default() -> Self {
@@ -488,6 +494,7 @@ impl Default for Mode {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct MrMode {
     c_flags: u32
 }
@@ -531,6 +538,7 @@ impl MrMode {
 
 }
 
+
 impl Default for MrMode {
     fn default() -> Self {
         Self::new()
@@ -570,6 +578,7 @@ impl Default for MrAccess {
     }
 }
 
+#[derive(Clone)]
 pub enum Progress {
     Unspec,
     Auto,
@@ -599,6 +608,7 @@ impl Progress {
     }
 }
 
+#[derive(Clone)]
 pub enum Threading {
     Unspec,
     Safe,
@@ -609,7 +619,31 @@ pub enum Threading {
 }
 
 impl Threading {
-    pub fn get_value(&self) -> libfabric_sys::fi_threading {
+    pub(crate) fn from_value(val: libfabric_sys::fi_threading) -> Self {
+        if val == libfabric_sys::fi_threading_FI_THREAD_UNSPEC {
+            Threading::Unspec
+        } 
+        else if val == libfabric_sys::fi_threading_FI_THREAD_SAFE {
+            Threading::Safe
+        }
+        else if val == libfabric_sys::fi_threading_FI_THREAD_FID {
+            Threading::Fid
+        }
+        else if val == libfabric_sys::fi_threading_FI_THREAD_DOMAIN {
+            Threading::Domain
+        }
+        else if val == libfabric_sys::fi_threading_FI_THREAD_COMPLETION {
+            Threading::Completion
+        }
+        else if val == libfabric_sys::fi_threading_FI_THREAD_ENDPOINT {
+            Threading::Endpoint
+        }
+        else {
+            panic!("Error value for Threading")
+        }
+    }
+
+    pub(crate) fn get_value(&self) -> libfabric_sys::fi_threading {
         match self {
             Threading::Unspec => libfabric_sys::fi_threading_FI_THREAD_UNSPEC,
             Threading::Safe => libfabric_sys::fi_threading_FI_THREAD_SAFE,
@@ -621,6 +655,7 @@ impl Threading {
     }
 }
 
+#[derive(Clone)]
 pub enum ResourceMgmt {
     Unspec,
     Disabled,
@@ -628,14 +663,33 @@ pub enum ResourceMgmt {
 }
 
 impl ResourceMgmt {
-    pub fn get_value(&self) -> libfabric_sys::fi_resource_mgmt {
-        match self {
-            ResourceMgmt::Unspec => libfabric_sys::fi_resource_mgmt_FI_RM_UNSPEC,
+    pub(crate) fn from_value(val: libfabric_sys::fi_resource_mgmt) -> Self {
+        if val == libfabric_sys::fi_resource_mgmt_FI_RM_UNSPEC {
+            Self::Unspec
+        }
+        else if val == libfabric_sys::fi_resource_mgmt_FI_RM_DISABLED {
+            Self::Disabled
+        }
+        else if val == libfabric_sys::fi_resource_mgmt_FI_RM_ENABLED {
+            Self::Enabled
+        }
+        else {
+            panic!("Error value for Resource Management")
+        }
+    }
+    
+}
+
+impl Into<libfabric_sys::fi_resource_mgmt> for ResourceMgmt {
+    fn into(self) -> libfabric_sys::fi_resource_mgmt {
+        match self {                                                                      
+           ResourceMgmt::Unspec =>   libfabric_sys::fi_resource_mgmt_FI_RM_UNSPEC,
             ResourceMgmt::Disabled => libfabric_sys::fi_resource_mgmt_FI_RM_DISABLED,
-            ResourceMgmt::Enabled => libfabric_sys::fi_resource_mgmt_FI_RM_ENABLED,
+            ResourceMgmt::Enabled =>  libfabric_sys::fi_resource_mgmt_FI_RM_ENABLED, 
         }
     }
 }
+
 
 pub enum EpType {
     Unspec,
@@ -672,6 +726,7 @@ impl CounterEvents {
     }
 }
 
+#[derive(Clone)]
 pub enum TClass {
     Unspec,
     Dscp,
@@ -685,7 +740,7 @@ pub enum TClass {
 }
 
 impl TClass {
-    pub fn get_value(&self) -> libfabric_sys::_bindgen_ty_5 {
+    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_5 {
         
         match self {
             TClass::Unspec => libfabric_sys::FI_TC_UNSPEC,
@@ -697,6 +752,40 @@ impl TClass {
             TClass::BulkData => libfabric_sys::FI_TC_BULK_DATA,
             TClass::Scavenger => libfabric_sys::FI_TC_SCAVENGER,
             TClass::NetworkCtrl => libfabric_sys::FI_TC_NETWORK_CTRL,
+        }
+    }
+
+    pub fn from_value(val: libfabric_sys::_bindgen_ty_5) -> Self {
+        
+        if val == libfabric_sys::FI_TC_UNSPEC {
+            TClass::Unspec
+        }
+        else if val == libfabric_sys::FI_TC_DSCP {
+            TClass::Dscp
+        }
+        else if val == libfabric_sys::FI_TC_LABEL {
+            TClass::Label
+        }
+        else if val == libfabric_sys::FI_TC_BEST_EFFORT {
+            TClass::BestEffort
+        }
+        else if val == libfabric_sys::FI_TC_LOW_LATENCY {
+            TClass::LowLatency
+        }
+        else if val == libfabric_sys::FI_TC_DEDICATED_ACCESS {
+            TClass::DedicatedAccess
+        }
+        else if val == libfabric_sys::FI_TC_BULK_DATA {
+            TClass::BulkData
+        }
+        else if val == libfabric_sys::FI_TC_SCAVENGER {
+            TClass::Scavenger
+        }
+        else if val == libfabric_sys::FI_TC_NETWORK_CTRL {
+            TClass::NetworkCtrl
+        }
+        else {
+            panic!("Error value for TClass")
         }
     }
 }
@@ -1032,19 +1121,35 @@ pub enum WaitObjType2<'a> {
     Unspec,
 }
 
-pub enum DomainCaps {
-    LocalComm,
-    RemoteComm,
-    SharedAv,
+#[derive(Clone)]
+pub struct DomainCaps {
+    c_flags: u64,
 }
 
 impl DomainCaps {
-    pub(crate) fn get_value(&self) -> u64 {
-        match self {
-            DomainCaps::LocalComm => libfabric_sys::FI_LOCAL_COMM,
-            DomainCaps::RemoteComm => libfabric_sys::FI_REMOTE_COMM,
-            DomainCaps::SharedAv => libfabric_sys::FI_SHARED_AV,
+    pub fn new() -> Self {
+        Self {
+            c_flags: 0,
         }
+    }
+
+    pub(crate) fn from_value(value: u64) -> Self {
+        DomainCaps {
+            c_flags: value,
+        }
+    }   
+
+    gen_set_get_flag!(directed_recv, is_directed_recv, libfabric_sys::FI_DIRECTED_RECV);
+    gen_set_get_flag!(av_user_id, is_av_user_id, libfabric_sys::FI_AV_USER_ID);
+    gen_set_get_flag!(local_comm, is_local_comm, libfabric_sys::FI_LOCAL_COMM);
+    gen_set_get_flag!(remote_comm, is_remote_comm, libfabric_sys::FI_REMOTE_COMM);
+    gen_set_get_flag!(shared_av, is_shared_av, libfabric_sys::FI_SHARED_AV);
+}
+
+
+impl Into<u64> for DomainCaps {
+    fn into(self) -> u64 {
+        self.c_flags
     }
 }
 

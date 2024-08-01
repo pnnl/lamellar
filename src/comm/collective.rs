@@ -1,19 +1,20 @@
-use std::cell::OnceCell;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
+use crate::MyOnceCell;
+use crate::MyRc;
+use crate::MyRefCell;
 use crate::RawMappedAddress;
+use crate::av::AddressVectorSet;
+use crate::av::AddressVectorSetImpl;
 use crate::cq::ReadCq;
 use crate::enums;
 use crate::enums::CollectiveOptions;
 use crate::enums::JoinOptions;
-use crate::ep::Address;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
 use crate::eq::ReadEq;
 use crate::error::Error;
-use crate::MappedAddress;
+
 use crate::fid;
 use crate::fid::AsRawFid;
 use crate::fid::AsTypedFid;
@@ -30,35 +31,70 @@ use super::message::extract_raw_addr_and_ctx;
 use super::message::extract_raw_ctx;
 
 pub struct MulticastGroupCollective {
-    pub(crate) inner: Rc<MulticastGroupCollectiveImpl>,
+    pub(crate) inner: MyRc<MulticastGroupCollectiveImpl>,
 }
 
+
 pub struct MulticastGroupCollectiveImpl  {
-    c_mc: OnceCell<OwnedMcFid>,
-    addr: OnceCell<RawMappedAddress>,
-    eps: RefCell<Vec<Rc<dyn CollectiveValidEp>>>,
+    c_mc: MyOnceCell<OwnedMcFid>,
+    addr: MyOnceCell<RawMappedAddress>,
+    eps: MyRefCell<Vec<MyRc<dyn CollectiveValidEp>>>,
+    avset: MyRc<AddressVectorSetImpl>,
 }
 
 pub(crate) trait CollectiveValidEp {}
 impl<EP: CollectiveEp> CollectiveValidEp for EP {}
 
 impl MulticastGroupCollectiveImpl {
-    pub(crate) fn new() -> Self  {
+    pub(crate) fn new(avset: &MyRc<AddressVectorSetImpl>) -> Self  {
         Self {
-            c_mc: OnceCell::new(),
-            addr: OnceCell::new(),
-            eps: RefCell::new(Vec::new()),
+            c_mc: MyOnceCell::new(),
+            addr: MyOnceCell::new(),
+            eps: MyRefCell::new(Vec::new()),
+            avset: avset.clone(),
         }
     }
 
-    pub(crate) fn join_impl<T, EP: CollectiveValidEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &Rc<EP>, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
+    // pub(crate) fn join_impl<T, EP: CollectiveValidEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &MyRc<EP>, addr: &Address, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
+    //     let mut c_mc: McRawFid = std::ptr::null_mut();
+    //     let err = 
+    //         if let Some(ctx) = context {
+    //             unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.get_value(), &mut c_mc, (ctx as *mut T).cast()) }
+    //         }
+    //         else {
+    //             unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.get_value(), &mut c_mc, std::ptr::null_mut()) }
+    //         };
+
+    //     if err != 0 {
+    //         Err(Error::from_err_code((-err).try_into().unwrap()))
+    //     }
+    //     else {
+    //         if let Err(old_mc)  = self.c_mc.set(OwnedMcFid::from(c_mc)) {
+    //             assert!(old_mc.as_raw_typed_fid() == c_mc);
+    //         }
+    //         else {
+    //             self.addr.set(unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc)}).unwrap()
+    //         }
+    //         self.eps.write().push(ep.clone());
+    //         Ok(())
+    //     }
+    // }
+
+    pub(crate) fn join_collective_impl<T, EP: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &MyRc<EP>, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
         let mut c_mc: McRawFid = std::ptr::null_mut();
+        let addr = self.addr.get();
+        let raw_addr = if let Some(addr) = addr {
+            *addr
+        } 
+        else {
+            self.avset.get_addr()?
+        };
         let err = 
             if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.get_value(), &mut c_mc, (ctx as *mut T).cast()) }
+                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), raw_addr, self.avset.as_raw_typed_fid(), options.get_value(), &mut c_mc, (ctx as *mut T).cast()) }
             }
             else {
-                unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.get_value(), &mut c_mc, std::ptr::null_mut()) }
+                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), raw_addr, self.avset.as_raw_typed_fid(), options.get_value(), &mut c_mc, std::ptr::null_mut()) }
             };
 
         if err != 0 {
@@ -71,31 +107,9 @@ impl MulticastGroupCollectiveImpl {
             else {
                 self.addr.set(unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc)}).unwrap()
             }
-            self.eps.borrow_mut().push(ep.clone());
-            Ok(())
-        }
-    }
-
-    pub(crate) fn join_collective_impl<T, EP: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &Rc<EP>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: Option<&mut T>) -> Result<(), Error> {
-        let mut c_mc: McRawFid = std::ptr::null_mut();
-        let err = 
-            if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), mapped_addr.raw_addr(), set.as_raw_typed_fid(), options.get_value(), &mut c_mc, (ctx as *mut T).cast()) }
-            }
-            else {
-                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), mapped_addr.raw_addr(), set.as_raw_typed_fid(), options.get_value(), &mut c_mc, std::ptr::null_mut()) }
-            };
-
-        if err != 0 {
-            Err(Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            if let Err(old_mc)  = self.c_mc.set(OwnedMcFid::from(c_mc)) {
-                assert!(old_mc.as_raw_typed_fid() == c_mc);
-            }
-            else {
-                self.addr.set(unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc)}).unwrap()
-            }
+            #[cfg(feature="thread-safe")]
+            self.eps.write().push(ep.clone());
+            #[cfg(not(feature="thread-safe"))]
             self.eps.borrow_mut().push(ep.clone());
             Ok(())
         }
@@ -106,34 +120,34 @@ impl MulticastGroupCollectiveImpl {
 impl MulticastGroupCollective {
 
     #[allow(dead_code)]
-    pub(crate) fn from_impl(mc_impl: &Rc<MulticastGroupCollectiveImpl>) -> Self {
+    pub(crate) fn from_impl(mc_impl: &MyRc<MulticastGroupCollectiveImpl>) -> Self {
         Self {
             inner: mc_impl.clone(),
         }
     }
 
-    pub fn new() -> Self {
-        Self { inner: Rc::new(MulticastGroupCollectiveImpl::new())} 
+    pub fn new(avset: &AddressVectorSet) -> Self {
+        Self { inner: MyRc::new(MulticastGroupCollectiveImpl::new(&avset.inner))} 
     }
 
     pub(crate) fn get_raw_addr(&self) -> RawMappedAddress {
         *self.inner.addr.get().unwrap()
     }
 
-    pub fn join<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, addr: &Address, options: JoinOptions) -> Result<(), Error> {
-        self.inner.join_impl::<(), E>(&ep.inner, addr, options, None)
-    }
+    // pub fn join<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, addr: &Address, options: JoinOptions) -> Result<(), Error> {
+    //     self.inner.join_impl::<(), E>(&ep.inner, addr, options, None)
+    // }
 
-    pub fn join_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, addr: &Address, options: JoinOptions, context: &mut T) -> Result<(), Error> {
-        self.inner.join_impl(&ep.inner, addr, options, Some(context))
-    }
+    // pub fn join_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, addr: &Address, options: JoinOptions, context: &mut T) -> Result<(), Error> {
+    //     self.inner.join_impl(&ep.inner, addr, options, Some(context))
+    // }
 
-    pub fn join_collective_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions, context: &mut T) -> Result<(), Error> {
-        self.inner.join_collective_impl(&ep.inner, mapped_addr, set, options, Some(context))
+    pub fn join_collective_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, options: JoinOptions, context: &mut T) -> Result<(), Error> {
+        self.inner.join_collective_impl(&ep.inner, options, Some(context))
         
     }
-    pub fn join_collective<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, mapped_addr: &MappedAddress, set: &crate::av::AddressVectorSet, options: JoinOptions) -> Result<(), Error> {
-        self.inner.join_collective_impl::<(), E>(&ep.inner, mapped_addr, set, options, None)
+    pub fn join_collective<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, options: JoinOptions) -> Result<(), Error> {
+        self.inner.join_collective_impl::<(), E>(&ep.inner, options, None)
     }
 }
 

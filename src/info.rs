@@ -135,14 +135,13 @@ impl<T> InfoBuilder<T> {
     //     }
     // }
 
-    pub fn request(self) -> Result<Info<T>, crate::error::Error> {
-        let mut c_info: *mut libfabric_sys::fi_info = std::ptr::null_mut();
-        let c_info_ptr: *mut *mut libfabric_sys::fi_info = &mut c_info;
+    pub fn build(self) -> Result<Info<T>, crate::error::Error> {
+        let mut c_info = unsafe{libfabric_sys::inlined_fi_allocinfo()};
         let node = if self.c_node.is_empty() { std::ptr::null_mut() } else { self.c_node.as_ptr() };
         let service = if self.c_service.is_empty() { std::ptr::null_mut() } else { self.c_service.as_ptr() };
         
         let err = unsafe{
-            libfabric_sys::fi_getinfo(libfabric_sys::fi_version(), node, service, self.flags, self.c_info_hints, c_info_ptr)
+            libfabric_sys::fi_getinfo(libfabric_sys::fi_version(), node, service, self.flags, self.c_info_hints, &mut c_info)
         };
 
         check_error(err.try_into().unwrap())?;
@@ -151,12 +150,13 @@ impl<T> InfoBuilder<T> {
         let mut entries = std::vec::Vec::new();
         if !c_info.is_null() {
             entries.push(InfoEntry::new(c_info));
-        }
-        unsafe {
-            let mut curr = (*c_info).next;
-            while  !curr.is_null() {
-                entries.push(InfoEntry::new(curr));
-                curr = (*curr).next;
+         
+            unsafe {
+                let mut curr = (*c_info).next;
+                while  !curr.is_null() {
+                    entries.push(InfoEntry::new(curr));
+                    curr = (*curr).next;
+                }
             }
         }
         
@@ -180,7 +180,7 @@ impl InfoBuilder<()> {
     }
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct InfoEntry<T> { 
     caps: InfoCapsImpl,
     fabric_attr: crate::fabric::FabricAttr,
@@ -193,19 +193,33 @@ pub struct InfoEntry<T> {
     phantom: PhantomData<T>
 }
 
+unsafe impl<T> Send for InfoEntry<T>{}
+unsafe impl<T> Sync for InfoEntry<T>{} 
+
+
 impl<T> InfoEntry<T> {
     
     pub(crate) fn new(c_info: *mut  libfabric_sys::fi_info) -> Self {
+        let c_info = unsafe{libfabric_sys::fi_dupinfo(c_info)};
         let mut fabric_attr = crate::fabric::FabricAttr::new();
             unsafe { *fabric_attr.get_mut() = *(*c_info).fabric_attr}
-        let mut domain_attr = crate::domain::DomainAttr::new();
-            unsafe { *domain_attr.get_mut() = *(*c_info).domain_attr}
+        let domain_attr = unsafe{*(*c_info).domain_attr}.into();
         let tx_attr = crate::xcontext::TxAttr::from( unsafe {(*c_info).tx_attr } );
         let rx_attr = crate::xcontext::RxAttr::from( unsafe {(*c_info).rx_attr } );
         let ep_attr = crate::ep::EndpointAttr::from(unsafe {(*c_info).ep_attr});
         let caps: u64 = unsafe {(*c_info).caps};
         let nic = if ! unsafe{ (*c_info).nic.is_null()} {Some(Nic::from_attr(unsafe{*(*c_info).nic})) } else {None};
-        Self { caps: InfoCapsImpl::from(caps) , fabric_attr, domain_attr, tx_attr, rx_attr, ep_attr, nic, c_info, phantom: PhantomData }
+        Self { 
+            caps: InfoCapsImpl::from(caps) , 
+            fabric_attr, 
+            domain_attr, 
+            tx_attr, 
+            rx_attr, 
+            ep_attr, 
+            nic, 
+            c_info, 
+            phantom: PhantomData 
+        }
     }
 
     pub fn get_dest_addr(&self) -> Address {
@@ -248,6 +262,63 @@ impl<T> InfoEntry<T> {
         self.nic.clone()
     }
 
+}
+
+pub struct InfoIterator<'a, T> {
+    info: &'a Info<T>, 
+    index: usize,
+}
+
+impl<T> Info<T> {
+    pub fn iter(&self) -> InfoIterator<T> {
+        InfoIterator{
+            info: self,
+            index: 0,
+        }
+    }
+}
+
+impl<'a, T> Iterator for InfoIterator<'a, T> {
+    type Item = &'a InfoEntry<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.info.entries.len() {
+            let result = Some(&self.info.entries[self.index]);
+            self.index += 1;
+            result
+        }
+        else {
+            None
+        }
+    }
+}
+
+pub struct InfoIntoIterator<T> {
+    info: Info<T>, 
+}
+
+impl<T> IntoIterator for Info<T> {
+    type Item = InfoEntry<T>;
+
+    type IntoIter = InfoIntoIterator<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        InfoIntoIterator{info: self}
+    }
+}
+
+impl<T> Iterator for InfoIntoIterator<T> {
+    type Item = InfoEntry<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.info.entries.is_empty() {
+            None
+        }
+        else {
+            let result = self.info.entries.remove(0);
+            Some(result)
+        }
+    }
 }
 
 impl<T> std::fmt::Debug for InfoEntry<T> {
@@ -350,16 +421,10 @@ impl Info<()> {
     }
 
 }
-impl<T> Info<T> {
-
-    pub fn get(&self) -> &Vec<InfoEntry<T>> {
-        &self.entries
-    }
-}
-
 impl<T> Drop for Info<T> {
     
     fn drop(&mut self) {
+        println!("Dropping Info!");
         unsafe {
             libfabric_sys::fi_freeinfo(self.c_info);
         }
@@ -453,7 +518,7 @@ impl<T> InfoHints<T> {
     // }
     #[allow(unused_mut)]
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
-        unsafe { (*self.c_info).mode = mode.get_value()} ;
+        unsafe { (*self.c_info).mode = mode.into()} ;
 
         self
     }
@@ -471,7 +536,7 @@ impl<T> InfoHints<T> {
     }
     
     pub fn domain_attr(self, attr: crate::domain::DomainAttr) -> Self {
-        unsafe { *(*self.c_info).domain_attr = *attr.get() };
+        unsafe { *(*self.c_info).domain_attr = attr.into() };
 
         self
     }

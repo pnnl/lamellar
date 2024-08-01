@@ -1,11 +1,11 @@
 
 
-use std::{ffi::CString, rc::Rc};
+use std::ffi::CString;
 
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{utils::check_error, info::InfoEntry, fid::{AsRawFid, FabricRawFid, OwnedFabricFid, RawFid, AsTypedFid, AsRawTypedFid, BorrowedFid, BorrowedTypedFid}};
+use crate::{fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, BorrowedTypedFid, FabricRawFid, OwnedFabricFid, RawFid}, info::InfoEntry, utils::check_error, MyRc};
 
 pub(crate) struct FabricImpl {
     pub(crate) c_fabric: OwnedFabricFid,
@@ -19,7 +19,7 @@ pub(crate) struct FabricImpl {
 /// Note that other objects that rely on a `Fabric` (e.g., [`PassiveEndpoint`](crate::ep::PassiveEndpoint)) will extend its lifetime until they
 /// are also dropped.
 pub struct Fabric {
-    pub(crate) inner: Rc<FabricImpl>,
+    pub(crate) inner: MyRc<FabricImpl>,
 }
 
 impl FabricImpl {
@@ -66,7 +66,7 @@ impl Fabric {
     pub(crate) fn new<T0>(attr: FabricAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self { inner: 
-                Rc::new(FabricImpl::new(attr, context)?) 
+                MyRc::new(FabricImpl::new(attr, context)?)
             }
         )
     }
@@ -163,14 +163,14 @@ impl FabricAttr {
     pub fn name(&mut self, name: String) -> &mut Self { //[TODO] Possible memory leak
         let name = CString::new(name).unwrap();
         self.f_name = name;
-        self.c_attr.name = unsafe{std::mem::transmute(self.f_name.as_ptr())};
+        self.c_attr.name = unsafe{std::mem::transmute::<*const i8, *mut i8>(self.f_name.as_ptr())};
         self
     }
 
     pub fn prov_name(&mut self, name: String) -> &mut Self { //[TODO] Possible memory leak
         let name = CString::new(name).unwrap();
         self.prov_name = name;
-        self.c_attr.prov_name = unsafe{std::mem::transmute(self.prov_name.as_ptr())};
+        self.c_attr.prov_name = unsafe{std::mem::transmute::<*const i8, *mut i8>(self.prov_name.as_ptr())};
         self
     }
 
@@ -226,7 +226,6 @@ impl Default for FabricAttr {
 /// It encapsulates an incremental configuration of the address vector, as provided by a `fi_fabric_attr`,
 /// followed by a call to `fi_fabric`  
 pub struct FabricBuilder<'a, T> {
-    fab_attr: FabricAttr,
     ctx: Option<&'a mut T>,
 }
 
@@ -235,9 +234,8 @@ impl<'a> FabricBuilder<'a, ()> {
     /// Initiates the creation of a new [Fabric] based on the respective field of the `info` entry.
     /// 
     /// The initial configuration is what is set in the `fi_info::fabric_attr` field and no `context` is provided.
-    pub fn new<E>(info: &InfoEntry<E>) -> FabricBuilder<()> {
+    pub fn new() -> FabricBuilder<'a, ()> {
         FabricBuilder::<()> {
-            fab_attr: info.get_fabric_attr().clone(),
             ctx: None,
         }
     }
@@ -250,7 +248,6 @@ impl<'a, T> FabricBuilder<'a, T> {
     /// Corresponds to passing a non-NULL `context` value to `fi_fabric`.
     pub fn context(self, ctx: &'a mut T) -> FabricBuilder<'a, T> {
         FabricBuilder {
-            fab_attr: self.fab_attr,
             ctx: Some(ctx),
         }
     }
@@ -259,7 +256,7 @@ impl<'a, T> FabricBuilder<'a, T> {
     /// 
     /// Corresponds to retrieving the `fabric_attr` field of the provided `fi_info` entry (from [`new`](Self::new))
     /// and passing it along with an optional `context` to `fi_fabric`
-    pub fn build(self) -> Result<Fabric, crate::error::Error> {
-        Fabric::new(self.fab_attr, self.ctx)
+    pub fn build<E>(self, info: &InfoEntry<E>) -> Result<Fabric, crate::error::Error> {
+        Fabric::new(info.get_fabric_attr().clone(), self.ctx)
     }    
 }

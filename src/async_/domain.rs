@@ -1,6 +1,4 @@
-use std::rc::Rc;
-
-use crate::{domain::{DomainImplBase, DomainBase, DomainBuilder}, eq::EventQueueBase, fid::AsRawTypedFid};
+use crate::{domain::{DomainBase, DomainBuilder, DomainImplBase}, eq::EventQueueBase, fid::AsRawTypedFid, MyRc};
 
 use super::eq::{AsyncReadEq, EventQueue};
 
@@ -12,7 +10,7 @@ pub type Domain = DomainBase<dyn AsyncReadEq>;
 impl DomainImplBase<dyn AsyncReadEq> {
 
     
-    pub(crate) fn bind(&self, eq: Rc<dyn AsyncReadEq>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, eq: MyRc<dyn AsyncReadEq>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
 
         if err != 0 {

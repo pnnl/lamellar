@@ -1,23 +1,29 @@
-use std::{rc::Rc, collections::HashMap, cell::RefCell, future::Future, task::ready, pin::Pin, os::fd::AsRawFd};
+use std::{collections::HashMap,future::Future, task::ready, pin::Pin, os::fd::AsRawFd};
 
 #[cfg(feature="use-async-std")]
 use async_io::Async as Async;
 #[cfg(feature="use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
-use crate::{eq::{Event, EventQueueImpl, EventQueueAttr, EventQueueBase, ReadEq, WriteEq, EventError}, error::{Error, ErrorKind}, fid::{AsFid, self, RawFid, AsRawFid, AsRawTypedFid, EqRawFid}, async_::AsyncCtx, cq::WaitObjectRetrieve};
+use crate::{async_::AsyncCtx, cq::WaitObjectRetrieve, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, EqRawFid, RawFid}, MyRc, MyRefCell};
 
 use super::AsyncFid;
 
 pub type EventQueue<T> = EventQueueBase<T>;
 
-pub(crate) trait  FdEq: ReadEq + AsRawFd{
-    
-}
+//pub(crate) trait  FdEq: ReadEq + AsRawFd{
+//    
+//}
 
 impl<const WRITE: bool> AsyncFid for AsyncEventQueueImpl<WRITE> {
     fn trywait(&self) -> Result<(), Error> {
         self.base.get_ref()._fabric_rc.trywait(self.base.get_ref())
+    }
+}
+
+impl<EQ: AsyncFid> AsyncFid for EventQueue<EQ> {
+    fn trywait(&self) -> Result<(), Error> {
+        self.inner.trywait()
     }
 }
 
@@ -210,7 +216,13 @@ impl<'a> Future for EqAsyncRead<'a>{
 
                         if let Some(mut guard) = _guard {
                             match ev.eq {
+                                #[cfg(feature="thread-safe")]
+                                EqType::Write(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
+                                #[cfg(not(feature="thread-safe"))]
                                 EqType::Write(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                #[cfg(feature="thread-safe")]
+                                EqType::NoWrite(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
+                                #[cfg(not(feature="thread-safe"))]
                                 EqType::NoWrite(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
                             }
                         }
@@ -296,8 +308,14 @@ impl<'a> Future for EqAsyncReadOwned<'a>{
                         match _guard {
                             Some(mut guard) => {
                                 match ev.eq {
+                                    #[cfg(feature="thread-safe")]
+                                    EqType::Write(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
+                                    #[cfg(not(feature="thread-safe"))]
                                     EqType::Write(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                    #[cfg(feature="thread-safe")]
                                     EqType::NoWrite(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                    #[cfg(not(feature="thread-safe"))]
+                                    EqType::NoWrite(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
                                 }
                             },
                             None => {}
@@ -317,7 +335,7 @@ impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
 
         Ok(
             Self {
-                inner: Rc::new(
+                inner: MyRc::new(
                     AsyncEventQueueImpl::new(&fabric.inner, attr, context)?
                 ),
             })
@@ -373,6 +391,16 @@ impl AsyncReadEq for AsyncEventQueueImpl<false> {
     } 
 }
 
+impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead  {
+        self.inner.read_in_async(buf, event)
+    }
+
+    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, ctx: usize) -> AsyncEventEq  {
+        self.inner.async_event_wait(event_type, req_fid, ctx)
+    }
+}
+
 impl<EQ: AsyncReadEq> EventQueue<EQ> {
     pub async fn read_async(&self) -> Result<Event, crate::error::Error>{
         let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
@@ -384,92 +412,109 @@ impl<EQ: AsyncReadEq> EventQueue<EQ> {
 
 pub struct AsyncEventQueueImpl<const WRITE: bool> {
     pub(crate) base: Async<EventQueueImpl<WRITE, true, true, true>>,
-    pending_entries: RefCell<HashMap<usize, Result<Event, Error>>>,
-    pending_err_entries: RefCell<HashMap<libfabric_sys::fid_t, Vec::<Result<Event, Error>>>>,
+    pending_entries: MyRefCell<HashMap<usize, Result<Event, Error>>>,
+    pending_err_entries: MyRefCell<HashMap<libfabric_sys::fid_t, Vec::<Result<Event, Error>>>>,
     #[allow(clippy::type_complexity)]
-    pending_cm_entries: RefCell<HashMap<(u32,libfabric_sys::fid_t), Vec::<Result<Event, Error>>>>,
-
-    // pub(crate) mrs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncMemoryRegionImpl>>>,   // We neep maps Fid -> MemoryRegionImpl/AddressVectorImpl/MulticastGroupCollectiveImpl, however, we don't want to extend 
-    // the lifetime of any of these objects just because of the maps.
-    // Moreover, these objects will keep references to the EQ to keep it from dropping while
-    // they are still bound, thus, we would have cyclic references that wouldn't let any 
-    // of the two sides drop. 
-    // pub(crate) avs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncAddressVectorImpl>>>,
-    // pub(crate) mcs: RefCell<std::collections::HashMap<RawFid, Weak<AsyncMulticastGroupCollectiveImpl>>>,
+    pending_cm_entries: MyRefCell<HashMap<(u32,libfabric_sys::fid_t), Vec::<Result<Event, Error>>>>,
 }
 
 
 impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
-    pub(crate) fn new<T0>(fabric: &Rc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(fabric: &MyRc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         
         Ok(Self {
             base: Async::new(EventQueueImpl::new(fabric, attr, context)?).unwrap(),
-            pending_entries: RefCell::new(HashMap::new()),
-            pending_cm_entries: RefCell::new(HashMap::new()),
-            pending_err_entries: RefCell::new(HashMap::new()),
-            // mrs: RefCell::new(HashMap::new()),
-            // avs: RefCell::new(HashMap::new()),
-            // mcs: RefCell::new(HashMap::new()),
+            pending_entries: MyRefCell::new(HashMap::new()),
+            pending_cm_entries: MyRefCell::new(HashMap::new()),
+            pending_err_entries: MyRefCell::new(HashMap::new()),
         })
     }
-    // if let Some(mut entries) = ev.fut.eq.pending_cm_entries.borrow_mut().remove(&(ev.event_type, ev.req_fid)) {
 
     #[inline]
     pub(crate) fn insert_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid, entry: Result<Event, Error>) {
-        if let Some(vec) =  self.pending_cm_entries.borrow_mut().get_mut(&(event_type, req_fid)) {
+        #[cfg(feature="thread-safe")]
+        let mut vec =  self.pending_cm_entries.write();
+        #[cfg(not(feature="thread-safe"))]
+        let mut vec =  self.pending_cm_entries.borrow_mut();
+        if let Some(vec) = vec.get_mut(&(event_type, req_fid)) {
             vec.push(entry);
         }
         else {
+            #[cfg(feature="thread-safe")]
+            self.pending_cm_entries.write().insert((event_type, req_fid), vec![entry]);
+            #[cfg(not(feature="thread-safe"))]
             self.pending_cm_entries.borrow_mut().insert((event_type, req_fid), vec![entry]);
         }
     }
 
     #[inline]
     pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>) {
+        #[cfg(feature="thread-safe")]
+        self.pending_entries.write().insert( ctx, entry);
+        #[cfg(not(feature="thread-safe"))]
         self.pending_entries.borrow_mut().insert( ctx, entry);
     }
 
     #[inline]
     pub(crate) fn remove_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: RawFid) -> Option<Result<Event, Error>>{
-        match self.pending_cm_entries.borrow_mut().get_mut(&(event_type, req_fid)) {
+        #[cfg(feature="thread-safe")]
+        let mut res = self.pending_cm_entries.write();
+        #[cfg(not(feature="thread-safe"))]
+        let mut res = self.pending_cm_entries.borrow_mut();
+        match res.get_mut(&(event_type, req_fid)){
             None => None, Some(vec) => vec.pop()
         }
     }
 
     #[inline]
     pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>>{
-        self.pending_entries.borrow_mut().remove(&ctx)
+        #[cfg(feature="thread-safe")]
+        { self.pending_entries.write().remove(&ctx) }
+        
+        #[cfg(not(feature="thread-safe"))]
+        { self.pending_entries.borrow_mut().remove(&ctx)} 
     }
 
 
 
     #[inline]
     pub(crate) fn insert_err_entry(&self, req_fid: RawFid, entry: Result<Event, Error>) {
-        if let Some(vec) =  self.pending_err_entries.borrow_mut().get_mut(&req_fid) {
+        #[cfg(feature="thread-safe")]
+        let mut res = self.pending_err_entries.write(); 
+        #[cfg(not(feature="thread-safe"))]
+        let mut res = self.pending_err_entries.borrow_mut(); 
+        if let Some(vec) = res.get_mut(&req_fid) { 
             vec.push(entry);
         }
         else {
+            #[cfg(feature="thread-safe")]
+            self.pending_err_entries.write().insert(req_fid, vec![entry]);
+            #[cfg(not(feature="thread-safe"))]
             self.pending_err_entries.borrow_mut().insert(req_fid, vec![entry]);
         }
     }
 
     #[inline]
     pub(crate) fn remove_err_entry(&self, req_fid: RawFid) -> Option<Result<Event, Error>>{
-        match self.pending_err_entries.borrow_mut().get_mut(&req_fid) {
+        #[cfg(feature="thread-safe")]
+        let mut res = self.pending_err_entries.write(); 
+        #[cfg(not(feature="thread-safe"))]
+        let mut res = self.pending_err_entries.borrow_mut(); 
+        match res.get_mut(&req_fid) {
             None => None, Some(vec) => vec.pop()
         }
     }
 
-    // pub(crate) fn bind_mr(&self, mr: &Rc<AsyncMemoryRegionImpl>) {
-    //     self.mrs.borrow_mut().insert(mr.as_raw_fid(), Rc::downgrade(mr));
+    // pub(crate) fn bind_mr(&self, mr: &MyRc<AsyncMemoryRegionImpl>) {
+    //     self.mrs.borrow_mut().insert(mr.as_raw_fid(), MyRc::downgrade(mr));
     // }
 
-    // pub(crate) fn bind_av(&self, av: &Rc<AsyncAddressVectorImpl>) {
-    //     self.avs.borrow_mut().insert(av.as_raw_fid(), Rc::downgrade(av));
+    // pub(crate) fn bind_av(&self, av: &MyRc<AsyncAddressVectorImpl>) {
+    //     self.avs.borrow_mut().insert(av.as_raw_fid(), MyRc::downgrade(av));
     // }
 
-    // pub(crate) fn bind_mc(&self, mc: &Rc<AsyncMulticastGroupCollectiveImpl>) {
-    //     self.mcs.borrow_mut().insert(mc.as_raw_fid(), Rc::downgrade(mc));
+    // pub(crate) fn bind_mc(&self, mc: &MyRc<AsyncMulticastGroupCollectiveImpl>) {
+    //     self.mcs.borrow_mut().insert(mc.as_raw_fid(), MyRc::downgrade(mc));
     // }
 
     pub(crate) fn get_inner(&self) -> &EventQueueImpl<WRITE, true, true, true> {
@@ -677,7 +722,7 @@ impl<const WRITE: bool> AsFid for &AsyncEventQueueImpl<WRITE> {
        self.base.get_ref().as_fid()
     }
 }
-impl<const WRITE: bool> AsFid for Rc<AsyncEventQueueImpl<WRITE>> {
+impl<const WRITE: bool> AsFid for MyRc<AsyncEventQueueImpl<WRITE>> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
        self.base.get_ref().as_fid()
     }
@@ -701,15 +746,15 @@ impl<const WRITE: bool> AsRawTypedFid for AsyncEventQueueImpl<WRITE> {
 // impl<const WRITE: bool> crate::BindImpl for AsyncEventQueueImpl<WRITE> {}
 
 // impl BindEqImpl<AsyncEventQueueImpl, AsyncCompletionQueueImpl> for AsyncEventQueueImpl {
-//     fn bind_mr(&self, mr: &Rc<MemoryRegionImplBase<AsyncEventQueueImpl>>) {
+//     fn bind_mr(&self, mr: &MyRc<MemoryRegionImplBase<AsyncEventQueueImpl>>) {
 //         self.bind_mr(mr);
 //     }
 
-//     fn bind_av(&self, av: &Rc<AddressVectorImplBase<AsyncEventQueueImpl>>) {
+//     fn bind_av(&self, av: &MyRc<AddressVectorImplBase<AsyncEventQueueImpl>>) {
 //         self.bind_av(av);
 //     }
 
-//     fn bind_mc(&self, mc: &Rc<MulticastGroupCollectiveImplBase<AsyncEventQueueImpl, AsyncCompletionQueueImpl>>) {
+//     fn bind_mc(&self, mc: &MyRc<MulticastGroupCollectiveImplBase<AsyncEventQueueImpl, AsyncCompletionQueueImpl>>) {
 //         self.bind_mc(mc);
 //     }
 // }
@@ -767,8 +812,6 @@ impl <'a, T, const WRITE: bool> EventQueueBuilder<'a, T, WRITE> {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
 
@@ -778,9 +821,9 @@ mod tests {
 
     // #[test]
     // fn eq_write_read_self() {
-    //     let info = Info::new().request().unwrap();
-    //     let entries = info.get();
-    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let info = Info::new().build().unwrap();
+    // let entry = info.into_iter().next().unwrap();
+    //     let fab = crate::fabric::FabricBuilder::new(&entry).build().unwrap();
     //     let eq = EventQueueBuilder::new(&fab)
     //         .size(32)
     //         .write()
@@ -834,9 +877,9 @@ mod tests {
 
     // #[test]
     // fn eq_size_verify() {
-    //     let info = Info::new().request().unwrap();
+    //     let info = Info::new().build().unwrap();
     //     let entries = info.get();
-    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let fab = crate::fabric::FabricBuilder::new(&entry).build().unwrap();
     //     let eq = EventQueueBuilder::new(&fab)
     //         .size(32)
     //         .write()
@@ -854,9 +897,9 @@ mod tests {
 
     // #[test]
     // fn eq_write_sread_self() {
-    //     let info = Info::new().request().unwrap();
+    //     let info = Info::new().build().unwrap();
     //     let entries = info.get();
-    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let fab = crate::fabric::FabricBuilder::new(&entry).build().unwrap();
     //     let eq = EventQueueBuilder::new(&fab)
     //         .size(32)
     //         .write()
@@ -904,9 +947,9 @@ mod tests {
 
     // #[test]
     // fn eq_readerr() {
-    //     let info = Info::new().request().unwrap();
+    //     let info = Info::new().build().unwrap();
     //     let entries = info.get();
-    //     let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+    //     let fab = crate::fabric::FabricBuilder::new(&entry).build().unwrap();
     //     let eq = EventQueueBuilder::new(&fab)
     //         .size(32)
     //         .write()
@@ -949,10 +992,10 @@ mod tests {
 
     #[test]
     fn eq_open_close_sizes() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
             let _eq = EventQueueBuilder::new(&fab)
@@ -975,10 +1018,10 @@ mod libfabric_lifetime_tests {
 
     #[test]
     fn eq_drops_before_fabric() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let mut eqs = Vec::new();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
@@ -986,10 +1029,7 @@ mod libfabric_lifetime_tests {
                 .size(size)
                 .build().unwrap();
             eqs.push(eq);
-            println!("Count = {} \n", std::rc::Rc::strong_count(&fab.inner));
         }
-
         drop(fab);
-        println!("Count = {} After dropping fab\n", std::rc::Rc::strong_count(&eqs[0].inner.base.get_ref()._fabric_rc));
     }
 }

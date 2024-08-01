@@ -1,6 +1,6 @@
-use std::{marker::PhantomData, rc::Rc, cell::OnceCell};
+use std::marker::PhantomData;
 
-use crate::{cntr::{Counter, ReadCntr}, enums::TransferOptions, ep::{BaseEndpoint, Endpoint, ActiveEndpoint}, fid::{AsFid, self, AsRawFid, OwnedEpFid, RawFid, AsTypedFid, EpRawFid, AsRawTypedFid}, cq::ReadCq};
+use crate::{cntr::{Counter, ReadCntr}, cq::ReadCq, enums::TransferOptions, ep::{ActiveEndpoint, BaseEndpoint, Endpoint}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid}, MyOnceCell, MyRc};
 
 pub struct Receive;
 pub struct Transmit;
@@ -8,12 +8,12 @@ pub struct Transmit;
 pub(crate) struct XContextBaseImpl<T, CQ: ?Sized> {
     pub(crate) c_ep: OwnedEpFid,
     phantom: PhantomData<T>,
-    pub(crate) cq: OnceCell<Rc<CQ>>,
-    pub(crate) cntr: OnceCell<Rc<dyn ReadCntr>>,
+    pub(crate) cq: MyOnceCell<MyRc<CQ>>,
+    pub(crate) cntr: MyOnceCell<MyRc<dyn ReadCntr>>,
 }
 
 pub struct XContextBase<T, CQ: ?Sized> {
-    pub(crate) inner: Rc<XContextBaseImpl<T, CQ>>
+    pub(crate) inner: MyRc<XContextBaseImpl<T, CQ>>
 }
 
 //================== XContext Trait Implementations ==================//
@@ -99,13 +99,13 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
                 Self {
                     c_ep: OwnedEpFid::from(c_ep), 
                     phantom: PhantomData,
-                    cq: OnceCell::new(),
-                    cntr: OnceCell::new(),
+                    cq: MyOnceCell::new(),
+                    cntr: MyOnceCell::new(),
                 })
         }
     }
 
-    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
@@ -127,7 +127,7 @@ impl TxContextImpl {
         TxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
@@ -145,7 +145,7 @@ impl<CQ: ?Sized> TxContextBase<CQ> {
     pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: Option<&mut T0>) -> Result<TxContextBase<CQ>, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(TxContextImplBase::<CQ>::new(ep, index, attr, context)?)
+                inner: MyRc::new(TxContextImplBase::<CQ>::new(ep, index, attr, context)?)
             }
         )
     }
@@ -284,7 +284,7 @@ impl TxAttr {
     }
 
     pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
-        self.c_attr.mode = mode.get_value();
+        self.c_attr.mode = mode.into();
         self
     }
 
@@ -410,13 +410,13 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
                 Self {
                     c_ep: OwnedEpFid::from(c_ep), 
                     phantom: PhantomData,
-                    cq: OnceCell::new(),
-                    cntr: OnceCell::new(),
+                    cq: MyOnceCell::new(),
+                    cntr: MyOnceCell::new(),
                 })
         }
     }
 
-    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
@@ -438,7 +438,7 @@ impl RxContextImplBase<dyn ReadCq> {
         RxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
@@ -455,7 +455,7 @@ impl<CQ: ?Sized> RxContextBase<CQ> {
     pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
-                inner: Rc::new(RxContextImplBase::new(ep, index, attr, context)?)
+                inner: MyRc::new(RxContextImplBase::new(ep, index, attr, context)?)
             }
         )
     }
@@ -583,7 +583,7 @@ impl RxAttr {
     }
 
     pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
-        self.c_attr.mode = mode.get_value();
+        self.c_attr.mode = mode.into();
         self
     }
 

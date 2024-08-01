@@ -1,14 +1,13 @@
-use std::rc::Rc;
-use crate::{ep::{Address, PassiveEndpointBase, EndpointBase, EndpointAttr, EndpointImplBase, PassiveEndpointImplBase, ActiveEndpoint, IncompleteBindCntr}, fid::{RawFid, AsRawFid, AsRawTypedFid}, eq::{Event, EventQueueBase, ReadEq}, info::InfoEntry, cq::ReadCq, domain::DomainBase, av::AddressVectorBase};
+use crate::{av::AddressVectorBase, cq::ReadCq, domain::DomainBase, ep::{ActiveEndpoint, Address, EndpointAttr, EndpointBase, EndpointImplBase, IncompleteBindCntr, PassiveEndpointBase, PassiveEndpointImplBase}, eq::{Event, EventQueueBase, ReadEq}, fid::{AsRawFid, AsRawTypedFid, RawFid}, info::InfoEntry, MyRc};
 use super::{eq::AsyncReadEq, cq::AsyncReadCq};
 
 pub struct ConnectionListener {
-    eq:  Rc<dyn AsyncReadEq>,
+    eq:  MyRc<dyn AsyncReadEq>,
     ep_fid: RawFid,
 }
 
 impl ConnectionListener {
-    fn new(ep_fid: RawFid, eq: &Rc<dyn AsyncReadEq>) -> Self {
+    fn new(ep_fid: RawFid, eq: &MyRc<dyn AsyncReadEq>) -> Self {
         
         Self {
             ep_fid,
@@ -31,7 +30,7 @@ impl Endpoint<()> {
     pub fn new<T0, E, DEQ:?Sized + 'static >(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
         Ok(
             EndpointBase::<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
-                inner:Rc::new(EndpointImplBase::new(&domain.inner, info, flags, context)?),
+                inner:MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, context)?),
             }
         )
     }
@@ -62,7 +61,7 @@ pub struct IncompleteBindCq<'a, EP> {
 }
 
 impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
-    pub(crate) fn bind_cq_<T: AsyncReadCq + 'static>(&self, cq: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cq_<T: AsyncReadCq + 'static>(&self, cq: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
         
         if err != 0 {
@@ -102,7 +101,7 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
 
 impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
 
-    pub(crate) fn bind_eq<T: AsyncReadEq + 'static>(&self, eq: &Rc<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: AsyncReadEq + 'static>(&self, eq: &MyRc<T>) -> Result<(), crate::error::Error>  {
             
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), 0) };
         
@@ -121,7 +120,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
         // pub fn alias(&self, flags: u64) -> Result<Self, crate::error::Error> {
         //     Ok(
         //         Self {
-        //             inner: Rc::new (self.inner.alias(flags)?),
+        //             inner: MyRc::new (self.inner.alias(flags)?),
         //         }
         //     )
 }
@@ -138,7 +137,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>> {
     // pub fn alias(&self, flags: u64) -> Result<Self, crate::error::Error> {
     //     Ok(
     //         Self {
-    //             inner: Rc::new (self.inner.alias(flags)?),
+    //             inner: MyRc::new (self.inner.alias(flags)?),
     //         }
     //     )
     // }
@@ -204,13 +203,12 @@ impl<T> PassiveEndpoint<T> {
 impl<E> PassiveEndpointImplBase<E, dyn AsyncReadEq> {
 
 
-    pub(crate) fn bind<T: AsyncReadEq + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind<T: AsyncReadEq + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            // self._sync_rcs.borrow_mut().push(res.clone()); 
             if self.eq.set(res.clone()).is_err() {panic!("Could not set oncecell")}
             Ok(())
         }
@@ -248,7 +246,7 @@ impl<'a> EndpointBuilder<'a, (), ()> {
 
 impl<'a, E> EndpointBuilder<'a, (), E> {
 
-    pub fn build<DEQ: 'static>(self, domain: &DomainBase<DEQ>) -> Result<Endpoint<E>, crate::error::Error> {
+    pub fn build<DEQ: ?Sized +'static>(self, domain: &DomainBase<DEQ>) -> Result<Endpoint<E>, crate::error::Error> {
         Endpoint::new(domain, self.info, self.flags, self.ctx)
     }
 
@@ -333,48 +331,48 @@ impl<'a, E> EndpointBuilder<'a, (), E> {
 }
 
 pub trait AsyncCmEp {
-    fn retrieve_eq(&self) -> &Rc<impl AsyncReadEq + ?Sized> ;
+    fn retrieve_eq(&self) -> &MyRc<impl AsyncReadEq + ?Sized> ;
 }
 pub trait AsyncTxEp {
-    fn retrieve_tx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized> ;
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> ;
 }
 
 pub trait AsyncRxEp {
-    fn retrieve_rx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized> ;
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> ;
 }
 
 impl<EP, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncCmEp for EndpointImplBase<EP, EQ, CQ> {
-    fn retrieve_eq(&self) -> &Rc<impl AsyncReadEq + ?Sized>  {
+    fn retrieve_eq(&self) -> &MyRc<impl AsyncReadEq + ?Sized>  {
         self.eq.get().unwrap()
     }
 }
 
 impl<EP, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncTxEp for EndpointImplBase<EP, EQ, CQ> {
-    fn retrieve_tx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized> {
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
         self.tx_cq.get().unwrap()
     }
 }
 
 impl<EP, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncRxEp for EndpointImplBase<EP, EQ, CQ> {
-    fn retrieve_rx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized> {
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
         self.rx_cq.get().unwrap()
     }
 }
 
 impl<EP: AsyncCmEp> AsyncCmEp for EndpointBase<EP> {
-    fn retrieve_eq(&self) -> &Rc<impl AsyncReadEq + ?Sized>  {
+    fn retrieve_eq(&self) -> &MyRc<impl AsyncReadEq + ?Sized>  {
         self.inner.retrieve_eq()
     }
 }
 
 impl<EP: AsyncTxEp> AsyncTxEp for EndpointBase<EP> {
-    fn retrieve_tx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized>  {
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>  {
         self.inner.retrieve_tx_cq()
     }
 }
 
 impl<EP: AsyncRxEp> AsyncRxEp for EndpointBase<EP> {
-    fn retrieve_rx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized>  {
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>  {
         self.inner.retrieve_rx_cq()
     }
 }

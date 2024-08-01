@@ -1,6 +1,35 @@
 #[cfg(all(feature="use-tokio", feature="use-async-std"))]
 compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive");
-use std::{rc::Rc, cell::OnceCell};
+
+#[cfg(feature="thread-safe")]
+use std::sync::OnceLock;
+#[cfg(not(feature="thread-safe"))]
+use std::cell::OnceCell;
+#[cfg(feature="thread-safe")]
+use std::sync::Arc;
+#[cfg(not(feature="thread-safe"))]
+use std::rc::Rc;
+
+#[cfg(feature="thread-safe")]
+use parking_lot::RwLock; 
+#[cfg(not(feature="thread-safe"))]
+use std::cell::RefCell;
+
+#[cfg(feature="thread-safe")]
+pub type MyRefCell<T> = RwLock<T>;
+#[cfg(not(feature="thread-safe"))]
+pub type MyRefCell<T> = RefCell<T>;
+
+#[cfg(feature="thread-safe")]
+pub type MyRc<T> = Arc<T>;
+#[cfg(feature="thread-safe")]
+pub type MyOnceCell<T> = OnceLock<T>;
+
+#[cfg(not(feature="thread-safe"))]
+pub type MyRc<T> = Rc<T>;
+#[cfg(not(feature="thread-safe"))]
+pub type MyOnceCell<T> = OnceCell<T>;
+
 
 use av::{AddressVectorImplT, AddressVectorSetImpl};
 use fid::AsRawFid;
@@ -35,8 +64,8 @@ pub type RawMappedAddress = libfabric_sys::fi_addr_t;
 
 #[derive(Clone)]
 pub(crate) enum AddressSource {
-    Av(Rc<dyn AddressVectorImplT>),
-    AvSet(Rc<AddressVectorSetImpl>)
+    Av(MyRc<dyn AddressVectorImplT + Sync + Send>),
+    AvSet(MyRc<AddressVectorSetImpl>)
 }
 
 /// Owned wrapper around a libfabric `fi_addr_t`.
@@ -50,12 +79,12 @@ pub(crate) enum AddressSource {
 #[repr(C)]
 pub struct MappedAddress {
     addr: libfabric_sys::fi_addr_t,
-    av: OnceCell<AddressSource>,
+    av: MyOnceCell<AddressSource>,
 }
 
 impl MappedAddress {
 
-    // pub(crate) fn from_raw_addr_trait(addr: RawMappedAddress, av: &Rc<dyn AddressVectorImplT>) -> Self {
+    // pub(crate) fn from_raw_addr_trait(addr: RawMappedAddress, av: &MyRc<dyn AddressVectorImplT>) -> Self {
     //     let avcell = OnceCell::new();
         
     //     if avcell.set(AddressSource::Av(av.clone())).is_err() {
@@ -69,7 +98,7 @@ impl MappedAddress {
     // }
     
     pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: AddressSource) -> Self {
-        let avcell = OnceCell::new();
+        let avcell = MyOnceCell::new();
         
         if avcell.set(av).is_err() {
             panic!("MappedAddress is already set");
@@ -85,7 +114,7 @@ impl MappedAddress {
         
         Self {
             addr,
-            av: OnceCell::new(),
+            av: MyOnceCell::new(),
         }
     }
 
@@ -263,7 +292,7 @@ impl Default for Context2 {
 
 // pub trait BindImpl: AsRawFid {}
 pub trait Bind {
-    fn inner(&self) -> Rc<dyn AsRawFid>;
+    fn inner(&self) -> MyRc<dyn AsRawFid>;
 }
 
 
@@ -274,28 +303,113 @@ pub trait Writable{}
 pub trait WaitRetrievable{}
 
 
-pub const MSG : usize = 0;
-pub const RMA : usize = 1;
-pub const TAG : usize = 2;
-pub const ATOMIC : usize = 3;
-pub const MCAST : usize = 4;
-pub const NAMEDRXCTX : usize = 5;
-pub const DRECV: usize = 6; 
-pub const VMSG: usize = 7; 
-pub const HMEM: usize = 8; 
-pub const COLL: usize = 9; 
-pub const XPU: usize = 10; 
-pub const SEND: usize = 11; 
-pub const RECV: usize = 12; 
-pub const WRITE: usize = 13; 
-pub const READ: usize = 14; 
-pub const RWRITE: usize = 15; 
-pub const RREAD: usize = 16;
+pub enum FabInfoCaps {
+    MSG =           0,
+    RMA =           1,
+    TAG =           2,
+    ATOMIC =        3,
+    MCAST =         4,
+    NAMEDRXCTX =    5,
+    DRECV =         6, 
+    VMSG =          7, 
+    HMEM =          8, 
+    COLL =          9, 
+    XPU =           10, 
+    SEND =          11, 
+    RECV =          12, 
+    WRITE =         13, 
+    READ =          14, 
+    RWRITE =        15, 
+    RREAD =         16,
+}
 
-pub const fn get<const N: usize>(index: usize, asked: &[usize]) -> bool {
+
+impl FabInfoCaps {
+    pub const fn value(&self) -> usize{
+        match self {
+            FabInfoCaps::MSG => FabInfoCaps::MSG as usize,
+            FabInfoCaps::RMA => FabInfoCaps::RMA as usize,
+            FabInfoCaps::TAG => FabInfoCaps::TAG as usize,
+            FabInfoCaps::ATOMIC => FabInfoCaps::ATOMIC as usize,
+            FabInfoCaps::MCAST => FabInfoCaps::MCAST as usize,
+            FabInfoCaps::NAMEDRXCTX => FabInfoCaps::NAMEDRXCTX as usize,
+            FabInfoCaps::DRECV => FabInfoCaps::DRECV as usize,
+            FabInfoCaps::VMSG => FabInfoCaps::VMSG as usize,
+            FabInfoCaps::HMEM => FabInfoCaps::HMEM as usize,
+            FabInfoCaps::COLL => FabInfoCaps::COLL as usize,
+            FabInfoCaps::XPU => FabInfoCaps::XPU as usize,
+            FabInfoCaps::SEND => FabInfoCaps::SEND as usize,
+            FabInfoCaps::RECV => FabInfoCaps::RECV as usize,
+            FabInfoCaps::WRITE => FabInfoCaps::WRITE as usize,
+            FabInfoCaps::READ => FabInfoCaps::READ as usize,
+            FabInfoCaps::RWRITE => FabInfoCaps::RWRITE as usize,
+            FabInfoCaps::RREAD => FabInfoCaps::RREAD as usize,
+        }
+    }
+}
+pub enum SyncCaps {
+    WAIT =      0,
+    RETRIEVE =  1,
+    FD =        2,
+}
+
+pub use SyncCaps as CntrCaps;
+pub use SyncCaps as CqCaps;
+
+pub enum EqCaps {
+    WAIT =      0,
+    RETRIEVE =  1,
+    FD =        2,
+    WRITE =     3,
+}
+
+impl SyncCaps {
+    pub const fn value(&self) -> usize{
+        match self {
+            SyncCaps::WAIT => SyncCaps::WAIT as usize,
+            SyncCaps::RETRIEVE => SyncCaps::RETRIEVE as usize,
+            SyncCaps::FD => SyncCaps::FD as usize,
+        }
+    }
+}
+
+impl EqCaps {
+    pub const fn value(&self) -> usize{
+        match self {
+            EqCaps::WAIT => EqCaps::WAIT as usize,
+            EqCaps::RETRIEVE => EqCaps::RETRIEVE as usize,
+            EqCaps::FD => EqCaps::FD as usize,
+            EqCaps::WRITE => EqCaps::WRITE as usize,
+        }
+    }
+}
+
+pub const fn get_eq<const N: usize>(index: EqCaps, asked: &[EqCaps]) -> bool {
     let mut i = 0;
     while i < N {
-        if index == asked[i] {
+        if index.value() == asked[i].value() {
+            return true
+        }
+        i+=1;
+    }
+    false
+}
+
+pub const fn get_sync<const N: usize>(index: SyncCaps, asked: &[SyncCaps]) -> bool {
+    let mut i = 0;
+    while i < N {
+        if index.value() == asked[i].value() {
+            return true
+        }
+        i+=1;
+    }
+    false
+}
+
+pub const fn get_info<const N: usize>(index: FabInfoCaps, asked: &[FabInfoCaps]) -> bool {
+    let mut i = 0;
+    while i < N {
+        if index.value() == asked[i].value() {
             return true
         }
         i+=1;
@@ -314,34 +428,127 @@ macro_rules! count {
 //     };
 // }
 #[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
-macro_rules! caps_type_N {
-    ($N: stmt, $($opt: ident),*) => {
+macro_rules! info_caps_type_N {
+    ($N: stmt, $($opt: expr),*) => {
         libfabric::infocapsoptions::InfoCaps<
         // set($N, MSG, $($opt),*), 
-        {libfabric::get::<{$N}>(libfabric::MSG, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::RMA, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::TAG, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::ATOMIC, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::MCAST, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::NAMEDRXCTX, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::DRECV, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::VMSG, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::HMEM, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::COLL, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::XPU, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::SEND, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::RECV, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::WRITE, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::READ, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::RWRITE, &[$($opt),*])}, 
-        {libfabric::get::<{$N}>(libfabric::RREAD, &[$($opt),*])}>
+        {libfabric::get_info::<{$N}>(FabInfoCaps::MSG, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::RMA, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::TAG, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::ATOMIC, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::MCAST, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::NAMEDRXCTX, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::DRECV, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::VMSG, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::HMEM, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::COLL, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::XPU, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::SEND, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::RECV, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::WRITE, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::READ, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::RWRITE, &[$($opt),*])}, 
+        {libfabric::get_info::<{$N}>(FabInfoCaps::RREAD, &[$($opt),*])}>
         
     };
 }
 
+#[macro_export]// CQ: WAIT, RETRIEVE, FD
+macro_rules! cq_caps_type_N {
+    ($N: stmt, $($opt: expr),*) => {
+        libfabric::cq::CompletionQueueImpl<
+        // set($N, MSG, $($opt),*), 
+        {libfabric::get_sync::<{$N}>(libfabric::SyncCaps::WAIT, &[$($opt),*])}, 
+        {libfabric::get_sync::<{$N}>(libfabric::SyncCaps::RETRIEVE, &[$($opt),*])}, 
+        {libfabric::get_sync::<{$N}>(libfabric::SyncCaps::FD, &[$($opt),*])}, >
+    };
+}
+
+#[macro_export]// EQ: WRITE, WAIT, RETRIEVE, FD
+macro_rules! eq_caps_type_N {
+    ($N: stmt, $($opt: expr),*) => {
+        libfabric::eq::EventQueueImpl<
+        // set($N, MSG, $($opt),*), 
+        {libfabric::get_eq::<{$N}>(libfabric::EqCaps::WRITE, &[$($opt),*])}, 
+        {libfabric::get_eq::<{$N}>(libfabric::EqCaps::WAIT, &[$($opt),*])}, 
+        {libfabric::get_eq::<{$N}>(libfabric::EqCaps::RETRIEVE, &[$($opt),*])}, 
+        {libfabric::get_eq::<{$N}>(libfabric::EqCaps::FD, &[$($opt),*])},> 
+    };
+}
+
+#[macro_export]// CNTR: WAIT, RETRIEVE, FD
+macro_rules! cntr_caps_type_N {
+    ($N: stmt, $($opt: expr),*) => {
+        libfabric::cntr::CounterImpl<
+        // set($N, MSG, $($opt),*), 
+        {libfabric::get_sync::<{$N}>(libfabric::SyncCaps::WAIT, &[$($opt),*])}, 
+        {libfabric::get_sync::<{$N}>(libfabric::SyncCaps::RETRIEVE, &[$($opt),*])}, 
+        {libfabric::get_sync::<{$N}>(libfabric::SyncCaps::FD, &[$($opt),*])}, >
+    };
+}
+
+
+
+
+
 #[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
-macro_rules!  caps_type{
-    ($($opt: ident),*) => {
-        libfabric::caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
+macro_rules!  info_caps_type{
+    ($($opt: expr),*) => {
+        libfabric::info_caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
+    };
+}
+
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules!  cq_caps_type{
+    ($($opt: expr),*) => {
+        libfabric::cq_caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
+    };
+}
+
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules!  eq_caps_type{
+    ($($opt: expr),*) => {
+        libfabric::eq_caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
+    };
+}
+
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules!  cntr_caps_type{
+    ($($opt: expr),*) => {
+        libfabric::cntr_caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
+    };
+}
+
+#[cfg(any(feature="use-async-std", feature = "use-tokio"))]
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules! async_cq_caps_type_N {
+    ($N: stmt, $($opt: expr),*) => {
+        libfabric::async_::cq::AsyncCompletionQueueImpl
+    };
+}
+
+#[cfg(any(feature="use-async-std", feature = "use-tokio"))]
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules! async_eq_caps_type_N {
+    ($N: stmt, $($opt: expr),*) => {
+        libfabric::async_::eq::AsyncEventQueueImpl<
+        // set($N, MSG, $($opt),*), 
+        {libfabric::get_eq::<{$N}>(libfabric::EqCaps::WRITE, &[$($opt),*])},> 
+    };
+}
+
+#[cfg(any(feature="use-async-std", feature = "use-tokio"))]
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules!  async_cq_caps_type{
+    ($($opt: expr),*) => {
+        libfabric::async_cq_caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
+    };
+}
+
+#[cfg(any(feature="use-async-std", feature = "use-tokio"))]
+#[macro_export]// MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
+macro_rules!  async_eq_caps_type{
+    ($($opt: expr),*) => {
+        libfabric::async_eq_caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
     };
 }

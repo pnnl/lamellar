@@ -25,9 +25,8 @@ define_test!(pp_server_msg, async_pp_server_msg, {
         ep_attr.ep_type(libfabric::enums::EndpointType::Msg);
 
     let mut dom_attr = libfabric::domain::DomainAttr::new();
-        dom_attr
-        .threading(libfabric::enums::Threading::Domain)
-        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
+    dom_attr.threading =libfabric::enums::Threading::Domain;
+    dom_attr.mr_mode = libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw();
     
     
     let mut tx_attr = libfabric::xcontext::TxAttr::new();
@@ -57,20 +56,19 @@ define_test!(pp_server_msg, async_pp_server_msg, {
 
     // match hintscaps {
         // HintsCaps::Msg(hints) => {
-    let (info, fab, eq, pep) = prefix::start_server(hintscaps.clone(), IP.to_owned(), "9222".to_owned());
+    let (infocap, fab, eq, pep) = prefix::start_server(hintscaps.clone(), IP.to_owned(), "9222".to_owned());
 
 
         let (tx_cq, rx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = call!(prefix::ft_server_connect,&pep, &mut gl_ctx, &eq, &fab);
-        match info {
-            prefix::InfoWithCaps::Msg(info) => {
-                let entries = info.get();
+        match infocap {
+            prefix::InfoWithCaps::Msg(entry) => {
                 let test_sizes = gl_ctx.test_sizes.clone();
-                let inject_size = entries[0].get_tx_attr().get_inject_size();
+                let inject_size = entry.get_tx_attr().get_inject_size();
                 for msg_size in test_sizes {
                     call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
                 }
                 
-                call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+                call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
                 
                 match ep {
                     EndpointCaps::Msg(ep) => {
@@ -81,15 +79,14 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                     }
                 }
             }
-            prefix::InfoWithCaps::Tagged(info) => {
-                let entries = info.get();
+            prefix::InfoWithCaps::Tagged(entry) => {
                 let test_sizes = gl_ctx.test_sizes.clone();
-                let inject_size = entries[0].get_tx_attr().get_inject_size();
+                let inject_size = entry.get_tx_attr().get_inject_size();
                 for msg_size in test_sizes {
                     call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, true);
                 }
                 
-                call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+                call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
                 
                 match ep {
                     EndpointCaps::Msg(ep) => {
@@ -111,9 +108,8 @@ define_test!(pp_client_msg, async_pp_client_msg, {
         ep_attr    .ep_type(libfabric::enums::EndpointType::Msg);
 
     let mut dom_attr = libfabric::domain::DomainAttr::new();
-        dom_attr
-        .threading(libfabric::enums::Threading::Domain)
-        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw());
+    dom_attr.threading = libfabric::enums::Threading::Domain;
+    dom_attr.mr_mode = libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw();
 
     let mut tx_attr = libfabric::xcontext::TxAttr::new();
         tx_attr.tclass(libfabric::enums::TClass::LowLatency);
@@ -143,19 +139,18 @@ define_test!(pp_client_msg, async_pp_client_msg, {
     // match hintscaps {
         // HintsCaps::Msg(hints) => {
 
-    let (info, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = 
+    let (infocap, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = 
         call!(prefix::ft_client_connect,hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned());
         
-    match info {
-        prefix::InfoWithCaps::Msg(info) => {
-            let entries = info.get();
+    match infocap {
+        prefix::InfoWithCaps::Msg(entry) => {
             let test_sizes = gl_ctx.test_sizes.clone();
-            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            let inject_size = entry.get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
                 call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
                 EndpointCaps::Msg(ep) => {
                     ep.shutdown().unwrap();
@@ -165,15 +160,14 @@ define_test!(pp_client_msg, async_pp_client_msg, {
                 }
             }
         }
-        prefix::InfoWithCaps::Tagged(info) => {
-            let entries = info.get();
+        prefix::InfoWithCaps::Tagged(entry) => {
             let test_sizes = gl_ctx.test_sizes.clone();
-            let inject_size = entries[0].get_tx_attr().get_inject_size();
+            let inject_size = entry.get_tx_attr().get_inject_size();
             for msg_size in test_sizes {
                 call!(prefix::pingpong,inject_size, &mut gl_ctx, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &ep, &mut mr_desc, 100, 10, msg_size, false);
             }
             
-            call!(prefix::ft_finalize,&entries[0], &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
+            call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
                 EndpointCaps::Msg(ep) => {
                     ep.shutdown().unwrap();

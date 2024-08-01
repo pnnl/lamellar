@@ -1,6 +1,4 @@
-use std::rc::Rc;
-
-use crate::{xcontext::{XContextBase, Transmit, Receive, XContextBaseImpl, ReceiveContextBuilder, TxContextBuilder}, fid::{AsRawTypedFid, EpRawFid, AsFid, AsRawFid}, cntr::{Counter, ReadCntr}};
+use crate::{cntr::{Counter, ReadCntr}, fid::{AsFid, AsRawFid, AsRawTypedFid, EpRawFid}, xcontext::{Receive, ReceiveContextBuilder, Transmit, TxContextBuilder, XContextBase, XContextBaseImpl}, MyRc};
 use super::{cq::AsyncReadCq, ep::{AsyncRxEp, AsyncTxEp}};
 
 pub type TransmitContext = XContextBase<Transmit, dyn AsyncReadCq>; 
@@ -15,7 +13,7 @@ impl TransmitContextImpl {
         TxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_cq_<T: AsyncReadCq + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cq_<T: AsyncReadCq + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
@@ -29,14 +27,14 @@ impl TransmitContextImpl {
 }
 
 impl AsyncTxEp for TransmitContext {
-    fn retrieve_tx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized>  {
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>  {
         self.inner.retrieve_tx_cq()
     }
 }
 
 
 impl AsyncTxEp for TransmitContextImpl {
-    fn retrieve_tx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized>  {
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>  {
         self.cq.get().unwrap()
     }
 }
@@ -118,7 +116,7 @@ impl ReceiveContextImpl {
         RxIncompleteBindCntr { ep: self, flags: 0}
     }
 
-    pub(crate) fn bind_cq_<T: AsyncReadCq + AsFid + 'static>(&self, res: &Rc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cq_<T: AsyncReadCq + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
         
         if err != 0 {
@@ -143,13 +141,13 @@ impl ReceiveContext {
 }
 
 impl AsyncRxEp for ReceiveContext {
-    fn retrieve_rx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized>  {
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>  {
         self.inner.retrieve_rx_cq()
     }
 }
 
 impl AsyncRxEp for ReceiveContextImpl {
-    fn retrieve_rx_cq(&self) -> &Rc<impl AsyncReadCq + ?Sized>  {
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>  {
         self.cq.get().unwrap()
     }
 }

@@ -1,12 +1,15 @@
-use std::{marker::PhantomData, rc::Rc};
+use std::marker::PhantomData; 
 
-use crate::error;
+use crate::{error, MyRc};
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
 
 pub(crate) struct OwnedTypedFid<FID: AsRawFid> {
     typed_fid: FID,
 }
+
+unsafe impl<FID: AsRawFid> Sync for OwnedTypedFid<FID> {}
+unsafe impl<FID: AsRawFid> Send for OwnedTypedFid<FID> {}
 
 impl<FID: AsRawFid + AsRawTypedFid> OwnedTypedFid<FID> {
     pub(crate) fn from(typed_fid: FID) -> Self {
@@ -58,6 +61,7 @@ impl<'a, FID: AsRawFid + Copy>  AsRawFid for BorrowedTypedFid<'a, FID> {
 impl<FID: AsRawFid> Drop for OwnedTypedFid<FID> {
     #[inline]
     fn drop(&mut self) {
+        println!("Dropping !");
         let err = unsafe { libfabric_sys::inlined_fi_close(self.typed_fid.as_raw_fid()) };
 
         if err != 0 {
@@ -66,7 +70,7 @@ impl<FID: AsRawFid> Drop for OwnedTypedFid<FID> {
     }
 }
 
-impl<T: AsRawFid> AsRawFid for Rc<T> {
+impl<T: AsRawFid> AsRawFid for MyRc<T> {
     fn as_raw_fid(&self) -> RawFid {
         (**self).as_raw_fid()
     }

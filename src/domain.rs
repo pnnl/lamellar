@@ -1,23 +1,26 @@
-use std::{ffi::CString, rc::Rc, cell::OnceCell};
+use core::slice;
+use std::ffi::CString;
+
+use libfabric_sys::fi_domain_attr;
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{DomainCaps, TClass, MrMode}, fabric::FabricImpl, utils::{check_error, to_fi_datatype}, info::InfoEntry, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, eq::{EventQueueBase, ReadEq, EventQueue}};
-
-
+use crate::{enums::{DomainCaps, MrMode, TClass}, eq::{EventQueue, EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, info::InfoEntry, utils::{check_error, to_fi_datatype}, MyOnceCell, MyRc};
 
 pub(crate) struct DomainImplBase<EQ: ?Sized> {
     pub(crate) c_domain: OwnedDomainFid,
-    pub(crate) domain_attr: DomainAttr,
-    pub(crate) _eq_rc: OnceCell<(Rc<EQ>, bool)>,
-    _fabric_rc: Rc<FabricImpl>,
+    pub(crate) mr_mode: MrMode,
+    pub(crate) mr_key_size: usize,
+    pub(crate) _eq_rc: MyOnceCell<(MyRc<EQ>, bool)>,
+    _fabric_rc: MyRc<FabricImpl>,
 }
 
 
 
 pub(crate) trait DomainImplT: AsRawFid + AsRawTypedFid<Output = DomainRawFid>{
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error>;
-    fn get_fabric_impl(&self) -> Rc<FabricImpl>;
+    #[allow(unused)]
+    fn get_fabric_impl(&self) -> MyRc<FabricImpl>;
     fn get_mr_mode(&self) -> MrMode;
     fn get_mr_key_size(&self) -> usize;
 }
@@ -27,16 +30,16 @@ impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
        self.unmap_key(key) 
     }
 
-    fn get_fabric_impl(&self) -> Rc<FabricImpl> {
+    fn get_fabric_impl(&self) -> MyRc<FabricImpl> {
         self._fabric_rc.clone()
     }
 
     fn get_mr_mode(&self) -> MrMode {
-        self.domain_attr.get_mr_mode()
+        self.mr_mode
     }
 
     fn get_mr_key_size(&self) -> usize {
-        self.domain_attr.get_mr_key_size()
+        self.mr_key_size
     }
 }
 
@@ -44,7 +47,7 @@ impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
 
 impl<EQ: ?Sized > DomainImplBase<EQ> {
 
-    pub(crate) fn new<T0, E>(fabric: &Rc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0, E>(fabric: &MyRc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_domain: DomainRawFid = std::ptr::null_mut();
         let err =
             if let Some(ctx) = context {
@@ -70,18 +73,19 @@ impl<EQ: ?Sized > DomainImplBase<EQ> {
             Ok(
                 Self { 
                     c_domain: OwnedDomainFid::from(c_domain), 
-                    domain_attr,
+                    mr_key_size: domain_attr.mr_key_size,
+                    mr_mode: domain_attr.mr_mode,
                     _fabric_rc: fabric.clone(), 
-                    _eq_rc: OnceCell::new(),
+                    _eq_rc: MyOnceCell::new(),
                 })
         }
     }
 }
 
-impl DomainImplBase<dyn ReadEq> {
+impl DomainImplBase<dyn ReadEq+ Sync + Send> {
 
     
-    pub(crate) fn bind(&self, eq: Rc<dyn ReadEq>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind(&self, eq: MyRc<dyn ReadEq+ Sync + Send>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
         let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
 
         if err != 0 {
@@ -186,16 +190,16 @@ impl<EQ: ?Sized > DomainImplBase<EQ> {
 /// are also dropped.
 // pub type Domain = DomainBase<dyn EventQueueImplT>;
 
-pub struct DomainBase<EQ: ?Sized> {
-    pub(crate) inner: Rc<DomainImplBase<EQ>>,
+pub struct DomainBase<EQ: ?Sized+ Sync + Send> {
+    pub(crate) inner: MyRc<DomainImplBase<EQ>>,
 }
 
-impl<EQ: ?Sized> DomainImplT for DomainBase<EQ> {
+impl<EQ: ?Sized+ Sync + Send> DomainImplT for DomainBase<EQ> {
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         self.inner.unmap_key(key)
     }
 
-    fn get_fabric_impl(&self) -> Rc<FabricImpl> {
+    fn get_fabric_impl(&self) -> MyRc<FabricImpl> {
         self.inner.get_fabric_impl()
     }
 
@@ -208,30 +212,30 @@ impl<EQ: ?Sized> DomainImplT for DomainBase<EQ> {
     }
 }
 
-impl<EQ: ?Sized> DomainBase<EQ> {
+impl<EQ: ?Sized+ Sync + Send> DomainBase<EQ> {
     
     pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self{
                 inner: 
-                Rc::new(DomainImplBase::new(&fabric.inner, info, flags, domain_attr, context)?)
+                MyRc::new(DomainImplBase::new(&fabric.inner, info, flags, domain_attr, context)?)
             }
         )    
     }
 }
 
-impl DomainBase<dyn ReadEq> {
+impl DomainBase<dyn ReadEq+ Sync + Send> {
     /// Associates an [crate::eq::EventQueue] with the domain.
     /// 
     /// If `async_mem_reg` is true, the provider should perform all memory registration operations asynchronously, with the completion reported through the event queue
     /// 
     /// Corresponds to `fi_domain_bind`, with flag `FI_REG_MR` if `async_mem_reg` is true. 
-    pub(crate) fn bind_eq<EQ: ReadEq + 'static>(&self, eq: &EventQueueBase<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_eq<EQ: ReadEq + 'static+ Sync + Send>(&self, eq: &EventQueueBase<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
         self.inner.bind(eq.inner.clone(), async_mem_reg)
     }
 }
 
-impl<EQ: ?Sized> DomainBase<EQ> {
+impl<EQ: ?Sized+ Sync + Send> DomainBase<EQ> {
 
     /// Indicates if a provider supports a specific atomic operation
     /// 
@@ -288,7 +292,7 @@ impl<EQ: ?Sized> AsRawTypedFid for DomainImplBase<EQ> {
     }
 }
 
-impl<EQ> AsFid for DomainBase<EQ> {
+impl<EQ: Sync + Send> AsFid for DomainBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
        self.inner.as_fid()
     }
@@ -300,19 +304,19 @@ impl<EQ: ?Sized> AsRawFid for DomainImplBase<EQ> {
     }
 }
 
-impl<EQ: ?Sized> AsRawFid for DomainBase<EQ> {
+impl<EQ: ?Sized+ Sync + Send> AsRawFid for DomainBase<EQ> {
     fn as_raw_fid(&self) -> fid::RawFid {
         self.inner.as_raw_fid()
     }
 }
 
-impl<EQ> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
+impl<EQ: Sync + Send> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
        self.inner.as_typed_fid()
     }
 }
 
-impl<EQ: ?Sized> AsRawTypedFid for DomainBase<EQ> {
+impl<EQ: ?Sized+ Sync + Send> AsRawTypedFid for DomainBase<EQ> {
     type Output = DomainRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -322,24 +326,48 @@ impl<EQ: ?Sized> AsRawTypedFid for DomainBase<EQ> {
 
 //================== Domain attribute ==================//
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DomainAttr {
-    pub(crate) c_attr : libfabric_sys::fi_domain_attr,
-    f_name: std::ffi::CString,
+    _domain: usize, // [TODO] Not supported
+    pub name: String, 
+    pub threading: crate::enums::Threading,
+    pub control_progress: crate::enums::Progress,
+    pub data_progress: crate::enums::Progress,
+    pub resource_mgmt: crate::enums::ResourceMgmt,
+    pub av_type: crate::enums::AddressVectorType,
+    pub mr_mode: crate::enums::MrMode,
+    pub mr_key_size: usize,
+    pub cq_data_size: usize,
+    pub cq_cnt: usize,
+    pub ep_cnt: usize,
+    pub tx_ctx_cnt: usize,
+    pub rx_ctx_cnt: usize,
+    pub max_ep_tx_ctx: usize,
+    pub max_ep_rx_ctx: usize,
+    pub max_ep_stx_ctx: usize,
+    pub max_ep_srx_ctx: usize,
+    pub cntr_cnt: usize,
+    pub mr_iov_limit: usize,
+    pub caps: crate::enums::DomainCaps,
+    pub mode: crate::enums::Mode,
+    _auth_key: Option<Vec<u8>>, // [TODO] Not supported
+    pub max_err_data: usize,
+    pub mr_cnt: usize,
+    pub tclass: crate::enums::TClass,
 }
 
 impl DomainAttr {
-
+     
     pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_domain_attr {
-            domain: std::ptr::null_mut(),
-            name: std::ptr::null_mut(),
-            threading: crate::enums::Threading::Unspec.get_value(),
-            control_progress: crate::enums::Progress::Unspec.get_value(),
-            data_progress: crate::enums::Progress::Unspec.get_value(),
-            resource_mgmt: crate::enums::ResourceMgmt::Unspec.get_value(),
-            av_type: crate::enums::AddressVectorType::Unspec.get_value(),
-            mr_mode: 0,
+        Self {
+            _domain: 0,
+            name: String::new(),
+            threading: crate::enums::Threading::Unspec,
+            control_progress: crate::enums::Progress::Unspec,
+            data_progress: crate::enums::Progress::Unspec,
+            resource_mgmt: crate::enums::ResourceMgmt::Unspec,
+            av_type: crate::enums::AddressVectorType::Unspec,
+            mr_mode: crate::enums::MrMode::new(),
             mr_key_size: 0,
             cq_data_size: 0,
             cq_cnt: 0,
@@ -352,197 +380,86 @@ impl DomainAttr {
             max_ep_srx_ctx: 0,
             cntr_cnt: 0,
             mr_iov_limit: 0,
-            caps: 0,
-            mode: 0,
-            auth_key: std::ptr::null_mut(),
-            auth_key_size: 0,
+            caps: crate::enums::DomainCaps::new(),
+            mode: crate::enums::Mode::new(),
+            _auth_key: None,
             max_err_data: 0,
             mr_cnt: 0,
-            tclass: 0,         
-        };
-        Self { c_attr , f_name: CString::new("").unwrap()}
-    }
-
-    // pub fn domain(&mut self, domain: &Domain) -> &mut Self {
-    //     self.c_attr.domain = domain.as_raw_typed_fid();
-    //     self
-    // }
-
-    pub fn name(&mut self, name: String) -> &mut Self { //[TODO] Possible memory leak
-        let name = std::ffi::CString::new(name).unwrap();
-        self.f_name = name;
-        self.c_attr.name = unsafe{std::mem::transmute(self.f_name.as_ptr())};
-        self
-    }
-
-    pub fn threading(&mut self, threading: crate::enums::Threading) -> &mut Self {
-        self.c_attr.threading = threading.get_value();
-        self
-    }
-
-    pub fn control_progress(&mut self, control_progress: crate::enums::Progress) -> &mut Self {
-        self.c_attr.control_progress = control_progress.get_value();
-        self
-    }
-
-    pub fn data_progress(&mut self, data_progress: crate::enums::Progress) -> &mut Self {
-        self.c_attr.data_progress = data_progress.get_value();
-        self
-    }
-
-    pub fn resource_mgmt(&mut self, res_mgmt: crate::enums::ResourceMgmt) -> &mut Self {
-        self.c_attr.resource_mgmt = res_mgmt.get_value();
-        self
-    }
-
-    pub fn av_type(&mut self, av_type: crate::enums::AddressVectorType) -> &mut Self {
-        self.c_attr.av_type = av_type.get_value();
-        self
-    }
-
-    pub fn mr_mode(&mut self, mr_mode: crate::enums::MrMode) -> &mut Self {
-        self.c_attr.mr_mode = mr_mode.get_value() as i32;
-        self
-    }
-
-    pub fn mr_key_size(&mut self, size: usize) -> &mut Self{
-        self.c_attr.mr_key_size = size;
-        self
-    }
-    
-
-    pub fn cq_data_size(&mut self, size: usize) -> &mut Self{
-        self.c_attr.cq_data_size = size;
-        self
-    }
-    
-
-    pub fn cq_cnt(&mut self, size: usize) -> &mut Self{
-        self.c_attr.cq_cnt = size;
-        self
-    }
-
-    pub fn ep_cnt(&mut self, size: usize) -> &mut Self{
-        self.c_attr.ep_cnt = size;
-        self
-    }
-
-    pub fn tx_ctx_cnt(&mut self, size: usize) -> &mut Self{
-        self.c_attr.tx_ctx_cnt = size;
-        self
-    }
-
-    pub fn rx_ctx_cnt(&mut self, size: usize) -> &mut Self{
-        self.c_attr.rx_ctx_cnt = size;
-        self
-    }
-
-    pub fn max_ep_tx_ctx(&mut self, size: usize) -> &mut Self{
-        self.c_attr.max_ep_tx_ctx = size;
-        self
-    }
-
-    pub fn max_ep_rx_ctx(&mut self, size: usize) -> &mut Self{
-        self.c_attr.max_ep_rx_ctx = size;
-        self
-    }
-
-    pub fn max_ep_stx_ctx(&mut self, size: usize) -> &mut Self{
-        self.c_attr.max_ep_stx_ctx = size;
-        self
-    }
-
-    pub fn max_ep_srx_ctx(&mut self, size: usize) -> &mut Self{
-        self.c_attr.max_ep_srx_ctx = size;
-        self
-    }
-
-    pub fn cntr_cnt(&mut self, size: usize) -> &mut Self{
-        self.c_attr.cntr_cnt = size;
-        self
-    }
-
-    pub fn mr_iov_limit(&mut self, size: usize) -> &mut Self{
-        self.c_attr.mr_iov_limit = size;
-        self
-    }
-
-    pub fn caps(&mut self, caps: DomainCaps) -> &mut Self {
-        self.c_attr.caps = caps.get_value();
-        self
-    }
-
-    pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
-        self.c_attr.mode = mode.get_value();
-        self
-    }
-
-    pub fn auth_key(&mut self, key: &mut [u8]) -> &mut Self {
-        self.c_attr.auth_key_size = key.len();
-        self.c_attr.auth_key = key.as_mut_ptr();
-        self
-    }
-
-    pub fn max_err_data(&mut self, size: usize) -> &mut Self{
-        self.c_attr.max_err_data = size;
-        self
-    }
-
-    pub fn mr_cnt(&mut self, size: usize) -> &mut Self{
-        self.c_attr.mr_cnt = size;
-        self
-    }
-
-    pub fn tclass(&mut self, class: TClass) -> &mut Self {
-        self.c_attr.tclass = class.get_value();
-        self
-    }
-    
-    pub fn get_mode(&self) -> u64 {
-        self.c_attr.mode 
-    }
-
-    pub fn get_mr_mode(&self) -> crate::enums::MrMode {
-        crate::enums::MrMode::from_value(self.c_attr.mr_mode.try_into().unwrap())
-    }
-
-    pub fn get_av_type(&self) ->  crate::enums::AddressVectorType {
-        crate::enums::AddressVectorType::from_value( self.c_attr.av_type)
-    }
-
-    pub fn get_data_progress(&self) -> crate::enums::Progress {
-        
-        crate::enums::Progress::from_value(self.c_attr.data_progress)
-    }
-
-    pub fn get_mr_iov_limit(&self) -> usize {
-        self.c_attr.mr_iov_limit
-    }
-
-    pub fn get_cntr_cnt(&self) -> usize {
-        self.c_attr.cntr_cnt
-    }
-
-    pub fn get_cq_data_size(&self) -> u64 {
-        self.c_attr.cq_data_size as u64
-    }
-
-    pub fn get_mr_key_size(&self) -> usize {
-        self.c_attr.mr_key_size
-    }
-
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_domain_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_domain_attr {
-        &mut self.c_attr
+            tclass: crate::enums::TClass::Unspec,
+        }
     }
 }
 
-impl Default for DomainAttr {
-    fn default() -> Self {
-        Self::new()
+impl From<libfabric_sys::fi_domain_attr> for DomainAttr {
+    fn from(value: libfabric_sys::fi_domain_attr) -> Self {
+        Self {
+            _domain: value.domain as usize,
+            name: {if !value.name.is_null() {unsafe {std::ffi::CStr::from_ptr(value.name)}.to_str().unwrap().to_string()} else {String::new()}} ,
+            threading: crate::enums::Threading::from_value(value.threading),
+            control_progress: crate::enums::Progress::from_value(value.control_progress),
+            data_progress: crate::enums::Progress::from_value(value.data_progress),
+            resource_mgmt: crate::enums::ResourceMgmt::from_value(value.resource_mgmt),
+            av_type: crate::enums::AddressVectorType::from_value(value.av_type),
+            mr_mode: crate::enums::MrMode::from_value(value.mr_mode as u32),
+            mr_key_size:value.mr_key_size,
+            cq_data_size: value.cq_data_size,
+            cq_cnt: value.cq_cnt,
+            ep_cnt: value.ep_cnt,
+            tx_ctx_cnt: value.tx_ctx_cnt,
+            rx_ctx_cnt: value.rx_ctx_cnt,
+            max_ep_tx_ctx: value.max_ep_tx_ctx,
+            max_ep_rx_ctx: value.max_ep_rx_ctx,
+            max_ep_stx_ctx: value.max_ep_stx_ctx,
+            max_ep_srx_ctx: value.max_ep_srx_ctx,
+            cntr_cnt: value.cntr_cnt,
+            mr_iov_limit: value.mr_iov_limit,
+            caps: crate::enums::DomainCaps::from_value(value.caps),
+            mode: crate::enums::Mode::from_value(value.mode),
+            _auth_key: {if !value.auth_key.is_null() {Some(unsafe{slice::from_raw_parts(value.auth_key, value.auth_key_size)}.to_vec())} else {None} },
+            max_err_data: value.max_err_data,
+            mr_cnt: value.mr_cnt,
+            tclass: crate::enums::TClass::from_value(value.tclass),
+       }  
+    }
+}
+
+impl Into<libfabric_sys::fi_domain_attr> for DomainAttr {
+    fn into(self) -> libfabric_sys::fi_domain_attr {
+        // let (key, key_size) = if let Some(val) = self.auth_key {
+        //     (val.as_ptr(), val.len())
+        // }
+        // else {
+        //     (std::ptr::null(), 0)
+        // };
+        libfabric_sys::fi_domain_attr {
+            domain: std::ptr::null_mut(),
+            name: std::ptr::null_mut(), // Only used as output so it's fine
+            threading: self.threading.get_value(),
+            control_progress: self.control_progress.get_value(),
+            data_progress: self.data_progress.get_value(),
+            resource_mgmt: self.resource_mgmt.into(),
+            av_type: self.av_type.get_value(),
+            mr_mode: self.mr_mode.get_value() as i32,
+            mr_key_size: self.mr_key_size,
+            cq_data_size: self.cq_data_size,
+            cq_cnt: self.cq_cnt,
+            ep_cnt: self.ep_cnt,
+            tx_ctx_cnt: self.tx_ctx_cnt,
+            rx_ctx_cnt: self.rx_ctx_cnt,
+            max_ep_tx_ctx: self.max_ep_tx_ctx,
+            max_ep_rx_ctx: self.max_ep_rx_ctx,
+            max_ep_stx_ctx: self.max_ep_stx_ctx,
+            max_ep_srx_ctx: self.max_ep_srx_ctx,
+            cntr_cnt: self.cntr_cnt,
+            mr_iov_limit: self.mr_iov_limit,
+            caps: self.caps.into(),
+            mode: self.mode.into(),
+            auth_key: std::ptr::null_mut(),
+            auth_key_size: 0,
+            max_err_data: self.max_err_data,
+            mr_cnt: self.mr_cnt,
+            tclass: self.tclass.get_value(),
+       }  
     }
 }
 
@@ -612,8 +529,8 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
     /// and passing it to a `fi_domain` call with an optional `context` (set by [Self::context]).
     /// Or a call to `fi_domain2` with `context` of type `fi_peer_context` and `flags` equal to `FI_PEER`
-    pub fn build_and_bind<EQ: ReadEq + 'static>(self, eq: &EventQueue<EQ>, async_mem_reg: bool) -> Result<DomainBase<dyn ReadEq>, crate::error::Error> {
-        let domain = DomainBase::<dyn ReadEq>::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)?;
+    pub fn build_and_bind<EQ: ReadEq + 'static+ Sync + Send>(self, eq: &EventQueue<EQ>, async_mem_reg: bool) -> Result<DomainBase<dyn ReadEq+ Sync + Send>, crate::error::Error> {
+        let domain = DomainBase::<dyn ReadEq+ Sync + Send>::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)?;
         domain.bind_eq(eq, async_mem_reg)?;
         Ok(domain)
     }
@@ -633,7 +550,7 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
 }
 
 pub type Domain = DomainBase<()>;
-pub type BoundDomain = DomainBase<dyn ReadEq>;
+pub type BoundDomain = DomainBase<dyn ReadEq+ Sync + Send>;
 
 
 #[repr(C)]
@@ -642,7 +559,7 @@ pub struct PeerDomainCtx {
 }
 
 impl PeerDomainCtx {
-    pub fn new<EQ>(size: usize, domain: &DomainBase<EQ>) -> Self {
+    pub fn new<EQ: Sync + Send>(size: usize, domain: &DomainBase<EQ>) -> Self {
         Self {
             c_ctx : {
                 libfabric_sys::fi_peer_domain_context {
@@ -663,14 +580,13 @@ mod tests {
 
     #[test]
     fn domain_test() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
-        
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
         let mut doms = Vec::new();
         for _ in 0..count {
-            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entry).build().unwrap();
             doms.push(domain);
         }
     }
@@ -683,15 +599,14 @@ mod libfabric_lifetime_tests {
     #[test]
 
     fn domain_drops_before_fabric() {
-        let info = Info::new().request().unwrap();
-        let entries = info.get();
+        let info = Info::new().build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-        let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
         let mut doms = Vec::new();
         for _ in 0..count {
-            let domain = crate::domain::DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-            println!("Count = {}", std::rc::Rc::strong_count(&fab.inner));
+            let domain = crate::domain::DomainBuilder::new(&fab, &entry).build().unwrap();
             doms.push(domain);
         }
         drop(fab);

@@ -1,6 +1,4 @@
-use std::rc::Rc;
-
-use crate::{av::{AddressVectorImplBase, AddressVectorBase, AddressVectorAttr}, ep::Address, RawMappedAddress, eq::Event, enums::AVOptions, fid::{AsRawFid, AsRawTypedFid}, MappedAddress, domain::DomainBase};
+use crate::{av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase}, domain::DomainBase, enums::AVOptions, ep::Address, eq::Event, fid::{AsRawFid, AsRawTypedFid}, MappedAddress, MyRc, RawMappedAddress};
 use super::{eq::{EventQueue, AsyncReadEq}, AsyncCtx};
 
 
@@ -58,7 +56,7 @@ impl AddressVector {
 
 pub struct AddressVectorBuilder<'a, T> {
     av_attr: AddressVectorAttr,
-    eq: Rc<dyn AsyncReadEq>,
+    eq: MyRc<dyn AsyncReadEq>,
     ctx: Option<&'a mut T>,
 }
 
@@ -200,34 +198,34 @@ mod tests {
             ep_attr.ep_type(crate::enums::EndpointType::Rdm);
     
         let mut dom_attr = crate::domain::DomainAttr::new();
-            dom_attr
-            .mode(crate::enums::Mode::all())
-            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
+            dom_attr.mode = crate::enums::Mode::all();
+            dom_attr.mr_mode = crate::enums::MrMode::new()
+                .basic()
+                .scalable()
+                .inverse();
 
         let hints = InfoHints::new()
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = Info::new().hints(&hints).request().unwrap();
-        let entries = info.get();
-        if !entries.is_empty() {
+        let info = Info::new().hints(&hints).build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-            let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-            let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-            let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
         
-            for i in 0..17 {
-                let count = 1 << i;
-                let _av = AddressVectorBuilder::new(&eq)
-                    .type_(crate::enums::AddressVectorType::Map)
-                    .count(count)
-                    .build(&domain)
-                    .unwrap();
-            }
+        let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
+        let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
+    
+        for i in 0..17 {
+            let count = 1 << i;
+            let _av = AddressVectorBuilder::new(&eq)
+                .type_(crate::enums::AddressVectorType::Map)
+                .count(count)
+                .build(&domain)
+                .unwrap();
         }
-        else {
-            panic!("No capable fabric found!");
-        }
+        
+        
     }
 
     #[test]
@@ -237,31 +235,28 @@ mod tests {
             ep_attr.ep_type(crate::enums::EndpointType::Rdm);
 
         let mut dom_attr = crate::domain::DomainAttr::new();
-            dom_attr
-            .mode(crate::enums::Mode::all())
-            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
+        dom_attr.mode = crate::enums::Mode::all();
+        dom_attr.mr_mode = crate::enums::MrMode::new().basic().scalable().inverse();
 
         let hints = InfoHints::new()
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
         let info = Info::new()
-            .hints(&hints).request().unwrap();
+            .hints(&hints).build().unwrap();
 
-        let entries = info.get();
-        if !entries.is_empty() {
-            let fab: crate::fabric::Fabric = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-            let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
-            let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
-            let _av = AddressVectorBuilder::new(&eq)
-                .type_(crate::enums::AddressVectorType::Map)
-                .count(32)
-                .build(&domain)
-                .unwrap();
-        }
-        else {
-            panic!("No capable fabric found!");
-        }
+        let entry = info.into_iter().next().unwrap();
+        
+        let fab: crate::fabric::Fabric = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+        let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
+        let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
+        let _av = AddressVectorBuilder::new(&eq)
+            .type_(crate::enums::AddressVectorType::Map)
+            .count(32)
+            .build(&domain)
+            .unwrap();
+        
+        
     }
 }
 
@@ -278,20 +273,19 @@ mod libfabric_lifetime_tests {
             ep_attr.ep_type(crate::enums::EndpointType::Rdm);
     
         let mut dom_attr = crate::domain::DomainAttr::new();
-            dom_attr
-            .mode(crate::enums::Mode::all())
-            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse());
+        dom_attr.mode = crate::enums::Mode::all();
+        dom_attr.mr_mode = crate::enums::MrMode::new().basic().scalable().inverse();
 
         let hints = InfoHints::new()
             .ep_attr(ep_attr)
             .domain_attr(dom_attr);
 
-        let info = Info::new().hints(&hints).request().unwrap();
-        let entries = info.get();
-        if !entries.is_empty() {
+        let info = Info::new().hints(&hints).build().unwrap();
+        let entry = info.into_iter().next().unwrap();
         
-            let fab = crate::fabric::FabricBuilder::new(&entries[0]).build().unwrap();
-            let domain = DomainBuilder::new(&fab, &entries[0]).build().unwrap();
+        
+            let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
+            let domain = DomainBuilder::new(&fab, &entry).build().unwrap();
             let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
         
             let mut avs = Vec::new();
@@ -303,13 +297,9 @@ mod libfabric_lifetime_tests {
                     .build(&domain)
                     .unwrap();
                 avs.push(av);
-                println!("Count = {}", std::rc::Rc::strong_count(&domain.inner));
             }
             drop(domain);
-            println!("Count = {} After dropping domain", std::rc::Rc::strong_count(&avs[0].inner._domain_rc));
-        }
-        else {
-            panic!("No capable fabric found!");
-        }
+        
+        
     }
 }
