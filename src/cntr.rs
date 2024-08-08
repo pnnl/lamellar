@@ -22,7 +22,7 @@ pub struct Counter<CNTR> {
 pub struct CounterImpl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     pub(crate) c_cntr: OwnedCntrFid,
     wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    _domain_rc: MyRc<dyn DomainImplT + Sync + Send>,
+    _domain_rc: MyRc<dyn DomainImplT>,
 }
 
 pub trait ReadCntr : AsRawTypedFid<Output = CntrRawFid> + AsRawFid { 
@@ -116,7 +116,7 @@ impl<CNTR: WaitCntr> WaitCntr for Counter<CNTR> {}
 
 impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> CounterImpl<WAIT, RETRIEVE, FD> {
 
-    pub(crate) fn new<EQ: ?Sized + 'static + Sync + Send, T0>(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: ?Sized + 'static, T0>(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, mut attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_cntr: CntrRawFid = std::ptr::null_mut();
 
         let err = 
@@ -135,7 +135,7 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> CounterImpl<WAIT, R
                 Self {
                     c_cntr: OwnedCntrFid::from(c_cntr), 
                     wait_obj: Some(attr.c_attr.wait_obj),
-                    _domain_rc: domain.clone() as MyRc<dyn DomainImplT + Sync + Send>,
+                    _domain_rc: domain.clone() as MyRc<dyn DomainImplT>,
                 })
         }
     }
@@ -146,7 +146,7 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> CounterImpl<WAIT, R
 impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> Counter<CounterImpl<WAIT, RETRIEVE, FD>> {
     #[allow(dead_code)]
 
-    pub(crate) fn new<EQ: ?Sized + 'static+ Sync + Send, T0>(domain: &crate::domain::DomainBase<EQ>, attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: ?Sized + 'static, T0>(domain: &crate::domain::DomainBase<EQ>, attr: CounterAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: MyRc::new(CounterImpl::new(&domain.inner, attr, context)?),
@@ -271,7 +271,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CounterBuild
     /// 
     /// Corresponds to creating a `fi_cntr_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cntr_open` call with an optional `context`.
-    pub fn build<EQ: ?Sized +'static+ Sync + Send>(self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<Counter<CounterImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
+    pub fn build<EQ: ?Sized +'static>(self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<Counter<CounterImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
         Counter::new(domain, self.cntr_attr, self.ctx)
     }
 }
@@ -371,7 +371,7 @@ impl CounterAttr {
     }
 
     pub(crate) fn events(&mut self, events: crate::enums::CounterEvents) -> &mut Self {
-        self.c_attr.events = events.get_value();
+        self.c_attr.events = events.as_raw();
 
         self
     }
@@ -380,7 +380,7 @@ impl CounterAttr {
         if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
             self.c_attr.wait_set = wait_set.as_raw_typed_fid();
         }
-        self.c_attr.wait_obj = wait_obj.get_value();
+        self.c_attr.wait_obj = wait_obj.as_raw();
         self
     }
 
@@ -410,31 +410,27 @@ impl Default for CounterAttr {
 
 #[cfg(test)]
 mod tests {
-    use crate::info::{InfoHints, Info};
+    use crate::info::{Info, InfoHints, Version};
 
     use super::{CounterBuilder, ReadCntr};
 
     #[test]
     fn cntr_loop() {
+        let info = Info::new(&Version{major: 1, minor: 18})
+            .enter_hints()
+                .enter_domain_attr()
+                    .mode(crate::enums::Mode::all())
+                    .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+                .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
-        let mut dom_attr = crate::domain::DomainAttr::new();
-        dom_attr.mode = crate::enums::Mode::all();
-        dom_attr.mr_mode = crate::enums::MrMode::new()
-            .basic()
-            .scalable()
-            .inverse();
-        
-        let hints = InfoHints::new()
-            .domain_attr(dom_attr)
-            .mode(crate::enums::Mode::all());
-        
-
-        let info = Info::new().hints(&hints).build().unwrap();
         for e in info.iter() {
-                if e.get_domain_attr().cntr_cnt != 0 {
+                if e.domain_attr().cntr_cnt() != 0 {
                     let fab = crate::fabric::FabricBuilder::new().build(e).unwrap();
                     let domain = crate::domain::DomainBuilder::new(&fab, e).build().unwrap();
-                    let cntr_cnt = std::cmp::min(e.get_domain_attr().cntr_cnt, 100);
+                    let cntr_cnt = std::cmp::min(e.domain_attr().cntr_cnt(), 100);
                     let cntrs: Vec<_> = (0..cntr_cnt).map(|_| CounterBuilder::new().build(&domain).unwrap() ).collect::<>();
 
                     for (i,cntr) in cntrs.iter().enumerate() {
@@ -467,28 +463,28 @@ mod tests {
 #[cfg(test)]
 mod libfabric_lifetime_tests {
 
-    use crate::{info::{InfoHints, Info}, cntr::ReadCntr};
+    use crate::{cntr::ReadCntr, info::{Info, InfoHints, Version}};
 
     use super::CounterBuilder;
 
 
     #[test]
     fn cntr_drops_before_domain() {
-        let mut dom_attr = crate::domain::DomainAttr::new();
-        dom_attr.mode = crate::enums::Mode::all();
-        dom_attr.mr_mode = crate::enums::MrMode::new().basic().scalable().inverse();
+            let info = Info::new(&Version{major: 1, minor: 18})
+            .enter_hints()
+                .enter_domain_attr()
+                    .mode(crate::enums::Mode::all())
+                    .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+                .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
         
-        let hints = InfoHints::new()
-            .domain_attr(dom_attr)
-            .mode(crate::enums::Mode::all());
-        
-
-        let info = Info::new().hints(&hints).build().unwrap();
         for e in info.iter() {
-            if e.get_domain_attr().cntr_cnt != 0 {
+            if e.domain_attr().cntr_cnt() != 0 {
                 let fab = crate::fabric::FabricBuilder::new().build(e).unwrap();
                 let domain = crate::domain::DomainBuilder::new(&fab, e).build().unwrap();
-                let cntr_cnt = std::cmp::min(e.get_domain_attr().cntr_cnt, 100);
+                let cntr_cnt = std::cmp::min(e.domain_attr().cntr_cnt(), 100);
                 let cntrs: Vec<_> = (0..cntr_cnt).map(|_| CounterBuilder::new().build(&domain).unwrap() ).collect::<>();
                 for (i,cntr) in cntrs.iter().enumerate() {
                     cntr.set(i as u64).unwrap();

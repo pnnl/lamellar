@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::utils::AsFiType;
 use crate::MyOnceCell;
 use crate::MyRc;
 use crate::MyRefCell;
@@ -26,7 +27,6 @@ use crate::fid::{AsFid, AsRawTypedFid};
 use crate::infocapsoptions::CollCap;
 use crate::mr::DataDescriptor;
 use crate::utils::check_error;
-use crate::utils::to_fi_datatype;
 use super::message::extract_raw_addr_and_ctx;
 use super::message::extract_raw_ctx;
 
@@ -34,11 +34,16 @@ pub struct MulticastGroupCollective {
     pub(crate) inner: MyRc<MulticastGroupCollectiveImpl>,
 }
 
+impl std::fmt::Debug for MulticastGroupCollective{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "")
+    }
+}
 
 pub struct MulticastGroupCollectiveImpl  {
     c_mc: MyOnceCell<OwnedMcFid>,
-    addr: MyOnceCell<RawMappedAddress>,
     eps: MyRefCell<Vec<MyRc<dyn CollectiveValidEp>>>,
+    addr: MyOnceCell<RawMappedAddress>,
     avset: MyRc<AddressVectorSetImpl>,
 }
 
@@ -59,10 +64,10 @@ impl MulticastGroupCollectiveImpl {
     //     let mut c_mc: McRawFid = std::ptr::null_mut();
     //     let err = 
     //         if let Some(ctx) = context {
-    //             unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.get_value(), &mut c_mc, (ctx as *mut T).cast()) }
+    //             unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.as_raw(), &mut c_mc, (ctx as *mut T).cast()) }
     //         }
     //         else {
-    //             unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.get_value(), &mut c_mc, std::ptr::null_mut()) }
+    //             unsafe { libfabric_sys::inlined_fi_join(ep.as_raw_typed_fid(), addr.as_bytes().as_ptr().cast(), options.as_raw(), &mut c_mc, std::ptr::null_mut()) }
     //         };
 
     //     if err != 0 {
@@ -91,10 +96,10 @@ impl MulticastGroupCollectiveImpl {
         };
         let err = 
             if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), raw_addr, self.avset.as_raw_typed_fid(), options.get_value(), &mut c_mc, (ctx as *mut T).cast()) }
+                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), raw_addr, self.avset.as_raw_typed_fid(), options.as_raw(), &mut c_mc, (ctx as *mut T).cast()) }
             }
             else {
-                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), raw_addr, self.avset.as_raw_typed_fid(), options.get_value(), &mut c_mc, std::ptr::null_mut()) }
+                unsafe { libfabric_sys::inlined_fi_join_collective(ep.as_raw_typed_fid(), raw_addr, self.avset.as_raw_typed_fid(), options.as_raw(), &mut c_mc, std::ptr::null_mut()) }
             };
 
         if err != 0 {
@@ -156,7 +161,7 @@ pub(crate) trait CollectiveEpImpl : CollectiveEp + AsRawTypedFid<Output = EpRawF
         let ctx = extract_raw_ctx(context);
         
         let err = if let Some(opt) = options {
-            unsafe { libfabric_sys::inlined_fi_barrier2(self.as_raw_typed_fid(), mc_group.get_raw_addr() , opt.get_value(), ctx) }
+            unsafe { libfabric_sys::inlined_fi_barrier2(self.as_raw_typed_fid(), mc_group.get_raw_addr() , opt.as_raw(), ctx) }
         }
         else {
             unsafe { libfabric_sys::inlined_fi_barrier(self.as_raw_typed_fid(), mc_group.get_raw_addr(), ctx) }
@@ -165,58 +170,58 @@ pub(crate) trait CollectiveEpImpl : CollectiveEp + AsRawTypedFid<Output = EpRawF
         check_error(err)
     } 
 
-    fn broadcast_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn broadcast_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, context : Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
-        let err = unsafe { libfabric_sys::inlined_fi_broadcast(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), mc_group.get_raw_addr() , root_raw_addr, to_fi_datatype::<T>(), options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_broadcast(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), mc_group.get_raw_addr() , root_raw_addr, T::as_fi_datatype(), options.as_raw(), ctx) };
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn alltoall_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn alltoall_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let ctx = extract_raw_ctx(context);
-        let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), to_fi_datatype::<T>(), options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_alltoall(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), T::as_fi_datatype(), options.as_raw(), ctx) };
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn allgather_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn allgather_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let ctx = extract_raw_ctx(context);
-        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr().cast(), result_desc.get_desc(), mc_group.get_raw_addr(), libfabric_sys::fi_datatype_FI_UINT8, options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr().cast(), result_desc.get_desc(), mc_group.get_raw_addr(), libfabric_sys::fi_datatype_FI_UINT8, options.as_raw(), ctx) };
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
-    fn allreduce_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn allreduce_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let ctx = extract_raw_ctx(context);
-        let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr() , to_fi_datatype::<T>(), op.get_value(), options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_allreduce(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr() , T::as_fi_datatype(), op.as_raw(), options.as_raw(), ctx) };
         check_error(err)
     }
     
     #[allow(clippy::too_many_arguments)]
-    fn reduce_scatter_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn reduce_scatter_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let ctx = extract_raw_ctx(context);
-        let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), to_fi_datatype::<T>(), op.get_value(), options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_reduce_scatter(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), T::as_fi_datatype(), op.as_raw(), options.as_raw(), ctx) };
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn reduce_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>,op: crate::enums::Op,  options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn reduce_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>,op: crate::enums::Op,  options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
-        let err = unsafe { libfabric_sys::inlined_fi_reduce(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), root_raw_addr, to_fi_datatype::<T>(), op.get_value(), options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_reduce(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), root_raw_addr, T::as_fi_datatype(), op.as_raw(), options.as_raw(), ctx) };
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn scatter_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn scatter_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
-        let err = unsafe { libfabric_sys::inlined_fi_scatter(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), root_raw_addr, to_fi_datatype::<T>(), options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_scatter(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), root_raw_addr, T::as_fi_datatype(), options.as_raw(), ctx) };
         check_error(err)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gather_impl<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    fn gather_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: Option<&crate::MappedAddress>, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
-        let err = unsafe { libfabric_sys::inlined_fi_gather(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), root_raw_addr, to_fi_datatype::<T>(), options.get_value(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_gather(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result as *mut T as *mut std::ffi::c_void, result_desc.get_desc(), mc_group.get_raw_addr(), root_raw_addr, T::as_fi_datatype(), options.as_raw(), ctx) };
         check_error(err)
     }
 }
@@ -226,36 +231,36 @@ pub trait CollectiveEp {
     fn barrier_with_context<T0>(&self, mc_group: &MulticastGroupCollective, context: &mut T0) -> Result<(), crate::error::Error> ;
     fn barrier_with_options(&self, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     fn barrier_with_context_with_options<T0>(&self, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context : &mut T0) -> Result<(), crate::error::Error> ;
-    fn broadcast<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor,  mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn broadcast<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor,  mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn broadcast_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor,  mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut T0) -> Result<(), crate::error::Error> ;
+    fn broadcast_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor,  mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut T0) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn alltoall<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn alltoall<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn alltoall_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
+    fn alltoall_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn allreduce<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn allreduce<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn allreduce_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
-    fn allgather<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn allreduce_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
+    fn allgather<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn allgather_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
+    fn allgather_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn reduce_scatter<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn reduce_scatter<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn reduce_scatter_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
+    fn reduce_scatter_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn reduce<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn reduce<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn reduce_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
+    fn reduce_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn scatter<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn scatter<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn scatter_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
+    fn scatter_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn gather<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
+    fn gather<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> ;
     #[allow(clippy::too_many_arguments)]
-    fn gather_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
+    fn gather_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> ;
 }
 
 impl<EP: CollectiveEpImpl> CollectiveEp for EP {
@@ -275,81 +280,81 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         self.barrier_impl(mc_group, Some(context), Some(options))
     }
 
-    fn broadcast<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn broadcast<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.broadcast_impl::<T, ()>(buf, desc, mc_group, Some(root_mapped_addr), options, None)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn broadcast_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor,  mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut T0) -> Result<(), crate::error::Error> {
+    fn broadcast_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor,  mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut T0) -> Result<(), crate::error::Error> {
         self.broadcast_impl(buf, desc, mc_group, Some(root_mapped_addr), options, Some(context))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn alltoall<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn alltoall<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.alltoall_impl::<T, ()>(buf, desc, result, result_desc, mc_group, options, None)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn alltoall_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
+    fn alltoall_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
         self.alltoall_impl(buf, desc, result, result_desc, mc_group, options, Some(context))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn allreduce<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn allreduce<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.allreduce_impl::<T, ()>(buf, desc, result, result_desc, mc_group, op, options, None)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn allreduce_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
+    fn allreduce_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
         self.allreduce_impl(buf, desc, result, result_desc, mc_group, op, options, Some(context))
     }
 
-    fn allgather<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn allgather<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.allgather_impl::<T, ()>(buf, desc, result, result_desc, mc_group, options, None)
     }
     
     #[allow(clippy::too_many_arguments)]
-    fn allgather_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
+    fn allgather_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
         self.allgather_impl(buf, desc, result, result_desc, mc_group, options, Some(context))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn reduce_scatter<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn reduce_scatter<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.reduce_scatter_impl::<T, ()>(buf, desc, result, result_desc, mc_group, op, options, None)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn reduce_scatter_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
+    fn reduce_scatter_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
         self.reduce_scatter_impl(buf, desc, result, result_desc, mc_group, op, options, Some(context))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn reduce<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn reduce<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.reduce_impl::<T, ()>(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), op, options, None)
     }
     
     #[allow(clippy::too_many_arguments)]
-    fn reduce_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
+    fn reduce_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::Op,  options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
         self.reduce_impl(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), op, options, Some(context))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn scatter<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn scatter<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.scatter_impl::<T, ()>(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, None)
     }
     
     #[allow(clippy::too_many_arguments)]
-    fn scatter_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
+    fn scatter_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
         self.scatter_impl(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, Some(context))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gather<T: 'static>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> {
+    fn gather<T: AsFiType>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions) -> Result<(), crate::error::Error> {
         self.gather_impl::<T, ()>(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, None)
     }
     
     #[allow(clippy::too_many_arguments)]
-    fn gather_with_context<T: 'static, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
+    fn gather_with_context<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut T, result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut T0) -> Result<(), crate::error::Error> {
         self.gather_impl(buf, desc, result, result_desc, mc_group, Some(root_mapped_addr), options, Some(context))
     }
 }
@@ -415,7 +420,7 @@ pub struct CollectiveAttr<T> {
     phantom: PhantomData<T>,
 }
 
-impl<T: 'static> CollectiveAttr<T> {
+impl<T: AsFiType> CollectiveAttr<T> {
 
     //[TODO] CHECK INITIAL VALUES
     pub fn new() -> Self {
@@ -423,7 +428,7 @@ impl<T: 'static> CollectiveAttr<T> {
         Self {
             c_attr: libfabric_sys::fi_collective_attr {
                 op: 0,
-                datatype: to_fi_datatype::<T>(),
+                datatype: T::as_fi_datatype(),
                 datatype_attr: libfabric_sys::fi_atomic_attr{count: 0, size: 0},
                 max_members: 0,
                 mode: 0, // [TODO] What are the valid options?
@@ -434,7 +439,7 @@ impl<T: 'static> CollectiveAttr<T> {
 
 
     pub fn op(mut self, op: &enums::Op) -> Self {
-        self.c_attr.op = op.get_value();
+        self.c_attr.op = op.as_raw();
         self
     }
 
@@ -453,7 +458,7 @@ impl<T: 'static> CollectiveAttr<T> {
     }
 }
 
-impl<T: 'static> Default for CollectiveAttr<T> {
+impl<T: AsFiType> Default for CollectiveAttr<T> {
     fn default() -> Self {
         Self::new()
     }

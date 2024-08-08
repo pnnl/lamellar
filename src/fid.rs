@@ -3,13 +3,26 @@ use std::marker::PhantomData;
 use crate::{error, MyRc};
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
+#[derive(Hash, Clone, Copy)]
+pub(crate) struct Fid(pub(crate) RawFid);
+
+impl PartialEq for Fid {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for Fid {}
+
+impl AsRawFid for Fid {
+    fn as_raw_fid(&self) -> RawFid {
+        self.0
+    }
+}
 
 pub(crate) struct OwnedTypedFid<FID: AsRawFid> {
     typed_fid: FID,
 }
-
-unsafe impl<FID: AsRawFid> Sync for OwnedTypedFid<FID> {}
-unsafe impl<FID: AsRawFid> Send for OwnedTypedFid<FID> {}
 
 impl<FID: AsRawFid + AsRawTypedFid> OwnedTypedFid<FID> {
     pub(crate) fn from(typed_fid: FID) -> Self {
@@ -61,7 +74,6 @@ impl<'a, FID: AsRawFid + Copy>  AsRawFid for BorrowedTypedFid<'a, FID> {
 impl<FID: AsRawFid> Drop for OwnedTypedFid<FID> {
     #[inline]
     fn drop(&mut self) {
-        println!("Dropping !");
         let err = unsafe { libfabric_sys::inlined_fi_close(self.typed_fid.as_raw_fid()) };
 
         if err != 0 {

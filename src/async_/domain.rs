@@ -38,9 +38,8 @@ impl DomainBase<dyn AsyncReadEq> {
 
 impl<'a, T, E> DomainBuilder<'a, T, E> {
 
-
     pub fn build_and_bind_async<EQ: AsyncReadEq + 'static>(self, eq: &EventQueue<EQ>, async_mem_reg: bool) -> Result<DomainBase<dyn AsyncReadEq>, crate::error::Error> {
-        let domain = DomainBase::<dyn AsyncReadEq>::new(self.fabric, self.info, self.flags, self.info.get_domain_attr().clone(), self.ctx)?;
+        let domain = DomainBase::<dyn AsyncReadEq>::new(self.fabric, self.info, self.flags, self.info.domain_attr().clone(), self.ctx)?;
         domain.bind_eq(eq, async_mem_reg)?;
         Ok(domain)
     }

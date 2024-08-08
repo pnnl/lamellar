@@ -1,14 +1,14 @@
 use std::marker::PhantomData;
 
 #[repr(C)]
-pub struct IoVec<'a, T> {
-    pub(crate) c_iovec: libfabric_sys::iovec,
-    pub(crate) borrow: PhantomData<&'a T>,
+pub struct IoVec<'a> {
+    c_iovec: libfabric_sys::iovec,
+    borrow: PhantomData<&'a ()>,
 }
 
-impl<'a, T> IoVec<'a, T> {
+impl<'a> IoVec<'a> {
 
-    pub fn from(mem: &'a T) -> Self {
+    pub fn from<T>(mem: &'a T) -> Self {
         let c_iovec = libfabric_sys::iovec{
             iov_base:  (mem as *const T as *mut T).cast(),
             iov_len: std::mem::size_of_val(mem),
@@ -17,16 +17,7 @@ impl<'a, T> IoVec<'a, T> {
         Self { c_iovec, borrow: PhantomData }
     }
 
-    pub fn from_mut(mem: &'a mut T) -> Self {
-        let c_iovec = libfabric_sys::iovec{
-            iov_base:  (mem as *mut T).cast(),
-            iov_len: std::mem::size_of_val(mem),
-        };
-
-        Self { c_iovec, borrow: PhantomData }
-    }
-
-    pub fn from_slice(mem: &'a [T]) -> Self {
+    pub fn from_slice<T>(mem: &'a [T]) -> Self {
         let c_iovec = libfabric_sys::iovec{
             iov_base:  (mem.as_ptr() as *mut T).cast(),
             iov_len: std::mem::size_of_val(mem),
@@ -35,7 +26,30 @@ impl<'a, T> IoVec<'a, T> {
         Self { c_iovec, borrow: PhantomData }
     }
 
-    pub fn from_slice_mut(mem: &'a mut [T]) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn get(&self) ->  &libfabric_sys::iovec {
+        &self.c_iovec
+    }
+}
+
+#[repr(C)]
+pub struct IoVecMut<'a> {
+    c_iovec: libfabric_sys::iovec,
+    borrow: PhantomData<&'a mut ()>,
+}
+
+impl<'a> IoVecMut<'a> {
+
+    pub fn from<T>(mem: &'a mut T) -> Self {
+        let c_iovec = libfabric_sys::iovec{
+            iov_base:  (mem as *mut T).cast(),
+            iov_len: std::mem::size_of_val(mem),
+        };
+
+        Self { c_iovec, borrow: PhantomData }
+    }
+
+    pub fn from_slice<T>(mem: &'a mut [T]) -> Self {
         let c_iovec = libfabric_sys::iovec{
             iov_base:  mem.as_mut_ptr().cast(),
             iov_len: std::mem::size_of_val(mem),
@@ -45,20 +59,15 @@ impl<'a, T> IoVec<'a, T> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get(&self) ->  *const libfabric_sys::iovec {
-        &self.c_iovec
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::iovec {
+    pub(crate) fn get_mut(&mut self) ->  &mut libfabric_sys::iovec {
         &mut self.c_iovec
     }
 }
 
 #[repr(C)]
 pub struct Ioc<'a, T>{
-    pub(crate) c_ioc: libfabric_sys::fi_ioc,
-    pub(crate) borrow: PhantomData<&'a T>,
+    c_ioc: libfabric_sys::fi_ioc,
+    borrow: PhantomData<&'a T>,
 }
 
 impl<'a, T> Ioc<'a, T> {
@@ -66,15 +75,6 @@ impl<'a, T> Ioc<'a, T> {
     pub fn from(mem: &'a T) -> Self {
         let c_ioc = libfabric_sys::fi_ioc{
             addr:  (mem as *const T as *mut T).cast(),
-            count: 1,
-        };
-
-        Self { c_ioc, borrow: PhantomData }
-    }
-
-    pub fn from_mut(mem: &'a mut T) -> Self {
-        let c_ioc = libfabric_sys::fi_ioc{
-            addr:  (mem as *mut T).cast(),
             count: 1,
         };
 
@@ -90,7 +90,30 @@ impl<'a, T> Ioc<'a, T> {
         Self { c_ioc, borrow: PhantomData }
     }
 
-    pub fn from_slice_mut(mem: &'a mut [T]) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn get(&self) ->  &libfabric_sys::fi_ioc {
+        &self.c_ioc
+    }
+}
+
+#[repr(C)]
+pub struct IocMut<'a, T>{
+    c_ioc: libfabric_sys::fi_ioc,
+    borrow: PhantomData<&'a mut T>,
+}
+
+impl<'a, T> IocMut<'a, T> {
+
+    pub fn from(mem: &'a mut T) -> Self {
+        let c_ioc = libfabric_sys::fi_ioc{
+            addr:  (mem as *mut T).cast(),
+            count: 1,
+        };
+
+        Self { c_ioc, borrow: PhantomData }
+    }
+
+    pub fn from_slice(mem: &'a mut [T]) -> Self {
         let c_ioc = libfabric_sys::fi_ioc{
             addr:  mem.as_mut_ptr().cast(),
             count: mem.len(),
@@ -100,12 +123,7 @@ impl<'a, T> Ioc<'a, T> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get(&self) ->  *const libfabric_sys::fi_ioc {
-        &self.c_ioc
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_ioc {
+    pub(crate) fn get_mut(&mut self) ->  &mut libfabric_sys::fi_ioc {
         &mut self.c_ioc
     }
 }

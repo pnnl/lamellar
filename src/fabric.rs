@@ -1,11 +1,11 @@
 
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, BorrowedTypedFid, FabricRawFid, OwnedFabricFid, RawFid}, info::InfoEntry, utils::check_error, MyRc};
+use crate::{fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, BorrowedTypedFid, FabricRawFid, OwnedFabricFid, RawFid}, info::{InfoEntry, Version}, utils::check_error, MyRc};
 
 pub(crate) struct FabricImpl {
     pub(crate) c_fabric: OwnedFabricFid,
@@ -24,15 +24,15 @@ pub struct Fabric {
 
 impl FabricImpl {
 
-    pub(crate) fn new<T0>(mut attr: FabricAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>( attr: FabricAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_fabric: FabricRawFid  = std::ptr::null_mut();
-
+        let mut c_attr = unsafe {attr.get()};
         let err = 
             if let Some(ctx) = context {
-                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), &mut c_fabric, (ctx as *mut T0).cast())}
+                unsafe {libfabric_sys::fi_fabric(&mut c_attr, &mut c_fabric, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe {libfabric_sys::fi_fabric(attr.get_mut(), &mut c_fabric, std::ptr::null_mut())}
+                unsafe {libfabric_sys::fi_fabric(&mut c_attr, &mut c_fabric, std::ptr::null_mut())}
             };
         
         if err != 0 || c_fabric.is_null() {
@@ -136,70 +136,64 @@ impl AsRawTypedFid for Fabric {
 
 #[derive(Clone, Debug)]
 pub struct FabricAttr {
-    c_attr : libfabric_sys::fi_fabric_attr,
-    f_name : CString,
-    prov_name : CString,
+    fabric_id: usize,
+    name: String,
+    prov_name: String,
+    _c_name: CString,
+    _c_prov_name: CString,
+    prov_version: Version,
+    api_version: Version,
 }
 
 impl FabricAttr {
 
-    pub fn new() -> Self {
+    pub(crate) fn from_raw_ptr(c_fab_att :*const libfabric_sys::fi_fabric_attr) -> Self {
+        assert!(!c_fab_att.is_null());
+        let c_name = unsafe{if !(*c_fab_att).name.is_null() {CStr::from_ptr((*c_fab_att).name).into()} else {CString::new("").unwrap()}};
+        let c_prov_name = unsafe{if !(*c_fab_att).prov_name.is_null() {CStr::from_ptr((*c_fab_att).prov_name).into()} else {CString::new("").unwrap()}};
+        Self {
+            fabric_id: unsafe {*c_fab_att}.fabric as usize,
+            name: c_name.to_str().unwrap().to_string(),
+            prov_name: c_prov_name.to_str().unwrap().to_string(),
+            _c_name: c_name,
+            _c_prov_name: c_prov_name,
+            prov_version: Version::from_raw(unsafe{*c_fab_att}.prov_version), 
+            api_version: Version::from_raw(unsafe{*c_fab_att}.api_version), 
+        }
+    }
+
+    pub(crate) unsafe fn get(&self) -> libfabric_sys::fi_fabric_attr {
+
         let c_attr = libfabric_sys::fi_fabric_attr {
-            fabric: std::ptr::null_mut(),
-            name: std::ptr::null_mut(),
-            prov_name: std::ptr::null_mut(),
-            prov_version: 0,
-            api_version: 0,
+            fabric: self.fabric_id as *mut libfabric_sys::fid_fabric,
+            prov_name: unsafe {std::mem::transmute(self._c_prov_name.as_ptr())},
+            name: unsafe {std::mem::transmute(self._c_name.as_ptr())},
+            prov_version: self.prov_version.as_raw(),
+            api_version: self.api_version.as_raw(),
         };
 
-        Self { c_attr, f_name: CString::new("").unwrap(), prov_name: CString::new("").unwrap() }
+        c_attr
     }
 
-    // pub fn fabric(&mut self, fabric: &Fabric) -> &mut Self {
-    //     self.c_attr.fabric = fabric.c_fabric;
-    //     self
-    // }
-
-    pub fn name(&mut self, name: String) -> &mut Self { //[TODO] Possible memory leak
-        let name = CString::new(name).unwrap();
-        self.f_name = name;
-        self.c_attr.name = unsafe{std::mem::transmute::<*const i8, *mut i8>(self.f_name.as_ptr())};
-        self
+    pub fn fabric_id(&self) -> usize {
+        self.fabric_id
     }
 
-    pub fn prov_name(&mut self, name: String) -> &mut Self { //[TODO] Possible memory leak
-        let name = CString::new(name).unwrap();
-        self.prov_name = name;
-        self.c_attr.prov_name = unsafe{std::mem::transmute::<*const i8, *mut i8>(self.prov_name.as_ptr())};
-        self
-    }
-
-    pub fn prov_version(&mut self, version: u32) -> &mut Self {
-        self.c_attr.prov_version = version;
-        self
-    }
-
-    pub fn api_version(&mut self, version: u32) -> &mut Self {
-        self.c_attr.api_version = version;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_fabric_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_fabric_attr {
-        &mut self.c_attr
-    }
-
-    pub fn get_prov_name(&self) -> String {
-        unsafe{ std::ffi::CStr::from_ptr(self.c_attr.prov_name).to_str().unwrap().to_string() }
+    pub fn prov_name(&self) -> &str {
+        &self.prov_name
     }    
 
-    pub fn get_name(&self) -> String {
-        unsafe{ std::ffi::CStr::from_ptr(self.c_attr.name).to_str().unwrap().to_string() }
+    pub fn name(&self) -> &str {
+        &self.name
     }    
+
+    pub fn prov_version(&self) -> Version {
+        self.prov_version
+    }
+    
+    pub fn api_version(&self) -> Version {
+        self.api_version
+    }
 }
 
 // impl Drop for FabricAttr {
@@ -212,12 +206,6 @@ impl FabricAttr {
 //         }
 //     }
 // }
-
-impl Default for FabricAttr {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 
 /// Builder for the [`Fabric`] type.
@@ -257,6 +245,7 @@ impl<'a, T> FabricBuilder<'a, T> {
     /// Corresponds to retrieving the `fabric_attr` field of the provided `fi_info` entry (from [`new`](Self::new))
     /// and passing it along with an optional `context` to `fi_fabric`
     pub fn build<E>(self, info: &InfoEntry<E>) -> Result<Fabric, crate::error::Error> {
-        Fabric::new(info.get_fabric_attr().clone(), self.ctx)
+
+        Fabric::new(info.fabric_attr().clone(), self.ctx)
     }    
 }

@@ -5,7 +5,7 @@ use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_G
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::{AddressVector, AddressVectorBase, AddressVectorImplBase}, cntr::{Counter, ReadCntr}, cq::ReadCq, domain::DomainImplT, enums::{HmemP2p, TransferOptions}, eq::{EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid, RawFid}, info::InfoEntry, utils::check_error, MyOnceCell, MyRc};
+use crate::{av::{AddressVector, AddressVectorBase, AddressVectorImplBase}, cntr::{Counter, ReadCntr}, cq::{CompletionQueue, ReadCq}, domain::DomainImplT, enums::{EndpointType, HmemP2p, Protocol, TransferOptions}, eq::{EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid, RawFid}, info::{InfoEntry, Version}, utils::check_error, MyOnceCell, MyRc, MyRefCell};
 
 #[repr(C)]
 pub struct Address {
@@ -37,18 +37,22 @@ impl Address {
     } 
 }
 
+pub(crate) enum EpCq<CQ: ?Sized> {
+    Separate(MyRc<CQ>, MyRc<CQ>),
+    Shared(MyRc<CQ>),
+}
+
 pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     pub(crate) c_ep: OwnedEpFid,
-    pub(crate) tx_cq: MyOnceCell<MyRc<CQ>>,
-    pub(crate) rx_cq: MyOnceCell<MyRc<CQ>>,
+    pub(crate) cq: MyOnceCell<EpCq<CQ>>,
     pub(crate) eq: MyOnceCell<MyRc<EQ>>,
-    _bound_cntr: MyOnceCell<MyRc<dyn AsRawFid + Sync + Send>>,
-    _bound_av: MyOnceCell<MyRc<dyn AsRawFid + Sync + Send>>,
-    _domain_rc:  MyRc<dyn DomainImplT + Sync + Send>,
+    _bound_cntrs: MyRefCell<Vec<MyRc<dyn AsRawFid>>>,
+    _bound_av: MyOnceCell<MyRc<dyn AsRawFid>>,
+    _domain_rc:  MyRc<dyn DomainImplT>,
     phantom: PhantomData<T>,
 }
 
-pub type  Endpoint<T>  = EndpointBase<EndpointImplBase<T, dyn ReadEq  + Sync + Send, dyn ReadCq + Sync + Send>>;
+pub type  Endpoint<T>  = EndpointBase<EndpointImplBase<T, dyn ReadEq , dyn ReadCq>>;
 pub struct EndpointBase<EP> {
     pub(crate) inner: MyRc<EP>,
 }
@@ -192,7 +196,7 @@ pub trait BaseEndpoint : AsRawFid {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(HmemP2p::from_value(res))
+            Ok(HmemP2p::from_raw(res))
         }
     }
 
@@ -221,7 +225,7 @@ pub trait BaseEndpoint : AsRawFid {
 
         let mut len = std::mem::size_of::<u32>();
 
-        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, (&mut hmem.get_value() as *mut u32).cast(), &mut len)};
+        let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_FI_HMEM_P2P as i32, (&mut hmem.as_raw() as *mut u32).cast(), &mut len)};
     
         check_error(err.try_into().unwrap())
     }
@@ -281,7 +285,7 @@ pub struct ScalableEndpoint<E> {
 }
 
 impl ScalableEndpoint<()> {
-    pub fn new<T0, E, EQ: ?Sized + 'static+ Sync + Send>(domain: &crate::domain::DomainBase<EQ>, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<ScalableEndpoint<E>, crate::error::Error> {
+    pub fn new<T0, E, EQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<EQ>, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<ScalableEndpoint<E>, crate::error::Error> {
         Ok(
             ScalableEndpoint::<E> { 
                 inner: MyRc::new( ScalableEndpointImpl::new(&domain.inner, info, context)?),
@@ -609,52 +613,52 @@ impl<E> AsFd for PassiveEndpoint<E> {
 
 //================== Endpoint (fi_endpoint) ==================//
 
-pub struct IncompleteBindCq<'a, EP> {
-    pub(crate) ep: &'a EP,
-    pub(crate) flags: u64,
-}
+// pub struct IncompleteBindCq<'a, EP> {
+//     pub(crate) ep: &'a EP,
+//     pub(crate) flags: u64,
+// }
 
-impl<'a, EP> IncompleteBindCq<'a, EP> {
-    pub fn recv(&mut self, selective: bool) -> &mut Self {
-        if selective {
-            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
+// impl<'a, EP> IncompleteBindCq<'a, EP> {
+//     pub fn recv(&mut self, selective: bool) -> &mut Self {
+//         if selective {
+//             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
         
-            self
-        }
-        else {
-            self.flags |= libfabric_sys::FI_RECV as u64;
+//             self
+//         }
+//         else {
+//             self.flags |= libfabric_sys::FI_RECV as u64;
 
-            self
-        }
-    }
+//             self
+//         }
+//     }
 
-    pub fn transmit(&mut self, selective: bool) -> &mut Self {
-        if selective {
-            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_TRANSMIT as u64;
+//     pub fn transmit(&mut self, selective: bool) -> &mut Self {
+//         if selective {
+//             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_TRANSMIT as u64;
 
-            self
-        }
-        else {
-            self.flags |= libfabric_sys::FI_TRANSMIT as u64;
+//             self
+//         }
+//         else {
+//             self.flags |= libfabric_sys::FI_TRANSMIT as u64;
 
-            self
-        }
-    }
-}
+//             self
+//         }
+//     }
+// }
 
-impl<'a, EP> IncompleteBindCq<'a, EndpointImplBase<EP, dyn ReadEq + Sync + Send, dyn ReadCq + Sync + Send>> {
+// impl<'a, EP> IncompleteBindCq<'a, EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>> {
 
-    pub fn cq<T: AsRawFid+ ReadCq + 'static + Sync + Send>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
-        self.ep.bind_cq_(&cq.inner, self.flags)
-    }
-}
+//     pub fn cq<T: AsRawFid+ ReadCq + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
+//         self.ep.bind_cq_(&cq.inner, self.flags)
+//     }
+// }
 
 pub struct IncompleteBindCntr<'a, EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> {
     pub(crate) ep: &'a EndpointImplBase<EP, EQ, CQ>,
     pub(crate) flags: u64,
 }
 
-impl<'a, EP, EQ: ?Sized + ReadEq + AsRawFid + 'static + Sync + Send, CQ: ?Sized + ReadCq + Sync + Send> IncompleteBindCntr<'a, EP, EQ, CQ> {
+impl<'a, EP, EQ: ?Sized + ReadEq + AsRawFid + 'static, CQ: ?Sized + ReadCq> IncompleteBindCntr<'a, EP, EQ, CQ> {
 
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
@@ -692,14 +696,14 @@ impl<'a, EP, EQ: ?Sized + ReadEq + AsRawFid + 'static + Sync + Send, CQ: ?Sized 
         self
     }
 
-    pub fn cntr(&mut self, cntr: &Counter<impl ReadCntr + 'static + Sync + Send>) -> Result<(), crate::error::Error> {
+    pub fn cntr(&mut self, cntr: &Counter<impl ReadCntr + 'static>) -> Result<(), crate::error::Error> {
         self.ep.bind_cntr_(&cntr.inner, self.flags)
     }
 }
 
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
 
-    pub(crate) fn new<T0, E, DEQ: ?Sized + 'static + Sync + Send>(domain: &MyRc<crate::domain::DomainImplBase<DEQ>>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Self, crate::error::Error> {
+    pub(crate) fn new<T0, E, DEQ: ?Sized + 'static>(domain: &MyRc<crate::domain::DomainImplBase<DEQ>>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Self, crate::error::Error> {
         let mut c_ep: EpRawFid = std::ptr::null_mut();
         let err =
             if let Some(ctx) = context {
@@ -717,9 +721,8 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
                 Self { 
                     c_ep: OwnedEpFid::from(c_ep),
                     _bound_av: MyOnceCell::new(),
-                    _bound_cntr: MyOnceCell::new(),
-                    rx_cq: MyOnceCell::new(),
-                    tx_cq: MyOnceCell::new(),
+                    _bound_cntrs: MyRefCell::new(Vec::new()),
+                    cq: MyOnceCell::new(),
                     eq: MyOnceCell::new(),
                     _domain_rc: domain.clone(),
                     phantom: PhantomData,
@@ -729,18 +732,18 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
 }
 
 impl Endpoint<()> {
-    pub fn new<T0, E, DEQ:?Sized + 'static + Sync + Send>(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
+    pub fn new<T0, E, DEQ:?Sized + 'static>(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
         Ok(
-            EndpointBase::<EndpointImplBase<E, dyn ReadEq + Sync + Send, dyn ReadCq + Sync + Send>> {
+            EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
                 inner:MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, context)?),
             }
         )
     }
 }
 
-impl<EP, EQ: ?Sized + ReadEq + 'static + Sync + Send, CQ: ?Sized + ReadCq + Sync + Send> EndpointImplBase<EP, EQ, CQ> {
+impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq> EndpointImplBase<EP, EQ, CQ> {
     
-    pub(crate) fn bind_av_<AVEQ: ?Sized + ReadEq + 'static + Sync + Send>(&self, res: &MyRc<AddressVectorImplBase<AVEQ>>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_av_<AVEQ: ?Sized + ReadEq + 'static>(&self, res: &MyRc<AddressVectorImplBase<AVEQ>>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
         
         if err != 0 {
@@ -754,64 +757,67 @@ impl<EP, EQ: ?Sized + ReadEq + 'static + Sync + Send, CQ: ?Sized + ReadCq + Sync
         }
     } 
 
-    pub(crate) fn bind_cntr_(&self, res: &MyRc<impl ReadCntr + 'static + Sync + Send>, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_cntr_(&self, res: &MyRc<impl ReadCntr + 'static>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            if self._bound_cntr.set(res.clone()).is_err() {
-                panic!("Endpoint already bound to a Counter");
-            }
+            #[cfg(not(feature = "thread-safe"))]
+            self._bound_cntrs.borrow_mut().push(res.clone());
+            #[cfg(feature = "thread-safe")]
+            self._bound_cntrs.write().push(res.clone());
             Ok(())
         }
     } 
 }
 
-impl<EP, EQ: ?Sized + ReadEq + 'static + Sync + Send> EndpointImplBase<EP, EQ, dyn ReadCq + Sync + Send> {
-    pub(crate) fn bind_cq_<T: AsRawFid + ReadCq + 'static + Sync + Send>(&self, cq: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
+impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
+    pub(crate) fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(&self, cq: &MyRc<T>, selective: bool) -> Result<(), crate::error::Error> {
+        let mut flags = libfabric_sys::FI_TRANSMIT as u64 | libfabric_sys::FI_RECV as u64;
+        if selective {
+            flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+        }
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
+
+        check_error(err as isize)?;
+        if self.cq.set(EpCq::Shared(cq.clone())).is_err() {
+            panic!("Endpoint already bound with another shared Completion Queueu");
         }
-        else {
 
-            if (flags & libfabric_sys::FI_TRANSMIT as u64) != 0 && (flags & libfabric_sys::FI_RECV as u64) != 0{
-                if self.tx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-                if self.rx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-            }
-            else if flags & libfabric_sys::FI_TRANSMIT as u64 != 0 {
-                if self.tx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-            }
-            else if flags & libfabric_sys::FI_RECV as u64 != 0{
-                if self.rx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-            }
-            else {
-                panic!("Binding to Endpoint without specifying direction");
-            }
+        Ok(())
+    }
 
-            Ok(())
+    pub(crate) fn bind_separate_cqs<T: AsRawFid + ReadCq + 'static>(&self, tx_cq: &MyRc<T>, tx_selective: bool, rx_cq: &MyRc<T>, rx_selective: bool) -> Result<(), crate::error::Error> {
+        let mut tx_flags = libfabric_sys::FI_TRANSMIT as u64;
+        if tx_selective {
+            tx_flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
         }
-    } 
+        
+        let mut rx_flags = libfabric_sys::FI_RECV as u64;
+        if rx_selective {
+            rx_flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+        }
+        
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), tx_cq.as_raw_fid(), tx_flags) };
+        check_error(err as isize)?;
+        
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), rx_cq.as_raw_fid(), rx_flags) };
+        check_error(err as isize)?;
 
-    pub(crate) fn bind_cq(&self) -> IncompleteBindCq<Self> {
-        IncompleteBindCq { ep: self, flags: 0}
+        if self.cq.set(EpCq::Separate(tx_cq.clone(), rx_cq.clone())).is_err() {
+            panic!("Endpoint already bound with other  Completion Queueus");
+        }
+
+        Ok(())
     }
 }
 
-impl<EP, CQ: ?Sized + ReadCq + Sync + Send> EndpointImplBase<EP, dyn ReadEq + Sync + Send, CQ> {
+impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn ReadEq, CQ> {
 
-    pub(crate) fn bind_eq<T: ReadEq + 'static + Sync + Send>(&self, eq: &MyRc<T>) -> Result<(), crate::error::Error>  {
+    pub(crate) fn bind_eq<T: ReadEq + 'static>(&self, eq: &MyRc<T>) -> Result<(), crate::error::Error>  {
             
         let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), 0) };
         
@@ -828,13 +834,13 @@ impl<EP, CQ: ?Sized + ReadCq + Sync + Send> EndpointImplBase<EP, dyn ReadEq + Sy
     }
 }
 
-impl<EP, EQ: ?Sized +  AsRawFid + 'static + ReadEq + Sync + Send, CQ: ?Sized + ReadCq + Sync + Send> EndpointImplBase<EP, EQ, CQ> {
+impl<EP, EQ: ?Sized +  AsRawFid + 'static + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<EP, EQ, CQ> {
 
     pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<EP, EQ, CQ> {
         IncompleteBindCntr { ep: self, flags: 0}
     }
     
-    pub(crate) fn bind_av<AVEQ: ?Sized + ReadEq + 'static + Sync + Send>(&self, av: &AddressVectorBase<AVEQ>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_av<AVEQ: ?Sized + ReadEq + 'static>(&self, av: &AddressVectorBase<AVEQ>) -> Result<(), crate::error::Error> {
     
         self.bind_av_(&av.inner, 0)
     }
@@ -852,9 +858,8 @@ impl<EP, EQ: ?Sized +  AsRawFid + 'static + ReadEq + Sync + Send, CQ: ?Sized + R
                 Self { 
                     c_ep: OwnedEpFid::from(c_ep),
                     _bound_av: MyOnceCell::new(),
-                    _bound_cntr: MyOnceCell::new(),
-                    rx_cq: MyOnceCell::new(),
-                    tx_cq: MyOnceCell::new(),
+                    _bound_cntrs: MyRefCell::new(Vec::new()),
+                    cq: MyOnceCell::new(),
                     eq: MyOnceCell::new(),
                     _domain_rc: self._domain_rc.clone(),
                     phantom: PhantomData,
@@ -863,25 +868,29 @@ impl<EP, EQ: ?Sized +  AsRawFid + 'static + ReadEq + Sync + Send, CQ: ?Sized + R
     }
 }
 
-impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq + Sync + Send, dyn ReadCq + Sync + Send>> {
-    pub fn bind_cq(&self) -> IncompleteBindCq<EndpointImplBase<EP, dyn ReadEq + Sync + Send, dyn ReadCq + Sync + Send>> {
-        self.inner.bind_cq()
+impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>> {
+    pub fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(&self, cq: &CompletionQueue<T>, selective: bool) -> Result<(), crate::error::Error> {
+        self.inner.bind_shared_cq(&cq.inner, selective)
+    }
+
+    pub fn bind_separate_cqs<T: AsRawFid + ReadCq + 'static>(&self, tx_cq: &CompletionQueue<T>, tx_selective: bool, rx_cq: &CompletionQueue<T>, rx_selective: bool) -> Result<(), crate::error::Error> {
+        self.inner.bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
     }
 }
 
 
-impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq + Sync + Send, dyn ReadCq + Sync + Send>> {
-    pub fn bind_eq<T: ReadEq + 'static + Sync + Send>(&self, eq: &EventQueueBase<T>) -> Result<(), crate::error::Error>  {
+impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>> {
+    pub fn bind_eq<T: ReadEq + 'static>(&self, eq: &EventQueueBase<T>) -> Result<(), crate::error::Error>  {
         self.inner.bind_eq(&eq.inner)
     }
 }
 
-impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq + Sync + Send, dyn ReadCq + Sync + Send>> {
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq + Sync + Send, dyn ReadCq + Sync + Send> {
+impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
         self.inner.bind_cntr()
     }
 
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static + Sync + Send>(&self, av: &AddressVectorBase<EQ>) -> Result<(), crate::error::Error> {
+    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(&self, av: &AddressVectorBase<EQ>) -> Result<(), crate::error::Error> {
         self.inner.bind_av(av)
     }
 
@@ -1043,7 +1052,7 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid>{
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(TransferOptions::from_value(ops))
+            Ok(TransferOptions::from_raw(ops))
         }
     }
 
@@ -1055,14 +1064,14 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid>{
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(TransferOptions::from_value(ops))
+            Ok(TransferOptions::from_raw(ops))
         }
     }
 
     fn set_transmit_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
 
         ops.transmit();
-        let err = unsafe{ inlined_fi_control(self.as_raw_typed_fid().as_raw_fid(), libfabric_sys::FI_SETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
+        let err = unsafe{ inlined_fi_control(self.as_raw_typed_fid().as_raw_fid(), libfabric_sys::FI_SETOPSFLAG as i32, (&mut ops.as_raw() as *mut u32).cast())}; 
 
         check_error(err.try_into().unwrap())
     }
@@ -1070,7 +1079,7 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid>{
     fn set_receive_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
         
         ops.recv();
-        let err = unsafe{ inlined_fi_control(self.as_raw_typed_fid().as_raw_fid(), libfabric_sys::FI_SETOPSFLAG as i32, (&mut ops.get_value() as *mut u32).cast())}; 
+        let err = unsafe{ inlined_fi_control(self.as_raw_typed_fid().as_raw_fid(), libfabric_sys::FI_SETOPSFLAG as i32, (&mut ops.as_raw() as *mut u32).cast())}; 
 
         check_error(err.try_into().unwrap())
     }
@@ -1078,122 +1087,184 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid>{
 //================== Endpoint attribute ==================//
 #[derive(Clone)]
 pub struct EndpointAttr {
-    c_attr: libfabric_sys::fi_ep_attr,
+    type_: EndpointType,
+    protocol: Protocol,
+    protocol_version: Version,
+    max_msg_size: usize,
+    msg_prefix_size: usize,
+    max_order_raw_size: usize,
+    max_order_war_size: usize,
+    max_order_waw_size: usize,
+    mem_tag_format: u64,
+    tx_ctx_cnt: usize,
+    rx_ctx_cnt: usize,
+    auth_key: Option<Vec<u8>>,
 }
 
 impl EndpointAttr {
-    pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_ep_attr{
-            type_: libfabric_sys::fi_ep_type_FI_EP_UNSPEC,
-            protocol: libfabric_sys::FI_PROTO_UNSPEC,
-            protocol_version: 0,
-            max_msg_size: 0,
-            msg_prefix_size: 0,
-            max_order_raw_size: 0,
-            max_order_war_size: 0,
-            max_order_waw_size: 0,
-            mem_tag_format: 0,
-            tx_ctx_cnt: 0,
-            rx_ctx_cnt: 0,
-            auth_key_size: 0,
-            auth_key: std::ptr::null_mut(),
+    pub(crate) fn new() -> Self {
+
+        Self {
+            type_: EndpointType::Unspec,
+            protocol: Protocol::Unspec,
+            protocol_version : Version{major: 0, minor: 0}, 
+            max_msg_size : 0, 
+            msg_prefix_size : 0, 
+            max_order_raw_size : 0, 
+            max_order_war_size : 0, 
+            max_order_waw_size : 0, 
+            mem_tag_format : 0, 
+            tx_ctx_cnt : 0, 
+            rx_ctx_cnt : 0, 
+            auth_key: None,
+        }
+    }
+
+    pub(crate) fn from_raw_ptr(c_ep_attr: *const libfabric_sys::fi_ep_attr) -> Self {
+        Self {
+            type_: EndpointType::from_raw(unsafe {*c_ep_attr}.type_),
+            protocol: Protocol::from_raw(unsafe {*c_ep_attr}.protocol),
+            protocol_version: Version::from_raw(unsafe {*c_ep_attr}.protocol_version),
+            max_msg_size : unsafe{*c_ep_attr}.max_msg_size, 
+            msg_prefix_size : unsafe{*c_ep_attr}.msg_prefix_size, 
+            max_order_raw_size : unsafe{*c_ep_attr}.max_order_raw_size, 
+            max_order_war_size : unsafe{*c_ep_attr}.max_order_war_size, 
+            max_order_waw_size : unsafe{*c_ep_attr}.max_order_waw_size, 
+            mem_tag_format : unsafe{*c_ep_attr}.mem_tag_format, 
+            tx_ctx_cnt : unsafe{*c_ep_attr}.tx_ctx_cnt, 
+            rx_ctx_cnt : unsafe{*c_ep_attr}.rx_ctx_cnt,
+            auth_key: if !unsafe{*c_ep_attr}.auth_key.is_null() { Some(unsafe {std::slice::from_raw_parts((*c_ep_attr).auth_key, (*c_ep_attr).auth_key_size).to_vec()}) } else {None},
+        }
+    }
+
+    pub(crate) fn get(&self) -> libfabric_sys::fi_ep_attr {
+        let (auth_key, auth_key_size) = if let Some(auth_key) = &self.auth_key {
+            (auth_key.as_ptr(), auth_key.len())
+        }
+        else {
+            (std::ptr::null(), 0)
         };
-
-        Self { c_attr }
+        libfabric_sys::fi_ep_attr {
+            type_: self.type_.as_raw(),
+            protocol: self.protocol.as_raw(),
+            protocol_version: self.protocol_version.as_raw(),
+            max_msg_size: self.max_msg_size,
+            msg_prefix_size: self.msg_prefix_size,
+            max_order_raw_size: self.max_order_raw_size,
+            max_order_war_size: self.max_order_war_size,
+            max_order_waw_size: self.max_order_waw_size,
+            mem_tag_format: self.mem_tag_format,
+            tx_ctx_cnt: self.tx_ctx_cnt,
+            rx_ctx_cnt: self.rx_ctx_cnt,
+            auth_key: unsafe {std::mem::transmute(auth_key)},
+            auth_key_size,
+        }
     }
 
-    pub(crate) fn from(c_ep_attr: *mut libfabric_sys::fi_ep_attr) -> Self {
-        let c_attr = unsafe { *c_ep_attr };
+    pub fn set_type(&mut self, type_: crate::enums::EndpointType) -> &mut Self {
 
-        Self { c_attr }
-    }
-
-    pub fn ep_type(&mut self, type_: crate::enums::EndpointType) -> &mut Self {
-
-        self.c_attr.type_ = type_.get_value();
+        self.type_ = type_;
         self
     }
 
-    pub fn protocol(&mut self, proto: crate::enums::Protocol) -> &mut Self {
+    pub fn set_protocol(&mut self, proto: crate::enums::Protocol) -> &mut Self {
 
-        self.c_attr.protocol = proto.get_value();
+        self.protocol = proto;
         self
     }
 
-    pub fn max_msg_size(&mut self, size: usize) -> &mut Self {
+    pub fn set_max_msg_size(&mut self, size: usize) -> &mut Self {
 
-        self.c_attr.max_msg_size = size;
+        self.max_msg_size = size;
         self
     }
 
-    pub fn msg_prefix_size(&mut self, size: usize) -> &mut Self {
+    pub fn set_msg_prefix_size(&mut self, size: usize) -> &mut Self {
 
-        self.c_attr.msg_prefix_size = size;
+        self.msg_prefix_size = size;
         self
     }
 
-    pub fn max_order_raw_size(&mut self, size: usize) -> &mut Self {
+    pub fn set_max_order_raw_size(&mut self, size: usize) -> &mut Self {
 
-        self.c_attr.max_order_raw_size = size;
+        self.max_order_raw_size = size;
         self
     }
 
-    pub fn max_order_war_size(&mut self, size: usize) -> &mut Self {
+    pub fn set_max_order_war_size(&mut self, size: usize) -> &mut Self {
 
-        self.c_attr.max_order_war_size = size;
+        self.max_order_war_size = size;
         self
     }
 
-    pub fn max_order_waw_size(&mut self, size: usize) -> &mut Self {
+    pub fn set_max_order_waw_size(&mut self, size: usize) -> &mut Self {
 
-        self.c_attr.max_order_waw_size = size;
+        self.max_order_waw_size = size;
         self
     }
 
-    pub fn mem_tag_format(&mut self, tag: u64) -> &mut Self {
+    pub fn set_mem_tag_format(&mut self, tag: u64) -> &mut Self {
 
-        self.c_attr.mem_tag_format = tag;
+        self.mem_tag_format = tag;
         self
     }
 
-    pub fn tx_ctx_cnt(&mut self, size: usize) -> &mut Self {
+    pub fn set_tx_ctx_cnt(&mut self, size: usize) -> &mut Self {
 
-        self.c_attr.tx_ctx_cnt = size;
+        self.tx_ctx_cnt = size;
         self
     }
 
-    pub fn rx_ctx_cnt(&mut self, size: usize) -> &mut Self {
+    pub fn set_rx_ctx_cnt(&mut self, size: usize) -> &mut Self {
 
-        self.c_attr.rx_ctx_cnt = size;
+        self.rx_ctx_cnt = size;
         self
     }
 
-    pub fn auth_key(&mut self, key: &mut [u8]) -> &mut Self {
+    pub fn set_auth_key(&mut self, key: &mut [u8]) -> &mut Self {
 
-        self.c_attr.auth_key_size = key.len();
-        self.c_attr.auth_key = key.as_mut_ptr();
+        self.auth_key = Some(key.to_vec());
         self
     }
 
-    pub fn get_type(&self) -> crate::enums::EndpointType {
-        crate::enums::EndpointType::from(self.c_attr.type_)
+    pub fn type_(&self) -> &crate::enums::EndpointType {
+        &self.type_
     }
 
-    pub fn get_max_msg_size(&self) -> usize {
-        self.c_attr.max_msg_size 
+    pub fn max_msg_size(&self) -> usize {
+        self.max_msg_size 
     }
 
-    pub fn get_msg_prefix_size(&self) -> usize {
-        self.c_attr.msg_prefix_size
+    pub fn msg_prefix_size(&self) -> usize {
+        self.msg_prefix_size
     }
 
-    pub(crate) fn get(&self) ->  *const libfabric_sys::fi_ep_attr {
-        &self.c_attr
+    pub fn max_order_raw_size(&self) -> usize {
+        self.max_order_raw_size
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_mut(&mut self) ->  *mut libfabric_sys::fi_ep_attr {
-        &mut self.c_attr
+    pub fn max_order_war_size(&self) -> usize {
+        self.max_order_war_size
+    }
+
+    pub fn max_order_waw_size(&self) -> usize {
+        self.max_order_waw_size
+    }
+
+    pub fn tx_ctx_cnt(&self) -> usize {
+        self.tx_ctx_cnt
+    }
+
+    pub fn rx_ctx_cnt(&self) -> usize {
+        self.rx_ctx_cnt
+    }
+
+    pub fn mem_tag_format(&self) -> u64 {
+        self.mem_tag_format
+    }
+
+    pub fn auth_key(&self) -> &Option<Vec<u8>> {
+        &self.auth_key
     }
 }
 
@@ -1224,11 +1295,11 @@ impl<'a> EndpointBuilder<'a, (), ()> {
 
 impl<'a, E> EndpointBuilder<'a, (), E> {
 
-    pub fn build<EQ: ?Sized + 'static+ Sync + Send>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<Endpoint<E>, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<Endpoint<E>, crate::error::Error> {
         Endpoint::new(domain, self.info, self.flags, self.ctx)
     }
 
-    pub fn build_scalable<EQ: ?Sized + 'static+ Sync + Send>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<ScalableEndpoint<E>, crate::error::Error> {
+    pub fn build_scalable<EQ: ?Sized + 'static>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<ScalableEndpoint<E>, crate::error::Error> {
         ScalableEndpoint::new(domain, self.info, self.ctx)
     }
 
@@ -1249,67 +1320,67 @@ impl<'a, E> EndpointBuilder<'a, (), E> {
 
     pub fn ep_type(mut self, type_: crate::enums::EndpointType) -> Self {
 
-        self.ep_attr.ep_type(type_);
+        self.ep_attr.set_type(type_);
         self
     }
 
     pub fn protocol(mut self, proto: crate::enums::Protocol) -> Self{
         
-        self.ep_attr.protocol(proto);
+        self.ep_attr.set_protocol(proto);
         self
     }
 
     pub fn max_msg_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_msg_size(size);
+        self.ep_attr.set_max_msg_size(size);
         self
     }
 
     pub fn msg_prefix_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.msg_prefix_size(size);
+        self.ep_attr.set_msg_prefix_size(size);
         self
     }
 
     pub fn max_order_raw_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_order_raw_size(size);
+        self.ep_attr.set_max_order_raw_size(size);
         self
     }
 
     pub fn max_order_war_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_order_war_size(size);
+        self.ep_attr.set_max_order_war_size(size);
         self
     }
 
     pub fn max_order_waw_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_order_waw_size(size);
+        self.ep_attr.set_max_order_waw_size(size);
         self
     }
 
     pub fn mem_tag_format(mut self, tag: u64) -> Self {
 
-        self.ep_attr.mem_tag_format(tag);
+        self.ep_attr.set_mem_tag_format(tag);
         self
     }
 
     pub fn tx_ctx_cnt(mut self, size: usize) -> Self {
 
-        self.ep_attr.tx_ctx_cnt(size);
+        self.ep_attr.set_tx_ctx_cnt(size);
         self
     }
 
     pub fn rx_ctx_cnt(mut self, size: usize) -> Self {
 
-        self.ep_attr.rx_ctx_cnt(size);
+        self.ep_attr.set_rx_ctx_cnt(size);
         self
     }
 
     pub fn auth_key(mut self, key: &mut [u8]) -> Self {
 
-        self.ep_attr.auth_key(key);
+        self.ep_attr.set_auth_key(key);
         self
     }
 }

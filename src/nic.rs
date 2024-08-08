@@ -6,23 +6,24 @@ pub struct Nic {
 }
 
 impl Nic {
-    pub(crate) fn from_attr(fid: libfabric_sys::fid_nic) -> Self {
-        let device_attr = if ! fid.device_attr.is_null() {
-            Some(DeviceAttr::from_attr(unsafe{*fid.device_attr}))
+    pub(crate) fn from_raw_ptr(fid: *const libfabric_sys::fid_nic) -> Self {
+        assert!(!fid.is_null());
+        let device_attr = if ! unsafe{*fid}.device_attr.is_null() {
+            Some(DeviceAttr::from_raw_ptr(unsafe{*fid}.device_attr))
         }
         else {
             None
         };
 
-        let bus_attr = if ! fid.bus_attr.is_null() {
-            Some(BusAttr::from_attr(unsafe{*fid.bus_attr}))
+        let bus_attr = if ! unsafe{*fid}.bus_attr.is_null() {
+            Some(BusAttr::from_raw_ptr(unsafe{*fid}.bus_attr))
         }
         else {
             None
         };
 
-        let link_attr = if ! fid.link_attr.is_null() {
-            Some(LinkAttr::from_attr(unsafe{*fid.link_attr}))
+        let link_attr = if ! unsafe{*fid}.link_attr.is_null() {
+            Some(LinkAttr::from_raw_ptr(unsafe{*fid}.link_attr))
         }
         else {
             None
@@ -46,13 +47,14 @@ pub struct DeviceAttr {
 }
 
 impl DeviceAttr {
-    pub(crate) fn from_attr(attr: libfabric_sys::fi_device_attr) -> Self {
+    pub(crate) fn from_raw_ptr(attr: *const libfabric_sys::fi_device_attr) -> Self {
+        assert!(!attr.is_null());
         Self {
-            name: if attr.name.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.name).to_str().unwrap_or("").to_owned().into()}},
-            device_id: if attr.device_id.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.device_id).to_str().unwrap_or("").to_owned().into()}},
-            device_version: if attr.device_version.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.device_version).to_str().unwrap_or("").to_owned().into()}},
-            driver: if attr.driver.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.driver).to_str().unwrap_or("").to_owned().into()}},
-            firmware: if attr.firmware.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.firmware).to_str().unwrap_or("").to_owned().into()}},
+            name: if  unsafe{*attr}.name.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr( (*attr).name).to_str().unwrap_or("").to_owned().into()}},
+            device_id: if  unsafe{*attr}.device_id.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr( (*attr).device_id).to_str().unwrap_or("").to_owned().into()}},
+            device_version: if  unsafe{*attr}.device_version.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr( (*attr).device_version).to_str().unwrap_or("").to_owned().into()}},
+            driver: if  unsafe{*attr}.driver.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr( (*attr).driver).to_str().unwrap_or("").to_owned().into()}},
+            firmware: if  unsafe{*attr}.firmware.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr( (*attr).firmware).to_str().unwrap_or("").to_owned().into()}},
         }
     }
 }
@@ -67,13 +69,15 @@ pub struct LinkAttr {
 }
 
 impl LinkAttr {
-    pub(crate) fn from_attr(attr: libfabric_sys::fi_link_attr) -> Self {
+    pub(crate) fn from_raw_ptr(attr: *const libfabric_sys::fi_link_attr) -> Self {
+        assert!(!attr.is_null());
+
         Self {
-            address: if attr.address.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.address).to_str().unwrap_or("").to_owned().into()}},
-            mtu: attr.mtu,
-            speed: attr.speed,
-            state: LinkState::from_value(attr.state),
-            network_type: if attr.network_type.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr(attr.network_type).to_str().unwrap_or("").to_owned().into()}},
+            address: if unsafe {*attr}.address.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr((*attr).address).to_str().unwrap_or("").to_owned().into()}},
+            mtu: unsafe {*attr}.mtu,
+            speed: unsafe {*attr}.speed,
+            state: LinkState::from_raw(unsafe {*attr}.state),
+            network_type: if unsafe {*attr}.network_type.is_null() {None} else {unsafe{std::ffi::CStr::from_ptr((*attr).network_type).to_str().unwrap_or("").to_owned().into()}},
         }
     }
 }
@@ -87,7 +91,7 @@ pub enum LinkState {
 }
 
 impl LinkState {
-    pub(crate) fn from_value(val: libfabric_sys::fi_link_state) -> Self {
+    pub(crate) fn from_raw(val: libfabric_sys::fi_link_state) -> Self {
         if val == libfabric_sys::fi_link_state_FI_LINK_UNKNOWN {
             LinkState::Unknown
         }
@@ -110,10 +114,11 @@ pub struct BusAttr {
 }
 
 impl BusAttr {
-    pub(crate) fn from_attr(attr: libfabric_sys::fi_bus_attr) -> Self {
+    pub(crate) fn from_raw_ptr(attr: *const libfabric_sys::fi_bus_attr) -> Self {
+        assert!(!attr.is_null());
         Self {
-            bus_type: BusType::from_value(attr.bus_type),
-            pci: PciAttr::from_attr(unsafe{attr.attr.pci})
+            bus_type: BusType::from_raw(unsafe{*attr}.bus_type),
+            pci: PciAttr::from_attr(unsafe{(*attr).attr.pci})
         }
     }
 }
@@ -126,7 +131,7 @@ pub enum BusType {
 }
 
 impl BusType {
-    pub(crate) fn from_value(val: libfabric_sys::fi_bus_type) -> Self {
+    pub(crate) fn from_raw(val: libfabric_sys::fi_bus_type) -> Self {
         if val == libfabric_sys::fi_bus_type_FI_BUS_UNKNOWN {
             BusType::Unknown
         }

@@ -1,5 +1,5 @@
 use crate::domain::DomainBase;
-use crate::fid::{AsRawTypedFid, OwnedMrFid};
+use crate::fid::{AsRawTypedFid, Fid, OwnedMrFid};
 use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder};
 use crate::eq::Event;
 use crate::enums::MrMode;
@@ -20,7 +20,7 @@ impl MemoryRegionImpl {
 
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast() ) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.as_raw().into(), 0, requested_key, flags.as_raw() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast() ) };
         
         if err == 0 {
             
@@ -30,7 +30,7 @@ impl MemoryRegionImpl {
                 }
                 else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(),&mut async_ctx as *mut AsyncCtx as usize).await?;
-                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(std::ptr::null_mut()),  &mut async_ctx as *mut AsyncCtx as usize).await?;
                     
                     return Ok( (res,
                         Self {
@@ -66,7 +66,7 @@ impl MemoryRegionImpl {
 
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.as_raw_typed_fid(), attr.get(), flags.get_value() as u64, c_mr_ptr) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.as_raw_typed_fid(), attr.get(), flags.as_raw() as u64, c_mr_ptr) };
     
         if err == 0 {
             
@@ -76,7 +76,7 @@ impl MemoryRegionImpl {
                 }
                 else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), attr.c_attr.context as usize).await?;
-                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, std::ptr::null_mut(),  attr.c_attr.context as usize).await?;
+                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(std::ptr::null_mut()),  attr.c_attr.context as usize).await?;
 
                     return Ok((res,
                         Self {
@@ -98,11 +98,11 @@ impl MemoryRegionImpl {
     }
             
     #[allow(dead_code)]
-    pub(crate) async fn from_iovec_async<'a, T>(domain: &'a MyRc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
+    pub(crate) async fn from_iovec_async<'a>(domain: &'a MyRc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
-        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.as_raw_typed_fid(), iov.as_ptr().cast(), iov.len(), access.get_value().into(), 0, requested_key, flags.get_value() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast())};
+        let err = unsafe { libfabric_sys::inlined_fi_mr_regv(domain.as_raw_typed_fid(), iov.as_ptr().cast(), iov.len(), access.as_raw().into(), 0, requested_key, flags.as_raw() as u64, c_mr_ptr, (&mut async_ctx as *mut AsyncCtx).cast())};
     
         if err == 0 {
             
@@ -112,7 +112,7 @@ impl MemoryRegionImpl {
                 }
                 else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
-                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, std::ptr::null_mut(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+                    let res = eq.async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(std::ptr::null_mut()),  &mut async_ctx as *mut AsyncCtx as usize).await?;
 
                     return Ok((res,
                         Self {
@@ -161,7 +161,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    async fn from_iovec_async<'a, T, T0>(domain: &'a crate::async_::domain::Domain,  iov : &[crate::iovec::IoVec<'a, T>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event, Self), crate::error::Error> {
+    async fn from_iovec_async<'a, T0>(domain: &'a crate::async_::domain::Domain,  iov : &[crate::iovec::IoVec<'a>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event, Self), crate::error::Error> {
         let ctx = user_ctx.map(|ctx| (ctx as *mut T0).cast());
         let (event, mr) = MemoryRegionImpl::from_iovec_async(&domain.inner, iov, access, requested_key, flags, ctx).await?;
         Ok((event,
@@ -174,7 +174,7 @@ impl MemoryRegion {
     
 }
 
-impl<'a, T> MemoryRegionBuilder<'a, T> {
+impl<'a> MemoryRegionBuilder<'a> {
 
     /// Constructs a new [MemoryRegion] with the configurations requested so far.
     /// 
@@ -303,7 +303,7 @@ impl<'a, T> MemoryRegionBuilder<'a, T> {
 //         let mut dom_attr = crate::domain::DomainAttr::new();
 //             dom_attr
 //             .mode(!0)
-//             .mr_mode(!(crate::enums::MrMode::BASIC.get_value() | crate::enums::MrMode::scalable(self).get_value() | crate::enums::MrMode::LOCAL.get_value() ) as i32 );
+//             .mr_mode(!(crate::enums::MrMode::BASIC.as_raw() | crate::enums::MrMode::scalable(self).as_raw() | crate::enums::MrMode::LOCAL.as_raw() ) as i32 );
 //         let mut hints = crate::InfoHints::new();
 //             hints
 //             .caps(crate::InfoCaps::new().msg().rma())

@@ -1,5 +1,5 @@
-use crate::{av::AddressVectorBase, cq::ReadCq, domain::DomainBase, ep::{ActiveEndpoint, Address, EndpointAttr, EndpointBase, EndpointImplBase, IncompleteBindCntr, PassiveEndpointBase, PassiveEndpointImplBase}, eq::{Event, EventQueueBase, ReadEq}, fid::{AsRawFid, AsRawTypedFid, RawFid}, info::InfoEntry, MyRc};
-use super::{eq::AsyncReadEq, cq::AsyncReadCq};
+use crate::{av::AddressVectorBase, cq::ReadCq, domain::DomainBase, ep::{ActiveEndpoint, Address, EndpointAttr, EndpointBase, EndpointImplBase, EpCq, IncompleteBindCntr, PassiveEndpointBase, PassiveEndpointImplBase}, eq::{Event, EventQueueBase, ReadEq}, fid::{AsRawFid, AsRawTypedFid, Fid, RawFid}, info::InfoEntry, utils::check_error, MyRc};
+use super::{cq::{AsyncReadCq, CompletionQueue}, eq::AsyncReadEq};
 
 pub struct ConnectionListener {
     eq:  MyRc<dyn AsyncReadEq>,
@@ -17,7 +17,7 @@ impl ConnectionListener {
 
     pub async fn next(&self) -> Result<Event, crate::error::Error> {
         
-        let res = self.eq.async_event_wait(libfabric_sys::FI_CONNREQ, self.ep_fid,  0).await?;
+        let res = self.eq.async_event_wait(libfabric_sys::FI_CONNREQ, Fid(self.ep_fid),  0).await?;
         Ok(res)
     }
 }
@@ -42,7 +42,7 @@ impl<T> Endpoint<T> {
         self.inner.connect(addr)?;
         
         let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
-        let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, self.as_raw_fid(),  0).await?;
+        let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_raw_fid()),  0).await?;
         Ok(res)
     }
 
@@ -50,7 +50,7 @@ impl<T> Endpoint<T> {
         self.accept()?;
 
         let eq = self.inner.eq.get().expect("Endpoint not bound to an EventQueue");
-        let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, self.as_raw_fid(),  0).await?;
+        let res = eq.async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_raw_fid()),  0).await?;
         Ok(res)
     }
 }
@@ -61,41 +61,78 @@ pub struct IncompleteBindCq<'a, EP> {
 }
 
 impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
-    pub(crate) fn bind_cq_<T: AsyncReadCq + 'static>(&self, cq: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
+    // pub(crate) fn bind_cq_<T: AsyncReadCq + 'static>(&self, cq: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
+    //     let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
         
-        if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
+    //     if err != 0 {
+    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+    //     }
+    //     else {
 
-            if (flags & libfabric_sys::FI_TRANSMIT as u64) != 0 && (flags & libfabric_sys::FI_RECV as u64) != 0{
-                if self.tx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-                if self.rx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-            }
-            else if flags & libfabric_sys::FI_TRANSMIT as u64 != 0 {
-                if self.tx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-            }
-            else if flags & libfabric_sys::FI_RECV as u64 != 0{
-                if self.rx_cq.set(cq.clone()).is_err() {
-                    panic!("Endpoint is already bound to a CompletionQueue for this direction");
-                }
-            }
-            else {
-                panic!("Binding to Endpoint without specifying direction");
-            }
-            Ok(())
-        }
-    } 
+    //         if (flags & libfabric_sys::FI_TRANSMIT as u64) != 0 && (flags & libfabric_sys::FI_RECV as u64) != 0{
+    //             if self.tx_cq.set(cq.clone()).is_err() {
+    //                 panic!("Endpoint is already bound to a CompletionQueue for this direction");
+    //             }
+    //             if self.rx_cq.set(cq.clone()).is_err() {
+    //                 panic!("Endpoint is already bound to a CompletionQueue for this direction");
+    //             }
+    //         }
+    //         else if flags & libfabric_sys::FI_TRANSMIT as u64 != 0 {
+    //             if self.tx_cq.set(cq.clone()).is_err() {
+    //                 panic!("Endpoint is already bound to a CompletionQueue for this direction");
+    //             }
+    //         }
+    //         else if flags & libfabric_sys::FI_RECV as u64 != 0{
+    //             if self.rx_cq.set(cq.clone()).is_err() {
+    //                 panic!("Endpoint is already bound to a CompletionQueue for this direction");
+    //             }
+    //         }
+    //         else {
+    //             panic!("Binding to Endpoint without specifying direction");
+    //         }
+    //         Ok(())
+    //     }
+    // } 
 
-    pub(crate) fn bind_cq(&self) -> IncompleteBindCq<EP> {
-        IncompleteBindCq { ep: self, flags: 0}
+    pub(crate) fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static >(&self, cq: &MyRc<T>, selective: bool) -> Result<(), crate::error::Error> {
+        let mut flags = libfabric_sys::FI_TRANSMIT as u64 | libfabric_sys::FI_RECV as u64;
+        if selective {
+            flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+        }
+        
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags) };
+
+        check_error(err as isize)?;
+        if self.cq.set(EpCq::Shared(cq.clone())).is_err() {
+            panic!("Endpoint already bound with another shared Completion Queueu");
+        }
+
+        Ok(())
+    }
+
+    
+    pub(crate) fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static >(&self, tx_cq: &MyRc<T>, tx_selective: bool, rx_cq: &MyRc<T>, rx_selective: bool) -> Result<(), crate::error::Error> {
+        let mut tx_flags = libfabric_sys::FI_TRANSMIT as u64;
+        if tx_selective {
+            tx_flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+        }
+        
+        let mut rx_flags = libfabric_sys::FI_RECV as u64;
+        if rx_selective {
+            rx_flags |= libfabric_sys::FI_SELECTIVE_COMPLETION;
+        }
+        
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), tx_cq.as_raw_fid(), tx_flags) };
+        check_error(err as isize)?;
+        
+        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), rx_cq.as_raw_fid(), rx_flags) };
+        check_error(err as isize)?;
+
+        if self.cq.set(EpCq::Separate(tx_cq.clone(), rx_cq.clone())).is_err() {
+            panic!("Endpoint already bound with other  Completion Queueus");
+        }
+
+        Ok(())
     }
 }
 
@@ -143,9 +180,14 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>> {
     // }
 }
 impl<E> Endpoint<E> {
-    pub fn bind_cq(&self) -> IncompleteBindCq<E> {
-        self.inner.bind_cq()
+    pub fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static >(&self, cq: &CompletionQueue<T>, selective: bool) -> Result<(), crate::error::Error> {
+        self.inner.bind_shared_cq(&cq.inner, selective)
     }
+
+    pub fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static >(&self, tx_cq: &CompletionQueue<T>, tx_selective: bool, rx_cq: &CompletionQueue<T>, rx_selective: bool) -> Result<(), crate::error::Error> {
+        self.inner.bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
+    }
+
 }
 
 impl<E> Endpoint<E> {
@@ -154,37 +196,37 @@ impl<E> Endpoint<E> {
     }
 }
 
-impl<'a, EP> IncompleteBindCq<'a, EP> {
-    pub fn recv(&mut self, selective: bool) -> &mut Self {
-        if selective {
-            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
+// impl<'a, EP> IncompleteBindCq<'a, EP> {
+//     pub fn recv(&mut self, selective: bool) -> &mut Self {
+//         if selective {
+//             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
         
-            self
-        }
-        else {
-            self.flags |= libfabric_sys::FI_RECV as u64;
+//             self
+//         }
+//         else {
+//             self.flags |= libfabric_sys::FI_RECV as u64;
 
-            self
-        }
-    }
+//             self
+//         }
+//     }
 
-    pub fn transmit(&mut self, selective: bool) -> &mut Self {
-        if selective {
-            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_TRANSMIT as u64;
+//     pub fn transmit(&mut self, selective: bool) -> &mut Self {
+//         if selective {
+//             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_TRANSMIT as u64;
 
-            self
-        }
-        else {
-            self.flags |= libfabric_sys::FI_TRANSMIT as u64;
+//             self
+//         }
+//         else {
+//             self.flags |= libfabric_sys::FI_TRANSMIT as u64;
 
-            self
-        }
-    }
+//             self
+//         }
+//     }
 
-    pub fn cq<T: AsyncReadCq + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
-        self.ep.bind_cq_(&cq.inner, self.flags)
-    }
-}
+//     pub fn cq<T: AsyncReadCq + 'static>(&mut self, cq: &crate::cq::CompletionQueueBase<T>) -> Result<(), crate::error::Error> {
+//         self.ep.bind_cq_(&cq.inner, self.flags)
+//     }
+// }
 
 // ============== Async stuff ======================= //
 pub type PassiveEndpoint<T> = PassiveEndpointBase<T, dyn AsyncReadEq>;
@@ -265,67 +307,67 @@ impl<'a, E> EndpointBuilder<'a, (), E> {
 
     pub fn ep_type(mut self, type_: crate::enums::EndpointType) -> Self {
 
-        self.ep_attr.ep_type(type_);
+        self.ep_attr.set_type(type_);
         self
     }
 
     pub fn protocol(mut self, proto: crate::enums::Protocol) -> Self{
         
-        self.ep_attr.protocol(proto);
+        self.ep_attr.set_protocol(proto);
         self
     }
 
     pub fn max_msg_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_msg_size(size);
+        self.ep_attr.set_max_msg_size(size);
         self
     }
 
     pub fn msg_prefix_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.msg_prefix_size(size);
+        self.ep_attr.set_msg_prefix_size(size);
         self
     }
 
     pub fn max_order_raw_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_order_raw_size(size);
+        self.ep_attr.set_max_order_raw_size(size);
         self
     }
 
     pub fn max_order_war_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_order_war_size(size);
+        self.ep_attr.set_max_order_war_size(size);
         self
     }
 
     pub fn max_order_waw_size(mut self, size: usize) -> Self {
 
-        self.ep_attr.max_order_waw_size(size);
+        self.ep_attr.set_max_order_waw_size(size);
         self
     }
 
     pub fn mem_tag_format(mut self, tag: u64) -> Self {
 
-        self.ep_attr.mem_tag_format(tag);
+        self.ep_attr.set_mem_tag_format(tag);
         self
     }
 
     pub fn tx_ctx_cnt(mut self, size: usize) -> Self {
 
-        self.ep_attr.tx_ctx_cnt(size);
+        self.ep_attr.set_tx_ctx_cnt(size);
         self
     }
 
     pub fn rx_ctx_cnt(mut self, size: usize) -> Self {
 
-        self.ep_attr.rx_ctx_cnt(size);
+        self.ep_attr.set_rx_ctx_cnt(size);
         self
     }
 
     pub fn auth_key(mut self, key: &mut [u8]) -> Self {
 
-        self.ep_attr.auth_key(key);
+        self.ep_attr.set_auth_key(key);
         self
     }
 }
@@ -349,13 +391,21 @@ impl<EP, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncCmEp for Endpo
 
 impl<EP, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncTxEp for EndpointImplBase<EP, EQ, CQ> {
     fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
-        self.tx_cq.get().unwrap()
+        match self.cq.get().expect("Endpoint is not bound to Completion Queue(s)") {
+            EpCq::Shared(tx_cq) | EpCq::Separate(tx_cq, _) => {
+                tx_cq
+            }
+        }
     }
 }
 
 impl<EP, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncRxEp for EndpointImplBase<EP, EQ, CQ> {
     fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
-        self.rx_cq.get().unwrap()
+        match self.cq.get().expect("Endpoint is not bound to Completion Queue(s)") {
+            EpCq::Shared(rx_cq) | EpCq::Separate(_, rx_cq) => {
+                rx_cq
+            }
+        }
     }
 }
 

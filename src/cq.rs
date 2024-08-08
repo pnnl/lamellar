@@ -70,7 +70,7 @@ pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD:
     pub(crate) error_buff: MyRefCell<CompletionError>,
     #[allow(dead_code)]
     pub(crate) wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    pub(crate) _domain_rc: MyRc<dyn DomainImplT + Sync + Send>,
+    pub(crate) _domain_rc: MyRc<dyn DomainImplT>,
 }
 
 /// Owned wrapper around a libfabric `fid_cq`.
@@ -371,7 +371,7 @@ pub trait WaitObjectRetrieve<'a> {
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImpl<WAIT, RETRIEVE, FD>  {
 
-    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT + Sync + Send>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: CqRawFid  = std::ptr::null_mut();
         // let mut entries: Vec<$t> = Vec::with_capacity(std::mem::size_of::<$t>() * $count);
@@ -424,7 +424,7 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>> {
 
     // pub(crate) fn new<EQ: AsFid + 'static, T0>(_options: T, domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT + Sync + Send>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: MyRc::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?),
@@ -760,7 +760,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// 
     /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cq_open` call with an optional `context`.
-    pub fn build<EQ: ?Sized + 'static+ Sync + Send>(self, domain: &DomainBase<EQ>) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static>(self, domain: &DomainBase<EQ>) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
         // CompletionQueue::new(self.options, self.domain, self.cq_attr, self.ctx, self.default_buff_size)   
         CompletionQueue::<CompletionQueueImpl<WAIT, RETRIEVE, FD>>::new(domain.inner.clone(), self.cq_attr, self.ctx, self.default_buff_size)   
     }
@@ -768,6 +768,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
 
 //================== CompletionQueue Attribute (fi_cq_attr) ==================//
 
+#[derive(Clone)]
 pub(crate) struct CompletionQueueAttr {
     pub(crate) c_attr: libfabric_sys::fi_cq_attr,
 }
@@ -778,10 +779,10 @@ impl CompletionQueueAttr {
         let c_attr = libfabric_sys::fi_cq_attr{
             size: 0, 
             flags: 0, 
-            format: crate::enums::CqFormat::UNSPEC.get_value(), 
-            wait_obj: crate::enums::WaitObj::Unspec.get_value(),
+            format: crate::enums::CqFormat::Unspec.as_raw(), 
+            wait_obj: crate::enums::WaitObj::Unspec.as_raw(),
             signaling_vector: 0,
-            wait_cond: crate::enums::WaitCond::None.get_value(),
+            wait_cond: crate::enums::WaitCond::None.as_raw(),
             wait_set: std::ptr::null_mut()
         };
 
@@ -794,7 +795,7 @@ impl CompletionQueueAttr {
     }
 
     pub(crate) fn format(&mut self, format: crate::enums::CqFormat) -> &mut Self {
-        self.c_attr.format = format.get_value();
+        self.c_attr.format = format.as_raw();
         self
     }
     
@@ -802,7 +803,7 @@ impl CompletionQueueAttr {
         if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
             self.c_attr.wait_set = wait_set.as_raw_typed_fid();
         }
-        self.c_attr.wait_obj = wait_obj.get_value();
+        self.c_attr.wait_obj = wait_obj.as_raw();
         self
     }
     
@@ -813,7 +814,7 @@ impl CompletionQueueAttr {
     }
 
     pub(crate) fn wait_cond(&mut self, wait_cond: crate::enums::WaitCond) -> &mut Self {
-        self.c_attr.wait_cond = wait_cond.get_value();
+        self.c_attr.wait_cond = wait_cond.as_raw();
         self
     }
 
@@ -839,10 +840,6 @@ impl Default for CompletionQueueAttr {
 pub struct CompletionEntry<Format> {
     pub(crate) c_entry: Format,
 }
-
-unsafe impl<T> Sync for CompletionEntry<T> {}
-unsafe impl<T> Send for CompletionEntry<T> {}
-
 
 impl CompletionEntry<()> {
     fn new() -> Self {
@@ -901,7 +898,7 @@ impl CompletionEntry<MsgEntry> {
     /// 
     /// Corresponds to accessing the `fi_cq_msg_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
-        CompletionFlags::from_value(self.c_entry.flags)
+        CompletionFlags::from_raw(self.c_entry.flags)
     }
 } 
 
@@ -915,7 +912,7 @@ impl CompletionEntry<DataEntry> {
     /// 
     /// Corresponds to accessing the `fi_cq_data_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
-        CompletionFlags::from_value(self.c_entry.flags)
+        CompletionFlags::from_raw(self.c_entry.flags)
     }
 
     /// Returns the receive data buffer.
@@ -944,7 +941,7 @@ impl CompletionEntry<TaggedEntry> {
     }
 
     pub fn flags(&self) -> CompletionFlags {
-        CompletionFlags::from_value(self.c_entry.flags)
+        CompletionFlags::from_raw(self.c_entry.flags)
     }
 
 
@@ -1054,7 +1051,7 @@ impl CompletionError {
     /// 
     /// Corresponds to accessing the `fi_cq_err_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
-        CompletionFlags::from_value(self.c_err.flags)
+        CompletionFlags::from_raw(self.c_err.flags)
     }
 
     /// Returns the receive data buffer.
@@ -1109,9 +1106,6 @@ impl CompletionError {
     }
 }
 
-unsafe impl Sync for CompletionError {}
-unsafe impl Send for CompletionError {}
-
 impl Default for CompletionError {
     fn default() -> Self {
         Self::new()
@@ -1126,11 +1120,14 @@ impl Default for CompletionError {
 #[cfg(test)]
 mod tests {
 
-    use crate::{cq::*, domain::DomainBuilder, info::Info};
+    use crate::{cq::*, domain::DomainBuilder, info::{Info, Version}};
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = Info::new().build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .get()
+            .unwrap();
+        
         let entry = info.into_iter().next().unwrap();
         
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1144,7 +1141,9 @@ mod tests {
 
     #[test]
     fn cq_signal() {
-        let info = Info::new().build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .get()
+            .unwrap();
         let entry = info.into_iter().next().unwrap();
         
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1166,7 +1165,9 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = Info::new().build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .get()
+            .unwrap();
         let entry = info.into_iter().next().unwrap();
         
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1183,11 +1184,13 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{cq::*, domain::DomainBuilder, info::Info};
+    use crate::{cq::*, domain::DomainBuilder, info::{Info, Version}};
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = Info::new().build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .get()
+            .unwrap();
         let entry = info.into_iter().next().unwrap();
         
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

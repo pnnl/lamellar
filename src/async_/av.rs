@@ -1,4 +1,4 @@
-use crate::{av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase}, domain::DomainBase, enums::AVOptions, ep::Address, eq::Event, fid::{AsRawFid, AsRawTypedFid}, MappedAddress, MyRc, RawMappedAddress};
+use crate::{av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase}, domain::DomainBase, enums::AVOptions, ep::Address, eq::Event, fid::{AsRawFid, AsRawTypedFid, Fid}, MappedAddress, MyRc, RawMappedAddress};
 use super::{eq::{EventQueue, AsyncReadEq}, AsyncCtx};
 
 
@@ -30,7 +30,7 @@ impl AsyncAddressVectorImpl {
             };
 
             // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_AV_COMPLETE}>::new(self.as_raw_fid(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
-            let res = eq.async_event_wait(libfabric_sys::FI_AV_COMPLETE, self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await?;
+            let res = eq.async_event_wait(libfabric_sys::FI_AV_COMPLETE, Fid(self.as_raw_fid()),  &mut async_ctx as *mut AsyncCtx as usize).await?;
             if let Event::AVComplete(ref entry) = res {
                 fi_addresses.truncate(entry.data() as usize);
             }
@@ -39,16 +39,16 @@ impl AsyncAddressVectorImpl {
     } 
 }
 
-pub type AddressVector = AddressVectorBase<dyn AsyncReadEq>;
+pub type AddressVector = AddressVectorBase<dyn AsyncReadEq >;
 
 impl AddressVector {
     pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
-        let (event, fi_addresses) = self.inner.insert_async(addr, options.get_value(), None).await?;
+        let (event, fi_addresses) = self.inner.insert_async(addr, options.as_raw(), None).await?;
         Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
     }
     
     pub async fn insert_with_context_async<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<(Event, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
-        let (event, fi_addresses) =self.inner.insert_async(addr, options.get_value(), Some((ctx as *mut T).cast())).await?;
+        let (event, fi_addresses) =self.inner.insert_async(addr, options.as_raw(), Some((ctx as *mut T).cast())).await?;
         Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
     }
     
@@ -187,28 +187,26 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::domain::DomainBuilder;
-    use crate::info::{InfoHints, Info};
+    use crate::info::{Info, InfoHints, Version};
     use crate::async_::eq::EventQueueBuilder;
 
     use super::AddressVectorBuilder;
 
     #[test]
     fn av_open_close() {
-        let mut ep_attr = crate::ep::EndpointAttr::new();
-            ep_attr.ep_type(crate::enums::EndpointType::Rdm);
-    
-        let mut dom_attr = crate::domain::DomainAttr::new();
-            dom_attr.mode = crate::enums::Mode::all();
-            dom_attr.mr_mode = crate::enums::MrMode::new()
-                .basic()
-                .scalable()
-                .inverse();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .enter_hints()
+                .enter_ep_attr()
+                    .type_(crate::enums::EndpointType::Rdm)
+                .leave_ep_attr()
+                .enter_domain_attr()
+                    .mode(crate::enums::Mode::all())
+                    .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+                .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
-        let hints = InfoHints::new()
-            .ep_attr(ep_attr)
-            .domain_attr(dom_attr);
-
-        let info = Info::new().hints(&hints).build().unwrap();
         let entry = info.into_iter().next().unwrap();
         
         
@@ -231,19 +229,18 @@ mod tests {
     #[test]
     fn av_good_sync() {
         
-        let mut ep_attr = crate::ep::EndpointAttr::new();
-            ep_attr.ep_type(crate::enums::EndpointType::Rdm);
-
-        let mut dom_attr = crate::domain::DomainAttr::new();
-        dom_attr.mode = crate::enums::Mode::all();
-        dom_attr.mr_mode = crate::enums::MrMode::new().basic().scalable().inverse();
-
-        let hints = InfoHints::new()
-            .ep_attr(ep_attr)
-            .domain_attr(dom_attr);
-
-        let info = Info::new()
-            .hints(&hints).build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .enter_hints()
+                .enter_ep_attr()
+                    .type_(crate::enums::EndpointType::Rdm)
+                .leave_ep_attr()
+                .enter_domain_attr()
+                    .mode(crate::enums::Mode::all())
+                    .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+                .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         let entry = info.into_iter().next().unwrap();
         
@@ -262,25 +259,26 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{info::{InfoHints, Info}, async_::eq::EventQueueBuilder, domain::DomainBuilder};
+    use crate::{async_::eq::EventQueueBuilder, domain::DomainBuilder, info::{Info, InfoHints, Version}};
 
     use super::AddressVectorBuilder;
 
     #[test]
     fn av_drops_before_domain() {
         
-        let mut ep_attr = crate::ep::EndpointAttr::new();
-            ep_attr.ep_type(crate::enums::EndpointType::Rdm);
-    
-        let mut dom_attr = crate::domain::DomainAttr::new();
-        dom_attr.mode = crate::enums::Mode::all();
-        dom_attr.mr_mode = crate::enums::MrMode::new().basic().scalable().inverse();
-
-        let hints = InfoHints::new()
-            .ep_attr(ep_attr)
-            .domain_attr(dom_attr);
-
-        let info = Info::new().hints(&hints).build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .enter_hints()
+                .enter_ep_attr()
+                    .type_(crate::enums::EndpointType::Rdm)
+                .leave_ep_attr()
+                .enter_domain_attr()
+                    .mode(crate::enums::Mode::all())
+                    .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+                .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
+        
         let entry = info.into_iter().next().unwrap();
         
         

@@ -1,6 +1,6 @@
 use core::panic;
 use std::time::Instant;
-use libfabric::{cntr::{Counter, CounterBuilder, ReadCntr, WaitCntr}, cq::{CompletionQueue, CompletionQueueBuilder, WaitCq, ReadCq}, domain::{self, Domain, BoundDomain}, ep::{EndpointBuilder, Endpoint, Address, PassiveEndpoint, ActiveEndpoint, BaseEndpoint}, eq::{EventQueueBuilder, ReadEq, WaitEq, EventQueue}, fabric, Context, Waitable, infocapsoptions::{TagDefaultCap, MsgDefaultCap, self, RmaCap, RmaDefaultCap}, info::{InfoHints, Info, InfoEntry, InfoCapsImpl}, mr::{default_desc, MemoryRegionKey, MappedMemoryRegionKey}, enums::AVOptions, MappedAddress, comm::{rma::{WriteEp, ReadEp, ReadWriteEp}, message::{SendEp, RecvEp}, tagged::{TagSendEp, TagRecvEp}}};
+use libfabric::{cntr::{Counter, CounterBuilder, ReadCntr, WaitCntr}, comm::{message::{RecvEp, SendEp}, rma::{ReadEp, ReadWriteEp, WriteEp}, tagged::{TagRecvEp, TagSendEp}}, cq::{CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq}, domain::{self, BoundDomain, Domain}, enums::AVOptions, ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint}, eq::{EventQueue, EventQueueBuilder, ReadEq, WaitEq}, fabric, info::{Info, InfoCapsImpl, InfoEntry, InfoHints, Version}, infocapsoptions::{self, MsgDefaultCap, RmaCap, RmaDefaultCap, TagDefaultCap}, mr::{default_desc, MappedMemoryRegionKey, MemoryRegionKey}, Context, MappedAddress, Waitable};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -80,7 +80,7 @@ pub type SpinCq = libfabric::cq_caps_type!();
 pub type SreadCq = libfabric::cq_caps_type!(CqCaps::WAIT);
 pub type FdCq = libfabric::cq_caps_type!(CqCaps::WAIT, CqCaps::RETRIEVE, CqCaps::FD);
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
     Msg(InfoHints<M>),
     Tagged(InfoHints<T>),
@@ -127,12 +127,17 @@ impl RmaInfo {
 //     }
 // }
 
+pub enum EqCqOpt<T> {
+    Shared(CompletionQueue<T>),
+    Separate(CompletionQueue<T>, CompletionQueue<T>),
+}
+
 pub enum CqType {
-    Spin(CompletionQueue<SpinCq>),
-    Sread(CompletionQueue<SreadCq>),
-    WaitSet(CompletionQueue<SreadCq>),
-    WaitFd(CompletionQueue<FdCq>),
-    WaitYield(CompletionQueue<SreadCq>),
+    Spin(EqCqOpt<SpinCq>),
+    Sread(EqCqOpt<SreadCq>),
+    WaitSet(EqCqOpt<SreadCq>),
+    WaitFd(EqCqOpt<FdCq>),
+    WaitYield(EqCqOpt<SreadCq>),
 }
 
 impl TestsGlobalCtx {
@@ -191,7 +196,7 @@ impl TestsGlobalCtx {
         comp_method: CompMeth::Spin, 
         tx_ctx: Context::new(),
         rx_ctx: Context::new(),
-        options: FT_OPT_RX_CQ | FT_OPT_TX_CQ}
+        options: FT_OPT_RX_CQ | FT_OPT_TX_CQ | FT_OPT_CQ_SHARED}
     }
 }
 
@@ -217,7 +222,7 @@ pub fn ft_open_fabric_res<E>(info: &InfoEntry<E>) -> (libfabric::fabric::Fabric,
 
 
 
-pub fn ft_open_domain_res<E, EQ: ReadEq + 'static+ Sync + Send>(info: &InfoEntry<E>, fab: &fabric::Fabric, eq: &libfabric::eq::EventQueue<EQ>) -> ConfDomain {
+pub fn ft_open_domain_res<E, EQ: ReadEq + 'static>(info: &InfoEntry<E>, fab: &fabric::Fabric, eq: &libfabric::eq::EventQueue<EQ>) -> ConfDomain {
 
     let try_bind = libfabric::domain::DomainBuilder::new(fab, info)
         .build_and_bind(eq, false);
@@ -232,41 +237,65 @@ pub fn ft_open_domain_res<E, EQ: ReadEq + 'static+ Sync + Send>(info: &InfoEntry
 }
 
 
-pub fn ft_alloc_ep_res<E, EQ: ?Sized + 'static+ Sync + Send>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::DomainBase<EQ>) -> (CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::av::AddressVector>){
+pub fn ft_alloc_ep_res<E, EQ: ?Sized + 'static>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &libfabric::domain::DomainBase<EQ>) -> (CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::av::AddressVector>){
 
-    let format = if info.get_caps().is_tagged() {
-        enums::CqFormat::TAGGED
+    let format = if info.caps().is_tagged() {
+        enums::CqFormat::Tagged
     }
     else {
-        enums::CqFormat::CONTEXT
+        enums::CqFormat::Context
     };
 
     let tx_cq_builder = CompletionQueueBuilder::new()
-        .size(info.get_tx_attr().get_size())
+        .size(info.tx_attr().size())
         .format(format);
     // .format_ctx();
     // .build()
     // .unwrap();
     
     let rx_cq_builder = CompletionQueueBuilder::new()
-        .size(info.get_rx_attr().get_size())
+        .size(info.rx_attr().size())
+        .format(format);
+    
+    let shared_cq_builder = CompletionQueueBuilder::new()
+        .size(info.rx_attr().size() + info.tx_attr().size())
         .format(format);
         // .build()
         // .unwrap();
     
-    let (tx_cq, rx_cq) = match gl_ctx.comp_method {
+    let cq_type = match gl_ctx.comp_method {
         CompMeth::Spin => {
-            (CqType::Spin(tx_cq_builder.wait_none().build(domain).unwrap()), CqType::Spin(rx_cq_builder.wait_none().build(domain).unwrap()))
+            if gl_ctx.options & FT_OPT_CQ_SHARED == 0 {
+                CqType::Spin(EqCqOpt::Separate(tx_cq_builder.wait_none().build(domain).unwrap(), rx_cq_builder.wait_none().build(domain).unwrap()))
+            }
+            else {
+                CqType::Spin(EqCqOpt::Shared(shared_cq_builder.wait_none().build(domain).unwrap()))
+            }
         },
         CompMeth::Sread => {
-            (CqType::Sread(tx_cq_builder.build(domain).unwrap()), CqType::Sread(rx_cq_builder.build(domain).unwrap()))
+            if gl_ctx.options & FT_OPT_CQ_SHARED == 0 {
+                CqType::Sread(EqCqOpt::Separate(tx_cq_builder.build(domain).unwrap(), rx_cq_builder.build(domain).unwrap()))
+            }
+            else {
+                CqType::Sread(EqCqOpt::Shared(shared_cq_builder.build(domain).unwrap()))
+            }
         },
         CompMeth::WaitSet => todo!(),
         CompMeth::WaitFd => {
-            (CqType::WaitFd(tx_cq_builder.wait_fd().build(domain).unwrap()), CqType::WaitFd(rx_cq_builder.wait_fd().build(domain).unwrap()))
+            if gl_ctx.options & FT_OPT_CQ_SHARED == 0 {
+                CqType::WaitFd(EqCqOpt::Separate(tx_cq_builder.wait_fd().build(domain).unwrap(), rx_cq_builder.wait_fd().build(domain).unwrap()))
+            }
+            else {
+                CqType::WaitFd(EqCqOpt::Shared(shared_cq_builder.wait_fd().build(domain).unwrap()))
+            }
         },
         CompMeth::Yield => {
-            (CqType::WaitYield(tx_cq_builder.wait_yield().build(domain).unwrap()), CqType::WaitYield(rx_cq_builder.wait_yield().build(domain).unwrap()))
+            if gl_ctx.options & FT_OPT_CQ_SHARED == 0 {
+                CqType::Sread(EqCqOpt::Separate(tx_cq_builder.wait_yield().build(domain).unwrap(), rx_cq_builder.wait_yield().build(domain).unwrap()))
+            }
+            else {
+                CqType::Sread(EqCqOpt::Shared(shared_cq_builder.wait_yield().build(domain).unwrap()))
+            }
         },
     };
 
@@ -285,20 +314,20 @@ pub fn ft_alloc_ep_res<E, EQ: ?Sized + 'static+ Sync + Send>(info: &InfoEntry<E>
         None
     };
 
-    let rma_cntr = if gl_ctx.options & FT_OPT_RX_CNTR != 0 && info.get_caps().is_rma() {
+    let rma_cntr = if gl_ctx.options & FT_OPT_RX_CNTR != 0 && info.caps().is_rma() {
         Some(CounterBuilder::new().build(domain).unwrap())
     }
     else {
         None
     };
 
-    let av = match info.get_ep_attr().get_type() {
+    let av = match info.ep_attr().type_() {
         libfabric::enums::EndpointType::Rdm | libfabric::enums::EndpointType::Dgram  => {
                 
                 
-                let av = match info.get_domain_attr().av_type {
+                let av = match info.domain_attr().av_type() {
                     libfabric::enums::AddressVectorType::Unspec => libfabric::av::AddressVectorBuilder::new(),
-                    _ => libfabric::av::AddressVectorBuilder::new().type_(info.get_domain_attr().av_type.clone()),
+                    _ => libfabric::av::AddressVectorBuilder::new().type_(info.domain_attr().av_type().clone()),
                 }.count(1)
                 .build(domain)
                 .unwrap();
@@ -307,13 +336,13 @@ pub fn ft_alloc_ep_res<E, EQ: ?Sized + 'static+ Sync + Send>(info: &InfoEntry<E>
         _ => None,
     };
 
-    (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av)
+    (cq_type, tx_cntr, rx_cntr, rma_cntr, av)
     
 }
 
 #[allow(clippy::type_complexity)]
-pub fn ft_alloc_active_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &ConfDomain) -> (CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, libfabric::ep::Endpoint<E>, Option<libfabric::av::AddressVector>) {
-    let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av) = match domain {
+pub fn ft_alloc_active_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, domain: &ConfDomain) -> (CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, libfabric::ep::Endpoint<E>, Option<libfabric::av::AddressVector>) {
+    let (cq_type, tx_cntr, rx_cntr, rma_cntr, av) = match domain {
         ConfDomain::Unbound(domain) =>  ft_alloc_ep_res(info, gl_ctx, domain),
         ConfDomain::Bound(domain) =>  ft_alloc_ep_res(info, gl_ctx, domain),
     };
@@ -326,31 +355,30 @@ pub fn ft_alloc_active_res<E>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, 
         ConfDomain::Unbound(domain) => EndpointBuilder::new(info).build(domain).unwrap(),
         ConfDomain::Bound(domain) => EndpointBuilder::new(info).build(domain).unwrap(),
     };
-    (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, av)
+    (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, av)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep<T: ReadEq + 'static + Sync + Send, CNTR: ReadCntr + 'static + Sync + Send, I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, ep: &mut libfabric::ep::Endpoint<E>, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<T>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) {
+pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, ep: &mut libfabric::ep::Endpoint<E>, cq_type: &CqType, eq: &libfabric::eq::EventQueue<T>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) {
     
-    match info.get_ep_attr().get_type() {
+    match info.ep_attr().type_() {
         libfabric::enums::EndpointType::Msg => ep.bind_eq(eq).unwrap(),
-        _ => if info.get_caps().is_collective() || info.get_caps().is_multicast() {
+        _ => if info.caps().is_collective() || info.caps().is_multicast() {
             ep.bind_eq(eq).unwrap();
         }
     }
 
     if let Some(av_val) = av { ep.bind_av(av_val).unwrap() }
 
-    bind_tx_cq(tx_cq, ep, gl_ctx);
-    bind_rx_cq(rx_cq, ep, gl_ctx);
+    bind_cq(cq_type, ep, gl_ctx);
 
     let mut bind_cntr = ep.bind_cntr();
     
-    if gl_ctx.options & FT_OPT_TX_CQ == 0 {
+    if gl_ctx.options & FT_OPT_TX_CNTR != 0 {
         bind_cntr.send();
     }
 
-    if info.get_caps().is_rma() || info.get_caps().is_atomic() {
+    if info.caps().is_rma() || info.caps().is_atomic() {
         bind_cntr.write().read();
     }
 
@@ -361,7 +389,7 @@ pub fn ft_enable_ep<T: ReadEq + 'static + Sync + Send, CNTR: ReadCntr + 'static 
 
     let mut bind_cntr = ep.bind_cntr();
     
-    if gl_ctx.options & FT_OPT_RX_CQ == 0 {
+    if gl_ctx.options & FT_OPT_RX_CNTR != 0 {
         bind_cntr.recv();
     }
 
@@ -370,12 +398,12 @@ pub fn ft_enable_ep<T: ReadEq + 'static + Sync + Send, CNTR: ReadCntr + 'static 
         bind_cntr.cntr(cntr).unwrap();
     }
 
-    if info.get_caps().is_rma() || info.get_caps().is_atomic() && info.get_caps().is_rma_event() {
+    if info.caps().is_rma() || info.caps().is_atomic() && info.caps().is_rma_event() {
         let mut bind_cntr = ep.bind_cntr();
-        if info.get_caps().is_remote_write() {
+        if info.caps().is_remote_write() {
             bind_cntr.remote_write();
         }
-        if info.get_caps().is_remote_read() {
+        if info.caps().is_remote_read() {
             bind_cntr.remote_read();
         }
         if let Some(cntr) = rma_cntr {
@@ -386,66 +414,48 @@ pub fn ft_enable_ep<T: ReadEq + 'static + Sync + Send, CNTR: ReadCntr + 'static 
     ep.enable().unwrap();
 }
 
-fn bind_rx_cq<E>(rx_cq: &CqType, ep: &mut libfabric::ep::Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
-
-    match rx_cq {
-        CqType::Spin(rx_cq) => {    
-            ep.bind_cq()
-                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(rx_cq).unwrap();
-        }
-        CqType::Sread(rx_cq) => {    
-            ep.bind_cq()
-                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(rx_cq).unwrap();
-        }
-        CqType::WaitSet(rx_cq) => {    
-            ep.bind_cq()
-                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(rx_cq).unwrap();
-        }
-        CqType::WaitFd(rx_cq) => {    
-            ep.bind_cq()
-                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(rx_cq).unwrap();
-        }
-        CqType::WaitYield(rx_cq) => {    
-            ep.bind_cq()
-                .recv(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(rx_cq).unwrap();
-        }
+fn bind_cq_<T: libfabric::cq::ReadCq + 'static, E>(cq_type: &EqCqOpt<T>, ep: &mut libfabric::ep::Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
+    match cq_type {
+        EqCqOpt::Shared(cq) => ep.bind_shared_cq(cq, false).unwrap(),
+        EqCqOpt::Separate(tx_cq, rx_cq) => ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0).unwrap(),
     }
 }
 
-fn bind_tx_cq<E>(tx_cq: &CqType, ep: &mut libfabric::ep::Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
+fn bind_cq<E>(cq_type: &CqType, ep: &mut libfabric::ep::Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
 
-    match tx_cq {
-        CqType::Spin(tx_cq) => {    
-            ep.bind_cq()
-                .transmit(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(tx_cq).unwrap();
-        }
-        CqType::Sread(tx_cq) => {    
-            ep.bind_cq()
-                .transmit(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(tx_cq).unwrap();
-        }
-        CqType::WaitSet(tx_cq) => {    
-            ep.bind_cq()
-                .transmit(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(tx_cq).unwrap();
-        }
-        CqType::WaitFd(tx_cq) => {    
-            ep.bind_cq()
-                .transmit(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(tx_cq).unwrap();
-        }
-        CqType::WaitYield(tx_cq) => {    
-            ep.bind_cq()
-                .transmit(gl_ctx.options & FT_OPT_TX_CQ == 0)
-                .cq(tx_cq).unwrap();
-        }
+    match cq_type {
+        CqType::Spin(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
+        CqType::Sread(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
+        CqType::WaitSet(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
+        CqType::WaitFd(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
+        CqType::WaitYield(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
     }
+    // match rx_cq {
+    //     CqType::Spin(rx_cq) => {    
+    //         if let CqType::Spin(tx_cq) = tx_cq {
+    //             ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0 ).unwrap()
+    //         }
+    //         else {
+    //             panic!("Completion Queues of different types");
+    //         }
+    //     }
+    //     CqType::WaitYield(rx_cq)| CqType::WaitSet(rx_cq) |CqType::Sread(rx_cq) => {    
+    //         if let CqType::WaitYield(tx_cq)| CqType::WaitSet(tx_cq) |CqType::Sread(tx_cq) = tx_cq {
+    //             ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0 ).unwrap()
+    //         }
+    //         else {
+    //             panic!("Completion Queues of different types");
+    //         }
+    //     }
+    //     CqType::WaitFd(rx_cq) => {    
+    //         if let CqType::WaitFd(tx_cq) = tx_cq {
+    //             ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0 ).unwrap()
+    //         }
+    //         else {
+    //             panic!("Completion Queues of different types");
+    //         }
+    //     }
+    // }
 }
 
 pub fn ft_complete_connect(eq: &impl WaitEq) { // [TODO] Do not panic, return errors
@@ -499,49 +509,66 @@ pub enum PassiveEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
 
 
 #[allow(clippy::type_complexity)]
-pub fn ft_server_connect<T: ReadEq + WaitEq + 'static+ Sync + Send, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(pep: &PassiveEndpointCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (CqType, CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, EndpointCaps<M,TT>,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_server_connect<T: ReadEq + WaitEq + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(pep: &PassiveEndpointCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &libfabric::eq::EventQueue<T>, fab: &fabric::Fabric) -> (CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, EndpointCaps<M,TT>,  Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     match pep {
 
         PassiveEndpointCaps::Msg(pep) => {
             let new_info = ft_retrieve_conn_req(eq, pep);
             let domain = ft_open_domain_res(&new_info, fab, eq);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
+            let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
             let mut ep = EndpointCaps::Msg(ep);
-            let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
+            let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx, &mut ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             ft_accept_connection(&ep, eq);
-            (tx_cq, rx_cq, tx_cntr, rx_cntr, ep,  mr, mr_desc)
+            (cq_type, tx_cntr, rx_cntr, ep,  mr, mr_desc)
         }
         PassiveEndpointCaps::Tagged(pep) => {
             let new_info = ft_retrieve_conn_req(eq, pep);
             let domain = ft_open_domain_res(&new_info, fab, eq);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
+            let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain);
             let mut ep = EndpointCaps::Tagged(ep);
-            let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
+            let (mr, mr_desc) =  ft_enable_ep_recv(&new_info, gl_ctx, &mut ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             ft_accept_connection(&ep, eq);
-            (tx_cq, rx_cq, tx_cntr, rx_cntr, ep,  mr, mr_desc)
+            (cq_type, tx_cntr, rx_cntr, ep,  mr, mr_desc)
         }
     }
 }
 
-pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, source: bool) -> Info<T> {
-    let mut ep_attr = hints.get_ep_attr();
+pub fn ft_getinfo<T>(hints: InfoHints<T>, node: String, service: String, connected: bool, source: bool) -> Info<T> {
+    
+    let info = if ! connected {
+        hints
+            .enter_ep_attr()
+                .type_(libfabric::enums::EndpointType::Rdm)
+            .leave_ep_attr()
+    } else {
+        hints
+    }.leave_hints();
+
+    if source {
+        info.source(libfabric::info::ServiceAddress::Service(service))
+    } else {
+        info
+            .service(&service)
+            .node(&node)
+    }.get().unwrap()
 
 
-    let hints = match ep_attr.get_type() {
-        libfabric::enums::EndpointType::Unspec => {ep_attr.ep_type(libfabric::enums::EndpointType::Rdm); hints.ep_attr(ep_attr)},
-        _ => hints ,
-    };
 
-    let info = 
-        if source {
-            Info::new_source(libfabric::info::InfoSourceOpt::Service(service))
-        }
-        else {
-            Info::new().service(&service).node(&node)
-        };
+    // let hints = match ep_attr.type_() {
+    //     libfabric::enums::EndpointType::Unspec => {ep_attr.ep_type(libfabric::enums::EndpointType::Rdm); hints.ep_attr(ep_attr)},
+    //     _ => hints ,
+    // };
 
-     info.hints(&hints).build().unwrap()
+    // let info = 
+    //     if source {
+    //         Info::new_source(&Version{major: 1, minor:19}, libfabric::info::InfoSourceOpt::Service(service))
+    //     }
+    //     else {
+    //         Info::new(&Version{major: 1, minor:19}).service(&service).node(&node)
+    //     };
+
+    //  info.hints(&hints).build().unwrap()
 
 }
 
@@ -558,8 +585,8 @@ pub fn ft_connect_ep<E>(ep: &libfabric::ep::Endpoint<E>, eq: &impl WaitEq, addr:
 
 pub fn ft_rx_prefix_size<E>(info: &InfoEntry<E>) -> usize {
 
-    if info.get_rx_attr().get_mode().is_msg_prefix(){ 
-        info.get_ep_attr().get_max_msg_size()
+    if info.rx_attr().mode().is_msg_prefix(){ 
+        info.ep_attr().max_msg_size()
     }
     else {
         0
@@ -568,8 +595,8 @@ pub fn ft_rx_prefix_size<E>(info: &InfoEntry<E>) -> usize {
 
 pub fn ft_tx_prefix_size<E>(info: &InfoEntry<E>) -> usize {
 
-    if info.get_tx_attr().get_mode().is_msg_prefix() { 
-        info.get_ep_attr().get_max_msg_size()
+    if info.tx_attr().mode().is_msg_prefix() { 
+        info.ep_attr().max_msg_size()
     }
     else {
         0
@@ -581,8 +608,8 @@ pub const FT_RMA_SYNC_MSG_BYTES : usize = 4;
 
 pub fn ft_set_tx_rx_sizes<E>(info: &InfoEntry<E>, max_test_size: usize, tx_size: &mut usize, rx_size: &mut usize) {
     *tx_size = max_test_size;
-    if *tx_size > info.get_ep_attr().get_max_msg_size() {
-        *tx_size = info.get_ep_attr().get_max_msg_size();
+    if *tx_size > info.ep_attr().max_msg_size() {
+        *tx_size = info.ep_attr().max_msg_size();
     }
     println!("FT PREFIX = {}", ft_rx_prefix_size(info));
     *rx_size = *tx_size + ft_rx_prefix_size(info);
@@ -623,25 +650,25 @@ pub fn ft_alloc_msgs<I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, dom
 // }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep_recv<EQ: ReadEq + 'static + Sync + Send, CNTR: ReadCntr + 'static + Sync + Send, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &mut EndpointCaps<M, T>, domain: &ConfDomain, tx_cq: &CqType, rx_cq: &CqType, eq: &libfabric::eq::EventQueue<EQ>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_enable_ep_recv<EQ: ReadEq + 'static, CNTR: ReadCntr + 'static, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &mut EndpointCaps<M, T>, domain: &ConfDomain, cq_type: &CqType, eq: &libfabric::eq::EventQueue<EQ>, av: &Option<libfabric::av::AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     
     let (mr, mut data_desc)  = match ep {
         EndpointCaps::Msg(ep) => {
-            ft_enable_ep(info, gl_ctx, ep, tx_cq, rx_cq, eq, av, tx_cntr, rx_cntr, rma_cntr);
+            ft_enable_ep(info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr);
             ft_alloc_msgs(info, gl_ctx, domain, ep)
         }
         EndpointCaps::Tagged(ep) => {
-            ft_enable_ep(info, gl_ctx, ep, tx_cq, rx_cq, eq, av, tx_cntr, rx_cntr, rma_cntr);
+            ft_enable_ep(info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr);
             ft_alloc_msgs(info, gl_ctx, domain, ep)
         }
     };
 
-    match rx_cq {
-        CqType::Spin(rx_cq) => {ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)},
-        CqType::Sread(rx_cq) => {ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)},
-        CqType::WaitSet(rx_cq) => {ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)},
-        CqType::WaitFd(rx_cq) => {ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)},
-        CqType::WaitYield(rx_cq) => {ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)},
+    match cq_type {
+        CqType::Spin(cq_type) => { match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)}},
+        CqType::Sread(cq_type) => {match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)}},
+        CqType::WaitSet(cq_type) => {match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)}},
+        CqType::WaitFd(cq_type) => {match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)}},
+        CqType::WaitYield(cq_type) => {match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, std::cmp::max(FT_MAX_CTRL_MSG, gl_ctx.rx_size), NO_CQ_DATA, &mut data_desc, rx_cq)}},
     }
     
 
@@ -654,39 +681,38 @@ pub enum InfoWithCaps<M,T> {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, source: bool) -> (InfoWithCaps<M, T>, EndpointCaps<M, T>, ConfDomain, CqType, CqType, Option<Counter<DefaultCntr>>, Option<Counter<DefaultCntr>>, Option<libfabric::mr::MemoryRegion>, libfabric::av::AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, source: bool) -> (InfoWithCaps<M, T>, EndpointCaps<M, T>, ConfDomain, CqType, Option<Counter<DefaultCntr>>, Option<Counter<DefaultCntr>>, Option<libfabric::mr::MemoryRegion>, libfabric::av::AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
     
     match hints {
         HintsCaps::Msg(hints) => {
-            let info = ft_getinfo(hints, node.clone(), service.clone(), source);
+            let info = ft_getinfo(hints, node.clone(), service.clone(), false, source);
             let entry = info.into_iter().next().unwrap();
             let (_fabric, eq, domain) = ft_open_fabric_res(&entry);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entry, gl_ctx, &domain);
+            let (cq_type, tx_cntr, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entry, gl_ctx, &domain);
             let mut ep =  EndpointCaps::Msg(ep);
-            let (mr, mut mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
+            let (mr, mut mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
             let av = av.unwrap();
-            ft_init_av(&entry, gl_ctx, &av , &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&mut mr_desc, node.is_empty());
-            (InfoWithCaps::Msg(entry), ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, mr, av, mr_desc)
+            ft_init_av(&entry, gl_ctx, &av , &ep, &cq_type, &tx_cntr, &rx_cntr,&mut mr_desc, node.is_empty());
+            (InfoWithCaps::Msg(entry), ep, domain, cq_type, tx_cntr, rx_cntr, mr, av, mr_desc)
         }
         HintsCaps::Tagged(hints) => {
-            let info =ft_getinfo(hints, node.clone(), service.clone(), source);
+            let info =ft_getinfo(hints, node.clone(), service.clone(), false, source);
             let entry = info.into_iter().next().unwrap();
             let (_fabric, eq, domain) = ft_open_fabric_res(&entry);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entry, gl_ctx, &domain);
+            let (cq_type, tx_cntr, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entry, gl_ctx, &domain);
             let mut ep = EndpointCaps::Tagged(ep);
             
-            let (mr, mut mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
+            let (mr, mut mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr);
             let av = av.unwrap();
-            ft_init_av(&entry, gl_ctx, &av , &ep, &tx_cq, &rx_cq, &tx_cntr, &rx_cntr,&mut mr_desc, node.is_empty());
-            (InfoWithCaps::Tagged(entry), ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, mr, av, mr_desc)
+            ft_init_av(&entry, gl_ctx, &av , &ep, &cq_type, &tx_cntr, &rx_cntr,&mut mr_desc, node.is_empty());
+            (InfoWithCaps::Tagged(entry), ep, domain, cq_type, tx_cntr, rx_cntr, mr, av, mr_desc)
         }
     }
-    // (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mr_desc)
 }
 
 pub fn ft_av_insert(av: &libfabric::av::AddressVector, addr: &Address, options: AVOptions) -> MappedAddress {
 
-    let mut added = av.insert(std::slice::from_ref(addr), options).unwrap();
+    let mut added = av.insert(std::slice::from_ref(addr).into(), options).unwrap();
     added.pop().unwrap().expect("Could not add address to address vector")
 }
 
@@ -741,11 +767,11 @@ pub enum TagRecvOp {
 }
 
 pub fn ft_init_cq_data<E>(info: &InfoEntry<E>) -> u64 {
-    if info.get_domain_attr().cq_data_size >= std::mem::size_of::<u64>() {
+    if info.domain_attr().cq_data_size() >= std::mem::size_of::<u64>() {
         0x0123456789abcdef_u64
     }
     else {
-        0x0123456789abcdef & ((1 << (info.get_domain_attr().cq_data_size * 8)) - 1)
+        0x0123456789abcdef & ((1 << (info.domain_attr().cq_data_size() * 8)) - 1)
     }
 }
 
@@ -812,6 +838,8 @@ pub fn msg_post<E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut
     match op {
         SendOp::MsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
+            let mut mem_descs = vec![default_desc()];
+
             let msg = 
                 if let Some(fi_addr) = remote_address {
 
@@ -819,7 +847,7 @@ pub fn msg_post<E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut
                         libfabric::msg::Msg::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_addr)
                     }
                     else {
-                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_addr)
+                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut mem_descs, fi_addr)
                     }
                 }
                 else {
@@ -827,7 +855,7 @@ pub fn msg_post<E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut
                         libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc))
                     }
                     else {
-                        libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut [default_desc()])
+                        libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut mem_descs)
                     }
                 };
             let msg_ref = &msg;
@@ -929,6 +957,7 @@ pub fn tagged_post<E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr
     match op {
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
+            let mut mem_descs = vec![default_desc()];
             let msg = 
                 if let Some(fi_address) = remote_address {
 
@@ -936,7 +965,7 @@ pub fn tagged_post<E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr
                         libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_address, 0, *tx_seq, 0)
                     }
                     else {
-                        libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), &mut [default_desc()], fi_address, 0, *tx_seq, 0)
+                        libfabric::msg::MsgTagged::new(std::slice::from_ref(&iov), &mut mem_descs, fi_address, 0, *tx_seq, 0)
                     }
                 }
                 else {
@@ -945,7 +974,7 @@ pub fn tagged_post<E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr
                         libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), 0, *tx_seq, 0)
                     }
                     else {
-                        libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), &mut [default_desc()], 0, *tx_seq, 0)
+                        libfabric::msg::MsgTagged::new_connected(std::slice::from_ref(&iov), &mut mem_descs, 0, *tx_seq, 0)
                     }
                 };
             let msg_ref = &msg;
@@ -1066,11 +1095,11 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCt
 pub fn ft_tx<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>) {
 
     match tx_cq {
-        CqType::Spin(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::Sread(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::WaitSet(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::WaitFd(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
-        CqType::WaitYield(tx_cq) => {ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq);},
+        CqType::Spin(eq_type) => {match eq_type { EqCqOpt::Separate(tx_cq,_) | EqCqOpt::Shared(tx_cq) => ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq),}},
+        CqType::Sread(eq_type) => {match eq_type { EqCqOpt::Separate(tx_cq,_) | EqCqOpt::Shared(tx_cq) => ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq),}},
+        CqType::WaitSet(eq_type) => {match eq_type { EqCqOpt::Separate(tx_cq,_) | EqCqOpt::Shared(tx_cq) => ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq),}},
+        CqType::WaitFd(eq_type) => {match eq_type { EqCqOpt::Separate(tx_cq,_) | EqCqOpt::Shared(tx_cq) => ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq),}},
+        CqType::WaitYield(eq_type) => {match eq_type { EqCqOpt::Separate(tx_cq,_) | EqCqOpt::Shared(tx_cq) => ft_post_tx(gl_ctx, ep, size, NO_CQ_DATA, data_desc, tx_cq),}},
     }
     
     ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
@@ -1096,11 +1125,11 @@ pub fn ft_rx<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut Te
 
     ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
     match rx_cq {
-        CqType::Spin(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),
-        CqType::Sread(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),
-        CqType::WaitSet(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),
-        CqType::WaitFd(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),
-        CqType::WaitYield(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),
+        CqType::Spin(cq_type) => match cq_type { EqCqOpt::Shared(rx_cq)| EqCqOpt::Separate(_, rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),}
+        CqType::Sread(cq_type) => match cq_type { EqCqOpt::Shared(rx_cq)| EqCqOpt::Separate(_, rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),}
+        CqType::WaitSet(cq_type) => match cq_type { EqCqOpt::Shared(rx_cq)| EqCqOpt::Separate(_, rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),}
+        CqType::WaitFd(cq_type) => match cq_type { EqCqOpt::Shared(rx_cq)| EqCqOpt::Separate(_, rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),}
+        CqType::WaitYield(cq_type) => match cq_type { EqCqOpt::Shared(rx_cq)| EqCqOpt::Separate(_, rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, rx_cq),}
     }
 }
 
@@ -1123,11 +1152,11 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlob
 pub fn ft_inject<M: MsgDefaultCap, T:TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, size: usize, tx_cq: &CqType) {
     
     match tx_cq{
-        CqType::Spin(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::Sread(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::WaitSet(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::WaitFd(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
-        CqType::WaitYield(tx_cq) => {ft_post_inject(gl_ctx, ep, size, tx_cq);},
+        CqType::Spin(cq_type) => match cq_type  {EqCqOpt::Shared(tx_cq)| EqCqOpt::Separate(tx_cq, _) => {ft_post_inject(gl_ctx, ep, size, tx_cq)}},
+        CqType::Sread(cq_type) => match cq_type  {EqCqOpt::Shared(tx_cq)| EqCqOpt::Separate(tx_cq, _) => {ft_post_inject(gl_ctx, ep, size, tx_cq)}},
+        CqType::WaitSet(cq_type) => match cq_type  {EqCqOpt::Shared(tx_cq)| EqCqOpt::Separate(tx_cq, _) => {ft_post_inject(gl_ctx, ep, size, tx_cq)}},
+        CqType::WaitFd(cq_type) => match cq_type  {EqCqOpt::Shared(tx_cq)| EqCqOpt::Separate(tx_cq, _) => {ft_post_inject(gl_ctx, ep, size, tx_cq)}},
+        CqType::WaitYield(cq_type) => match cq_type  {EqCqOpt::Shared(tx_cq)| EqCqOpt::Separate(tx_cq, _) => {ft_post_inject(gl_ctx, ep, size, tx_cq)}},
     }
 }
 
@@ -1144,7 +1173,9 @@ pub fn ft_progress(cq: &impl ReadCq, _total: u64, cq_cntr: &mut u64) {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx,  av: &libfabric::av::AddressVector, ep: &EndpointCaps<M,T>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
+pub fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx,  av: &libfabric::av::AddressVector, ep: &EndpointCaps<M,T>, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
+    
+    
     if !server {
         gl_ctx.remote_address = Some(ft_av_insert(av, &info.get_dest_addr(),  AVOptions::new()));
         let epname = match ep {
@@ -1159,19 +1190,19 @@ pub fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>
         let len = epname_bytes.len();
         gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(epname_bytes );
 
-        ft_tx(gl_ctx, ep, len, data_desc, tx_cq, tx_cntr);
-        ft_rx(gl_ctx, ep, 1, data_desc, rx_cq, rx_cntr);
+        ft_tx(gl_ctx, ep, len, data_desc, cq_type, tx_cntr);
+        ft_rx(gl_ctx, ep, 1, data_desc, cq_type, rx_cntr);
 
     }
     else {
         let mut v = [0_u8; FT_MAX_CTRL_MSG];
 
-        ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
+        ft_get_rx_comp(gl_ctx, rx_cntr, cq_type, gl_ctx.rx_seq);
         v.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+FT_MAX_CTRL_MSG]);
         let address = unsafe {Address::from_bytes(&v)};
 
         gl_ctx.remote_address = Some(ft_av_insert(av, &address, AVOptions::new()));
-        // if matches!(info.get_domain_attr().av_type, libfabric::enums::AddressVectorType::Table ) {
+        // if matches!(info.domain_attr().av_type, libfabric::enums::AddressVectorType::Table ) {
         //     let mut zero = 0;
         //     ft_av_insert(av, &v, &mut zero, 0);
         // }
@@ -1179,27 +1210,27 @@ pub fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>
         //     ft_av_insert(av, &v, &mut gl_ctx.remote_address, 0);
         // }
         
-        match rx_cq {
-            CqType::Spin(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
-            CqType::Sread(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
-            CqType::WaitSet(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
-            CqType::WaitFd(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
-            CqType::WaitYield(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
+        match cq_type {
+            CqType::Spin(cq_type) => { match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)}},
+            CqType::Sread(cq_type) => { match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq)  => ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)}},
+            CqType::WaitSet(cq_type) => { match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq)  => ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)}},
+            CqType::WaitFd(cq_type) => { match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq)  => ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)}},
+            CqType::WaitYield(cq_type) => { match cq_type {EqCqOpt::Separate(_, rx_cq) | EqCqOpt::Shared(rx_cq)  => ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)}},
         }
         
         
-        // if matches!(info.get_domain_attr().av_type, libfabric::enums::AddressVectorType::Table) {
+        // if matches!(info.domain_attr().av_type, libfabric::enums::AddressVectorType::Table) {
         //     gl_ctx.remote_address = 0;
         // }
         
-        ft_tx(gl_ctx, ep, 1, data_desc, tx_cq, tx_cntr);
+        ft_tx(gl_ctx, ep, 1, data_desc, cq_type, tx_cntr);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_init_av<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, av: &libfabric::av::AddressVector, ep: &EndpointCaps<M, T>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
+pub fn ft_init_av<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, av: &libfabric::av::AddressVector, ep: &EndpointCaps<M, T>, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
 
-    ft_init_av_dst_addr(info, gl_ctx, av, ep,  tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc, server);
+    ft_init_av_dst_addr(info, gl_ctx, av, ep,  cq_type,  tx_cntr, rx_cntr, mr_desc, server);
 }
 
 pub fn ft_spin_for_comp(cq: &impl ReadCq, curr: &mut u64, total: u64, _timeout: i32, _tag: u64) {
@@ -1237,16 +1268,16 @@ pub fn ft_wait_for_comp(cq: &impl WaitCq, curr: &mut u64, total: u64, _timeout: 
     }
 }
 
-pub fn ft_read_cq(cq: &CqType, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
+// pub fn ft_read_cq(cq: &CqType, curr: &mut u64, total: u64, timeout: i32, tag: u64) {
 
-    match cq {
-        CqType::Spin(cq) => ft_spin_for_comp(cq, curr, total, timeout, tag),
-        CqType::Sread(cq ) => ft_wait_for_comp(cq, curr, total, timeout, tag),
-        CqType::WaitSet(cq) => ft_wait_for_comp(cq, curr, total, timeout, tag),
-        CqType::WaitFd(cq) => ft_wait_for_comp(cq, curr, total, timeout, tag),
-        CqType::WaitYield(cq) => ft_wait_for_comp(cq, curr, total, timeout, tag),
-    }
-}
+//     match cq {
+//         CqType::Spin(cq) => ft_spin_for_comp(cq, curr, total, timeout, tag),
+//         CqType::Sread(cq ) => ft_wait_for_comp(cq, curr, total, timeout, tag),
+//         CqType::WaitSet(cq) => ft_wait_for_comp(cq, curr, total, timeout, tag),
+//         CqType::WaitFd(cq) => ft_wait_for_comp(cq, curr, total, timeout, tag),
+//         CqType::WaitYield(cq) => ft_wait_for_comp(cq, curr, total, timeout, tag),
+//     }
+// }
 
 pub fn ft_spin_for_cntr<CNTR: ReadCntr>(cntr: &Counter<CNTR>, total: u64) {
 
@@ -1268,9 +1299,9 @@ pub fn ft_wait_for_cntr<CNTR: WaitCntr + ReadCntr>(cntr: &Counter<CNTR>, total: 
     }
 }
 
-pub fn ft_get_cq_comp(rx_curr: &mut u64, rx_cq: &CqType, total: u64) {
-    ft_read_cq(rx_cq, rx_curr, total, -1, 0);
-}
+// pub fn ft_get_cq_comp(rx_curr: &mut u64, rx_cq: &CqType, total: u64) {
+//     ft_read_cq(rx_cq, rx_curr, total, -1, 0);
+// }
 
 pub fn ft_get_cntr_comp<CNTR: WaitCntr +ReadCntr>(cntr: &Option<Counter<CNTR>>, total: u64) {
     
@@ -1288,8 +1319,29 @@ pub fn ft_get_cntr_comp<CNTR: WaitCntr +ReadCntr>(cntr: &Option<Counter<CNTR>>, 
 
 pub fn ft_get_rx_comp<CNTR: WaitCntr + ReadCntr>(gl_ctx: &mut TestsGlobalCtx, rx_cntr: &Option<Counter<CNTR>>, rx_cq: &CqType, total: u64) {
 
-    if gl_ctx.options & FT_OPT_RX_CQ != 0{
-        ft_get_cq_comp(&mut gl_ctx.rx_cq_cntr, rx_cq, total);
+    if gl_ctx.options & FT_OPT_RX_CQ != 0 { 
+        match rx_cq {
+            CqType::Spin(cq_type) => match cq_type {
+                EqCqOpt::Shared(rx_cq) => ft_spin_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(_, rx_cq) => ft_spin_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+            },
+            CqType::Sread(cq_type) => match cq_type {
+                EqCqOpt::Shared(rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(_, rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+            },
+            CqType::WaitSet(cq_type) => match cq_type {
+                EqCqOpt::Shared(rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(_, rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+            },
+            CqType::WaitFd(cq_type) => match cq_type {
+                EqCqOpt::Shared(rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(_, rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+            },
+            CqType::WaitYield(cq_type) => match cq_type {
+                EqCqOpt::Shared(rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(_, rx_cq) => ft_wait_for_comp(rx_cq, &mut gl_ctx.rx_cq_cntr, total, -1, 0),
+            },
+        }
     }
     else {
         ft_get_cntr_comp(rx_cntr, total);
@@ -1298,8 +1350,29 @@ pub fn ft_get_rx_comp<CNTR: WaitCntr + ReadCntr>(gl_ctx: &mut TestsGlobalCtx, rx
 
 pub fn ft_get_tx_comp<CNTR: WaitCntr + ReadCntr>(gl_ctx: &mut TestsGlobalCtx, tx_cntr: &Option<Counter<CNTR>>, tx_cq: &CqType, total: u64) {
 
-    if gl_ctx.options & FT_OPT_RX_CQ != 0{
-        ft_get_cq_comp(&mut gl_ctx.tx_cq_cntr, tx_cq, total);
+    if gl_ctx.options & FT_OPT_TX_CQ != 0 { 
+        match tx_cq {
+            CqType::Spin(cq_type) => match cq_type {
+                EqCqOpt::Shared(tx_cq) => ft_spin_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(tx_cq, _) => ft_spin_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+            },
+            CqType::Sread(cq_type) => match cq_type {
+                EqCqOpt::Shared(tx_cq) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(tx_cq, _) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+            },
+            CqType::WaitSet(cq_type) => match cq_type {
+                EqCqOpt::Shared(tx_cq) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(tx_cq, _) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+            },
+            CqType::WaitFd(cq_type) => match cq_type {
+                EqCqOpt::Shared(tx_cq) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(tx_cq, _) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+            },
+            CqType::WaitYield(cq_type) => match cq_type {
+                EqCqOpt::Shared(tx_cq) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+                EqCqOpt::Separate(tx_cq, _) => ft_wait_for_comp(tx_cq, &mut gl_ctx.tx_cq_cntr, total, -1, 0),
+            },
+        }
     }
     else {
         ft_get_cntr_comp(tx_cntr, total);
@@ -1308,16 +1381,16 @@ pub fn ft_get_tx_comp<CNTR: WaitCntr + ReadCntr>(gl_ctx: &mut TestsGlobalCtx, tx
 
 pub fn ft_need_mr_reg<E>(info: &InfoEntry<E>) -> bool {
 
-    if info.get_caps().is_rma() || info.get_caps().is_atomic() {
+    if info.caps().is_rma() || info.caps().is_atomic() {
         true
     }
     else {
-        info.get_domain_attr().mr_mode.is_local()
+        info.domain_attr().mr_mode().is_local()
     }
 }
 
 pub fn ft_chek_mr_local_flag<E>(info: &InfoEntry<E>) -> bool {
-    info.get_mode().is_local_mr() || info.get_domain_attr().mr_mode.is_local()
+    info.get_mode().is_local_mr() || info.domain_attr().mr_mode().is_local()
 }
 
 pub fn ft_rma_read_target_allowed(caps: &InfoCapsImpl) -> bool {
@@ -1346,17 +1419,17 @@ pub fn ft_rma_write_target_allowed(caps: &InfoCapsImpl) -> bool {
     false
 }
 
-pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(buff: &'b [u8], info: &InfoEntry<E>) -> libfabric::mr::MemoryRegionBuilder<'a, u8> {
+pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(buff: &'b [u8], info: &InfoEntry<E>) -> libfabric::mr::MemoryRegionBuilder<'a> {
 
     let mut mr_builder = libfabric::mr::MemoryRegionBuilder::new(buff);
 
     if ft_chek_mr_local_flag(info) {
-        if info.get_caps().is_msg() || info.get_caps().is_tagged() {
-            let mut temp = info.get_caps().is_send();
+        if info.caps().is_msg() || info.caps().is_tagged() {
+            let mut temp = info.caps().is_send();
             if temp {
                 mr_builder = mr_builder.access_send();
             }
-            temp |= info.get_caps().is_recv();
+            temp |= info.caps().is_recv();
             if temp {
                 mr_builder = mr_builder.access_recv();
             }
@@ -1365,11 +1438,11 @@ pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(buff: &'b [u8], info: &InfoEntry<E>)
             }
         }
     }
-    else if info.get_caps().is_rma() || info.get_caps().is_atomic() {
-        if ft_rma_read_target_allowed(info.get_caps()) {
+    else if info.caps().is_rma() || info.caps().is_atomic() {
+        if ft_rma_read_target_allowed(info.caps()) {
             mr_builder = mr_builder.access_remote_read();
         }
-        if ft_rma_write_target_allowed(info.get_caps()) {
+        if ft_rma_write_target_allowed(info.caps()) {
             mr_builder = mr_builder.access_remote_write();
         }
     }
@@ -1393,7 +1466,7 @@ pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &ConfDomain, _ep: &libfabric:
 
     let desc = mr.description();
 
-    if info.get_domain_attr().mr_mode.is_endpoint() {
+    if info.domain_attr().mr_mode().is_endpoint() {
         todo!();
         // println!("MR ENDPOINT");
         // mr.bind_ep(ep).unwrap();
@@ -1404,21 +1477,19 @@ pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &ConfDomain, _ep: &libfabric:
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_sync<CNTR: WaitCntr, M: MsgDefaultCap, T:TagDefaultCap>( ep: &EndpointCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
-    
-    // println!("TX SEQ: {},  TX_CTR: {}", gl_ctx.tx_seq, gl_ctx.tx_cq_cntr);
-    // println!("RX SEQ: {},  RX_CTR: {}", gl_ctx.rx_seq, gl_ctx.rx_cq_cntr);
-    ft_tx(gl_ctx, ep, 1, mr_desc, tx_cq, tx_cntr);
-    ft_rx(gl_ctx, ep, 1, mr_desc, rx_cq, rx_cntr);
+pub fn ft_sync<CNTR: WaitCntr, M: MsgDefaultCap, T:TagDefaultCap>( ep: &EndpointCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, cq_type: &CqType,  tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+
+    ft_tx(gl_ctx, ep, 1, mr_desc, cq_type, tx_cntr);
+    ft_rx(gl_ctx, ep, 1, mr_desc, cq_type, rx_cntr);
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_exchange_keys<CNTR: WaitCntr, E, M:MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, mr: &mut libfabric::mr::MemoryRegion, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, domain: &ConfDomain, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) -> RmaInfo{
+pub fn ft_exchange_keys<CNTR: WaitCntr, E, M:MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, mr: &mut libfabric::mr::MemoryRegion, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, domain: &ConfDomain, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) -> RmaInfo{
     // let mut addr ; 
     // let mut key_size = 0;
     let mut rma_iov = libfabric::iovec::RmaIoVec::new();
     
-    // if info.get_domain_attr().mr_mode.is_raw() { 
+    // if info.domain_attr().mr_mode.is_raw() { 
     //     addr = mr.address( 0).unwrap(); // [TODO] Change this to return base_addr, key_size
     // }
 
@@ -1427,14 +1498,14 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M:MsgDefaultCap, T:TagDefaultCap>(inf
     //     panic!("Key size does not fit");
     // }
 
-    if info.get_domain_attr().mr_mode.is_basic() || info.get_domain_attr().mr_mode.is_virt_addr() {
+    if info.domain_attr().mr_mode().is_basic() || info.domain_attr().mr_mode().is_virt_addr() {
         let addr = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)].as_mut_ptr() as u64;
         rma_iov = rma_iov.address(addr);
     }
     
 
     let key = mr.key().unwrap();
-    // if info.get_domain_attr().mr_mode.is_raw() {
+    // if info.domain_attr().mr_mode.is_raw() {
     //     // panic!("Not handled currently");
     //     let mr_key = mr.raw_key(0).unwrap();
     //     let raw_key_bytes = mr_key.as_bytes();
@@ -1469,8 +1540,8 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M:MsgDefaultCap, T:TagDefaultCap>(inf
 
     gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+len].copy_from_slice(unsafe{ std::slice::from_raw_parts(&rma_iov as *const libfabric::iovec::RmaIoVec as *const u8, std::mem::size_of::<libfabric::iovec::RmaIoVec>())});
     
-    ft_tx(gl_ctx, ep, len + ft_tx_prefix_size(info), mr_desc, tx_cq, tx_cntr);
-    ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
+    ft_tx(gl_ctx, ep, len + ft_tx_prefix_size(info), mr_desc, cq_type, tx_cntr);
+    ft_get_rx_comp(gl_ctx, rx_cntr, cq_type, gl_ctx.rx_seq);
     
     unsafe{ std::slice::from_raw_parts_mut(&mut rma_iov as *mut libfabric::iovec::RmaIoVec as *mut u8,std::mem::size_of::<libfabric::iovec::RmaIoVec>())}.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index+len]);
     let mapped_key = match domain {
@@ -1487,15 +1558,15 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M:MsgDefaultCap, T:TagDefaultCap>(inf
 
     let peer_info = RmaInfo::new(rma_iov.get_address(), rma_iov.get_len(), mapped_key);
 
-    match rx_cq {
-        CqType::Spin(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),
-        CqType::Sread(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),
-        CqType::WaitSet(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),
-        CqType::WaitFd(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),
-        CqType::WaitYield(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq),
+    match cq_type {
+        CqType::Spin(cq_type) => match cq_type {EqCqOpt::Separate(_, rx_cq)| EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq)},
+        CqType::Sread(cq_type) => match cq_type {EqCqOpt::Separate(_, rx_cq)| EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq)},
+        CqType::WaitSet(cq_type) => match cq_type {EqCqOpt::Separate(_, rx_cq)| EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq)},
+        CqType::WaitFd(cq_type) => match cq_type {EqCqOpt::Separate(_, rx_cq)| EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq)},
+        CqType::WaitYield(cq_type) => match cq_type {EqCqOpt::Separate(_, rx_cq)| EqCqOpt::Shared(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr_desc, rx_cq)},
     }
     
-    ft_sync(ep, gl_ctx,  tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc);
+    ft_sync(ep, gl_ctx,  cq_type, tx_cntr, rx_cntr, mr_desc);
 
     peer_info
 }
@@ -1504,7 +1575,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
    
     match hints {
         HintsCaps::Msg(hints) => {
-            let info = ft_getinfo(hints, node, service, true);
+            let info = ft_getinfo(hints, node, service, true, true);
             let entry = info.into_iter().next().unwrap();
 
             let fab = libfabric::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1523,7 +1594,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
             (InfoWithCaps::Msg(entry), fab, eq, PassiveEndpointCaps::Msg(pep))
         }
         HintsCaps::Tagged(hints) => {
-            let info = ft_getinfo(hints, node, service, true);
+            let info = ft_getinfo(hints, node, service, true,  true);
             let entry = info.into_iter().next().unwrap();
 
             let fab = libfabric::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1546,84 +1617,83 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
 }
 
 #[allow(clippy::type_complexity)]
-pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (InfoWithCaps<M, T>, CqType, CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, EndpointCaps<M, T>, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (InfoWithCaps<M, T>, CqType, Option<libfabric::cntr::Counter<DefaultCntr>>, Option<libfabric::cntr::Counter<DefaultCntr>>, EndpointCaps<M, T>, Option<libfabric::mr::MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     match hints {
         HintsCaps::Msg(hints) => {
-            let info = ft_getinfo(hints, node, service, false);
+            let info = ft_getinfo(hints, node, service, true, false);
 
             let entry = info.into_iter().next().unwrap();
 
             let (_fab, eq, domain) = ft_open_fabric_res(&entry);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entry, gl_ctx, &domain);
+            let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entry, gl_ctx, &domain);
             
             let mut ep = EndpointCaps::Msg(ep);
-            let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
+            let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             match ep {
                 EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
                 EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
             }
             
-            (InfoWithCaps::Msg(entry), rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, mr_desc)
+            (InfoWithCaps::Msg(entry), cq_type, tx_cntr, rx_cntr, ep, mr, mr_desc)
 
         }
         HintsCaps::Tagged(hints) => {
-            let info = ft_getinfo(hints, node, service, false);
+            let info = ft_getinfo(hints, node, service, true, false);
 
             let entry = info.into_iter().next().unwrap();
 
             let (_fab, eq, domain) = ft_open_fabric_res(&entry);
-            let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entry, gl_ctx,&domain);
+            let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entry, gl_ctx,&domain);
             
             let mut ep = EndpointCaps::Tagged(ep);
-            let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &tx_cq, &rx_cq, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
+            let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             match ep {
                 EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
                 EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
             }
-            (InfoWithCaps::Tagged(entry), rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, mr_desc)
+            (InfoWithCaps::Tagged(entry), cq_type, tx_cntr, rx_cntr, ep, mr, mr_desc)
         }
     }
     
     // (info, fab, domain, eq, rx_cq, tx_cq, tx_cntr, rx_cntr, ep, mr, mr_desc)
 }
 
-
 #[allow(clippy::too_many_arguments)]
-pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>) {
+pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>) {
 
     
     let base = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
 
     match ep {
         EndpointCaps::Msg(ep) => {
-            match tx_cq {
-                CqType::Spin(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::Sread(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitSet(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitFd(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitYield(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
+            match cq_type {
+                CqType::Spin(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::Sread(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::WaitSet(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::WaitFd(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::WaitYield(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
             }
         }
         EndpointCaps::Tagged(ep) => {
-            match tx_cq {
-                CqType::Spin(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::Sread(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitSet(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitFd(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
-                CqType::WaitYield(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA);},
+            match cq_type {
+                CqType::Spin(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) =>  tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::Sread(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) =>  tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::WaitSet(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) =>  tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::WaitFd(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) =>  tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
+                CqType::WaitYield(cq_type) => {match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) =>  tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA)}},
             }
         }
     }
 
-    ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
-    ft_get_rx_comp(gl_ctx, rx_cntr, rx_cq, gl_ctx.rx_seq);
+    ft_get_tx_comp(gl_ctx, tx_cntr, cq_type, gl_ctx.tx_seq);
+    ft_get_rx_comp(gl_ctx, rx_cntr, cq_type, gl_ctx.rx_seq);
 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_finalize<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>,  tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_finalize<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>,  cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
 
-    ft_finalize_ep(info, gl_ctx, ep, data_desc, tx_cq, rx_cq, tx_cntr, rx_cntr);
+    ft_finalize_ep(info, gl_ctx, ep, data_desc, cq_type, tx_cntr, rx_cntr);
 }
 
 // pub fn close_all_pep(fab: libfabric::fabric::Fabric, domain: libfabric::domain::Domain, eq :libfabric::eq::EventQueue, rx_cq: libfabric::cq::CompletionQueue, tx_cq: libfabric::cq::CompletionQueue, ep: libfabric::ep::Endpoint<E>, pep: libfabric::ep::PassiveEndpoint, mr: Option<libfabric::mr::MemoryRegion>) {
@@ -1652,10 +1722,9 @@ pub fn ft_finalize<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(info: 
 // }
 
 #[allow(clippy::too_many_arguments)]
-pub fn pingpong<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(inject_size: usize, gl_ctx: &mut TestsGlobalCtx, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, iters: usize, warmup: usize, size: usize, server: bool) {
-    // let inject_size = info.get_tx_attr().get_inject_size();
-
-    ft_sync(ep, gl_ctx, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc);
+pub fn pingpong<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(inject_size: usize, gl_ctx: &mut TestsGlobalCtx, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, iters: usize, warmup: usize, size: usize, server: bool) {
+    // let inject_size = info.tx_attr().get_inject_size();
+    ft_sync(ep, gl_ctx, cq_type, tx_cntr, rx_cntr, mr_desc);
     let mut now = Instant::now();
     if ! server {
         for i in 0..warmup+iters {
@@ -1664,13 +1733,13 @@ pub fn pingpong<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(inject_size:
             }
 
             if size < inject_size {
-                ft_inject(gl_ctx, ep, size, tx_cq);
+                ft_inject(gl_ctx, ep, size, cq_type);
             }
             else {
-                ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr);
+                ft_tx(gl_ctx, ep, size, mr_desc, cq_type, tx_cntr);
             }
 
-            ft_rx(gl_ctx, ep, size, mr_desc, rx_cq, rx_cntr);
+            ft_rx(gl_ctx, ep, size, mr_desc, cq_type, rx_cntr);
         }
     }
     else {
@@ -1679,14 +1748,14 @@ pub fn pingpong<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(inject_size:
                 // Start timer
             }
 
-            ft_rx(gl_ctx, ep, size, mr_desc, rx_cq, rx_cntr);
+            ft_rx(gl_ctx, ep, size, mr_desc, cq_type, rx_cntr);
 
 
             if size < inject_size {
-                ft_inject(gl_ctx, ep, size, tx_cq);
+                ft_inject(gl_ctx, ep, size, cq_type);
             }
             else {
-                ft_tx(gl_ctx, ep, size, mr_desc, tx_cq, tx_cntr);
+                ft_tx(gl_ctx, ep, size, mr_desc, cq_type, tx_cntr);
             }
         }
     }
@@ -1703,29 +1772,29 @@ pub fn pingpong<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(inject_size:
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn bw_tx_comp<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn bw_tx_comp<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, ep: &EndpointCaps<M, T>,  cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>) {
 
-    ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
-    ft_rx(gl_ctx, ep, FT_RMA_SYNC_MSG_BYTES, mr_desc, rx_cq, rx_cntr);
+    ft_get_tx_comp(gl_ctx, tx_cntr, cq_type, gl_ctx.tx_seq);
+    ft_rx(gl_ctx, ep, FT_RMA_SYNC_MSG_BYTES, mr_desc, cq_type, rx_cntr);
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn bw_rma_comp<CNTR: WaitCntr, M:MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, op: &RmaOp, ep: &EndpointCaps<M, T>, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
+pub fn bw_rma_comp<CNTR: WaitCntr, M:MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut TestsGlobalCtx, op: &RmaOp, ep: &EndpointCaps<M, T>, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
     if matches!(op, RmaOp::RMA_WRITEDATA) {
         if ! server {
-            bw_tx_comp(gl_ctx, ep, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc);
+            bw_tx_comp(gl_ctx, ep, cq_type, tx_cntr, rx_cntr, mr_desc);
         }
     }
     else {
-        ft_get_tx_comp(gl_ctx, tx_cntr, tx_cq, gl_ctx.tx_seq);
+        ft_get_tx_comp(gl_ctx, tx_cntr, cq_type, gl_ctx.tx_seq);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn pingpong_rma<CNTR: WaitCntr, E: RmaCap, M: MsgDefaultCap + RmaDefaultCap, T: TagDefaultCap + RmaDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, tx_cq: &CqType, rx_cq: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, op: RmaOp, remote: &RmaInfo, iters: usize, warmup: usize, size: usize, server: bool) {
-    let inject_size = info.get_tx_attr().get_inject_size();
+pub fn pingpong_rma<CNTR: WaitCntr, E: RmaCap, M: MsgDefaultCap + RmaDefaultCap, T: TagDefaultCap + RmaDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, ep: &EndpointCaps<M, T>, mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, op: RmaOp, remote: &RmaInfo, iters: usize, warmup: usize, size: usize, server: bool) {
+    let inject_size = info.tx_attr().inject_size();
 
-    ft_sync(ep, gl_ctx, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc);
+    ft_sync(ep, gl_ctx, cq_type, tx_cntr, rx_cntr, mr_desc);
     let offest_rma_start = FT_RMA_SYNC_MSG_BYTES + std::cmp::max(ft_tx_prefix_size(info), ft_rx_prefix_size(info));
 
 
@@ -1745,41 +1814,41 @@ pub fn pingpong_rma<CNTR: WaitCntr, E: RmaCap, M: MsgDefaultCap + RmaDefaultCap,
             match ep {
                 EndpointCaps::Msg(ep) => {
                     if size < inject_size {
-                        match tx_cq {
-                            CqType::Spin(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::Sread(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::WaitSet(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::WaitFd(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::WaitYield(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
+                        match cq_type {
+                            CqType::Spin(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::Sread(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::WaitSet(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::WaitFd(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::WaitYield(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
                         }
                     }
                     else {
-                        match tx_cq {
-                            CqType::Spin(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::Sread(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::WaitSet(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::WaitFd(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::WaitYield(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
+                        match cq_type {
+                            CqType::Spin(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::Sread(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::WaitSet(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::WaitFd(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::WaitYield(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
                         }
                     }
                 }
                 EndpointCaps::Tagged(ep) => {
                     if size < inject_size {
-                        match tx_cq {
-                            CqType::Spin(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::Sread(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::WaitSet(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::WaitFd(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
-                            CqType::WaitYield(tx_cq) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq),
+                        match cq_type {
+                            CqType::Spin(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::Sread(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::WaitSet(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::WaitFd(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
+                            CqType::WaitYield(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma_inject(gl_ctx, &op, offset, size, remote, ep, tx_cq)},
                         }
                     }
                     else {
-                        match tx_cq {
-                            CqType::Spin(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::Sread(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::WaitSet(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::WaitFd(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
-                            CqType::WaitYield(tx_cq) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq),
+                        match cq_type {
+                            CqType::Spin(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::Sread(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::WaitSet(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::WaitFd(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
+                            CqType::WaitYield(cq_type) => match cq_type {EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => ft_post_rma(gl_ctx, &op, offset, size, remote, ep, mr_desc.as_mut().unwrap(), tx_cq)},
                         }
                     }
                 }
@@ -1791,14 +1860,14 @@ pub fn pingpong_rma<CNTR: WaitCntr, E: RmaCap, M: MsgDefaultCap + RmaDefaultCap,
         j+=1;
 
         if j == gl_ctx.window_size {
-            bw_rma_comp(gl_ctx, &op, ep, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc, server);
+            bw_rma_comp(gl_ctx, &op, ep, cq_type, tx_cntr, rx_cntr, mr_desc, server);
             j = 0;
         }
 
         offset += size;
     }
 
-    bw_rma_comp(gl_ctx, &op, ep, tx_cq, rx_cq, tx_cntr, rx_cntr, mr_desc, server);
+    bw_rma_comp(gl_ctx, &op, ep, cq_type, tx_cntr, rx_cntr, mr_desc, server);
     
 
     if size == 1 {

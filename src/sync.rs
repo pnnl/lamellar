@@ -208,7 +208,7 @@ impl WaitSetAttr {
     }
     
     pub(crate) fn wait_obj(&mut self, wait_obj: enums::WaitObj2) -> &mut Self {
-        self.c_attr.wait_obj = wait_obj.get_value();
+        self.c_attr.wait_obj = wait_obj.as_raw();
         self
     }
 
@@ -236,7 +236,7 @@ impl PollSetBuilder {
         }
     }
 
-    pub fn build<EQ: Sync + Send>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<PollSet, crate::error::Error> {
+    pub fn build<EQ>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<PollSet, crate::error::Error> {
         PollSet::new(domain, self.poll_attr)
     }
 }
@@ -257,7 +257,7 @@ pub struct PollSet {
 
 impl PollSetImpl {
 
-    pub(crate) fn new<EQ: Sync + Send>(domain: &crate::domain::DomainBase<EQ>, mut attr: crate::sync::PollSetAttr) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ>(domain: &crate::domain::DomainBase<EQ>, mut attr: crate::sync::PollSetAttr) -> Result<Self, crate::error::Error> {
         let mut c_poll: PollRawFid = std::ptr::null_mut();
         let err = unsafe { libfabric_sys::inlined_fi_poll_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_poll) };
     
@@ -351,7 +351,7 @@ impl PollSetImpl {
 
 impl PollSet {
     
-    pub(crate) fn new<EQ: Sync + Send>(domain: &crate::domain::DomainBase<EQ>, attr: crate::sync::PollSetAttr) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ>(domain: &crate::domain::DomainBase<EQ>, attr: crate::sync::PollSetAttr) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: 

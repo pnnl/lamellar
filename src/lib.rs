@@ -64,7 +64,7 @@ pub type RawMappedAddress = libfabric_sys::fi_addr_t;
 
 #[derive(Clone)]
 pub(crate) enum AddressSource {
-    Av(MyRc<dyn AddressVectorImplT + Sync + Send>),
+    Av(MyRc<dyn AddressVectorImplT>),
     AvSet(MyRc<AddressVectorSetImpl>)
 }
 

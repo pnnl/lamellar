@@ -14,14 +14,14 @@ pub(crate) trait AsyncRecvEpImpl: AsyncRxEp + RecvEpImpl {
     }
 
     #[inline]
-	async fn recvv_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&MappedAddress>, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
+	async fn recvv_async_impl<'a>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&MappedAddress>, user_ctx: Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         self.recvv_impl(iov, desc, mapped_addr, Some(&mut async_ctx as *mut AsyncCtx))?;
         let cq = self.retrieve_rx_cq();
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
-    async fn recvmsg_async_impl(&self, msg: &mut crate::msg::Msg, options: RecvMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
+    async fn recvmsg_async_impl<'a>(&self, msg: &mut crate::msg::MsgMut<'a>, options: RecvMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
         let real_user_ctx = msg.c_msg.context;
         let mut async_ctx = AsyncCtx{user_ctx: 
             if real_user_ctx.is_null() {
@@ -50,11 +50,11 @@ pub trait AsyncRecvEp {
     fn recv_async<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn recv_from_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn recv_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-    fn recvv_from_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn recvv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor]) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn recvv_from_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress,  context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn recvv_with_contex_asynct<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-    fn recvmsg_async(&self, msg: &mut crate::msg::Msg, options: RecvMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn recvv_from_async<'a>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn recvv_async<'a>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor]) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn recvv_from_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress,  context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn recvv_with_contex_asynct<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn recvmsg_async(&self, msg: &mut crate::msg::MsgMut, options: RecvMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
 }
 
 impl<E: AsyncRecvEpImpl> AsyncRecvEpImpl for  EndpointBase<E> {}
@@ -78,29 +78,29 @@ impl<EP: AsyncRecvEpImpl> AsyncRecvEp for EP {
         self.recv_async_imp(buf, desc, None, Some((context as *mut T0).cast()))
     }
         
-    fn recvv_from_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    fn recvv_from_async<'a>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.recvv_async_impl(iov, desc, Some(mapped_addr), None)
     }
 
-    fn recvv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor]) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    fn recvv_async<'a>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor]) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.recvv_async_impl(iov, desc, None, None)
     }
     
-    fn recvv_from_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress,  context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    fn recvv_from_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress,  context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.recvv_async_impl(iov, desc, Some(mapped_addr), Some((context as *mut T0).cast()))
     }
     
-    fn recvv_with_contex_asynct<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    fn recvv_with_contex_asynct<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.recvv_async_impl(iov, desc, None, Some((context as *mut T0).cast()))
     }
 
-    fn recvmsg_async(&self, msg: &mut crate::msg::Msg, options: RecvMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    fn recvmsg_async(&self, msg: &mut crate::msg::MsgMut, options: RecvMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.recvmsg_async_impl(msg, options)
     }
 }
 
 pub(crate) trait AsyncSendEpImpl: AsyncTxEp + SendEpImpl {
-	async fn sendv_async_impl<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&MappedAddress>, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 
+	async fn sendv_async_impl<'a>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], mapped_addr: Option<&MappedAddress>, user_ctx : Option<*mut std::ffi::c_void>) -> Result<SingleCompletion, crate::error::Error> { 
         let mut async_ctx = AsyncCtx{user_ctx};
         self.sendv_impl(iov, desc, mapped_addr, Some(&mut async_ctx as *mut AsyncCtx))?;
         let cq = self.retrieve_tx_cq();
@@ -114,7 +114,7 @@ pub(crate) trait AsyncSendEpImpl: AsyncTxEp + SendEpImpl {
         cq.wait_for_ctx_async(&mut async_ctx).await
     }
 
-    async fn sendmsg_async_impl(&self, msg: &mut crate::msg::Msg, options: SendMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
+    async fn sendmsg_async_impl<'a>(&self, msg: &mut crate::msg::Msg<'a>, options: SendMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
         let real_user_ctx = msg.c_msg.context;
         let mut async_ctx = 
             AsyncCtx {
@@ -147,10 +147,10 @@ pub(crate) trait AsyncSendEpImpl: AsyncTxEp + SendEpImpl {
 }
 
 pub trait AsyncSendEp {
-    fn sendv_to_async<'a, T>(&self, iov: & [crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn sendv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor]) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn sendv_to_with_context_async<'a, T,T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn sendv_with_context_async<'a, T,T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn sendv_to_async<'a>(&self, iov: & [crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn sendv_async<'a>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor]) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn sendv_to_with_context_async<'a,T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn sendv_with_context_async<'a,T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn send_to_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn send_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn send_to_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
@@ -165,19 +165,19 @@ pub trait AsyncSendEp {
 // impl<E, EQ: ?Sized +  AsyncReadEq,  CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
 
 impl<EP: AsyncSendEpImpl> AsyncSendEp for EP {
-    async fn sendv_to_async<'a, T>(&self, iov: & [crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> Result<SingleCompletion, crate::error::Error> { 
+    async fn sendv_to_async<'a>(&self, iov: & [crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress) -> Result<SingleCompletion, crate::error::Error> { 
 	    self.sendv_async_impl(iov, desc, Some(mapped_addr), None).await 
     }
 
-	async fn sendv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor]) -> Result<SingleCompletion, crate::error::Error> { 
+	async fn sendv_async<'a>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor]) -> Result<SingleCompletion, crate::error::Error> { 
 	    self.sendv_async_impl(iov, desc, None, None).await 
     }
     
-	async fn sendv_to_with_context_async<'a, T,T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
+	async fn sendv_to_with_context_async<'a,T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], mapped_addr: &MappedAddress, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
 	    self.sendv_async_impl(iov, desc, Some(mapped_addr), Some((context as *mut T0).cast())).await 
     }
     
-	async fn sendv_with_context_async<'a, T,T0>(&self, iov: &[crate::iovec::IoVec<'a, T>], desc: &mut [impl DataDescriptor], context : &mut T0) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
+	async fn sendv_with_context_async<'a,T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], context : &mut T0) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
 	    self.sendv_async_impl(iov, desc, None, Some((context as *mut T0).cast())).await 
     }
 
@@ -197,7 +197,7 @@ impl<EP: AsyncSendEpImpl> AsyncSendEp for EP {
         self.send_async_impl(buf, desc, None, Some((context as *mut T0).cast())).await
     }
 
-    async fn sendmsg_async(&self, msg: &mut crate::msg::Msg, options: SendMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
+    async fn sendmsg_async<'a>(&self, msg: &mut crate::msg::Msg<'a>, options: SendMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
         self.sendmsg_async_impl(msg, options).await
     }
 

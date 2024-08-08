@@ -19,7 +19,7 @@ pub enum Event {
 impl Event{
 
     #[allow(dead_code)]
-    pub(crate) fn get_value(&self) -> libfabric_sys::_bindgen_ty_18 {
+    pub(crate) fn as_raw(&self) -> libfabric_sys::_bindgen_ty_18 {
 
         match self {
             // Event::Notify(_) => libfabric_sys::FI_NOTIFY,
@@ -188,7 +188,7 @@ pub trait WriteEq : AsRawTypedFid<Output = EqRawFid> {
     }
     
     fn write(&self, event: Event) -> Result<(), crate::error::Error>{
-        let event_val = event.get_value();
+        let event_val = event.as_raw();
         let (event_entry, event_entry_size) = event.get_entry();
 
         let ret = unsafe { libfabric_sys::inlined_fi_eq_write(self.as_raw_typed_fid(), event_val, event_entry, event_entry_size, 0) };
@@ -738,7 +738,7 @@ impl EventQueueAttr {
         if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
             self.c_attr.wait_set = wait_set.as_raw_typed_fid();
         }
-        self.c_attr.wait_obj = wait_obj.get_value();
+        self.c_attr.wait_obj = wait_obj.as_raw();
         self
     }
 
@@ -937,7 +937,7 @@ impl Default for EventQueueCmEntry {
 #[cfg(test)]
 mod tests {
 
-    use crate::info::Info;
+    use crate::info::{Info, Version};
 
     use super::EventQueueBuilder;
 
@@ -1114,7 +1114,9 @@ mod tests {
 
     #[test]
     fn eq_open_close_sizes() {
-        let info = Info::new().build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .get()
+            .unwrap();
         let entry = info.into_iter().next().unwrap();
         
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1134,14 +1136,16 @@ mod tests {
 #[cfg(test)]
 mod libfabric_lifetime_tests {
 
-    use crate::info::Info;
+    use crate::info::{Info, Version};
 
     use super::EventQueueBuilder;
 
 
     #[test]
     fn eq_drops_before_fabric() {
-        let info = Info::new().build().unwrap();
+        let info = Info::new(&Version{major: 1, minor: 19})
+            .get()
+            .unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

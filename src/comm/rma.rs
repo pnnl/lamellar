@@ -1,3 +1,4 @@
+use crate::info::Version;
 use crate::FI_ADDR_UNSPEC;
 use crate::cq::ReadCq;
 use crate::enums::ReadMsgOptions;
@@ -28,17 +29,21 @@ pub(crate) trait ReadEpImpl: ReadEp + AsRawTypedFid<Output = EpRawFid>{
         check_error(err)
     }
     
-    unsafe fn readv_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
+    unsafe fn readv_impl<T0>(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_readv(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
     }
     
-    unsafe fn readmsg_impl(&self, msg: &crate::msg::MsgRma, options: ReadMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+    unsafe fn readmsg_impl(&self, msg: &crate::msg::MsgRmaMut, options: ReadMsgOptions) -> Result<(), crate::error::Error> {
+        let err = unsafe{ libfabric_sys::inlined_fi_readmsg(self.as_raw_typed_fid(), msg.get() as *const libfabric_sys::fi_msg_rma, options.as_raw()) };
         check_error(err)
     }
 }
+
+
+
+
 
 pub trait ReadEp {
     /// Read data from a remote memory region into local buffer `buf`
@@ -94,7 +99,7 @@ pub trait ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_readv` with no context`
-    unsafe fn readv_from<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
+    unsafe fn readv_from(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
             
     /// Similar to [ReadEp::readv_from] but providing a context
     /// 
@@ -105,7 +110,7 @@ pub trait ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_readv`
-    unsafe fn readv_from_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
+    unsafe fn readv_from_with_context<T0>(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
                 
     /// Similar to [ReadEp::readv_from] but without specifying a network address 
     /// 
@@ -116,7 +121,7 @@ pub trait ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_readv` with no context and `src_addr` set to `FI_ADDR_UNSPEC`
-    unsafe fn readv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
+    unsafe fn readv(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
                     
     /// Similar to [ReadEp::readv] but with a provided context 
     /// 
@@ -127,7 +132,7 @@ pub trait ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_readv` with `src_addr` set to `FI_ADDR_UNSPEC`
-    unsafe fn readv_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
+    unsafe fn readv_with_context<T0>(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
     
     /// Read from remote node with the specifications provided by the `msg` argument 
     /// 
@@ -138,7 +143,7 @@ pub trait ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_readmsg`
-    unsafe fn readmsg(&self, msg: &crate::msg::MsgRma, options: ReadMsgOptions) -> Result<(), crate::error::Error> ;
+    unsafe fn readmsg(&self, msg: &crate::msg::MsgRmaMut, options: ReadMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
 impl<EP: ReadEpImpl> ReadEp for EP {
@@ -158,23 +163,23 @@ impl<EP: ReadEpImpl> ReadEp for EP {
         self.read_impl(buf, desc, None, mem_addr, mapped_key, Some(context))
     }
 
-    unsafe fn readv_from<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
-        self.readv_impl::<T,()>(iov, desc, Some(src_addr), mem_addr, mapped_key, None)
+    unsafe fn readv_from(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
+        self.readv_impl::<()>(iov, desc, Some(src_addr), mem_addr, mapped_key, None)
     }
         
-    unsafe  fn readv_from_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
+    unsafe  fn readv_from_with_context<T0>(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         self.readv_impl(iov, desc, Some(src_addr), mem_addr, mapped_key, Some(context))
     }
 
-    unsafe fn readv<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
-        self.readv_impl::<T,()>(iov, desc, None, mem_addr, mapped_key, None)
+    unsafe fn readv(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
+        self.readv_impl::<()>(iov, desc, None, mem_addr, mapped_key, None)
     }
     
-    unsafe  fn readv_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
+    unsafe  fn readv_with_context<T0>(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         self.readv_impl(iov, desc, None, mem_addr, mapped_key, Some(context))
     }
     
-    unsafe fn readmsg(&self, msg: &crate::msg::MsgRma, options: ReadMsgOptions) -> Result<(), crate::error::Error> {
+    unsafe fn readmsg(&self, msg: &crate::msg::MsgRmaMut, options: ReadMsgOptions) -> Result<(), crate::error::Error> {
         self.readmsg_impl(msg, options)
     }
 }
@@ -205,7 +210,7 @@ pub(crate) trait WriteEpImpl: WriteEp + AsRawTypedFid<Output = EpRawFid>{
         check_error(err)
     }
     
-    unsafe fn writev_impl<T,T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> { 
+    unsafe fn writev_impl<T0>(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut T0>) -> Result<(), crate::error::Error> { 
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_writev(self.as_raw_typed_fid(), iov.as_ptr().cast(), desc.as_mut_ptr().cast(), iov.len(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
         check_error(err)
@@ -230,7 +235,7 @@ pub(crate) trait WriteEpImpl: WriteEp + AsRawTypedFid<Output = EpRawFid>{
     }
 
     unsafe fn writemsg_impl(&self, msg: &crate::msg::MsgRma, options: WriteMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.as_raw_typed_fid(), &msg.c_msg_rma as *const libfabric_sys::fi_msg_rma, options.get_value()) };
+        let err = unsafe{ libfabric_sys::inlined_fi_writemsg(self.as_raw_typed_fid(), msg.get() as *const libfabric_sys::fi_msg_rma, options.as_raw()) };
         check_error(err)
     }
 }
@@ -318,7 +323,7 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writev` without a provided context
-    unsafe fn writev_to<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
+    unsafe fn writev_to(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
         
     /// Similar to [WriteEp::writev_to] but with a provided context
     /// 
@@ -329,7 +334,7 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writev`.
-    unsafe fn writev_to_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
+    unsafe fn writev_to_with_context<T0>(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
             
     /// Similar to [WriteEp::writev_to] but without specifying a network address
     /// 
@@ -340,7 +345,7 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writev` with `dest_addr` = `FI_ADDR_UNSPEC` and no contex.
-    unsafe fn writev<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
+    unsafe fn writev(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> ;
                 
     /// Similar to [WriteEp::writev] but with a provided context
     /// 
@@ -351,7 +356,7 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writev` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn writev_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
+    unsafe fn writev_with_context<T0>(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> ;
     
     /// # Safety
     /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
@@ -427,22 +432,22 @@ impl<EP: WriteEpImpl> WriteEp for EP {
     }   
 
     #[inline]
-    unsafe fn writev_to<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
-        self.writev_impl::<T,()>(iov, desc, Some(dest_addr), mem_addr, mapped_key, None)
+    unsafe fn writev_to(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
+        self.writev_impl::<()>(iov, desc, Some(dest_addr), mem_addr, mapped_key, None)
     }
 
     #[inline]
-    unsafe fn writev_to_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
+    unsafe fn writev_to_with_context<T0>(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         self.writev_impl(iov, desc, Some(dest_addr), mem_addr, mapped_key, Some(context))
     }
     
     #[inline]
-    unsafe fn writev<T>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
-        self.writev_impl::<T,()>(iov, desc, None, mem_addr, mapped_key, None)
+    unsafe fn writev(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> { //[TODO]
+        self.writev_impl::<()>(iov, desc, None, mem_addr, mapped_key, None)
     }
 
     #[inline]
-    unsafe fn writev_with_context<T, T0>(&self, iov: &[crate::iovec::IoVec<T>], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
+    unsafe fn writev_with_context<T0>(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: &mut T0) -> Result<(), crate::error::Error> { //[TODO]
         self.writev_impl(iov, desc, None, mem_addr, mapped_key, Some(context))
     }
 

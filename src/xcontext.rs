@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{cntr::{Counter, ReadCntr}, cq::ReadCq, enums::TransferOptions, ep::{ActiveEndpoint, BaseEndpoint, Endpoint}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid}, MyOnceCell, MyRc};
+use crate::{cntr::{Counter, ReadCntr}, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, Endpoint}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid}, MyOnceCell, MyRc};
 
 pub struct Receive;
 pub struct Transmit;
@@ -81,14 +81,16 @@ pub(crate) type TxContextImpl = XContextBaseImpl<Transmit, dyn ReadCq>;
 
 impl<CQ: ?Sized> TxContextImplBase<CQ> {
 
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: TxAttr, context: Option<&mut T0>) -> Result<TxContextImplBase<CQ>, crate::error::Error> {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: Option<&mut T0>) -> Result<TxContextImplBase<CQ>, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
+
+
         let err = 
             if let Some(ctx) = context {
-                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
+                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
+                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, std::ptr::null_mut())}
             };
         
         if err != 0 {
@@ -189,48 +191,48 @@ impl <'a, T, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, T, E> {
     // }
 
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
-        self.tx_attr.mode(mode);
+        self.tx_attr.set_mode(mode);
         self
     }
 
     pub fn set_transmit_options(mut self, ops: TransferOptions) -> Self {
         ops.transmit();
-        self.tx_attr.op_flags(ops);
+        self.tx_attr.set_op_flags(ops);
         self
     }
 
     pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
-        self.tx_attr.msg_order(msg_order);
+        self.tx_attr.set_msg_order(msg_order);
         self
     }
 
     pub fn comp_order(mut self, comp_order: TxCompOrder) -> Self {
-        self.tx_attr.comp_order(comp_order);
+        self.tx_attr.set_comp_order(comp_order);
         self
     }
 
     pub fn inject_size(mut self, size: usize) -> Self {
-        self.tx_attr.inject_size(size);
+        self.tx_attr.set_inject_size(size);
         self
     }
 
     pub fn size(mut self, size: usize) -> Self {
-        self.tx_attr.size(size);
+        self.tx_attr.set_size(size);
         self
     }
 
     pub fn iov_limit(mut self, iov_limit: usize) -> Self {
-        self.tx_attr.iov_limit(iov_limit);
+        self.tx_attr.set_iov_limit(iov_limit);
         self
     }
 
     pub fn rma_iov_limit(mut self, rma_iov_limit: usize) -> Self {
-        self.tx_attr.rma_iov_limit(rma_iov_limit);
+        self.tx_attr.set_rma_iov_limit(rma_iov_limit);
         self
     }
 
-    pub fn tclass(mut self, class: crate::enums::TClass) -> Self {
-        self.tx_attr.tclass(class);
+    pub fn tclass(mut self, class: crate::enums::TrafficClass) -> Self {
+        self.tx_attr.set_traffic_class(class);
         self
     }
 
@@ -251,138 +253,163 @@ impl <'a, T, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, T, E> {
 //================== TxContext Attribute ==================//
 #[derive(Clone, Debug)]
 pub struct TxAttr {
-    c_attr: libfabric_sys::fi_tx_attr,
+    caps: TxCaps,
+    mode: Mode,
+    op_flags: TransferOptions,
+    msg_order: MsgOrder,
+    comp_order: TxCompOrder,
+    inject_size: usize,
+    size: usize,
+    iov_limit: usize,
+    rma_iov_limit: usize,
+    traffic_class: TrafficClass, 
 }
 
 impl TxAttr {
-    pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_tx_attr {
-            caps: 0,
-            mode: 0,
-            op_flags: 0,
-            msg_order: 0,
-            comp_order: 0,
+
+    pub(crate) fn new() -> Self {
+        Self {
+            caps: TxCaps::new(),
+            mode: Mode::new(),
+            op_flags: TransferOptions::new(),
+            msg_order: MsgOrder::new(),
+            comp_order: TxCompOrder::new(),
+            traffic_class: TrafficClass::Unspec,
             inject_size: 0,
-            size: 0,
             iov_limit: 0,
+            size: 0,
             rma_iov_limit: 0,
-            tclass: 0,
-        };
-
-        Self { c_attr }        
+        }
     }
 
-    pub(crate) fn from(c_tx_attr_ptr: *mut libfabric_sys::fi_tx_attr) -> Self {
-        let c_attr = unsafe { *c_tx_attr_ptr };
-
-        Self { c_attr }
-    }
-    
-    pub fn caps(&mut self, caps: TxCaps) -> &mut Self {
-        self.c_attr.caps = caps.get_value();
-        self
-    }
-
-    pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
-        self.c_attr.mode = mode.into();
-        self
-    }
-
-    pub fn op_flags(&mut self, tfer: crate::enums::TransferOptions) -> &mut Self {
-        self.c_attr.op_flags = tfer.get_value().into();
-        self
-    }
-
-    pub fn msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
-        self.c_attr.msg_order = msg_order.get_value();
-        self
-    }
-
-    pub fn comp_order(&mut self, comp_order: TxCompOrder) -> &mut Self {
-        self.c_attr.comp_order = comp_order.get_value();
-        self
-    }
-
-    pub fn inject_size(&mut self, size: usize) -> &mut Self {
-        self.c_attr.inject_size = size;
-        self
-    }
-
-    pub fn size(&mut self, size: usize) -> &mut Self {
-        self.c_attr.size = size;
-        self
-    }
-
-    pub fn iov_limit(&mut self, iov_limit: usize) -> &mut Self {
-        self.c_attr.iov_limit = iov_limit;
-        self
-    }
-
-    pub fn rma_iov_limit(&mut self, rma_iov_limit: usize) -> &mut Self {
-        self.c_attr.rma_iov_limit = rma_iov_limit;
-        self
-    }
-
-    pub fn tclass(&mut self, class: crate::enums::TClass) -> &mut Self {
-        self.c_attr.tclass = class.get_value();
-        self
-    }
-
-    pub fn get_caps(&self) -> u64 {
-        self.c_attr.caps
-    }
-
-    pub fn get_mode(&self) -> crate::enums::Mode {
-        crate::enums::Mode::from_value(self.c_attr.mode)
-    }
-
-    pub fn get_op_flags(&self) -> u64 {
-        self.c_attr.op_flags
-    }
-
-    pub fn get_msg_order(&self) -> u64 {
-        self.c_attr.msg_order
-    }
-
-    pub fn get_comp_order(&self) -> u64 {
-        self.c_attr.comp_order
-    }
-
-    pub fn get_inject_size(&self) -> usize {
-        self.c_attr.inject_size
-    }
-
-    pub fn get_size(&self) -> usize {
-        self.c_attr.size
+    pub(crate) fn from_raw_ptr(c_tx_attr_ptr: *const libfabric_sys::fi_tx_attr) -> Self {
+        assert!(!c_tx_attr_ptr.is_null());
+        Self {
+            caps: TxCaps::from_raw(unsafe{*c_tx_attr_ptr}.caps),
+            mode: Mode::from_raw(unsafe{*c_tx_attr_ptr}.mode),
+            op_flags: TransferOptions::from_raw(unsafe{*c_tx_attr_ptr}.op_flags as u32),
+            msg_order: MsgOrder::from_raw(unsafe{*c_tx_attr_ptr}.msg_order),
+            comp_order: TxCompOrder::from_raw(unsafe{*c_tx_attr_ptr}.comp_order),
+            inject_size: unsafe{*c_tx_attr_ptr}.inject_size,
+            iov_limit: unsafe{*c_tx_attr_ptr}.iov_limit,
+            size: unsafe{*c_tx_attr_ptr}.size,
+            rma_iov_limit: unsafe{*c_tx_attr_ptr}.rma_iov_limit,
+            traffic_class: TrafficClass::from_raw(unsafe{*c_tx_attr_ptr}.tclass),
+        }
     }
     
-    pub fn get_iov_limit(&self) -> usize {
-        self.c_attr.iov_limit
+    pub(crate) fn set_caps(&mut self, caps: TxCaps) -> &mut Self {
+        self.caps = caps;
+        self
     }
 
-    pub fn get_rma_iov_limit(&self) -> usize {
-        self.c_attr.rma_iov_limit
+    pub(crate) fn set_mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
+        self.mode = mode;
+        self
     }
 
-    pub fn get_tclass(&self) -> u32 {
-        self.c_attr.tclass
+    pub(crate) fn set_op_flags(&mut self, tfer: crate::enums::TransferOptions) -> &mut Self {
+        self.op_flags = tfer;
+        self
+    }
+
+    pub(crate) fn set_msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
+        self.msg_order = msg_order;
+        self
+    }
+
+    pub(crate) fn set_comp_order(&mut self, comp_order: TxCompOrder) -> &mut Self {
+        self.comp_order = comp_order;
+        self
+    }
+
+    pub(crate) fn set_inject_size(&mut self, size: usize) -> &mut Self {
+        self.inject_size = size;
+        self
+    }
+
+    pub(crate) fn set_size(&mut self, size: usize) -> &mut Self {
+        self.size = size;
+        self
+    }
+
+    pub(crate) fn set_iov_limit(&mut self, iov_limit: usize) -> &mut Self {
+        self.iov_limit = iov_limit;
+        self
+    }
+
+    pub(crate) fn set_rma_iov_limit(&mut self, rma_iov_limit: usize) -> &mut Self {
+        self.rma_iov_limit = rma_iov_limit;
+        self
+    }
+
+    pub(crate) fn set_traffic_class(&mut self, class: crate::enums::TrafficClass) -> &mut Self {
+        self.traffic_class = class;
+        self
+    }
+
+    pub fn caps(&self) -> &TxCaps {
+        &self.caps
+    }
+
+    pub fn mode(&self) -> &Mode {
+        &self.mode
+    }
+
+    pub fn op_flags(&self) -> &TransferOptions {
+        &self.op_flags
+    }
+
+    pub fn msg_order(&self) -> &MsgOrder {
+        &self.msg_order
+    }
+
+    pub fn comp_order(&self) -> &TxCompOrder {
+        &self.comp_order
+    }
+
+    pub fn inject_size(&self) -> usize {
+        self.inject_size
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+    
+    pub fn iov_limit(&self) -> usize {
+        self.iov_limit
+    }
+
+    pub fn rma_iov_limit(&self) -> usize {
+        self.rma_iov_limit
+    }
+
+    pub fn traffic_class(&self) -> &TrafficClass {
+        &self.traffic_class
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_tx_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_tx_attr {
-        &mut self.c_attr
+    pub(crate) unsafe fn get(&self) -> libfabric_sys::fi_tx_attr {
+        libfabric_sys::fi_tx_attr {
+            caps: self.caps.as_raw(),
+            mode: self.mode.as_raw(),
+            op_flags: self.op_flags.as_raw() as u64,
+            msg_order: self.msg_order.as_raw(),
+            comp_order: self.comp_order.as_raw(),
+            tclass: self.traffic_class.as_raw(),
+            inject_size: self.inject_size,
+            size: self.size,
+            iov_limit: self.iov_limit,
+            rma_iov_limit: self.rma_iov_limit,
+        }
     }
 }
 
-impl Default for TxAttr {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for TxAttr {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 //================== RxContext ==================//
 pub type RxContext = XContextBase<Receive, dyn ReadCq>; 
@@ -392,14 +419,14 @@ pub(crate) type RxContextImplBase<CQ> = XContextBaseImpl<Receive, CQ>;
 
 impl<CQ: ?Sized> RxContextImplBase<CQ> {
 
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, mut attr: RxAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = 
             if let Some(ctx) = context {
-                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, (ctx as *mut T0).cast())}
+                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, (ctx as *mut T0).cast())}
             }
             else {
-                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, attr.get_mut(), &mut c_ep, std::ptr::null_mut())}
+                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, std::ptr::null_mut())}
             };
         
         if err != 0 {
@@ -500,38 +527,38 @@ impl<'a, T, E: AsRawTypedFid<Output = EpRawFid>> ReceiveContextBuilder<'a, T, E>
     // }
 
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
-        self.rx_attr.mode(mode);
+        self.rx_attr.set_mode(mode);
         self
     }
 
     pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
-        self.rx_attr.msg_order(msg_order);
+        self.rx_attr.set_msg_order(msg_order);
         self
     }
 
     pub fn comp_order(mut self, comp_order: RxCompOrder) -> Self {
-        self.rx_attr.comp_order(comp_order);
+        self.rx_attr.set_comp_order(comp_order);
         self
     }
 
     pub fn total_buffered_recv(mut self, total_buffered_recv: usize) -> Self {
-        self.rx_attr.total_buffered_recv(total_buffered_recv);
+        self.rx_attr.set_total_buffered_recv(total_buffered_recv);
         self
     }
 
     pub fn size(mut self, size: usize) -> Self {
-        self.rx_attr.size(size);
+        self.rx_attr.set_size(size);
         self
     }
 
     pub fn iov_limit(mut self, iov_limit: usize) -> Self {
-        self.rx_attr.iov_limit(iov_limit);
+        self.rx_attr.set_iov_limit(iov_limit);
         self
     }
 
     pub fn set_receive_options(mut self, ops: TransferOptions) -> Self {
         ops.recv();
-        self.rx_attr.op_flags(ops);
+        self.rx_attr.set_op_flags(ops);
         self
     }
 
@@ -550,115 +577,242 @@ impl<'a, T, E: AsRawTypedFid<Output = EpRawFid>> ReceiveContextBuilder<'a, T, E>
 }
 
 //================== RxContext Attribute ==================//
-#[derive(Clone)]
+// #[derive(Clone)]
+// pub struct RxAttr {
+//     c_attr: libfabric_sys::fi_rx_attr,
+// }
+
+#[derive(Clone, Debug)]
 pub struct RxAttr {
-    c_attr: libfabric_sys::fi_rx_attr,
+    caps: RxCaps,
+    mode: Mode,
+    op_flags: TransferOptions,
+    msg_order: MsgOrder,
+    comp_order: RxCompOrder,
+    total_buffered_recv: usize,
+    size: usize,
+    iov_limit: usize,
 }
 
 impl RxAttr {
-    pub fn new() -> Self {
-        let c_attr = libfabric_sys::fi_rx_attr {
-            caps: 0,
-            mode: 0,
-            op_flags: 0,
-            msg_order: 0,
-            comp_order: 0,
+
+    pub(crate) fn new() -> Self {
+        Self {
+            caps: RxCaps::new(),
+            mode: Mode::new(),
+            op_flags: TransferOptions::new(),
+            msg_order: MsgOrder::new(),
+            comp_order: RxCompOrder::new(),
             total_buffered_recv: 0,
-            size: 0,
             iov_limit: 0,
-        };
-
-        Self { c_attr }
+            size: 0,
+        }
     }
 
-    pub(crate) fn from(c_rx_attr: *mut libfabric_sys::fi_rx_attr) -> Self {
-        let c_attr = unsafe { *c_rx_attr };
-
-        Self { c_attr }
+    pub(crate) fn from_raw_ptr(c_rx_attr_ptr: *const libfabric_sys::fi_rx_attr) -> Self {
+        assert!(!c_rx_attr_ptr.is_null());
+        Self {
+            caps: RxCaps::from_raw(unsafe{*c_rx_attr_ptr}.caps),
+            mode: Mode::from_raw(unsafe{*c_rx_attr_ptr}.mode),
+            op_flags: TransferOptions::from_raw(unsafe{*c_rx_attr_ptr}.op_flags as u32),
+            msg_order: MsgOrder::from_raw(unsafe{*c_rx_attr_ptr}.msg_order),
+            comp_order: RxCompOrder::from_raw(unsafe{*c_rx_attr_ptr}.comp_order),
+            total_buffered_recv: unsafe{*c_rx_attr_ptr}.total_buffered_recv,
+            iov_limit: unsafe{*c_rx_attr_ptr}.iov_limit,
+            size: unsafe{*c_rx_attr_ptr}.size,
+        }
     }
-
-    pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
-        self.c_attr.caps = caps.get_value();
+    
+    pub(crate) fn set_caps(&mut self, caps: RxCaps) -> &mut Self {
+        self.caps = caps;
         self
     }
 
-    pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
-        self.c_attr.mode = mode.into();
+    pub(crate) fn set_mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
+        self.mode = mode;
         self
     }
 
-
-    pub fn msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
-        self.c_attr.msg_order = msg_order.get_value();
+    pub(crate) fn set_op_flags(&mut self, tfer: crate::enums::TransferOptions) -> &mut Self {
+        self.op_flags = tfer;
         self
     }
 
-    pub fn comp_order(&mut self, comp_order: RxCompOrder) -> &mut Self {
-        self.c_attr.comp_order = comp_order.get_value();
+    pub(crate) fn set_msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
+        self.msg_order = msg_order;
         self
     }
 
-    pub fn total_buffered_recv(&mut self, total_buffered_recv: usize) -> &mut Self {
-        self.c_attr.total_buffered_recv = total_buffered_recv;
+    pub(crate) fn set_comp_order(&mut self, comp_order: RxCompOrder) -> &mut Self {
+        self.comp_order = comp_order;
         self
     }
 
-    pub fn size(&mut self, size: usize) -> &mut Self {
-        self.c_attr.size = size;
+    pub(crate) fn set_total_buffered_recv(&mut self, total_buffered_recv: usize) -> &mut Self {
+        self.total_buffered_recv = total_buffered_recv;
         self
     }
 
-    pub fn iov_limit(&mut self, iov_limit: usize) -> &mut Self {
-        self.c_attr.iov_limit = iov_limit;
+    pub(crate) fn set_size(&mut self, size: usize) -> &mut Self {
+        self.size = size;
         self
     }
 
-    pub fn op_flags(&mut self, tfer: crate::enums::TransferOptions) -> &mut Self {
-        self.c_attr.op_flags = tfer.get_value().into();
+    pub(crate) fn set_iov_limit(&mut self, iov_limit: usize) -> &mut Self {
+        self.iov_limit = iov_limit;
         self
     }
 
-    pub fn get_caps(&self) -> u64 {
-        self.c_attr.caps
+    pub fn caps(&self) -> &RxCaps {
+        &self.caps
     }
 
-    pub fn get_mode(&self) -> crate::enums::Mode {
-        crate::enums::Mode::from_value(self.c_attr.mode)
+    pub fn mode(&self) -> &Mode {
+        &self.mode
     }
 
-    pub fn get_op_flags(&self) -> u64 {
-        self.c_attr.op_flags
+    pub fn op_flags(&self) -> &TransferOptions {
+        &self.op_flags
     }
 
-    pub fn get_msg_order(&self) -> u64 {
-        self.c_attr.msg_order
+    pub fn msg_order(&self) -> &MsgOrder {
+        &self.msg_order
     }
 
-    pub fn get_comp_order(&self) -> u64 {
-        self.c_attr.comp_order
+    pub fn comp_order(&self) -> &RxCompOrder {
+        &self.comp_order
     }
 
-    pub fn get_size(&self) -> usize {
-        self.c_attr.size
+    pub fn total_buffered_recv(&self) -> usize {
+        self.total_buffered_recv
     }
 
-    pub fn get_iov_limit(&self) -> usize {
-        self.c_attr.iov_limit
+    pub fn size(&self) -> usize {
+        self.size
+    }
+    
+    pub fn iov_limit(&self) -> usize {
+        self.iov_limit
     }
 
-    pub fn get_total_buffered_recv(&self) -> usize {
-        self.c_attr.total_buffered_recv
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_rx_attr {
-        &self.c_attr
-    }
-
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_rx_attr {
-        &mut self.c_attr
+    pub(crate) unsafe fn get(&self) -> libfabric_sys::fi_rx_attr {
+        libfabric_sys::fi_rx_attr {
+            caps: self.caps.as_raw(),
+            mode: self.mode.as_raw(),
+            op_flags: self.op_flags.as_raw() as u64,
+            msg_order: self.msg_order.as_raw(),
+            comp_order: self.comp_order.as_raw(),
+            total_buffered_recv: self.total_buffered_recv,
+            size: self.size,
+            iov_limit: self.iov_limit,
+        }
     }
 }
+
+// impl RxAttr {
+//     pub fn new() -> Self {
+//         let c_attr = libfabric_sys::fi_rx_attr {
+//             caps: 0,
+//             mode: 0,
+//             op_flags: 0,
+//             msg_order: 0,
+//             comp_order: 0,
+//             total_buffered_recv: 0,
+//             size: 0,
+//             iov_limit: 0,
+//         };
+
+//         Self { c_attr }
+//     }
+
+//     pub(crate) fn from(c_rx_attr: *mut libfabric_sys::fi_rx_attr) -> Self {
+//         let c_attr = unsafe { *c_rx_attr };
+
+//         Self { c_attr }
+//     }
+
+//     pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
+//         self.c_attr.caps = caps.get_value();
+//         self
+//     }
+
+//     pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
+//         self.c_attr.mode = mode.into();
+//         self
+//     }
+
+
+//     pub fn msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
+//         self.c_attr.msg_order = msg_order.get_value();
+//         self
+//     }
+
+//     pub fn comp_order(&mut self, comp_order: RxCompOrder) -> &mut Self {
+//         self.c_attr.comp_order = comp_order.get_value();
+//         self
+//     }
+
+//     pub fn total_buffered_recv(&mut self, total_buffered_recv: usize) -> &mut Self {
+//         self.c_attr.total_buffered_recv = total_buffered_recv;
+//         self
+//     }
+
+//     pub fn size(&mut self, size: usize) -> &mut Self {
+//         self.c_attr.size = size;
+//         self
+//     }
+
+//     pub fn iov_limit(&mut self, iov_limit: usize) -> &mut Self {
+//         self.c_attr.iov_limit = iov_limit;
+//         self
+//     }
+
+//     pub fn op_flags(&mut self, tfer: crate::enums::TransferOptions) -> &mut Self {
+//         self.c_attr.op_flags = tfer.get_value().into();
+//         self
+//     }
+
+//     pub fn get_caps(&self) -> u64 {
+//         self.c_attr.caps
+//     }
+
+//     pub fn get_mode(&self) -> crate::enums::Mode {
+//         crate::enums::Mode::from_value(self.c_attr.mode)
+//     }
+
+//     pub fn get_op_flags(&self) -> u64 {
+//         self.c_attr.op_flags
+//     }
+
+//     pub fn get_msg_order(&self) -> u64 {
+//         self.c_attr.msg_order
+//     }
+
+//     pub fn get_comp_order(&self) -> u64 {
+//         self.c_attr.comp_order
+//     }
+
+//     pub fn get_size(&self) -> usize {
+//         self.c_attr.size
+//     }
+
+//     pub fn get_iov_limit(&self) -> usize {
+//         self.c_attr.iov_limit
+//     }
+
+//     pub fn get_total_buffered_recv(&self) -> usize {
+//         self.c_attr.total_buffered_recv
+//     }
+
+//     #[allow(dead_code)]
+//     pub(crate) fn get(&self) -> *const libfabric_sys::fi_rx_attr {
+//         &self.c_attr
+//     }
+
+//     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_rx_attr {
+//         &mut self.c_attr
+//     }
+// }
 
 impl Default for RxAttr {
     fn default() -> Self {
@@ -721,14 +875,21 @@ impl<'a> TxIncompleteBindCntr<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct TxCaps {
     c_flags: u64,
 }
 
 impl TxCaps {
 
-    pub(crate) fn get_value(&self) -> u64 {
+    pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
+    }
+
+    pub(crate) fn from_raw(value: u64) -> Self {
+        Self {
+            c_flags: value,
+        }
     }
 
     pub fn new() -> Self {
@@ -760,14 +921,21 @@ impl Default for TxCaps {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct MsgOrder {
     c_flags: u64,
 }
 
 impl MsgOrder {
 
-    pub(crate) fn get_value(&self) -> u64 {
+    pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
+    }
+    
+    pub(crate) fn from_raw(value: u64) -> Self {
+        Self {
+            c_flags: value,
+        }
     }
 
     pub fn new() -> Self {
@@ -801,6 +969,7 @@ impl Default for MsgOrder {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct TxCompOrder {
     c_flags: u64,
 }
@@ -808,13 +977,19 @@ pub struct TxCompOrder {
 
 impl TxCompOrder {
 
-    pub(crate) fn get_value(&self) -> u64 {
+    pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
     pub fn new() -> Self {
         Self {
             c_flags: 0,
+        }
+    }
+
+    pub(crate) fn from_raw(value: u64) -> Self {
+        Self {
+            c_flags: value,
         }
     }
 
@@ -884,19 +1059,26 @@ impl<'a> RxIncompleteBindCntr<'a> {
 }
 
 
+#[derive(Clone, Copy, Debug)]
 pub struct RxCaps {
     c_flags: u64,
 }
 
 impl RxCaps {
 
-    pub(crate) fn get_value(&self) -> u64 {
+    pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
     pub fn new() -> Self {
         Self {
             c_flags: 0,
+        }
+    }
+
+    pub(crate) fn from_raw(value: u64) -> Self {
+        Self {
+            c_flags: value,
         }
     }
 
@@ -926,14 +1108,21 @@ impl Default for RxCaps {
 }
 
 
+#[derive(Clone, Copy, Debug)]
 pub struct RxCompOrder {
     c_flags: u64,
 }
 
 impl RxCompOrder {
 
-    pub(crate) fn get_value(&self) -> u64 {
+    pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
+    }
+
+    pub(crate) fn from_raw(value: u64) -> Self {
+        Self {
+            c_flags: value
+        }
     }
 
     pub fn new() -> Self {
