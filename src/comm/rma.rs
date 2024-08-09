@@ -1,5 +1,3 @@
-use crate::info::Version;
-use crate::FI_ADDR_UNSPEC;
 use crate::cq::ReadCq;
 use crate::enums::ReadMsgOptions;
 use crate::enums::WriteMsgOptions;
@@ -18,6 +16,7 @@ use crate::xcontext::RxContextBase;
 use crate::xcontext::RxContextImplBase;
 use crate::xcontext::TxContextBase;
 use crate::xcontext::TxContextImplBase;
+use crate::FI_ADDR_UNSPEC;
 
 use super::message::extract_raw_addr_and_ctx;
 

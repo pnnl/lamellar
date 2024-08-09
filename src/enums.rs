@@ -263,7 +263,7 @@ impl Default for Mode {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MrMode {
     c_flags: u32
 }
@@ -514,7 +514,6 @@ impl<const MSG: bool> TferOptions<false, MSG, false, false, false, false> { // A
     gen_set_get_flag!(claim, is_claim, libfabric_sys::FI_CLAIM);
     gen_set_get_flag!(discard, is_discard, libfabric_sys::FI_DISCARD);
     gen_set_get_flag!(multi_recv, is_multi_recv, libfabric_sys::FI_MULTI_RECV as u64);
-    
 }
 
 impl TferOptions<false, true, false, false, true, false> { // Only tagged Posted Receive Operations
@@ -655,7 +654,7 @@ pub enum WaitObjType2<'a> {
     Unspec,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DomainCaps {
     c_flags: u64,
 }

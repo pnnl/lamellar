@@ -1,6 +1,6 @@
 use core::panic;
 use std::time::Instant;
-use libfabric::{cntr::{Counter, CounterBuilder, ReadCntr, WaitCntr}, comm::{message::{RecvEp, SendEp}, rma::{ReadEp, ReadWriteEp, WriteEp}, tagged::{TagRecvEp, TagSendEp}}, cq::{CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq}, domain::{self, BoundDomain, Domain}, enums::AVOptions, ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint}, eq::{EventQueue, EventQueueBuilder, ReadEq, WaitEq}, fabric, info::{Info, InfoCapsImpl, InfoEntry, InfoHints, Version}, infocapsoptions::{self, MsgDefaultCap, RmaCap, RmaDefaultCap, TagDefaultCap}, mr::{default_desc, MappedMemoryRegionKey, MemoryRegionKey}, Context, MappedAddress, Waitable};
+use libfabric::{cntr::{Counter, CounterBuilder, ReadCntr, WaitCntr}, comm::{message::{RecvEp, SendEp}, rma::{ReadWriteEp, WriteEp}, tagged::{TagRecvEp, TagSendEp}}, cq::{CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq}, domain::{self, BoundDomain, Domain}, enums::AVOptions, ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint}, eq::{EventQueue, EventQueueBuilder, ReadEq, WaitEq}, fabric, info::{Info, InfoCapsImpl, InfoEntry, InfoHints, Version}, infocapsoptions::{self, MsgDefaultCap, RmaCap, RmaDefaultCap, TagDefaultCap}, mr::{default_desc, MappedMemoryRegionKey, MemoryRegionKey}, Context, MappedAddress};
 use libfabric::enums;
 pub enum CompMeth {
     Spin,
@@ -838,30 +838,22 @@ pub fn msg_post<E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64, tx_cq_cntr: &mut
     match op {
         SendOp::MsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
-            let mut mem_descs = vec![default_desc()];
+            let mut desc = default_desc();
 
-            let msg = 
-                if let Some(fi_addr) = remote_address {
-
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_addr)
-                    }
-                    else {
-                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut mem_descs, fi_addr)
-                    }
-                }
-                else {
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc))
-                    }
-                    else {
-                        libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut mem_descs)
-                    }
-                };
-            let msg_ref = &msg;
             let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
-            
-            ft_post!(sendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
+             
+            if let Some(fi_addr) = remote_address {
+                let desc = if let Some(mr_desc) = data_desc.as_mut() {mr_desc} else {&mut default_desc()};
+                let msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr);
+                let msg_ref = &msg;
+                ft_post!(sendmsg_to, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
+            }
+            else {
+                let desc = if let Some(mr_desc) = data_desc.as_mut() {mr_desc} else {&mut default_desc()};
+                let msg = libfabric::msg::MsgConnected::from_iov(&iov, desc);
+                let msg_ref = &msg;
+                ft_post!(sendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
+            };
         }
         SendOp::Send => {
             // let ctx = &mut tx_ctx;
@@ -1177,7 +1169,7 @@ pub fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>
     
     
     if !server {
-        gl_ctx.remote_address = Some(ft_av_insert(av, &info.get_dest_addr(),  AVOptions::new()));
+        gl_ctx.remote_address = Some(ft_av_insert(av, &info.dest_addr().unwrap(),  AVOptions::new()));
         let epname = match ep {
             EndpointCaps::Msg(ep) => {
                 ep.getname().unwrap()
@@ -1390,7 +1382,7 @@ pub fn ft_need_mr_reg<E>(info: &InfoEntry<E>) -> bool {
 }
 
 pub fn ft_chek_mr_local_flag<E>(info: &InfoEntry<E>) -> bool {
-    info.get_mode().is_local_mr() || info.domain_attr().mr_mode().is_local()
+    info.mode().is_local_mr() || info.domain_attr().mr_mode().is_local()
 }
 
 pub fn ft_rma_read_target_allowed(caps: &InfoCapsImpl) -> bool {
@@ -1577,6 +1569,7 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
         HintsCaps::Msg(hints) => {
             let info = ft_getinfo(hints, node, service, true, true);
             let entry = info.into_iter().next().unwrap();
+            println!("{:?}", entry.domain_attr());
 
             let fab = libfabric::fabric::FabricBuilder::new().build(&entry).unwrap();
 
@@ -1630,8 +1623,8 @@ pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M,
             let mut ep = EndpointCaps::Msg(ep);
             let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             match ep {
-                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
-                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
+                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap()),
+                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap()),
             }
             
             (InfoWithCaps::Msg(entry), cq_type, tx_cntr, rx_cntr, ep, mr, mr_desc)
@@ -1648,8 +1641,8 @@ pub fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M,
             let mut ep = EndpointCaps::Tagged(ep);
             let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             match ep {
-                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
-                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()),
+                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap()),
+                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap()),
             }
             (InfoWithCaps::Tagged(entry), cq_type, tx_cntr, rx_cntr, ep, mr, mr_desc)
         }

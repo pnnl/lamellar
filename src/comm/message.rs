@@ -1,5 +1,5 @@
 
-use crate::{FI_ADDR_UNSPEC, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, mr::DataDescriptor, utils::check_error, MappedAddress, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, cq::ReadCq, xcontext::{TxContextBase, TxContextImplBase, RxContextImplBase, RxContextBase}, infocapsoptions::{MsgCap, RecvMod, SendMod}};
+use crate::{cq::ReadCq, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, utils::{check_error, Either}, xcontext::{RxContextBase, RxContextImplBase, TxContextBase, TxContextImplBase}, MappedAddress, FI_ADDR_UNSPEC};
 
 pub(crate) fn extract_raw_ctx<T0>(context: Option<*mut T0>) -> *mut std::ffi::c_void {
     if let Some(ctx) = context {
@@ -43,8 +43,13 @@ pub(crate) trait RecvEpImpl: RecvEp + AsRawTypedFid<Output = EpRawFid> {
     }
 
     
-    fn recvmsg_impl(&self, msg: &crate::msg::MsgMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.as_raw()) };
+    fn recvmsg_impl(&self, msg: Either<&crate::msg::MsgMut, &crate::msg::MsgConnectedMut> , options: RecvMsgOptions) -> Result<(), crate::error::Error> {
+        let c_msg = match msg {
+            Either::Left(msg) => msg.c_msg,
+            Either::Right(msg) => msg.c_msg,
+        };
+
+        let err = unsafe{ libfabric_sys::inlined_fi_recvmsg(self.as_raw_typed_fid(), &c_msg, options.as_raw()) };
         check_error(err)
     }
 }
@@ -59,7 +64,8 @@ pub trait RecvEp {
 	fn recvv(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor]) -> Result<(), crate::error::Error> ;
 	fn recvv_from_with_context<T0>(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddress,  context: &mut T0) -> Result<(), crate::error::Error> ;
 	fn recvv_with_context<T0>(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], context: &mut T0) -> Result<(), crate::error::Error> ;
-    fn recvmsg(&self, msg: &crate::msg::MsgMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> ;
+    fn recvmsg(&self, msg: &crate::msg::MsgConnectedMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> ;
+    fn recvmsg_from(&self, msg: &crate::msg::MsgMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
 impl<EP: RecvEpImpl> RecvEp for EP {
@@ -104,8 +110,13 @@ impl<EP: RecvEpImpl> RecvEp for EP {
     }
 
     #[inline]
-    fn recvmsg(&self, msg: &crate::msg::MsgMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
-        self.recvmsg_impl(msg, options)
+    fn recvmsg(&self, msg: &crate::msg::MsgConnectedMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
+        self.recvmsg_impl(Either::Right(msg), options)
+    }
+
+    #[inline]
+    fn recvmsg_from(&self, msg: &crate::msg::MsgMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> {
+        self.recvmsg_impl(Either::Left(msg), options)
     }
 }
 
@@ -127,8 +138,13 @@ pub(crate) trait SendEpImpl: SendEp + AsRawTypedFid<Output = EpRawFid> {
         check_error(err)
     }
 
-    fn sendmsg_impl(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.as_raw_typed_fid(), &msg.c_msg as *const libfabric_sys::fi_msg, options.as_raw()) };
+    fn sendmsg_impl(&self, msg: Either<&crate::msg::Msg, &crate::msg::MsgConnected>, options: SendMsgOptions) -> Result<(), crate::error::Error> {
+        let c_msg = match msg {
+            Either::Left(msg) => msg.c_msg,
+            Either::Right(msg) => msg.c_msg,
+        };
+
+        let err = unsafe{ libfabric_sys::inlined_fi_sendmsg(self.as_raw_typed_fid(), &c_msg, options.as_raw()) };
         check_error(err)
     }
 
@@ -170,7 +186,8 @@ pub trait SendEp {
     fn send<T>(&self, buf: &[T], desc: &mut impl DataDescriptor) -> Result<(), crate::error::Error> ;
     fn send_to_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &crate::MappedAddress, context : &mut T0) -> Result<(), crate::error::Error> ;
     fn send_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, context : &mut T0) -> Result<(), crate::error::Error> ;
-    fn sendmsg(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> ;
+    fn sendmsg_to(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> ;
+    fn sendmsg(&self, msg: &crate::msg::MsgConnected, options: SendMsgOptions) -> Result<(), crate::error::Error> ;
     fn senddata_to<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> ;
     fn senddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64) -> Result<(), crate::error::Error> ;
     fn senddata_to_with_context<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &crate::MappedAddress, context : &mut T0) -> Result<(), crate::error::Error> ;
@@ -223,8 +240,13 @@ impl<EP: SendEpImpl> SendEp for EP {
     }
 
     #[inline]
-    fn sendmsg(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
-        self.sendmsg_impl(msg, options)
+    fn sendmsg(&self, msg: &crate::msg::MsgConnected, options: SendMsgOptions) -> Result<(), crate::error::Error> {
+        self.sendmsg_impl(Either::Right(msg), options)
+    }
+
+    #[inline]
+    fn sendmsg_to(&self, msg: &crate::msg::Msg, options: SendMsgOptions) -> Result<(), crate::error::Error> {
+        self.sendmsg_impl(Either::Left(msg), options)
     }
 
     #[inline]

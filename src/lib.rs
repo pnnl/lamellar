@@ -77,6 +77,7 @@ pub(crate) enum AddressSource {
 /// Note that other objects that it will extend the respective [`crate::av::AddressVector`]'s (if any) lifetime until they
 /// it is dropped.
 #[repr(C)]
+#[derive(Clone)]
 pub struct MappedAddress {
     addr: libfabric_sys::fi_addr_t,
     av: MyOnceCell<AddressSource>,

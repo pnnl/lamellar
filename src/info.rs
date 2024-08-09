@@ -218,6 +218,9 @@ impl<T> InfoBuilder<T> {
 // #[derive(Clone)]
 pub struct InfoEntry<T> { 
     caps: InfoCapsImpl,
+    mode: crate::enums::Mode,
+    src_address: Option<Address>,
+    dest_address: Option<Address>,
     fabric_attr: crate::fabric::FabricAttr,
     domain_attr: crate::domain::DomainAttr,
     tx_attr: crate::xcontext::TxAttr,
@@ -234,6 +237,24 @@ impl<T> InfoEntry<T> {
         let c_info = unsafe{libfabric_sys::fi_dupinfo(c_info)};
         let fabric_attr = crate::fabric::FabricAttr::from_raw_ptr(unsafe{*c_info}.fabric_attr);
         let domain_attr = DomainAttr::from_raw_ptr(unsafe{*c_info}.domain_attr);
+        let mode = Mode::from_raw(unsafe{*c_info}.mode);
+        let dest_address = 
+            if unsafe {*c_info}.dest_addr.is_null() {
+                None
+            } else { 
+                Some(
+                    unsafe{ Address::from_raw_parts((*c_info).dest_addr as *const u8, (*c_info).dest_addrlen) }
+                )
+            };
+
+        let src_address = 
+            if unsafe {*c_info}.src_addr.is_null() {
+                None
+            } else {
+                Some(
+                    unsafe{ Address::from_raw_parts((*c_info).src_addr as *const u8, (*c_info).src_addrlen) }
+                )
+            };
         
         let tx_attr = crate::xcontext::TxAttr::from_raw_ptr( unsafe {*c_info}.tx_attr);
         let rx_attr = crate::xcontext::RxAttr::from_raw_ptr( unsafe {*c_info}.rx_attr);
@@ -244,27 +265,30 @@ impl<T> InfoEntry<T> {
         let nic = if ! unsafe{ (*c_info).nic.is_null()} {Some(Nic::from_raw_ptr(unsafe{*c_info}.nic)) } else {None};
         Self { 
             caps: InfoCapsImpl::from(caps) , 
+            mode,
+            src_address,
+            dest_address, 
             fabric_attr, 
             domain_attr, 
             tx_attr, 
             rx_attr, 
-            ep_attr, 
+            ep_attr,
             nic, 
             c_info, 
             phantom: PhantomData 
         }
     }
 
-    pub fn get_dest_addr(&self) -> Address {
-        unsafe{ Address::from_raw_parts((*self.c_info).dest_addr as *const u8, (*self.c_info).dest_addrlen) }
+    pub fn dest_addr(&self) -> Option<&Address> {
+        self.dest_address.as_ref()
     }
 
-    pub fn get_src_addr(&self) -> Address {
-        unsafe{ Address::from_raw_parts((*self.c_info).src_addr as *const u8, (*self.c_info).src_addrlen) }
+    pub fn src_addr(&self) -> Option<&Address> {
+        self.src_address.as_ref()
     }
 
-    pub fn get_mode(&self) -> crate::enums::Mode {
-        crate::enums::Mode::from_raw(unsafe { (*self.c_info).mode })
+    pub fn mode(&self) -> &crate::enums::Mode {
+        &self.mode
     }
 
     pub fn domain_attr(&self) -> &crate::domain::DomainAttr {

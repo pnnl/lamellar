@@ -9,12 +9,12 @@ pub struct Msg<'a> {
 
 impl<'a> Msg<'a> {
 
-    pub fn new(iov: &'a [iovec::IoVec], desc: &'a mut [impl DataDescriptor], mapped_addr: &'a MappedAddress) -> Self {
-        Msg {
+    pub fn from_iov(iov: &'a iovec::IoVec, desc: &'a mut impl DataDescriptor, mapped_addr: &'a MappedAddress) -> Self {
+        Self {
             c_msg : libfabric_sys::fi_msg {
-                msg_iov: iov.as_ptr().cast(),
-                desc: desc.as_mut_ptr().cast(),
-                iov_count: iov.len(),
+                msg_iov: iov.get(),
+                desc: desc.get_desc_ptr(),
+                iov_count: 1,
                 addr: mapped_addr.raw_addr(),
                 context: std::ptr::null_mut(), // [TODO]
                 data: 0,
@@ -23,13 +23,14 @@ impl<'a> Msg<'a> {
         }
     }
 
-    pub fn new_connected(iov: &'a [iovec::IoVec], desc: &'a mut [impl DataDescriptor]) -> Self {
-        Msg {
+    pub fn from_iov_slice(iovs: &'a [iovec::IoVec], descs: &'a mut [impl DataDescriptor], mapped_addr: &'a MappedAddress) -> Self {
+        assert_eq!(iovs.len(), descs.len());
+        Self {
             c_msg : libfabric_sys::fi_msg {
-                msg_iov: iov.as_ptr().cast(),
-                desc: desc.as_mut_ptr().cast(),
-                iov_count: iov.len(),
-                addr: FI_ADDR_UNSPEC,
+                msg_iov: iovs.as_ptr().cast(),
+                desc: descs.as_mut_ptr().cast(),
+                iov_count: descs.len(),
+                addr: mapped_addr.raw_addr(),
                 context: std::ptr::null_mut(), // [TODO]
                 data: 0,
             },
@@ -38,20 +39,19 @@ impl<'a> Msg<'a> {
     }
 }
 
-pub struct MsgMut<'a> {
+pub struct MsgConnected<'a> {
     pub(crate) c_msg: libfabric_sys::fi_msg,
     phantom: PhantomData<&'a ()>,
 }
 
-impl<'a> MsgMut<'a> {
-
-    pub fn new(iov: &'a [iovec::IoVecMut], desc: &'a mut [impl DataDescriptor], mapped_addr: &'a MappedAddress) -> Self {
-        MsgMut {
+impl<'a> MsgConnected<'a> {
+    pub fn from_iov(iov: &'a iovec::IoVec, desc: &'a mut impl DataDescriptor) -> Self {
+        Self {
             c_msg : libfabric_sys::fi_msg {
-                msg_iov: iov.as_ptr().cast(),
-                desc: desc.as_mut_ptr().cast(),
-                iov_count: iov.len(),
-                addr: mapped_addr.raw_addr(),
+                msg_iov: iov.get(),
+                desc: desc.get_desc_ptr(),
+                iov_count: 1,
+                addr: FI_ADDR_UNSPEC,
                 context: std::ptr::null_mut(), // [TODO]
                 data: 0,
             },
@@ -59,8 +59,9 @@ impl<'a> MsgMut<'a> {
         }
     }
 
-    pub fn new_connected(iov: &'a [iovec::IoVecMut], desc: &'a mut [impl DataDescriptor]) -> Self {
-        MsgMut {
+    pub fn from_iov_slice(iov: &'a [iovec::IoVec], desc: &'a mut [impl DataDescriptor]) -> Self {
+        assert!(iov.len() == desc.len());
+        Self {
             c_msg : libfabric_sys::fi_msg {
                 msg_iov: iov.as_ptr().cast(),
                 desc: desc.as_mut_ptr().cast(),
@@ -72,9 +73,80 @@ impl<'a> MsgMut<'a> {
             phantom: PhantomData,
         }
     }
-    
 }
 
+
+pub struct MsgMut<'a> {
+    pub(crate) c_msg: libfabric_sys::fi_msg,
+    phantom: PhantomData<&'a mut ()>,
+}
+
+impl<'a> MsgMut<'a> {
+
+    pub fn from_iov(iov: &'a mut iovec::IoVecMut, desc: &'a mut impl DataDescriptor, mapped_addr: &'a MappedAddress) -> Self {
+        Self {
+            c_msg : libfabric_sys::fi_msg {
+                msg_iov: iov.get_mut(),
+                desc: desc.get_desc_ptr(),
+                iov_count: 1,
+                addr: mapped_addr.raw_addr(),
+                context: std::ptr::null_mut(), // [TODO]
+                data: 0,
+            },
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn from_iov_slice(iov: &'a [iovec::IoVecMut], desc: &'a mut [impl DataDescriptor], mapped_addr: &'a MappedAddress) -> Self {
+        Self {
+            c_msg : libfabric_sys::fi_msg {
+                msg_iov: iov.as_ptr().cast(),
+                desc: desc.as_mut_ptr().cast(),
+                iov_count: iov.len(),
+                addr: mapped_addr.raw_addr(),
+                context: std::ptr::null_mut(), // [TODO]
+                data: 0,
+            },
+            phantom: PhantomData,
+        }
+    }
+}
+
+pub struct MsgConnectedMut<'a> {
+    pub(crate) c_msg: libfabric_sys::fi_msg,
+    phantom: PhantomData<&'a mut ()>,
+}
+
+impl<'a> MsgConnectedMut<'a> {
+
+    pub fn from_iov(iov: &'a mut iovec::IoVecMut, desc: &'a mut impl DataDescriptor) -> Self {
+        Self {
+            c_msg : libfabric_sys::fi_msg {
+                msg_iov: iov.get_mut(),
+                desc: desc.get_desc_ptr(),
+                iov_count: 1,
+                addr: FI_ADDR_UNSPEC,
+                context: std::ptr::null_mut(), // [TODO]
+                data: 0,
+            },
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn from_iov_slice(iov: &'a [iovec::IoVecMut], desc: &'a mut [impl DataDescriptor]) -> Self {
+        Self {
+            c_msg : libfabric_sys::fi_msg {
+                msg_iov: iov.as_ptr().cast(),
+                desc: desc.as_mut_ptr().cast(),
+                iov_count: iov.len(),
+                addr: FI_ADDR_UNSPEC,
+                context: std::ptr::null_mut(), // [TODO]
+                data: 0,
+            },
+            phantom: PhantomData,
+        }
+    }
+}
 
 pub struct MsgTagged<'a> {
     pub(crate) c_msg_tagged: libfabric_sys::fi_msg_tagged,

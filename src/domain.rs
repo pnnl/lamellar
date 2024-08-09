@@ -1,8 +1,6 @@
 use core::slice;
 use std::ffi::CString;
 
-use libfabric_sys::fi_domain_attr;
-
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 use crate::{enums::{AddressVectorType, DomainCaps, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass}, eq::{EventQueue, EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, info::InfoEntry, utils::{check_error, AsFiType}, MyOnceCell, MyRc};
@@ -326,7 +324,7 @@ impl<EQ: ?Sized> AsRawTypedFid for DomainBase<EQ> {
 
 //================== Domain attribute ==================//
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DomainAttr {
     _c_name: CString, 
     domain_id: usize, // [TODO] Not supported

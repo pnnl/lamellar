@@ -75,7 +75,6 @@ impl<FID: AsRawFid> Drop for OwnedTypedFid<FID> {
     #[inline]
     fn drop(&mut self) {
         let err = unsafe { libfabric_sys::inlined_fi_close(self.typed_fid.as_raw_fid()) };
-
         if err != 0 {
             panic!("{}", error::Error::from_err_code((-err).try_into().unwrap()));
         }

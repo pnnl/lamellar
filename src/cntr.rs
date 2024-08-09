@@ -410,7 +410,7 @@ impl Default for CounterAttr {
 
 #[cfg(test)]
 mod tests {
-    use crate::info::{Info, InfoHints, Version};
+    use crate::info::{Info, Version};
 
     use super::{CounterBuilder, ReadCntr};
 
@@ -463,7 +463,7 @@ mod tests {
 #[cfg(test)]
 mod libfabric_lifetime_tests {
 
-    use crate::{cntr::ReadCntr, info::{Info, InfoHints, Version}};
+    use crate::{cntr::ReadCntr, info::{Info, Version}};
 
     use super::CounterBuilder;
 

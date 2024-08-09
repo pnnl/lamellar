@@ -124,17 +124,17 @@ pub trait DataDescriptor {
     fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void;
 }
 
-pub fn default_desc() -> DefaultMemDesc { DefaultMemDesc { c_desc: std::ptr::null_mut() }}
+pub fn default_desc() -> MemoryRegionDesc { MemoryRegionDesc { c_desc: std::ptr::null_mut() }}
 
-impl DataDescriptor for DefaultMemDesc {
-    fn get_desc(&mut self) -> *mut std::ffi::c_void {
-        std::ptr::null_mut()
-    }
+// impl DataDescriptor for DefaultMemDesc {
+//     fn get_desc(&mut self) -> *mut std::ffi::c_void {
+//         std::ptr::null_mut()
+//     }
     
-    fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void {
-        std::ptr::null_mut()
-    }
-}
+//     fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void {
+//         std::ptr::null_mut()
+//     }
+// }
 
 // impl Drop for MemoryRegion {
 //     fn drop(&mut self) {
@@ -470,7 +470,7 @@ impl MemoryRegion {
 /// An opaque wrapper for the descriptor of a [MemoryRegion] as obtained from
 /// `fi_mr_desc`.
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
 }
@@ -901,7 +901,7 @@ mod tests {
             let domain = crate::domain::DomainBuilder::new(&fab, &entry).build().unwrap();
 
             let mut mr_access: u64 = 0;
-            if entry.get_mode().is_local_mr() || entry.domain_attr().mr_mode().is_local() {
+            if entry.mode().is_local_mr() || entry.domain_attr().mr_mode().is_local() {
 
                 if entry.caps().is_msg() || entry.caps().is_tagged() {
                     let mut on = false;
@@ -991,7 +991,7 @@ mod libfabric_lifetime_tests {
 
             let mut mr_access: u64 = 0;
 
-            if entry.get_mode().is_local_mr() || entry.domain_attr().mr_mode().is_local() {
+            if entry.mode().is_local_mr() || entry.domain_attr().mr_mode().is_local() {
 
                 if entry.caps().is_msg() || entry.caps().is_tagged() {
                     let mut on = false;

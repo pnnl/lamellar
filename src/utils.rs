@@ -61,3 +61,8 @@ pub(crate) fn error_to_string(errnum: i64) -> String {
     let str = unsafe { std::ffi::CStr::from_ptr(ret) };
     str.to_str().unwrap().to_string()
 }
+
+pub enum Either<L, R> {
+    Left(L),
+    Right(R)
+}

@@ -194,13 +194,3 @@ pub enum ErrorKind {
     CapabilitiesNotMet,
     Other,
 }
-
-#[allow(dead_code)]
-fn throw_error() -> Result<u32, Error> {
-    std::result::Result::Err(Error::from_err_code(libfabric_sys::FI_EPERM))
-}
-
-#[test]
-fn test_error() {
-    let _res = throw_error().unwrap();
-}
