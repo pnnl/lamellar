@@ -186,7 +186,7 @@ pub(crate) trait CollectiveEpImpl : CollectiveEp + AsRawTypedFid<Output = EpRawF
     #[allow(clippy::too_many_arguments)]
     fn allgather_impl<T: AsFiType, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, result: &mut [T], result_desc: &mut impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: Option<*mut T0>) -> Result<(), crate::error::Error> {
         let ctx = extract_raw_ctx(context);
-        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr().cast(), result_desc.get_desc(), mc_group.get_raw_addr(), libfabric_sys::fi_datatype_FI_UINT8, options.as_raw(), ctx) };
+        let err = unsafe { libfabric_sys::inlined_fi_allgather(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), result.as_mut_ptr().cast(), result_desc.get_desc(), mc_group.get_raw_addr(), T::as_fi_datatype(), options.as_raw(), ctx) };
         check_error(err)
     }
     
