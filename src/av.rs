@@ -838,7 +838,7 @@ impl<'a, T, EQ: ?Sized +  ReadEq + 'static> AddressVectorSetBuilder<'a, T, EQ> {
 
 //================== Attribute Structs ==================//
 
-pub struct AddressVectorAttr {
+pub(crate) struct AddressVectorAttr {
     pub(crate) c_attr: libfabric_sys::fi_av_attr, 
 }
 

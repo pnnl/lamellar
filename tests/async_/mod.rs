@@ -809,29 +809,23 @@ pub async fn msg_post<CQ: ReadCq, E: MsgDefaultCap>(op: SendOp, tx_seq: &mut u64
     match op {
         SendOp::MsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
-            let mut mem_descs = vec![default_desc()];
-
-            let mut msg = 
-                if let Some(fi_addr) = remote_address {
-
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc), fi_addr)
-                    }
-                    else {
-                        libfabric::msg::Msg::new(std::slice::from_ref(&iov), &mut mem_descs, fi_addr)
-                    }
-                }
-                else if let Some(mr_desc) = data_desc.as_mut() {
-                    libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), std::slice::from_mut(mr_desc))
-                }
-                else {
-                    libfabric::msg::Msg::new_connected(std::slice::from_ref(&iov), &mut mem_descs)
-                };
-            let msg_ref = &mut msg;
             let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
+
+            if let Some(fi_addr) = remote_address {
+                let desc = if let Some(mr_desc) = data_desc.as_mut() {mr_desc} else {&mut default_desc()};
+                let mut msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr);
+                let msg_ref = &mut msg;
+                ft_post_async!(sendmsg_to_async, "sendmsg", ep, msg_ref, flag);
+
+            }
+            else {
+                let desc = if let Some(mr_desc) = data_desc.as_mut() {mr_desc} else {&mut default_desc()};
+                let mut msg = libfabric::msg::MsgConnected::from_iov(&iov, desc);
+                let msg_ref = &mut msg;
+                ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag);
+            };
             
             // ft_post!(sendmsg, ft_progress, tx_cq, *tx_seq, tx_cq_cntr, "sendmsg", ep, msg_ref, flag);
-            ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag);
         }
         SendOp::Send => {
 
@@ -1140,7 +1134,7 @@ pub fn ft_progress<CQ: ReadCq>(cq: &CompletionQueue<CQ>, _total: u64, cq_cntr: &
 #[allow(clippy::too_many_arguments)]
 pub async fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx,  av: &AddressVector, ep: &EndpointCaps<M,T>, cq_type: &CqType, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>, server: bool) {
     if !server {
-        gl_ctx.remote_address = Some(ft_av_insert(av, &info.get_dest_addr(),  AVOptions::new()).await);
+        gl_ctx.remote_address = Some(ft_av_insert(av, &info.dest_addr().unwrap(),  AVOptions::new()).await);
         let epname = match ep {
             EndpointCaps::Msg(ep) => {
                 ep.getname().unwrap()
@@ -1315,7 +1309,7 @@ pub fn ft_need_mr_reg<E>(info: &InfoEntry<E>) -> bool {
 }
 
 pub fn ft_chek_mr_local_flag<E>(info: &InfoEntry<E>) -> bool {
-    info.get_mode().is_local_mr() || info.domain_attr().mr_mode().is_local()
+    info.mode().is_local_mr() || info.domain_attr().mr_mode().is_local()
 }
 
 pub fn ft_rma_read_target_allowed(caps: &InfoCapsImpl) -> bool {
@@ -1550,8 +1544,8 @@ pub async fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsC
             let mut ep = EndpointCaps::Msg(ep);
             let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             match ep {
-                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()).await,
-                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()).await,
+                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await,
+                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await,
             }
             
             (InfoWithCaps::Msg(entry), cq_type, tx_cntr, rx_cntr, ep, mr, mr_desc)
@@ -1568,8 +1562,8 @@ pub async fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsC
             let mut ep = EndpointCaps::Tagged(ep);
             let (mr, mr_desc)  = ft_enable_ep_recv(&entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr);
             match ep {
-                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()).await,
-                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.get_dest_addr()).await,
+                EndpointCaps::Msg(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await,
+                EndpointCaps::Tagged(ref ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await,
             }
             (InfoWithCaps::Tagged(entry), cq_type, tx_cntr, rx_cntr, ep, mr, mr_desc)
         }

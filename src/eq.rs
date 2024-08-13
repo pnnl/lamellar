@@ -796,7 +796,7 @@ impl EventError {
         &mut self.c_err
     }       
 
-    pub fn get_fid(&self) -> BorrowedFid<'_> {
+    pub fn get_fid<'a>(&'a self) -> BorrowedFid<'a> {
         unsafe {BorrowedFid::borrow_raw(self.c_err.fid)}
     }
 

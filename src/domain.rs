@@ -323,11 +323,12 @@ impl<EQ: ?Sized> AsRawTypedFid for DomainBase<EQ> {
 }
 
 //================== Domain attribute ==================//
-
+/// Represents a read-only version of the a `fi_info`'s `fi_domain_attr` field returned by 
+/// a call to `fi_getinfo()`  
 #[derive(Clone, Debug)]
 pub struct DomainAttr {
     _c_name: CString, 
-    domain_id: usize, // [TODO] Not supported
+    domain_id: usize, 
     name: String, 
     threading: crate::enums::Threading,
     control_progress: crate::enums::Progress,
@@ -349,7 +350,7 @@ pub struct DomainAttr {
     mr_iov_limit: usize,
     caps: crate::enums::DomainCaps,
     mode: crate::enums::Mode,
-    auth_key: Option<Vec<u8>>, // [TODO] Not supported
+    auth_key: Option<Vec<u8>>, 
     max_err_data: usize,
     mr_cnt: usize,
     traffic_class: crate::enums::TrafficClass,

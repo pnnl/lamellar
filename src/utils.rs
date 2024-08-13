@@ -63,6 +63,7 @@ pub(crate) fn error_to_string(errnum: i64) -> String {
     str.to_str().unwrap().to_string()
 }
 
+#[derive(Clone)]
 pub enum Either<L, R> {
     Left(L),
     Right(R)

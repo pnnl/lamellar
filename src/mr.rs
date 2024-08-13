@@ -2,10 +2,6 @@ use crate::{cntr::ReadCntr, cq::ReadCq, domain::DomainImplT, enums::{MrAccess, M
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
-#[repr(C)]
-pub struct DefaultMemDesc {
-    c_desc: *mut std::ffi::c_void,
-}
 
 /// Represents a key needed to access a remote [MemoryRegion].
 /// 
