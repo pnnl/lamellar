@@ -115,18 +115,18 @@ pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
     /// This call is not available for completion queues configured with no wait object (i.e. [CompletionQueueBuilder::wait_none()]).
     /// 
     /// Corresponds to `fi_cq_sreadfrom` with `cond` set to `NULL`.
-    fn sreadfrom_in(&self, count: usize, buffer: &mut Completion, cond: usize, timeout: i32) -> Result< Option<MappedAddress>, crate::error::Error> {
+    fn sreadfrom_in(&self, count: usize, buffer: &mut Completion, cond: usize, timeout: i32) -> Result<Option<MappedAddress>, crate::error::Error> {
         
         let p_cond = cond as *const usize as *const std::ffi::c_void;
         let mut address = 0;
-        let p_address = &mut address as *mut RawMappedAddress;   
+        let p_address = &mut address;   
         let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.as_raw_typed_fid(), count, buffer, p_address, p_cond, timeout);
 
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
         }
         else {
-            Some(MappedAddress::from_raw_addr_no_av(address))
+            Some(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Unspec(address)))
         };
 
         if err < 0 {
@@ -214,7 +214,7 @@ pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
             None
         }
         else {
-            Some(MappedAddress::from_raw_addr_no_av(address))
+            Some(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Unspec(address)))
         };
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 

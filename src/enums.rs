@@ -112,14 +112,49 @@ gen_enum!(WaitCond, u32,
     (Threshold, libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_THRESHOLD)
 );
 
-gen_enum!(HmemIface, libfabric_sys::fi_hmem_iface, 
-    (System, libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM), 
-    (Cuda, libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA), 
-    (Rocr, libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR), 
-    (Ze, libfabric_sys::fi_hmem_iface_FI_HMEM_ZE), 
-    (Neuron, libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON), 
-    (SynapseAi, libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI)
-);
+#[derive(Clone,Copy,Debug)]
+pub enum HmemIface {
+    System,
+    Cuda(i32),
+    Rocr(i32),
+    Ze(i32, i32),
+    Neuron(i32),
+    SynapseAi(i32),
+}
+impl HmemIface {
+    #[allow(dead_code)]
+    pub(crate)fn as_raw(&self) -> libfabric_sys::fi_hmem_iface {
+        match self {
+            HmemIface::System => libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM,
+            HmemIface::Cuda(_) => libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA,
+            HmemIface::Rocr(_) => libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR,
+            HmemIface::Ze(_, _) => libfabric_sys::fi_hmem_iface_FI_HMEM_ZE,
+            HmemIface::Neuron(_) => libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON,
+            HmemIface::SynapseAi(_) => libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI,
+        
+            }
+    }
+ 
+    #[allow(dead_code)]
+    pub(crate)fn from_raw(value:libfabric_sys::fi_hmem_iface, id: i32, additional_id: i32) -> HmemIface {
+        if value==libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM {
+            return HmemIface::System
+        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA {
+            return HmemIface::Cuda(id)
+        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR {
+            return HmemIface::Rocr(id)
+        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ZE {
+            return HmemIface::Ze(id, additional_id)
+        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON {
+            return HmemIface::Neuron(id)
+        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI {
+            return HmemIface::SynapseAi(id)
+        }else {
+            panic!("Invalid value {}",value);
+        }
+    }
+
+}
 
 gen_enum!(EndpointOptName, libfabric_sys::_bindgen_ty_20, 
     (MinMultiRecv, libfabric_sys::FI_OPT_MIN_MULTI_RECV),
@@ -312,6 +347,30 @@ impl Default for MrMode {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub struct MrRegOpt {
+    c_flags: u64,
+}
+
+impl MrRegOpt {
+    pub fn new() -> Self {
+        Self{c_flags: 0}
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_raw(value: u64) -> Self {
+        Self{c_flags: value}
+    }
+
+    pub fn as_raw(&self) -> u64 {
+        self.c_flags
+    }
+
+    gen_set_get_flag!(rma_event, is_rma_event, libfabric_sys::FI_RMA_EVENT);
+    gen_set_get_flag!(rma_pmem, is_rma_pmem, libfabric_sys::FI_RMA_PMEM);
+    gen_set_get_flag!(hmem_device_only, is_hmem_device_only, libfabric_sys::FI_HMEM_DEVICE_ONLY);
+    gen_set_get_flag!(hmem_host_alloc, is_hmem_host_alloc, libfabric_sys::FI_HMEM_HOST_ALLOC);
 }
 
 pub struct MrAccess {

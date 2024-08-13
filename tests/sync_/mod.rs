@@ -1413,7 +1413,7 @@ pub fn ft_rma_write_target_allowed(caps: &InfoCapsImpl) -> bool {
 
 pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(buff: &'b [u8], info: &InfoEntry<E>) -> libfabric::mr::MemoryRegionBuilder<'a> {
 
-    let mut mr_builder = libfabric::mr::MemoryRegionBuilder::new(buff);
+    let mut mr_builder = libfabric::mr::MemoryRegionBuilder::new(buff, enums::HmemIface::System);
 
     if ft_chek_mr_local_flag(info) {
         if info.caps().is_msg() || info.caps().is_tagged() {
@@ -1452,8 +1452,8 @@ pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &ConfDomain, _ep: &libfabric:
     // let mut mr_attr = libfabric::mr::MemoryRegionAttr::new().iov(std::slice::from_ref(&iov)).requested_key(key).iface(libfabric::enums::HmemIface::SYSTEM);
     
     let mr = match domain {
-        ConfDomain::Unbound(domain) => ft_info_to_mr_builder(buf, info).requested_key(key).iface(libfabric::enums::HmemIface::System).build(domain).unwrap(),
-        ConfDomain::Bound(domain) => ft_info_to_mr_builder(buf, info).requested_key(key).iface(libfabric::enums::HmemIface::System).build(domain).unwrap(),
+        ConfDomain::Unbound(domain) => ft_info_to_mr_builder(buf, info).requested_key(key).build(domain).unwrap(),
+        ConfDomain::Bound(domain) => ft_info_to_mr_builder(buf, info).requested_key(key).build(domain).unwrap(),
     };
 
     let desc = mr.description();

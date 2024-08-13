@@ -2,7 +2,7 @@ use std::{collections::VecDeque, ffi::CString, marker::PhantomData};
 
 use libfabric_sys::FI_SOURCE;
 
-use crate::{domain::{DomainAttr, DomainBase}, enums::{AddressFormat, AddressVectorType, DomainCaps, EndpointType, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass, TransferOptions}, ep::Address, fabric::Fabric, fid::AsRawTypedFid, infocapsoptions::Caps, nic::Nic, utils::check_error, xcontext::{MsgOrder, RxCaps, RxCompOrder, TxCaps, TxCompOrder}};
+use crate::{domain::{DomainAttr, DomainBase}, enums::{AddressFormat, AddressVectorType, DomainCaps, EndpointType, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass, TransferOptions}, ep::Address, fabric::Fabric, fid::AsRawTypedFid, infocapsoptions::Caps, nic::Nic, utils::check_error, xcontext::{MsgOrder, RxCaps, RxCompOrder, TxCaps, TxCompOrder}, MappedAddress, RawMappedAddress, FI_ADDR_NOTAVAIL, FI_ADDR_UNSPEC};
 
 #[derive(Clone, Debug)]
 pub struct InfoCapsImpl {
@@ -279,6 +279,19 @@ impl<T> InfoEntry<T> {
         }
     }
 
+
+    pub fn rx_addr(&self, rx_index: i32, rx_ctx_bits: i32) -> Result<MappedAddress, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_rx_addr(FI_ADDR_NOTAVAIL, rx_index, rx_ctx_bits) };
+        if ret == FI_ADDR_NOTAVAIL || ret == FI_ADDR_UNSPEC {
+            return Err(crate::error::Error::from_err_code(libfabric_sys::FI_EADDRNOTAVAIL));
+        }
+        match self.domain_attr.av_type() {
+            AddressVectorType::Unspec => Ok(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Unspec(ret))),
+            AddressVectorType::Map => Ok(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Map(ret))),
+            AddressVectorType::Table => Ok(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Table(ret))),
+        }
+    }
+
     pub fn dest_addr(&self) -> Option<&Address> {
         self.dest_address.as_ref()
     }
@@ -450,30 +463,16 @@ impl Info<()> {
         }
     }
 
-    // pub fn new_source(version: &Version, source: InfoSourceOpt) -> InfoBuilder<()> {
-    //     let (c_node, c_service) = 
-    //         match source {
-    //             InfoSourceOpt::NodeAndService(node, service) => {
-    //                 (std::ffi::CString::new(node).unwrap(), std::ffi::CString::new(service).unwrap())
-    //             } 
-    //             InfoSourceOpt::Node(node) => {
-    //                 (std::ffi::CString::new(node).unwrap(), std::ffi::CString::new("").unwrap())
-    //             }
-    //             InfoSourceOpt::Service(service) => {
-    //                 (std::ffi::CString::new("").unwrap(), std::ffi::CString::new(service).unwrap())
-    //             }
-    //         };
-
-    //     InfoBuilder::<()> {
-    //         c_hints: std::ptr::null_mut(),
-    //         c_version: version.get_value(),
-    //         c_node,
-    //         c_service,
-    //         flags: FI_SOURCE,
-    //         phantom: PhantomData,
-    //     }
-    // }
-
+    pub fn with_numeric_host(version: &Version, host: &str) -> InfoBuilder<()> {
+        InfoBuilder::<()> {
+            c_hints: std::ptr::null_mut(),
+            c_version: version.as_raw(),
+            c_node: std::ffi::CString::new(host).unwrap(),
+            c_service: std::ffi::CString::new("").unwrap(),
+            flags: libfabric_sys::FI_NUMERICHOST,
+            phantom: PhantomData,
+        }
+    }
 }
 impl<T> Drop for Info<T> {
     

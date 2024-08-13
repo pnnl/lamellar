@@ -1,4 +1,4 @@
-use crate::{cntr::ReadCntr, cq::ReadCq, domain::DomainImplT, enums::{MrAccess, MrMode}, eq::ReadEq, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, MrRawFid, OwnedMrFid, RawFid}, iovec::IoVec, utils::check_error, MyOnceCell, MyRc};
+use crate::{cntr::ReadCntr, cq::ReadCq, domain::DomainImplT, enums::{MrAccess, MrMode, MrRegOpt}, eq::ReadEq, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, MrRawFid, OwnedMrFid, RawFid}, iovec::IoVec, utils::check_error, MyOnceCell, MyRc};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
 
@@ -161,7 +161,7 @@ pub struct MemoryRegion {
 impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0, EQ: 'static >(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0, EQ: 'static >(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrRegOpt, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let err = if let Some(ctx) = context {
                 unsafe { libfabric_sys::inlined_fi_mr_reg(domain.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), access.as_raw().into(), 0, requested_key, flags.as_raw() as u64, &mut c_mr, (ctx as *mut T0).cast() ) }
@@ -186,7 +186,7 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn from_attr<EQ: ?Sized + 'static >(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr<EQ: ?Sized + 'static >(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, attr: MemoryRegionAttr, flags: MrRegOpt) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe { libfabric_sys::inlined_fi_mr_regattr(domain.as_raw_typed_fid(), attr.get(), flags.as_raw() as u64, c_mr_ptr) };
@@ -206,7 +206,7 @@ impl MemoryRegionImpl {
     }
             
     #[allow(dead_code)]
-    fn from_iovec<T0, EQ: 'static >(domain: &MyRc<crate::domain::DomainImplBase<EQ>>,  iov : &[crate::iovec::IoVec], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T0, EQ: 'static >(domain: &MyRc<crate::domain::DomainImplBase<EQ>>,  iov : &[crate::iovec::IoVec], access: &MrAccess, requested_key: u64, flags: MrRegOpt, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err =
@@ -364,7 +364,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_buffer<T, T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrRegOpt, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner:
@@ -373,7 +373,7 @@ impl MemoryRegion {
         )
     }
     
-    pub(crate) fn from_attr<EQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<EQ>, attr: MemoryRegionAttr, flags: MrMode) -> Result<Self, crate::error::Error> { // [TODO] Add context version
+    pub(crate) fn from_attr<EQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<EQ>, attr: MemoryRegionAttr, flags: MrRegOpt) -> Result<Self, crate::error::Error> { // [TODO] Add context version
         Ok(
             Self {
                 inner: 
@@ -383,7 +383,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    fn from_iovec<T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>,  iov : &[crate::iovec::IoVec], access: &MrAccess, requested_key: u64, flags: MrMode, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    fn from_iovec<T0, EQ: 'static>(domain: &crate::domain::DomainBase<EQ>,  iov : &[crate::iovec::IoVec], access: &MrAccess, requested_key: u64, flags: MrRegOpt, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 inner: 
@@ -630,10 +630,21 @@ impl MemoryRegionAttr {
 
     pub fn iface(&mut self, iface: crate::enums::HmemIface) -> &mut Self {
         self.c_attr.iface = iface.as_raw();
+        self.c_attr.device = match iface {
+            crate::enums::HmemIface::Ze(drv_idx, dev_idx) => {
+                let ze_id =  unsafe {libfabric_sys::inlined_fi_hmem_ze_device(drv_idx, dev_idx)};
+                libfabric_sys::fi_mr_attr__bindgen_ty_1 {
+                    ze: ze_id,
+                }
+            },
+            crate::enums::HmemIface::System => libfabric_sys::fi_mr_attr__bindgen_ty_1{reserved: 0},
+            crate::enums::HmemIface::Cuda(id) => libfabric_sys::fi_mr_attr__bindgen_ty_1{cuda: id},
+            crate::enums::HmemIface::Rocr(id) => libfabric_sys::fi_mr_attr__bindgen_ty_1{cuda: id},
+            crate::enums::HmemIface::Neuron(id) => libfabric_sys::fi_mr_attr__bindgen_ty_1{neuron: id},
+            crate::enums::HmemIface::SynapseAi(id) => libfabric_sys::fi_mr_attr__bindgen_ty_1{synapseai: id},
+        };
         self
     }
-
-    // pub fn device(&mut self, device: libfabric_sys::devi) // [TODO]
 
     pub(crate) fn get(&self) ->  *const libfabric_sys::fi_mr_attr {
         &self.c_attr
@@ -659,7 +670,7 @@ impl Default for MemoryRegionAttr {
 pub struct MemoryRegionBuilder<'a> {
     pub(crate) mr_attr: MemoryRegionAttr,
     pub(crate) iovs: Vec<IoVec<'a>>,
-    pub(crate) flags: MrMode,
+    pub(crate) flags: MrRegOpt,
 }
 
 impl<'a> MemoryRegionBuilder<'a> {
@@ -667,12 +678,14 @@ impl<'a> MemoryRegionBuilder<'a> {
 
     /// Initiates the creation of new [MemoryRegion] on `domain`, with backing memory `buff`.
     /// 
-    /// The initial configuration is what would be set if ony the field `fi_mr_attr::mr_iov` was set.
-    pub fn new<T>(buff: &'a [T]) -> Self {
+    /// The initial configuration is only setting the fields `fi_mr_attr::mr_iov`, `fi_mr_attr::iface`.
+    pub fn new<T>(buff: &'a [T], iface: crate::enums::HmemIface) -> Self {
 
+        let mut mr_attr = MemoryRegionAttr::new();
+            mr_attr.iface(iface);
         Self {
-            mr_attr: MemoryRegionAttr::new(),
-            flags: MrMode::new(),
+            mr_attr,
+            flags: MrRegOpt::new(),
             iovs: vec![IoVec::from_slice(buff)],
         }
     }
@@ -785,19 +798,25 @@ impl<'a> MemoryRegionBuilder<'a> {
         self
     }
 
-    /// Indicates the software interfaces used by the application to allocate and manage the memory region
-    /// 
-    /// Corresponds to setting the `fi_mr_attr::iface` field
-    pub fn iface(mut self, iface: crate::enums::HmemIface) -> Self {
-        self.mr_attr.iface(iface);
+    pub fn hmem_device_only(mut self) -> Self {
+        self.flags = self.flags.hmem_device_only();
         self
     }
 
-    pub fn flags(mut self, flags: MrMode) -> Self {
-        self.flags = flags;
+    pub fn hmem_host_alloc(mut self) -> Self {
+        self.flags = self.flags.hmem_host_alloc();
         self
     }
 
+    pub fn rma_event(mut self) -> Self {
+        self.flags = self.flags.rma_event();
+        self
+    }
+
+    pub fn rma_pmem(mut self) -> Self {
+        self.flags = self.flags.rma_pmem();
+        self
+    }
 
     /// Constructs a new [MemoryRegion] with the configurations requested so far.
     /// 
@@ -929,7 +948,7 @@ mod tests {
                 let buff_size = test.0;
                 let buf = vec![0_u64; buff_size as usize];
                 for combo in &combos {
-                    let _mr = MemoryRegionBuilder::new(&buf)
+                    let _mr = MemoryRegionBuilder::new(&buf, crate::enums::HmemIface::System)
                         // .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
                         .access(&MrAccess::from_raw(*combo as u32))
                         .requested_key(0xC0DE)
@@ -1020,7 +1039,7 @@ mod libfabric_lifetime_tests {
                 let buff_size = test.0;
                 let buf = vec![0_u64; buff_size as usize ];
                 for combo in &combos {
-                    let mr = MemoryRegionBuilder::new(&buf)
+                    let mr = MemoryRegionBuilder::new(&buf, crate::enums::HmemIface::System)
                         .access(&MrAccess::from_raw(*combo as u32))
                         .requested_key(0xC0DE)
                         .build(&domain)

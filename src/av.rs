@@ -2,13 +2,21 @@ use std::ffi::CString;
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{DomainBase, DomainImplT}, enums::{AVOptions, AVSetOptions}, ep::Address, eq::ReadEq, fid::{self, AVSetRawFid, AsRawFid, AsRawTypedFid, AsTypedFid, AvRawFid, OwnedAVFid, OwnedAVSetFid, RawFid}, AddressSource, MappedAddress, MyOnceCell, MyRc, RawMappedAddress, FI_ADDR_NOTAVAIL};
+use crate::{domain::{DomainBase, DomainImplT}, enums::{AVOptions, AVSetOptions, AddressVectorType}, ep::Address, eq::ReadEq, fid::{self, AVSetRawFid, AsRawFid, AsRawTypedFid, AsTypedFid, AvRawFid, OwnedAVFid, OwnedAVSetFid, RawFid}, AddressSource, MappedAddress, MyOnceCell, MyRc, RawMappedAddress, FI_ADDR_NOTAVAIL};
 
-pub(crate) trait AddressVectorImplT {}
+pub(crate) trait AddressVectorImplT {
+    fn type_(&self) -> AddressVectorType;
+}
 
-impl<EQ: ?Sized> AddressVectorImplT for AddressVectorImplBase<EQ> {}
+impl<EQ: ?Sized> AddressVectorImplT for AddressVectorImplBase<EQ> {
+    fn type_(&self) -> AddressVectorType {
+        self.type_
+    }
+}
+
 pub(crate) struct AddressVectorImplBase<EQ: ?Sized> {
     pub(crate) c_av: OwnedAVFid, 
+    pub(crate) type_: AddressVectorType,
     pub(crate) _eq_rc: MyOnceCell<MyRc<EQ>>,
     pub(crate) _domain_rc: MyRc<dyn DomainImplT>,
 }
@@ -33,6 +41,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
             Ok(
                 Self {
                     c_av: OwnedAVFid::from(c_av),
+                    type_: AddressVectorType::from_raw(attr.c_attr.type_),
                     _eq_rc: MyOnceCell::new(),
                     _domain_rc: domain.clone(),
                 }
@@ -40,6 +49,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         }
     }
 }
+
 impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
     /// Associates an [EventQueue](crate::eq::EventQueue) with the AddressVector.
@@ -64,7 +74,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 }
 impl<EQ: ?Sized> AddressVectorImplBase<EQ> {
 
-    fn insert<T>(&self, addr: &[Address], flags: u64, ctx: Option<&mut T>) -> Result<Vec<RawMappedAddress>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
+    fn insert<T>(&self, addr: &[Address], flags: u64, ctx: Option<&mut T>) -> Result<Vec<libfabric_sys::fi_addr_t>, crate::error::Error> { // [TODO] //[TODO] Handle flags, handle context, handle async
 
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len() );
@@ -89,7 +99,7 @@ impl<EQ: ?Sized> AddressVectorImplBase<EQ> {
         }
     }
 
-    pub(crate) fn insertsvc<T>(&self, node: &str, service: &str, flags: u64, ctx: Option<&mut T>) -> Result<RawMappedAddress, crate::error::Error> {
+    pub(crate) fn insertsvc<T>(&self, node: &str, service: &str, flags: u64, ctx: Option<&mut T>) -> Result<libfabric_sys::fi_addr_t, crate::error::Error> {
         let mut fi_addr = 0u64;
         let ctx = if let Some(ctx) = ctx {
             ctx as *mut T
@@ -107,7 +117,7 @@ impl<EQ: ?Sized> AddressVectorImplBase<EQ> {
         }
     }
 
-    pub(crate) fn insertsvc_str<T>(&self, service_str: &str, flags: u64, ctx: Option<&mut T>) -> Result<RawMappedAddress, crate::error::Error> {
+    pub(crate) fn insertsvc_str<T>(&self, service_str: &str, flags: u64, ctx: Option<&mut T>) -> Result<libfabric_sys::fi_addr_t, crate::error::Error> {
         let mut fi_addr = 0u64;
         let ctx = if let Some(ctx) = ctx {
             ctx as *mut T
@@ -127,7 +137,7 @@ impl<EQ: ?Sized> AddressVectorImplBase<EQ> {
         }
     }
 
-    pub(crate) fn insertsym<T>(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, flags: u64, ctx: Option<&mut T>) -> Result<Vec<RawMappedAddress>, crate::error::Error> { // [TODO] Handle case where operation partially failed
+    pub(crate) fn insertsym<T>(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, flags: u64, ctx: Option<&mut T>) -> Result<Vec<libfabric_sys::fi_addr_t>, crate::error::Error> { // [TODO] Handle case where operation partially failed
         let total_cnt = nodecnt * svccnt;
         let mut fi_addresses = vec![0u64; total_cnt];
         let c_node_str = CString::new(node).unwrap();
@@ -150,7 +160,7 @@ impl<EQ: ?Sized> AddressVectorImplBase<EQ> {
     }
 
     pub(crate) fn remove(&self, addr: Vec<crate::MappedAddress>) -> Result<(), crate::error::Error> {
-        let mut fi_addresses =  addr.into_iter().map(|mapped_addr| {mapped_addr.raw_addr()}).collect::<Vec<u64>>();
+        let mut fi_addresses =  addr.into_iter().map(|mapped_addr| {mapped_addr.raw_addr()}).collect::<Vec<libfabric_sys::fi_addr_t>>();
         
         let err = unsafe { libfabric_sys::inlined_fi_av_remove(self.as_raw_typed_fid(), fi_addresses.as_mut_ptr().cast(), fi_addresses.len(), 0) };
 
@@ -290,7 +300,15 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
             },
         };
 
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone())))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter()
+            .map(|fi_addr| 
+                if fi_addr == FI_ADDR_NOTAVAIL {None} 
+                else {
+                    Some(
+                        MappedAddress::from_raw_addr(RawMappedAddress::from_raw(self.inner.type_, fi_addr), AddressSource::Av(self.inner.clone()))
+                    )
+                }
+            ).collect::<Vec<_>>())
     }
 
     /// Same as [Self::insert] but with an extra argument to provide a context
@@ -313,7 +331,15 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
             },
         };
 
-        Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone())))}).collect::<Vec<_>>())
+        Ok(fi_addresses.into_iter()
+            .map(|fi_addr| 
+                if fi_addr == FI_ADDR_NOTAVAIL {None} 
+                else {
+                    Some(
+                        MappedAddress::from_raw_addr(RawMappedAddress::from_raw(self.inner.type_, fi_addr), AddressSource::Av(self.inner.clone()))
+                    )
+                }
+            ).collect::<Vec<_>>())
     }
     
     // /// Same as [Self::insert] but with an extra argument to provide a context
@@ -564,7 +590,7 @@ impl<'a, T, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, T, EQ> {
 
 pub(crate) struct AddressVectorSetImpl {
     pub(crate) c_set : OwnedAVSetFid,
-    _av_rc: MyRc<dyn AddressVectorImplT>,
+    pub(crate) _av_rc: MyRc<dyn AddressVectorImplT>,
 }
 
 
@@ -658,7 +684,7 @@ impl AddressVectorSetImpl {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(addr)
+            Ok(RawMappedAddress::from_raw(self._av_rc.type_(), addr))
         }
     }
 }
@@ -749,11 +775,33 @@ pub struct AddressVectorSetBuilder<'a, T, EQ: ReadEq + ?Sized> {
 }
 
 impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, (), EQ> {
-    pub fn new(av: &'a AddressVectorBase<EQ>) -> AddressVectorSetBuilder<'a, (), EQ> {
+    pub fn new_from_range(av: &'a AddressVectorBase<EQ>, start_addr: &crate::TableMappedAddress, end_addr: &crate::TableMappedAddress, stride: usize) -> AddressVectorSetBuilder<'a, (), EQ> {
+        if ! matches!(av.inner.type_(), AddressVectorType::Table) {
+            panic!("Can only use new_from_range for AVs of Table addressing type");
+        }
+
+        let mut avset_attr = AddressVectorSetAttr::new();
+            avset_attr.start_addr(start_addr)
+                .end_addr(end_addr)
+                .stride(stride);
+            
+
         AddressVectorSetBuilder {
-            avset_attr: AddressVectorSetAttr::new(),
+            avset_attr,
             ctx: None,
             av ,
+        }
+    }
+
+    pub fn new(av: &'a AddressVectorBase<EQ>) -> AddressVectorSetBuilder<'a, (), EQ> {
+        let mut avset_attr = AddressVectorSetAttr::new();
+            avset_attr.c_attr.start_addr = FI_ADDR_NOTAVAIL;
+            avset_attr.c_attr.end_addr = FI_ADDR_NOTAVAIL;
+        
+        AddressVectorSetBuilder {
+            avset_attr,
+            ctx: None,
+            av,
         }
     }
 }
@@ -766,33 +814,6 @@ impl<'a, T, EQ: ?Sized +  ReadEq + 'static> AddressVectorSetBuilder<'a, T, EQ> {
     pub fn count(mut self, size: usize) -> Self {
 
         self.avset_attr.count(size);
-        self
-    }
-
-    /// Indicates the start address to include to the the AV set.
-    /// 
-    /// Corresponds to setting the `fi_av_set_attr::start_addr` field.
-    pub fn start_addr(mut self, mapped_addr: &crate::MappedAddress) -> Self { // [TODO] Merge with end_addr + stride
-        
-        self.avset_attr.start_addr(mapped_addr);
-        self
-    }
-
-    /// Indicates the end address to include to the the AV set.
-    /// 
-    /// Corresponds to setting the `fi_av_set_attr::end_addr` field.
-    pub fn end_addr(mut self, mapped_addr: &crate::MappedAddress) -> Self {
-        
-        self.avset_attr.end_addr(mapped_addr);
-        self
-    }
-
-    /// The number of entries between successive addresses included in the AV set.
-    /// 
-    /// Corresponds to setting the `fi_av_set_attr::stride` field.
-    pub fn stride(mut self, stride: usize) -> Self {
-
-        self.avset_attr.stride(stride);
         self
     }
 
@@ -947,15 +968,15 @@ impl AddressVectorSetAttr {
         self
     }
 
-    pub(crate) fn start_addr(&mut self, mapped_addr: &crate::MappedAddress) -> &mut Self {
+    pub(crate) fn start_addr(&mut self, mapped_addr: &crate::TableMappedAddress) -> &mut Self {
         
-        self.c_attr.start_addr = mapped_addr.raw_addr();
+        self.c_attr.start_addr = mapped_addr.raw_mapped_addr;
         self
     }
 
-    pub(crate) fn end_addr(&mut self, mapped_addr: &crate::MappedAddress) -> &mut Self {
+    pub(crate) fn end_addr(&mut self, mapped_addr: &crate::TableMappedAddress) -> &mut Self {
         
-        self.c_attr.end_addr = mapped_addr.raw_addr();
+        self.c_attr.end_addr = mapped_addr.raw_mapped_addr;
         self
     }
 

@@ -188,12 +188,11 @@ impl<I: MsgDefaultCap + Caps> Ofi<I> {
                 }
                 mr = if info_entry.domain_attr().mr_mode().is_local() {
                     Some(
-                        MemoryRegionBuilder::new(&mut reg_mem)
+                        MemoryRegionBuilder::new(&mut reg_mem, libfabric::enums::HmemIface::System)
                         .access_read()
                         .access_write()
                         .access_send()
                         .access_recv()
-                        .iface(libfabric::enums::HmemIface::System)
                         .build(&domain)?
                     )
                 } else {
@@ -227,12 +226,11 @@ impl<I: MsgDefaultCap + Caps> Ofi<I> {
 
                 mr = if info_entry.domain_attr().mr_mode().is_local() {
                     Some(
-                        MemoryRegionBuilder::new(&mut reg_mem)
+                        MemoryRegionBuilder::new(&mut reg_mem, libfabric::enums::HmemIface::System)
                         .access_read()
                         .access_write()
                         .access_send()
                         .access_recv()
-                        .iface(libfabric::enums::HmemIface::System)
                         .build(&domain)?
                     )
                 } else {
@@ -556,7 +554,7 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
     };
 
     let mut reg_mem: Vec<_> = (0..1024*2).into_iter().map(|v: usize| (v % 256) as u8).collect();
-    let mr = MemoryRegionBuilder::new(&reg_mem)
+    let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
         .access_recv()
         .access_send()
         .build(&ofi.domain)
@@ -663,7 +661,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
     };
     
     let mut reg_mem: Vec<_> = (0..1024*2).into_iter().map(|v: usize| (v % 256) as u8).collect();
-    let mr = MemoryRegionBuilder::new(&reg_mem)
+    let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
         .access_recv()
         .access_send()
         .build(&ofi.domain)

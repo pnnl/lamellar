@@ -10,8 +10,11 @@ use std::sync::Arc;
 #[cfg(not(feature="thread-safe"))]
 use std::rc::Rc;
 
+use enums::AddressVectorType;
+use libfabric_sys::fi_addr_t;
 #[cfg(feature="thread-safe")]
-use parking_lot::RwLock; 
+use parking_lot::RwLock;
+use utils::check_error; 
 #[cfg(not(feature="thread-safe"))]
 use std::cell::RefCell;
 
@@ -60,7 +63,47 @@ pub mod msg;
 #[cfg(any(feature="use-async-std", feature = "use-tokio"))]
 pub mod async_;
 
-pub type RawMappedAddress = libfabric_sys::fi_addr_t; 
+#[derive(Clone)]
+pub struct TableMappedAddress {
+    raw_mapped_addr: libfabric_sys::fi_addr_t,
+    av: AddressSource,
+}
+
+#[derive(Clone)]
+pub struct UnspecMappedAddress {
+    raw_mapped_addr: libfabric_sys::fi_addr_t,
+}
+
+#[derive(Clone)]
+pub struct MapMappedAddress {
+    raw_mapped_addr: u64,
+    av: AddressSource,
+}
+
+#[derive(Clone, Debug)]
+pub enum RawMappedAddress {
+    Map(libfabric_sys::fi_addr_t),
+    Table(libfabric_sys::fi_addr_t),
+    Unspec(libfabric_sys::fi_addr_t)
+}
+
+impl RawMappedAddress {
+    pub(crate) fn get(&self) -> libfabric_sys::fi_addr_t {
+        match self {
+            RawMappedAddress::Map(addr) => *addr,
+            RawMappedAddress::Table(addr) => *addr,
+            RawMappedAddress::Unspec(addr) => *addr,
+        }
+    }
+
+    pub(crate) fn from_raw(av_type: AddressVectorType, raw_addr: libfabric_sys::fi_addr_t) -> RawMappedAddress {
+        match av_type {
+            AddressVectorType::Map => RawMappedAddress::Map(raw_addr),
+            AddressVectorType::Table => RawMappedAddress::Table(raw_addr),
+            AddressVectorType::Unspec => panic!("Unspecified address type"),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) enum AddressSource {
@@ -76,11 +119,11 @@ pub(crate) enum AddressSource {
 /// 
 /// Note that other objects that it will extend the respective [`crate::av::AddressVector`]'s (if any) lifetime until they
 /// it is dropped.
-#[repr(C)]
 #[derive(Clone)]
-pub struct MappedAddress {
-    addr: libfabric_sys::fi_addr_t,
-    av: MyOnceCell<AddressSource>,
+pub enum MappedAddress {
+    Unspec(UnspecMappedAddress),
+    Map(MapMappedAddress),
+    Table(TableMappedAddress),
 }
 
 impl MappedAddress {
@@ -99,29 +142,53 @@ impl MappedAddress {
     // }
     
     pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: AddressSource) -> Self {
-        let avcell = MyOnceCell::new();
-        
-        if avcell.set(av).is_err() {
-            panic!("MappedAddress is already set");
-        } 
-        
-        Self {
-            addr,
-            av: avcell,
+        match addr {
+            RawMappedAddress::Map(addr) => Self::Map(MapMappedAddress{raw_mapped_addr: addr, av: av}),
+            RawMappedAddress::Table(addr) => Self::Table(TableMappedAddress{raw_mapped_addr: addr, av: av}),
+            RawMappedAddress::Unspec(addr) => Self::Unspec(UnspecMappedAddress{raw_mapped_addr: addr}),
         }
     }
 
     pub(crate) fn from_raw_addr_no_av(addr: RawMappedAddress) -> Self {
-        
-        Self {
-            addr,
-            av: MyOnceCell::new(),
+        match addr {
+            RawMappedAddress::Unspec(addr) => Self::Unspec(UnspecMappedAddress{raw_mapped_addr: addr}),
+            _ => panic!("Addresses mapped by an AV")
         }
     }
 
-    pub(crate) fn raw_addr(&self) -> RawMappedAddress {
-        self.addr
+    pub(crate) fn raw_addr(&self) -> libfabric_sys::fi_addr_t {
+        match self {
+            Self::Map(t) => t.raw_mapped_addr,
+            Self::Table(m) => m.raw_mapped_addr,
+            Self::Unspec(u) => u.raw_mapped_addr,
+        }
     }
+
+    pub fn rx_addr(&self, rx_index: i32, rx_ctx_bits: i32) -> Result<MappedAddress, crate::error::Error> {
+        let ret = unsafe { libfabric_sys::inlined_fi_rx_addr(self.raw_addr(), rx_index, rx_ctx_bits) };
+        if ret == FI_ADDR_NOTAVAIL || ret == FI_ADDR_UNSPEC {
+            return Err(crate::error::Error::from_err_code(libfabric_sys::FI_EADDRNOTAVAIL));
+        }
+    
+        Ok(match self {
+            Self::Map(m) => 
+                Self::Map(
+                    MapMappedAddress{raw_mapped_addr: ret, av: m.av.clone()}
+                )
+            ,
+            Self::Table(t) => 
+                Self::Table(
+                    TableMappedAddress{raw_mapped_addr: ret, av: t.av.clone()}
+                )
+            ,
+            Self::Unspec(_) => 
+                Self::Unspec(
+                    UnspecMappedAddress{raw_mapped_addr: ret}
+                )
+            ,
+        })
+    }
+    
 }
 
 pub type DataType = libfabric_sys::fi_datatype;
@@ -173,25 +240,7 @@ const FI_ADDR_UNSPEC : u64 = u64::MAX;
 
 
 
-pub fn rx_addr(addr: &MappedAddress, rx_index: i32, rx_ctx_bits: i32) -> Option<MappedAddress> {
-    let ret = unsafe { libfabric_sys::inlined_fi_rx_addr(addr.raw_addr(), rx_index, rx_ctx_bits) };
-    if ret == FI_ADDR_NOTAVAIL {
-        None
-    }
-    else {
-        Some(MappedAddress::from_raw_addr(ret, addr.av.get().unwrap().clone()))
-    }
-}
 
-pub fn rx_addr_no_av(rx_index: i32, rx_ctx_bits: i32) -> Option<MappedAddress> {
-    let ret = unsafe { libfabric_sys::inlined_fi_rx_addr(FI_ADDR_NOTAVAIL, rx_index, rx_ctx_bits) };
-    if ret == FI_ADDR_NOTAVAIL {
-        None
-    }
-    else {
-        Some(MappedAddress::from_raw_addr_no_av(ret))
-    }
-}
 
 
 
