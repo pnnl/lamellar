@@ -3,7 +3,7 @@ use std::os::fd::{AsFd, BorrowedFd, AsRawFd, RawFd};
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{cq::WaitObjectRetrieve, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, EqRawFid, OwnedEqFid}, MyRc, MyRefCell};
+use crate::{cq::WaitObjectRetrieve, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, EqRawFid, OwnedEqFid}, Context, MyRc, MyRefCell};
 use crate::{enums::WaitObjType, fabric::FabricImpl, infocapsoptions::Caps, info::{InfoHints, InfoEntry}, fid::{self, RawFid}};
 
 pub enum Event {
@@ -340,17 +340,11 @@ pub struct EventQueueBase<EQ: ?Sized> {
 
 impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {
 
-    pub(crate) fn new<T0>(fabric: &MyRc<crate::fabric::FabricImpl>, mut attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(fabric: &MyRc<crate::fabric::FabricImpl>, mut attr: EventQueueAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
         let mut c_eq: *mut libfabric_sys::fid_eq  = std::ptr::null_mut();
         let c_eq_ptr: *mut *mut libfabric_sys::fid_eq = &mut c_eq;
 
-        let err = 
-            if let Some(ctx) = context {
-                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.as_raw_typed_fid(), attr.get_mut(), c_eq_ptr, (ctx as *mut T0).cast())}
-            }
-            else {
-                unsafe {libfabric_sys::inlined_fi_eq_open(fabric.as_raw_typed_fid(), attr.get_mut(), c_eq_ptr, std::ptr::null_mut())}
-            };
+        let err = unsafe {libfabric_sys::inlined_fi_eq_open(fabric.as_raw_typed_fid(), attr.get_mut(), c_eq_ptr, context)};
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -411,12 +405,16 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
 
 impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> EventQueue<EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>> {
 
-    pub(crate) fn new<T0>(fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
 
         Ok(
             Self {
                 inner: MyRc::new(
-                    EventQueueImpl::new(&fabric.inner, attr, context)?
+                    EventQueueImpl::new(&fabric.inner, attr, c_void)?
                 ),
             })
     }
@@ -601,13 +599,13 @@ impl<T: ReadEq + 'static> crate::Bind for EventQueue<T> {
 
 //================== EventQueue Attribute(fi_eq_attr) ==================//
 
-pub struct EventQueueBuilder<'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
+pub struct EventQueueBuilder<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     eq_attr: EventQueueAttr,
     fabric: &'a crate::fabric::Fabric,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
 }
 
-impl<'a> EventQueueBuilder<'a, (), false, true, false, false> {
+impl<'a> EventQueueBuilder<'a, false, true, false, false> {
     pub fn new(fabric: &'a crate::fabric::Fabric) -> Self {
        Self {
             eq_attr: EventQueueAttr::new(),
@@ -617,14 +615,14 @@ impl<'a> EventQueueBuilder<'a, (), false, true, false, false> {
     }
 }
 
-impl <'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> EventQueueBuilder<'a, T, WRITE, WAIT, RETRIEVE, FD> {
+impl <'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> EventQueueBuilder<'a, WRITE, WAIT, RETRIEVE, FD> {
     
     pub fn size(mut self, size: usize) -> Self {
         self.eq_attr.size(size);
         self
     }
 
-    pub fn write(mut self) -> EventQueueBuilder<'a, T, true, WAIT, RETRIEVE, FD> {
+    pub fn write(mut self) -> EventQueueBuilder<'a, true, WAIT, RETRIEVE, FD> {
         self.eq_attr.write();
 
         EventQueueBuilder {
@@ -634,7 +632,7 @@ impl <'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD
         }
     }
     
-    pub fn wait_none(mut self) -> EventQueueBuilder<'a, T, WRITE, false, false, false> {
+    pub fn wait_none(mut self) -> EventQueueBuilder<'a, WRITE, false, false, false> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::None);
 
         EventQueueBuilder {
@@ -644,7 +642,7 @@ impl <'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD
         }
     }
     
-    pub fn wait_fd(mut self) -> EventQueueBuilder<'a, T, WRITE, true, true, true> {
+    pub fn wait_fd(mut self) -> EventQueueBuilder<'a, WRITE, true, true, true> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         EventQueueBuilder {
@@ -654,7 +652,7 @@ impl <'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD
         }
     }
 
-    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> EventQueueBuilder<'a, T, WRITE, true, false, false> {
+    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> EventQueueBuilder<'a, WRITE, true, false, false> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         
@@ -665,7 +663,7 @@ impl <'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD
         }
     }
 
-    pub fn wait_mutex(mut self) -> EventQueueBuilder<'a, T, WRITE, true, true, false> {
+    pub fn wait_mutex(mut self) -> EventQueueBuilder<'a, WRITE, true, true, false> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         
@@ -676,7 +674,7 @@ impl <'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD
         }
     }
 
-    pub fn wait_yield(mut self) -> EventQueueBuilder<'a, T, WRITE, true, false, false> {
+    pub fn wait_yield(mut self) -> EventQueueBuilder<'a, WRITE, true, false, false> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         EventQueueBuilder {
@@ -691,7 +689,7 @@ impl <'a, T, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD
         self
     }
 
-    pub fn context(self, ctx: &'a mut T) -> EventQueueBuilder<'a, T, WRITE, WAIT, RETRIEVE, FD> {
+    pub fn context(self, ctx: &'a mut Context) -> EventQueueBuilder<'a, WRITE, WAIT, RETRIEVE, FD> {
         EventQueueBuilder {
             eq_attr: self.eq_attr,
             fabric: self.fabric,
@@ -847,10 +845,10 @@ impl<F: AsRawFid> EventQueueEntry<F> {
         &self.event_fid
     }
 
-    pub fn set_context<T>(&mut self, context: &mut T) -> &mut Self {
+    pub fn set_context<T>(&mut self, context: &mut Context) -> &mut Self {
         let context_writable: *mut *mut std::ffi::c_void =  &mut (self.c_entry.context);
         let context_writable_usize: *mut  usize = context_writable as  *mut usize;
-        unsafe { *context_writable_usize = *(context as *mut T as *mut usize) };
+        unsafe { *context_writable_usize = *(context.inner_mut() as *mut usize) };
         self
     }
 

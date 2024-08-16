@@ -5,7 +5,7 @@ use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_G
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::{AddressVector, AddressVectorBase, AddressVectorImplBase}, cntr::{Counter, ReadCntr}, cq::{CompletionQueue, ReadCq}, domain::DomainImplT, enums::{EndpointType, HmemP2p, Protocol, TransferOptions}, eq::{EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid, RawFid}, info::{InfoEntry, Version}, utils::check_error, MyOnceCell, MyRc, MyRefCell};
+use crate::{av::{AddressVector, AddressVectorBase, AddressVectorImplBase}, cntr::{Counter, ReadCntr}, cq::{CompletionQueue, ReadCq}, domain::DomainImplT, enums::{EndpointType, HmemP2p, Protocol, TransferOptions}, eq::{EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid, RawFid}, info::{InfoEntry, Version}, utils::check_error, Context, MyOnceCell, MyRc, MyRefCell};
 
 #[repr(C)]
 pub struct Address {
@@ -285,10 +285,15 @@ pub struct ScalableEndpoint<E> {
 }
 
 impl ScalableEndpoint<()> {
-    pub fn new<T0, E, EQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<EQ>, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<ScalableEndpoint<E>, crate::error::Error> {
+    pub fn new<E, EQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<EQ>, info: &InfoEntry<E>, context: Option<&mut Context>) -> Result<ScalableEndpoint<E>, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             ScalableEndpoint::<E> { 
-                inner: MyRc::new( ScalableEndpointImpl::new(&domain.inner, info, context)?),
+                inner: MyRc::new( ScalableEndpointImpl::new(&domain.inner, info, c_void)?),
                 phantom: PhantomData,
             })
     }
@@ -296,15 +301,9 @@ impl ScalableEndpoint<()> {
 
 impl ScalableEndpointImpl {
 
-    pub fn new<T0, E, EQ: ?Sized + 'static>(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<ScalableEndpointImpl, crate::error::Error> {
+    pub fn new<E, EQ: ?Sized + 'static>(domain: &MyRc<crate::domain::DomainImplBase<EQ>>, info: &InfoEntry<E>, context: *mut std::ffi::c_void) -> Result<ScalableEndpointImpl, crate::error::Error> {
         let mut c_sep: EpRawFid = std::ptr::null_mut();
-        let err = 
-            if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_scalable_ep(domain.as_raw_typed_fid(), info.c_info, &mut c_sep, (ctx as *mut T0).cast()) }
-            }
-            else {
-                unsafe { libfabric_sys::inlined_fi_scalable_ep(domain.as_raw_typed_fid(), info.c_info, &mut c_sep, std::ptr::null_mut()) }
-            };
+        let err = unsafe { libfabric_sys::inlined_fi_scalable_ep(domain.as_raw_typed_fid(), info.c_info, &mut c_sep, context) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -445,11 +444,16 @@ pub struct PassiveEndpointBase<E, EQ: ?Sized> {
 }
 
 impl<EQ: ?Sized> PassiveEndpointBase<(), EQ> {
-    pub fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<PassiveEndpointBase<E, EQ>, crate::error::Error> {
+    pub fn new<E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, context: Option<&mut Context>) -> Result<PassiveEndpointBase<E, EQ>, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             PassiveEndpointBase::<E, EQ> {
                 inner: 
-                    MyRc::new(PassiveEndpointImplBase::new(&fabric.inner, info, context)?)
+                    MyRc::new(PassiveEndpointImplBase::new(&fabric.inner, info, c_void)?)
             }
         )
     }
@@ -457,15 +461,9 @@ impl<EQ: ?Sized> PassiveEndpointBase<(), EQ> {
 
 impl<EQ: ?Sized> PassiveEndpointImplBase<(), EQ> {
 
-    pub fn new<T0, E>(fabric: &MyRc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, context: Option<&mut T0>) -> Result<PassiveEndpointImplBase<E, EQ>, crate::error::Error> {
+    pub fn new<E>(fabric: &MyRc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, context: *mut std::ffi::c_void) -> Result<PassiveEndpointImplBase<E, EQ>, crate::error::Error> {
         let mut c_pep: PepRawFid = std::ptr::null_mut();
-        let err = 
-            if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.as_raw_typed_fid(), info.c_info, &mut  c_pep, (ctx as *mut T0).cast()) }
-            }
-            else {
-                unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.as_raw_typed_fid(), info.c_info, &mut  c_pep, std::ptr::null_mut()) }
-            };
+        let err = unsafe { libfabric_sys::inlined_fi_passive_ep(fabric.as_raw_typed_fid(), info.c_info, &mut  c_pep, context) };
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -484,7 +482,6 @@ impl<EQ: ?Sized> PassiveEndpointImplBase<(), EQ> {
 
 
 impl<E> PassiveEndpointImplBase<E, dyn ReadEq> {
-
 
     pub(crate) fn bind<T: ReadEq + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_pep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags) };
@@ -703,15 +700,9 @@ impl<'a, EP, EQ: ?Sized + ReadEq + AsRawFid + 'static, CQ: ?Sized + ReadCq> Inco
 
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
 
-    pub(crate) fn new<T0, E, DEQ: ?Sized + 'static>(domain: &MyRc<crate::domain::DomainImplBase<DEQ>>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Self, crate::error::Error> {
+    pub(crate) fn new<E, DEQ: ?Sized + 'static>(domain: &MyRc<crate::domain::DomainImplBase<DEQ>>, info: &InfoEntry<E>, flags: u64, context: *mut std::ffi::c_void) -> Result< Self, crate::error::Error> {
         let mut c_ep: EpRawFid = std::ptr::null_mut();
-        let err =
-            if let Some(ctx) = context {
-                unsafe { libfabric_sys::inlined_fi_endpoint2(domain.as_raw_typed_fid(), info.c_info, &mut c_ep, flags, (ctx as *mut T0).cast()) }
-            } 
-            else {
-                unsafe { libfabric_sys::inlined_fi_endpoint2(domain.as_raw_typed_fid(), info.c_info, &mut c_ep, flags, std::ptr::null_mut()) }
-            };
+        let err = unsafe { libfabric_sys::inlined_fi_endpoint2(domain.as_raw_typed_fid(), info.c_info, &mut c_ep, flags, context) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -732,10 +723,15 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
 }
 
 impl Endpoint<()> {
-    pub fn new<T0, E, DEQ:?Sized + 'static>(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
+    pub fn new<E, DEQ:?Sized + 'static>(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut Context>) -> Result< Endpoint<E>, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
-                inner:MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, context)?),
+                inner:MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
             }
         )
     }
@@ -968,8 +964,8 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid>{
         check_error(err)
     }
 
-    fn cancel_with_context<T0>(&self, context: &mut T0) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_raw_typed_fid().as_raw_fid(), (context as *mut T0).cast()) };
+    fn cancel_with_context<T0>(&self, context: &mut Context) -> Result<(), crate::error::Error> {
+        let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_raw_typed_fid().as_raw_fid(), context.inner_mut()) };
         check_error(err)
     }
 
@@ -1137,6 +1133,7 @@ impl EndpointAttr {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get(&self) -> libfabric_sys::fi_ep_attr {
         let (auth_key, auth_key_size) = if let Some(auth_key) = &self.auth_key {
             (auth_key.as_ptr(), auth_key.len())
@@ -1170,6 +1167,12 @@ impl EndpointAttr {
     pub fn set_protocol(&mut self, proto: crate::enums::Protocol) -> &mut Self {
 
         self.protocol = proto;
+        self
+    }
+
+    pub fn set_protocol_version(&mut self, protocol_version: &Version) -> &mut Self {
+
+        self.protocol_version = protocol_version.clone();
         self
     }
 
@@ -1231,6 +1234,14 @@ impl EndpointAttr {
         &self.type_
     }
 
+    pub fn protocol(&self) -> &crate::enums::Protocol {
+        &self.protocol
+    }
+
+    pub fn protocol_version(&self) -> &Version {
+        &self.protocol_version
+    }
+
     pub fn max_msg_size(&self) -> usize {
         self.max_msg_size 
     }
@@ -1274,17 +1285,17 @@ impl Default for EndpointAttr {
     }
 }
 
-pub struct EndpointBuilder<'a, T, E> {
+pub struct EndpointBuilder<'a, E> {
     ep_attr: EndpointAttr,
     flags: u64,
     info: &'a InfoEntry<E>,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
 }
 
-impl<'a> EndpointBuilder<'a, (), ()> {
+impl<'a> EndpointBuilder<'a, ()> {
 
-    pub fn new<E>(info: &'a InfoEntry<E>, ) -> EndpointBuilder<'a, (), E> {
-        EndpointBuilder::<(), E> {
+    pub fn new<E>(info: &'a InfoEntry<E>, ) -> EndpointBuilder<'a, E> {
+        EndpointBuilder::<E> {
             ep_attr: EndpointAttr::new(),
             flags: 0,
             info,
@@ -1293,7 +1304,7 @@ impl<'a> EndpointBuilder<'a, (), ()> {
     }
 }
 
-impl<'a, E> EndpointBuilder<'a, (), E> {
+impl<'a, E> EndpointBuilder<'a, E> {
 
     pub fn build<EQ: ?Sized + 'static>(self, domain: &crate::domain::DomainBase<EQ>) -> Result<Endpoint<E>, crate::error::Error> {
         Endpoint::new(domain, self.info, self.flags, self.ctx)

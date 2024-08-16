@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use crate::mr::MappedMemoryRegionKey;
+
 #[repr(C)]
 pub struct IoVec<'a> {
     c_iovec: libfabric_sys::iovec,
@@ -160,6 +162,11 @@ impl RmaIoVec {
         self
     }
 
+    pub fn mapped_key(mut self, key: &MappedMemoryRegionKey) -> Self {
+        self.c_rma_iovec.key = key.get_key();
+        self
+    }
+
     pub fn get_address(&self) -> u64 {
         self.c_rma_iovec.addr
     }
@@ -172,6 +179,10 @@ impl RmaIoVec {
         self.c_rma_iovec.key
     }
 
+    pub(crate) fn get(&self) -> *const libfabric_sys::fi_rma_iov {
+        &self.c_rma_iovec
+    }
+
 }
 
 impl Default for RmaIoVec {
@@ -180,46 +191,77 @@ impl Default for RmaIoVec {
     }
 }
 
-#[cfg(test)]
-#[cfg(ignore)]
-mod rust_lifetime_tests {
-    use crate::iovec::IoVec;
+pub struct RmaIoc {
+    pub(crate) c_rma_ioc: libfabric_sys::fi_rma_ioc,
+}
 
-    fn foo(data: &mut [usize]) {}
-    fn foo_ref(data: & [usize]) {}
-    fn foo2<T>(data: & iovec::IoVec<T>) {}
+impl RmaIoc {
+    pub fn new(addr: u64, count: usize, key: &MappedMemoryRegionKey) -> Self {
+        Self {
+            c_rma_ioc: libfabric_sys::fi_rma_ioc {
+                addr, 
+                count, 
+                key: key.get_key(), 
+            }
+        }
+    }
 
-    #[test]
-    fn iovec_lifetime() {
-        let mut  data: Vec<usize> = Vec::new();
-        let iov = iovec::IoVec::from_slice(&data);
-        drop(data);
-        iov.get();
+    pub fn count(&self) -> usize {
+        self.c_rma_ioc.count
     }
-    
-    #[test]
-    fn iovec_borrow_mut() {
-        let mut  data: Vec<usize> = Vec::new();
-        let iov = iovec::IoVec::from_slice(&data);
-        foo(&mut data);
-        drop(data);
-        iov.get();
-    }
-    
 
-    #[test]
-    fn iovec_mut_mut() {
-        let mut  data: Vec<usize> = Vec::new();
-        let iov = iovec::IoVec::from_slice_mut(&mut data);
-        foo(&mut data);
-        iov.get();
+    pub fn addr(&self) -> u64 {
+        self.c_rma_ioc.addr
     }
-    
-    #[test]
-    fn iovec_mut_borrow() {
-        let mut  data: Vec<usize> = Vec::new();
-        let iov = iovec::IoVec::from_slice_mut(&mut data);
-        foo_ref(&data);
-        iov.get();
+
+    pub(crate) fn get(&self) -> *const libfabric_sys::fi_rma_ioc {
+        &self.c_rma_ioc
     }
 }
+
+
+
+
+// #[cfg(test)]
+// #[cfg(ignore)]
+// mod rust_lifetime_tests {
+//     use crate::iovec::IoVec;
+
+//     fn foo(data: &mut [usize]) {}
+//     fn foo_ref(data: & [usize]) {}
+//     fn foo2<T>(data: & iovec::IoVec<T>) {}
+
+//     #[test]
+//     fn iovec_lifetime() {
+//         let mut  data: Vec<usize> = Vec::new();
+//         let iov = iovec::IoVec::from_slice(&data);
+//         drop(data);
+//         iov.get();
+//     }
+    
+//     #[test]
+//     fn iovec_borrow_mut() {
+//         let mut  data: Vec<usize> = Vec::new();
+//         let iov = iovec::IoVec::from_slice(&data);
+//         foo(&mut data);
+//         drop(data);
+//         iov.get();
+//     }
+    
+
+//     #[test]
+//     fn iovec_mut_mut() {
+//         let mut  data: Vec<usize> = Vec::new();
+//         let iov = iovec::IoVec::from_slice_mut(&mut data);
+//         foo(&mut data);
+//         iov.get();
+//     }
+    
+//     #[test]
+//     fn iovec_mut_borrow() {
+//         let mut  data: Vec<usize> = Vec::new();
+//         let iov = iovec::IoVec::from_slice_mut(&mut data);
+//         foo_ref(&data);
+//         iov.get();
+//     }
+// }

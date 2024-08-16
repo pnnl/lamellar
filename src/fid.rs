@@ -4,7 +4,7 @@ use crate::{error, MyRc};
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
 #[derive(Hash, Clone, Copy)]
-pub(crate) struct Fid(pub(crate) RawFid);
+pub struct Fid(pub(crate) RawFid);
 
 impl PartialEq for Fid {
     fn eq(&self, other: &Self) -> bool {

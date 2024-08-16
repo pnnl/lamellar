@@ -1,11 +1,11 @@
-use std::{collections::HashMap,future::Future, task::ready, pin::Pin, os::fd::AsRawFd};
+use std::{collections::HashMap,future::Future, task::ready, pin::Pin};
 
 #[cfg(feature="use-async-std")]
 use async_io::Async as Async;
 #[cfg(feature="use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
-use crate::{async_::AsyncCtx, cq::WaitObjectRetrieve, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, EqRawFid, Fid, RawFid}, MyRc, MyRefCell};
+use crate::{async_::AsyncCtx, cq::WaitObjectRetrieve, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, EqRawFid, Fid, RawFid}, Context, MyRc, MyRefCell};
 
 use super::AsyncFid;
 
@@ -331,12 +331,16 @@ impl<'a> Future for EqAsyncReadOwned<'a>{
 
 impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
 
-    pub(crate) fn new<T0>(fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
 
         Ok(
             Self {
                 inner: MyRc::new(
-                    AsyncEventQueueImpl::new(&fabric.inner, attr, context)?
+                    AsyncEventQueueImpl::new(&fabric.inner, attr, c_void)?
                 ),
             })
     }
@@ -420,7 +424,7 @@ pub struct AsyncEventQueueImpl<const WRITE: bool> {
 
 
 impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
-    pub(crate) fn new<T0>(fabric: &MyRc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(fabric: &MyRc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
         
         Ok(Self {
             base: Async::new(EventQueueImpl::new(fabric, attr, context)?).unwrap(),
@@ -761,13 +765,13 @@ impl<const WRITE: bool> AsRawTypedFid for AsyncEventQueueImpl<WRITE> {
 //     }
 // }
 
-pub struct EventQueueBuilder<'a, T, const WRITE: bool> {
+pub struct EventQueueBuilder<'a, const WRITE: bool> {
     eq_attr: EventQueueAttr,
     fabric: &'a crate::fabric::Fabric,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
 }
 
-impl<'a> EventQueueBuilder<'a, (), false> {
+impl<'a> EventQueueBuilder<'a, false> {
     pub fn new(fabric: &'a crate::fabric::Fabric) -> Self {
        Self {
             eq_attr: EventQueueAttr::new(),
@@ -777,14 +781,14 @@ impl<'a> EventQueueBuilder<'a, (), false> {
     }
 }
 
-impl <'a, T, const WRITE: bool> EventQueueBuilder<'a, T, WRITE> {
+impl <'a, const WRITE: bool> EventQueueBuilder<'a, WRITE> {
     
     pub fn size(mut self, size: usize) -> Self {
         self.eq_attr.size(size);
         self
     }
 
-    pub fn write(mut self) -> EventQueueBuilder<'a, T, true> {
+    pub fn write(mut self) -> EventQueueBuilder<'a, true> {
         self.eq_attr.write();
 
         EventQueueBuilder {
@@ -799,7 +803,7 @@ impl <'a, T, const WRITE: bool> EventQueueBuilder<'a, T, WRITE> {
         self
     }
 
-    pub fn context(self, ctx: &'a mut T) -> EventQueueBuilder<'a, T, WRITE> {
+    pub fn context(self, ctx: &'a mut Context) -> EventQueueBuilder<'a, WRITE> {
         EventQueueBuilder {
             eq_attr: self.eq_attr,
             fabric: self.fabric,

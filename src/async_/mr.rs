@@ -2,8 +2,8 @@ use crate::domain::DomainBase;
 use crate::fid::{AsRawTypedFid, Fid, OwnedMrFid};
 use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder};
 use crate::eq::Event;
-use crate::enums::MrMode;
-use crate::{MyOnceCell, MyRc};
+use crate::enums::{MrMode, MrRegOpt};
+use crate::{Context, MyOnceCell, MyRc};
 use crate::{mr::{MemoryRegion, MemoryRegionImpl}, enums::MrAccess};
 use super::AsyncCtx;
 
@@ -53,7 +53,7 @@ impl MemoryRegionImpl {
 
 
     #[allow(dead_code)]
-    pub(crate) async fn from_attr_async(domain: &MyRc<crate::async_::domain::AsyncDomainImpl>, mut attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event,Self), crate::error::Error> { // [TODO] Add context version
+    pub(crate) async fn from_attr_async(domain: &MyRc<crate::async_::domain::AsyncDomainImpl>, mut attr: MemoryRegionAttr, flags: MrRegOpt) -> Result<(Event,Self), crate::error::Error> { // [TODO] Add context version
         
         let mut async_ctx = 
             if attr.c_attr.context.is_null() {
@@ -98,7 +98,7 @@ impl MemoryRegionImpl {
     }
             
     #[allow(dead_code)]
-    pub(crate) async fn from_iovec_async<'a>(domain: &'a MyRc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
+    pub(crate) async fn from_iovec_async<'a>(domain: &'a MyRc<crate::async_::domain::AsyncDomainImpl>,  iov : &[crate::iovec::IoVec<'a>], access: &MrAccess, requested_key: u64, flags: MrRegOpt, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Self), crate::error::Error> {
         let mut async_ctx = AsyncCtx{user_ctx};
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
@@ -137,8 +137,8 @@ impl MemoryRegionImpl {
 impl MemoryRegion {
     
     #[allow(dead_code)]
-    pub(crate) async fn from_buffer_async<T, T0>(domain: &crate::async_::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event,Self), crate::error::Error> {
-        let ctx = user_ctx.map(|ctx| (ctx as *mut T0).cast());
+    pub(crate) async fn from_buffer_async<T>(domain: &crate::async_::domain::Domain, buf: &[T], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut Context>) -> Result<(Event,Self), crate::error::Error> {
+        let ctx = user_ctx.map(|ctx| ctx.inner_mut());
         let (event, mr) = MemoryRegionImpl::from_buffer_async(&domain.inner, buf, access, requested_key, flags, ctx).await?;
         Ok((event,
             Self {
@@ -150,7 +150,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn from_attr_async(domain: &crate::async_::domain::Domain, attr: MemoryRegionAttr, flags: MrMode) -> Result<(Event, Self), crate::error::Error> { // [TODO] Add context version
+    pub(crate) async fn from_attr_async(domain: &crate::async_::domain::Domain, attr: MemoryRegionAttr, flags: MrRegOpt) -> Result<(Event, Self), crate::error::Error> { // [TODO] Add context version
         let (event, mr) = MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags).await?;
         Ok((event,
             Self {
@@ -161,8 +161,8 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    async fn from_iovec_async<'a, T0>(domain: &'a crate::async_::domain::Domain,  iov : &[crate::iovec::IoVec<'a>], access: &MrAccess, requested_key: u64, flags: MrMode, user_ctx: Option<&mut T0>) -> Result<(Event, Self), crate::error::Error> {
-        let ctx = user_ctx.map(|ctx| (ctx as *mut T0).cast());
+    async fn from_iovec_async<'a>(domain: &'a crate::async_::domain::Domain,  iov : &[crate::iovec::IoVec<'a>], access: &MrAccess, requested_key: u64, flags: MrRegOpt, user_ctx: Option<&mut Context>) -> Result<(Event, Self), crate::error::Error> {
+        let ctx = user_ctx.map(|ctx| ctx.inner_mut());
         let (event, mr) = MemoryRegionImpl::from_iovec_async(&domain.inner, iov, access, requested_key, flags, ctx).await?;
         Ok((event,
             Self {

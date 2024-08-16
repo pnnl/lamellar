@@ -28,7 +28,10 @@ macro_rules! gen_enum {
     };
 }
 
-gen_enum!(Op, u32, 
+
+
+
+gen_enum!(AtomicOp, u32, 
     (Min, libfabric_sys::fi_op_FI_MIN),
     (Max, libfabric_sys::fi_op_FI_MAX),
     (Sum, libfabric_sys::fi_op_FI_SUM),
@@ -36,22 +39,78 @@ gen_enum!(Op, u32,
     (Lor, libfabric_sys::fi_op_FI_LOR),
     (Land, libfabric_sys::fi_op_FI_LAND),
     (Bor, libfabric_sys::fi_op_FI_BOR),
-    (Bar, libfabric_sys::fi_op_FI_BAND),
+    (Band, libfabric_sys::fi_op_FI_BAND),
+    (Lxor, libfabric_sys::fi_op_FI_LXOR),
+    (Bxor, libfabric_sys::fi_op_FI_BXOR),
+    (AtomicWrite, libfabric_sys::fi_op_FI_ATOMIC_WRITE)
+);
+gen_enum!(FetchAtomicOp, u32, 
+    (Min, libfabric_sys::fi_op_FI_MIN),
+    (Max, libfabric_sys::fi_op_FI_MAX),
+    (Sum, libfabric_sys::fi_op_FI_SUM),
+    (Prod, libfabric_sys::fi_op_FI_PROD),
+    (Lor, libfabric_sys::fi_op_FI_LOR),
+    (Land, libfabric_sys::fi_op_FI_LAND),
+    (Bor, libfabric_sys::fi_op_FI_BOR),
+    (Band, libfabric_sys::fi_op_FI_BAND),
     (Lxor, libfabric_sys::fi_op_FI_LXOR),
     (Bxor, libfabric_sys::fi_op_FI_BXOR),
     (AtomicRead, libfabric_sys::fi_op_FI_ATOMIC_READ),
-    (AtomicWrite, libfabric_sys::fi_op_FI_ATOMIC_WRITE),
+    (AtomicWrite, libfabric_sys::fi_op_FI_ATOMIC_WRITE)
+);
+
+gen_enum!(CompareAtomicOp, u32, 
     (Cswap, libfabric_sys::fi_op_FI_CSWAP),
     (CswapNe, libfabric_sys::fi_op_FI_CSWAP_NE),
     (CswapLe, libfabric_sys::fi_op_FI_CSWAP_LE),
     (CswapLt, libfabric_sys::fi_op_FI_CSWAP_LT),
     (CswapGe, libfabric_sys::fi_op_FI_CSWAP_GE),
     (CswapGt, libfabric_sys::fi_op_FI_CSWAP_GT),
-    (Mswap, libfabric_sys::fi_op_FI_MSWAP),
-    (AtomicOpLast, libfabric_sys::fi_op_FI_ATOMIC_OP_LAST),
+    (Mswap, libfabric_sys::fi_op_FI_MSWAP)
+);
+
+gen_enum!(CollAtomicOp, u32, 
+    (Min, libfabric_sys::fi_op_FI_MIN),
+    (Max, libfabric_sys::fi_op_FI_MAX),
+    (Sum, libfabric_sys::fi_op_FI_SUM),
+    (Prod, libfabric_sys::fi_op_FI_PROD),
+    (Lor, libfabric_sys::fi_op_FI_LOR),
+    (Land, libfabric_sys::fi_op_FI_LAND),
+    (Bor, libfabric_sys::fi_op_FI_BOR),
+    (Band, libfabric_sys::fi_op_FI_BAND),
+    (Lxor, libfabric_sys::fi_op_FI_LXOR),
+    (Bxor, libfabric_sys::fi_op_FI_BXOR),
+    (AtomicWrite, libfabric_sys::fi_op_FI_ATOMIC_WRITE),
+    (AtomicRead, libfabric_sys::fi_op_FI_ATOMIC_READ),
     (Noop, libfabric_sys::fi_op_FI_NOOP)
 );
 
+pub trait AtomicOperation {
+    fn as_raw(&self) -> u32;
+}
+
+impl AtomicOperation for AtomicOp {
+    fn as_raw(&self) -> u32 {
+        self.as_raw()
+    }
+}
+
+impl AtomicOperation for FetchAtomicOp {
+    fn as_raw(&self) -> u32 {
+        self.as_raw()
+    }
+}
+impl AtomicOperation for CompareAtomicOp {
+    fn as_raw(&self) -> u32 {
+        self.as_raw()
+    }
+}
+
+// impl AtomicOperation for CompareAtomicOp {
+//     fn as_raw(&self) -> u32 {
+//         self.as_raw()
+//     }
+// }
 
 gen_enum!(CollectiveOp, u32,
     (Barrier,libfabric_sys::fi_collective_op_FI_BARRIER),
@@ -536,12 +595,16 @@ impl<const OUT: bool, const MSG: bool> TferOptions<OUT, MSG, false, false, false
     gen_set_get_flag!(tagged, is_tagged, libfabric_sys::FI_TAGGED as u64);
 }
 
+impl<const OUT: bool> TferOptions<OUT, true, false, false, false, true> { // All atomic msg transfers
+    gen_set_get_flag!(inject, is_inject, libfabric_sys::FI_INJECT as u64);
+}
+
 
 impl<const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> TferOptions<true, MSG, RMA, DATA, TAGGED, ATOMIC> { // All transmits
     gen_set_get_flag!(fence, is_fence, libfabric_sys::FI_FENCE as u64);
 }
 
-impl<const RMA: bool, const TAGGED: bool> TferOptions<true, false, RMA, true, TAGGED, false> { // Only data transmits (no msg)
+impl<const RMA: bool, const DATA: bool, const TAGGED: bool> TferOptions<true, true, RMA, DATA, TAGGED, false> { // Only data transmits (no msg)
     gen_set_get_flag!(remote_cq_data, is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
 }
 
@@ -552,7 +615,7 @@ impl<const RMA: bool, const TAGGED: bool> TferOptions<true, true, RMA, false, TA
     gen_set_get_flag!(inject_complete, is_inject_complete, libfabric_sys::FI_INJECT_COMPLETE as u64);
     gen_set_get_flag!(transmit_complete, is_transmit_complete, libfabric_sys::FI_TRANSMIT_COMPLETE as u64);
     gen_set_get_flag!(delivery_complete, is_delivery_complete, libfabric_sys::FI_DELIVERY_COMPLETE as u64);
-    gen_set_get_flag!(remote_cq_data, is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
+    // gen_set_get_flag!(remote_cq_data, is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
 }
 
 
@@ -602,10 +665,10 @@ pub type TaggedRecvMsgOptions = TferOptions<false, true, false, false, true, fal
 pub type ReadMsgOptions = TferOptions<false, true, true, false, false, false>;
 
 // pub type AtomicOptions = TferOptions<true, false, true, false, false, true>;
-pub type AtomicMsgOptions = TferOptions<true, true, true, false, false, true>;
+pub type AtomicMsgOptions = TferOptions<true, true, false, false, false, true>;
 
 // pub type AtomicFetchOptions = TferOptions<true, false, true, false, false, true>;
-pub type AtomicFetchMsgOptions = TferOptions<true, true, true, false, false, true>;
+pub type AtomicFetchMsgOptions = TferOptions<true, true, false, false, false, true>;
 
 pub type CollectiveOptions = AtomicMsgOptions;
 

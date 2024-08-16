@@ -3,7 +3,7 @@ use crate::cq::{CompletionEntry, SingleCompletion};
 use crate::domain::{DomainBase, DomainImplBase};
 use crate::error::ErrorKind;
 use crate::fid::{AsRawTypedFid, CqRawFid};
-use crate::{MyRc, MyRefCell};
+use crate::{Context, MyRc, MyRefCell};
 use std::collections::HashMap;
 use std::os::fd::BorrowedFd;
 use std::pin::Pin;
@@ -56,10 +56,15 @@ pub trait AsyncReadCq: ReadCq {
 }
 
 impl CompletionQueue<AsyncCompletionQueueImpl> {
-    pub(crate) fn new<T0, EQ: ?Sized + 'static>(domain: &DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: ?Sized + 'static>(domain: &DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut Context>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             Self {
-                inner: MyRc::new(AsyncCompletionQueueImpl::new(&domain.inner, attr, context, default_buff_size)?),
+                inner: MyRc::new(AsyncCompletionQueueImpl::new(&domain.inner, attr, c_void, default_buff_size)?),
             }
         )
     }
@@ -184,7 +189,7 @@ impl<T: AsyncReadCq> AsyncReadCq for CompletionQueue<T> {
 
 impl AsyncCompletionQueueImpl {
 
-    pub(crate) fn new<T0, EQ: ?Sized + 'static>(domain: &MyRc<DomainImplBase<EQ>>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: ?Sized + 'static>(domain: &MyRc<DomainImplBase<EQ>>, attr: CompletionQueueAttr, context: *mut std::ffi::c_void, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         Ok(
             Self {
                 base:Async::new(CompletionQueueImpl::new(domain.clone(),
@@ -526,20 +531,20 @@ impl AsRawFid for AsyncCompletionQueueImpl {
     }
 }
 
-pub struct CompletionQueueBuilder<'a, T> {
+pub struct CompletionQueueBuilder<'a> {
     cq_attr: CompletionQueueAttr,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
     default_buff_size: usize,
 }
 
     
-impl<'a> CompletionQueueBuilder<'a, ()> {
+impl<'a> CompletionQueueBuilder<'a> {
     
     /// Initiates the creation of a new [CompletionQueue] on `domain`.
     /// 
     /// The initial configuration is what would be set if no `fi_cq_attr` or `context` was provided to 
     /// the `fi_cq_open` call. 
-    pub fn new() -> CompletionQueueBuilder<'a, ()> {
+    pub fn new() -> CompletionQueueBuilder<'a> {
         Self  {
             cq_attr: CompletionQueueAttr::new(),
             ctx: None,
@@ -548,13 +553,13 @@ impl<'a> CompletionQueueBuilder<'a, ()> {
     }
 }
 
-impl<'a> Default for CompletionQueueBuilder<'a, ()> {
+impl<'a> Default for CompletionQueueBuilder<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a, T> CompletionQueueBuilder<'a, T> {
+impl<'a> CompletionQueueBuilder<'a> {
 
     /// Specifies the minimum size of a completion queue.
     /// 
@@ -586,7 +591,7 @@ impl<'a, T> CompletionQueueBuilder<'a, T> {
     /// Sets the context to be passed to the `CompletionQueue`.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_cq_open`.
-    pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T> {
+    pub fn context(self, ctx: &'a mut Context) -> CompletionQueueBuilder<'a> {
         CompletionQueueBuilder {
             ctx: Some(ctx),
             cq_attr: self.cq_attr,

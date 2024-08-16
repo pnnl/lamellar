@@ -11,10 +11,9 @@ use std::sync::Arc;
 use std::rc::Rc;
 
 use enums::AddressVectorType;
-use libfabric_sys::fi_addr_t;
 #[cfg(feature="thread-safe")]
 use parking_lot::RwLock;
-use utils::check_error; 
+ 
 #[cfg(not(feature="thread-safe"))]
 use std::cell::RefCell;
 
@@ -288,13 +287,12 @@ const FI_ADDR_UNSPEC : u64 = u64::MAX;
 
 
 
-pub struct Context {
+pub struct Context1 {
     #[allow(dead_code)]
-
     c_val: libfabric_sys::fi_context,
 }
 
-impl Context {
+impl Context1 {
     pub fn new() -> Self {
         Self {
             c_val : {
@@ -304,12 +302,17 @@ impl Context {
     }
     
     #[allow(dead_code)]
+    pub(crate) fn get(&self) -> *const libfabric_sys::fi_context {
+        &self.c_val
+    }
+    
+    #[allow(dead_code)]
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context {
         &mut self.c_val
     }
 }
 
-impl Default for Context {
+impl Default for Context1 {
     fn default() -> Self {
         Self::new()
     }
@@ -332,6 +335,11 @@ impl Context2 {
     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context2 {
         &mut self.c_val
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn get(&self) -> *const libfabric_sys::fi_context2 {
+        &self.c_val
+    }
 }
 
 impl Default for Context2 {
@@ -339,6 +347,28 @@ impl Default for Context2 {
         Self::new()
     }
 }
+
+pub enum Context {
+    Context1(Context1),
+    Context2(Context2),
+}
+
+impl Context {
+    fn inner_mut(&mut self) -> *mut std::ffi::c_void {
+        match self {
+            Context::Context1(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
+            Context::Context2(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
+        }
+    }
+
+    fn inner(&self) -> *const std::ffi::c_void {
+        match self {
+            Context::Context1(ctx) => ctx.get() as *const std::ffi::c_void,
+            Context::Context2(ctx) => ctx.get() as *const std::ffi::c_void,
+        }
+    }
+}
+
 
 // pub trait BindImpl: AsRawFid {}
 pub trait Bind {
@@ -601,4 +631,54 @@ macro_rules!  async_eq_caps_type{
     ($($opt: expr),*) => {
         libfabric::async_eq_caps_type_N!(libfabric::count!($($opt)*), $($opt),*)
     };
+}
+
+pub trait AsFiType {
+    fn as_fi_datatype() -> libfabric_sys::fi_datatype;
+}
+
+macro_rules! impl_as_fi_type {
+    ($(($rtype: ty, $fitype: path)),*) => {
+        $(impl AsFiType for $rtype {
+            fn as_fi_datatype() -> libfabric_sys::fi_datatype {
+                $fitype
+            }
+        })*
+    };
+}
+
+impl_as_fi_type!(
+    ((), libfabric_sys::fi_datatype_FI_VOID),
+    (i8, libfabric_sys::fi_datatype_FI_INT8),
+    (i16, libfabric_sys::fi_datatype_FI_INT16),
+    (i32, libfabric_sys::fi_datatype_FI_INT32),
+    (i64, libfabric_sys::fi_datatype_FI_INT64),
+    (i128, libfabric_sys::fi_datatype_FI_INT128),
+    (u8, libfabric_sys::fi_datatype_FI_UINT8),
+    (u16, libfabric_sys::fi_datatype_FI_UINT16),
+    (u32, libfabric_sys::fi_datatype_FI_UINT32),
+    (u64, libfabric_sys::fi_datatype_FI_UINT64),
+    (u128, libfabric_sys::fi_datatype_FI_UINT128),
+    (f32, libfabric_sys::fi_datatype_FI_FLOAT),
+    (f64, libfabric_sys::fi_datatype_FI_DOUBLE)
+);
+
+impl AsFiType for usize {
+    fn as_fi_datatype() -> libfabric_sys::fi_datatype {
+        if std::mem::size_of::<usize>() == 8 {libfabric_sys::fi_datatype_FI_UINT64}
+        else if std::mem::size_of::<usize>() == 4 {libfabric_sys::fi_datatype_FI_UINT32}
+        else if std::mem::size_of::<usize>() == 2 {libfabric_sys::fi_datatype_FI_UINT16}
+        else if std::mem::size_of::<usize>() == 1 {libfabric_sys::fi_datatype_FI_UINT8}
+        else {panic!("Unhandled usize datatype size")}
+    }
+}
+
+impl AsFiType for isize {
+    fn as_fi_datatype() -> libfabric_sys::fi_datatype {
+        if std::mem::size_of::<isize>() == 8 {libfabric_sys::fi_datatype_FI_INT64}
+        else if std::mem::size_of::<isize>() == 4 {libfabric_sys::fi_datatype_FI_INT32}
+        else if std::mem::size_of::<isize>() == 2 {libfabric_sys::fi_datatype_FI_INT16}
+        else if std::mem::size_of::<isize>() == 1 {libfabric_sys::fi_datatype_FI_INT8}
+        else {panic!("Unhandled isize datatype size")}
+    }
 }

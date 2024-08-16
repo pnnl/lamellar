@@ -1,6 +1,6 @@
 use std::os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd};
 
-use crate::{domain::{DomainBase, DomainImplT}, fid::AsFid, MyRc, MyRefCell};
+use crate::{domain::{DomainBase, DomainImplT}, fid::AsFid, Context, MyRc, MyRefCell};
 use crate::{enums::{WaitObjType, CompletionFlags}, MappedAddress, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error};
 //================== CompletionQueue (fi_cq) ==================//
 
@@ -371,19 +371,12 @@ pub trait WaitObjectRetrieve<'a> {
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImpl<WAIT, RETRIEVE, FD>  {
 
-    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT>, mut attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(domain: MyRc<dyn DomainImplT>, mut attr: CompletionQueueAttr, context: *mut std::ffi::c_void, default_buff_size: usize) -> Result<Self, crate::error::Error> {
         
         let mut c_cq: CqRawFid  = std::ptr::null_mut();
-        // let mut entries: Vec<$t> = Vec::with_capacity(std::mem::size_of::<$t>() * $count);
 
-        let err = 
-            if let Some(ctx) = context {
-                unsafe {libfabric_sys::inlined_fi_cq_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_cq, (ctx as *mut T0).cast())}
-            }
-            else {
-                unsafe {libfabric_sys::inlined_fi_cq_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_cq, std::ptr::null_mut())}
-            };
-        
+        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_cq, context)};
+
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
         }
@@ -424,10 +417,15 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>> {
 
     // pub(crate) fn new<EQ: AsFid + 'static, T0>(_options: T, domain: &crate::domain::DomainBase<EQ>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
-    pub(crate) fn new<T0>(domain: MyRc<dyn DomainImplT>, attr: CompletionQueueAttr, context: Option<&mut T0>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(domain: MyRc<dyn DomainImplT>, attr: CompletionQueueAttr, context: Option<&mut Context>, default_buff_size: usize) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             Self {
-                inner: MyRc::new(CompletionQueueImpl::new(domain, attr, context, default_buff_size)?),
+                inner: MyRc::new(CompletionQueueImpl::new(domain, attr, c_void, default_buff_size)?),
             }
         )
     }
@@ -559,21 +557,21 @@ impl<T: AsFd> AsFd for CompletionQueue<T> {
 /// `CompletionQueueBuilder` is used to configure and build a new `CompletionQueue`.
 /// It encapsulates an incremental configuration of the address vector, as provided by a `fi_cq_attr`,
 /// followed by a call to `fi_cq_open`  
-pub struct CompletionQueueBuilder<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
+pub struct CompletionQueueBuilder<'a, const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     cq_attr: CompletionQueueAttr,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
     // options: Options<WAIT, WAITFD>,
     default_buff_size: usize,
 }
 
     
-impl<'a> CompletionQueueBuilder<'a, (), true, false, false> {
+impl<'a> CompletionQueueBuilder<'a, true, false, false> {
     
     /// Initiates the creation of a new [CompletionQueue] on `domain`.
     /// 
     /// The initial configuration is what would be set if no `fi_cq_attr` or `context` was provided to 
     /// the `fi_cq_open` call. 
-    pub fn new() -> CompletionQueueBuilder<'a, (), true, false, false> {
+    pub fn new() -> CompletionQueueBuilder<'a, true, false, false> {
         Self  {
             cq_attr: CompletionQueueAttr::new(),
             ctx: None,
@@ -582,13 +580,13 @@ impl<'a> CompletionQueueBuilder<'a, (), true, false, false> {
     }
 }
 
-impl<'a> Default for CompletionQueueBuilder<'a, (), true, false, false> {
+impl<'a> Default for CompletionQueueBuilder<'a, true, false, false> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQueueBuilder<'a, T, WAIT, RETRIEVE, FD> {
+impl<'a, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQueueBuilder<'a, WAIT, RETRIEVE, FD> {
 
     /// Specifies the minimum size of a completion queue.
     /// 
@@ -620,7 +618,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// Sets the underlying low-level waiting object to none.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_NONE`.
-    pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, T, false, false, false> {
+    pub fn wait_none(mut self) -> CompletionQueueBuilder<'a, false, false, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::None);
 
         CompletionQueueBuilder {
@@ -633,7 +631,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// Sets the underlying low-level waiting object to FD.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_FD`.
-    pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, T,  true,  true, true> {
+    pub fn wait_fd(mut self) -> CompletionQueueBuilder<'a, true,  true, true> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
         CompletionQueueBuilder {
@@ -647,7 +645,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// Sets the underlying low-level waiting object to [crate::sync::WaitSet] `set`.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_SET` and `fi_cq_attr::wait_set` to `set`.
-    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, T, true, false, false> {
+    pub fn wait_set(mut self, set: &crate::sync::WaitSet) -> CompletionQueueBuilder<'a, true, false, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Set(set));
 
         
@@ -661,7 +659,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// Sets the underlying low-level waiting object to Mutex+Conditional.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_MUTEX_COND`.
-    pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, T,  true, true, false> {
+    pub fn wait_mutex(mut self) -> CompletionQueueBuilder<'a, true, true, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
         
@@ -675,7 +673,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// Indicates that the counter will wait without a wait object but instead yield on every wait.
     /// 
     /// Corresponds to setting `fi_cq_attr::wait_obj` to `FI_WAIT_YIELD`.
-    pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, T,  true, false, false> {
+    pub fn wait_yield(mut self) -> CompletionQueueBuilder<'a, true, false, false> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
         CompletionQueueBuilder {
@@ -748,7 +746,7 @@ impl<'a, T, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQu
     /// Sets the context to be passed to the `CompletionQueue`.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_cq_open`.
-    pub fn context(self, ctx: &'a mut T) -> CompletionQueueBuilder<'a, T, WAIT, RETRIEVE, FD> {
+    pub fn context(self, ctx: &'a mut Context) -> CompletionQueueBuilder<'a, WAIT, RETRIEVE, FD> {
         CompletionQueueBuilder {
             ctx: Some(ctx),
             cq_attr: self.cq_attr,
@@ -836,7 +834,7 @@ impl Default for CompletionQueueAttr {
 }
 
 // //================== CompletionQueue Entry (fi_cq_entry) ==================//
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CompletionEntry<Format> {
     pub(crate) c_entry: Format,
 }
@@ -1094,7 +1092,7 @@ impl CompletionError {
     }
 
     pub fn is_op_context_equal(&self, ctx: &crate::Context) -> bool {
-        std::ptr::eq(self.c_err.op_context, ctx as *const crate::Context as *const std::ffi::c_void)
+        std::ptr::eq(self.c_err.op_context, ctx.inner())
     }
 
     pub(crate) fn err_data(&self) -> *const std::ffi::c_void {

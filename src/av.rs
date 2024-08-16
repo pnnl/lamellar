@@ -2,7 +2,7 @@ use std::ffi::CString;
 
 #[allow(unused_imports)] 
 use crate::fid::AsFid;
-use crate::{domain::{DomainBase, DomainImplT}, enums::{AVOptions, AVSetOptions, AddressVectorType}, ep::Address, eq::ReadEq, fid::{self, AVSetRawFid, AsRawFid, AsRawTypedFid, AsTypedFid, AvRawFid, OwnedAVFid, OwnedAVSetFid, RawFid}, AddressSource, MappedAddress, MyOnceCell, MyRc, RawMappedAddress, FI_ADDR_NOTAVAIL};
+use crate::{domain::{DomainBase, DomainImplT}, enums::{AVOptions, AVSetOptions, AddressVectorType}, ep::Address, eq::ReadEq, fid::{self, AVSetRawFid, AsRawFid, AsRawTypedFid, AsTypedFid, AvRawFid, OwnedAVFid, OwnedAVSetFid, RawFid}, AddressSource, Context, MappedAddress, MyOnceCell, MyRc, RawMappedAddress, FI_ADDR_NOTAVAIL};
 
 pub(crate) trait AddressVectorImplT {
     fn type_(&self) -> AddressVectorType;
@@ -23,16 +23,10 @@ pub(crate) struct AddressVectorImplBase<EQ: ?Sized> {
 
 impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
-    pub(crate) fn new<DEQ: ?Sized + 'static, T>(domain: &MyRc<crate::domain::DomainImplBase<DEQ>>, mut attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<DEQ: ?Sized + 'static>(domain: &MyRc<crate::domain::DomainImplBase<DEQ>>, mut attr: AddressVectorAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
         let mut c_av:   AvRawFid =  std::ptr::null_mut();
 
-        let err = 
-        if let Some(ctx) = context {
-            unsafe { libfabric_sys::inlined_fi_av_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_av, ctx as *mut T as *mut std::ffi::c_void) }
-        }
-        else {
-            unsafe { libfabric_sys::inlined_fi_av_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_av, std::ptr::null_mut()) }
-        };
+        let err = unsafe { libfabric_sys::inlined_fi_av_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_av, context) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -117,10 +111,10 @@ impl<EQ: ?Sized> AddressVectorImplBase<EQ> {
         }
     }
 
-    pub(crate) fn insertsvc_str<T>(&self, service_str: &str, flags: u64, ctx: Option<&mut T>) -> Result<libfabric_sys::fi_addr_t, crate::error::Error> {
+    pub(crate) fn insertsvc_str(&self, service_str: &str, flags: u64, ctx: Option<*mut std::ffi::c_void>) -> Result<libfabric_sys::fi_addr_t, crate::error::Error> {
         let mut fi_addr = 0u64;
         let ctx = if let Some(ctx) = ctx {
-            ctx as *mut T
+            ctx
         } else {
             std::ptr::null_mut()
         };
@@ -259,11 +253,15 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
         }
     }
 
-    pub(crate) fn new<DEQ: ?Sized + 'static, T>(domain: &crate::domain::DomainBase<DEQ>, attr: AddressVectorAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
-        
+    pub(crate) fn new<DEQ: ?Sized + 'static>(domain: &crate::domain::DomainBase<DEQ>, attr: AddressVectorAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             Self {
-                inner: MyRc::new (AddressVectorImplBase::new(&domain.inner, attr, context)?)
+                inner: MyRc::new (AddressVectorImplBase::new(&domain.inner, attr, c_void)?)
             }
         )
     }
@@ -285,7 +283,7 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
     pub fn insert(&self, addr: AvInAddress, options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = match addr {
             AvInAddress::String(str_addr) => {
-                let mapped_addr = self.inner.insertsvc_str::<()>(str_addr, options.as_raw(), None)?;
+                let mapped_addr = self.inner.insertsvc_str(str_addr, options.as_raw(), None)?;
                 vec![mapped_addr]
             },
             AvInAddress::Encoded(addresses) => {
@@ -313,10 +311,10 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
 
     /// Same as [Self::insert] but with an extra argument to provide a context
     ///
-    pub fn insert_with_context<T>(&self, addr: AvInAddress, options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
+    pub fn insert_with_context<T>(&self, addr: AvInAddress, options: AVOptions, ctx: &mut Context) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
         let fi_addresses = match addr {
             AvInAddress::String(str_addr) => {
-                let mapped_addr = self.inner.insertsvc_str(str_addr, options.as_raw(), Some(ctx))?;
+                let mapped_addr = self.inner.insertsvc_str(str_addr, options.as_raw(), Some(ctx.inner_mut()))?;
                 vec![mapped_addr]
             },
             AvInAddress::Encoded(addresses) => {
@@ -403,20 +401,20 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
 /// `AddressVectorBuilder` is used to configure and build a new `AddressVector`.
 /// It encapsulates an incremental configuration of the address vector, as provided by a `fi_av_attr`,
 /// followed by a call to `fi_av_open`  
-pub struct AddressVectorBuilder<'a, T, EQ: ?Sized> {
+pub struct AddressVectorBuilder<'a, EQ: ?Sized> {
     av_attr: AddressVectorAttr,
     eq: Option<&'a MyRc<EQ>>,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
 }
 
 
-impl<'a> AddressVectorBuilder<'a, (), ()> {
+impl<'a> AddressVectorBuilder<'a, ()> {
     
     /// Initiates the creation of a new [AddressVector] on `domain`.
     /// 
     /// The initial configuration is what would be set if no `fi_av_attr` or `context` was provided to 
     /// the `fi_av_open` call. 
-    pub fn new() -> AddressVectorBuilder<'a, (), ()> {
+    pub fn new() -> AddressVectorBuilder<'a, ()> {
         AddressVectorBuilder {
             av_attr: AddressVectorAttr::new(),
             eq: None,
@@ -427,7 +425,7 @@ impl<'a> AddressVectorBuilder<'a, (), ()> {
     /// Opens the [AddressVector] with a `name`.
     /// 
     /// Corresponds to setting field `fi_av_attr::name`
-    pub fn with_name(name: &str) -> AddressVectorBuilder<'a, (), ()> {
+    pub fn with_name(name: &str) -> AddressVectorBuilder<'a, ()> {
         let mut av_attr = AddressVectorAttr::new();
             av_attr.name(name.to_string());
         
@@ -441,7 +439,7 @@ impl<'a> AddressVectorBuilder<'a, (), ()> {
     /// Opens the [AddressVector] to read-only mode.
     /// 
     /// Corresponds to setting the corresponding bit (`FI_READ`) of the field `fi_av_attr::flags`
-    pub fn read_only(name: &str) -> AddressVectorBuilder<'a, (), ()> {
+    pub fn read_only(name: &str) -> AddressVectorBuilder<'a, ()> {
         let mut av_attr = AddressVectorAttr::new();
             av_attr.name(name.to_string())
                 .read_only();
@@ -455,13 +453,13 @@ impl<'a> AddressVectorBuilder<'a, (), ()> {
 
 }
 
-impl<'a> Default for AddressVectorBuilder<'a, (), ()> {
+impl<'a> Default for AddressVectorBuilder<'a, ()> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a, T, EQ> AddressVectorBuilder<'a, T, EQ> {
+impl<'a, EQ> AddressVectorBuilder<'a, EQ> {
 
 
     /// Sets the type of the [AddressVector].
@@ -514,7 +512,7 @@ impl<'a, T, EQ> AddressVectorBuilder<'a, T, EQ> {
     }
 }
 
-impl<'a, T, EQ: ReadEq> AddressVectorBuilder<'a, T, EQ> {
+impl<'a, EQ: ReadEq> AddressVectorBuilder<'a, EQ> {
 
     // [TODO] Asynchronous insertion does not work correctly
     // / Requests that insertions to [AddressVector] be done asynchronously.
@@ -532,7 +530,7 @@ impl<'a, T, EQ: ReadEq> AddressVectorBuilder<'a, T, EQ> {
     // }
 }
 
-impl<'a, T, EQ> AddressVectorBuilder<'a, T, EQ> {
+impl<'a, EQ> AddressVectorBuilder<'a, EQ> {
 
     /// Indicates that each node will be associated with the same number of endpoints.
     /// 
@@ -545,7 +543,7 @@ impl<'a, T, EQ> AddressVectorBuilder<'a, T, EQ> {
     /// Sets the context to be passed to the [AddressVector].
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_av_open`.
-    pub fn context(self, ctx: &'a mut T) -> AddressVectorBuilder<'a, T, EQ> {
+    pub fn context(self, ctx: &'a mut Context) -> AddressVectorBuilder<'a, EQ> {
         AddressVectorBuilder {
             av_attr: self.av_attr,
             eq: self.eq,
@@ -553,7 +551,7 @@ impl<'a, T, EQ> AddressVectorBuilder<'a, T, EQ> {
         }
     }
 }
-impl<'a, T> AddressVectorBuilder<'a, T, ()> {
+impl<'a> AddressVectorBuilder<'a, ()> {
 
     /// Constructs a new [AddressVector] with the configurations requested so far.
     /// 
@@ -570,7 +568,7 @@ impl<'a, T> AddressVectorBuilder<'a, T, ()> {
     }
     
 }
-impl<'a, T, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, T, EQ> {
+impl<'a, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, EQ> {
 
     /// Constructs a new [AddressVector] with the configurations requested so far.
     /// 
@@ -597,16 +595,10 @@ pub(crate) struct AddressVectorSetImpl {
 
 impl AddressVectorSetImpl {
 
-    fn new<EQ: AsRawFid + 'static + ?Sized + ReadEq, T>(av: &AddressVectorBase<EQ>, mut attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    fn new<EQ: AsRawFid + 'static + ?Sized + ReadEq>(av: &AddressVectorBase<EQ>, mut attr: AddressVectorSetAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
         let mut c_set: AVSetRawFid = std::ptr::null_mut();
 
-        let err = 
-        if let Some(ctx) = context {
-            unsafe { libfabric_sys::inlined_fi_av_set(av.as_raw_typed_fid(), attr.get_mut(), &mut c_set, (ctx as *mut T).cast()) }
-        }
-        else {
-            unsafe { libfabric_sys::inlined_fi_av_set(av.as_raw_typed_fid(), attr.get_mut(), &mut c_set, std::ptr::null_mut()) }
-        };
+        let err = unsafe { libfabric_sys::inlined_fi_av_set(av.as_raw_typed_fid(), attr.get_mut(), &mut c_set, context) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -703,11 +695,16 @@ pub struct AddressVectorSet {
 
 impl AddressVectorSet {
 
-    pub(crate) fn new<EQ: AsRawFid + 'static + ?Sized + ReadEq, T>(av: &AddressVectorBase<EQ>, attr: AddressVectorSetAttr, context: Option<&mut T>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<EQ: AsRawFid + 'static + ?Sized + ReadEq>(av: &AddressVectorBase<EQ>, attr: AddressVectorSetAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             Self {
                 inner: 
-                    MyRc::new(AddressVectorSetImpl::new(av, attr, context)?)
+                    MyRc::new(AddressVectorSetImpl::new(av, attr, c_void)?)
             }
         )
     }
@@ -768,14 +765,14 @@ impl AddressVectorSet {
 /// `AddressVectorSetBuilder` is used to configure and build a new [AddressVectorSet].
 /// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_av_set_attr`,
 /// followed by a call to `fi_av_set`  
-pub struct AddressVectorSetBuilder<'a, T, EQ: ReadEq + ?Sized> {
+pub struct AddressVectorSetBuilder<'a, EQ: ReadEq + ?Sized> {
     avset_attr: AddressVectorSetAttr,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
     av: &'a AddressVectorBase<EQ>,
 }
 
-impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, (), EQ> {
-    pub fn new_from_range(av: &'a AddressVectorBase<EQ>, start_addr: &crate::TableMappedAddress, end_addr: &crate::TableMappedAddress, stride: usize) -> AddressVectorSetBuilder<'a, (), EQ> {
+impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, EQ> {
+    pub fn new_from_range(av: &'a AddressVectorBase<EQ>, start_addr: &crate::TableMappedAddress, end_addr: &crate::TableMappedAddress, stride: usize) -> AddressVectorSetBuilder<'a, EQ> {
         if ! matches!(av.inner.type_(), AddressVectorType::Table) {
             panic!("Can only use new_from_range for AVs of Table addressing type");
         }
@@ -793,7 +790,7 @@ impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, (), EQ> {
         }
     }
 
-    pub fn new(av: &'a AddressVectorBase<EQ>) -> AddressVectorSetBuilder<'a, (), EQ> {
+    pub fn new(av: &'a AddressVectorBase<EQ>) -> AddressVectorSetBuilder<'a, EQ> {
         let mut avset_attr = AddressVectorSetAttr::new();
             avset_attr.c_attr.start_addr = FI_ADDR_NOTAVAIL;
             avset_attr.c_attr.end_addr = FI_ADDR_NOTAVAIL;
@@ -806,7 +803,7 @@ impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, (), EQ> {
     }
 }
 
-impl<'a, T, EQ: ?Sized +  ReadEq + 'static> AddressVectorSetBuilder<'a, T, EQ> {
+impl<'a, EQ: ?Sized +  ReadEq + 'static> AddressVectorSetBuilder<'a, EQ> {
 
     /// Indicates the expected the number of members that will be a part of the AV set.
     /// 
@@ -840,7 +837,7 @@ impl<'a, T, EQ: ?Sized +  ReadEq + 'static> AddressVectorSetBuilder<'a, T, EQ> {
     /// Sets the context to be passed to the AV set.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_av_set`.
-    pub fn context(self, ctx: &'a mut T) -> AddressVectorSetBuilder<'a, T, EQ> {
+    pub fn context(self, ctx: &'a mut Context) -> AddressVectorSetBuilder<'a, EQ> {
         AddressVectorSetBuilder {
             avset_attr: self.avset_attr,
             av: self.av,

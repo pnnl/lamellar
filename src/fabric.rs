@@ -5,7 +5,7 @@ use std::ffi::{CStr, CString};
 //================== Fabric (fi_fabric) ==================//
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, BorrowedTypedFid, FabricRawFid, OwnedFabricFid, RawFid}, info::{InfoEntry, Version}, utils::check_error, MyRc};
+use crate::{fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, BorrowedTypedFid, FabricRawFid, OwnedFabricFid, RawFid}, info::{InfoEntry, Version}, utils::check_error, Context, MyRc};
 
 pub(crate) struct FabricImpl {
     pub(crate) c_fabric: OwnedFabricFid,
@@ -24,16 +24,10 @@ pub struct Fabric {
 
 impl FabricImpl {
 
-    pub(crate) fn new<T0>( attr: FabricAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new( attr: FabricAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
         let mut c_fabric: FabricRawFid  = std::ptr::null_mut();
         let mut c_attr = unsafe {attr.get()};
-        let err = 
-            if let Some(ctx) = context {
-                unsafe {libfabric_sys::fi_fabric(&mut c_attr, &mut c_fabric, (ctx as *mut T0).cast())}
-            }
-            else {
-                unsafe {libfabric_sys::fi_fabric(&mut c_attr, &mut c_fabric, std::ptr::null_mut())}
-            };
+        let err = unsafe {libfabric_sys::fi_fabric(&mut c_attr, &mut c_fabric, context)};
         
         if err != 0 || c_fabric.is_null() {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -63,10 +57,15 @@ impl FabricImpl {
 
 impl Fabric {
     
-    pub(crate) fn new<T0>(attr: FabricAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(attr: FabricAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+        
         Ok(
             Self { inner: 
-                MyRc::new(FabricImpl::new(attr, context)?)
+                MyRc::new(FabricImpl::new(attr, c_void)?)
             }
         )
     }
@@ -213,28 +212,28 @@ impl FabricAttr {
 /// `FabricBuilder` is used to configure and build a new `Fabric`.
 /// It encapsulates an incremental configuration of the address vector, as provided by a `fi_fabric_attr`,
 /// followed by a call to `fi_fabric`  
-pub struct FabricBuilder<'a, T> {
-    ctx: Option<&'a mut T>,
+pub struct FabricBuilder<'a> {
+    ctx: Option<&'a mut Context>,
 }
 
-impl<'a> FabricBuilder<'a, ()> {
+impl<'a> FabricBuilder<'a> {
     
     /// Initiates the creation of a new [Fabric] based on the respective field of the `info` entry.
     /// 
     /// The initial configuration is what is set in the `fi_info::fabric_attr` field and no `context` is provided.
-    pub fn new() -> FabricBuilder<'a, ()> {
-        FabricBuilder::<()> {
+    pub fn new() -> FabricBuilder<'a> {
+        FabricBuilder {
             ctx: None,
         }
     }
 }
 
-impl<'a, T> FabricBuilder<'a, T> {
+impl<'a> FabricBuilder<'a> {
 
     /// Sets the context to be passed to the `Fabric`.
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_fabric`.
-    pub fn context(self, ctx: &'a mut T) -> FabricBuilder<'a, T> {
+    pub fn context(self, ctx: &'a mut Context) -> FabricBuilder<'a> {
         FabricBuilder {
             ctx: Some(ctx),
         }

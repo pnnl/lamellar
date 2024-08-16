@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{cntr::{Counter, ReadCntr}, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, Endpoint}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid}, MyOnceCell, MyRc};
+use crate::{cntr::{Counter, ReadCntr}, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, Endpoint}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid}, Context, MyOnceCell, MyRc};
 
 pub struct Receive;
 pub struct Transmit;
@@ -81,17 +81,9 @@ pub(crate) type TxContextImpl = XContextBaseImpl<Transmit, dyn ReadCq>;
 
 impl<CQ: ?Sized> TxContextImplBase<CQ> {
 
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: Option<&mut T0>) -> Result<TxContextImplBase<CQ>, crate::error::Error> {
+    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: *mut std::ffi::c_void) -> Result<TxContextImplBase<CQ>, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-
-
-        let err = 
-            if let Some(ctx) = context {
-                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, (ctx as *mut T0).cast())}
-            }
-            else {
-                unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, std::ptr::null_mut())}
-            };
+        let err = unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, context)};
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -144,10 +136,15 @@ impl TxContextImpl {
 }
 
 impl<CQ: ?Sized> TxContextBase<CQ> {
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: Option<&mut T0>) -> Result<TxContextBase<CQ>, crate::error::Error> {
+    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: Option<&mut Context>) -> Result<TxContextBase<CQ>, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             Self {
-                inner: MyRc::new(TxContextImplBase::<CQ>::new(ep, index, attr, context)?)
+                inner: MyRc::new(TxContextImplBase::<CQ>::new(ep, index, attr, c_void)?)
             }
         )
     }
@@ -164,17 +161,17 @@ impl TxContext {
 }
 
 //================== TxContext Builder ==================//
-pub struct TxContextBuilder<'a, T, E> {
+pub struct TxContextBuilder<'a, E> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
     pub(crate) ep: &'a Endpoint<E>,
-    pub(crate) ctx: Option<&'a mut T>,
+    pub(crate) ctx: Option<&'a mut Context>,
 }
 
 
-impl<'a> TxContextBuilder<'a, (), ()> {
-    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> TxContextBuilder<'a, (), E> {
-        TxContextBuilder::<(), E> {
+impl<'a> TxContextBuilder<'a, ()> {
+    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> TxContextBuilder<'a, E> {
+        TxContextBuilder::<E> {
             tx_attr: TxAttr::new(),
             index,
             ep,
@@ -183,7 +180,7 @@ impl<'a> TxContextBuilder<'a, (), ()> {
     }
 }
 
-impl <'a, T, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, T, E> {
+impl <'a, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, E> {
     
     // pub fn caps(mut self, caps: TxCaps) -> Self {
     //     self.tx_attr.caps(caps);
@@ -236,7 +233,7 @@ impl <'a, T, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, T, E> {
         self
     }
 
-    pub fn context(self, ctx: &'a mut T) -> TxContextBuilder<'a, T, E> {
+    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, E> {
         TxContextBuilder {
             tx_attr: self.tx_attr,
             index: self.index,
@@ -298,6 +295,7 @@ impl TxAttr {
         }
     }
     
+    #[allow(dead_code)]
     pub(crate) fn set_caps(&mut self, caps: TxCaps) -> &mut Self {
         self.caps = caps;
         self
@@ -419,15 +417,9 @@ pub(crate) type RxContextImplBase<CQ> = XContextBaseImpl<Receive, CQ>;
 
 impl<CQ: ?Sized> RxContextImplBase<CQ> {
 
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-        let err = 
-            if let Some(ctx) = context {
-                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, (ctx as *mut T0).cast())}
-            }
-            else {
-                unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, std::ptr::null_mut())}
-            };
+        let err = unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, context)};
         
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -479,10 +471,15 @@ impl RxContextImplBase<dyn ReadCq> {
 }
 
 impl<CQ: ?Sized> RxContextBase<CQ> {
-    pub(crate) fn new<T0>(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             Self {
-                inner: MyRc::new(RxContextImplBase::new(ep, index, attr, context)?)
+                inner: MyRc::new(RxContextImplBase::new(ep, index, attr, c_void)?)
             }
         )
     }
@@ -501,16 +498,16 @@ impl RxContextBase<dyn ReadCq> {
 
 
 //================== RxContext Builder ==================//
-pub struct ReceiveContextBuilder<'a, T, E> {
+pub struct ReceiveContextBuilder<'a, E> {
     pub(crate) rx_attr: RxAttr,
     pub(crate) index: i32,
     pub(crate) ep: &'a Endpoint<E>,
-    pub(crate) ctx: Option<&'a mut T>,
+    pub(crate) ctx: Option<&'a mut Context>,
 }
 
-impl<'a> ReceiveContextBuilder<'a, (), ()> {
-    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> ReceiveContextBuilder<'a, (), E> {
-        ReceiveContextBuilder::<(), E> {
+impl<'a> ReceiveContextBuilder<'a, ()> {
+    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> ReceiveContextBuilder<'a, E> {
+        ReceiveContextBuilder::<E> {
             rx_attr: RxAttr::new(),
             index,
             ep,
@@ -519,7 +516,7 @@ impl<'a> ReceiveContextBuilder<'a, (), ()> {
     }
 }
 
-impl<'a, T, E: AsRawTypedFid<Output = EpRawFid>> ReceiveContextBuilder<'a, T, E> {
+impl<'a, E: AsRawTypedFid<Output = EpRawFid>> ReceiveContextBuilder<'a, E> {
 
     // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
     //     self.rx_attr.caps(caps);
@@ -562,7 +559,7 @@ impl<'a, T, E: AsRawTypedFid<Output = EpRawFid>> ReceiveContextBuilder<'a, T, E>
         self
     }
 
-    pub fn context(self, ctx: &'a mut T) -> ReceiveContextBuilder<'a, T, E> {
+    pub fn context(self, ctx: &'a mut Context) -> ReceiveContextBuilder<'a, E> {
         ReceiveContextBuilder {
             rx_attr: self.rx_attr,
             index: self.index,
@@ -623,6 +620,7 @@ impl RxAttr {
         }
     }
     
+    #[allow(dead_code)]
     pub(crate) fn set_caps(&mut self, caps: RxCaps) -> &mut Self {
         self.caps = caps;
         self

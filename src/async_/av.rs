@@ -1,11 +1,11 @@
-use crate::{av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase}, domain::DomainBase, enums::AVOptions, ep::Address, eq::Event, fid::{AsRawFid, AsRawTypedFid, Fid}, MappedAddress, MyRc, RawMappedAddress};
+use crate::{av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase}, domain::DomainBase, enums::AVOptions, ep::Address, eq::Event, fid::{AsRawFid, AsRawTypedFid, Fid}, Context, MappedAddress, MyRc, RawMappedAddress};
 use super::{eq::{EventQueue, AsyncReadEq}, AsyncCtx};
 
 
 pub(crate) type AsyncAddressVectorImpl = AddressVectorImplBase<dyn AsyncReadEq>;
 
 impl AsyncAddressVectorImpl {
-    pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Vec<RawMappedAddress>), crate::error::Error> { // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async
+    pub(crate) async fn insert_async(&self, addr: &[Address], flags: u64, user_ctx: Option<*mut std::ffi::c_void>) -> Result<(Event,Vec<u64>), crate::error::Error> { // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async
         let mut async_ctx = AsyncCtx{user_ctx};
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len() );
@@ -44,30 +44,30 @@ pub type AddressVector = AddressVectorBase<dyn AsyncReadEq >;
 impl AddressVector {
     pub async fn insert_async(&self, addr: &[Address], options: AVOptions) -> Result<(Event, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
         let (event, fi_addresses) = self.inner.insert_async(addr, options.as_raw(), None).await?;
-        Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
+        Ok((event, fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(RawMappedAddress::from_raw(self.inner.type_, fi_addr), crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
     }
     
     pub async fn insert_with_context_async<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<(Event, Vec<MappedAddress>), crate::error::Error> { // [TODO] as_raw_typed_fid async
         let (event, fi_addresses) =self.inner.insert_async(addr, options.as_raw(), Some((ctx as *mut T).cast())).await?;
-        Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(fi_addr, crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
+        Ok((event,fi_addresses.into_iter().map(|fi_addr| MappedAddress::from_raw_addr(RawMappedAddress::from_raw(self.inner.type_, fi_addr), crate::AddressSource::Av(self.inner.clone()))).collect::<Vec<_>>()))
     }
     
 }
 
-pub struct AddressVectorBuilder<'a, T> {
+pub struct AddressVectorBuilder<'a> {
     av_attr: AddressVectorAttr,
     eq: MyRc<dyn AsyncReadEq>,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
 }
 
 
-impl<'a> AddressVectorBuilder<'a, ()> {
+impl<'a> AddressVectorBuilder<'a> {
     
     /// Initiates the creation of a new [AddressVector] on `domain`.
     /// 
     /// The initial configuration is what would be set if no `fi_av_attr` or `context` was provided to 
     /// the `fi_av_open` call. 
-    pub fn new<EQ: AsyncReadEq + 'static>(eq: &EventQueue<EQ>) -> AddressVectorBuilder<'a, ()> {
+    pub fn new<EQ: AsyncReadEq + 'static>(eq: &EventQueue<EQ>) -> AddressVectorBuilder<'a> {
         let mut av_attr = AddressVectorAttr::new();
             av_attr.async_();
         AddressVectorBuilder {
@@ -78,7 +78,7 @@ impl<'a> AddressVectorBuilder<'a, ()> {
     }
 }
 
-impl<'a, T> AddressVectorBuilder<'a, T> {
+impl<'a> AddressVectorBuilder<'a> {
 
 
     /// Sets the type of the [AddressVector].
@@ -163,7 +163,7 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
     /// Sets the context to be passed to the [AddressVector].
     /// 
     /// Corresponds to passing a non-NULL `context` value to `fi_av_open`.
-    pub fn context(self, ctx: &'a mut T) -> AddressVectorBuilder<'a, T> {
+    pub fn context(self, ctx: &'a mut Context) -> AddressVectorBuilder<'a> {
         AddressVectorBuilder {
             av_attr: self.av_attr,
             eq: self.eq,
@@ -187,7 +187,7 @@ impl<'a, T> AddressVectorBuilder<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::domain::DomainBuilder;
-    use crate::info::{Info, InfoHints, Version};
+    use crate::info::{Info, Version};
     use crate::async_::eq::EventQueueBuilder;
 
     use super::AddressVectorBuilder;
@@ -259,7 +259,7 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{async_::eq::EventQueueBuilder, domain::DomainBuilder, info::{Info, InfoHints, Version}};
+    use crate::{async_::eq::EventQueueBuilder, domain::DomainBuilder, info::{Info, Version}};
 
     use super::AddressVectorBuilder;
 

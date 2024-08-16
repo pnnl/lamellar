@@ -1,4 +1,4 @@
-use crate::{av::AddressVectorBase, cq::ReadCq, domain::DomainBase, ep::{ActiveEndpoint, Address, EndpointAttr, EndpointBase, EndpointImplBase, EpCq, IncompleteBindCntr, PassiveEndpointBase, PassiveEndpointImplBase}, eq::{Event, EventQueueBase, ReadEq}, fid::{AsRawFid, AsRawTypedFid, Fid, RawFid}, info::InfoEntry, utils::check_error, MyRc};
+use crate::{av::AddressVectorBase, cq::ReadCq, domain::DomainBase, ep::{ActiveEndpoint, Address, EndpointAttr, EndpointBase, EndpointImplBase, EpCq, IncompleteBindCntr, PassiveEndpointBase, PassiveEndpointImplBase}, eq::{Event, EventQueueBase, ReadEq}, fid::{AsRawFid, AsRawTypedFid, Fid, RawFid}, info::InfoEntry, utils::check_error, Context, MyRc};
 use super::{cq::{AsyncReadCq, CompletionQueue}, eq::AsyncReadEq};
 
 pub struct ConnectionListener {
@@ -27,10 +27,15 @@ pub type Endpoint<T> = EndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn Asy
 
 impl Endpoint<()> {
 
-    pub fn new<T0, E, DEQ:?Sized + 'static >(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut T0>) -> Result< Endpoint<E>, crate::error::Error> {
+    pub fn new<E, DEQ:?Sized + 'static >(domain: &crate::domain::DomainBase<DEQ>, info: &InfoEntry<E>, flags: u64, context: Option<&mut Context>) -> Result< Endpoint<E>, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             EndpointBase::<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
-                inner:MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, context)?),
+                inner:MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
             }
         )
     }
@@ -55,6 +60,7 @@ impl<T> Endpoint<T> {
     }
 }
 
+#[allow(dead_code)]
 pub struct IncompleteBindCq<'a, EP> {
     pub(crate) ep: &'a EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>,
     pub(crate) flags: u64,
@@ -267,17 +273,17 @@ impl<E> PassiveEndpointBase<E, dyn AsyncReadEq> {
 
 
 
-pub struct EndpointBuilder<'a, T, E> {
+pub struct EndpointBuilder<'a, E> {
     ep_attr: EndpointAttr,
     flags: u64,
     info: &'a InfoEntry<E>,
-    ctx: Option<&'a mut T>,
+    ctx: Option<&'a mut Context>,
 }
 
-impl<'a> EndpointBuilder<'a, (), ()> {
+impl<'a> EndpointBuilder<'a, ()> {
 
-    pub fn new<E>(info: &'a InfoEntry<E>, ) -> EndpointBuilder<'a, (), E> {
-        EndpointBuilder::<(), E> {
+    pub fn new<E>(info: &'a InfoEntry<E>, ) -> EndpointBuilder<'a, E> {
+        EndpointBuilder {
             ep_attr: EndpointAttr::new(),
             flags: 0,
             info,
@@ -286,7 +292,7 @@ impl<'a> EndpointBuilder<'a, (), ()> {
     }
 }
 
-impl<'a, E> EndpointBuilder<'a, (), E> {
+impl<'a, E> EndpointBuilder<'a, E> {
 
     pub fn build<DEQ: ?Sized +'static>(self, domain: &DomainBase<DEQ>) -> Result<Endpoint<E>, crate::error::Error> {
         Endpoint::new(domain, self.info, self.flags, self.ctx)

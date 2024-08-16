@@ -3,7 +3,7 @@ use std::ffi::CString;
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{AddressVectorType, DomainCaps, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass}, eq::{EventQueue, EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, info::InfoEntry, utils::{check_error, AsFiType}, MyOnceCell, MyRc};
+use crate::{enums::{AddressVectorType, AtomicOperation, DomainCaps, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass}, eq::{EventQueue, EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, info::InfoEntry, utils::check_error, AsFiType, Context, MyOnceCell, MyRc};
 
 pub(crate) struct DomainImplBase<EQ: ?Sized> {
     pub(crate) c_domain: OwnedDomainFid,
@@ -45,24 +45,16 @@ impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
 
 impl<EQ: ?Sized > DomainImplBase<EQ> {
 
-    pub(crate) fn new<T0, E>(fabric: &MyRc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<E>(fabric: &MyRc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
         let mut c_domain: DomainRawFid = std::ptr::null_mut();
         let err =
-            if let Some(ctx) = context {
-                if flags == 0 {
-                    unsafe { libfabric_sys::inlined_fi_domain(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, (ctx as *mut T0).cast()) }
-                    
-                }
-                else {
-                    unsafe { libfabric_sys::inlined_fi_domain2(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, flags, (ctx as *mut T0).cast()) }
-                }
-            }
-            else if flags == 0 {
-                unsafe { libfabric_sys::inlined_fi_domain(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, std::ptr::null_mut()) }
+            if flags == 0 {
+                unsafe { libfabric_sys::inlined_fi_domain(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, context) }
             }
             else {
-                unsafe { libfabric_sys::inlined_fi_domain2(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, flags, std::ptr::null_mut()) }
+                unsafe { libfabric_sys::inlined_fi_domain2(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, flags, context) }
             };
+
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -108,7 +100,7 @@ impl<EQ: ?Sized > DomainImplBase<EQ> {
     //     crate::ep::Endpoint::from_attr_with_context(self, rx_attr, context)
     // }
 
-    pub(crate) fn query_atomic<T: AsFiType>(&self, op: crate::enums::Op, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
+    pub(crate) fn query_atomic<T: AsFiType>(&self, op: impl AtomicOperation, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.as_raw_typed_fid(), T::as_fi_datatype(), op.as_raw(), attr.get_mut(), flags )};
 
         check_error(err.try_into().unwrap())
@@ -212,11 +204,16 @@ impl<EQ: ?Sized> DomainImplT for DomainBase<EQ> {
 
 impl<EQ: ?Sized> DomainBase<EQ> {
     
-    pub(crate) fn new<T0, E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut T0>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
         Ok(
             Self{
                 inner: 
-                MyRc::new(DomainImplBase::new(&fabric.inner, info, flags, domain_attr, context)?)
+                MyRc::new(DomainImplBase::new(&fabric.inner, info, flags, domain_attr, c_void)?)
             }
         )    
     }
@@ -240,7 +237,7 @@ impl<EQ: ?Sized> DomainBase<EQ> {
     /// Returns true if the provider supports operations `op` for datatype `T` and atomic ops as reflected in `flags`.
     /// 
     /// Corresponds to `fi_query_atomic` with `datatype` automatically inferred from `T`.
-    pub fn query_atomic<T: AsFiType>(&self, op: crate::enums::Op, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Flags
+    pub fn query_atomic<T: AsFiType>(&self, op: impl AtomicOperation, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Flags
         
         self.inner.query_atomic::<T>(op, attr, flags)
     }
@@ -392,6 +389,7 @@ impl DomainAttr {
        }  
     }
 
+    #[allow(dead_code)]
     pub(crate) unsafe fn get(&self) -> libfabric_sys::fi_domain_attr {
         libfabric_sys::fi_domain_attr {
             domain: self.domain_id as *mut libfabric_sys::fid_domain,
@@ -535,26 +533,28 @@ impl DomainAttr {
 /// `DomainBuilder` is used to configure and build a new [Domain].
 /// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_domain_attr`,
 /// followed by a call to `fi_domain_open`  
-pub struct DomainBuilder<'a, T, E> {
+pub struct DomainBuilder<'a, E> {
     pub(crate) fabric: &'a crate::fabric::Fabric,
     pub(crate) info: &'a InfoEntry<E>,
-    pub(crate) ctx: Option<&'a mut T>,
+    pub(crate) ctx: Option<&'a mut Context>,
+    pub(crate) peer_ctx: Option<&'a mut PeerDomainCtx>,
     pub(crate) flags: u64,
 }
 
-impl<'a> DomainBuilder<'a, (), ()> {
+impl<'a> DomainBuilder<'a, ()> {
 
 
     /// Initiates the creation of new [Domain] on `fabric`, using the configuration found in `info`.
     /// 
     /// The initial configuration is what would be set if no `fi_domain_attr` or `context` was provided to 
     /// the `fi_domain` call. 
-    pub fn new<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>) -> DomainBuilder<'a, (), E> {
-        DomainBuilder::<(), E> {
+    pub fn new<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>) -> DomainBuilder<'a, E> {
+        DomainBuilder::<E> {
             fabric,
             info,
             flags: 0,
             ctx: None,
+            peer_ctx: None,
         }
     }
 
@@ -563,34 +563,36 @@ impl<'a> DomainBuilder<'a, (), ()> {
     /// 
     /// The initial configuration is what would be set if no `fi_domain_attr` was provided to 
     /// the `fi_domain2` call and `context` was set to a `fi_peer_context`. 
-    pub fn new_with_peer<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>, peer_ctx: &'a mut PeerDomainCtx) -> DomainBuilder<'a, PeerDomainCtx, E> {
-        DomainBuilder::<PeerDomainCtx, E> {
+    pub fn new_with_peer<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>, peer_ctx: &'a mut PeerDomainCtx) -> DomainBuilder<'a, E> {
+        DomainBuilder::<E> {
             fabric,
             info,
             flags: libfabric_sys::FI_PEER,
-            ctx: Some(peer_ctx),
+            ctx: None,
+            peer_ctx: Some(peer_ctx),
         }
     }
 
 
 }
 
-impl<'a, E> DomainBuilder<'a, (), E> {
+impl<'a, E> DomainBuilder<'a, E> {
     
     /// Sets the context to be passed to the domain.
     /// 
     /// Corresponds to passing a non-NULL, non-`fi_peer_context` `context` value to `fi_domain`.
-    pub fn context<T>(self, ctx: &'a mut T) -> DomainBuilder<'a, T, E> {
+    pub fn context(self, ctx: &'a mut Context) -> DomainBuilder<'a, E> {
         DomainBuilder {
             fabric: self.fabric,
             info: self.info,
             flags: self.flags,
             ctx: Some(ctx),
+            peer_ctx: self.peer_ctx,
         }
     }
 }
 
-impl<'a, T, E> DomainBuilder<'a, T, E> {
+impl<'a, E> DomainBuilder<'a, E> {
     /// Constructs a new [Domain] with the configurations requested so far.
     /// 
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
@@ -604,7 +606,7 @@ impl<'a, T, E> DomainBuilder<'a, T, E> {
 
 }
 
-impl<'a, T, E> DomainBuilder<'a, T, E> {
+impl<'a, E> DomainBuilder<'a, E> {
     /// Constructs a new [Domain] with the configurations requested so far.
     /// 
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
