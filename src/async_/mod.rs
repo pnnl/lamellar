@@ -9,6 +9,7 @@ pub mod comm;
 pub mod cq;
 mod xcontext;
 
+// [TODO] Remove user ctx and replace with a proper Context
 pub struct AsyncCtx {
     pub(crate) user_ctx: Option<*mut std::ffi::c_void>,
 }

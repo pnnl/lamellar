@@ -1,4 +1,4 @@
-use libfabric::{async_::comm::rma::AsyncWriteEp, cntr::{ReadCntr, WaitCntr}, comm::{message::{RecvEp, SendEp}, rma::{ReadEp, WriteEp}, tagged::TagRecvEp}, ep::{ActiveEndpoint, BaseEndpoint}, infocapsoptions::RmaDefaultCap, Context1};
+use libfabric::{async_::comm::rma::AsyncWriteEp, cntr::{ReadCntr, WaitCntr}, comm::{message::{RecvEp, SendEp}, rma::{ReadEp, WriteEp}, tagged::TagRecvEp}, ep::{ActiveEndpoint, BaseEndpoint}, infocapsoptions::RmaDefaultCap};
 use std::time::Instant;
 
 
@@ -65,8 +65,8 @@ pub struct TestsGlobalCtx {
     pub test_sizes: Vec<usize>,
     pub window_size: usize,
     pub comp_method: CompMeth,
-    pub tx_ctx: Context,
-    pub rx_ctx: Context,
+    pub tx_ctx: Option<Context>,
+    pub rx_ctx: Option<Context>,
     pub options: u64,
 }
 use libfabric::FabInfoCaps;
@@ -204,8 +204,8 @@ impl TestsGlobalCtx {
         ],
         window_size: 64,
         comp_method: CompMeth::WaitFd, 
-        tx_ctx: Context::Context1(Context1::new()),
-        rx_ctx: Context::Context1(Context1::new()),
+        tx_ctx: None,
+        rx_ctx: None,
         options: FT_OPT_RX_CQ | FT_OPT_TX_CQ}
     }
 }
@@ -454,13 +454,15 @@ pub enum PassiveEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
 
 
 #[allow(clippy::type_complexity)]
-pub async fn ft_server_connect<T: AsyncReadEq + 'static, M: infocapsoptions::Caps + MsgDefaultCap, TT: infocapsoptions::Caps +TagDefaultCap>(pep: &PassiveEndpointCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &EventQueue<T>, fab: &fabric::Fabric) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub async fn ft_server_connect<T: AsyncReadEq + 'static, M: infocapsoptions::Caps + MsgDefaultCap + 'static, TT: infocapsoptions::Caps +TagDefaultCap + 'static>(pep: &PassiveEndpointCaps<M, TT>, gl_ctx: &mut TestsGlobalCtx, eq: &EventQueue<T>, fab: &fabric::Fabric) -> (CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M,TT>,  Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     match pep {
 
         
         PassiveEndpointCaps::Msg(pep) => {
             let new_info =   ft_retrieve_conn_req(pep).await;
+            gl_ctx.tx_ctx = Some(new_info.allocate_context());
+            gl_ctx.rx_ctx = Some(new_info.allocate_context());
             let domain = ft_open_domain_res(&new_info, fab);
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain, eq);
             let mut ep = EndpointCaps::Msg(ep);
@@ -470,6 +472,8 @@ pub async fn ft_server_connect<T: AsyncReadEq + 'static, M: infocapsoptions::Cap
         }
         PassiveEndpointCaps::Tagged(pep) => {
             let new_info = ft_retrieve_conn_req(pep).await;
+            gl_ctx.tx_ctx = Some(new_info.allocate_context());
+            gl_ctx.rx_ctx = Some(new_info.allocate_context());
             let domain = ft_open_domain_res(&new_info, fab);
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&new_info, gl_ctx, &domain, eq);
             let mut ep = EndpointCaps::Tagged(ep);
@@ -565,7 +569,7 @@ pub fn ft_set_tx_rx_sizes<E>(info: &InfoEntry<E>, max_test_size: usize, tx_size:
     *tx_size +=  ft_tx_prefix_size(info);
 }
 
-pub fn ft_alloc_msgs<I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, domain: &DomainBase<()>, ep: &Endpoint<E>) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_alloc_msgs<I, E: 'static>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, domain: &DomainBase<()>, ep: &Endpoint<E>) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     let alignment: usize = 64;
     ft_set_tx_rx_sizes(info, *gl_ctx.test_sizes.last().unwrap(), &mut gl_ctx.tx_size, &mut gl_ctx.rx_size);
@@ -595,7 +599,7 @@ pub fn ft_alloc_msgs<I, E>(info: &InfoEntry<I>, gl_ctx: &mut TestsGlobalCtx, dom
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep_recv<EQ: AsyncReadEq + 'static, CNTR: WaitCntr + 'static , E, M: MsgDefaultCap, T: TagDefaultCap>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &mut EndpointCaps<M, T>, domain: &DomainBase<()>, cq_type: &CqType, eq: &EventQueue<EQ>, av: &Option<AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_enable_ep_recv<EQ: AsyncReadEq + 'static, CNTR: WaitCntr + 'static , E, M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(info: &InfoEntry<E>, gl_ctx: &mut TestsGlobalCtx, ep: &mut EndpointCaps<M, T>, domain: &DomainBase<()>, cq_type: &CqType, eq: &EventQueue<EQ>, av: &Option<AddressVector>, tx_cntr: &Option<Counter<CNTR>>, rx_cntr: &Option<Counter<CNTR>>, rma_cntr: &Option<Counter<CNTR>>) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     
     let (mr, mut data_desc)  = match ep {
         EndpointCaps::Msg(ep) => {
@@ -625,12 +629,14 @@ pub enum InfoWithCaps<M,T> {
 }
 
 #[allow(clippy::type_complexity)]
-pub async fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, source: bool) -> (InfoWithCaps<M, T>, EndpointCaps<M, T>, DomainBase<()>, CqType, Option<Counter<CounterOptions>>, Option<Counter<CounterOptions>>, Option<MemoryRegion>, AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
+pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String, source: bool) -> (InfoWithCaps<M, T>, EndpointCaps<M, T>, DomainBase<()>, CqType, Option<Counter<CounterOptions>>, Option<Counter<CounterOptions>>, Option<MemoryRegion>, AddressVector, Option<libfabric::mr::MemoryRegionDesc>) {
     
     match hints {
         HintsCaps::Msg(hints) => {
             let info = ft_getinfo(hints, node.clone(), service.clone(), false, source);
             let entry = info.into_iter().next().unwrap();
+            gl_ctx.tx_ctx = Some(entry.allocate_context());
+            gl_ctx.rx_ctx = Some(entry.allocate_context());
             let (_fabric, eq, domain) = ft_open_fabric_res(&entry);
             let (cq_type, tx_cntr, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
             let mut ep =  EndpointCaps::Msg(ep);
@@ -642,6 +648,8 @@ pub async fn ft_init_fabric<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps
         HintsCaps::Tagged(hints) => {
             let info =ft_getinfo(hints, node.clone(), service.clone(), false, source);
             let entry = info.into_iter().next().unwrap();
+            gl_ctx.tx_ctx = Some(entry.allocate_context());
+            gl_ctx.rx_ctx = Some(entry.allocate_context());
             let (_fabric, eq, domain) = ft_open_fabric_res(&entry);
             let (cq_type, tx_cntr, rx_cntr, rma_ctr, ep, av) =  ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
             let mut ep = EndpointCaps::Tagged(ep);
@@ -939,10 +947,10 @@ pub async fn ft_post_tx<CQ: ReadCq, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: 
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index+size];
     match ep {
         EndpointCaps::Msg(ep) => {
-            msg_post(SendOp::Send, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, data_desc, buf, data).await;
+            msg_post(SendOp::Send, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), fi_addr, tx_cq, ep, data_desc, buf, data).await;
         }
         EndpointCaps::Tagged(ep) => {
-            tagged_post(TagSendOp::TagSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, data_desc, buf, data).await;
+            tagged_post(TagSendOp::TagSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), fi_addr, gl_ctx.ft_tag, tx_cq, ep, data_desc, buf, data).await;
         }
     }
 }
@@ -968,10 +976,10 @@ pub fn ft_post_rx<CQ: ReadCq, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &mut T
 
     match ep {
         EndpointCaps::Msg(ep) => {
-            msg_post_recv(RecvOp::Recv, &mut gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, &mut gl_ctx.rx_ctx, &gl_ctx.remote_address, rx_cq, ep, data_desc, buf, NO_CQ_DATA);
+            msg_post_recv(RecvOp::Recv, &mut gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, &mut gl_ctx.rx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, rx_cq, ep, data_desc, buf, NO_CQ_DATA);
         }
         EndpointCaps::Tagged(ep) => {
-            tagged_post_recv(TagRecvOp::TagRecv, &mut gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, &mut gl_ctx.rx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, rx_cq, ep, data_desc, buf, NO_CQ_DATA);
+            tagged_post_recv(TagRecvOp::TagRecv, &mut gl_ctx.rx_seq, &mut gl_ctx.rx_cq_cntr, &mut gl_ctx.rx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, gl_ctx.ft_tag, rx_cq, ep, data_desc, buf, NO_CQ_DATA);
         }
     }
 }
@@ -996,10 +1004,10 @@ pub fn ft_post_inject<CQ: ReadCq, M: MsgDefaultCap, T: TagDefaultCap>(gl_ctx: &m
     
     match ep {
         EndpointCaps::Msg(ep) => {
-            msg_post_inject(&mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, tx_cq, ep, &mut None, buf, NO_CQ_DATA);
+            msg_post_inject(&mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), fi_addr, tx_cq, ep, &mut None, buf, NO_CQ_DATA);
         }
         EndpointCaps::Tagged(ep) => {
-            tagged_post_inject(&mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, fi_addr, gl_ctx.ft_tag, tx_cq, ep, &mut None, buf, NO_CQ_DATA);
+            tagged_post_inject(&mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), fi_addr, gl_ctx.ft_tag, tx_cq, ep, &mut None, buf, NO_CQ_DATA);
         }
     }
     // gl_ctx.tx_cq_cntr += 1;
@@ -1266,7 +1274,7 @@ pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(_domain: &'a DomainBase<()>, buff: &
     mr_builder
 }
 
-pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &DomainBase<()>, _ep: &Endpoint<E>, buf: &mut [u8], key: u64) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub fn ft_reg_mr<I,E: 'static>(info: &InfoEntry<I>, domain: &DomainBase<()>, ep: &Endpoint<E>, buf: &mut [u8], key: u64) -> (Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
 
     if ! ft_need_mr_reg(info) {
         println!("MR not needed");
@@ -1277,6 +1285,11 @@ pub fn ft_reg_mr<I,E>(info: &InfoEntry<I>, domain: &DomainBase<()>, _ep: &Endpoi
     
     let mr = ft_info_to_mr_builder(domain, buf, info).requested_key(key).build(domain).unwrap();
     // let (_event, mr) = task::block_on(async {mr_buidler.build_async().await}).unwrap();
+
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let desc = mr.description();
 
@@ -1428,12 +1441,14 @@ pub fn start_server<M: MsgDefaultCap, T:TagDefaultCap>(hints: HintsCaps<M, T>, n
 }
 
 #[allow(clippy::type_complexity)]
-pub async fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (InfoWithCaps<M, T>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M, T>, Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
+pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(hints: HintsCaps<M, T>, gl_ctx: &mut TestsGlobalCtx, node: String, service: String) -> (InfoWithCaps<M, T>, CqType, Option<libfabric::cntr::Counter<CounterOptions>>, Option<libfabric::cntr::Counter<CounterOptions>>, EndpointCaps<M, T>, Option<MemoryRegion>, Option<libfabric::mr::MemoryRegionDesc>) {
     match hints {
         HintsCaps::Msg(hints) => {
             let info = ft_getinfo(hints, node, service, true, false);
 
             let entry = info.into_iter().next().unwrap();
+            gl_ctx.tx_ctx = Some(entry.allocate_context());
+            gl_ctx.rx_ctx = Some(entry.allocate_context());
 
             let (_fab, eq, domain) = ft_open_fabric_res(&entry);
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entry, gl_ctx,&domain, &eq);
@@ -1452,6 +1467,8 @@ pub async fn ft_client_connect<M: MsgDefaultCap, T: TagDefaultCap>(hints: HintsC
             let info = ft_getinfo(hints, node, service, true, false);
 
             let entry = info.into_iter().next().unwrap();
+            gl_ctx.tx_ctx = Some(entry.allocate_context());
+            gl_ctx.rx_ctx = Some(entry.allocate_context());
 
             let (_fab, eq, domain) = ft_open_fabric_res(&entry);
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) = ft_alloc_active_res(&entry, gl_ctx,&domain, &eq);
@@ -1482,17 +1499,17 @@ pub async fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T:TagDefaultCap
                 // CqType::Spin(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
                 // CqType::Sread(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
                 // CqType::WaitSet(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
-                CqType::WaitFd(cq_type) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, cq_type.tx_cq(), ep, data_desc, base, NO_CQ_DATA).await},
-                // CqType::WaitYield(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitFd(cq_type) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, cq_type.tx_cq(), ep, data_desc, base, NO_CQ_DATA).await},
+                // CqType::WaitYield(tx_cq) => {msg_post(SendOp::MsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
             }
         }
         EndpointCaps::Tagged(ep) => {
             match cq_type {
-                // CqType::Spin(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
-                // CqType::Sread(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
-                // CqType::WaitSet(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
-                CqType::WaitFd(cq_type) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, cq_type.tx_cq(), ep, data_desc, base, NO_CQ_DATA).await},
-                // CqType::WaitYield(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx, &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                // CqType::Spin(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                // CqType::Sread(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                // CqType::WaitSet(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
+                CqType::WaitFd(cq_type) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, gl_ctx.ft_tag, cq_type.tx_cq(), ep, data_desc, base, NO_CQ_DATA).await},
+                // CqType::WaitYield(tx_cq) => {tagged_post(TagSendOp::TagMsgSend, &mut gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, &mut gl_ctx.tx_ctx.as_mut().unwrap(), &gl_ctx.remote_address, gl_ctx.ft_tag, tx_cq, ep, data_desc, base, NO_CQ_DATA).await},
             }
         }
     }

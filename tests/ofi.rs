@@ -1,8 +1,8 @@
-use libfabric::{av::AddressVectorBuilder, comm::{atomic::{AtomicFetchEp, AtomicReadWriteEp, AtomicWriteEp}, message::{RecvEp, SendEp}, rma::{ReadEp, WriteEp}, tagged::{TagRecvEp, TagSendEp}}, cq::{Completion, CompletionQueue, CompletionQueueBuilder, DataEntry, ReadCq, WaitCq}, domain::{Domain, DomainBuilder}, enums::{AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType, FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions}, ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder}, eq::{EventQueueBuilder, WaitEq}, error::{Error, ErrorKind}, fabric::FabricBuilder, info::{Info, InfoEntry, Version}, infocapsoptions::{AtomicDefaultCap, Caps, InfoCaps, MsgDefaultCap, RmaDefaultCap, TagDefaultCap}, iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoVec, RmaIoc}, mr::{default_desc, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc, MemoryRegionKey}, msg::{Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected, MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut, MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut}, CqCaps, EqCaps, MappedAddress};
+
+use libfabric::{av::AddressVectorBuilder, comm::{atomic::{AtomicFetchEp, AtomicReadWriteEp, AtomicWriteEp}, message::{RecvEp, SendEp}, rma::{ReadEp, WriteEp}, tagged::{TagRecvEp, TagSendEp}}, cq::{Completion, CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq}, domain::{Domain, DomainBuilder}, enums::{AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType, FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions}, ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder}, eq::{EventQueueBuilder, WaitEq}, error::{Error, ErrorKind}, fabric::FabricBuilder, info::{Info, InfoEntry, Version}, infocapsoptions::{AtomicDefaultCap, Caps, CollCap, InfoCaps, MsgDefaultCap, RmaDefaultCap, TagDefaultCap}, iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoVec, RmaIoc}, mr::{default_desc, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc, MemoryRegionKey}, msg::{Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected, MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut, MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut}, Context, CqCaps, EqCaps, MappedAddress};
 pub type SpinCq = libfabric::cq_caps_type!(CqCaps::WAIT);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::WAIT);
 pub mod common;
-use common::IP;
 
 pub enum CqType {
     Separate((CompletionQueue<SpinCq>, CompletionQueue<SpinCq>)),
@@ -98,7 +98,7 @@ pub fn ft_progress(cq: &impl ReadCq) {
 }
 
 
-impl<I: MsgDefaultCap + Caps> Ofi<I> {
+impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
     pub fn new(info_entry: InfoEntry<I>, shared_cqs: bool, server: bool, name: &str) -> Result<Self, Error> {
         if server {
@@ -212,6 +212,10 @@ impl<I: MsgDefaultCap + Caps> Ofi<I> {
                         .access_send()
                         .access_recv()
                         .build(&domain)?;
+                    let mr = match mr {
+                        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ep).unwrap(); mr.enable().unwrap()},
+                    };
                     let key = mr.key().unwrap();
                     (Some(mr), Some(key))
                 } else {
@@ -251,6 +255,10 @@ impl<I: MsgDefaultCap + Caps> Ofi<I> {
                         .access_send()
                         .access_recv()
                         .build(&domain)?;
+                    let mr = match mr {
+                        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ep).unwrap(); mr.enable().unwrap()},
+                    };
                     let key = mr.key().unwrap();
                     (Some(mr), Some(key))
                 } else {
@@ -501,7 +509,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     }
 }
 
-impl<I: MsgDefaultCap> Ofi<I> {
+impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn send<T>(&self, buf: &[T], desc: &mut MemoryRegionDesc, data: Option<u64>) {
         loop {
             let err = match self.mapped_addr {
@@ -538,6 +546,60 @@ impl<I: MsgDefaultCap> Ofi<I> {
                         }
                         else {
                             self.ep.send(&buf, desc)
+                        }
+                    }
+                },
+            };
+            match err {
+                Ok(_) => break,
+                Err(err) => {
+                    if ! matches!(err.kind, ErrorKind::TryAgain) {
+                        panic!("{:?}", err);
+                    }
+                }
+            }
+
+            ft_progress(self.cq_type.tx_cq());
+            ft_progress(self.cq_type.rx_cq());
+        } 
+    }
+
+    pub fn send_with_context<T>(&self, buf: &[T], desc: &mut MemoryRegionDesc, data: Option<u64>, context: &mut Context) {
+        loop {
+            let err = match self.mapped_addr {
+                Some(ref addr) => {
+                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                        if data.is_some() {
+                            self.ep.injectdata_to(buf, data.unwrap(), addr)
+                        }
+                        else {
+                            self.ep.inject_to(&buf, addr)
+                        }
+                    } else {
+                        if data.is_some() {
+                            self.ep.senddata_to_with_context(&buf, desc, data.unwrap(), addr, context)
+                        }
+                        else {
+                            self.ep.send_to_with_context(&buf, desc, addr, context)
+                        }
+
+                    }
+                    
+                },
+                None => {
+                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                        if data.is_some() {
+                            self.ep.injectdata(&buf, data.unwrap())
+                        }
+                        else {
+                            self.ep.inject(&buf)
+                        }
+                    } else {
+                        if data.is_some() {
+                            self.ep.senddata_with_context(&buf, desc, data.unwrap(), context)
+                        }
+                        else {
+                            self.ep.send_with_context(&buf, desc, context)
                         }
                     }
                 },
@@ -698,8 +760,10 @@ impl<I: MsgDefaultCap> Ofi<I> {
             .build(&self.domain)
             .unwrap();
 
-
-
+        let mr = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&self.ep).unwrap(); mr.enable().unwrap()},
+        };
 
         let mut desc = mr.description();
         self.send(&reg_mem[..key_bytes.len()+ 2*std::mem::size_of::<usize>()], &mut desc, None);
@@ -1148,59 +1212,56 @@ impl<I: AtomicDefaultCap> Ofi<I> {
     }
 }
 
+impl<I: CollCap> Ofi<I>  {
+
+
+}
+
 
 macro_rules! gen_info {
     ($ep_type: ident, $caps: ident, $shared_cq: literal, $ip: expr, $server: ident, $name: ident) => {
-        Ofi::new(if !$server {
-            Info::new(&Version{major: 1, minor: 19})
-                .enter_hints()
-                    .enter_ep_attr()
-                        .type_($ep_type)
-                    .leave_ep_attr()
-                    .enter_domain_attr()
-                        .threading(libfabric::enums::Threading::Domain)
-                        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
-                    .leave_domain_attr()
-                    .enter_tx_attr()
-                        .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-                    .leave_tx_attr()
-                    .addr_format(libfabric::enums::AddressFormat::Unspec)
-                    .caps($caps)
-                .leave_hints()
-                .node($ip)
-                .service("9222")
-                .get()
-                .unwrap()
-                .into_iter()
-                .next()
-                .unwrap()
-        } else {
-            Info::new(&Version{major: 1, minor: 19})
-                .enter_hints()
-                    .enter_ep_attr()
-                        .type_($ep_type)
-                    .leave_ep_attr()
-                    .enter_domain_attr()
-                        .threading(libfabric::enums::Threading::Domain)
-                        .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
-                    .leave_domain_attr()
-                    .enter_tx_attr()
-                        .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-                    .leave_tx_attr()
-                    .addr_format(libfabric::enums::AddressFormat::Unspec)
-                    .caps($caps)
-                .leave_hints()
-                .source(libfabric::info::ServiceAddress::Service("9222".to_owned()))
-                .get()
-                .unwrap()
-                .into_iter()
-                .next()
-                .unwrap()
-        }, $shared_cq, $server, $name).unwrap()
+        Ofi::new(
+            {
+                let info =
+                    Info::new(&Version{major: 1, minor: 19})
+                        .enter_hints()
+                            .enter_ep_attr()
+                                .type_($ep_type)
+                            .leave_ep_attr()
+                            .enter_domain_attr()
+                                .threading(libfabric::enums::Threading::Domain)
+                                .mr_mode(libfabric::enums::MrMode::new().prov_key().allocated().virt_addr().local().endpoint().raw())
+                            .leave_domain_attr()
+                            .enter_tx_attr()
+                                .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+                            .leave_tx_attr()
+                            .addr_format(libfabric::enums::AddressFormat::Unspec)
+                            .caps($caps)
+                        .leave_hints();
+                if $server {
+                    info
+                    .source(libfabric::info::ServiceAddress::Service("9222".to_owned()))
+                    .get()
+                    .unwrap()
+                    .into_iter()
+                    .next()
+                    .unwrap()
+                } else {
+                    info
+                    .node($ip)
+                    .service("9222")
+                    .get()
+                    .unwrap()
+                    .into_iter()
+                    .next()
+                    .unwrap()
+                }
+            }
+        , $shared_cq, $server, $name).unwrap()
     };
 }
 
-fn handshake<I: Caps + MsgDefaultCap>(server: bool, name: &str, caps: Option<I>) -> Ofi<I> {
+fn handshake<I: Caps + MsgDefaultCap + 'static>(server: bool, name: &str, caps: Option<I>) -> Ofi<I> {
     let caps = caps.unwrap();
     let ep_type = EndpointType::Msg;
     let hostname = std::process::Command::new("hostname").output().expect("Failed to execute hostname").stdout;
@@ -1221,7 +1282,7 @@ fn handshake_connected1() {
 }
 
 
-fn handshake_connectionless<I: MsgDefaultCap + Caps>(server: bool, name: &str, caps: Option<I>) -> Ofi<I> {
+fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(server: bool, name: &str, caps: Option<I>) -> Ofi<I> {
     
     let caps = caps.unwrap();
     let ep_type = EndpointType::Rdm;
@@ -1255,13 +1316,26 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         .access_send()
         .build(&ofi.domain)
         .unwrap();
+    
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let mut desc = [mr.description(), mr.description()];
+    let mut ctx = ofi.info_entry.allocate_context();
 
     if server{
         // Send a single buffer
-        ofi.send(&reg_mem[..512], &mut desc[0], None);
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        ofi.send_with_context(&reg_mem[..512], &mut desc[0], None, &mut ctx);
+
+        let completion = ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        match completion {
+            Completion::Data(entry) => {
+                assert!(entry[0].is_op_context_equal(&ctx))
+            }
+            _ => panic!("unexpected completion type"),
+        }
 
         assert!(std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size());
         
@@ -1355,6 +1429,11 @@ fn sendrecvdata(server: bool, name: &str, connected: bool) {
         .access_send()
         .build(&ofi.domain)
         .unwrap();
+    
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let mut desc = [mr.description(), mr.description()];
     let data = Some(128u64);
@@ -1414,6 +1493,11 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         .access_send()
         .build(&ofi.domain)
         .unwrap();
+
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let mut desc = [mr.description(), mr.description()];
     let data = Some(128u64);
@@ -1524,6 +1608,11 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         .access_send()
         .build(&ofi.domain)
         .unwrap();
+
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let desc = mr.description();
     let mut descs = [desc.clone(), desc];
@@ -1697,6 +1786,10 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         .access_send()
         .build(&ofi.domain)
         .unwrap();
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let desc = mr.description();
     let mut descs = [desc.clone(), desc];
@@ -1872,6 +1965,10 @@ fn writeread(server: bool, name: &str, connected: bool) {
         .access_remote_read()
         .build(&ofi.domain)
         .unwrap();
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let desc = mr.description();
     let mut descs = [desc.clone(), desc];
@@ -1995,6 +2092,10 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         .build(&ofi.domain)
         .unwrap();
 
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
     let desc = mr.description();
     let mut descs = [desc.clone(), desc];
     let mapped_addr = ofi.mapped_addr.clone();
@@ -2187,6 +2288,11 @@ fn atomic(server: bool, name: &str, connected: bool) {
         .build(&ofi.domain)
         .unwrap();
 
+        
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
     let desc = mr.description();
     let mut descs = [desc.clone(), desc];
     // let mapped_addr = ofi.mapped_addr.clone();
@@ -2336,6 +2442,11 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         .access_remote_read()
         .build(&ofi.domain)
         .unwrap();
+
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
 
     let mut desc0 = mr.description();
     let mut desc1 = mr.description();
@@ -2541,6 +2652,10 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         .build(&ofi.domain)
         .unwrap();
 
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
     let mut desc = mr.description();
     let mut comp_desc = mr.description();
     let mut res_desc = mr.description();
@@ -2687,6 +2802,10 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
         .build(&ofi.domain)
         .unwrap();
 
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
     let desc = mr.description();
     let mut descs = [desc.clone(), desc];
     let mapped_addr = ofi.mapped_addr.clone();
@@ -2772,7 +2891,10 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         .access_remote_read()
         .build(&ofi.domain)
         .unwrap();
-
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024*2);
@@ -2874,7 +2996,12 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         .access_remote_read()
         .build(&ofi.domain)
         .unwrap();
-
+    
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {mr.bind_ep(&ofi.ep).unwrap(); mr.enable().unwrap()},
+    };
+    
     let mut desc = mr.description();
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
@@ -2933,8 +3060,6 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         ofi.send(&reg_mem[512..1024], &mut desc, None);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
-
-    
 }
 
 #[test]

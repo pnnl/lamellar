@@ -7,7 +7,7 @@ pub mod common; // Public to supress lint warnings (unused function)
 use common::IP;
 use libfabric::{ep::ActiveEndpoint, info::{Info, Version}};
 use prefix::{HintsCaps, EndpointCaps, define_test, call};
-use sync_ as prefix; 
+use async_ as prefix; 
 
 
 // To run the following tests do:
@@ -19,8 +19,9 @@ use sync_ as prefix;
 // 5. Run client (e.g. cargo test pp_client_msg -- --ignored --nocapture) 
 
 define_test!(pp_server_msg, async_pp_server_msg, {
-    let mut gl_ctx = prefix::TestsGlobalCtx::new();
-
+    let hostname = std::process::Command::new("hostname").output().expect("Failed to execute hostname").stdout;
+    let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
+    let ip = "172.17.110.".to_string() + &hostname;
     let info = Info::new(&Version{major: 1, minor: 19})
         .enter_hints()
             .enter_ep_attr()
@@ -44,8 +45,9 @@ define_test!(pp_server_msg, async_pp_server_msg, {
 
     // match hintscaps {
         // HintsCaps::Msg(hints) => {
-    let (infocap, fab, eq, pep) = prefix::start_server(hintscaps, IP.to_owned(), "9222".to_owned());
+    let (infocap, fab, eq, pep) = prefix::start_server(hintscaps, ip.strip_suffix("\n").unwrap_or(&ip).to_owned(), "9222".to_owned());
 
+    let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
         let (cq_type, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = call!(prefix::ft_server_connect,&pep, &mut gl_ctx, &eq, &fab);
         match infocap {
@@ -91,6 +93,9 @@ define_test!(pp_server_msg, async_pp_server_msg, {
 
 
 define_test!(pp_client_msg, async_pp_client_msg, {
+    let hostname = std::process::Command::new("hostname").output().expect("Failed to execute hostname").stdout;
+    let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
+    let ip = "172.17.110.".to_string() + &hostname;
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
     let info = Info::new(&Version{major: 1, minor: 19})
         .enter_hints()
@@ -118,7 +123,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
         // HintsCaps::Msg(hints) => {
 
     let (infocap, cq_type, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = 
-        call!(prefix::ft_client_connect,hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned());
+        call!(prefix::ft_client_connect,hintscaps, &mut gl_ctx, ip.strip_suffix("\n").unwrap_or(&ip).to_owned(), "9222".to_owned());
         
     match infocap {
         prefix::InfoWithCaps::Msg(entry) => {

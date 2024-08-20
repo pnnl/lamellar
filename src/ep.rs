@@ -1,11 +1,11 @@
 use std::{os::fd::{AsFd, BorrowedFd}, marker::PhantomData};
 
 
-use libfabric_sys::{fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
+use libfabric_sys::{fi_hmem_iface_FI_HMEM_CUDA, fi_hmem_iface_FI_HMEM_ZE, fi_wait_obj_FI_WAIT_FD, inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG};
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{av::{AddressVector, AddressVectorBase, AddressVectorImplBase}, cntr::{Counter, ReadCntr}, cq::{CompletionQueue, ReadCq}, domain::DomainImplT, enums::{EndpointType, HmemP2p, Protocol, TransferOptions}, eq::{EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid, RawFid}, info::{InfoEntry, Version}, utils::check_error, Context, MyOnceCell, MyRc, MyRefCell};
+use crate::{av::{AddressVector, AddressVectorBase, AddressVectorImplBase}, cntr::{Counter, ReadCntr}, cq::{CompletionQueue, ReadCq}, domain::DomainImplT, enums::{EndpointType, HmemIface, HmemP2p, Protocol, TransferOptions}, eq::{EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid, RawFid}, info::{InfoEntry, Version}, trigger::TriggerXpu, utils::check_error, Context, MyOnceCell, MyRc, MyRefCell};
 
 #[repr(C)]
 pub struct Address {
@@ -200,24 +200,44 @@ pub trait BaseEndpoint : AsRawFid {
         }
     }
 
-    fn xpu_trigger(&self) -> Result<libfabric_sys::fi_trigger_xpu, crate::error::Error> {
+    fn xpu_trigger(&self, iface: &HmemIface) -> Result<TriggerXpu, crate::error::Error> {
+        let (dev_type, device) = match iface {
+            HmemIface::Cuda(dev_id) => (fi_hmem_iface_FI_HMEM_CUDA, libfabric_sys::fi_trigger_xpu__bindgen_ty_1{cuda: *dev_id}),
+            HmemIface::Ze(drv_id, dev_id) => (fi_hmem_iface_FI_HMEM_ZE, libfabric_sys::fi_trigger_xpu__bindgen_ty_1{ze: unsafe{libfabric_sys::inlined_fi_hmem_ze_device(*drv_id, *dev_id)}}),
+            _=> panic!("Device type not supported"),
+        };
         let mut res = libfabric_sys::fi_trigger_xpu {
             count: 0,
-            iface: 0,
-            device: libfabric_sys::fi_trigger_xpu__bindgen_ty_1 {
-                reserved: 0,
-            },
+            iface: dev_type,
+            device,
             var: std::ptr::null_mut(),
         };
         let mut len = std::mem::size_of::<libfabric_sys::fi_trigger_xpu>();
 
         let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_XPU_TRIGGER as i32, (&mut res as *mut libfabric_sys::fi_trigger_xpu).cast(), &mut len)};
-    
+        let var = libfabric_sys::fi_trigger_var {
+            datatype: 0,
+            count: 0,
+            addr: std::ptr::null_mut(),
+            value: libfabric_sys::fi_trigger_var__bindgen_ty_1 {
+                val64: 0,
+            }
+        };
+        let mut trigger_vars = vec![var ;res.count as usize];
+        res.var = trigger_vars.as_mut_ptr();
+
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
         }
         else {
-            Ok(res)
+            let err = unsafe { libfabric_sys::inlined_fi_getopt(self.as_raw_fid(), libfabric_sys::FI_OPT_ENDPOINT as i32, libfabric_sys::FI_OPT_XPU_TRIGGER as i32, (&mut res as *mut libfabric_sys::fi_trigger_xpu).cast(), &mut len)};
+            if err != 0 {
+                Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
+            }
+            else {
+                let vars: Vec<libfabric_sys::fi_trigger_var> = (0..res.count).into_iter().map(|i| {return unsafe{*res.var.add(i as usize)}; }).collect();
+                Ok(TriggerXpu::new(iface.clone(), vars))
+            }
         }
     }
 

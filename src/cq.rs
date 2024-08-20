@@ -881,15 +881,15 @@ impl CompletionEntry<TaggedEntry> {
 
 impl CompletionEntry<CtxEntry> {
     
-    pub fn is_op_context_equal<T>(&self, ctx: &T) -> bool {
-        std::ptr::eq(self.c_entry.op_context, (ctx as *const T).cast() )
+    pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
+        std::ptr::eq(self.c_entry.op_context, ctx.inner() )
     }
 } 
 
 impl CompletionEntry<MsgEntry> {
     
-    pub fn is_op_context_equal<T>(&self, ctx: &T) -> bool {
-        std::ptr::eq(self.c_entry.op_context, (ctx as *const T).cast() )
+    pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
+        std::ptr::eq(self.c_entry.op_context, ctx.inner() )
     }
 
     /// Returns the completion flags related to this completion entry
@@ -902,8 +902,8 @@ impl CompletionEntry<MsgEntry> {
 
 impl CompletionEntry<DataEntry> {
     
-    pub fn is_op_context_equal<T>(&self, ctx: &T) -> bool {
-        std::ptr::eq(self.c_entry.op_context, (ctx as *const T).cast() )
+    pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
+        std::ptr::eq(self.c_entry.op_context, ctx.inner() )
     }
 
     /// Returns the completion flags related to this completion entry
@@ -934,8 +934,8 @@ impl CompletionEntry<DataEntry> {
 
 impl CompletionEntry<TaggedEntry> {
     
-    pub fn is_op_context_equal<T>(&self, ctx: &T) -> bool {
-        std::ptr::eq(self.c_entry.op_context, (ctx as *const T).cast() )
+    pub fn is_op_context_equal<T>(&self, ctx: &Context) -> bool {
+        std::ptr::eq(self.c_entry.op_context, ctx.inner() )
     }
 
     pub fn flags(&self) -> CompletionFlags {

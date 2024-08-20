@@ -306,6 +306,8 @@ macro_rules! gen_get_flag {
 
 pub(crate) use gen_set_get_flag;
 
+use crate::trigger::{TriggerThreshold, TriggerXpu};
+
 #[derive(Clone, Copy, Debug)]
 pub struct Mode {
     c_flags: u64
@@ -521,6 +523,53 @@ gen_enum!(AddressFormat, libfabric_sys::_bindgen_ty_3,
     (Cxi, libfabric_sys::FI_ADDR_CXI),
     (Ucx, libfabric_sys::FI_ADDR_UCX)
 );
+
+
+
+pub enum TriggerEvent<'a> {
+    Threshold(TriggerThreshold<'a>),
+    Xpu(TriggerXpu),
+}
+
+impl<'a> TriggerEvent<'a> {
+
+    pub fn as_raw(&mut self) -> (libfabric_sys::fi_trigger_event, libfabric_sys::fi_triggered_context__bindgen_ty_1) {
+        match self {
+            Self::Threshold(thold) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD, 
+                libfabric_sys::fi_triggered_context__bindgen_ty_1{
+                    threshold: thold.c_thold
+                }) 
+            ,
+            Self::Xpu(xpu) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU, 
+                    
+                    libfabric_sys::fi_triggered_context__bindgen_ty_1{
+                        xpu: xpu.as_raw(),
+                    }
+                )
+            ,
+        }
+    }
+
+    pub fn as_raw2(&mut self) -> (libfabric_sys::fi_trigger_event, libfabric_sys::fi_triggered_context2__bindgen_ty_1) {
+        match self {
+            Self::Threshold(thold) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD, 
+                libfabric_sys::fi_triggered_context2__bindgen_ty_1{
+                    threshold: thold.c_thold
+                }) 
+            ,
+            Self::Xpu(xpu) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU, 
+                    
+                    libfabric_sys::fi_triggered_context2__bindgen_ty_1{
+                        xpu: xpu.as_raw(),
+                    }
+                )
+            ,
+        }
+    }
+}
+//     (Threshold, libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD),
+//     (Xpu, libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU)
+// );
 
 pub struct AVOptions {
     c_flags: u64,

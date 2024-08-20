@@ -2,7 +2,7 @@ use std::{collections::VecDeque, ffi::CString, marker::PhantomData};
 
 use libfabric_sys::FI_SOURCE;
 
-use crate::{domain::{DomainAttr, DomainBase}, enums::{AddressFormat, AddressVectorType, DomainCaps, EndpointType, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass, TransferOptions}, ep::Address, fabric::Fabric, fid::AsRawTypedFid, infocapsoptions::Caps, nic::Nic, utils::check_error, xcontext::{MsgOrder, RxCaps, RxCompOrder, TxCaps, TxCompOrder}, MappedAddress, RawMappedAddress, FI_ADDR_NOTAVAIL, FI_ADDR_UNSPEC};
+use crate::{domain::{DomainAttr, DomainBase}, enums::{AddressFormat, AddressVectorType, DomainCaps, EndpointType, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass, TransferOptions, TriggerEvent}, ep::Address, fabric::Fabric, fid::AsRawTypedFid, infocapsoptions::Caps, nic::Nic, trigger::{TriggeredContext, TriggeredContext1, TriggeredContext2, TriggeredContextType}, utils::check_error, xcontext::{MsgOrder, RxCaps, RxCompOrder, TxCaps, TxCompOrder}, Context, Context1, Context2, ContextType, MappedAddress, RawMappedAddress, FI_ADDR_NOTAVAIL, FI_ADDR_UNSPEC};
 
 #[derive(Clone, Debug)]
 pub struct InfoCapsImpl {
@@ -289,6 +289,22 @@ impl<T> InfoEntry<T> {
             AddressVectorType::Unspec => Ok(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Unspec(ret))),
             AddressVectorType::Map => Ok(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Map(ret))),
             AddressVectorType::Table => Ok(MappedAddress::from_raw_addr_no_av(RawMappedAddress::Table(ret))),
+        }
+    }
+
+    pub fn allocate_context(&self) -> Context {
+        if self.mode.is_context() {
+            Context(ContextType::Context1(Box::new(Context1::new())))
+        } else {
+            Context(ContextType::Context2(Box::new(Context2::new())))
+        }
+    }
+
+    pub fn allocate_triggered_context<'a, 'b>(&self, event: &'a mut TriggerEvent<'b>) -> TriggeredContext<'a, 'b> {
+        if self.mode.is_context() {
+            TriggeredContext(TriggeredContextType::TriggeredContext1(Box::new(TriggeredContext1::new(event))))
+        } else {
+            TriggeredContext(TriggeredContextType::TriggeredContext2(Box::new(TriggeredContext2::new(event))))
         }
     }
 

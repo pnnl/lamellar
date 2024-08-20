@@ -144,7 +144,7 @@ pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: OwnedMrFid,
     pub(crate) _domain_rc: MyRc<dyn DomainImplT  >,
     pub(crate) bound_cntr: MyOnceCell<MyRc<dyn ReadCntr  >>, 
-    pub(crate) bound_ep: MyOnceCell<MyRc<dyn AsRawFid >>, 
+    pub(crate) bound_ep: MyOnceCell<MyRc<dyn AsRawFid>>, 
 }
 
 /// Owned wrapper around a libfabric `fid_mr`.
@@ -157,6 +157,8 @@ pub(crate) struct MemoryRegionImpl {
 pub struct MemoryRegion {
     pub(crate) inner: MyRc<MemoryRegionImpl>,
 }
+
+
 
 impl MemoryRegionImpl {
 
@@ -266,7 +268,7 @@ impl MemoryRegionImpl {
 impl MemoryRegionImpl {
 
     #[allow(dead_code)]
-    pub(crate) fn bind_ep<EP: 'static , CQ: ?Sized + AsRawFid + ReadCq + 'static >(&self, ep: &MyRc<crate::ep::EndpointImplBase<EP, impl ReadEq + 'static , CQ>>) -> Result<(), crate::error::Error> {
+    pub(crate) fn bind_ep<EP: AsRawFid + 'static>(&self, ep: &MyRc<EP>) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0) } ;
         if err != 0 {
             if self.bound_ep.set(ep.clone()).is_err() {
@@ -413,19 +415,7 @@ impl MemoryRegion {
         self.inner.bind_cntr(&cntr.inner, remote_write_event)
     }
 
-    // /// Associates the memory region with an endpoint
-    // /// 
-    // /// Bind the memory region to `ep`.
-    // /// 
-    // /// Corresponds to `fi_mr_bind` with a `fid_ep` 
-    // pub fn bind_ep<E>(&self, ep: &crate::ep::EndpointBase<E, EQ, CQ>) -> Result<(), crate::error::Error> {
-    //     self.inner.bind_ep(&ep.inner)?;
-    //     ep.inner.eq
-    //         .get()
-    //         .expect("Endpoint is to bound to an Event Queue")
-    //         .bind_mr(&self.inner);
-    //     Ok(())
-    // }
+
 
     /// Notify the provider of any change to the physical pages backing a registered memory region.
     /// 
@@ -434,12 +424,7 @@ impl MemoryRegion {
         self.inner.refresh(iov, 0)   
     }
 
-    /// Enables a memory region for use.
-    /// 
-    /// Corresponds to `fi_mr_enable`
-    pub fn enable(&self) -> Result<(), crate::error::Error> {
-        self.inner.enable()
-    }
+
 
     /// Retrieves the address of memory backing this memory region
     /// 
@@ -455,12 +440,6 @@ impl MemoryRegion {
         self.inner.description()
     }
 }
-
-//==================== Async stuff ================================//
-
-
-
-
 
 /// An opaque wrapper for the descriptor of a [MemoryRegion] as obtained from
 /// `fi_mr_desc`.
@@ -661,6 +640,40 @@ impl Default for MemoryRegionAttr {
     }
 }
 
+pub struct DisabledMemoryRegion {
+    mr: MemoryRegion,
+}
+
+impl DisabledMemoryRegion {
+    /// Associates the memory region with an endpoint
+    /// 
+    /// Bind the memory region to `ep`.
+    /// 
+    /// Corresponds to `fi_mr_bind` with a `fid_ep` 
+    pub fn bind_ep<EP: AsRawFid + 'static>(&self, ep: &crate::ep::EndpointBase<EP>) -> Result<(), crate::error::Error> {
+        self.mr.inner.bind_ep(&ep.inner)?;
+        // ep.inner.eq
+        //     .get()
+        //     .expect("Endpoint is to bound to an Event Queue")
+        //     .bind_mr(&self.inner);
+        Ok(())
+    }
+
+    /// Enables a memory region for use.
+    /// 
+    /// Corresponds to `fi_mr_enable`
+    pub fn enable(self) -> Result<MemoryRegion, crate::error::Error> {
+        self.mr.inner.enable()?;
+        Ok(self.mr)
+    }
+}
+
+pub enum MaybeDisabledMemoryRegion {
+    Enabled(MemoryRegion),
+    Disabled(DisabledMemoryRegion),
+}
+
+
 /// Builder for the [MemoryRegion] type.
 /// 
 /// `MemoryRegionBuilder` is used to configure and build a new [MemoryRegion].
@@ -821,7 +834,7 @@ impl<'a> MemoryRegionBuilder<'a> {
     /// 
     /// Corresponds to creating a `fi_mr_attr`, setting its fields to the requested ones,
     /// and passign it to `fi_mr_regattr`.
-    pub fn build<EQ: ?Sized + 'static>(mut self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<MemoryRegion, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static>(mut self, domain: &'a crate::domain::DomainBase<EQ>) -> Result<MaybeDisabledMemoryRegion, crate::error::Error> {
         if domain.inner._eq_rc.get().is_some() {
             let (_eq, async_reg) = domain.inner._eq_rc.get().unwrap();
             if *async_reg {
@@ -829,7 +842,14 @@ impl<'a> MemoryRegionBuilder<'a> {
             }
         }
         self.mr_attr.iov(&self.iovs);
-        MemoryRegion::from_attr(domain, self.mr_attr, self.flags)
+        let mr = MemoryRegion::from_attr(domain, self.mr_attr, self.flags)?;
+        
+        if domain.get_mr_mode().is_endpoint() {
+            Ok(MaybeDisabledMemoryRegion::Disabled(DisabledMemoryRegion {mr}))
+        }
+        else {
+            Ok(MaybeDisabledMemoryRegion::Enabled(mr))
+        }
     }
 
     // /// Constructs a new [MemoryRegion] with the configurations requested so far.

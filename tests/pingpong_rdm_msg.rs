@@ -71,6 +71,9 @@ define_test!(pp_server_rdm_msg, async_pp_server_rdm_msg, {
 
 
 define_test!(pp_client_rdm_msg, async_pp_client_rdm_msg, {
+    let hostname = std::process::Command::new("hostname").output().expect("Failed to execute hostname").stdout;
+    let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
+    let ip = "172.17.110.".to_string() + &hostname;
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
     let info = Info::new(&Version{major: 1, minor: 19})
@@ -95,7 +98,7 @@ define_test!(pp_client_rdm_msg, async_pp_client_rdm_msg, {
     };
 
     let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
-        call!(prefix::ft_init_fabric,hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
+        call!(prefix::ft_init_fabric,hintscaps, &mut gl_ctx, ip.strip_suffix("\n").unwrap_or(&ip).to_owned(), "9222".to_owned(), false);
 
     match infocap {
         prefix::InfoWithCaps::Msg(entry) => {

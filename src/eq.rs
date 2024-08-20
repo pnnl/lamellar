@@ -866,8 +866,8 @@ impl<F: AsRawFid> EventQueueEntry<F> {
         unsafe { std::mem::transmute_copy::<T,&T>(&*(context_ptr as *const T)) }
     }
 
-    pub fn is_context_equal<T>(&self, ctx: &T) -> bool {
-        std::ptr::eq(self.c_entry.context, ctx as *const T as *const std::ffi::c_void)
+    pub fn is_context_equal(&self, ctx: &Context) -> bool {
+        std::ptr::eq(self.c_entry.context, ctx.inner())
     }
 
 }

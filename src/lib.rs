@@ -59,6 +59,8 @@ mod utils;
 mod fid;
 pub mod iovec;
 pub mod msg;
+pub mod trigger;
+
 #[cfg(any(feature="use-async-std", feature = "use-tokio"))]
 pub mod async_;
 
@@ -287,7 +289,7 @@ const FI_ADDR_UNSPEC : u64 = u64::MAX;
 
 
 
-pub struct Context1 {
+struct Context1 {
     #[allow(dead_code)]
     c_val: libfabric_sys::fi_context,
 }
@@ -318,7 +320,7 @@ impl Default for Context1 {
     }
 }
 
-pub struct Context2 {
+struct Context2 {
     c_val: libfabric_sys::fi_context2,
 }
 
@@ -348,23 +350,29 @@ impl Default for Context2 {
     }
 }
 
-pub enum Context {
-    Context1(Context1),
-    Context2(Context2),
+enum ContextType {
+    Context1(Box<Context1>),
+    Context2(Box<Context2>),
 }
+
+// We use heap allocated data to allow moving the wrapper field
+// without affecting the pointer used by libfabric
+
+
+pub struct Context(ContextType);
 
 impl Context {
     fn inner_mut(&mut self) -> *mut std::ffi::c_void {
-        match self {
-            Context::Context1(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
-            Context::Context2(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
+        match &mut self.0 {
+            ContextType::Context1(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
+            ContextType::Context2(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
         }
     }
 
     fn inner(&self) -> *const std::ffi::c_void {
-        match self {
-            Context::Context1(ctx) => ctx.get() as *const std::ffi::c_void,
-            Context::Context2(ctx) => ctx.get() as *const std::ffi::c_void,
+        match &self.0 {
+            ContextType::Context1(ctx) => ctx.get() as *const std::ffi::c_void,
+            ContextType::Context2(ctx) => ctx.get() as *const std::ffi::c_void,
         }
     }
 }

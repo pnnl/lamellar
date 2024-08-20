@@ -23,6 +23,9 @@ use sync_ as prefix;
 
 
 define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
+    let hostname = std::process::Command::new("hostname").output().expect("Failed to execute hostname").stdout;
+    let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
+    let ip = "172.17.110.".to_string() + &hostname;
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
     gl_ctx.options = prefix::FT_OPT_RX_CNTR | prefix::FT_OPT_TX_CNTR;
     // todo!();
@@ -80,6 +83,9 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
 
 
 define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
+    let hostname = std::process::Command::new("hostname").output().expect("Failed to execute hostname").stdout;
+    let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
+    let ip = "172.17.110.".to_string() + &hostname;
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
     gl_ctx.options = prefix::FT_OPT_RX_CNTR | prefix::FT_OPT_TX_CNTR;
     // todo!();
@@ -108,7 +114,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
 
 
     let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) = 
-        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, IP.to_owned(), "9222".to_owned(), false);
+        prefix::ft_init_fabric(hintscaps, &mut gl_ctx, ip.strip_suffix("\n").unwrap_or(&ip).to_owned(), "9222".to_owned(), false);
 
     match infocap {
         prefix::InfoWithCaps::Msg(entry) => {
