@@ -934,7 +934,7 @@ impl CompletionEntry<DataEntry> {
 
 impl CompletionEntry<TaggedEntry> {
     
-    pub fn is_op_context_equal<T>(&self, ctx: &Context) -> bool {
+    pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
         std::ptr::eq(self.c_entry.op_context, ctx.inner() )
     }
 

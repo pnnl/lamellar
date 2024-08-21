@@ -144,7 +144,7 @@ impl MulticastGroupCollective {
     //     self.inner.join_impl(&ep.inner, addr, options, Some(context.inner_mut()))
     // }
 
-    pub fn join_collective_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, options: JoinOptions, context: &mut Context) -> Result<(), Error> {
+    pub fn join_collective_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, options: JoinOptions, context: &mut Context) -> Result<(), Error> {
         self.inner.join_collective_impl(&ep.inner, options, Some(context.inner_mut()))
         
     }
