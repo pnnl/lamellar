@@ -144,8 +144,8 @@ impl MappedAddress {
     
     pub(crate) fn from_raw_addr(addr: RawMappedAddress, av: AddressSource) -> Self {
         match addr {
-            RawMappedAddress::Map(addr) => Self::Map(MapMappedAddress{raw_mapped_addr: addr, av: av}),
-            RawMappedAddress::Table(addr) => Self::Table(TableMappedAddress{raw_mapped_addr: addr, av: av}),
+            RawMappedAddress::Map(addr) => Self::Map(MapMappedAddress{raw_mapped_addr: addr, av}),
+            RawMappedAddress::Table(addr) => Self::Table(TableMappedAddress{raw_mapped_addr: addr, av}),
             RawMappedAddress::Unspec(addr) => Self::Unspec(UnspecMappedAddress{raw_mapped_addr: addr}),
         }
     }

@@ -772,7 +772,7 @@ pub struct AddressVectorSetBuilder<'a, EQ: ReadEq + ?Sized> {
 }
 
 impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, EQ> {
-    pub fn new_from_range(av: &'a AddressVectorBase<EQ>, start_addr: &crate::TableMappedAddress, end_addr: &crate::TableMappedAddress, stride: usize) -> AddressVectorSetBuilder<'a, EQ> {
+    pub fn new_from_range(av: &'a AddressVectorBase<EQ>, start_addr: &crate::MappedAddress, end_addr: &crate::MappedAddress, stride: usize) -> AddressVectorSetBuilder<'a, EQ> {
         if ! matches!(av.inner.type_(), AddressVectorType::Table) {
             panic!("Can only use new_from_range for AVs of Table addressing type");
         }
@@ -794,6 +794,7 @@ impl<'a, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, EQ> {
         let mut avset_attr = AddressVectorSetAttr::new();
             avset_attr.c_attr.start_addr = FI_ADDR_NOTAVAIL;
             avset_attr.c_attr.end_addr = FI_ADDR_NOTAVAIL;
+            avset_attr.c_attr.count = 0;
         
         AddressVectorSetBuilder {
             avset_attr,
@@ -965,15 +966,15 @@ impl AddressVectorSetAttr {
         self
     }
 
-    pub(crate) fn start_addr(&mut self, mapped_addr: &crate::TableMappedAddress) -> &mut Self {
+    pub(crate) fn start_addr(&mut self, mapped_addr: &crate::MappedAddress) -> &mut Self {
         
-        self.c_attr.start_addr = mapped_addr.raw_mapped_addr;
+        self.c_attr.start_addr = mapped_addr.raw_addr();
         self
     }
 
-    pub(crate) fn end_addr(&mut self, mapped_addr: &crate::TableMappedAddress) -> &mut Self {
+    pub(crate) fn end_addr(&mut self, mapped_addr: &crate::MappedAddress) -> &mut Self {
         
-        self.c_attr.end_addr = mapped_addr.raw_mapped_addr;
+        self.c_attr.end_addr = mapped_addr.raw_addr();
         self
     }
 
