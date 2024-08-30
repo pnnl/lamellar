@@ -186,12 +186,12 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>> {
     // }
 }
 impl<E> Endpoint<E> {
-    pub fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static >(&self, cq: &CompletionQueue<T>, selective: bool) -> Result<(), crate::error::Error> {
-        self.inner.bind_shared_cq(&cq.inner, selective)
+    pub fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static >(&self, cq: &CompletionQueue<T>) -> Result<(), crate::error::Error> {
+        self.inner.bind_shared_cq(&cq.inner, false)
     }
 
-    pub fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static >(&self, tx_cq: &CompletionQueue<T>, tx_selective: bool, rx_cq: &CompletionQueue<T>, rx_selective: bool) -> Result<(), crate::error::Error> {
-        self.inner.bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
+    pub fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static >(&self, tx_cq: &CompletionQueue<T>, rx_cq: &CompletionQueue<T>) -> Result<(), crate::error::Error> {
+        self.inner.bind_separate_cqs(&tx_cq.inner, false, &rx_cq.inner, false)
     }
 
 }

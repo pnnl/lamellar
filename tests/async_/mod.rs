@@ -393,8 +393,8 @@ pub fn ft_enable_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(in
 fn bind_cq<E>(cq_type: &CqType, ep: &mut Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
     match cq_type {
         CqType::WaitFd(cq_type) => match cq_type {
-            EpCqType::Shared(shared_cq) => ep.bind_shared_cq(shared_cq, false).unwrap(),
-            EpCqType::Separate(tx_cq, rx_cq) => ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0).unwrap(),
+            EpCqType::Shared(shared_cq) => ep.bind_shared_cq(shared_cq).unwrap(),
+            EpCqType::Separate(tx_cq, rx_cq) => ep.bind_separate_cqs(tx_cq, rx_cq).unwrap(),
         },
     }
 }
