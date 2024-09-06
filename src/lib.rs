@@ -37,6 +37,7 @@ use av::{AddressVectorImplT, AddressVectorSetImpl};
 use fid::AsRawFid;
 
 pub mod ep;
+pub mod conn_ep;
 pub mod domain;
 pub mod eq;
 pub mod fabric;

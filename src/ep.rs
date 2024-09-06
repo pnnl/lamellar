@@ -9,7 +9,7 @@ use crate::{av::{AddressVector, AddressVectorBase, AddressVectorImplBase}, cntr:
 
 #[repr(C)]
 pub struct Address {
-    address: Vec<u8>,
+    pub(crate) address: Vec<u8>,
 }
 
 impl Address {

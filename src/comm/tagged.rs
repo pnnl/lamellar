@@ -50,19 +50,28 @@ pub(crate) trait TagRecvEpImpl: TagRecvEp + AsRawTypedFid<Output = EpRawFid>{
 
 pub trait TagRecvEp {
     fn trecv_from<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
-    fn trecv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
     fn trecv_from_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> ;
-    fn trecv_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> ;
     fn trecv_from_triggered<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64, context: &mut TriggeredContext) -> Result<(), crate::error::Error> ;
-    fn trecv_triggered<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut TriggeredContext) -> Result<(), crate::error::Error> ;
     fn trecvv_from(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
-	fn trecvv(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
 	fn trecvv_from_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
-	fn trecvv_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
 	fn trecvv_from_triggered(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+    fn trecvmsg_from(&self, msg: &crate::msg::MsgTaggedMut, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> ;
+    fn trecv_from_any<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
+    fn trecv_from_any_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> ;
+    fn trecv_from_any_triggered<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+    fn trecvv_from_any(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
+	fn trecvv_from_any_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
+	fn trecvv_from_any_triggered(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_tag: u64, ignore:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+}
+
+pub trait ConnectedTagRecvEp {
+    fn trecv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
+    fn trecv_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> ;
+    fn trecv_triggered<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+	fn trecvv(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> Result<(), crate::error::Error> ;
+	fn trecvv_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
 	fn trecvv_triggered(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
     fn trecvmsg(&self, msg: &crate::msg::MsgTaggedConnectedMut, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> ;
-    fn trecvmsg_from(&self, msg: &crate::msg::MsgTaggedMut, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
 impl<EP: TagRecvEpImpl>  TagRecvEp for EP {
@@ -72,7 +81,7 @@ impl<EP: TagRecvEpImpl>  TagRecvEp for EP {
     }
 
     #[inline]
-    fn trecv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
+    fn trecv_from_any<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, None)
     }
     
@@ -80,9 +89,9 @@ impl<EP: TagRecvEpImpl>  TagRecvEp for EP {
     fn trecv_from_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, Some(mapped_addr), tag, ignore, Some(context.inner_mut()))
     }
-    
+
     #[inline]
-    fn trecv_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> {
+    fn trecv_from_any_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
     }
     
@@ -92,17 +101,17 @@ impl<EP: TagRecvEpImpl>  TagRecvEp for EP {
     }
     
     #[inline]
-    fn trecv_triggered<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut TriggeredContext) -> Result<(), crate::error::Error> {
+    fn trecv_from_any_triggered<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut TriggeredContext) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
     }
-
+    
     #[inline]
     fn trecvv_from(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
         self.trecvv_impl(iov, desc, Some(src_mapped_addr), tag, ignore, None)
     }
-
+    
     #[inline]
-	fn trecvv(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> Result<(), crate::error::Error> { //[TODO]
+    fn trecvv_from_any(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
         self.trecvv_impl(iov, desc, None, tag, ignore, None)
     }
 
@@ -110,9 +119,9 @@ impl<EP: TagRecvEpImpl>  TagRecvEp for EP {
 	fn trecvv_from_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> { //[TODO]
         self.trecvv_impl(iov, desc, Some(src_mapped_addr), tag, ignore, Some(context.inner_mut()))
     }
-
+    
     #[inline]
-	fn trecvv_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> { //[TODO]
+    fn trecvv_from_any_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> { //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
     }
 
@@ -120,15 +129,47 @@ impl<EP: TagRecvEpImpl>  TagRecvEp for EP {
 	fn trecvv_from_triggered(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { //[TODO]
         self.trecvv_impl(iov, desc, Some(src_mapped_addr), tag, ignore, Some(context.inner_mut()))
     }
-
+    
     #[inline]
-	fn trecvv_triggered(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { //[TODO]
+    fn trecvv_from_any_triggered(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
     }
 
     #[inline]
     fn trecvmsg_from(&self, msg: &crate::msg::MsgTaggedMut, options: TaggedRecvMsgOptions) -> Result<(), crate::error::Error> {
         self.trecvmsg_impl(Either::Left(msg), options)
+    }
+}
+
+impl<EP: TagRecvEpImpl>  ConnectedTagRecvEp for EP {
+    #[inline]
+    fn trecv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<(), crate::error::Error> {
+        self.trecv_impl(buf, desc, None, tag, ignore, None)
+    }
+    
+    #[inline]
+    fn trecv_with_context<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut Context) -> Result<(), crate::error::Error> {
+        self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
+    }
+    
+    #[inline]
+    fn trecv_triggered<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut TriggeredContext) -> Result<(), crate::error::Error> {
+        self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
+    }
+    
+    #[inline]
+	fn trecvv(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> Result<(), crate::error::Error> { //[TODO]
+        self.trecvv_impl(iov, desc, None, tag, ignore, None)
+    }
+    
+    #[inline]
+	fn trecvv_with_context(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut Context) -> Result<(), crate::error::Error> { //[TODO]
+        self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
+    }
+    
+    #[inline]
+	fn trecvv_triggered(&self, iov: &[crate::iovec::IoVecMut], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { //[TODO]
+        self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
     }
 
     #[inline]
@@ -196,28 +237,31 @@ pub(crate) trait TagSendEpImpl: TagSendEp + AsRawTypedFid<Output = EpRawFid>{
 
 pub trait TagSendEp {
     fn tsend_to<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64) -> Result<(), crate::error::Error> ;
-    fn tsend<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> Result<(), crate::error::Error> ;
     fn tsend_to_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
-    fn tsend_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
     fn tsend_to_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
-    fn tsend_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
 	fn tsendv_to(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64) -> Result<(), crate::error::Error> ;    
-	fn tsendv(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64) -> Result<(), crate::error::Error> ;
 	fn tsendv_to_with_context(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
-	fn tsendv_with_context(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
 	fn tsendv_to_triggered(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
-	fn tsendv_triggered(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
-    fn tsendmsg(&self, msg: &crate::msg::MsgTaggedConnected, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> ;
     fn tsendmsg_to(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> ;
     fn tsenddata_to<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &MappedAddress, tag: u64) -> Result<(), crate::error::Error> ;
-    fn tsenddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> Result<(), crate::error::Error> ;
     fn tsenddata_to_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &MappedAddress, tag: u64, context : &mut Context) -> Result<(), crate::error::Error> ;
-    fn tsenddata_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut Context) -> Result<(), crate::error::Error> ;
     fn tsenddata_to_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &MappedAddress, tag: u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
-    fn tsenddata_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
     fn tinject_to<T>(&self, buf: &[T], mapped_addr: &MappedAddress, tag:u64 ) -> Result<(), crate::error::Error> ;
-    fn tinject<T>(&self, buf: &[T], tag:u64 ) -> Result<(), crate::error::Error> ;
     fn tinjectdata_to<T>(&self, buf: &[T], data: u64, mapped_addr: &MappedAddress, tag: u64) -> Result<(), crate::error::Error> ;
+}
+
+pub trait ConnectedTagSendEp {
+    fn tsend<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> Result<(), crate::error::Error> ;
+    fn tsend_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
+    fn tsend_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+	fn tsendv(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64) -> Result<(), crate::error::Error> ;
+	fn tsendv_with_context(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut Context) -> Result<(), crate::error::Error> ;
+	fn tsendv_triggered(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+    fn tsendmsg(&self, msg: &crate::msg::MsgTaggedConnected, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error> ;
+    fn tsenddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> Result<(), crate::error::Error> ;
+    fn tsenddata_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut Context) -> Result<(), crate::error::Error> ;
+    fn tsenddata_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+    fn tinject<T>(&self, buf: &[T], tag:u64 ) -> Result<(), crate::error::Error> ;
     fn tinjectdata<T>(&self, buf: &[T], data: u64, tag: u64) -> Result<(), crate::error::Error> ;
 }
 
@@ -228,18 +272,8 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
     }
 
     #[inline]
-    fn tsend<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> Result<(), crate::error::Error> {
-        self.tsend_impl(buf, desc, None, tag, None)
-    }
-
-    #[inline]
     fn tsend_to_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> {
         self.tsend_impl(buf, desc, Some(mapped_addr), tag, Some(context.inner_mut()))
-    }
-
-    #[inline]
-    fn tsend_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> {
-        self.tsend_impl(buf, desc, None, tag, Some(context.inner_mut()))
     }
 
     #[inline]
@@ -248,38 +282,18 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
     }
 
     #[inline]
-    fn tsend_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> {
-        self.tsend_impl(buf, desc, None, tag, Some(context.inner_mut()))
-    }
-
-    #[inline]
-	fn tsendv_to(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64) -> Result<(), crate::error::Error> { // [TODO]
+    fn tsendv_to(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64) -> Result<(), crate::error::Error> { // [TODO]
         self.tsendv_impl(iov, desc, Some(dest_mapped_addr), tag, None)
     }
-    
+   
     #[inline]
-	fn tsendv(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64) -> Result<(), crate::error::Error> { // [TODO]
-        self.tsendv_impl(iov, desc, None, tag, None)
-    }
-
-    #[inline]
-	fn tsendv_to_with_context(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> { // [TODO]
+    fn tsendv_to_with_context(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> { // [TODO]
         self.tsendv_impl(iov, desc, Some(dest_mapped_addr), tag, Some(context.inner_mut()))
     }
 
     #[inline]
-	fn tsendv_with_context(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut Context) -> Result<(), crate::error::Error> { // [TODO]
-        self.tsendv_impl(iov, desc, None, tag, Some(context.inner_mut()))
-    }
-
-    #[inline]
-	fn tsendv_to_triggered(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { // [TODO]
+    fn tsendv_to_triggered(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { // [TODO]
         self.tsendv_impl(iov, desc, Some(dest_mapped_addr), tag, Some(context.inner_mut()))
-    }
-
-    #[inline]
-	fn tsendv_triggered(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { // [TODO]
-        self.tsendv_impl(iov, desc, None, tag, Some(context.inner_mut()))
     }
 
     #[inline]
@@ -288,18 +302,8 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
     }
 
     #[inline]
-    fn tsenddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> Result<(), crate::error::Error> {
-        self.tsenddata_impl(buf, desc, data, None, tag, None)
-    }
-
-    #[inline]
     fn tsenddata_to_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &MappedAddress, tag: u64, context : &mut Context) -> Result<(), crate::error::Error> {
         self.tsenddata_impl(buf, desc, data, Some(mapped_addr), tag, Some(context.inner_mut()))
-    }
-
-    #[inline]
-    fn tsenddata_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut Context) -> Result<(), crate::error::Error> {
-        self.tsenddata_impl(buf, desc, data, None, tag, Some(context.inner_mut()))
     }
 
     #[inline]
@@ -308,13 +312,65 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
     }
 
     #[inline]
-    fn tsenddata_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> {
+    fn tinject_to<T>(&self, buf: &[T], mapped_addr: &MappedAddress, tag:u64 ) -> Result<(), crate::error::Error> {
+        self.tinject_impl(buf, Some(mapped_addr), tag)
+    }
+
+    #[inline]
+    fn tinjectdata_to<T>(&self, buf: &[T], data: u64, mapped_addr: &MappedAddress, tag: u64) -> Result<(), crate::error::Error> {
+        self.tinjectdata_impl(buf, data, Some(mapped_addr), tag)
+    }
+
+    #[inline]
+    fn tsendmsg_to(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error>  {
+        self.tsendmsg_impl(Either::Left(msg), options)
+    }
+}
+
+impl<EP: TagSendEpImpl>  ConnectedTagSendEp for EP {
+    #[inline]
+    fn tsend<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> Result<(), crate::error::Error> {
+        self.tsend_impl(buf, desc, None, tag, None)
+    }
+
+    #[inline]
+    fn tsend_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut Context) -> Result<(), crate::error::Error> {
+        self.tsend_impl(buf, desc, None, tag, Some(context.inner_mut()))
+    }
+
+    #[inline]
+    fn tsend_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> {
+        self.tsend_impl(buf, desc, None, tag, Some(context.inner_mut()))
+    }
+
+    #[inline]
+	fn tsendv(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64) -> Result<(), crate::error::Error> { // [TODO]
+        self.tsendv_impl(iov, desc, None, tag, None)
+    }
+
+    #[inline]
+	fn tsendv_with_context(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut Context) -> Result<(), crate::error::Error> { // [TODO]
+        self.tsendv_impl(iov, desc, None, tag, Some(context.inner_mut()))
+    }
+
+    #[inline]
+	fn tsendv_triggered(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], tag:u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> { // [TODO]
+        self.tsendv_impl(iov, desc, None, tag, Some(context.inner_mut()))
+    }
+
+    #[inline]
+    fn tsenddata<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> Result<(), crate::error::Error> {
+        self.tsenddata_impl(buf, desc, data, None, tag, None)
+    }
+
+    #[inline]
+    fn tsenddata_with_context<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut Context) -> Result<(), crate::error::Error> {
         self.tsenddata_impl(buf, desc, data, None, tag, Some(context.inner_mut()))
     }
 
     #[inline]
-    fn tinject_to<T>(&self, buf: &[T], mapped_addr: &MappedAddress, tag:u64 ) -> Result<(), crate::error::Error> {
-        self.tinject_impl(buf, Some(mapped_addr), tag)
+    fn tsenddata_triggered<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut TriggeredContext) -> Result<(), crate::error::Error> {
+        self.tsenddata_impl(buf, desc, data, None, tag, Some(context.inner_mut()))
     }
 
     #[inline]
@@ -323,11 +379,6 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
     }
     
     #[inline]
-    fn tinjectdata_to<T>(&self, buf: &[T], data: u64, mapped_addr: &MappedAddress, tag: u64) -> Result<(), crate::error::Error> {
-        self.tinjectdata_impl(buf, data, Some(mapped_addr), tag)
-    }
-
-    #[inline]
     fn tinjectdata<T>(&self, buf: &[T], data: u64, tag: u64) -> Result<(), crate::error::Error> {
         self.tinjectdata_impl(buf, data, None, tag)
     }
@@ -335,11 +386,6 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
     #[inline]
     fn tsendmsg(&self, msg: &crate::msg::MsgTaggedConnected, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error>  {
         self.tsendmsg_impl(Either::Right(msg), options)
-    }
-    
-    #[inline]
-    fn tsendmsg_to(&self, msg: &crate::msg::MsgTagged, options: TaggedSendMsgOptions) -> Result<(), crate::error::Error>  {
-        self.tsendmsg_impl(Either::Left(msg), options)
     }
 }
 
