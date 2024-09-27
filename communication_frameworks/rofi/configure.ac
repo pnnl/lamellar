@@ -18,6 +18,12 @@ AC_ARG_ENABLE([stats],
     [AC_HELP_STRING([--enable-stats],
 		    [Enable statistics (default: disabled)])])
 
+AC_ARG_WITH([ofi],
+    [AC_HELP_STRING([--with-ofi],
+                    [Specify the path to libfabric install dir])],
+            [OFI_PATH="$withval"],
+            [OFI_PATH="/usr/local"])
+
 AC_ARG_WITH([ofi-provider],
     [AC_HELP_STRING([--with-ofi-provider],
                     [Manually select the underlying OFI provider (e.g., verbs, default: none)])],
@@ -25,6 +31,8 @@ AC_ARG_WITH([ofi-provider],
 		     AC_DEFINE(ROFI_OFI_PROVIDER,[$with_ofi_provider],[OFI Provider])],
 		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, false)])
 
+LDFLAGS="$LDFLAGS -L$OFI_PATH/lib -Wl,-rpath,$OFI_PATH/lib"
+CPPFLAGS="$CPPFLAGS -I$OFI_PATH/include"
 
 AC_CHECK_HEADERS([stdio.h],       [],[AC_MSG_ERROR[stdio.h  not found!]])
 AC_CHECK_HEADERS([sys/socket.h], [],[AC_MSG_ERROR[sys/socket.h  not found!]])
