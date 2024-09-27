@@ -9,7 +9,7 @@ repository = "https://github.com/pnnl/rofi-sys"
 license-file = "LICENSE"
 keywords = ["hpc","network","ditributed","libfabrics"]
 categories = ["external-ffi-bindings", "network-programming"]
-
+links ="rofi"
 
 [dependencies]
 
@@ -23,6 +23,8 @@ glob = "0.3.0"
 [lib]
 name = "rofisys"
 path = "src/lib.rs"
+
+
 
 [features]
 shared = []

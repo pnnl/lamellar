@@ -142,6 +142,7 @@ fn build_bindings() {
     let rofi_inc_dir = rofi_env.join("include");
     let rofi_lib_dir = rofi_env.join("lib");
 
+    println!("cargo:root={}", out_path.display());
     println!("cargo:rustc-link-search=native={}", rofi_lib_dir.display());
     println!("cargo:rustc-link-search=native={}", ofi_lib_dir.display());
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", rofi_lib_dir.display());
