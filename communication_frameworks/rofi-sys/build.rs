@@ -7,18 +7,39 @@ use std::env;
 use std::path::PathBuf;
 use std::process::{exit, Command, Stdio};
 
-fn build_rofi(out_path: &PathBuf, ofi_lib_dir: &PathBuf, ofi_inc_dir: &PathBuf) -> PathBuf {
+fn build_rofi(
+    out_path: &PathBuf,
+    ofi_env: &PathBuf,
+    ofi_lib_dir: &PathBuf,
+    ofi_inc_dir: &PathBuf,
+) -> PathBuf {
     let dest = out_path.clone().join("rofi_src");
     Command::new("cp")
         .args(&["-r", "rofi", &dest.to_string_lossy()])
         .status()
         .unwrap();
 
-    autotools::Config::new(dest)
+    #[cfg(feature = "shared")]
+    let path = autotools::Config::new(dest)
         .reconf("-ivfWnone")
+        .enable("shared", None)
+        .disable("static", None)
+        .with(format!("ofi={}", ofi_env.display()), None)
+        .ldflag(format! {" -L{} -libverbs -pthread -ldl -lrdmacm -lrt",ofi_lib_dir.display()})
+        .cflag(format! {"-O3  -I{}",ofi_inc_dir.display()})
+        .cxxflag(format! {"-O3"})
+        .build();
+    #[cfg(not(feature = "shared"))]
+    let path = autotools::Config::new(dest)
+        .reconf("-ivfWnone")
+        .disable("shared", None)
+        .enable("static", None)
+        .with(format!("ofi={}", ofi_env.display()), None)
         .ldflag(format! {"-L{} -libverbs -pthread -ldl -lrdmacm -lrt",ofi_lib_dir.display()})
-        .cflag(format! {"-I{} -O3",ofi_inc_dir.display()})
-        .build()
+        .cflag(format! {"-O3 -I{} ",ofi_inc_dir.display()})
+        .cxxflag(format! {"-O3"})
+        .build();
+    path
 }
 
 fn check_lib_for_function(lib: PathBuf, func: &str) -> Option<()> {
@@ -57,6 +78,7 @@ fn build_bindings() {
                 .status()
                 .unwrap();
 
+            #[cfg(not(feature = "shared"))]
             let install_dest = autotools::Config::new(dest.clone())
                 .reconf("-ivf")
                 .disable("shared", None)
@@ -65,6 +87,21 @@ fn build_bindings() {
                 .enable("atomics", None)
                 .enable("rxm", None)
                 .enable("xpmem", Some("no"))
+                .cflag("-O3")
+                .cxxflag("-O3")
+                .build();
+            #[cfg(feature = "shared")]
+            let install_dest = autotools::Config::new(dest.clone())
+                .reconf("-ivf")
+                .enable("shared", None)
+                .disable("static", None)
+                .enable("only", None)
+                .enable("verbs", None)
+                .enable("atomics", None)
+                .enable("rxm", None)
+                .enable("xpmem", Some("no"))
+                .cflag("-O3")
+                .cxxflag("-O3")
                 .build();
             std::path::PathBuf::from(install_dest)
         }
@@ -87,7 +124,7 @@ fn build_bindings() {
                 exit(1);
             }
         }
-        Err(_) => build_rofi(&out_path, &ofi_lib_dir, &ofi_inc_dir),
+        Err(_) => build_rofi(&out_path, &ofi_env, &ofi_lib_dir, &ofi_inc_dir),
     };
     for entry in glob("rofi/**/*.c").expect("Failed to read glob pattern") {
         match entry {
@@ -107,6 +144,9 @@ fn build_bindings() {
 
     println!("cargo:rustc-link-search=native={}", rofi_lib_dir.display());
     println!("cargo:rustc-link-search=native={}", ofi_lib_dir.display());
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", rofi_lib_dir.display());
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", ofi_lib_dir.display());
+
     println!("cargo:rustc-link-search=native=/usr/lib64");
     println!("cargo:rustc-link-search=native=/usr/lib64/libibverbs");
     println!("cargo:rustc-link-lib=rofi");
