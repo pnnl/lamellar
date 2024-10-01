@@ -805,12 +805,20 @@ impl DisabledMemoryRegion {
         &self,
         ep: &crate::ep::EndpointBase<EP, STATE>,
     ) -> Result<(), crate::error::Error> {
-        self.mr.inner.bind_ep(&ep.inner)?;
-        // ep.inner.eq
-        //     .get()
-        //     .expect("Endpoint is to bound to an Event Queue")
-        //     .bind_mr(&self.inner);
-        Ok(())
+        self.mr.inner.bind_ep(&ep.inner)
+    }
+
+    /// Associates the memory region with a counter
+    ///
+    /// Bind the memory region to `cntr` and request event generation for remote writes or atomics targeting this memory region.
+    ///
+    /// Corresponds to `fi_mr_bind` with a `fid_cntr`
+    pub fn bind_cntr(
+        &self,
+        cntr: &crate::cntr::Counter<impl ReadCntr + 'static>,
+        remote_write_event: bool,
+    ) -> Result<(), crate::error::Error> {
+        self.mr.inner.bind_cntr(&cntr.inner, remote_write_event)
     }
 
     /// Enables a memory region for use.

@@ -2,8 +2,6 @@ use crate::{
     cq::ReadCq,
     ep::{Connectionless, EndpointBase, EndpointImplBase},
     eq::ReadEq,
-    info::InfoEntry,
-    Context, MyRc,
 };
 
 pub type ConnectionlessEndpointBase<EP> = EndpointBase<EP, Connectionless>;
