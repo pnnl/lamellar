@@ -2801,18 +2801,16 @@ pub fn ft_reg_mr<I, E: 'static>(
     let mr = match mr {
         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
 
-        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-            match ep {
-                Endpoint::Connectionless(ep) => {
-                    mr.bind_ep(ep).unwrap();
-                    mr.enable().unwrap()
-                }
-                Endpoint::ConnectionOriented(ep) => {
-                    todo!();
-                    // mr.bind_ep(ep).unwrap(); mr.enable().unwrap()
-                }
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => match ep {
+            Endpoint::Connectionless(ep) => {
+                mr.bind_ep(ep).unwrap();
+                mr.enable().unwrap()
             }
-        }
+            Endpoint::ConnectionOriented(ep) => {
+                mr.bind_ep(ep).unwrap();
+                mr.enable().unwrap()
+            }
+        },
     };
 
     let desc = mr.description();

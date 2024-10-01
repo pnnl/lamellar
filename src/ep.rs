@@ -76,11 +76,21 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     phantom: PhantomData<T>,
 }
 
-// pub type Endpoint<T, const CONN: bool> =
-//     EndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>, CONN>;
+// pub type Endpoint<T, STATE: EpState> =
+//     EndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>, STATE>;
 
-pub struct EndpointBase<EP, const CONN: bool> {
+pub trait EpState {}
+pub struct Connected;
+pub struct Unconnected;
+pub struct Connectionless;
+
+impl EpState for Connected {}
+impl EpState for Unconnected {}
+impl EpState for Connectionless {}
+
+pub struct EndpointBase<EP, STATE: EpState> {
     pub(crate) inner: MyRc<EP>,
+    pub(crate) phantom: PhantomData<STATE>,
 }
 
 // pub(crate) trait BaseEndpointImpl: AsRawTypedFid<Output = EpRawFid> {
@@ -432,13 +442,13 @@ pub trait BaseEndpoint: AsRawFid {
 }
 
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> BaseEndpoint for EndpointImplBase<T, EQ, CQ> {}
-impl<T: BaseEndpoint, const CONN: bool> BaseEndpoint for EndpointBase<T, CONN> {}
+impl<T: BaseEndpoint, STATE: EpState> BaseEndpoint for EndpointBase<T, STATE> {}
 
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ActiveEndpoint for EndpointImplBase<T, EQ, CQ> {}
 
-impl<T: ActiveEndpoint, const CONN: bool> ActiveEndpoint for EndpointBase<T, CONN> {}
+impl<T: ActiveEndpoint, STATE: EpState> ActiveEndpoint for EndpointBase<T, STATE> {}
 
-impl<E: AsFd, const CONN: bool> AsFd for EndpointBase<E, CONN> {
+impl<E: AsFd, STATE: EpState> AsFd for EndpointBase<E, STATE> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
@@ -962,13 +972,13 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
     }
 }
 
-impl<const CONN: bool> EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, CONN> {
+impl<STATE: EpState> EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, STATE> {
     pub fn new<E, DEQ: ?Sized + 'static>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
         context: Option<&mut Context>,
-    ) -> Result<EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>, crate::error::Error>
+    ) -> Result<EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>, crate::error::Error>
     {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
@@ -976,8 +986,9 @@ impl<const CONN: bool> EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>
         };
 
         Ok(
-            EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN> {
+            EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE> {
                 inner: MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
+                phantom: PhantomData,
             },
         )
     }
@@ -1152,7 +1163,7 @@ impl<EP, EQ: ?Sized + AsRawFid + 'static + ReadEq, CQ: ?Sized + ReadCq>
     }
 }
 
-impl<EP, const CONN: bool> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, CONN> {
+impl<EP, STATE: EpState> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, STATE> {
     pub fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
@@ -1173,7 +1184,7 @@ impl<EP, const CONN: bool> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn Rea
     }
 }
 
-impl<EP, const CONN: bool> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, CONN> {
+impl<EP, STATE: EpState> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, STATE> {
     pub fn bind_eq<T: ReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
@@ -1182,7 +1193,7 @@ impl<EP, const CONN: bool> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn Rea
     }
 }
 
-impl<EP, const CONN: bool> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, CONN> {
+impl<EP, STATE: EpState> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, STATE> {
     pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
         self.inner.bind_cntr()
     }
@@ -1203,26 +1214,26 @@ impl<EP, const CONN: bool> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn Rea
     // }
 }
 
-impl<E: AsFid, const CONN: bool> AsFid for EndpointBase<E, CONN> {
+impl<E: AsFid, STATE: EpState> AsFid for EndpointBase<E, STATE> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
         self.inner.as_fid()
     }
 }
 
-impl<E: AsRawFid, const CONN: bool> AsRawFid for EndpointBase<E, CONN> {
+impl<E: AsRawFid, STATE: EpState> AsRawFid for EndpointBase<E, STATE> {
     fn as_raw_fid(&self) -> RawFid {
         self.inner.as_raw_fid()
     }
 }
 
-impl<E: AsTypedFid<EpRawFid>, const CONN: bool> AsTypedFid<EpRawFid> for EndpointBase<E, CONN> {
+impl<E: AsTypedFid<EpRawFid>, STATE: EpState> AsTypedFid<EpRawFid> for EndpointBase<E, STATE> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<E: AsRawTypedFid<Output = *mut libfabric_sys::fid_ep>, const CONN: bool> AsRawTypedFid
-    for EndpointBase<E, CONN>
+impl<E: AsRawTypedFid<Output = *mut libfabric_sys::fid_ep>, STATE: EpState> AsRawTypedFid
+    for EndpointBase<E, STATE>
 {
     type Output = EpRawFid;
 

@@ -1,12 +1,12 @@
 use crate::{
     cq::ReadCq,
-    ep::{EndpointBase, EndpointImplBase},
+    ep::{Connectionless, EndpointBase, EndpointImplBase},
     eq::ReadEq,
     info::InfoEntry,
     Context, MyRc,
 };
 
-pub type ConnectionlessEndpointBase<EP> = EndpointBase<EP, false>;
+pub type ConnectionlessEndpointBase<EP> = EndpointBase<EP, Connectionless>;
 
 pub type ConnectionlessEndpoint<E> =
     ConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>;

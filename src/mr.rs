@@ -5,6 +5,7 @@ use crate::{
     cq::ReadCq,
     domain::DomainImplT,
     enums::{MrAccess, MrRegOpt},
+    ep::EpState,
     eq::ReadEq,
     fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, MrRawFid, OwnedMrFid, RawFid},
     iovec::IoVec,
@@ -800,9 +801,9 @@ impl DisabledMemoryRegion {
     /// Bind the memory region to `ep`.
     ///
     /// Corresponds to `fi_mr_bind` with a `fid_ep`
-    pub fn bind_ep<EP: AsRawFid + 'static, const CONN: bool>(
+    pub fn bind_ep<EP: AsRawFid + 'static, STATE: EpState>(
         &self,
-        ep: &crate::ep::EndpointBase<EP, CONN>,
+        ep: &crate::ep::EndpointBase<EP, STATE>,
     ) -> Result<(), crate::error::Error> {
         self.mr.inner.bind_ep(&ep.inner)?;
         // ep.inner.eq
@@ -1092,17 +1093,17 @@ mod tests {
             minor: 19,
         })
         .enter_hints()
-            .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
-            .enter_domain_attr()
-                .mode(crate::enums::Mode::all())
-                .mr_mode(
-                    crate::enums::MrMode::new()
-                        .basic()
-                        .scalable()
-                        .local()
-                        .inverse(),
-                )
-            .leave_domain_attr()
+        .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
+        .enter_domain_attr()
+        .mode(crate::enums::Mode::all())
+        .mr_mode(
+            crate::enums::MrMode::new()
+                .basic()
+                .scalable()
+                .local()
+                .inverse(),
+        )
+        .leave_domain_attr()
         .leave_hints()
         .get()
         .unwrap();
@@ -1193,17 +1194,17 @@ mod libfabric_lifetime_tests {
             minor: 19,
         })
         .enter_hints()
-            .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
-            .enter_domain_attr()
-                .mode(crate::enums::Mode::all())
-                .mr_mode(
-                    crate::enums::MrMode::new()
-                        .basic()
-                        .scalable()
-                        .local()
-                        .inverse(),
-                )
-            .leave_domain_attr()
+        .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
+        .enter_domain_attr()
+        .mode(crate::enums::Mode::all())
+        .mr_mode(
+            crate::enums::MrMode::new()
+                .basic()
+                .scalable()
+                .local()
+                .inverse(),
+        )
+        .leave_domain_attr()
         .leave_hints()
         .get()
         .unwrap();

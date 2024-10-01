@@ -4,7 +4,7 @@ use crate::{
     cntr::{Counter, ReadCntr},
     cq::ReadCq,
     enums::{Mode, TrafficClass, TransferOptions},
-    ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase},
+    ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase, EpState},
     eq::ReadEq,
     fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid},
     Context, MyOnceCell, MyRc,
@@ -209,19 +209,19 @@ impl TxContext {
 }
 
 //================== TxContext Builder ==================//
-pub struct TxContextBuilder<'a, E, const CONN: bool> {
+pub struct TxContextBuilder<'a, E, STATE: EpState> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
-impl<'a, const CONN: bool> TxContextBuilder<'a, (), CONN> {
+impl<'a, STATE: EpState> TxContextBuilder<'a, (), STATE> {
     pub fn new<E>(
-        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
+        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
         index: i32,
-    ) -> TxContextBuilder<'a, E, CONN> {
-        TxContextBuilder::<E, CONN> {
+    ) -> TxContextBuilder<'a, E, STATE> {
+        TxContextBuilder::<E, STATE> {
             tx_attr: TxAttr::new(),
             index,
             ep,
@@ -230,7 +230,7 @@ impl<'a, const CONN: bool> TxContextBuilder<'a, (), CONN> {
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> TxContextBuilder<'a, E, CONN> {
+impl<'a, E: AsRawTypedFid<Output = EpRawFid>, STATE: EpState> TxContextBuilder<'a, E, STATE> {
     // pub fn caps(mut self, caps: TxCaps) -> Self {
     //     self.tx_attr.caps(caps);
     //     self
@@ -282,7 +282,7 @@ impl<'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> TxContextBuilder
         self
     }
 
-    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, E, CONN> {
+    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, E, STATE> {
         TxContextBuilder {
             tx_attr: self.tx_attr,
             index: self.index,
@@ -585,19 +585,19 @@ impl RxContextBase<dyn ReadCq> {
 }
 
 //================== RxContext Builder ==================//
-pub struct ReceiveContextBuilder<'a, E, const CONN: bool> {
+pub struct ReceiveContextBuilder<'a, E, STATE: EpState> {
     pub(crate) rx_attr: RxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
-impl<'a, const CONN: bool> ReceiveContextBuilder<'a, (), CONN> {
+impl<'a, STATE: EpState> ReceiveContextBuilder<'a, (), STATE> {
     pub fn new<E>(
-        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
+        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
         index: i32,
-    ) -> ReceiveContextBuilder<'a, E, CONN> {
-        ReceiveContextBuilder::<E, CONN> {
+    ) -> ReceiveContextBuilder<'a, E, STATE> {
+        ReceiveContextBuilder::<E, STATE> {
             rx_attr: RxAttr::new(),
             index,
             ep,
@@ -606,7 +606,7 @@ impl<'a, const CONN: bool> ReceiveContextBuilder<'a, (), CONN> {
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> ReceiveContextBuilder<'a, E, CONN> {
+impl<'a, E: AsRawTypedFid<Output = EpRawFid>, STATE: EpState> ReceiveContextBuilder<'a, E, STATE> {
     // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
     //     self.rx_attr.caps(caps);
     //     self
@@ -648,7 +648,7 @@ impl<'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> ReceiveContextBu
         self
     }
 
-    pub fn context(self, ctx: &'a mut Context) -> ReceiveContextBuilder<'a, E, CONN> {
+    pub fn context(self, ctx: &'a mut Context) -> ReceiveContextBuilder<'a, E, STATE> {
         ReceiveContextBuilder {
             rx_attr: self.rx_attr,
             index: self.index,

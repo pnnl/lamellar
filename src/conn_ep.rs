@@ -1,103 +1,17 @@
-use libfabric_sys::FI_CONNECTED;
+use std::marker::PhantomData;
 
 use crate::{
-    av::AddressVectorBase,
-    cq::{CompletionQueue, ReadCq},
-    ep::{
-        ActiveEndpoint, Address, BaseEndpoint, EndpointBase, EndpointImplBase, IncompleteBindCntr,
-    },
-    eq::{ConnectedEvent, Event, EventQueueBase, EventQueueCmEntry, ReadEq},
-    fid::{AsFid, AsRawFid, AsRawTypedFid, EpRawFid},
-    info::InfoEntry,
+    cq::ReadCq,
+    ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected},
+    eq::{ConnectedEvent, ReadEq},
+    fid::{AsRawFid, AsRawTypedFid, EpRawFid},
     utils::check_error,
-    Context, MyRc,
 };
 
-pub struct UnconnectedEndpointBase<EP> {
-    pub(crate) inner: MyRc<EP>,
-}
-impl<EP> UnconnectedEndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>> {
-    pub fn bind_eq<T: ReadEq + 'static>(
-        &self,
-        eq: &EventQueueBase<T>,
-    ) -> Result<(), crate::error::Error> {
-        self.inner.bind_eq(&eq.inner)
-    }
+pub type UnconnectedEndpointBase<EP> = EndpointBase<EP, Unconnected>;
 
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
-        self.inner.bind_cntr()
-    }
-
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
-        &self,
-        av: &AddressVectorBase<EQ>,
-    ) -> Result<(), crate::error::Error> {
-        self.inner.bind_av(av)
-    }
-
-    pub fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(
-        &self,
-        cq: &CompletionQueue<T>,
-        selective: bool,
-    ) -> Result<(), crate::error::Error> {
-        self.inner.bind_shared_cq(&cq.inner, selective)
-    }
-
-    pub fn bind_separate_cqs<T: AsRawFid + ReadCq + 'static>(
-        &self,
-        tx_cq: &CompletionQueue<T>,
-        tx_selective: bool,
-        rx_cq: &CompletionQueue<T>,
-        rx_selective: bool,
-    ) -> Result<(), crate::error::Error> {
-        self.inner
-            .bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
-    }
-}
-
-impl<EP: AsRawFid> AsRawFid for UnconnectedEndpointBase<EP> {
-    fn as_raw_fid(&self) -> crate::fid::RawFid {
-        self.inner.as_raw_fid()
-    }
-}
-
-impl<EP: AsFid> AsFid for UnconnectedEndpointBase<EP> {
-    fn as_fid(&self) -> crate::fid::BorrowedFid {
-        self.inner.as_fid()
-    }
-}
-
-impl<EP: AsRawTypedFid<Output = EpRawFid>> AsRawTypedFid for UnconnectedEndpointBase<EP> {
-    type Output = EpRawFid;
-
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.inner.as_raw_typed_fid()
-    }
-}
-
-impl<EP: BaseEndpoint> BaseEndpoint for UnconnectedEndpointBase<EP> {}
 pub type UnconnectedEndpoint<T> =
     UnconnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
-
-impl UnconnectedEndpoint<()> {
-    pub fn new<E, DEQ: ?Sized + 'static>(
-        domain: &crate::domain::DomainBase<DEQ>,
-        info: &InfoEntry<E>,
-        flags: u64,
-        context: Option<&mut Context>,
-    ) -> Result<UnconnectedEndpoint<E>, crate::error::Error> {
-        let c_void = match context {
-            Some(ctx) => ctx.inner_mut(),
-            None => std::ptr::null_mut(),
-        };
-
-        Ok(
-            UnconnectedEndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
-                inner: MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
-            },
-        )
-    }
-}
 
 impl<EP: AsRawTypedFid<Output = EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
@@ -155,15 +69,14 @@ impl<E> UnconnectedEndpoint<E> {
 
         ConnectedEndpoint {
             inner: self.inner.clone(),
+            phantom: PhantomData,
         }
     }
 }
 
-impl<E> ActiveEndpoint for UnconnectedEndpoint<E> {}
-
 pub trait ConnectedEp {}
 
-pub type ConnectedEndpointBase<EP> = EndpointBase<EP, true>;
+pub type ConnectedEndpointBase<EP> = EndpointBase<EP, Connected>;
 
 pub type ConnectedEndpoint<T> = ConnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
 
