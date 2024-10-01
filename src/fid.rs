@@ -1,4 +1,4 @@
-use std::marker::PhantomData; 
+use std::marker::PhantomData;
 
 use crate::{error, MyRc};
 pub(crate) type RawFid = *mut libfabric_sys::fid;
@@ -26,21 +26,22 @@ pub(crate) struct OwnedTypedFid<FID: AsRawFid> {
 
 impl<FID: AsRawFid + AsRawTypedFid> OwnedTypedFid<FID> {
     pub(crate) fn from(typed_fid: FID) -> Self {
-        Self {
-            typed_fid,
-        }
+        Self { typed_fid }
     }
 }
 
 pub struct BorrowedFid<'a> {
     fid: RawFid,
-    phantom: PhantomData<&'a OwnedTypedFid<RawFid>>
+    phantom: PhantomData<&'a OwnedTypedFid<RawFid>>,
 }
 
 impl BorrowedFid<'_> {
     #[inline]
     pub const unsafe fn borrow_raw(fid: RawFid) -> Self {
-        Self {fid, phantom: PhantomData}
+        Self {
+            fid,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -52,11 +53,14 @@ pub struct BorrowedTypedFid<'a, FID: AsRawFid + Copy> {
 impl<FID: AsRawFid + Copy> BorrowedTypedFid<'_, FID> {
     #[inline]
     pub const unsafe fn borrow_raw(typed_fid: FID) -> Self {
-        Self {typed_fid, phantom: PhantomData}
+        Self {
+            typed_fid,
+            phantom: PhantomData,
+        }
     }
 }
 
-impl<'a, FID: AsRawFid + Copy>  AsRawTypedFid for BorrowedTypedFid<'a, FID> {
+impl<'a, FID: AsRawFid + Copy> AsRawTypedFid for BorrowedTypedFid<'a, FID> {
     type Output = FID;
     #[inline]
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -64,7 +68,7 @@ impl<'a, FID: AsRawFid + Copy>  AsRawTypedFid for BorrowedTypedFid<'a, FID> {
     }
 }
 
-impl<'a, FID: AsRawFid + Copy>  AsRawFid for BorrowedTypedFid<'a, FID> {
+impl<'a, FID: AsRawFid + Copy> AsRawFid for BorrowedTypedFid<'a, FID> {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
         self.typed_fid.as_raw_fid()
@@ -76,7 +80,10 @@ impl<FID: AsRawFid> Drop for OwnedTypedFid<FID> {
     fn drop(&mut self) {
         let err = unsafe { libfabric_sys::inlined_fi_close(self.typed_fid.as_raw_fid()) };
         if err != 0 {
-            panic!("{}", error::Error::from_err_code((-err).try_into().unwrap()));
+            panic!(
+                "{}",
+                error::Error::from_err_code((-err).try_into().unwrap())
+            );
         }
     }
 }
@@ -96,26 +103,22 @@ impl<FID: AsRawFid + Copy> AsRawTypedFid for OwnedTypedFid<FID> {
 }
 
 impl<FID: AsRawFid> AsRawFid for OwnedTypedFid<FID> {
-
     fn as_raw_fid(&self) -> RawFid {
         self.typed_fid.as_raw_fid()
     }
 }
 
 impl<FID: AsRawFid> AsFid for OwnedTypedFid<FID> {
-    
     fn as_fid(&self) -> BorrowedFid<'_> {
-        unsafe {BorrowedFid::borrow_raw(self.as_raw_fid())}
+        unsafe { BorrowedFid::borrow_raw(self.as_raw_fid()) }
     }
 }
 
 impl<FID: AsRawFid + Copy> AsTypedFid<FID> for OwnedTypedFid<FID> {
-    
     fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FID> {
-        unsafe {BorrowedTypedFid::borrow_raw(self.as_raw_typed_fid())}
+        unsafe { BorrowedTypedFid::borrow_raw(self.as_raw_typed_fid()) }
     }
 }
-
 
 pub trait AsFid {
     fn as_fid(&self) -> BorrowedFid;
@@ -128,7 +131,6 @@ pub trait AsRawFid {
 pub trait AsTypedFid<FID: AsRawFid + Copy> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<FID>;
 }
-
 
 pub trait AsRawTypedFid {
     type Output: AsRawFid;
@@ -154,7 +156,6 @@ pub(crate) type DomainRawFid = *mut libfabric_sys::fid_domain;
 
 pub(crate) type OwnedDomainFid = OwnedTypedFid<DomainRawFid>;
 
-
 impl AsRawTypedFid for DomainRawFid {
     type Output = DomainRawFid;
 
@@ -166,10 +167,9 @@ impl AsRawTypedFid for DomainRawFid {
 impl AsRawFid for DomainRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
-
 
 pub(crate) type AvRawFid = *mut libfabric_sys::fid_av;
 
@@ -185,12 +185,11 @@ impl AsRawTypedFid for AvRawFid {
 impl AsRawFid for AvRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
 pub(crate) type OwnedAVFid = OwnedTypedFid<AvRawFid>;
-
 
 pub(crate) type AVSetRawFid = *mut libfabric_sys::fid_av_set;
 
@@ -206,7 +205,7 @@ impl AsRawTypedFid for AVSetRawFid {
 impl AsRawFid for AVSetRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -225,7 +224,7 @@ impl AsRawTypedFid for CntrRawFid {
 
 impl AsRawFid for CntrRawFid {
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -245,12 +244,11 @@ impl AsRawTypedFid for CqRawFid {
 impl AsRawFid for CqRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
 pub(crate) type OwnedCqFid = OwnedTypedFid<CqRawFid>;
-
 
 pub(crate) type FabricRawFid = *mut libfabric_sys::fid_fabric;
 
@@ -266,7 +264,7 @@ impl AsRawTypedFid for FabricRawFid {
 impl AsRawFid for FabricRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -286,7 +284,7 @@ impl AsRawTypedFid for MrRawFid {
 impl AsRawFid for MrRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -306,7 +304,7 @@ impl AsRawTypedFid for EqRawFid {
 impl AsRawFid for EqRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -326,7 +324,7 @@ impl AsRawTypedFid for WaitRawFid {
 impl AsRawFid for WaitRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -346,12 +344,11 @@ impl AsRawTypedFid for EpRawFid {
 impl AsRawFid for EpRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
 pub(crate) type OwnedEpFid = OwnedTypedFid<EpRawFid>;
-
 
 pub(crate) type PepRawFid = *mut libfabric_sys::fid_pep;
 
@@ -367,7 +364,7 @@ impl AsRawTypedFid for PepRawFid {
 impl AsRawFid for PepRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -387,7 +384,7 @@ impl AsRawTypedFid for McRawFid {
 impl AsRawFid for McRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 
@@ -407,7 +404,7 @@ impl AsRawTypedFid for PollRawFid {
 impl AsRawFid for PollRawFid {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        unsafe{&mut (**self).fid}
+        unsafe { &mut (**self).fid }
     }
 }
 

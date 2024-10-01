@@ -3,7 +3,18 @@ use std::ffi::CString;
 
 #[allow(unused_imports)]
 use crate::fid::AsFid;
-use crate::{enums::{AddressVectorType, AtomicOperation, DomainCaps, Mode, MrMode, Progress, ResourceMgmt, Threading, TrafficClass}, eq::{EventQueue, EventQueueBase, ReadEq}, fabric::FabricImpl, fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid}, info::InfoEntry, utils::check_error, AsFiType, Context, MyOnceCell, MyRc};
+use crate::{
+    enums::{
+        AddressVectorType, AtomicOperation, DomainCaps, Mode, MrMode, Progress, ResourceMgmt,
+        Threading, TrafficClass,
+    },
+    eq::{EventQueue, EventQueueBase, ReadEq},
+    fabric::FabricImpl,
+    fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, DomainRawFid, OwnedDomainFid},
+    info::InfoEntry,
+    utils::check_error,
+    AsFiType, Context, MyOnceCell, MyRc,
+};
 
 pub(crate) struct DomainImplBase<EQ: ?Sized> {
     pub(crate) c_domain: OwnedDomainFid,
@@ -13,9 +24,7 @@ pub(crate) struct DomainImplBase<EQ: ?Sized> {
     _fabric_rc: MyRc<FabricImpl>,
 }
 
-
-
-pub(crate) trait DomainImplT: AsRawFid + AsRawTypedFid<Output = DomainRawFid>{
+pub(crate) trait DomainImplT: AsRawFid + AsRawTypedFid<Output = DomainRawFid> {
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error>;
     #[allow(unused)]
     fn get_fabric_impl(&self) -> MyRc<FabricImpl>;
@@ -25,7 +34,7 @@ pub(crate) trait DomainImplT: AsRawFid + AsRawTypedFid<Output = DomainRawFid>{
 
 impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
-       self.unmap_key(key) 
+        self.unmap_key(key)
     }
 
     fn get_fabric_impl(&self) -> MyRc<FabricImpl> {
@@ -43,98 +52,151 @@ impl<EQ: ?Sized> DomainImplT for DomainImplBase<EQ> {
 
 //================== Domain (fi_domain) ==================//
 
-impl<EQ: ?Sized > DomainImplBase<EQ> {
-
-    pub(crate) fn new<E>(fabric: &MyRc<crate::fabric::FabricImpl>, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
+impl<EQ: ?Sized> DomainImplBase<EQ> {
+    pub(crate) fn new<E>(
+        fabric: &MyRc<crate::fabric::FabricImpl>,
+        info: &InfoEntry<E>,
+        flags: u64,
+        domain_attr: DomainAttr,
+        context: *mut std::ffi::c_void,
+    ) -> Result<Self, crate::error::Error> {
         let mut c_domain: DomainRawFid = std::ptr::null_mut();
-        let err =
-            if flags == 0 {
-                unsafe { libfabric_sys::inlined_fi_domain(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, context) }
+        let err = if flags == 0 {
+            unsafe {
+                libfabric_sys::inlined_fi_domain(
+                    fabric.as_raw_typed_fid(),
+                    info.c_info,
+                    &mut c_domain,
+                    context,
+                )
             }
-            else {
-                unsafe { libfabric_sys::inlined_fi_domain2(fabric.as_raw_typed_fid(), info.c_info, &mut c_domain, flags, context) }
-            };
-
+        } else {
+            unsafe {
+                libfabric_sys::inlined_fi_domain2(
+                    fabric.as_raw_typed_fid(),
+                    info.c_info,
+                    &mut c_domain,
+                    flags,
+                    context,
+                )
+            }
+        };
 
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
-            Ok(
-                Self { 
-                    c_domain: OwnedDomainFid::from(c_domain), 
-                    mr_key_size: domain_attr.mr_key_size,
-                    mr_mode: domain_attr.mr_mode,
-                    _fabric_rc: fabric.clone(), 
-                    _eq_rc: MyOnceCell::new(),
-                })
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            Ok(Self {
+                c_domain: OwnedDomainFid::from(c_domain),
+                mr_key_size: domain_attr.mr_key_size,
+                mr_mode: domain_attr.mr_mode,
+                _fabric_rc: fabric.clone(),
+                _eq_rc: MyOnceCell::new(),
+            })
         }
     }
 }
 
 impl DomainImplBase<dyn ReadEq> {
-
-    
-    pub(crate) fn bind(&self, eq: MyRc<dyn ReadEq>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
-        let err = unsafe{ libfabric_sys::inlined_fi_domain_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), if async_mem_reg {libfabric_sys::FI_REG_MR} else {0})} ;
+    pub(crate) fn bind(
+        &self,
+        eq: MyRc<dyn ReadEq>,
+        async_mem_reg: bool,
+    ) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_domain_bind(
+                self.as_raw_typed_fid(),
+                eq.as_raw_fid(),
+                if async_mem_reg {
+                    libfabric_sys::FI_REG_MR
+                } else {
+                    0
+                },
+            )
+        };
 
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
             if self._eq_rc.set((eq, async_mem_reg)).is_err() {
                 panic!("Domain is alread bound to an EventQueue");
             }
             Ok(())
         }
-    } 
+    }
 }
 
-impl<EQ: ?Sized > DomainImplBase<EQ> {
-
+impl<EQ: ?Sized> DomainImplBase<EQ> {
     // pub(crate) fn srx_context<T0>(&self, rx_attr: crate::RxAttr) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
     //     crate::ep::Endpoint::from_attr(self, rx_attr)
     // }
-    
+
     // pub(crate) fn srx_context_with_context<T0>(&self, rx_attr: crate::RxAttr, context: &mut T0) -> Result<crate::ep::Endpoint, crate::error::Error> { //[TODO]
     //     crate::ep::Endpoint::from_attr_with_context(self, rx_attr, context)
     // }
 
-    pub(crate) fn query_atomic<T: AsFiType>(&self, op: impl AtomicOperation, mut attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_atomic(self.as_raw_typed_fid(), T::as_fi_datatype(), op.as_raw(), attr.get_mut(), flags )};
+    pub(crate) fn query_atomic<T: AsFiType>(
+        &self,
+        op: impl AtomicOperation,
+        mut attr: crate::comm::atomic::AtomicAttr,
+        flags: u64,
+    ) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_query_atomic(
+                self.as_raw_typed_fid(),
+                T::as_fi_datatype(),
+                op.as_raw(),
+                attr.get_mut(),
+                flags,
+            )
+        };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MemoryRegionKey, flags: u64) -> Result<u64, crate::error::Error> {
+    pub(crate) fn map_raw(
+        &self,
+        mr_key: &mut crate::mr::MemoryRegionKey,
+        flags: u64,
+    ) -> Result<u64, crate::error::Error> {
         let mut mapped_key = 0;
         let err = match mr_key {
             crate::mr::MemoryRegionKey::Key(simple_key) => {
-                return Ok(*simple_key)
+                return Ok(*simple_key);
                 // unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, simple_key as *mut u64 as *mut u8, std::mem::size_of::<u64>(), &mut mapped_key, flags) }
             }
-            crate::mr::MemoryRegionKey::RawKey(raw_key) => {
-                unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.as_raw_typed_fid(), raw_key.1 , raw_key.0.as_mut_ptr().cast(), raw_key.0.len(), &mut mapped_key, flags) }
-            }
+            crate::mr::MemoryRegionKey::RawKey(raw_key) => unsafe {
+                libfabric_sys::inlined_fi_mr_map_raw(
+                    self.as_raw_typed_fid(),
+                    raw_key.1,
+                    raw_key.0.as_mut_ptr().cast(),
+                    raw_key.0.len(),
+                    &mut mapped_key,
+                    flags,
+                )
+            },
         };
-        
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
             Ok(mapped_key)
         }
     }
 
     // pub fn map_raw(&self, base_addr: u64, raw_key: &mut u8, key_size: usize, key: &mut u64, flags: u64) -> Result<(), crate::error::Error> {
     //     let err = unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.as_raw_typed_fid(), base_addr, raw_key, key_size, key, flags) };
-        
+
     //     check_error(err.try_into().unwrap())
     // }
 
     pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.as_raw_typed_fid(), key) };
-
 
         check_error(err.try_into().unwrap())
     }
@@ -147,35 +209,58 @@ impl<EQ: ?Sized > DomainImplBase<EQ> {
     //     crate::Stx::new(self, attr, context)
     // }
 
-    pub(crate) fn query_collective<T: AsFiType>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.as_raw_typed_fid(), coll.as_raw(), attr.get_mut(), 0) };
-    
+    pub(crate) fn query_collective<T: AsFiType>(
+        &self,
+        coll: crate::enums::CollectiveOp,
+        attr: &mut crate::comm::collective::CollectiveAttr<T>,
+    ) -> Result<bool, crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_query_collective(
+                self.as_raw_typed_fid(),
+                coll.as_raw(),
+                attr.get_mut(),
+                0,
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
             Ok(true)
         }
     }
 
-    pub(crate) fn query_collective_scatter<T: AsFiType>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_query_collective(self.as_raw_typed_fid(), coll.as_raw(), attr.get_mut(), libfabric_sys::fi_collective_op_FI_SCATTER.into()) };
-    
+    pub(crate) fn query_collective_scatter<T: AsFiType>(
+        &self,
+        coll: crate::enums::CollectiveOp,
+        attr: &mut crate::comm::collective::CollectiveAttr<T>,
+    ) -> Result<bool, crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_query_collective(
+                self.as_raw_typed_fid(),
+                coll.as_raw(),
+                attr.get_mut(),
+                libfabric_sys::fi_collective_op_FI_SCATTER.into(),
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
-        }
-        else {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
             Ok(true)
         }
     }
-
 }
 
 /// Owned wrapper around a libfabric `fid_domain`.
-/// 
+///
 /// This type wraps an instance of a `fid_domain`, monitoring its lifetime and closing it when it goes out of scope.
 /// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_domain.3.html).
-/// 
+///
 /// Note that other objects that rely on a Domain (e.g., [`Endpoint`](crate::ep::Endpoint)) will extend its lifetime until they
 /// are also dropped.
 // pub type Domain = DomainBase<dyn EventQueueImplT>;
@@ -203,79 +288,107 @@ impl<EQ: ?Sized> DomainImplT for DomainBase<EQ> {
 }
 
 impl<EQ: ?Sized> DomainBase<EQ> {
-    
-    pub(crate) fn new<E>(fabric: &crate::fabric::Fabric, info: &InfoEntry<E>, flags: u64, domain_attr: DomainAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new<E>(
+        fabric: &crate::fabric::Fabric,
+        info: &InfoEntry<E>,
+        flags: u64,
+        domain_attr: DomainAttr,
+        context: Option<&mut Context>,
+    ) -> Result<Self, crate::error::Error> {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
             None => std::ptr::null_mut(),
         };
 
-        Ok(
-            Self{
-                inner: 
-                MyRc::new(DomainImplBase::new(&fabric.inner, info, flags, domain_attr, c_void)?)
-            }
-        )    
+        Ok(Self {
+            inner: MyRc::new(DomainImplBase::new(
+                &fabric.inner,
+                info,
+                flags,
+                domain_attr,
+                c_void,
+            )?),
+        })
     }
 }
 
 impl DomainBase<dyn ReadEq> {
     /// Associates an [crate::eq::EventQueue] with the domain.
-    /// 
+    ///
     /// If `async_mem_reg` is true, the provider should perform all memory registration operations asynchronously, with the completion reported through the event queue
-    /// 
-    /// Corresponds to `fi_domain_bind`, with flag `FI_REG_MR` if `async_mem_reg` is true. 
-    pub(crate) fn bind_eq<EQ: ReadEq + 'static>(&self, eq: &EventQueueBase<EQ>, async_mem_reg: bool) -> Result<(), crate::error::Error> {
+    ///
+    /// Corresponds to `fi_domain_bind`, with flag `FI_REG_MR` if `async_mem_reg` is true.
+    pub(crate) fn bind_eq<EQ: ReadEq + 'static>(
+        &self,
+        eq: &EventQueueBase<EQ>,
+        async_mem_reg: bool,
+    ) -> Result<(), crate::error::Error> {
         self.inner.bind(eq.inner.clone(), async_mem_reg)
     }
 }
 
 impl<EQ: ?Sized> DomainBase<EQ> {
-
     /// Indicates if a provider supports a specific atomic operation
-    /// 
+    ///
     /// Returns true if the provider supports operations `op` for datatype `T` and atomic ops as reflected in `flags`.
-    /// 
+    ///
     /// Corresponds to `fi_query_atomic` with `datatype` automatically inferred from `T`.
-    pub fn query_atomic<T: AsFiType>(&self, op: impl AtomicOperation, attr: crate::comm::atomic::AtomicAttr, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Flags
-        
+    pub fn query_atomic<T: AsFiType>(
+        &self,
+        op: impl AtomicOperation,
+        attr: crate::comm::atomic::AtomicAttr,
+        flags: u64,
+    ) -> Result<(), crate::error::Error> {
+        //[TODO] Flags
+
         self.inner.query_atomic::<T>(op, attr, flags)
     }
 
-    pub(crate) fn map_raw(&self, mr_key: &mut crate::mr::MemoryRegionKey, flags: u64) -> Result<u64, crate::error::Error> {
+    pub(crate) fn map_raw(
+        &self,
+        mr_key: &mut crate::mr::MemoryRegionKey,
+        flags: u64,
+    ) -> Result<u64, crate::error::Error> {
         self.inner.map_raw(mr_key, flags)
     }
-    
+
     #[allow(dead_code)]
     pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
         self.inner.unmap_key(key)
     }
 
     /// Returns information about which collective operations are supported by a provider, and limitations on the collective.
-    /// 
+    ///
     /// Direclty corresponds to `fi_query_collective` with `flags` = 0
-    pub fn query_collective<T: AsFiType>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
+    pub fn query_collective<T: AsFiType>(
+        &self,
+        coll: crate::enums::CollectiveOp,
+        attr: &mut crate::comm::collective::CollectiveAttr<T>,
+    ) -> Result<bool, crate::error::Error> {
         self.inner.query_collective::<T>(coll, attr)
     }
 
     /// Requests attribute information on the reduce-scatter collective operation.
-    /// 
+    ///
     /// Direclty corresponds to `fi_query_collective` with `flags` = `FI_SCATTER`
-    pub fn query_collective_scatter<T: AsFiType>(&self, coll: crate::enums::CollectiveOp, attr: &mut crate::comm::collective::CollectiveAttr<T>) -> Result<bool, crate::error::Error> {
+    pub fn query_collective_scatter<T: AsFiType>(
+        &self,
+        coll: crate::enums::CollectiveOp,
+        attr: &mut crate::comm::collective::CollectiveAttr<T>,
+    ) -> Result<bool, crate::error::Error> {
         self.inner.query_collective_scatter::<T>(coll, attr)
     }
-                                
 }
 
 impl<EQ: ?Sized> AsFid for DomainImplBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.c_domain.as_fid()
+        self.c_domain.as_fid()
     }
 }
 
 impl<EQ: ?Sized> AsTypedFid<DomainRawFid> for DomainImplBase<EQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
-       self.c_domain.as_typed_fid()
+        self.c_domain.as_typed_fid()
     }
 }
 
@@ -289,7 +402,7 @@ impl<EQ: ?Sized> AsRawTypedFid for DomainImplBase<EQ> {
 
 impl<EQ> AsFid for DomainBase<EQ> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.inner.as_fid()
+        self.inner.as_fid()
     }
 }
 
@@ -307,7 +420,7 @@ impl<EQ: ?Sized> AsRawFid for DomainBase<EQ> {
 
 impl<EQ> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
-       self.inner.as_typed_fid()
+        self.inner.as_typed_fid()
     }
 }
 
@@ -320,13 +433,13 @@ impl<EQ: ?Sized> AsRawTypedFid for DomainBase<EQ> {
 }
 
 //================== Domain attribute ==================//
-/// Represents a read-only version of the a `fi_info`'s `fi_domain_attr` field returned by 
+/// Represents a read-only version of the a `fi_info`'s `fi_domain_attr` field returned by
 /// a call to `fi_getinfo()`  
 #[derive(Clone, Debug)]
 pub struct DomainAttr {
-    _c_name: CString, 
-    domain_id: usize, 
-    name: String, 
+    _c_name: CString,
+    domain_id: usize,
+    name: String,
     threading: crate::enums::Threading,
     control_progress: crate::enums::Progress,
     data_progress: crate::enums::Progress,
@@ -347,46 +460,58 @@ pub struct DomainAttr {
     mr_iov_limit: usize,
     caps: crate::enums::DomainCaps,
     mode: crate::enums::Mode,
-    auth_key: Option<Vec<u8>>, 
+    auth_key: Option<Vec<u8>>,
     max_err_data: usize,
     mr_cnt: usize,
     traffic_class: crate::enums::TrafficClass,
 }
 
 impl DomainAttr {
-    
     pub(crate) fn from_raw_ptr(value: *const libfabric_sys::fi_domain_attr) -> Self {
         assert!(!value.is_null());
-        let c_name = if !unsafe{*value}.name.is_null() {unsafe {std::ffi::CStr::from_ptr((*value).name)}.into()} else {CString::new("").unwrap()};
+        let c_name = if !unsafe { *value }.name.is_null() {
+            unsafe { std::ffi::CStr::from_ptr((*value).name) }.into()
+        } else {
+            CString::new("").unwrap()
+        };
         Self {
-            domain_id: unsafe{*value}.domain as usize,
-            name: c_name.to_str().unwrap().to_string() ,
+            domain_id: unsafe { *value }.domain as usize,
+            name: c_name.to_str().unwrap().to_string(),
             _c_name: c_name,
-            threading: crate::enums::Threading::from_raw(unsafe{*value}.threading),
-            control_progress: crate::enums::Progress::from_raw(unsafe{*value}.control_progress),
-            data_progress: crate::enums::Progress::from_raw(unsafe{*value}.data_progress),
-            resource_mgmt: crate::enums::ResourceMgmt::from_raw(unsafe{*value}.resource_mgmt),
-            av_type: crate::enums::AddressVectorType::from_raw(unsafe{*value}.av_type),
-            mr_mode: crate::enums::MrMode::from_raw(unsafe{*value}.mr_mode as u32),
-            mr_key_size:unsafe{*value}.mr_key_size,
-            cq_data_size: unsafe{*value}.cq_data_size,
-            cq_cnt: unsafe{*value}.cq_cnt,
-            ep_cnt: unsafe{*value}.ep_cnt,
-            tx_ctx_cnt: unsafe{*value}.tx_ctx_cnt,
-            rx_ctx_cnt: unsafe{*value}.rx_ctx_cnt,
-            max_ep_tx_ctx: unsafe{*value}.max_ep_tx_ctx,
-            max_ep_rx_ctx: unsafe{*value}.max_ep_rx_ctx,
-            max_ep_stx_ctx: unsafe{*value}.max_ep_stx_ctx,
-            max_ep_srx_ctx: unsafe{*value}.max_ep_srx_ctx,
-            cntr_cnt: unsafe{*value}.cntr_cnt,
-            mr_iov_limit: unsafe{*value}.mr_iov_limit,
-            caps: crate::enums::DomainCaps::from_raw(unsafe{*value}.caps),
-            mode: crate::enums::Mode::from_raw(unsafe{*value}.mode),
-            auth_key: {if !unsafe{*value}.auth_key.is_null() {Some(unsafe{slice::from_raw_parts((*value).auth_key, (*value).auth_key_size)}.to_vec())} else {None} },
-            max_err_data: unsafe{*value}.max_err_data,
-            mr_cnt: unsafe{*value}.mr_cnt,
-            traffic_class: crate::enums::TrafficClass::from_raw(unsafe{*value}.tclass),
-       }  
+            threading: crate::enums::Threading::from_raw(unsafe { *value }.threading),
+            control_progress: crate::enums::Progress::from_raw(unsafe { *value }.control_progress),
+            data_progress: crate::enums::Progress::from_raw(unsafe { *value }.data_progress),
+            resource_mgmt: crate::enums::ResourceMgmt::from_raw(unsafe { *value }.resource_mgmt),
+            av_type: crate::enums::AddressVectorType::from_raw(unsafe { *value }.av_type),
+            mr_mode: crate::enums::MrMode::from_raw(unsafe { *value }.mr_mode as u32),
+            mr_key_size: unsafe { *value }.mr_key_size,
+            cq_data_size: unsafe { *value }.cq_data_size,
+            cq_cnt: unsafe { *value }.cq_cnt,
+            ep_cnt: unsafe { *value }.ep_cnt,
+            tx_ctx_cnt: unsafe { *value }.tx_ctx_cnt,
+            rx_ctx_cnt: unsafe { *value }.rx_ctx_cnt,
+            max_ep_tx_ctx: unsafe { *value }.max_ep_tx_ctx,
+            max_ep_rx_ctx: unsafe { *value }.max_ep_rx_ctx,
+            max_ep_stx_ctx: unsafe { *value }.max_ep_stx_ctx,
+            max_ep_srx_ctx: unsafe { *value }.max_ep_srx_ctx,
+            cntr_cnt: unsafe { *value }.cntr_cnt,
+            mr_iov_limit: unsafe { *value }.mr_iov_limit,
+            caps: crate::enums::DomainCaps::from_raw(unsafe { *value }.caps),
+            mode: crate::enums::Mode::from_raw(unsafe { *value }.mode),
+            auth_key: {
+                if !unsafe { *value }.auth_key.is_null() {
+                    Some(
+                        unsafe { slice::from_raw_parts((*value).auth_key, (*value).auth_key_size) }
+                            .to_vec(),
+                    )
+                } else {
+                    None
+                }
+            },
+            max_err_data: unsafe { *value }.max_err_data,
+            mr_cnt: unsafe { *value }.mr_cnt,
+            traffic_class: crate::enums::TrafficClass::from_raw(unsafe { *value }.tclass),
+        }
     }
 
     #[allow(dead_code)]
@@ -417,8 +542,16 @@ impl DomainAttr {
             caps: self.caps.as_raw(),
             mode: self.mode.as_raw(),
             tclass: self.traffic_class.as_raw(),
-            auth_key: if let Some(auth_key) = &self.auth_key {std::mem::transmute(auth_key.as_ptr())} else {std::ptr::null_mut()},
-            auth_key_size: if let Some(auth_key) = &self.auth_key {auth_key.len()} else {0},
+            auth_key: if let Some(auth_key) = &self.auth_key {
+                std::mem::transmute(auth_key.as_ptr())
+            } else {
+                std::ptr::null_mut()
+            },
+            auth_key_size: if let Some(auth_key) = &self.auth_key {
+                auth_key.len()
+            } else {
+                0
+            },
         }
     }
 
@@ -527,9 +660,8 @@ impl DomainAttr {
     }
 }
 
-
 /// Builder for the [Domain] type.
-/// 
+///
 /// `DomainBuilder` is used to configure and build a new [Domain].
 /// It encapsulates an incremental configuration of the address vector set, as provided by a `fi_domain_attr`,
 /// followed by a call to `fi_domain_open`  
@@ -542,13 +674,14 @@ pub struct DomainBuilder<'a, E> {
 }
 
 impl<'a> DomainBuilder<'a, ()> {
-
-
     /// Initiates the creation of new [Domain] on `fabric`, using the configuration found in `info`.
-    /// 
-    /// The initial configuration is what would be set if no `fi_domain_attr` or `context` was provided to 
-    /// the `fi_domain` call. 
-    pub fn new<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>) -> DomainBuilder<'a, E> {
+    ///
+    /// The initial configuration is what would be set if no `fi_domain_attr` or `context` was provided to
+    /// the `fi_domain` call.
+    pub fn new<E>(
+        fabric: &'a crate::fabric::Fabric,
+        info: &'a InfoEntry<E>,
+    ) -> DomainBuilder<'a, E> {
         DomainBuilder::<E> {
             fabric,
             info,
@@ -558,12 +691,15 @@ impl<'a> DomainBuilder<'a, ()> {
         }
     }
 
-
     /// Initiates the creation of new [Domain] on `fabir`, using the configuration found in `info`.
-    /// 
-    /// The initial configuration is what would be set if no `fi_domain_attr` was provided to 
-    /// the `fi_domain2` call and `context` was set to a `fi_peer_context`. 
-    pub fn new_with_peer<E>(fabric: &'a crate::fabric::Fabric, info: &'a InfoEntry<E>, peer_ctx: &'a mut PeerDomainCtx) -> DomainBuilder<'a, E> {
+    ///
+    /// The initial configuration is what would be set if no `fi_domain_attr` was provided to
+    /// the `fi_domain2` call and `context` was set to a `fi_peer_context`.
+    pub fn new_with_peer<E>(
+        fabric: &'a crate::fabric::Fabric,
+        info: &'a InfoEntry<E>,
+        peer_ctx: &'a mut PeerDomainCtx,
+    ) -> DomainBuilder<'a, E> {
         DomainBuilder::<E> {
             fabric,
             info,
@@ -572,14 +708,11 @@ impl<'a> DomainBuilder<'a, ()> {
             peer_ctx: Some(peer_ctx),
         }
     }
-
-
 }
 
 impl<'a, E> DomainBuilder<'a, E> {
-    
     /// Sets the context to be passed to the domain.
-    /// 
+    ///
     /// Corresponds to passing a non-NULL, non-`fi_peer_context` `context` value to `fi_domain`.
     pub fn context(self, ctx: &'a mut Context) -> DomainBuilder<'a, E> {
         DomainBuilder {
@@ -594,33 +727,47 @@ impl<'a, E> DomainBuilder<'a, E> {
 
 impl<'a, E> DomainBuilder<'a, E> {
     /// Constructs a new [Domain] with the configurations requested so far.
-    /// 
+    ///
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
     /// and passing it to a `fi_domain` call with an optional `context` (set by [Self::context]).
     /// Or a call to `fi_domain2` with `context` of type `fi_peer_context` and `flags` equal to `FI_PEER`
-    pub fn build_and_bind<EQ: ReadEq + 'static>(self, eq: &EventQueue<EQ>, async_mem_reg: bool) -> Result<DomainBase<dyn ReadEq>, crate::error::Error> {
-        let domain = DomainBase::<dyn ReadEq>::new(self.fabric, self.info, self.flags, self.info.domain_attr().clone(), self.ctx)?;
+    pub fn build_and_bind<EQ: ReadEq + 'static>(
+        self,
+        eq: &EventQueue<EQ>,
+        async_mem_reg: bool,
+    ) -> Result<DomainBase<dyn ReadEq>, crate::error::Error> {
+        let domain = DomainBase::<dyn ReadEq>::new(
+            self.fabric,
+            self.info,
+            self.flags,
+            self.info.domain_attr().clone(),
+            self.ctx,
+        )?;
         domain.bind_eq(eq, async_mem_reg)?;
         Ok(domain)
     }
-
 }
 
 impl<'a, E> DomainBuilder<'a, E> {
     /// Constructs a new [Domain] with the configurations requested so far.
-    /// 
+    ///
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
     /// and passing it to a `fi_domain` call with an optional `context` (set by [Self::context]).
     /// Or a call to `fi_domain2` with `context` of type `fi_peer_context` and `flags` equal to `FI_PEER`
     pub fn build(self) -> Result<Domain, crate::error::Error> {
-        let domain = DomainBase::new(self.fabric, self.info, self.flags, self.info.domain_attr().clone(), self.ctx)?;
+        let domain = DomainBase::new(
+            self.fabric,
+            self.info,
+            self.flags,
+            self.info.domain_attr().clone(),
+            self.ctx,
+        )?;
         Ok(domain)
     }
 }
 
 pub type Domain = DomainBase<()>;
 pub type BoundDomain = DomainBase<dyn ReadEq>;
-
 
 #[repr(C)]
 pub struct PeerDomainCtx {
@@ -630,16 +777,15 @@ pub struct PeerDomainCtx {
 impl PeerDomainCtx {
     pub fn new<EQ>(size: usize, domain: &DomainBase<EQ>) -> Self {
         Self {
-            c_ctx : {
+            c_ctx: {
                 libfabric_sys::fi_peer_domain_context {
                     domain: domain.as_raw_typed_fid(),
                     size,
                 }
-            }
+            },
         }
     }
 }
-
 
 //================== Domain tests ==================//
 
@@ -649,15 +795,20 @@ mod tests {
 
     #[test]
     fn domain_test() {
-        let info = Info::new(&Version{major: 1, minor: 19})
-            .get()
-            .unwrap();
+        let info = Info::new(&Version {
+            major: 1,
+            minor: 19,
+        })
+        .get()
+        .unwrap();
         let entry = info.into_iter().next().unwrap();
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
         let mut doms = Vec::new();
         for _ in 0..count {
-            let domain = crate::domain::DomainBuilder::new(&fab, &entry).build().unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entry)
+                .build()
+                .unwrap();
             doms.push(domain);
         }
     }
@@ -670,16 +821,21 @@ mod libfabric_lifetime_tests {
     #[test]
 
     fn domain_drops_before_fabric() {
-        let info = Info::new(&Version{major: 1, minor: 19})
-            .get()
-            .unwrap();
+        let info = Info::new(&Version {
+            major: 1,
+            minor: 19,
+        })
+        .get()
+        .unwrap();
         let entry = info.into_iter().next().unwrap();
-        
+
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
         let mut doms = Vec::new();
         for _ in 0..count {
-            let domain = crate::domain::DomainBuilder::new(&fab, &entry).build().unwrap();
+            let domain = crate::domain::DomainBuilder::new(&fab, &entry)
+                .build()
+                .unwrap();
             doms.push(domain);
         }
         drop(fab);

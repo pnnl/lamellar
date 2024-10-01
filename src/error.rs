@@ -1,45 +1,45 @@
-use crate::{eq::EventError, cq::CompletionError};
+use crate::{cq::CompletionError, eq::EventError};
 
- 
- 
 pub struct Error {
     pub c_err: u32,
-    pub kind : ErrorKind,
+    pub kind: ErrorKind,
 }
 
 impl std::fmt::Display for Error {
-
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-
-        if matches!(self.kind, ErrorKind::CapabilitiesNotMet){
+        if matches!(self.kind, ErrorKind::CapabilitiesNotMet) {
             write!(f, "Capabilities requested not met")
-        }
-        else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
+        } else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
             match t {
                 QueueError::Completion(_) => write!(f, "Error found in CompletionQueue"),
                 QueueError::Event(_) => write!(f, "Error found in EventQueue"),
             }
-        }
-        else {
-            write!(f, "{} (Error {})", crate::utils::error_to_string(self.c_err.into()), self.c_err)
+        } else {
+            write!(
+                f,
+                "{} (Error {})",
+                crate::utils::error_to_string(self.c_err.into()),
+                self.c_err
+            )
         }
     }
 }
 impl std::fmt::Debug for Error {
-
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-
         if matches!(self.kind, ErrorKind::CapabilitiesNotMet) {
             write!(f, "Capabilities requested not met")
-        }
-        else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
+        } else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
             match t {
                 QueueError::Completion(_) => write!(f, "Error found in CompletionQueue"),
                 QueueError::Event(_) => write!(f, "Error found in EventQueue"),
             }
-        }
-        else {
-            write!(f, "{} (Error {})", crate::utils::error_to_string(self.c_err.into()), self.c_err)
+        } else {
+            write!(
+                f,
+                "{} (Error {})",
+                crate::utils::error_to_string(self.c_err.into()),
+                self.c_err
+            )
         }
     }
 }
@@ -48,16 +48,16 @@ pub enum QueueError {
     Completion(CompletionError),
 }
 
-
 impl Error {
-    pub(crate) fn from_queue_err(queue_error: QueueError) -> Self{
-        Self{c_err: libfabric_sys::FI_EAVAIL, kind: ErrorKind::ErrorInQueue(queue_error)}
+    pub(crate) fn from_queue_err(queue_error: QueueError) -> Self {
+        Self {
+            c_err: libfabric_sys::FI_EAVAIL,
+            kind: ErrorKind::ErrorInQueue(queue_error),
+        }
     }
 
     pub(crate) fn from_err_code(c_err: u32) -> Self {
-        
         let kind = match c_err {
-
             libfabric_sys::FI_EPERM => ErrorKind::NotPermitted,
             libfabric_sys::FI_ENOENT => ErrorKind::NotFound,
             libfabric_sys::FI_EINTR => ErrorKind::Interrupted,
@@ -84,7 +84,7 @@ impl Error {
             libfabric_sys::FI_EADDRNOTAVAIL => ErrorKind::AddrNotAvailalble,
             libfabric_sys::FI_ENETDOWN => ErrorKind::NetworkDown,
             libfabric_sys::FI_ENETUNREACH => ErrorKind::NetworkUnreachable,
-            
+
             libfabric_sys::FI_ECONNABORTED => ErrorKind::ConnectionAborted,
             libfabric_sys::FI_ECONNRESET => ErrorKind::ConnectionReset,
             libfabric_sys::FI_ENOBUFS => ErrorKind::NoBufSpaceAvailable,
@@ -101,34 +101,35 @@ impl Error {
             libfabric_sys::FI_EREMOTEIO => ErrorKind::RemoteIoError,
             libfabric_sys::FI_ECANCELED => ErrorKind::Canceled,
             libfabric_sys::FI_EKEYREJECTED => ErrorKind::KeyRejected,
-            libfabric_sys::FI_ETOOSMALL => panic!("TooSmall error to be created but no length is supplied"),
-            libfabric_sys::FI_EOPBADSTATE => ErrorKind::BadState, 
+            libfabric_sys::FI_ETOOSMALL => {
+                panic!("TooSmall error to be created but no length is supplied")
+            }
+            libfabric_sys::FI_EOPBADSTATE => ErrorKind::BadState,
 
-            libfabric_sys::FI_EAVAIL => ErrorKind::ErrorAvailable, 
-            libfabric_sys::FI_EBADFLAGS => ErrorKind::BadFlags, 
-            libfabric_sys::FI_ENOEQ => ErrorKind::NoEventQueue, 
-            libfabric_sys::FI_EDOMAIN => ErrorKind::InvalidDomain, 
-            libfabric_sys::FI_ENOCQ => ErrorKind::NoCompletionQueue, 
+            libfabric_sys::FI_EAVAIL => ErrorKind::ErrorAvailable,
+            libfabric_sys::FI_EBADFLAGS => ErrorKind::BadFlags,
+            libfabric_sys::FI_ENOEQ => ErrorKind::NoEventQueue,
+            libfabric_sys::FI_EDOMAIN => ErrorKind::InvalidDomain,
+            libfabric_sys::FI_ENOCQ => ErrorKind::NoCompletionQueue,
             libfabric_sys::FI_ECRC => ErrorKind::CrcError,
-            libfabric_sys::FI_ETRUNC =>  ErrorKind::TruncationError,
-            libfabric_sys::FI_ENOKEY => ErrorKind::KeyNotAvailable, 
-            libfabric_sys::FI_ENOAV => ErrorKind::NoAddressVector, 
+            libfabric_sys::FI_ETRUNC => ErrorKind::TruncationError,
+            libfabric_sys::FI_ENOKEY => ErrorKind::KeyNotAvailable,
+            libfabric_sys::FI_ENOAV => ErrorKind::NoAddressVector,
             libfabric_sys::FI_EOVERRUN => ErrorKind::QueueOverrun,
             libfabric_sys::FI_ENORX => ErrorKind::ReceiverNotReady,
             _ => ErrorKind::Other,
         };
 
-        Self { c_err, kind}
+        Self { c_err, kind }
     }
 
     pub(crate) fn caps_error() -> Self {
         Self {
-            c_err : 0,
+            c_err: 0,
             kind: ErrorKind::CapabilitiesNotMet,
         }
     }
 }
-    
 
 #[non_exhaustive]
 pub enum ErrorKind {
@@ -182,7 +183,7 @@ pub enum ErrorKind {
     NoEventQueue,
     InvalidDomain,
     NoCompletionQueue,
-    
+
     CrcError,
     TruncationError,
     KeyNotAvailable,

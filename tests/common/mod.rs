@@ -1,2 +1,1 @@
-pub const IP: &str = "172.17.110.15"; 
-
+pub const IP: &str = "172.17.110.15";

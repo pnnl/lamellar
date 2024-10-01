@@ -1,6 +1,13 @@
 use std::marker::PhantomData;
 
-use crate::{cntr::{Counter, ReadCntr}, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, Endpoint}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid}, Context, MyOnceCell, MyRc};
+use crate::{
+    cntr::{Counter, ReadCntr},
+    cq::ReadCq,
+    enums::{Mode, TrafficClass, TransferOptions},
+    ep::{ActiveEndpoint, BaseEndpoint, Endpoint},
+    fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid},
+    Context, MyOnceCell, MyRc,
+};
 
 pub struct Receive;
 pub struct Transmit;
@@ -13,7 +20,7 @@ pub(crate) struct XContextBaseImpl<T, CQ: ?Sized> {
 }
 
 pub struct XContextBase<T, CQ: ?Sized> {
-    pub(crate) inner: MyRc<XContextBaseImpl<T, CQ>>
+    pub(crate) inner: MyRc<XContextBaseImpl<T, CQ>>,
 }
 
 //================== XContext Trait Implementations ==================//
@@ -24,29 +31,29 @@ impl<T, CQ> BaseEndpoint for XContextBaseImpl<T, CQ> {}
 impl<T, CQ> AsFid for XContextBase<T, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid {
         self.inner.as_fid()
-    }    
+    }
 }
 
 impl<T, CQ> AsFid for XContextBaseImpl<T, CQ> {
     fn as_fid(&self) -> fid::BorrowedFid {
         self.c_ep.as_fid()
-    }    
+    }
 }
 
 impl<T, CQ> AsRawFid for XContextBase<T, CQ> {
     fn as_raw_fid(&self) -> RawFid {
         self.inner.as_raw_fid()
-    }    
+    }
 }
 
 impl<T, CQ> AsRawFid for XContextBaseImpl<T, CQ> {
     fn as_raw_fid(&self) -> RawFid {
         self.c_ep.as_raw_fid()
-    }    
+    }
 }
 
 impl<T, CQ> AsTypedFid<EpRawFid> for XContextBase<T, CQ> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid>{
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
 }
@@ -70,43 +77,68 @@ impl<T, CQ: ?Sized> AsRawTypedFid for XContextBaseImpl<T, CQ> {
 
     fn as_raw_typed_fid(&self) -> Self::Output {
         self.c_ep.as_raw_typed_fid()
-    }  
+    }
 }
 
 //================== TxContext ==================//
-pub type TxContextBase<CQ> = XContextBase<Transmit, CQ>; 
-pub type TxContext = XContextBase<Transmit, dyn ReadCq>; 
-pub(crate) type TxContextImplBase<CQ> = XContextBaseImpl<Transmit, CQ>; 
-pub(crate) type TxContextImpl = XContextBaseImpl<Transmit, dyn ReadCq>; 
+pub type TxContextBase<CQ> = XContextBase<Transmit, CQ>;
+pub type TxContext = XContextBase<Transmit, dyn ReadCq>;
+pub(crate) type TxContextImplBase<CQ> = XContextBaseImpl<Transmit, CQ>;
+pub(crate) type TxContextImpl = XContextBaseImpl<Transmit, dyn ReadCq>;
 
 impl<CQ: ?Sized> TxContextImplBase<CQ> {
-
-    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: *mut std::ffi::c_void) -> Result<TxContextImplBase<CQ>, crate::error::Error> {
+    pub(crate) fn new(
+        ep: &impl ActiveEndpoint,
+        index: i32,
+        attr: TxAttr,
+        context: *mut std::ffi::c_void,
+    ) -> Result<TxContextImplBase<CQ>, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-        let err = unsafe{ libfabric_sys::inlined_fi_tx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, context)};
-        
+        let err = unsafe {
+            libfabric_sys::inlined_fi_tx_context(
+                ep.as_raw_typed_fid(),
+                index,
+                &mut attr.get(),
+                &mut c_ep,
+                context,
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self {
-                    c_ep: OwnedEpFid::from(c_ep), 
-                    phantom: PhantomData,
-                    cq: MyOnceCell::new(),
-                    cntr: MyOnceCell::new(),
-                })
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            Ok(Self {
+                c_ep: OwnedEpFid::from(c_ep),
+                phantom: PhantomData,
+                cq: MyOnceCell::new(),
+                cntr: MyOnceCell::new(),
+            })
         }
     }
 
-    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
-        
+    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(
+        &self,
+        res: &MyRc<T>,
+        flags: u64,
+    ) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_raw_typed_fid(),
+                res.as_fid().as_raw_fid(),
+                flags,
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            if self.cntr.set(res.clone()).is_err() {panic!("TransmitContext already bound to a Counter");}
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            if self.cntr.set(res.clone()).is_err() {
+                panic!("TransmitContext already bound to a Counter");
+            }
             Ok(())
         }
     }
@@ -114,39 +146,54 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
 
 impl TxContextImpl {
     pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq {
-        TxIncompleteBindCq { ep: self, flags: 0}
+        TxIncompleteBindCq { ep: self, flags: 0 }
     }
 
     pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr {
-        TxIncompleteBindCntr { ep: self, flags: 0}
+        TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
-        
+    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(
+        &self,
+        res: &MyRc<T>,
+        flags: u64,
+    ) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_raw_typed_fid(),
+                res.as_fid().as_raw_fid(),
+                flags,
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            if self.cq.set(res.clone()).is_err() {panic!("TransmitContext already bound to a CompletionQueueu");}
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            if self.cq.set(res.clone()).is_err() {
+                panic!("TransmitContext already bound to a CompletionQueueu");
+            }
             Ok(())
         }
     }
-
 }
 
 impl<CQ: ?Sized> TxContextBase<CQ> {
-    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: TxAttr, context: Option<&mut Context>) -> Result<TxContextBase<CQ>, crate::error::Error> {
+    pub(crate) fn new(
+        ep: &impl ActiveEndpoint,
+        index: i32,
+        attr: TxAttr,
+        context: Option<&mut Context>,
+    ) -> Result<TxContextBase<CQ>, crate::error::Error> {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
             None => std::ptr::null_mut(),
         };
 
-        Ok(
-            Self {
-                inner: MyRc::new(TxContextImplBase::<CQ>::new(ep, index, attr, c_void)?)
-            }
-        )
+        Ok(Self {
+            inner: MyRc::new(TxContextImplBase::<CQ>::new(ep, index, attr, c_void)?),
+        })
     }
 }
 
@@ -168,7 +215,6 @@ pub struct TxContextBuilder<'a, E, const CONN: bool> {
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
-
 impl<'a, const CONN: bool> TxContextBuilder<'a, (), CONN> {
     pub fn new<E>(ep: &'a Endpoint<E, CONN>, index: i32) -> TxContextBuilder<'a, E, CONN> {
         TxContextBuilder::<E, CONN> {
@@ -180,8 +226,7 @@ impl<'a, const CONN: bool> TxContextBuilder<'a, (), CONN> {
     }
 }
 
-impl <'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> TxContextBuilder<'a, E, CONN> {
-    
+impl<'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> TxContextBuilder<'a, E, CONN> {
     // pub fn caps(mut self, caps: TxCaps) -> Self {
     //     self.tx_attr.caps(caps);
     //     self
@@ -259,11 +304,10 @@ pub struct TxAttr {
     size: usize,
     iov_limit: usize,
     rma_iov_limit: usize,
-    traffic_class: TrafficClass, 
+    traffic_class: TrafficClass,
 }
 
 impl TxAttr {
-
     pub(crate) fn new() -> Self {
         Self {
             caps: TxCaps::new(),
@@ -282,19 +326,19 @@ impl TxAttr {
     pub(crate) fn from_raw_ptr(c_tx_attr_ptr: *const libfabric_sys::fi_tx_attr) -> Self {
         assert!(!c_tx_attr_ptr.is_null());
         Self {
-            caps: TxCaps::from_raw(unsafe{*c_tx_attr_ptr}.caps),
-            mode: Mode::from_raw(unsafe{*c_tx_attr_ptr}.mode),
-            op_flags: TransferOptions::from_raw(unsafe{*c_tx_attr_ptr}.op_flags as u32),
-            msg_order: MsgOrder::from_raw(unsafe{*c_tx_attr_ptr}.msg_order),
-            comp_order: TxCompOrder::from_raw(unsafe{*c_tx_attr_ptr}.comp_order),
-            inject_size: unsafe{*c_tx_attr_ptr}.inject_size,
-            iov_limit: unsafe{*c_tx_attr_ptr}.iov_limit,
-            size: unsafe{*c_tx_attr_ptr}.size,
-            rma_iov_limit: unsafe{*c_tx_attr_ptr}.rma_iov_limit,
-            traffic_class: TrafficClass::from_raw(unsafe{*c_tx_attr_ptr}.tclass),
+            caps: TxCaps::from_raw(unsafe { *c_tx_attr_ptr }.caps),
+            mode: Mode::from_raw(unsafe { *c_tx_attr_ptr }.mode),
+            op_flags: TransferOptions::from_raw(unsafe { *c_tx_attr_ptr }.op_flags as u32),
+            msg_order: MsgOrder::from_raw(unsafe { *c_tx_attr_ptr }.msg_order),
+            comp_order: TxCompOrder::from_raw(unsafe { *c_tx_attr_ptr }.comp_order),
+            inject_size: unsafe { *c_tx_attr_ptr }.inject_size,
+            iov_limit: unsafe { *c_tx_attr_ptr }.iov_limit,
+            size: unsafe { *c_tx_attr_ptr }.size,
+            rma_iov_limit: unsafe { *c_tx_attr_ptr }.rma_iov_limit,
+            traffic_class: TrafficClass::from_raw(unsafe { *c_tx_attr_ptr }.tclass),
         }
     }
-    
+
     #[allow(dead_code)]
     pub(crate) fn set_caps(&mut self, caps: TxCaps) -> &mut Self {
         self.caps = caps;
@@ -373,7 +417,7 @@ impl TxAttr {
     pub fn size(&self) -> usize {
         self.size
     }
-    
+
     pub fn iov_limit(&self) -> usize {
         self.iov_limit
     }
@@ -410,39 +454,64 @@ impl TxAttr {
 // }
 
 //================== RxContext ==================//
-pub type RxContext = XContextBase<Receive, dyn ReadCq>; 
-pub type RxContextBase<CQ> = XContextBase<Receive, CQ>; 
-pub(crate) type RxContextImpl = XContextBaseImpl<Receive, dyn ReadCq>; 
-pub(crate) type RxContextImplBase<CQ> = XContextBaseImpl<Receive, CQ>; 
+pub type RxContext = XContextBase<Receive, dyn ReadCq>;
+pub type RxContextBase<CQ> = XContextBase<Receive, CQ>;
+pub(crate) type RxContextImpl = XContextBaseImpl<Receive, dyn ReadCq>;
+pub(crate) type RxContextImplBase<CQ> = XContextBaseImpl<Receive, CQ>;
 
 impl<CQ: ?Sized> RxContextImplBase<CQ> {
-
-    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(
+        ep: &impl ActiveEndpoint,
+        index: i32,
+        attr: RxAttr,
+        context: *mut std::ffi::c_void,
+    ) -> Result<Self, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
-        let err = unsafe{ libfabric_sys::inlined_fi_rx_context(ep.as_raw_typed_fid(), index, &mut attr.get(), &mut c_ep, context)};
-        
+        let err = unsafe {
+            libfabric_sys::inlined_fi_rx_context(
+                ep.as_raw_typed_fid(),
+                index,
+                &mut attr.get(),
+                &mut c_ep,
+                context,
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            Ok(
-                Self {
-                    c_ep: OwnedEpFid::from(c_ep), 
-                    phantom: PhantomData,
-                    cq: MyOnceCell::new(),
-                    cntr: MyOnceCell::new(),
-                })
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            Ok(Self {
+                c_ep: OwnedEpFid::from(c_ep),
+                phantom: PhantomData,
+                cq: MyOnceCell::new(),
+                cntr: MyOnceCell::new(),
+            })
         }
     }
 
-    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
-        
+    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(
+        &self,
+        res: &MyRc<T>,
+        flags: u64,
+    ) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_raw_typed_fid(),
+                res.as_fid().as_raw_fid(),
+                flags,
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            if self.cntr.set(res.clone()).is_err() {panic!("TransmitContext already bound to a CompletionQueueu");}
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            if self.cntr.set(res.clone()).is_err() {
+                panic!("TransmitContext already bound to a CompletionQueueu");
+            }
             Ok(())
         }
     }
@@ -450,43 +519,58 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
 
 impl RxContextImplBase<dyn ReadCq> {
     pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq {
-        RxIncompleteBindCq { ep: self, flags: 0}
+        RxIncompleteBindCq { ep: self, flags: 0 }
     }
 
     pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr {
-        RxIncompleteBindCntr { ep: self, flags: 0}
+        RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(&self, res: &MyRc<T>, flags: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_fid().as_raw_fid(), flags) };
-        
+    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(
+        &self,
+        res: &MyRc<T>,
+        flags: u64,
+    ) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_raw_typed_fid(),
+                res.as_fid().as_raw_fid(),
+                flags,
+            )
+        };
+
         if err != 0 {
-            Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-        }
-        else {
-            if self.cq.set(res.clone()).is_err() {panic!("TransmitContext already bound to a CompletionQueueu");}
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            if self.cq.set(res.clone()).is_err() {
+                panic!("TransmitContext already bound to a CompletionQueueu");
+            }
             Ok(())
         }
     }
 }
 
 impl<CQ: ?Sized> RxContextBase<CQ> {
-    pub(crate) fn new(ep: &impl ActiveEndpoint, index: i32, attr: RxAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(
+        ep: &impl ActiveEndpoint,
+        index: i32,
+        attr: RxAttr,
+        context: Option<&mut Context>,
+    ) -> Result<Self, crate::error::Error> {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
             None => std::ptr::null_mut(),
         };
 
-        Ok(
-            Self {
-                inner: MyRc::new(RxContextImplBase::new(ep, index, attr, c_void)?)
-            }
-        )
+        Ok(Self {
+            inner: MyRc::new(RxContextImplBase::new(ep, index, attr, c_void)?),
+        })
     }
 }
 
 impl RxContextBase<dyn ReadCq> {
-
     pub fn bind_cq(&self) -> RxIncompleteBindCq {
         self.inner.bind_cq()
     }
@@ -495,7 +579,6 @@ impl RxContextBase<dyn ReadCq> {
         self.inner.bind_cntr()
     }
 }
-
 
 //================== RxContext Builder ==================//
 pub struct ReceiveContextBuilder<'a, E, const CONN: bool> {
@@ -517,7 +600,6 @@ impl<'a, const CONN: bool> ReceiveContextBuilder<'a, (), CONN> {
 }
 
 impl<'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> ReceiveContextBuilder<'a, E, CONN> {
-
     // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
     //     self.rx_attr.caps(caps);
     //     self
@@ -592,7 +674,6 @@ pub struct RxAttr {
 }
 
 impl RxAttr {
-
     pub(crate) fn new() -> Self {
         Self {
             caps: RxCaps::new(),
@@ -609,17 +690,17 @@ impl RxAttr {
     pub(crate) fn from_raw_ptr(c_rx_attr_ptr: *const libfabric_sys::fi_rx_attr) -> Self {
         assert!(!c_rx_attr_ptr.is_null());
         Self {
-            caps: RxCaps::from_raw(unsafe{*c_rx_attr_ptr}.caps),
-            mode: Mode::from_raw(unsafe{*c_rx_attr_ptr}.mode),
-            op_flags: TransferOptions::from_raw(unsafe{*c_rx_attr_ptr}.op_flags as u32),
-            msg_order: MsgOrder::from_raw(unsafe{*c_rx_attr_ptr}.msg_order),
-            comp_order: RxCompOrder::from_raw(unsafe{*c_rx_attr_ptr}.comp_order),
-            total_buffered_recv: unsafe{*c_rx_attr_ptr}.total_buffered_recv,
-            iov_limit: unsafe{*c_rx_attr_ptr}.iov_limit,
-            size: unsafe{*c_rx_attr_ptr}.size,
+            caps: RxCaps::from_raw(unsafe { *c_rx_attr_ptr }.caps),
+            mode: Mode::from_raw(unsafe { *c_rx_attr_ptr }.mode),
+            op_flags: TransferOptions::from_raw(unsafe { *c_rx_attr_ptr }.op_flags as u32),
+            msg_order: MsgOrder::from_raw(unsafe { *c_rx_attr_ptr }.msg_order),
+            comp_order: RxCompOrder::from_raw(unsafe { *c_rx_attr_ptr }.comp_order),
+            total_buffered_recv: unsafe { *c_rx_attr_ptr }.total_buffered_recv,
+            iov_limit: unsafe { *c_rx_attr_ptr }.iov_limit,
+            size: unsafe { *c_rx_attr_ptr }.size,
         }
     }
-    
+
     #[allow(dead_code)]
     pub(crate) fn set_caps(&mut self, caps: RxCaps) -> &mut Self {
         self.caps = caps;
@@ -688,7 +769,7 @@ impl RxAttr {
     pub fn size(&self) -> usize {
         self.size
     }
-    
+
     pub fn iov_limit(&self) -> usize {
         self.iov_limit
     }
@@ -738,7 +819,6 @@ impl RxAttr {
 //         self.c_attr.mode = mode.into();
 //         self
 //     }
-
 
 //     pub fn msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
 //         self.c_attr.msg_order = msg_order.get_value();
@@ -824,21 +904,23 @@ pub struct TxIncompleteBindCq<'a> {
 }
 
 impl<'a> TxIncompleteBindCq<'a> {
-
     pub fn transmit(&mut self, selective: bool) -> &mut Self {
         if selective {
-            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_TRANSMIT as u64;
+            self.flags |=
+                libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_TRANSMIT as u64;
 
             self
-        }
-        else {
+        } else {
             self.flags |= libfabric_sys::FI_TRANSMIT as u64;
 
             self
         }
     }
 
-    pub fn cq<T: ReadCq + AsFid + 'static>(&mut self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: ReadCq + AsFid + 'static>(
+        &mut self,
+        cq: &crate::cq::CompletionQueue<T>,
+    ) -> Result<(), crate::error::Error> {
         self.ep.bind_cq_(&cq.inner, self.flags)
     }
 }
@@ -849,7 +931,6 @@ pub struct TxIncompleteBindCntr<'a> {
 }
 
 impl<'a> TxIncompleteBindCntr<'a> {
-
     pub fn remote_write(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_REMOTE_WRITE as u64;
 
@@ -868,7 +949,10 @@ impl<'a> TxIncompleteBindCntr<'a> {
         self
     }
 
-    pub fn cntr(&self, cntr: &Counter<impl ReadCntr + AsFid + 'static>) -> Result<(), crate::error::Error> {
+    pub fn cntr(
+        &self,
+        cntr: &Counter<impl ReadCntr + AsFid + 'static>,
+    ) -> Result<(), crate::error::Error> {
         self.ep.bind_cntr_(&cntr.inner, self.flags)
     }
 }
@@ -879,21 +963,16 @@ pub struct TxCaps {
 }
 
 impl TxCaps {
-
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
     pub(crate) fn from_raw(value: u64) -> Self {
-        Self {
-            c_flags: value,
-        }
+        Self { c_flags: value }
     }
 
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     crate::enums::gen_set_get_flag!(message, is_message, libfabric_sys::FI_MSG as u64);
@@ -908,8 +987,16 @@ impl TxCaps {
     crate::enums::gen_set_get_flag!(fence, is_fence, libfabric_sys::FI_FENCE as u64);
     crate::enums::gen_set_get_flag!(multicast, is_multicast, libfabric_sys::FI_MULTICAST as u64);
     crate::enums::gen_set_get_flag!(rma_pmem, is_rma_pmem, libfabric_sys::FI_RMA_PMEM);
-    crate::enums::gen_set_get_flag!(named_rx_ctx, is_named_rx_ctx, libfabric_sys::FI_NAMED_RX_CTX);
-    crate::enums::gen_set_get_flag!(collective, is_collective, libfabric_sys::FI_COLLECTIVE as u64);
+    crate::enums::gen_set_get_flag!(
+        named_rx_ctx,
+        is_named_rx_ctx,
+        libfabric_sys::FI_NAMED_RX_CTX
+    );
+    crate::enums::gen_set_get_flag!(
+        collective,
+        is_collective,
+        libfabric_sys::FI_COLLECTIVE as u64
+    );
     // crate::enums::gen_set_get_flag!(xpu, is_xpu, libfabric_sys::FI_XPU as u64);
 }
 
@@ -925,27 +1012,38 @@ pub struct MsgOrder {
 }
 
 impl MsgOrder {
-
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
-    
+
     pub(crate) fn from_raw(value: u64) -> Self {
-        Self {
-            c_flags: value,
-        }
+        Self { c_flags: value }
     }
 
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
-    crate::enums::gen_set_get_flag!(atomic_rar, is_atomic_rar, libfabric_sys::FI_ORDER_ATOMIC_RAR);
-    crate::enums::gen_set_get_flag!(atomic_raw, is_atomic_raw, libfabric_sys::FI_ORDER_ATOMIC_RAW);
-    crate::enums::gen_set_get_flag!(atomic_war, is_atomic_war, libfabric_sys::FI_ORDER_ATOMIC_WAR);
-    crate::enums::gen_set_get_flag!(atomic_waw, is_atomic_waw, libfabric_sys::FI_ORDER_ATOMIC_WAW);
+    crate::enums::gen_set_get_flag!(
+        atomic_rar,
+        is_atomic_rar,
+        libfabric_sys::FI_ORDER_ATOMIC_RAR
+    );
+    crate::enums::gen_set_get_flag!(
+        atomic_raw,
+        is_atomic_raw,
+        libfabric_sys::FI_ORDER_ATOMIC_RAW
+    );
+    crate::enums::gen_set_get_flag!(
+        atomic_war,
+        is_atomic_war,
+        libfabric_sys::FI_ORDER_ATOMIC_WAR
+    );
+    crate::enums::gen_set_get_flag!(
+        atomic_waw,
+        is_atomic_waw,
+        libfabric_sys::FI_ORDER_ATOMIC_WAW
+    );
     crate::enums::gen_set_get_flag!(rar, is_rar, libfabric_sys::FI_ORDER_RAR as u64);
     crate::enums::gen_set_get_flag!(ras, is_ras, libfabric_sys::FI_ORDER_RAS as u64);
     crate::enums::gen_set_get_flag!(raw, is_raw, libfabric_sys::FI_ORDER_RAW as u64);
@@ -972,23 +1070,17 @@ pub struct TxCompOrder {
     c_flags: u64,
 }
 
-
 impl TxCompOrder {
-
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     pub(crate) fn from_raw(value: u64) -> Self {
-        Self {
-            c_flags: value,
-        }
+        Self { c_flags: value }
     }
 
     crate::enums::gen_set_get_flag!(strict, is_strict, libfabric_sys::FI_ORDER_STRICT as u64);
@@ -1000,39 +1092,38 @@ impl Default for TxCompOrder {
     }
 }
 
-
 pub struct RxIncompleteBindCq<'a> {
-    pub(crate) ep: &'a  RxContextImpl,
+    pub(crate) ep: &'a RxContextImpl,
     pub(crate) flags: u64,
 }
 
 impl<'a> RxIncompleteBindCq<'a> {
-
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
-            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV  as u64 ;
-        
+            self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV as u64;
+
             self
-        }
-        else {
+        } else {
             self.flags |= libfabric_sys::FI_RECV as u64;
 
             self
         }
     }
 
-    pub fn cq<T: ReadCq + AsFid + 'static>(&self, cq: &crate::cq::CompletionQueue<T>) -> Result<(), crate::error::Error> {
+    pub fn cq<T: ReadCq + AsFid + 'static>(
+        &self,
+        cq: &crate::cq::CompletionQueue<T>,
+    ) -> Result<(), crate::error::Error> {
         self.ep.bind_cq_(&cq.inner, self.flags)
     }
 }
 
 pub struct RxIncompleteBindCntr<'a> {
-    pub(crate) ep: &'a  RxContextImpl,
+    pub(crate) ep: &'a RxContextImpl,
     pub(crate) flags: u64,
 }
 
 impl<'a> RxIncompleteBindCntr<'a> {
-    
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
 
@@ -1051,11 +1142,13 @@ impl<'a> RxIncompleteBindCntr<'a> {
         self
     }
 
-    pub fn cntr(&mut self, cntr: &Counter<impl AsFid + ReadCntr + 'static>) -> Result<(), crate::error::Error> {
+    pub fn cntr(
+        &mut self,
+        cntr: &Counter<impl AsFid + ReadCntr + 'static>,
+    ) -> Result<(), crate::error::Error> {
         self.ep.bind_cntr_(&cntr.inner, self.flags)
     }
 }
-
 
 #[derive(Clone, Copy, Debug)]
 pub struct RxCaps {
@@ -1063,40 +1156,59 @@ pub struct RxCaps {
 }
 
 impl RxCaps {
-
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     pub(crate) fn from_raw(value: u64) -> Self {
-        Self {
-            c_flags: value,
-        }
+        Self { c_flags: value }
     }
 
     crate::enums::gen_set_get_flag!(message, is_message, libfabric_sys::FI_MSG as u64);
-    crate::enums::gen_set_get_flag!(vabiable_message, is_vabiable_message, libfabric_sys::FI_VARIABLE_MSG);
+    crate::enums::gen_set_get_flag!(
+        vabiable_message,
+        is_vabiable_message,
+        libfabric_sys::FI_VARIABLE_MSG
+    );
     crate::enums::gen_set_get_flag!(rma, is_rma, libfabric_sys::FI_RMA as u64);
     crate::enums::gen_set_get_flag!(rma_event, is_rma_event, libfabric_sys::FI_RMA_EVENT);
     crate::enums::gen_set_get_flag!(tagged, is_tagged, libfabric_sys::FI_TAGGED as u64);
     crate::enums::gen_set_get_flag!(atomic, is_atomic, libfabric_sys::FI_ATOMIC as u64);
-    crate::enums::gen_set_get_flag!(remote_read, is_remote_read, libfabric_sys::FI_REMOTE_READ as u64);
-    crate::enums::gen_set_get_flag!(remote_write, is_remote_write, libfabric_sys::FI_REMOTE_WRITE as u64);
+    crate::enums::gen_set_get_flag!(
+        remote_read,
+        is_remote_read,
+        libfabric_sys::FI_REMOTE_READ as u64
+    );
+    crate::enums::gen_set_get_flag!(
+        remote_write,
+        is_remote_write,
+        libfabric_sys::FI_REMOTE_WRITE as u64
+    );
     crate::enums::gen_set_get_flag!(recv, is_recv, libfabric_sys::FI_RECV as u64);
-    crate::enums::gen_set_get_flag!(directed_recv, is_directed_recv, libfabric_sys::FI_DIRECTED_RECV);
+    crate::enums::gen_set_get_flag!(
+        directed_recv,
+        is_directed_recv,
+        libfabric_sys::FI_DIRECTED_RECV
+    );
     crate::enums::gen_set_get_flag!(hmem, is_hmem, libfabric_sys::FI_HMEM);
     crate::enums::gen_set_get_flag!(trigger, is_trigger, libfabric_sys::FI_TRIGGER as u64);
     crate::enums::gen_set_get_flag!(rma_pmem, is_rma_pmem, libfabric_sys::FI_RMA_PMEM);
-    crate::enums::gen_set_get_flag!(multi_recv, is_multi_recv, libfabric_sys::FI_MULTI_RECV as u64);
+    crate::enums::gen_set_get_flag!(
+        multi_recv,
+        is_multi_recv,
+        libfabric_sys::FI_MULTI_RECV as u64
+    );
     crate::enums::gen_set_get_flag!(source, is_source, libfabric_sys::FI_SOURCE);
     crate::enums::gen_set_get_flag!(source_err, is_source_err, libfabric_sys::FI_SOURCE_ERR);
-    crate::enums::gen_set_get_flag!(collective, is_collective, libfabric_sys::FI_COLLECTIVE as u64);
+    crate::enums::gen_set_get_flag!(
+        collective,
+        is_collective,
+        libfabric_sys::FI_COLLECTIVE as u64
+    );
 }
 
 impl Default for RxCaps {
@@ -1105,28 +1217,22 @@ impl Default for RxCaps {
     }
 }
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct RxCompOrder {
     c_flags: u64,
 }
 
 impl RxCompOrder {
-
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
     pub(crate) fn from_raw(value: u64) -> Self {
-        Self {
-            c_flags: value
-        }
+        Self { c_flags: value }
     }
 
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     crate::enums::gen_set_get_flag!(strict, is_strict, libfabric_sys::FI_ORDER_STRICT as u64);
@@ -1138,4 +1244,3 @@ impl Default for RxCompOrder {
         Self::new()
     }
 }
-
