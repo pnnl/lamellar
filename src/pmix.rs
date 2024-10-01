@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, thread::panicking};
 
-use crate::pmi::{ErrorKind, Pmi, PmiError};
+use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
     ($err_code: expr) => {
         if  $err_code as u32 != pmix_sys::PMIX_SUCCESS {
@@ -91,7 +91,7 @@ impl Pmi for PmiX {
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}",rank,key)).unwrap().into_raw();
             
             check_error!(unsafe { pmix_sys::PMIx_Get(&proc, kvs_key, std::ptr::null(), 0, &mut recv_val) });
-            unsafe{pmix_sys::pmix_value_xfer(&mut val, recv_val)};
+            unsafe{pmix_sys::PMIx_Value_xfer(&mut val, recv_val)};
             let byte_array = unsafe {std::ffi::CStr::from_ptr(val.data.string)}.to_bytes_with_nul();
 
             Ok(self.decode(&byte_array))
@@ -112,7 +112,7 @@ impl Pmi for PmiX {
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}",self.my_rank, key)).unwrap().into_raw();
             let mut kvs_val = self.encode(value);
             
-            unsafe{pmix_sys::pmix_value_load(&mut val, kvs_val.as_mut_ptr() as *mut std::ffi::c_void,  pmix_sys::PMIX_STRING as u16)};
+            unsafe{pmix_sys::PMIx_Value_load(&mut val, kvs_val.as_mut_ptr() as *mut std::ffi::c_void,  pmix_sys::PMIX_STRING as u16)};
             check_error!(unsafe { pmix_sys::PMIx_Put(pmix_sys::PMIX_GLOBAL as u8, kvs_key, &mut val) });
             check_error!(unsafe{ pmix_sys::PMIx_Commit()});
         }
