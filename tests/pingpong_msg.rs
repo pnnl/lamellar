@@ -7,7 +7,7 @@ pub mod common; // Public to supress lint warnings (unused function)
 use common::IP;
 use libfabric::{ep::ActiveEndpoint, info::{Info, Version}};
 use prefix::{HintsCaps, EndpointCaps, define_test, call};
-use async_ as prefix; 
+use sync_ as prefix; 
 
 
 // To run the following tests do:

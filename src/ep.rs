@@ -979,12 +979,7 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid>{
         check_error(err.try_into().unwrap())
     }
 
-    fn cancel(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_raw_typed_fid().as_raw_fid(), std::ptr::null_mut()) };
-        check_error(err)
-    }
-
-    fn cancel_with_context<T0>(&self, context: &mut Context) -> Result<(), crate::error::Error> {
+    fn cancel(&self, context: &mut Context) -> Result<(), crate::error::Error> {
         let err = unsafe { libfabric_sys::inlined_fi_cancel(self.as_raw_typed_fid().as_raw_fid(), context.inner_mut()) };
         check_error(err)
     }
