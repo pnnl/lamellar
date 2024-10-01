@@ -1,3 +1,7 @@
+use crate::conn_ep::ConnectedEndpointBase;
+use crate::conn_ep::ConnectedEp;
+use crate::connless_ep::ConnectionlessEndpointBase;
+use crate::connless_ep::ConnlessEp;
 use crate::trigger::TriggeredContext;
 use crate::utils::Either;
 use crate::AsFiType;
@@ -23,7 +27,7 @@ use crate::xcontext::TxContextBase;
 use crate::xcontext::TxContextImplBase;
 use super::message::extract_raw_addr_and_ctx;
 
-pub(crate) trait AtomicWriteEpImpl: AtomicWriteEp + AsRawTypedFid<Output = EpRawFid> + AtomicValidEp{
+pub(crate) trait AtomicWriteEpImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp{
     #[allow(clippy::too_many_arguments)]
     fn atomic_impl<T: AsFiType>(&self, buf: &[T],  desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::AtomicOp, context: Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -83,7 +87,7 @@ pub trait ConnectedAtomicWriteEp {
     unsafe fn inject_atomic<T: AsFiType>(&self, buf: &[T], mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::AtomicOp) -> Result<(), crate::error::Error> ;
 }
 
-impl<EP: AtomicWriteEpImpl> AtomicWriteEp for EP {
+impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     #[inline]
     unsafe fn atomic_to<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::AtomicOp) -> Result<(), crate::error::Error> {
         self.atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, op, None)
@@ -125,7 +129,7 @@ impl<EP: AtomicWriteEpImpl> AtomicWriteEp for EP {
     }
 
 }
-impl<EP: AtomicWriteEpImpl> ConnectedAtomicWriteEp for EP {
+impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
     #[inline]
     #[allow(clippy::too_many_arguments)]
     unsafe fn atomic<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::AtomicOp) -> Result<(), crate::error::Error> {
@@ -175,11 +179,10 @@ impl<EP: AtomicWriteEpImpl> ConnectedAtomicWriteEp for EP {
 
 // impl<E: AtomicCap+ WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
 impl<EP: AtomicCap + WriteMod, EQ: ?Sized, CQ: ?Sized + ReadCq>  AtomicWriteEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: AtomicWriteEpImpl>  AtomicWriteEpImpl for EndpointBase<E> {}
+impl<E: AtomicWriteEpImpl, const CONN: bool>  AtomicWriteEpImpl for EndpointBase<E, CONN> {}
 
 
-
-pub(crate) trait AtomicFetchEpImpl: AtomicFetchEp  + AsRawTypedFid<Output = EpRawFid> + AtomicValidEp {
+pub(crate) trait AtomicFetchEpImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomic_impl<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::FetchAtomicOp, context : Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error>{
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
@@ -224,7 +227,7 @@ pub trait ConnectedAtomicFetchEp {
     unsafe fn fetch_atomicmsg<T: AsFiType>(&self, msg: &crate::msg::MsgFetchAtomicConnected<T>,  resultv: &mut [crate::iovec::IocMut<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicFetchMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
-impl<EP: AtomicFetchEpImpl> AtomicFetchEp for EP {
+impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
     #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_from<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::FetchAtomicOp) -> Result<(), crate::error::Error>{
         self.fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, op, None)
@@ -253,7 +256,7 @@ impl<EP: AtomicFetchEpImpl> AtomicFetchEp for EP {
         self.fetch_atomicmsg_impl(Either::Left(msg), resultv, res_desc, options)
     }
 }
-impl<EP: AtomicFetchEpImpl> ConnectedAtomicFetchEp for EP {
+impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
     #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, res: &mut [T], res_desc: &mut impl DataDescriptor, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::FetchAtomicOp) -> Result<(), crate::error::Error>{
         self.fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, op, None)
@@ -290,10 +293,9 @@ impl<EP: AtomicFetchEpImpl> ConnectedAtomicFetchEp for EP {
 }
 
 impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicFetchEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E> {}
+impl<E: AtomicFetchEpImpl, const CONN: bool> AtomicFetchEpImpl for EndpointBase<E, CONN> {}
 
-
-pub(crate) trait AtomicCASImpl: AtomicCASEp + AsRawTypedFid<Output = EpRawFid> + AtomicValidEp{
+pub(crate) trait AtomicCASImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp{
     #[allow(clippy::too_many_arguments)]
     unsafe fn compare_atomic_impl<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &[T], compare_desc: &mut impl DataDescriptor, 
         result: &mut [T], result_desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::CompareAtomicOp, context : Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error> {
@@ -350,6 +352,9 @@ pub trait AtomicCASEp {
     #[allow(clippy::too_many_arguments)]
     unsafe fn compare_atomicv_to_triggered<T: AsFiType>(&self, ioc: &[crate::iovec::Ioc<T>], desc: &mut [impl DataDescriptor], comparetv: &[crate::iovec::Ioc<T>],  compare_desc: &mut [impl DataDescriptor],
         resultv: &mut [crate::iovec::IocMut<T>],  res_desc: &mut [impl DataDescriptor], dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, op: crate::enums::CompareAtomicOp, context : &mut TriggeredContext) -> Result<(), crate::error::Error> ;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicmsg_to<T: AsFiType>(&self, msg: &crate::msg::MsgCompareAtomic<T>, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::IocMut<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
 pub trait ConnectedAtomicCASEp {
@@ -381,13 +386,10 @@ pub trait ConnectedAtomicCASEp {
 
     #[allow(clippy::too_many_arguments)]
     unsafe fn compare_atomicmsg<T: AsFiType>(&self, msg: &crate::msg::MsgCompareAtomicConnected<T>, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::IocMut<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> ;
-    
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn compare_atomicmsg_to<T: AsFiType>(&self, msg: &crate::msg::MsgCompareAtomic<T>, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::IocMut<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
 
-impl<EP: AtomicCASImpl> AtomicCASEp for EP {
+impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
     #[inline]
     #[allow(clippy::too_many_arguments)]
     unsafe fn compare_atomic_to<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &[T], compare_desc: &mut impl DataDescriptor, 
@@ -432,9 +434,15 @@ impl<EP: AtomicCASImpl> AtomicCASEp for EP {
         
         self.compare_atomicv_impl(ioc, desc, comparetv, compare_desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, op, Some(context.inner_mut()))
     }
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicmsg_to<T: AsFiType>(&self, msg: &crate::msg::MsgCompareAtomic<T>, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::IocMut<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
+        self.compare_atomicmsg_impl(Either::Left(msg), comparev, compare_desc, resultv, res_desc, options)
+    }
 }
 
-impl<EP: AtomicCASImpl> ConnectedAtomicCASEp for EP {
+impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
     #[inline]
     #[allow(clippy::too_many_arguments)]
     unsafe fn compare_atomic<T: AsFiType>(&self, buf: &[T], desc: &mut impl DataDescriptor, compare: &[T], compare_desc: &mut impl DataDescriptor, 
@@ -489,15 +497,11 @@ impl<EP: AtomicCASImpl> ConnectedAtomicCASEp for EP {
         self.compare_atomicmsg_impl(Either::Right(msg), comparev, compare_desc, resultv, res_desc, options)
     }
 
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn compare_atomicmsg_to<T: AsFiType>(&self, msg: &crate::msg::MsgCompareAtomic<T>, comparev: &[crate::iovec::Ioc<T>], compare_desc: &mut [impl DataDescriptor], resultv: &mut [crate::iovec::IocMut<T>],  res_desc: &mut [impl DataDescriptor], options: AtomicMsgOptions) -> Result<(), crate::error::Error> {
-        self.compare_atomicmsg_impl(Either::Left(msg), comparev, compare_desc, resultv, res_desc, options)
-    }
 }
+impl<EP: AtomicCap + ReadMod + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicCASImpl for EndpointImplBase<EP, EQ, CQ> {}
 
 
-impl<EP: AtomicFetchEpImpl + AtomicWriteEpImpl> AtomicCASImpl for EP {}
+impl<E: AtomicCASImpl, const CONN: bool> AtomicCASImpl for EndpointBase<E, CONN> {}
 
 pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
     unsafe fn atomicvalid<T: AsFiType>(&self, op: crate::enums::AtomicOp) -> Result<usize, crate::error::Error> {
@@ -537,7 +541,8 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
     }
 }
 
-impl<E: AtomicValidEp> AtomicValidEp for EndpointBase<E> {}
+impl<E: AtomicValidEp, const CONN: bool> AtomicValidEp for EndpointBase<E, CONN> {}
+
 impl<EP: AtomicCap, EQ: ?Sized, CQ: ?Sized + ReadCq> AtomicValidEp for EndpointImplBase<EP, EQ, CQ> {}
 
 impl<CQ: ReadCq> AtomicWriteEpImpl for TxContextBase<CQ> {}

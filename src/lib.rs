@@ -64,6 +64,7 @@ pub mod trigger;
 
 #[cfg(any(feature="use-async-std", feature = "use-tokio"))]
 pub mod async_;
+pub mod connless_ep;
 
 #[derive(Clone)]
 pub struct TableMappedAddress {

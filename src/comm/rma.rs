@@ -1,3 +1,7 @@
+use crate::conn_ep::ConnectedEndpointBase;
+use crate::conn_ep::ConnectedEp;
+use crate::connless_ep::ConnectionlessEndpointBase;
+use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::ReadMsgOptions;
 use crate::enums::WriteMsgOptions;
@@ -24,7 +28,7 @@ use crate::FI_ADDR_UNSPEC;
 use super::message::extract_raw_addr_and_ctx;
 
 
-pub(crate) trait ReadEpImpl: ReadEp + AsRawTypedFid<Output = EpRawFid>{
+pub(crate) trait ReadEpImpl: AsRawTypedFid<Output = EpRawFid>{
     unsafe fn read_impl<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_addr: Option<&crate::MappedAddress>, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey, context: Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_read(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
@@ -47,10 +51,6 @@ pub(crate) trait ReadEpImpl: ReadEp + AsRawTypedFid<Output = EpRawFid>{
         check_error(err)
     }
 }
-
-
-
-
 
 pub trait ReadEp {
     /// Read data from a remote memory region into local buffer `buf`
@@ -160,7 +160,7 @@ pub trait ConnectedReadEp {
     unsafe fn readmsg(&self, msg: &crate::msg::MsgRmaConnectedMut, options: ReadMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
-impl<EP: ReadEpImpl> ReadEp for EP {
+impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn read_from<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, src_addr: &crate::MappedAddress, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
         self.read_impl(buf, desc, Some(src_addr), mem_addr, mapped_key, None)
     }
@@ -183,7 +183,7 @@ impl<EP: ReadEpImpl> ReadEp for EP {
         self.readmsg_impl(Either::Left(msg), options)
     }
 }
-impl<EP: ReadEpImpl> ConnectedReadEp for EP {
+impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn read<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mem_addr: u64,  mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error> {
         self.read_impl(buf, desc, None, mem_addr, mapped_key, None)
     }
@@ -217,10 +217,9 @@ impl<EP: ReadEpImpl> ConnectedReadEp for EP {
 
 
 impl<EP: RmaCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ReadEpImpl for EndpointImplBase<EP, EQ, CQ> { }
-impl<E: ReadEpImpl> ReadEpImpl for EndpointBase<E> {}
+impl<E: ReadEpImpl, const CONN: bool> ReadEpImpl for EndpointBase<E, CONN> {}
 
-
-pub(crate) trait WriteEpImpl: WriteEp + AsRawTypedFid<Output = EpRawFid>{
+pub(crate) trait WriteEpImpl: AsRawTypedFid<Output = EpRawFid>{
     unsafe fn write_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: Option<&crate::MappedAddress>, mem_addr: u64, mapped_key: &MappedMemoryRegionKey, context: Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error>  {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_write(self.as_raw_typed_fid(), buf.as_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, mem_addr, mapped_key.get_key(), ctx) };
@@ -494,7 +493,7 @@ pub trait ConnectedWriteEp {
     unsafe fn writemsg(&self, msg: &crate::msg::MsgRmaConnected, options: WriteMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
-impl<EP: WriteEpImpl> WriteEp for EP {
+impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     #[inline]
     unsafe fn write_to<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, dest_addr: &crate::MappedAddress, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error>  {
         self.write_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, None)
@@ -552,7 +551,7 @@ impl<EP: WriteEpImpl> WriteEp for EP {
     }
 }
 
-impl<EP: WriteEpImpl> ConnectedWriteEp for EP {
+impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     
     #[inline]
     unsafe fn write<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mem_addr: u64, mapped_key: &MappedMemoryRegionKey) -> Result<(), crate::error::Error>  {
@@ -616,7 +615,7 @@ impl<EP: WriteEpImpl> ConnectedWriteEp for EP {
 }
 
 impl<EP: RmaCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> WriteEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E> {}
+impl<E: WriteEpImpl, const CONN: bool> WriteEpImpl for EndpointBase<E, CONN> {}
 
 impl<CQ: ?Sized + ReadCq> WriteEpImpl  for TxContextBase<CQ> {}
 impl<CQ: ?Sized + ReadCq> WriteEpImpl  for TxContextImplBase<CQ> {}

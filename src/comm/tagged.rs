@@ -1,3 +1,7 @@
+use crate::conn_ep::ConnectedEndpointBase;
+use crate::conn_ep::ConnectedEp;
+use crate::connless_ep::ConnectionlessEndpointBase;
+use crate::connless_ep::ConnlessEp;
 use crate::trigger::TriggeredContext;
 use crate::utils::Either;
 use crate::Context;
@@ -24,7 +28,7 @@ use super::message::extract_raw_addr_and_ctx;
 
 
 
-pub(crate) trait TagRecvEpImpl: TagRecvEp + AsRawTypedFid<Output = EpRawFid>{
+pub(crate) trait TagRecvEpImpl: AsRawTypedFid<Output = EpRawFid>{
     fn trecv_impl<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag: u64, ignore:u64, context: Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_trecv(self.as_raw_typed_fid(), buf.as_mut_ptr() as *mut std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ignore, ctx) };
@@ -182,9 +186,9 @@ impl<EP: TagRecvEpImpl>  ConnectedTagRecvEp for EP {
 // impl<E: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
 impl<EP: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagRecvEpImpl for EndpointImplBase<EP, EQ, CQ> {}
 
-impl<E: TagRecvEpImpl> TagRecvEpImpl for EndpointBase<E> {}
+impl<E: TagRecvEpImpl, const CONN: bool> TagRecvEpImpl for EndpointBase<E, CONN> {}
 
-pub(crate) trait TagSendEpImpl: TagSendEp + AsRawTypedFid<Output = EpRawFid>{
+pub(crate) trait TagSendEpImpl: AsRawTypedFid<Output = EpRawFid>{
     fn tsend_impl<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: Option<&MappedAddress>, tag:u64, context : Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_tsend(self.as_raw_typed_fid(), buf.as_ptr() as *const std::ffi::c_void, std::mem::size_of_val(buf), desc.get_desc(), raw_addr, tag, ctx) };
@@ -265,7 +269,7 @@ pub trait ConnectedTagSendEp {
     fn tinjectdata<T>(&self, buf: &[T], data: u64, tag: u64) -> Result<(), crate::error::Error> ;
 }
 
-impl<EP: TagSendEpImpl>  TagSendEp for EP {
+impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     #[inline]
     fn tsend_to<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64) -> Result<(), crate::error::Error> {
         self.tsend_impl(buf, desc, Some(mapped_addr), tag, None)
@@ -327,7 +331,7 @@ impl<EP: TagSendEpImpl>  TagSendEp for EP {
     }
 }
 
-impl<EP: TagSendEpImpl>  ConnectedTagSendEp for EP {
+impl<EP: TagSendEpImpl + ConnectedEp>  ConnectedTagSendEp for EP {
     #[inline]
     fn tsend<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> Result<(), crate::error::Error> {
         self.tsend_impl(buf, desc, None, tag, None)
@@ -390,7 +394,7 @@ impl<EP: TagSendEpImpl>  ConnectedTagSendEp for EP {
 }
 
 impl<EP: TagCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagSendEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E> {}
+impl<E: TagSendEpImpl, const CONN: bool> TagSendEpImpl for EndpointBase<E, CONN> {}
 
 impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextBase<CQ> {}
 impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextImplBase<CQ>{}

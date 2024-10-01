@@ -650,7 +650,7 @@ impl DisabledMemoryRegion {
     /// Bind the memory region to `ep`.
     /// 
     /// Corresponds to `fi_mr_bind` with a `fid_ep` 
-    pub fn bind_ep<EP: AsRawFid + 'static>(&self, ep: &crate::ep::EndpointBase<EP>) -> Result<(), crate::error::Error> {
+    pub fn bind_ep<EP: AsRawFid + 'static, const CONN: bool>(&self, ep: &crate::ep::EndpointBase<EP, CONN>) -> Result<(), crate::error::Error> {
         self.mr.inner.bind_ep(&ep.inner)?;
         // ep.inner.eq
         //     .get()

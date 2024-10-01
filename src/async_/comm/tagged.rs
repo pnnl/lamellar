@@ -1,6 +1,8 @@
 use crate::async_::ep::{AsyncRxEp, AsyncTxEp};
 use crate::async_::xcontext::{TransmitContext, TransmitContextImpl, ReceiveContext, ReceiveContextImpl};
-use crate::comm::tagged::{TagRecvEpImpl, TagSendEp, TagSendEpImpl};
+use crate::comm::tagged::{ConnectedTagSendEp, TagRecvEpImpl, TagSendEp, TagSendEpImpl};
+use crate::conn_ep::ConnectedEp;
+use crate::connless_ep::ConnlessEp;
 use crate::ep::EndpointImplBase;
 use crate::infocapsoptions::{RecvMod, TagCap, SendMod};
 use crate::msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut};
@@ -62,14 +64,17 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
 
 pub trait AsyncTagRecvEp {
     fn trecv_from_async<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-    fn trecv_async<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn trecv_from_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ; 
-    fn trecv_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
 	fn trecvv_from_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn trecvv_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
 	fn trecvv_from_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-	fn trecvv_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn trecvmsg_from_async<'a>(&self, msg: &mut crate::msg::MsgTaggedMut<'a>, options: TaggedRecvMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+}
+
+pub trait ConnectedAsyncTagRecvEp {
+    fn trecv_async<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn trecv_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn trecvv_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+	fn trecvv_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn trecvmsg_async<'a>(&self, msg: &mut crate::msg::MsgTaggedConnectedMut<'a>, options: TaggedRecvMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
 }
 
@@ -84,45 +89,43 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
     async fn trecv_from_async<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> Result<SingleCompletion, crate::error::Error> {
         self.trecv_async_impl(buf, desc, Some(mapped_addr), tag, ignore, None).await
     }
+    #[inline]
+    async fn trecv_from_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
+        self.trecv_async_impl(buf, desc, Some(mapped_addr), tag, ignore, Some((context as *mut T0).cast())).await
+    }
+    #[inline]
+    async fn trecvv_from_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> Result<SingleCompletion, crate::error::Error> {
+        self.trecvv_async_impl(iov, desc, Some(src_mapped_addr), tag, ignore, None).await
+    }
+    #[inline]
+    async fn trecvv_from_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> { //[TODO]
+        self.trecvv_async_impl(iov, desc, Some(src_mapped_addr), tag, ignore, Some((context as *mut T0).cast())).await
+    }
+    #[inline]
+    async fn trecvmsg_from_async<'a>(&self, msg: &mut crate::msg::MsgTaggedMut<'a>, options: TaggedRecvMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
+        self.trecvmsg_async_impl(Either::Left(msg), options).await
+    }
+}
 
+impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
     #[inline]
     async fn trecv_async<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64) -> Result<SingleCompletion, crate::error::Error> {
         self.trecv_async_impl(buf, desc, None, tag, ignore, None).await
     }
     
     #[inline]
-    async fn trecv_from_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag: u64, ignore:u64, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.trecv_async_impl(buf, desc, Some(mapped_addr), tag, ignore, Some((context as *mut T0).cast())).await
-    }
-    
-    #[inline]
     async fn trecv_with_context_async<T, T0>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, tag: u64, ignore:u64, context: &mut T0) -> Result<SingleCompletion, crate::error::Error> {
         self.trecv_async_impl(buf, desc, None, tag, ignore, Some((context as *mut T0).cast())).await
     }
-
-	#[inline]
-    async fn trecvv_from_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64) -> Result<SingleCompletion, crate::error::Error> {
-        self.trecvv_async_impl(iov, desc, Some(src_mapped_addr), tag, ignore, None).await
-    }
-
+	
 	#[inline]
     async fn trecvv_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64) -> Result<SingleCompletion, crate::error::Error> {
         self.trecvv_async_impl(iov, desc, None, tag, ignore, None).await
     }
 
 	#[inline]
-    async fn trecvv_from_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], src_mapped_addr: &MappedAddress, tag: u64, ignore:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> { //[TODO]
-        self.trecvv_async_impl(iov, desc, Some(src_mapped_addr), tag, ignore, Some((context as *mut T0).cast())).await
-    }
-
-	#[inline]
     async fn trecvv_with_context_async<'a, T0>(&self, iov: &[crate::iovec::IoVecMut<'a>], desc: &mut [impl DataDescriptor], tag: u64, ignore:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
         self.trecvv_async_impl(iov, desc, None, tag, ignore, Some((context as *mut T0).cast())).await
-    }
-
-    #[inline]
-    async fn trecvmsg_from_async<'a>(&self, msg: &mut crate::msg::MsgTaggedMut<'a>, options: TaggedRecvMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.trecvmsg_async_impl(Either::Left(msg), options).await
     }
 
     #[inline]
@@ -192,18 +195,21 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
 
 pub trait AsyncTagSendEp: TagSendEp {
     fn tsend_to_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    fn tsend_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsend_to_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    fn tsend_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsendv_to_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;    
-    fn tsendv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn tsendv_to_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    fn tsendv_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    fn tsendmsg_async<'a>(&self, msg: &mut crate::msg::MsgTaggedConnected<'a>, options: TaggedSendMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsendmsg_to_async<'a>(&self, msg: &mut crate::msg::MsgTagged<'a>, options: TaggedSendMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsenddata_to_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &MappedAddress, tag: u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    fn tsenddata_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsenddata_to_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &MappedAddress, tag: u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+}
+
+pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
+    fn tsend_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+    fn tsend_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+    fn tsendv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    fn tsendv_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+    fn tsendmsg_async<'a>(&self, msg: &mut crate::msg::MsgTaggedConnected<'a>, options: TaggedSendMsgOptions) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+    fn tsenddata_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsenddata_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut T0) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -212,15 +218,10 @@ impl<EP: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> 
 
 impl<E: AsyncTagSendEpImpl> AsyncTagSendEpImpl for EndpointBase<E> {}
 
-impl<EP: AsyncTagSendEpImpl + TagSendEpImpl> AsyncTagSendEp for EP {
+impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP {
     #[inline]
     async fn tsend_to_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, mapped_addr: &MappedAddress, tag:u64) -> Result<SingleCompletion, crate::error::Error> {
         self.tsend_async_impl(buf, desc, Some(mapped_addr), tag, None).await
-    }
-
-    #[inline]
-    async fn tsend_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsend_async_impl(buf, desc, None, tag, None).await
     }
 
     #[inline]
@@ -229,33 +230,13 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl> AsyncTagSendEp for EP {
     }
 
     #[inline]
-    async fn tsend_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsend_async_impl(buf, desc, None, tag, Some((context as *mut T0).cast())).await
-    }
-
-	#[inline]
     async fn tsendv_to_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
         self.tsendv_async_impl(iov, desc, Some(dest_mapped_addr), tag, None).await
     }
     
-	#[inline]
-    async fn tsendv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
-        self.tsendv_async_impl(iov, desc, None, tag, None).await
-    } 
-
     #[inline]
     async fn tsendv_to_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], dest_mapped_addr: &MappedAddress, tag:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
         self.tsendv_async_impl(iov, desc, Some(dest_mapped_addr), tag, Some((context as *mut T0).cast())).await
-    }
-
-	#[inline]
-    async fn tsendv_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsendv_async_impl(iov, desc, None, tag, Some((context as *mut T0).cast())).await
-    }
-
-    #[inline]
-    async fn tsendmsg_async<'a>(&self, msg: &mut crate::msg::MsgTaggedConnected<'a>, options: TaggedSendMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsendmsg_async_impl(Either::Right(msg), options).await
     }
 
     #[inline]
@@ -269,15 +250,44 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl> AsyncTagSendEp for EP {
     }
 
     #[inline]
-    async fn tsenddata_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsenddata_async_impl(buf, desc, data, None, tag, None).await
-    }
-
-    #[inline]
     async fn tsenddata_to_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, mapped_addr: &MappedAddress, tag: u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
         self.tsenddata_async_impl(buf, desc, data, Some(mapped_addr), tag, Some((context as *mut T0).cast())).await
     }
 
+}
+
+impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
+    
+    #[inline]
+    async fn tsend_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64) -> Result<SingleCompletion, crate::error::Error> {
+        self.tsend_async_impl(buf, desc, None, tag, None).await
+    }
+    
+    #[inline]
+    async fn tsend_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, tag:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
+        self.tsend_async_impl(buf, desc, None, tag, Some((context as *mut T0).cast())).await
+    }
+	
+	#[inline]
+    async fn tsendv_async<'a, T>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64) -> Result<SingleCompletion, crate::error::Error> { // [TODO]
+        self.tsendv_async_impl(iov, desc, None, tag, None).await
+    } 
+    
+	#[inline]
+    async fn tsendv_with_context_async<'a, T, T0>(&self, iov: &[crate::iovec::IoVec<'a>], desc: &mut [impl DataDescriptor], tag:u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
+        self.tsendv_async_impl(iov, desc, None, tag, Some((context as *mut T0).cast())).await
+    }
+
+    #[inline]
+    async fn tsendmsg_async<'a>(&self, msg: &mut crate::msg::MsgTaggedConnected<'a>, options: TaggedSendMsgOptions) -> Result<SingleCompletion, crate::error::Error> {
+        self.tsendmsg_async_impl(Either::Right(msg), options).await
+    }
+
+    #[inline]
+    async fn tsenddata_async<T>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64) -> Result<SingleCompletion, crate::error::Error> {
+        self.tsenddata_async_impl(buf, desc, data, None, tag, None).await
+    }
+    
     #[inline]
     async fn tsenddata_with_context_async<T, T0>(&self, buf: &[T], desc: &mut impl DataDescriptor, data: u64, tag: u64, context : &mut T0) -> Result<SingleCompletion, crate::error::Error> {
         self.tsenddata_async_impl(buf, desc, data, None, tag, Some((context as *mut T0).cast())).await

@@ -144,16 +144,16 @@ impl MulticastGroupCollective {
     //     self.inner.join_impl(&ep.inner, addr, options, Some(context.inner_mut()))
     // }
 
-    pub fn join_collective_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, options: JoinOptions, context: &mut Context) -> Result<(), Error> {
+    pub fn join_collective_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static, const CONN: bool>(&self, ep: &EndpointBase<E, CONN>, options: JoinOptions, context: &mut Context) -> Result<(), Error> {
         self.inner.join_collective_impl(&ep.inner, options, Some(context.inner_mut()))
         
     }
-    pub fn join_collective<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>(&self, ep: &EndpointBase<E>, options: JoinOptions) -> Result<(), Error> {
+    pub fn join_collective<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static, const CONN: bool>(&self, ep: &EndpointBase<E, CONN>, options: JoinOptions) -> Result<(), Error> {
         self.inner.join_collective_impl(&ep.inner, options, None)
     }
 }
 
-pub(crate) trait CollectiveEpImpl : CollectiveEp + AsRawTypedFid<Output = EpRawFid> {
+pub(crate) trait CollectiveEpImpl : AsRawTypedFid<Output = EpRawFid> {
     fn barrier_impl(&self,  mc_group: &MulticastGroupCollective, context: Option<*mut std::ffi::c_void>, options: Option<CollectiveOptions>) -> Result<(), crate::error::Error> { 
         let ctx = extract_raw_ctx(context);
         
@@ -424,7 +424,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
 
 impl<EP: CollCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> CollectiveEpImpl for EndpointImplBase<EP, EQ, CQ>  {}
 
-impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E>  {}
+impl<E: CollectiveEpImpl, const CONN: bool> CollectiveEpImpl for EndpointBase<E, CONN>  {}
 
 impl AsFid for MulticastGroupCollective {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {

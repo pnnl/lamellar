@@ -1,5 +1,5 @@
 
-use crate::{cq::ReadCq, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, trigger::TriggeredContext, utils::{check_error, Either}, xcontext::{RxContextBase, RxContextImplBase, TxContextBase, TxContextImplBase}, Context, MappedAddress, FI_ADDR_UNSPEC};
+use crate::{conn_ep::{ConnectedEndpointBase, ConnectedEp}, connless_ep::{ConnectionlessEndpointBase, ConnlessEp}, cq::ReadCq, enums::{RecvMsgOptions, SendMsgOptions}, ep::{EndpointBase, EndpointImplBase}, eq::ReadEq, fid::{AsRawTypedFid, EpRawFid}, infocapsoptions::{MsgCap, RecvMod, SendMod}, mr::DataDescriptor, trigger::TriggeredContext, utils::{check_error, Either}, xcontext::{RxContextBase, RxContextImplBase, TxContextBase, TxContextImplBase}, Context, MappedAddress, FI_ADDR_UNSPEC};
 
 pub(crate) fn extract_raw_ctx(context: Option<*mut std::ffi::c_void>) -> *mut std::ffi::c_void {
     if let Some(ctx) = context {
@@ -29,7 +29,7 @@ pub(crate) fn extract_raw_addr_and_ctx(mapped_addr: Option<&MappedAddress>, cont
     (raw_addr, ctx)
 }
 
-pub(crate) trait RecvEpImpl: RecvEp + AsRawTypedFid<Output = EpRawFid> {
+pub(crate) trait RecvEpImpl: AsRawTypedFid<Output = EpRawFid> {
     fn recv_impl<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor, mapped_addr: Option<&crate::MappedAddress>, context: Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_recv(self.as_raw_typed_fid(), buf.as_mut_ptr().cast(), std::mem::size_of_val(buf), desc.get_desc(), raw_addr, ctx) };
@@ -64,7 +64,7 @@ pub trait ConnectedRecvEp {
     fn recvmsg(&self, msg: &crate::msg::MsgConnectedMut, options: RecvMsgOptions) -> Result<(), crate::error::Error> ;
 }
 
-impl<EP: RecvEpImpl> ConnectedRecvEp for EP {
+impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     #[inline]
     fn recv<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor) -> Result<(), crate::error::Error> {
         self.recv_impl::<T>(buf, desc, None, None)
@@ -112,7 +112,7 @@ pub trait RecvEp {
 }
 
 
-impl<EP: RecvEpImpl> RecvEp for EP {
+impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     #[inline]
     fn recv_from_any<T>(&self, buf: &mut [T], desc: &mut impl DataDescriptor) -> Result<(), crate::error::Error> {
         self.recv_impl::<T>(buf, desc, None, None)
@@ -182,9 +182,10 @@ impl<EP: RecvEpImpl> RecvEp for EP {
 impl<EP: MsgCap + RecvMod, EQ: ?Sized, CQ: ?Sized + ReadCq> RecvEpImpl for EndpointImplBase<EP, EQ, CQ> {}
 
 // impl<E: MsgCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
-impl<E: RecvEpImpl> RecvEpImpl for EndpointBase<E> {}
+impl<E: RecvEpImpl, const CONN: bool> RecvEpImpl for EndpointBase<E, CONN> {}
 
-pub(crate) trait SendEpImpl: SendEp + AsRawTypedFid<Output = EpRawFid> {
+
+pub(crate) trait SendEpImpl: AsRawTypedFid<Output = EpRawFid> {
     fn sendv_impl(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], mapped_addr: Option<&crate::MappedAddress>, context : Option<*mut std::ffi::c_void>) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe{ libfabric_sys::inlined_fi_sendv(self.as_raw_typed_fid(), iov.as_ptr().cast() , desc.as_mut_ptr().cast(), iov.len(), raw_addr, ctx) };
@@ -266,7 +267,7 @@ pub trait ConnectedSendEp {
     fn injectdata<T>(&self, buf: &[T], data: u64) -> Result<(), crate::error::Error> ;
 }
 
-impl<EP: SendEpImpl> SendEp for EP {
+impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     #[inline]
     fn sendv_to(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor], mapped_addr: &crate::MappedAddress) -> Result<(), crate::error::Error> {
         self.sendv_impl(iov, desc, Some(mapped_addr), None)
@@ -328,7 +329,7 @@ impl<EP: SendEpImpl> SendEp for EP {
     }
 }
 
-impl<EP: SendEpImpl> ConnectedSendEp for EP {
+impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     #[inline]
 	fn sendv(&self, iov: &[crate::iovec::IoVec], desc: &mut [impl DataDescriptor]) -> Result<(), crate::error::Error> { 
         self.sendv_impl(iov, desc, None, None)
@@ -392,7 +393,7 @@ impl<EP: SendEpImpl> ConnectedSendEp for EP {
 
 // impl<E: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
 impl<EP: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SendEpImpl for EndpointImplBase<EP, EQ, CQ> {}
-impl<E: SendEpImpl> SendEpImpl for EndpointBase<E> {}
+impl<E: SendEpImpl, const CONN: bool> SendEpImpl for EndpointBase<E, CONN> {}
 
 impl<CQ: ?Sized + ReadCq> SendEpImpl for TxContextBase<CQ>{}
 impl<CQ: ?Sized + ReadCq> SendEpImpl for TxContextImplBase<CQ>{}

@@ -61,12 +61,13 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                 call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mut mr_desc);
                 
                 match ep {
-                    EndpointCaps::Msg(ep) => {
+                    EndpointCaps::ConnectedMsg(ep) => {
                         ep.shutdown().unwrap();
                     }
-                    EndpointCaps::Tagged(ep) => {
+                    EndpointCaps::ConnectedTagged(ep) => {
                         ep.shutdown().unwrap();
                     }
+                    _ => {}
                 }
             }
             prefix::InfoWithCaps::Tagged(entry) => {
@@ -79,12 +80,13 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                 call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mut mr_desc);
                 
                 match ep {
-                    EndpointCaps::Msg(ep) => {
+                    EndpointCaps::ConnectedMsg(ep) => {
                         ep.shutdown().unwrap();
                     }
-                    EndpointCaps::Tagged(ep) => {
+                    EndpointCaps::ConnectedTagged(ep) => {
                         ep.shutdown().unwrap();
                     }
+                    _ => {}
                 }
             }
         }
@@ -135,12 +137,13 @@ define_test!(pp_client_msg, async_pp_client_msg, {
             
             call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
-                EndpointCaps::Msg(ep) => {
+                EndpointCaps::ConnectedMsg(ep) => {
                     ep.shutdown().unwrap();
                 }
-                EndpointCaps::Tagged(ep) => {
+                EndpointCaps::ConnectedTagged(ep) => {
                     ep.shutdown().unwrap();
                 }
+                _ => {}
             }
         }
         prefix::InfoWithCaps::Tagged(entry) => {
@@ -152,12 +155,13 @@ define_test!(pp_client_msg, async_pp_client_msg, {
             
             call!(prefix::ft_finalize,&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mut mr_desc);
             match ep {
-                EndpointCaps::Msg(ep) => {
+                EndpointCaps::ConnectedMsg(ep) => {
                     ep.shutdown().unwrap();
                 }
-                EndpointCaps::Tagged(ep) => {
+                EndpointCaps::ConnectedTagged(ep) => {
                     ep.shutdown().unwrap();
                 }
+                _ => {}
             }
         }
     }

@@ -161,17 +161,17 @@ impl TxContext {
 }
 
 //================== TxContext Builder ==================//
-pub struct TxContextBuilder<'a, E> {
+pub struct TxContextBuilder<'a, E, const CONN: bool> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a Endpoint<E>,
+    pub(crate) ep: &'a Endpoint<E, CONN>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
 
-impl<'a> TxContextBuilder<'a, ()> {
-    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> TxContextBuilder<'a, E> {
-        TxContextBuilder::<E> {
+impl<'a, const CONN: bool> TxContextBuilder<'a, (), CONN> {
+    pub fn new<E>(ep: &'a Endpoint<E, CONN>, index: i32) -> TxContextBuilder<'a, E, CONN> {
+        TxContextBuilder::<E, CONN> {
             tx_attr: TxAttr::new(),
             index,
             ep,
@@ -180,7 +180,7 @@ impl<'a> TxContextBuilder<'a, ()> {
     }
 }
 
-impl <'a, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, E> {
+impl <'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> TxContextBuilder<'a, E, CONN> {
     
     // pub fn caps(mut self, caps: TxCaps) -> Self {
     //     self.tx_attr.caps(caps);
@@ -233,7 +233,7 @@ impl <'a, E: AsRawTypedFid<Output = EpRawFid>> TxContextBuilder<'a, E> {
         self
     }
 
-    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, E> {
+    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, E, CONN> {
         TxContextBuilder {
             tx_attr: self.tx_attr,
             index: self.index,
@@ -498,16 +498,16 @@ impl RxContextBase<dyn ReadCq> {
 
 
 //================== RxContext Builder ==================//
-pub struct ReceiveContextBuilder<'a, E> {
+pub struct ReceiveContextBuilder<'a, E, const CONN: bool> {
     pub(crate) rx_attr: RxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a Endpoint<E>,
+    pub(crate) ep: &'a Endpoint<E, CONN>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
-impl<'a> ReceiveContextBuilder<'a, ()> {
-    pub fn new<E>(ep: &'a Endpoint<E>, index: i32) -> ReceiveContextBuilder<'a, E> {
-        ReceiveContextBuilder::<E> {
+impl<'a, const CONN: bool> ReceiveContextBuilder<'a, (), CONN> {
+    pub fn new<E>(ep: &'a Endpoint<E, CONN>, index: i32) -> ReceiveContextBuilder<'a, E, CONN> {
+        ReceiveContextBuilder::<E, CONN> {
             rx_attr: RxAttr::new(),
             index,
             ep,
@@ -516,7 +516,7 @@ impl<'a> ReceiveContextBuilder<'a, ()> {
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid>> ReceiveContextBuilder<'a, E> {
+impl<'a, E: AsRawTypedFid<Output = EpRawFid>, const CONN: bool> ReceiveContextBuilder<'a, E, CONN> {
 
     // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
     //     self.rx_attr.caps(caps);
@@ -559,7 +559,7 @@ impl<'a, E: AsRawTypedFid<Output = EpRawFid>> ReceiveContextBuilder<'a, E> {
         self
     }
 
-    pub fn context(self, ctx: &'a mut Context) -> ReceiveContextBuilder<'a, E> {
+    pub fn context(self, ctx: &'a mut Context) -> ReceiveContextBuilder<'a, E, CONN> {
         ReceiveContextBuilder {
             rx_attr: self.rx_attr,
             index: self.index,
