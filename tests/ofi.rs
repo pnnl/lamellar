@@ -19,8 +19,8 @@ use libfabric::{
         AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType,
         FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions,
     },
-    ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointABType, EndpointBuilder},
-    eq::{EventQueueBuilder, WaitEq},
+    ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder},
+    eq::{EventQueueBuilder, ReadEq, WaitEq},
     error::{Error, ErrorKind},
     fabric::FabricBuilder,
     info::{Info, InfoEntry, Version},
@@ -220,8 +220,8 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     ))
                 };
                 let ep = match EndpointBuilder::new(&info_entry).build(&domain).unwrap() {
-                    EndpointABType::Connectionless(_) => panic!("Expected connected EP"),
-                    EndpointABType::ConnectionOriented(unconn_ep) => unconn_ep,
+                    Endpoint::Connectionless(_) => panic!("Expected connected EP"),
+                    Endpoint::ConnectionOriented(unconn_ep) => unconn_ep,
                 };
                 ep.bind_eq(&eq).unwrap();
                 match cq_type {
@@ -239,7 +239,10 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     ep.accept().unwrap();
                 }
                 let ep = match eq.sread(-1) {
-                    Ok(event) => ep.connect_complete(event),
+                    Ok(event) => match event {
+                        libfabric::eq::Event::Connected(event) => ep.connect_complete(event),
+                        _ => panic!("Unexpected Event type"),
+                    },
                     Err(err) => {
                         if matches!(err.kind, ErrorKind::ErrorAvailable) {
                             let err = eq.readerr().unwrap();
@@ -287,8 +290,8 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 };
 
                 let ep = match EndpointBuilder::new(&info_entry).build(&domain).unwrap() {
-                    EndpointABType::Connectionless(ep) => ep,
-                    EndpointABType::ConnectionOriented(_) => panic!("Expected connectionless ep"),
+                    Endpoint::Connectionless(ep) => ep,
+                    Endpoint::ConnectionOriented(_) => panic!("Expected connectionless ep"),
                 };
                 match cq_type {
                     CqType::Separate((ref tx_cq, ref rx_cq)) => {

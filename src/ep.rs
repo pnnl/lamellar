@@ -76,8 +76,9 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     phantom: PhantomData<T>,
 }
 
-pub type Endpoint<T, const CONN: bool> =
-    EndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>, CONN>;
+// pub type Endpoint<T, const CONN: bool> =
+//     EndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>, CONN>;
+
 pub struct EndpointBase<EP, const CONN: bool> {
     pub(crate) inner: MyRc<EP>,
 }
@@ -961,13 +962,14 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
     }
 }
 
-impl<const CONN: bool> Endpoint<(), CONN> {
+impl<const CONN: bool> EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, CONN> {
     pub fn new<E, DEQ: ?Sized + 'static>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
         context: Option<&mut Context>,
-    ) -> Result<Endpoint<E, CONN>, crate::error::Error> {
+    ) -> Result<EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>, crate::error::Error>
+    {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
             None => std::ptr::null_mut(),
@@ -1578,7 +1580,7 @@ impl<'a> EndpointBuilder<'a, ()> {
     }
 }
 
-pub enum EndpointABType<EP> {
+pub enum Endpoint<EP> {
     Connectionless(ConnectionlessEndpoint<EP>),
     ConnectionOriented(UnconnectedEndpoint<EP>),
 }
@@ -1587,14 +1589,14 @@ impl<'a, E> EndpointBuilder<'a, E> {
     pub fn build<EQ: ?Sized + 'static>(
         self,
         domain: &crate::domain::DomainBase<EQ>,
-    ) -> Result<EndpointABType<E>, crate::error::Error> {
+    ) -> Result<Endpoint<E>, crate::error::Error> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
-            EndpointType::Msg | EndpointType::SockStream => Ok(EndpointABType::ConnectionOriented(
+            EndpointType::Msg | EndpointType::SockStream => Ok(Endpoint::ConnectionOriented(
                 UnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
             )),
             EndpointType::Dgram | EndpointType::Rdm | EndpointType::SockDgram => {
-                Ok(EndpointABType::Connectionless(ConnectionlessEndpoint::new(
+                Ok(Endpoint::Connectionless(ConnectionlessEndpoint::new(
                     domain, self.info, self.flags, self.ctx,
                 )?))
             }

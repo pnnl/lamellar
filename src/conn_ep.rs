@@ -1,10 +1,12 @@
+use libfabric_sys::FI_CONNECTED;
+
 use crate::{
     av::AddressVectorBase,
     cq::{CompletionQueue, ReadCq},
     ep::{
         ActiveEndpoint, Address, BaseEndpoint, EndpointBase, EndpointImplBase, IncompleteBindCntr,
     },
-    eq::{Event, EventQueueBase, EventQueueCmEntry, ReadEq},
+    eq::{ConnectedEvent, Event, EventQueueBase, EventQueueCmEntry, ReadEq},
     fid::{AsFid, AsRawFid, AsRawTypedFid, EpRawFid},
     info::InfoEntry,
     utils::check_error,
@@ -146,12 +148,8 @@ impl<EP: AsRawTypedFid<Output = EpRawFid>> UnconnectedEndpointBase<EP> {
 }
 
 impl<E> UnconnectedEndpoint<E> {
-    pub fn connect_complete(self, connected_event: Event) -> ConnectedEndpoint<E> {
+    pub fn connect_complete(self, event: ConnectedEvent) -> ConnectedEndpoint<E> {
         // TODO: Create a type specifically for each event type
-        let event = match connected_event {
-            Event::Connected(event) => event,
-            _ => panic!("Only \"Connected\" events are allowed"),
-        };
 
         assert_eq!(event.get_fid(), self.as_raw_fid());
 

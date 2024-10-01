@@ -4,7 +4,8 @@ use crate::{
     cntr::{Counter, ReadCntr},
     cq::ReadCq,
     enums::{Mode, TrafficClass, TransferOptions},
-    ep::{ActiveEndpoint, BaseEndpoint, Endpoint},
+    ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase},
+    eq::ReadEq,
     fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid},
     Context, MyOnceCell, MyRc,
 };
@@ -211,12 +212,15 @@ impl TxContext {
 pub struct TxContextBuilder<'a, E, const CONN: bool> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a Endpoint<E, CONN>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
 impl<'a, const CONN: bool> TxContextBuilder<'a, (), CONN> {
-    pub fn new<E>(ep: &'a Endpoint<E, CONN>, index: i32) -> TxContextBuilder<'a, E, CONN> {
+    pub fn new<E>(
+        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
+        index: i32,
+    ) -> TxContextBuilder<'a, E, CONN> {
         TxContextBuilder::<E, CONN> {
             tx_attr: TxAttr::new(),
             index,
@@ -584,12 +588,15 @@ impl RxContextBase<dyn ReadCq> {
 pub struct ReceiveContextBuilder<'a, E, const CONN: bool> {
     pub(crate) rx_attr: RxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a Endpoint<E, CONN>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
 impl<'a, const CONN: bool> ReceiveContextBuilder<'a, (), CONN> {
-    pub fn new<E>(ep: &'a Endpoint<E, CONN>, index: i32) -> ReceiveContextBuilder<'a, E, CONN> {
+    pub fn new<E>(
+        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, CONN>,
+        index: i32,
+    ) -> ReceiveContextBuilder<'a, E, CONN> {
         ReceiveContextBuilder::<E, CONN> {
             rx_attr: RxAttr::new(),
             index,

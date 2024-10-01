@@ -1,4 +1,5 @@
 use core::panic;
+use libfabric::connless_ep::ConnectionlessEndpoint;
 use libfabric::enums;
 use libfabric::{
     cntr::{Counter, CounterBuilder, ReadCntr, WaitCntr},
@@ -11,10 +12,7 @@ use libfabric::{
     cq::{CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq},
     domain::{BoundDomain, Domain},
     enums::AVOptions,
-    ep::{
-        self, ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointABType, EndpointBuilder,
-        PassiveEndpoint,
-    },
+    ep::{self, ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint},
     eq::{EventQueueBuilder, ReadEq, WaitEq},
     fabric,
     info::{Info, InfoCapsImpl, InfoEntry, InfoHints},
@@ -411,7 +409,7 @@ pub fn ft_alloc_active_res<E>(
     Option<libfabric::cntr::Counter<DefaultCntr>>,
     Option<libfabric::cntr::Counter<DefaultCntr>>,
     Option<libfabric::cntr::Counter<DefaultCntr>>,
-    EndpointABType<E>,
+    Endpoint<E>,
     Option<libfabric::av::AddressVector>,
 ) {
     let (cq_type, tx_cntr, rx_cntr, rma_cntr, av) = match domain {
@@ -431,7 +429,7 @@ pub fn ft_alloc_active_res<E>(
 pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
     info: &InfoEntry<I>,
     gl_ctx: &mut TestsGlobalCtx,
-    ep: &mut EndpointABType<E>,
+    ep: &mut Endpoint<E>,
     cq_type: &CqType,
     eq: &libfabric::eq::EventQueue<T>,
     av: &Option<libfabric::av::AddressVector>,
@@ -441,7 +439,7 @@ pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
 ) {
     bind_cq(cq_type, ep, gl_ctx);
     match ep {
-        EndpointABType::Connectionless(ep) => {
+        Endpoint::Connectionless(ep) => {
             if let Some(av_val) = av {
                 ep.bind_av(av_val).unwrap()
             }
@@ -485,7 +483,7 @@ pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
 
             ep.enable().unwrap();
         }
-        EndpointABType::ConnectionOriented(ep) => {
+        Endpoint::ConnectionOriented(ep) => {
             ep.bind_eq(eq).unwrap();
             if let Some(av_val) = av {
                 ep.bind_av(av_val).unwrap()
@@ -535,11 +533,11 @@ pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
 
 fn bind_cq_<T: libfabric::cq::ReadCq + 'static, E>(
     cq_type: &EqCqOpt<T>,
-    ep: &mut EndpointABType<E>,
+    ep: &mut Endpoint<E>,
     gl_ctx: &mut TestsGlobalCtx,
 ) {
     match ep {
-        EndpointABType::Connectionless(ep) => match cq_type {
+        Endpoint::Connectionless(ep) => match cq_type {
             EqCqOpt::Shared(cq) => ep.bind_shared_cq(cq, false).unwrap(),
             EqCqOpt::Separate(tx_cq, rx_cq) => ep
                 .bind_separate_cqs(
@@ -550,7 +548,7 @@ fn bind_cq_<T: libfabric::cq::ReadCq + 'static, E>(
                 )
                 .unwrap(),
         },
-        EndpointABType::ConnectionOriented(ep) => match cq_type {
+        Endpoint::ConnectionOriented(ep) => match cq_type {
             EqCqOpt::Shared(cq) => ep.bind_shared_cq(cq, false).unwrap(),
             EqCqOpt::Separate(tx_cq, rx_cq) => ep
                 .bind_separate_cqs(
@@ -564,7 +562,7 @@ fn bind_cq_<T: libfabric::cq::ReadCq + 'static, E>(
     }
 }
 
-fn bind_cq<E>(cq_type: &CqType, ep: &mut EndpointABType<E>, gl_ctx: &mut TestsGlobalCtx) {
+fn bind_cq<E>(cq_type: &CqType, ep: &mut Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
     match cq_type {
         CqType::Spin(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
         CqType::Sread(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
@@ -609,7 +607,10 @@ pub fn ft_complete_connect<E>(
     // if let libfabric::eq::EventQueue::Waitable(eq) = eq {
 
     if let Ok(event) = eq.sread(-1) {
-        unconnected_ep.connect_complete(event)
+        match event {
+            libfabric::eq::Event::Connected(event) => unconnected_ep.connect_complete(event),
+            _ => panic!("Unexpected Event type received"),
+        }
     } else {
         let _err_entry = eq.readerr().unwrap();
         panic!("{:?}", _err_entry.get_error())
@@ -645,10 +646,10 @@ pub fn ft_retrieve_conn_req<E: infocapsoptions::Caps>(
 }
 
 pub enum EndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
-    ConnectedMsg(Endpoint<M, true>),
-    ConnlessMsg(Endpoint<M, false>),
-    ConnectedTagged(Endpoint<T, true>),
-    ConnlessTagged(Endpoint<T, false>),
+    ConnectedMsg(ConnectedEndpoint<M>),
+    ConnlessMsg(ConnectionlessEndpoint<M>),
+    ConnectedTagged(ConnectedEndpoint<T>),
+    ConnlessTagged(ConnectionlessEndpoint<T>),
 }
 
 pub enum ConnEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -692,7 +693,7 @@ pub fn ft_server_connect<
                 &rma_cntr,
             );
             let ep = match ep {
-                EndpointABType::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep,
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -725,7 +726,7 @@ pub fn ft_server_connect<
                 &rma_cntr,
             );
             let ep = match ep {
-                EndpointABType::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep,
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -841,7 +842,7 @@ pub fn ft_alloc_msgs<I, E: 'static>(
     info: &InfoEntry<I>,
     gl_ctx: &mut TestsGlobalCtx,
     domain: &ConfDomain,
-    ep: &EndpointABType<E>,
+    ep: &Endpoint<E>,
 ) -> (
     Option<libfabric::mr::MemoryRegion>,
     Option<libfabric::mr::MemoryRegionDesc>,
@@ -959,7 +960,7 @@ pub fn ft_ep_recv<
 pub fn ft_enable_ep_recv<EQ: ReadEq + 'static, CNTR: ReadCntr + 'static, E, T: 'static>(
     info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
-    ep: &mut EndpointABType<T>,
+    ep: &mut Endpoint<T>,
     domain: &ConfDomain,
     cq_type: &CqType,
     eq: &libfabric::eq::EventQueue<EQ>,
@@ -1023,6 +1024,8 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
         HintsCaps::Msg(hints) => {
             let info = ft_getinfo(hints, node.clone(), service.clone(), false, source);
             let entry = info.into_iter().next().unwrap();
+            println!("{:?}", entry);
+
             gl_ctx.tx_ctx = Some(entry.allocate_context());
             gl_ctx.rx_ctx = Some(entry.allocate_context());
             let (_fabric, eq, domain) = ft_open_fabric_res(&entry);
@@ -1032,8 +1035,8 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
                 &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessMsg(match ep {
-                EndpointABType::Connectionless(ep) => ep,
-                EndpointABType::ConnectionOriented(_) => panic!("Unexpected Ep type"),
+                Endpoint::Connectionless(ep) => ep,
+                Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
                 &entry,
@@ -1085,8 +1088,8 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
                 &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
-                EndpointABType::Connectionless(ep) => ep,
-                EndpointABType::ConnectionOriented(_) => panic!("Unexpected Ep type"),
+                Endpoint::Connectionless(ep) => ep,
+                Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
                 &entry,
@@ -1668,43 +1671,72 @@ pub fn msg_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
             }
         }
         EndpointCaps::ConnlessMsg(ep) => {
-            let fi_address = remote_address.as_ref().unwrap();
-
             match op {
                 RecvOp::MsgRecv => {
                     todo!()
                 }
                 RecvOp::Recv => {
                     // let ctx = &mut gl_ctx.tx_ctx.as_mut().unwrap();
-                    if let Some(mr_desc) = data_desc.as_mut() {
-                        ft_post!(
-                            recv_from_with_context,
-                            ft_progress,
-                            rx_cq,
-                            *rx_seq,
-                            rx_cq_cntr,
-                            "receive",
-                            ep,
-                            base,
-                            mr_desc,
-                            fi_address,
-                            ctx
-                        );
+                    if let Some(fi_address) = remote_address.as_ref() {
+                        if let Some(mr_desc) = data_desc.as_mut() {
+                            ft_post!(
+                                recv_from_with_context,
+                                ft_progress,
+                                rx_cq,
+                                *rx_seq,
+                                rx_cq_cntr,
+                                "receive",
+                                ep,
+                                base,
+                                mr_desc,
+                                fi_address,
+                                ctx
+                            );
+                        } else {
+                            let mr_desc = &mut default_desc();
+                            ft_post!(
+                                recv_from_with_context,
+                                ft_progress,
+                                rx_cq,
+                                *rx_seq,
+                                rx_cq_cntr,
+                                "receive",
+                                ep,
+                                base,
+                                mr_desc,
+                                fi_address,
+                                ctx
+                            );
+                        }
                     } else {
-                        let mr_desc = &mut default_desc();
-                        ft_post!(
-                            recv_from_with_context,
-                            ft_progress,
-                            rx_cq,
-                            *rx_seq,
-                            rx_cq_cntr,
-                            "receive",
-                            ep,
-                            base,
-                            mr_desc,
-                            fi_address,
-                            ctx
-                        );
+                        if let Some(mr_desc) = data_desc.as_mut() {
+                            ft_post!(
+                                recv_from_any_with_context,
+                                ft_progress,
+                                rx_cq,
+                                *rx_seq,
+                                rx_cq_cntr,
+                                "receive",
+                                ep,
+                                base,
+                                mr_desc,
+                                ctx
+                            );
+                        } else {
+                            let mr_desc = &mut default_desc();
+                            ft_post!(
+                                recv_from_any_with_context,
+                                ft_progress,
+                                rx_cq,
+                                *rx_seq,
+                                rx_cq_cntr,
+                                "receive",
+                                ep,
+                                base,
+                                mr_desc,
+                                ctx
+                            );
+                        }
                     }
                 }
             }
@@ -1758,7 +1790,7 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
     ctx: &mut Context,
     ft_tag: u64,
     tx_cq: &impl ReadCq,
-    ep: &libfabric::ep::Endpoint<E, true>,
+    ep: &libfabric::conn_ep::ConnectedEndpoint<E>,
     data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
     base: &mut [u8],
     data: u64,
@@ -2741,7 +2773,7 @@ pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(
 pub fn ft_reg_mr<I, E: 'static>(
     info: &InfoEntry<I>,
     domain: &ConfDomain,
-    ep: &EndpointABType<E>,
+    ep: &Endpoint<E>,
     buf: &mut [u8],
     key: u64,
 ) -> (
@@ -2771,11 +2803,11 @@ pub fn ft_reg_mr<I, E: 'static>(
 
         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
             match ep {
-                EndpointABType::Connectionless(ep) => {
+                Endpoint::Connectionless(ep) => {
                     mr.bind_ep(ep).unwrap();
                     mr.enable().unwrap()
                 }
-                EndpointABType::ConnectionOriented(ep) => {
+                Endpoint::ConnectionOriented(ep) => {
                     todo!();
                     // mr.bind_ep(ep).unwrap(); mr.enable().unwrap()
                 }
@@ -3040,7 +3072,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
                 &rma_cntr,
             );
             let ep = match ep {
-                EndpointABType::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep,
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -3086,7 +3118,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
             );
 
             let ep = match ep {
-                EndpointABType::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep,
                 _ => panic!("Unexpected Endpoint Type"),
             };
 

@@ -14,13 +14,17 @@ use crate::{
     info::{InfoEntry, InfoHints},
     infocapsoptions::Caps,
 };
-use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_WRITE};
+use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_CONNECTED, FI_CONNREQ, FI_SHUTDOWN, FI_WRITE};
+
+pub type ConnReqEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNREQ }>;
+pub type ConnectedEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNECTED }>;
+pub type ShutdownEvent = EventQueueCmEntry<{ libfabric_sys::FI_SHUTDOWN }>;
 
 pub enum Event {
     // Notify(EventQueueEntry<T, NotifyEventFid>),
-    ConnReq(EventQueueCmEntry),
-    Connected(EventQueueCmEntry),
-    Shutdown(EventQueueCmEntry),
+    ConnReq(ConnReqEvent),
+    Connected(ConnectedEvent),
+    Shutdown(ShutdownEvent),
     MrComplete(EventQueueEntry<RawFid>),
     AVComplete(EventQueueEntry<RawFid>),
     JoinComplete(EventQueueEntry<RawFid>),
@@ -55,8 +59,15 @@ impl Event {
                 (&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(),
                 std::mem::size_of::<libfabric_sys::fi_eq_entry>(),
             ),
-            // ( (&entry.c_entry as *const libfabric_sys::fi_eq_entry).cast(), std::mem::size_of::<libfabric_sys::fi_eq_entry>()),
-            Event::ConnReq(entry) | Event::Connected(entry) | Event::Shutdown(entry) => (
+            Event::ConnReq(entry) => (
+                (&entry.c_entry as *const libfabric_sys::fi_eq_cm_entry).cast(),
+                std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>(),
+            ),
+            Event::Connected(entry) => (
+                (&entry.c_entry as *const libfabric_sys::fi_eq_cm_entry).cast(),
+                std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>(),
+            ),
+            Event::Shutdown(entry) => (
                 (&entry.c_entry as *const libfabric_sys::fi_eq_cm_entry).cast(),
                 std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>(),
             ),
@@ -81,17 +92,17 @@ impl Event {
     //     }
     // }
 
-    pub(crate) fn from_connect_value(val: u32, entry: EventQueueCmEntry) -> Self {
-        if val == libfabric_sys::FI_CONNREQ {
-            Event::ConnReq(entry)
-        } else if val == libfabric_sys::FI_CONNECTED {
-            Event::Connected(entry)
-        } else if val == libfabric_sys::FI_SHUTDOWN {
-            Event::Shutdown(entry)
-        } else {
-            panic!("Unexpected value for Event")
-        }
-    }
+    // pub(crate) fn from_connect_value<const ETYPE: u32>(entry: EventQueueCmEntry<ETYPE>) -> Self {
+    //     if ETYPE == libfabric_sys::FI_CONNREQ {
+    //         Event::ConnReq(entry)
+    //     } else if ETYPE == libfabric_sys::FI_CONNECTED {
+    //         Event::Connected(entry)
+    //     } else if ETYPE == libfabric_sys::FI_SHUTDOWN {
+    //         Event::Shutdown(entry)
+    //     } else {
+    //         panic!("Unexpected value for Event")
+    //     }
+    // }
 }
 
 //================== EventQueue (fi_eq) ==================//
@@ -509,12 +520,25 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
                 bytes_read,
                 std::mem::size_of::<libfabric_sys::fi_eq_cm_entry>()
             );
-            Event::from_connect_value(
-                *event,
-                EventQueueCmEntry {
+
+            if *event == FI_CONNREQ {
+                let entry = EventQueueCmEntry::<FI_CONNREQ> {
                     c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) },
-                },
-            )
+                };
+                Event::ConnReq(entry)
+            } else if *event == FI_CONNECTED {
+                let entry = EventQueueCmEntry::<FI_CONNECTED> {
+                    c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) },
+                };
+                Event::Connected(entry)
+            } else if *event == FI_SHUTDOWN {
+                let entry = EventQueueCmEntry::<FI_SHUTDOWN> {
+                    c_entry: unsafe { std::ptr::read(buffer.as_ptr().cast()) },
+                };
+                Event::Shutdown(entry)
+            } else {
+                panic!("Unexpected Event type")
+            }
         } else {
             debug_assert_eq!(
                 bytes_read,
@@ -1029,14 +1053,16 @@ impl<F: AsRawFid> EventQueueEntry<F> {
 //     }
 // }
 
+// }
+
 //================== EventQueueCmEntry (fi_eq_cm_entry) ==================//
 #[repr(C)]
-pub struct EventQueueCmEntry {
+pub struct EventQueueCmEntry<const ETYPE: libfabric_sys::_bindgen_ty_18> {
     pub(crate) c_entry: libfabric_sys::fi_eq_cm_entry,
 }
 
-impl EventQueueCmEntry {
-    pub fn new() -> EventQueueCmEntry {
+impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
+    pub fn new() -> EventQueueCmEntry<ETYPE> {
         let c_entry = libfabric_sys::fi_eq_cm_entry {
             fid: std::ptr::null_mut(),
             info: std::ptr::null_mut(),
@@ -1073,11 +1099,11 @@ impl EventQueueCmEntry {
     }
 }
 
-impl Default for EventQueueCmEntry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for EventQueueCmEntry {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 //================== Async Stuff ==============================//
 
