@@ -1174,6 +1174,46 @@ mod tests {
             panic!("No capable fabric found!");
         }
     }
+
+    pub struct MemoryRegionSlice<'a, DATA: Copy> {
+        pub slice: &'a mut [DATA],
+    }
+
+    impl<'a, DATA: Copy> MemoryRegionSlice<'a, DATA> {
+        pub fn split_at(
+            &'a mut self,
+            mid: usize,
+        ) -> (MemoryRegionSlice<'a, DATA>, MemoryRegionSlice<'a, DATA>) {
+            let (s0, s1) = self.slice.split_at_mut(mid);
+            (
+                MemoryRegionSlice::<'a, DATA> { slice: s0 },
+                MemoryRegionSlice::<'a, DATA> { slice: s1 },
+            )
+        }
+    }
+
+    impl<'a, DATA: Copy> MemoryRegionSlice<'a, DATA> {
+        pub fn slice<Idx>(&'a mut self, index: Idx) -> MemoryRegionSlice<'a, DATA>
+        where
+            Idx: std::slice::SliceIndex<[DATA], Output = [DATA]>,
+        {
+            MemoryRegionSlice::<'a, DATA> {
+                slice: &mut self.slice[index],
+            }
+        }
+    }
+
+    #[test]
+    fn try_wrapper() {
+        let mut vec = vec![0u8; 10];
+        let mut wrapped_vec = MemoryRegionSlice {
+            slice: &mut vec[..],
+        };
+        wrapped_vec.slice(0..4);
+        // let (w0, w1) = wrapped_vec.split_at(5);
+        // vec[0] = 1;
+        // let new_wrapped = wrapped_vec.slice();
+    }
 }
 
 #[cfg(test)]
