@@ -197,17 +197,17 @@ impl HmemIface {
     #[allow(dead_code)]
     pub(crate)fn from_raw(value:libfabric_sys::fi_hmem_iface, id: i32, additional_id: i32) -> HmemIface {
         if value==libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM {
-            return HmemIface::System
-        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA {
-            return HmemIface::Cuda(id)
-        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR {
-            return HmemIface::Rocr(id)
-        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ZE {
-            return HmemIface::Ze(id, additional_id)
-        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON {
-            return HmemIface::Neuron(id)
-        }if value==libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI {
-            return HmemIface::SynapseAi(id)
+            HmemIface::System
+        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA {
+            HmemIface::Cuda(id)
+        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR {
+            HmemIface::Rocr(id)
+        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ZE {
+            HmemIface::Ze(id, additional_id)
+        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON {
+            HmemIface::Neuron(id)
+        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI {
+            HmemIface::SynapseAi(id)
         }else {
             panic!("Invalid value {}",value);
         }
@@ -346,9 +346,9 @@ impl Mode {
     gen_set_get_flag!(buffered_recv, is_buffered_recv, libfabric_sys::FI_BUFFERED_RECV);
 }
 
-impl Into<u64> for Mode {
-    fn into(self) -> u64 {
-        self.c_flags
+impl From<Mode> for u64 {
+    fn from(val: Mode) -> Self {
+        val.c_flags
     }
 }
 
@@ -432,6 +432,12 @@ impl MrRegOpt {
     gen_set_get_flag!(rma_pmem, is_rma_pmem, libfabric_sys::FI_RMA_PMEM);
     gen_set_get_flag!(hmem_device_only, is_hmem_device_only, libfabric_sys::FI_HMEM_DEVICE_ONLY);
     gen_set_get_flag!(hmem_host_alloc, is_hmem_host_alloc, libfabric_sys::FI_HMEM_HOST_ALLOC);
+}
+
+impl Default for MrRegOpt {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct MrAccess {
@@ -855,9 +861,9 @@ impl DomainCaps {
 }
 
 
-impl Into<u64> for DomainCaps {
-    fn into(self) -> u64 {
-        self.c_flags
+impl From<DomainCaps> for u64 {
+    fn from(val: DomainCaps) -> Self {
+        val.c_flags
     }
 }
 

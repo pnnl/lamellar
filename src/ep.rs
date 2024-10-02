@@ -8,13 +8,12 @@ use libfabric_sys::{
     inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG,
 };
 
-#[allow(unused_imports)]
 use crate::fid::AsFid;
 use crate::{
     av::{AddressVector, AddressVectorBase, AddressVectorImplBase},
     cntr::{Counter, ReadCntr},
-    conn_ep::{UnconnectedEndpoint, UnconnectedEndpointBase},
-    connless_ep::{ConnectionlessEndpoint, ConnectionlessEndpointBase, ConnlessEp},
+    conn_ep::UnconnectedEndpoint,
+    connless_ep::ConnectionlessEndpoint,
     cq::{CompletionQueue, ReadCq},
     domain::DomainImplT,
     enums::{EndpointType, HmemIface, HmemP2p, Protocol, TransferOptions},
@@ -378,12 +377,9 @@ pub trait BaseEndpoint: AsRawFid {
                 ))
             } else {
                 let vars: Vec<libfabric_sys::fi_trigger_var> = (0..res.count)
-                    .into_iter()
-                    .map(|i| {
-                        return unsafe { *res.var.add(i as usize) };
-                    })
+                    .map(|i| unsafe { *res.var.add(i as usize) })
                     .collect();
-                Ok(TriggerXpu::new(iface.clone(), vars))
+                Ok(TriggerXpu::new(*iface, vars))
             }
         }
     }
@@ -1453,7 +1449,7 @@ impl EndpointAttr {
             mem_tag_format: self.mem_tag_format,
             tx_ctx_cnt: self.tx_ctx_cnt,
             rx_ctx_cnt: self.rx_ctx_cnt,
-            auth_key: unsafe { std::mem::transmute(auth_key) },
+            auth_key: unsafe { std::mem::transmute::<*const u8, *mut u8>(auth_key) },
             auth_key_size,
         }
     }
@@ -1469,7 +1465,7 @@ impl EndpointAttr {
     }
 
     pub fn set_protocol_version(&mut self, protocol_version: &Version) -> &mut Self {
-        self.protocol_version = protocol_version.clone();
+        self.protocol_version = *protocol_version;
         self
     }
 

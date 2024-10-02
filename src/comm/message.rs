@@ -1,6 +1,6 @@
 use crate::{
-    conn_ep::{ConnectedEndpointBase, ConnectedEp},
-    connless_ep::{ConnectionlessEndpointBase, ConnlessEp},
+    conn_ep::ConnectedEp,
+    connless_ep::ConnlessEp,
     cq::ReadCq,
     enums::{RecvMsgOptions, SendMsgOptions},
     ep::{EndpointBase, EndpointImplBase, EpState},

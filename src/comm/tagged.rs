@@ -1,7 +1,5 @@
 use super::message::extract_raw_addr_and_ctx;
-use crate::conn_ep::ConnectedEndpointBase;
 use crate::conn_ep::ConnectedEp;
-use crate::connless_ep::ConnectionlessEndpointBase;
 use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::TaggedRecvMsgOptions;
@@ -259,7 +257,7 @@ pub trait ConnectedTagRecvEp {
     ) -> Result<(), crate::error::Error>;
 }
 
-impl<EP: TagRecvEpImpl> TagRecvEp for EP {
+impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     #[inline]
     fn trecv_from<T>(
         &self,
@@ -448,7 +446,7 @@ impl<EP: TagRecvEpImpl> TagRecvEp for EP {
     }
 }
 
-impl<EP: TagRecvEpImpl> ConnectedTagRecvEp for EP {
+impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     #[inline]
     fn trecv<T>(
         &self,

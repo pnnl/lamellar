@@ -1,18 +1,25 @@
-use std::{collections::HashMap,future::Future, task::ready, pin::Pin};
+use std::{collections::HashMap, future::Future, pin::Pin, task::ready};
 
-#[cfg(feature="use-async-std")]
-use async_io::Async as Async;
-#[cfg(feature="use-tokio")]
+#[cfg(feature = "use-async-std")]
+use async_io::Async;
+#[cfg(feature = "use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
-use crate::{async_::AsyncCtx, cq::WaitObjectRetrieve, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{self, AsFid, AsRawFid, AsRawTypedFid, EqRawFid, Fid, RawFid}, Context, MyRc, MyRefCell};
+use crate::{
+    async_::AsyncCtx,
+    cq::WaitObjectRetrieve,
+    eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
+    error::{Error, ErrorKind},
+    fid::{self, AsFid, AsRawFid, AsRawTypedFid, EqRawFid, Fid, RawFid},
+    Context, MyRc, MyRefCell,
+};
 
 use super::AsyncFid;
 
 pub type EventQueue<T> = EventQueueBase<T>;
 
 //pub(crate) trait  FdEq: ReadEq + AsRawFd{
-//    
+//
 //}
 
 impl<const WRITE: bool> AsyncFid for AsyncEventQueueImpl<WRITE> {
@@ -28,12 +35,12 @@ impl<EQ: AsyncFid> AsyncFid for EventQueue<EQ> {
 }
 
 #[derive(Clone)]
-enum EqType<'a>{
+enum EqType<'a> {
     Write(&'a AsyncEventQueueImpl<true>),
     NoWrite(&'a AsyncEventQueueImpl<false>),
 }
 
-impl<'a>  EqType<'a> {
+impl<'a> EqType<'a> {
     #[inline]
     pub(crate) fn trywait(&self) -> Result<(), Error> {
         match self {
@@ -43,7 +50,7 @@ impl<'a>  EqType<'a> {
     }
 
     #[inline]
-    pub(crate) fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, Error>{
+    pub(crate) fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, Error> {
         match self {
             EqType::Write(e) => e.read_in(buff, event),
             EqType::NoWrite(e) => e.read_in(buff, event),
@@ -51,7 +58,7 @@ impl<'a>  EqType<'a> {
     }
 
     #[inline]
-    pub(crate) fn readerr_in(&self, buff: &mut [u8]) -> Result<usize, Error>{
+    pub(crate) fn readerr_in(&self, buff: &mut [u8]) -> Result<usize, Error> {
         match self {
             EqType::Write(e) => e.readerr_in(buff),
             EqType::NoWrite(e) => e.readerr_in(buff),
@@ -59,23 +66,32 @@ impl<'a>  EqType<'a> {
     }
 
     #[inline]
-    pub(crate) fn remove_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: &Fid) -> Option<Result<Event, Error>>{
+    pub(crate) fn remove_cm_entry(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: &Fid,
+    ) -> Option<Result<Event, Error>> {
         match self {
-            EqType::Write(e) =>  e.remove_cm_entry(event_type, req_fid),
-            EqType::NoWrite(e) =>  e.remove_cm_entry(event_type, req_fid),
+            EqType::Write(e) => e.remove_cm_entry(event_type, req_fid),
+            EqType::NoWrite(e) => e.remove_cm_entry(event_type, req_fid),
         }
     }
 
     #[inline]
-    pub(crate) fn insert_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: &Fid, entry: Result<Event, Error>) {
+    pub(crate) fn insert_cm_entry(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: &Fid,
+        entry: Result<Event, Error>,
+    ) {
         match self {
-            EqType::Write(e) =>  e.insert_cm_entry(event_type, req_fid, entry),
-            EqType::NoWrite(e) =>  e.insert_cm_entry(event_type, req_fid, entry),
+            EqType::Write(e) => e.insert_cm_entry(event_type, req_fid, entry),
+            EqType::NoWrite(e) => e.insert_cm_entry(event_type, req_fid, entry),
         }
     }
 
     #[inline]
-    pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>>{
+    pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>> {
         match self {
             EqType::Write(e) => e.remove_entry(ctx),
             EqType::NoWrite(e) => e.remove_entry(ctx),
@@ -83,7 +99,7 @@ impl<'a>  EqType<'a> {
     }
 
     #[inline]
-    pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>){
+    pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>) {
         match self {
             EqType::Write(e) => e.insert_entry(ctx, entry),
             EqType::NoWrite(e) => e.insert_entry(ctx, entry),
@@ -96,7 +112,7 @@ impl<'a>  EqType<'a> {
     }
 
     #[inline]
-    pub(crate) fn insert_err_entry(&self, req_fid: &Fid, entry: Result<Event, Error>){
+    pub(crate) fn insert_err_entry(&self, req_fid: &Fid, entry: Result<Event, Error>) {
         match self {
             EqType::Write(e) => e.insert_err_entry(req_fid, entry),
             EqType::NoWrite(e) => e.insert_err_entry(req_fid, entry),
@@ -104,30 +120,55 @@ impl<'a>  EqType<'a> {
     }
 
     #[inline]
-    pub(crate) fn remove_err_entry(&self, req_fid: &Fid) -> Option<Result<Event, Error>>{
+    pub(crate) fn remove_err_entry(&self, req_fid: &Fid) -> Option<Result<Event, Error>> {
         match self {
             EqType::Write(e) => e.remove_err_entry(req_fid),
             EqType::NoWrite(e) => e.remove_err_entry(req_fid),
         }
     }
-
-
 }
-
 
 #[cfg(feature = "use-tokio")]
 pub(crate) enum FutType<'a> {
-    Write(Pin<Box<dyn Future<Output = Result<tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<true,true,true,true>>, std::io::Error>> + 'a>>),
-    NoWrite(Pin<Box<dyn Future<Output = Result<tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<false,true,true,true>>, std::io::Error>> + 'a>>),
+    Write(
+        Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            tokio::io::unix::AsyncFdReadyGuard<
+                                'a,
+                                EventQueueImpl<true, true, true, true>,
+                            >,
+                            std::io::Error,
+                        >,
+                    > + 'a,
+            >,
+        >,
+    ),
+    NoWrite(
+        Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            tokio::io::unix::AsyncFdReadyGuard<
+                                'a,
+                                EventQueueImpl<false, true, true, true>,
+                            >,
+                            std::io::Error,
+                        >,
+                    > + 'a,
+            >,
+        >,
+    ),
 }
 
 #[cfg(feature = "use-async-std")]
 pub(crate) enum FutType<'a> {
-    Write(Pin<Box<async_io::Readable<'a, EventQueueImpl<true,true,true,true>>>>),
-    NoWrite(Pin<Box<async_io::Readable<'a, EventQueueImpl<false,true,true,true>>>>),
+    Write(Pin<Box<async_io::Readable<'a, EventQueueImpl<true, true, true, true>>>>),
+    NoWrite(Pin<Box<async_io::Readable<'a, EventQueueImpl<false, true, true, true>>>>),
 }
 
-pub struct EqAsyncRead<'a>{
+pub struct EqAsyncRead<'a> {
     buf: &'a mut [u8],
     event: &'a mut u32,
     eq: EqType<'a>,
@@ -135,7 +176,7 @@ pub struct EqAsyncRead<'a>{
 }
 
 impl<'a> EqAsyncRead<'a> {
-    fn new(buf: &'a mut [u8], event: &'a mut u32, eq: EqType<'a>,) -> Self {
+    fn new(buf: &'a mut [u8], event: &'a mut u32, eq: EqType<'a>) -> Self {
         Self {
             buf,
             event,
@@ -143,47 +184,47 @@ impl<'a> EqAsyncRead<'a> {
             fut: None,
         }
     }
-} 
-#[cfg(feature="use-tokio")]
+}
+#[cfg(feature = "use-tokio")]
 enum Guard<'a> {
     Write(tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<true, true, true, true>>),
     NoWrite(tokio::io::unix::AsyncFdReadyGuard<'a, EventQueueImpl<false, true, true, true>>),
 }
 
-#[cfg(feature="use-async-std")]
+#[cfg(feature = "use-async-std")]
 enum Guard {
     Write(()),
     NoWrite(()),
 }
 
-
-#[cfg(feature="use-tokio")]
+#[cfg(feature = "use-tokio")]
 impl<'a> Guard<'a> {
     fn clear_ready(&mut self) {
-        match self{
+        match self {
             Guard::Write(g) => g.clear_ready(),
             Guard::NoWrite(g) => g.clear_ready(),
         }
     }
 }
 
-impl<'a> Future for EqAsyncRead<'a>{
-    type Output=Result<usize, Error>;
+impl<'a> Future for EqAsyncRead<'a> {
+    type Output = Result<usize, Error>;
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
         let ev = self.get_mut();
         loop {
             // println!("About to block waiting for event");
             let (err, _guard) = if ev.eq.trywait().is_err() {
-                (ev.eq.read_in( ev.buf,  ev.event), None)
-            }
-            else {
+                (ev.eq.read_in(ev.buf, ev.event), None)
+            } else {
                 if ev.fut.is_none() {
-                    ev.fut = Some(
-                        match ev.eq {
-                            EqType::Write(e) => FutType::Write(Box::pin(e.base.readable())),
-                            EqType::NoWrite(e) => FutType::NoWrite(Box::pin(e.base.readable())),
-                        })
+                    ev.fut = Some(match ev.eq {
+                        EqType::Write(e) => FutType::Write(Box::pin(e.base.readable())),
+                        EqType::NoWrite(e) => FutType::NoWrite(Box::pin(e.base.readable())),
+                    })
                 }
 
                 // Tokio returns something we need, async_std returns ()
@@ -192,43 +233,66 @@ impl<'a> Future for EqAsyncRead<'a>{
                     FutType::Write(e) => Guard::Write(ready!(e.as_mut().poll(cx)).unwrap()),
                     FutType::NoWrite(e) => Guard::NoWrite(ready!(e.as_mut().poll(cx)).unwrap()),
                 };
-                
+
                 // We only need to reset the option to none
                 #[allow(clippy::let_underscore_future)]
                 let _ = ev.fut.take().unwrap();
-                (ev.eq.read_in( ev.buf,  ev.event), Some(_guard))
+                (ev.eq.read_in(ev.buf, ev.event), Some(_guard))
             };
             match err {
                 Err(error) => {
                     if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                        if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable)
-                        {
+                        if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
                             let _len = ev.eq.readerr_in(ev.buf)?;
                             let mut err_event = EventError::new();
                             err_event.c_err = unsafe { std::ptr::read(ev.buf.as_ptr().cast()) };
-                            return std::task::Poll::Ready(Err(Error::from_queue_err(crate::error::QueueError::Event(err_event))));
+                            return std::task::Poll::Ready(Err(Error::from_queue_err(
+                                crate::error::QueueError::Event(err_event),
+                            )));
                         }
-                    }
-                    else {
+                    } else {
                         // println!("Will continue");
 
-                        #[cfg(feature="use-tokio")]
-
+                        #[cfg(feature = "use-tokio")]
                         if let Some(mut guard) = _guard {
                             match ev.eq {
-                                #[cfg(feature="thread-safe")]
-                                EqType::Write(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
-                                #[cfg(not(feature="thread-safe"))]
-                                EqType::Write(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
-                                #[cfg(feature="thread-safe")]
-                                EqType::NoWrite(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
-                                #[cfg(not(feature="thread-safe"))]
-                                EqType::NoWrite(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
+                                #[cfg(feature = "thread-safe")]
+                                EqType::Write(e) => {
+                                    if e.pending_cm_entries.read().is_empty()
+                                        && e.pending_entries.read().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
+                                }
+                                #[cfg(not(feature = "thread-safe"))]
+                                EqType::Write(e) => {
+                                    if e.pending_cm_entries.borrow().is_empty()
+                                        && e.pending_entries.borrow().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
+                                }
+                                #[cfg(feature = "thread-safe")]
+                                EqType::NoWrite(e) => {
+                                    if e.pending_cm_entries.read().is_empty()
+                                        && e.pending_entries.read().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
+                                }
+                                #[cfg(not(feature = "thread-safe"))]
+                                EqType::NoWrite(e) => {
+                                    if e.pending_cm_entries.borrow().is_empty()
+                                        && e.pending_entries.borrow().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
+                                }
                             }
                         }
                         continue;
                     }
-                },
+                }
                 Ok(len) => return std::task::Poll::Ready(Ok(len)),
             }
         }
@@ -253,24 +317,25 @@ impl<'a> EqAsyncReadOwned<'a> {
     }
 }
 
-impl<'a> Future for EqAsyncReadOwned<'a>{
-    type Output=Result<usize, Error>;
+impl<'a> Future for EqAsyncReadOwned<'a> {
+    type Output = Result<usize, Error>;
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
         let ev = self.get_mut();
         loop {
             // println!("About to block waiting for event");
             let (err, _guard) = if ev.eq.trywait().is_err() {
                 // println!("Could not block");
-                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), None)
-            }
-            else {
+                (ev.eq.read_in(&mut ev.buf, &mut ev.event), None)
+            } else {
                 if ev.fut.is_none() {
-                    ev.fut = Some(
-                        match ev.eq {
-                            EqType::Write(e) => FutType::Write(Box::pin(e.base.readable())),
-                            EqType::NoWrite(e) => FutType::NoWrite(Box::pin(e.base.readable())),
-                        })
+                    ev.fut = Some(match ev.eq {
+                        EqType::Write(e) => FutType::Write(Box::pin(e.base.readable())),
+                        EqType::NoWrite(e) => FutType::NoWrite(Box::pin(e.base.readable())),
+                    })
                 }
 
                 // Tokio returns something we need, async_std returns ()
@@ -282,150 +347,194 @@ impl<'a> Future for EqAsyncReadOwned<'a>{
 
                 // println!("Did not block");
 
-                
                 // We only need to reset the option to none
                 #[allow(clippy::let_underscore_future)]
                 let _ = ev.fut.take().unwrap();
-                (ev.eq.read_in( &mut ev.buf,  &mut ev.event), Some(_guard))
+                (ev.eq.read_in(&mut ev.buf, &mut ev.event), Some(_guard))
             };
             match err {
                 Err(error) => {
                     if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                        if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable)
-                        {
+                        if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
                             let _len = ev.eq.readerr_in(&mut ev.buf)?;
                             let mut err_event = EventError::new();
                             err_event.c_err = unsafe { std::ptr::read(ev.buf.as_ptr().cast()) };
-                            return std::task::Poll::Ready(Err(Error::from_queue_err(crate::error::QueueError::Event(err_event))));
-                        }
-                        else {
+                            return std::task::Poll::Ready(Err(Error::from_queue_err(
+                                crate::error::QueueError::Event(err_event),
+                            )));
+                        } else {
                             return std::task::Poll::Ready(Err(error));
                         }
-                    }
-                    else {
+                    } else {
                         // println!("Will continue");
                         #[cfg(feature = "use-tokio")]
                         match _guard {
-                            Some(mut guard) => {
-                                match ev.eq {
-                                    #[cfg(feature="thread-safe")]
-                                    EqType::Write(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
-                                    #[cfg(not(feature="thread-safe"))]
-                                    EqType::Write(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
-                                    #[cfg(feature="thread-safe")]
-                                    EqType::NoWrite(e) => { if e.pending_cm_entries.borrow().is_empty() && e.pending_entries.borrow().is_empty() {guard.clear_ready()}},
-                                    #[cfg(not(feature="thread-safe"))]
-                                    EqType::NoWrite(e) => { if e.pending_cm_entries.read().is_empty() && e.pending_entries.read().is_empty() {guard.clear_ready()}},
+                            Some(mut guard) => match ev.eq {
+                                #[cfg(feature = "thread-safe")]
+                                EqType::Write(e) => {
+                                    if e.pending_cm_entries.read().is_empty()
+                                        && e.pending_entries.read().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
+                                }
+                                #[cfg(not(feature = "thread-safe"))]
+                                EqType::Write(e) => {
+                                    if e.pending_cm_entries.borrow().is_empty()
+                                        && e.pending_entries.borrow().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
+                                }
+                                #[cfg(feature = "thread-safe")]
+                                EqType::NoWrite(e) => {
+                                    if e.pending_cm_entries.borrow().is_empty()
+                                        && e.pending_entries.borrow().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
+                                }
+                                #[cfg(not(feature = "thread-safe"))]
+                                EqType::NoWrite(e) => {
+                                    if e.pending_cm_entries.read().is_empty()
+                                        && e.pending_entries.read().is_empty()
+                                    {
+                                        guard.clear_ready()
+                                    }
                                 }
                             },
                             None => {}
                         }
                         continue;
                     }
-                },
-                Ok(len) => {return std::task::Poll::Ready(Ok(len))},
+                }
+                Ok(len) => return std::task::Poll::Ready(Ok(len)),
             }
         }
     }
 }
 
 impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
-
-    pub(crate) fn new(fabric: &crate::fabric::Fabric, attr: EventQueueAttr, context: Option<&mut Context>) -> Result<Self, crate::error::Error> {
+    pub(crate) fn new(
+        fabric: &crate::fabric::Fabric,
+        attr: EventQueueAttr,
+        context: Option<&mut Context>,
+    ) -> Result<Self, crate::error::Error> {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
             None => std::ptr::null_mut(),
         };
 
-        Ok(
-            Self {
-                inner: MyRc::new(
-                    AsyncEventQueueImpl::new(&fabric.inner, attr, c_void)?
-                ),
-            })
+        Ok(Self {
+            inner: MyRc::new(AsyncEventQueueImpl::new(&fabric.inner, attr, c_void)?),
+        })
     }
 }
 
-
-pub trait AsyncReadEq: ReadEq + AsyncFid{
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead ;
-    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: Fid, ctx: usize) -> AsyncEventEq ;
+pub trait AsyncReadEq: ReadEq + AsyncFid {
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead;
+    fn async_event_wait(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: Fid,
+        ctx: usize,
+    ) -> AsyncEventEq;
 }
-
 
 impl AsyncEventQueueImpl<true> {
     #[allow(dead_code)]
-    pub(crate) async fn read_async(&self) -> Result<Event, crate::error::Error>{
+    pub(crate) async fn read_async(&self) -> Result<Event, crate::error::Error> {
         let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
         let mut event = 0;
         let len = self.read_in_async(&mut buf, &mut event).await?;
-        Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(len, &buf, &event))
+        Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(
+            len, &buf, &event,
+        ))
     }
 }
 
 impl AsyncEventQueueImpl<false> {
     #[allow(dead_code)]
-    pub(crate) async fn read_async(&self) -> Result<Event, crate::error::Error>{
+    pub(crate) async fn read_async(&self) -> Result<Event, crate::error::Error> {
         let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
         let mut event = 0;
         let len = self.read_in_async(&mut buf, &mut event).await?;
-        Ok(EventQueueImpl::<false, true, true, true>::read_eq_entry(len, &buf, &event))
+        Ok(EventQueueImpl::<false, true, true, true>::read_eq_entry(
+            len, &buf, &event,
+        ))
     }
 }
 
 impl AsyncReadEq for AsyncEventQueueImpl<true> {
-
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
-        EqAsyncRead::new(buf, event, EqType::Write(self) )
+        EqAsyncRead::new(buf, event, EqType::Write(self))
     }
 
-    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: Fid, ctx: usize) -> AsyncEventEq {
+    fn async_event_wait(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: Fid,
+        ctx: usize,
+    ) -> AsyncEventEq {
         AsyncEventEq::new(event_type, req_fid, EqType::Write(self), ctx)
-    } 
+    }
 }
 
 impl AsyncReadEq for AsyncEventQueueImpl<false> {
-
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
-        EqAsyncRead::new(buf, event, EqType::NoWrite(self) )
+        EqAsyncRead::new(buf, event, EqType::NoWrite(self))
     }
 
-    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: Fid, ctx: usize) -> AsyncEventEq {
+    fn async_event_wait(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: Fid,
+        ctx: usize,
+    ) -> AsyncEventEq {
         AsyncEventEq::new(event_type, req_fid, EqType::NoWrite(self), ctx)
-    } 
+    }
 }
 
 impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead  {
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
         self.inner.read_in_async(buf, event)
     }
 
-    fn async_event_wait(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: Fid, ctx: usize) -> AsyncEventEq  {
+    fn async_event_wait(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: Fid,
+        ctx: usize,
+    ) -> AsyncEventEq {
         self.inner.async_event_wait(event_type, req_fid, ctx)
     }
 }
 
 impl<EQ: AsyncReadEq> EventQueue<EQ> {
-    pub async fn read_async(&self) -> Result<Event, crate::error::Error>{
+    pub async fn read_async(&self) -> Result<Event, crate::error::Error> {
         let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
         let mut event = 0;
         let len = self.inner.read_in_async(&mut buf, &mut event).await?;
-        Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(len, &buf, &event))
+        Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(
+            len, &buf, &event,
+        ))
     }
 }
 
 pub struct AsyncEventQueueImpl<const WRITE: bool> {
     pub(crate) base: Async<EventQueueImpl<WRITE, true, true, true>>,
     pending_entries: MyRefCell<HashMap<usize, Result<Event, Error>>>,
-    pending_err_entries: MyRefCell<HashMap<Fid, Vec::<Result<Event, Error>>>>,
+    pending_err_entries: MyRefCell<HashMap<Fid, Vec<Result<Event, Error>>>>,
     #[allow(clippy::type_complexity)]
-    pending_cm_entries: MyRefCell<HashMap<(u32,Fid), Vec::<Result<Event, Error>>>>,
+    pending_cm_entries: MyRefCell<HashMap<(u32, Fid), Vec<Result<Event, Error>>>>,
 }
 
-
 impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
-    pub(crate) fn new(fabric: &MyRc<crate::fabric::FabricImpl>, attr: EventQueueAttr, context: *mut std::ffi::c_void) -> Result<Self, crate::error::Error> {
-        
+    pub(crate) fn new(
+        fabric: &MyRc<crate::fabric::FabricImpl>,
+        attr: EventQueueAttr,
+        context: *mut std::ffi::c_void,
+    ) -> Result<Self, crate::error::Error> {
         Ok(Self {
             base: Async::new(EventQueueImpl::new(fabric, attr, context)?).unwrap(),
             pending_entries: MyRefCell::new(HashMap::new()),
@@ -435,77 +544,96 @@ impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
     }
 
     #[inline]
-    pub(crate) fn insert_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: &Fid, entry: Result<Event, Error>) {
-        #[cfg(feature="thread-safe")]
-        let mut vec =  self.pending_cm_entries.write();
-        #[cfg(not(feature="thread-safe"))]
-        let mut vec =  self.pending_cm_entries.borrow_mut();
+    pub(crate) fn insert_cm_entry(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: &Fid,
+        entry: Result<Event, Error>,
+    ) {
+        #[cfg(feature = "thread-safe")]
+        let mut vec = self.pending_cm_entries.write();
+        #[cfg(not(feature = "thread-safe"))]
+        let mut vec = self.pending_cm_entries.borrow_mut();
         if let Some(vec) = vec.get_mut(&(event_type, *req_fid)) {
             vec.push(entry);
-        }
-        else {
-            #[cfg(feature="thread-safe")]
-            self.pending_cm_entries.write().insert((event_type, *req_fid), vec![entry]);
-            #[cfg(not(feature="thread-safe"))]
-            self.pending_cm_entries.borrow_mut().insert((event_type, *req_fid), vec![entry]);
+        } else {
+            #[cfg(feature = "thread-safe")]
+            self.pending_cm_entries
+                .write()
+                .insert((event_type, *req_fid), vec![entry]);
+            #[cfg(not(feature = "thread-safe"))]
+            self.pending_cm_entries
+                .borrow_mut()
+                .insert((event_type, *req_fid), vec![entry]);
         }
     }
 
     #[inline]
     pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>) {
-        #[cfg(feature="thread-safe")]
-        self.pending_entries.write().insert( ctx, entry);
-        #[cfg(not(feature="thread-safe"))]
-        self.pending_entries.borrow_mut().insert( ctx, entry);
+        #[cfg(feature = "thread-safe")]
+        self.pending_entries.write().insert(ctx, entry);
+        #[cfg(not(feature = "thread-safe"))]
+        self.pending_entries.borrow_mut().insert(ctx, entry);
     }
 
     #[inline]
-    pub(crate) fn remove_cm_entry(&self, event_type: libfabric_sys::_bindgen_ty_18, req_fid: &Fid) -> Option<Result<Event, Error>>{
-        #[cfg(feature="thread-safe")]
+    pub(crate) fn remove_cm_entry(
+        &self,
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: &Fid,
+    ) -> Option<Result<Event, Error>> {
+        #[cfg(feature = "thread-safe")]
         let mut res = self.pending_cm_entries.write();
-        #[cfg(not(feature="thread-safe"))]
+        #[cfg(not(feature = "thread-safe"))]
         let mut res = self.pending_cm_entries.borrow_mut();
-        match res.get_mut(&(event_type, *req_fid)){
-            None => None, Some(vec) => vec.pop()
+        match res.get_mut(&(event_type, *req_fid)) {
+            None => None,
+            Some(vec) => vec.pop(),
         }
     }
 
     #[inline]
-    pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>>{
-        #[cfg(feature="thread-safe")]
-        { self.pending_entries.write().remove(&ctx) }
-        
-        #[cfg(not(feature="thread-safe"))]
-        { self.pending_entries.borrow_mut().remove(&ctx)} 
+    pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>> {
+        #[cfg(feature = "thread-safe")]
+        {
+            self.pending_entries.write().remove(&ctx)
+        }
+
+        #[cfg(not(feature = "thread-safe"))]
+        {
+            self.pending_entries.borrow_mut().remove(&ctx)
+        }
     }
-
-
 
     #[inline]
     pub(crate) fn insert_err_entry(&self, req_fid: &Fid, entry: Result<Event, Error>) {
-        #[cfg(feature="thread-safe")]
-        let mut res = self.pending_err_entries.write(); 
-        #[cfg(not(feature="thread-safe"))]
-        let mut res = self.pending_err_entries.borrow_mut(); 
-        if let Some(vec) = res.get_mut(req_fid) { 
+        #[cfg(feature = "thread-safe")]
+        let mut res = self.pending_err_entries.write();
+        #[cfg(not(feature = "thread-safe"))]
+        let mut res = self.pending_err_entries.borrow_mut();
+        if let Some(vec) = res.get_mut(req_fid) {
             vec.push(entry);
-        }
-        else {
-            #[cfg(feature="thread-safe")]
-            self.pending_err_entries.write().insert(*req_fid, vec![entry]);
-            #[cfg(not(feature="thread-safe"))]
-            self.pending_err_entries.borrow_mut().insert(*req_fid, vec![entry]);
+        } else {
+            #[cfg(feature = "thread-safe")]
+            self.pending_err_entries
+                .write()
+                .insert(*req_fid, vec![entry]);
+            #[cfg(not(feature = "thread-safe"))]
+            self.pending_err_entries
+                .borrow_mut()
+                .insert(*req_fid, vec![entry]);
         }
     }
 
     #[inline]
-    pub(crate) fn remove_err_entry(&self, req_fid: &Fid) -> Option<Result<Event, Error>>{
-        #[cfg(feature="thread-safe")]
-        let mut res = self.pending_err_entries.write(); 
-        #[cfg(not(feature="thread-safe"))]
-        let mut res = self.pending_err_entries.borrow_mut(); 
+    pub(crate) fn remove_err_entry(&self, req_fid: &Fid) -> Option<Result<Event, Error>> {
+        #[cfg(feature = "thread-safe")]
+        let mut res = self.pending_err_entries.write();
+        #[cfg(not(feature = "thread-safe"))]
+        let mut res = self.pending_err_entries.borrow_mut();
         match res.get_mut(req_fid) {
-            None => None, Some(vec) => vec.pop()
+            None => None,
+            Some(vec) => vec.pop(),
         }
     }
 
@@ -560,24 +688,26 @@ impl<'a, const WRITE: bool> WaitObjectRetrieve<'a> for AsyncEventQueueImpl<WRITE
 // }
 
 // impl AsyncEventQueueImplT for AsyncEventQueueImpl {
-    
+
 //     async fn read_async(&self) -> Result<Event, crate::error::Error> {
 //         self.read_async().await
 //     }
 // }
 
-
-pub struct AsyncEventEq<'a>{
+pub struct AsyncEventEq<'a> {
     pub(crate) req_fid: Fid,
     pub(crate) ctx: usize,
     event_type: libfabric_sys::_bindgen_ty_18,
     fut: Pin<Box<EqAsyncReadOwned<'a>>>,
 }
 
-
-
 impl<'a> AsyncEventEq<'a> {
-    fn new(event_type: libfabric_sys::_bindgen_ty_18, req_fid: Fid, eq: EqType<'a>, ctx: usize) -> Self {
+    fn new(
+        event_type: libfabric_sys::_bindgen_ty_18,
+        req_fid: Fid,
+        eq: EqType<'a>,
+        ctx: usize,
+    ) -> Self {
         Self {
             event_type,
             fut: Box::pin(EqAsyncReadOwned::new(eq)),
@@ -588,30 +718,40 @@ impl<'a> AsyncEventEq<'a> {
 }
 
 impl<'a> Future for AsyncEventEq<'a> {
-    type Output=Result<Event, Error>;
+    type Output = Result<Event, Error>;
 
-    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
         let ev = self.get_mut();
 
-        loop{
-            if ev.event_type == libfabric_sys::FI_CONNREQ || ev.event_type == libfabric_sys::FI_CONNECTED || ev.event_type == libfabric_sys::FI_SHUTDOWN {
+        loop {
+            if ev.event_type == libfabric_sys::FI_CONNREQ
+                || ev.event_type == libfabric_sys::FI_CONNECTED
+                || ev.event_type == libfabric_sys::FI_SHUTDOWN
+            {
                 if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, &ev.req_fid) {
                     return std::task::Poll::Ready(entry);
                 }
-            }
-            else if let Some(mut entry) = ev.fut.eq.remove_entry(ev.ctx) {
+            } else if let Some(mut entry) = ev.fut.eq.remove_entry(ev.ctx) {
                 if ev.ctx != 0 {
                     if let Ok(ref mut entry) = entry {
                         match entry {
-                            crate::eq::Event::MrComplete(ref mut e) 
-                            | crate::eq::Event::AVComplete(ref mut e) 
-                            | crate::eq::Event::JoinComplete(ref mut e) => {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}},
+                            crate::eq::Event::MrComplete(ref mut e)
+                            | crate::eq::Event::AVComplete(ref mut e)
+                            | crate::eq::Event::JoinComplete(ref mut e) => {
+                                e.c_entry.context = unsafe {
+                                    (*(e.c_entry.context as *mut AsyncCtx))
+                                        .user_ctx
+                                        .unwrap_or(std::ptr::null_mut())
+                                }
+                            }
                             _ => panic!("Unexpected!"),
                         }
                     }
                     return std::task::Poll::Ready(entry);
-                }
-                else {
+                } else {
                     return std::task::Poll::Ready(entry);
                 }
             }
@@ -624,119 +764,160 @@ impl<'a> Future for AsyncEventEq<'a> {
                 Err(error) => {
                     if let ErrorKind::ErrorInQueue(ref q_err) = error.kind {
                         match q_err {
-                            crate::error::QueueError::Event(_) => {
-                                Err(error)
-                            },
+                            crate::error::QueueError::Event(_) => Err(error),
                             crate::error::QueueError::Completion(_) => todo!(), // Should never be the case
                         }
-                    }
-                    else {
+                    } else {
                         return std::task::Poll::Ready(Err(error));
                     }
-                },
+                }
                 Ok(len) => {
                     // println!("Read something {}", ev.fut.event);
                     Ok(ev.fut.eq.read_eq_entry(len, &ev.fut.buf, &ev.fut.event))
                 }
             };
-            
 
             match &mut res {
                 Ok(entry) => {
                     match entry {
-
-                        // crate::eq::Event::Notify(entry) | 
-                        crate::eq::Event::MrComplete(e) => { if e.c_entry.context as usize == ev.ctx  { if ev.ctx != 0 {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}}; return std::task::Poll::Ready(res);  } else {ev.fut.eq.insert_entry(e.c_entry.context as usize,res);}},
-                        crate::eq::Event::AVComplete(e) => { if e.c_entry.context as usize == ev.ctx  { if ev.ctx != 0 {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}}; return std::task::Poll::Ready(res);  } else {ev.fut.eq.insert_entry(e.c_entry.context as usize,res);}},
-                        crate::eq::Event::JoinComplete(e) => { println!("Found join event"); if e.c_entry.context as usize == ev.ctx  { if ev.ctx != 0 {e.c_entry.context = unsafe{ ( *(e.c_entry.context as *mut AsyncCtx)).user_ctx.unwrap_or(std::ptr::null_mut())}}; return std::task::Poll::Ready(res);  } else {ev.fut.eq.insert_entry(e.c_entry.context as usize, res);}},
-                        crate::eq::Event::ConnReq(e) => {
-                            if ev.event_type == libfabric_sys::FI_CONNREQ && ev.req_fid.0 == e.c_entry.fid{
-                                return std::task::Poll::Ready(res);
-                            }
-                            else {
-                                ev.fut.eq.insert_cm_entry(libfabric_sys::FI_CONNREQ, &ev.req_fid, res);
-                            }
-                        },
-                        crate::eq::Event::Connected(e) => {
-                            if ev.event_type == libfabric_sys::FI_CONNECTED && ev.req_fid.0 == e.c_entry.fid {
-                                return std::task::Poll::Ready(res);
-                            }
-                            else {
-                                ev.fut.eq.insert_cm_entry(libfabric_sys::FI_CONNECTED, &ev.req_fid, res);
-                            }
-                        },
-                        crate::eq::Event::Shutdown(e) => { // [TODO] No one will explcitly look for shutdown requests, should probably store it somewhere else
-                            if ev.event_type == libfabric_sys::FI_SHUTDOWN && ev.req_fid.0 == e.c_entry.fid {
-                                return std::task::Poll::Ready(res);
-                            }
-                            else {
-                                ev.fut.eq.insert_cm_entry(libfabric_sys::FI_SHUTDOWN, &ev.req_fid, res);
-                            }
-                        },
-                    }
-                }
-                Err(err_entry) => {
-                    match err_entry.kind {
-                        ErrorKind::ErrorInQueue(ref err) => {
-                            match err {
-                                crate::error::QueueError::Completion(_) => todo!(),
-                                crate::error::QueueError::Event(e) => {
-                                    if ev.ctx != 0 {
-                                        if e.c_err.context as usize == ev.ctx {
-                                            return std::task::Poll::Ready(res);
-                                        }
-                                        else if e.c_err.context as usize == 0 {
-                                            ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid), res)
-                                        }
-                                        else {
-                                            ev.fut.eq.insert_entry(e.c_err.context as usize, res)
-                                        }
+                        // crate::eq::Event::Notify(entry) |
+                        crate::eq::Event::MrComplete(e) => {
+                            if e.c_entry.context as usize == ev.ctx {
+                                if ev.ctx != 0 {
+                                    e.c_entry.context = unsafe {
+                                        (*(e.c_entry.context as *mut AsyncCtx))
+                                            .user_ctx
+                                            .unwrap_or(std::ptr::null_mut())
                                     }
-                                    else if e.c_err.context as usize == 0 {
-                                        if e.c_err.fid == ev.req_fid.0 {
-                                            return std::task::Poll::Ready(res);
-                                        }
-                                        else {
-                                            ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid), res)
-                                        }
-                                    }
-                                    else {
-                                        ev.fut.eq.insert_entry(e.c_err.context as usize, res)
-                                    }
-                                }
+                                };
+                                return std::task::Poll::Ready(res);
+                            } else {
+                                ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
                             }
                         }
-                        _ => panic!("Unexpected error"),
+                        crate::eq::Event::AVComplete(e) => {
+                            if e.c_entry.context as usize == ev.ctx {
+                                if ev.ctx != 0 {
+                                    e.c_entry.context = unsafe {
+                                        (*(e.c_entry.context as *mut AsyncCtx))
+                                            .user_ctx
+                                            .unwrap_or(std::ptr::null_mut())
+                                    }
+                                };
+                                return std::task::Poll::Ready(res);
+                            } else {
+                                ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
+                            }
+                        }
+                        crate::eq::Event::JoinComplete(e) => {
+                            println!("Found join event");
+                            if e.c_entry.context as usize == ev.ctx {
+                                if ev.ctx != 0 {
+                                    e.c_entry.context = unsafe {
+                                        (*(e.c_entry.context as *mut AsyncCtx))
+                                            .user_ctx
+                                            .unwrap_or(std::ptr::null_mut())
+                                    }
+                                };
+                                return std::task::Poll::Ready(res);
+                            } else {
+                                ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
+                            }
+                        }
+                        crate::eq::Event::ConnReq(e) => {
+                            if ev.event_type == libfabric_sys::FI_CONNREQ
+                                && ev.req_fid.0 == e.c_entry.fid
+                            {
+                                return std::task::Poll::Ready(res);
+                            } else {
+                                ev.fut.eq.insert_cm_entry(
+                                    libfabric_sys::FI_CONNREQ,
+                                    &ev.req_fid,
+                                    res,
+                                );
+                            }
+                        }
+                        crate::eq::Event::Connected(e) => {
+                            if ev.event_type == libfabric_sys::FI_CONNECTED
+                                && ev.req_fid.0 == e.c_entry.fid
+                            {
+                                return std::task::Poll::Ready(res);
+                            } else {
+                                ev.fut.eq.insert_cm_entry(
+                                    libfabric_sys::FI_CONNECTED,
+                                    &ev.req_fid,
+                                    res,
+                                );
+                            }
+                        }
+                        crate::eq::Event::Shutdown(e) => {
+                            // [TODO] No one will explcitly look for shutdown requests, should probably store it somewhere else
+                            if ev.event_type == libfabric_sys::FI_SHUTDOWN
+                                && ev.req_fid.0 == e.c_entry.fid
+                            {
+                                return std::task::Poll::Ready(res);
+                            } else {
+                                ev.fut.eq.insert_cm_entry(
+                                    libfabric_sys::FI_SHUTDOWN,
+                                    &ev.req_fid,
+                                    res,
+                                );
+                            }
+                        }
                     }
                 }
+                Err(err_entry) => match err_entry.kind {
+                    ErrorKind::ErrorInQueue(ref err) => match err {
+                        crate::error::QueueError::Completion(_) => todo!(),
+                        crate::error::QueueError::Event(e) => {
+                            if ev.ctx != 0 {
+                                if e.c_err.context as usize == ev.ctx {
+                                    return std::task::Poll::Ready(res);
+                                } else if e.c_err.context as usize == 0 {
+                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid), res)
+                                } else {
+                                    ev.fut.eq.insert_entry(e.c_err.context as usize, res)
+                                }
+                            } else if e.c_err.context as usize == 0 {
+                                if e.c_err.fid == ev.req_fid.0 {
+                                    return std::task::Poll::Ready(res);
+                                } else {
+                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid), res)
+                                }
+                            } else {
+                                ev.fut.eq.insert_entry(e.c_err.context as usize, res)
+                            }
+                        }
+                    },
+                    _ => panic!("Unexpected error"),
+                },
             }
 
             ev.fut = Box::pin(EqAsyncReadOwned::new(ev.fut.eq.clone()));
         }
-
     }
 }
 
 impl<const WRITE: bool> AsFid for AsyncEventQueueImpl<WRITE> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.base.get_ref().c_eq.as_fid()
+        self.base.get_ref().c_eq.as_fid()
     }
 }
 
 impl<const WRITE: bool> AsFid for &AsyncEventQueueImpl<WRITE> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.base.get_ref().as_fid()
+        self.base.get_ref().as_fid()
     }
 }
 impl<const WRITE: bool> AsFid for MyRc<AsyncEventQueueImpl<WRITE>> {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-       self.base.get_ref().as_fid()
+        self.base.get_ref().as_fid()
     }
 }
 
 impl<const WRITE: bool> AsRawFid for AsyncEventQueueImpl<WRITE> {
     fn as_raw_fid(&self) -> RawFid {
-       self.base.get_ref().as_raw_fid()
+        self.base.get_ref().as_raw_fid()
     }
 }
 
@@ -744,9 +925,8 @@ impl<const WRITE: bool> AsRawTypedFid for AsyncEventQueueImpl<WRITE> {
     type Output = EqRawFid;
 
     fn as_raw_typed_fid(&self) -> Self::Output {
-       self.base.get_ref().as_raw_typed_fid()
+        self.base.get_ref().as_raw_typed_fid()
     }
-    
 }
 
 // impl<const WRITE: bool> crate::BindImpl for AsyncEventQueueImpl<WRITE> {}
@@ -773,7 +953,7 @@ pub struct EventQueueBuilder<'a, const WRITE: bool> {
 
 impl<'a> EventQueueBuilder<'a, false> {
     pub fn new(fabric: &'a crate::fabric::Fabric) -> Self {
-       Self {
+        Self {
             eq_attr: EventQueueAttr::new(),
             fabric,
             ctx: None,
@@ -781,8 +961,7 @@ impl<'a> EventQueueBuilder<'a, false> {
     }
 }
 
-impl <'a, const WRITE: bool> EventQueueBuilder<'a, WRITE> {
-    
+impl<'a, const WRITE: bool> EventQueueBuilder<'a, WRITE> {
     pub fn size(mut self, size: usize) -> Self {
         self.eq_attr.size(size);
         self
@@ -797,7 +976,7 @@ impl <'a, const WRITE: bool> EventQueueBuilder<'a, WRITE> {
             ctx: self.ctx,
         }
     }
-    
+
     pub fn signaling_vector(mut self, signaling_vector: i32) -> Self {
         self.eq_attr.signaling_vector(signaling_vector);
         self
@@ -811,10 +990,10 @@ impl <'a, const WRITE: bool> EventQueueBuilder<'a, WRITE> {
         }
     }
 
-    pub fn build(mut self) ->  Result<EventQueue<AsyncEventQueueImpl<WRITE>>, crate::error::Error> {
+    pub fn build(mut self) -> Result<EventQueue<AsyncEventQueueImpl<WRITE>>, crate::error::Error> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
-        EventQueue::<AsyncEventQueueImpl<WRITE>>::new(self.fabric, self.eq_attr, self.ctx)   
+        EventQueue::<AsyncEventQueueImpl<WRITE>>::new(self.fabric, self.eq_attr, self.ctx)
     }
 }
 
@@ -858,18 +1037,18 @@ mod tests {
     //         };
 
     //         if let crate::eq::Event::Notify(entry) = ret {
-                
+
     //             if entry.get_context() != i /2 {
     //                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
     //             }
-                
+
     //             if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
     //                 panic!("Unexpected fid {:?}", entry.get_fid());
     //             }
     //         }
     //         else {
     //             panic!("Unexpected EventType");
-    //         } 
+    //         }
     //     }
 
     //     let ret = eq.read();
@@ -932,7 +1111,7 @@ mod tests {
     //             if entry.get_context() != i /2 {
     //                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
     //             }
-                
+
     //             if entry.get_fid() != if i & 2 == 2 {fab.as_raw_fid()} else {eq.as_raw_fid()} {
     //                 panic!("Unexpected fid {:?}", entry.get_fid());
     //             }
@@ -941,7 +1120,7 @@ mod tests {
     //             panic!("Unexpected EventType");
     //         }
     //     }
-            
+
     //     let ret = eq.read();
     //     if let Err(ref err) = ret {
     //         if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
@@ -978,7 +1157,7 @@ mod tests {
     //             if entry.get_context() != i  {
     //                 panic!("Unexpected context {} vs {}", entry.get_context(), i/2);
     //             }
-                
+
     //             if entry.get_fid() != fab.as_raw_fid() {
     //                 panic!("Unexpected fid {:?}", entry.get_fid());
     //             }
@@ -995,26 +1174,23 @@ mod tests {
     //     }
     // }
 
-
     #[test]
     fn eq_open_close_sizes() {
-        let info = Info::new(&Version{major: 1, minor: 19})
-            .get()
-            .unwrap();
+        let info = Info::new(&Version {
+            major: 1,
+            minor: 19,
+        })
+        .get()
+        .unwrap();
         let entry = info.into_iter().next().unwrap();
-        
+
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
-            let _eq = EventQueueBuilder::new(&fab)
-                .size(size)
-                .build().unwrap();
-            
+            let _eq = EventQueueBuilder::new(&fab).size(size).build().unwrap();
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
@@ -1023,21 +1199,21 @@ mod libfabric_lifetime_tests {
 
     use super::EventQueueBuilder;
 
-
     #[test]
     fn eq_drops_before_fabric() {
-        let info = Info::new(&Version{major: 1, minor: 19})
-            .get()
-            .unwrap();
+        let info = Info::new(&Version {
+            major: 1,
+            minor: 19,
+        })
+        .get()
+        .unwrap();
         let entry = info.into_iter().next().unwrap();
-        
+
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let mut eqs = Vec::new();
         for i in -1..17 {
             let size = if i == -1 { 0 } else { 1 << i };
-            let eq = EventQueueBuilder::new(&fab)
-                .size(size)
-                .build().unwrap();
+            let eq = EventQueueBuilder::new(&fab).size(size).build().unwrap();
             eqs.push(eq);
         }
         drop(fab);

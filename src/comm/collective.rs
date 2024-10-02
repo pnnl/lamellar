@@ -37,11 +37,11 @@ pub struct MulticastGroupCollective {
     pub(crate) inner: MyRc<MulticastGroupCollectiveImpl>,
 }
 
-impl std::fmt::Debug for MulticastGroupCollective {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "")
-    }
-}
+// impl std::fmt::Debug for MulticastGroupCollective {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         writeln!(f, "")
+//     }
+// }
 
 pub struct MulticastGroupCollectiveImpl {
     c_mc: MyOnceCell<OwnedMcFid>,

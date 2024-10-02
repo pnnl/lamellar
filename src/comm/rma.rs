@@ -1,6 +1,4 @@
-use crate::conn_ep::ConnectedEndpointBase;
 use crate::conn_ep::ConnectedEp;
-use crate::connless_ep::ConnectionlessEndpointBase;
 use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::ReadMsgOptions;

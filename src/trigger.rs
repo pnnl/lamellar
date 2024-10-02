@@ -1,8 +1,6 @@
 use std::marker::PhantomData;
 
-use libfabric_sys::{
-    fi_datatype_FI_UINT8, fi_trigger_var__bindgen_ty_1, fi_trigger_xpu__bindgen_ty_1,
-};
+use libfabric_sys::{fi_trigger_var__bindgen_ty_1, fi_trigger_xpu__bindgen_ty_1};
 
 use crate::{
     cntr::Counter,

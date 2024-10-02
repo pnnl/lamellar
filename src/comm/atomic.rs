@@ -1,7 +1,5 @@
 use super::message::extract_raw_addr_and_ctx;
-use crate::conn_ep::ConnectedEndpointBase;
 use crate::conn_ep::ConnectedEp;
-use crate::connless_ep::ConnectionlessEndpointBase;
 use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::AtomicFetchMsgOptions;
@@ -149,6 +147,7 @@ pub trait AtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn atomic_to_with_context<T: AsFiType>(
         &self,
         buf: &[T],
@@ -159,6 +158,7 @@ pub trait AtomicWriteEp {
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn atomic_to_triggered<T: AsFiType>(
         &self,
         buf: &[T],
@@ -169,6 +169,7 @@ pub trait AtomicWriteEp {
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn atomicv_to<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -178,6 +179,7 @@ pub trait AtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn atomicv_to_with_context<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -188,6 +190,7 @@ pub trait AtomicWriteEp {
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn atomicv_to_triggered<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -656,6 +659,7 @@ pub(crate) trait AtomicFetchEpImpl:
 }
 
 pub trait AtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_from<T: AsFiType>(
         &self,
         buf: &[T],
@@ -667,6 +671,7 @@ pub trait AtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_from_with_context<T: AsFiType>(
         &self,
         buf: &[T],
@@ -679,6 +684,7 @@ pub trait AtomicFetchEp {
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_from_triggered<T: AsFiType>(
         &self,
         buf: &[T],
@@ -691,6 +697,7 @@ pub trait AtomicFetchEp {
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomicv_from<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -702,6 +709,7 @@ pub trait AtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomicv_from_with_context<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -714,6 +722,7 @@ pub trait AtomicFetchEp {
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomicv_from_triggered<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -735,6 +744,7 @@ pub trait AtomicFetchEp {
     ) -> Result<(), crate::error::Error>;
 }
 pub trait ConnectedAtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic<T: AsFiType>(
         &self,
         buf: &[T],
@@ -745,6 +755,7 @@ pub trait ConnectedAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_with_context<T: AsFiType>(
         &self,
         buf: &[T],
@@ -756,6 +767,7 @@ pub trait ConnectedAtomicFetchEp {
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_triggered<T: AsFiType>(
         &self,
         buf: &[T],
@@ -767,6 +779,7 @@ pub trait ConnectedAtomicFetchEp {
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomicv<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -777,6 +790,7 @@ pub trait ConnectedAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomicv_with_context<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -788,6 +802,7 @@ pub trait ConnectedAtomicFetchEp {
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomicv_triggered<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],

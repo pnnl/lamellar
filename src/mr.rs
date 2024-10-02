@@ -2,11 +2,9 @@
 use crate::fid::AsFid;
 use crate::{
     cntr::ReadCntr,
-    cq::ReadCq,
     domain::DomainImplT,
     enums::{MrAccess, MrRegOpt},
     ep::EpState,
-    eq::ReadEq,
     fid::{self, AsRawFid, AsRawTypedFid, AsTypedFid, MrRawFid, OwnedMrFid, RawFid},
     iovec::IoVec,
     utils::check_error,
@@ -214,7 +212,7 @@ impl MemoryRegionImpl {
                 access.as_raw().into(),
                 0,
                 requested_key,
-                flags.as_raw() as u64,
+                flags.as_raw(),
                 &mut c_mr,
                 context,
             )
@@ -246,7 +244,7 @@ impl MemoryRegionImpl {
             libfabric_sys::inlined_fi_mr_regattr(
                 domain.as_raw_typed_fid(),
                 attr.get(),
-                flags.as_raw() as u64,
+                flags.as_raw(),
                 c_mr_ptr,
             )
         };
@@ -284,7 +282,7 @@ impl MemoryRegionImpl {
                 access.as_raw().into(),
                 0,
                 requested_key,
-                flags.as_raw() as u64,
+                flags.as_raw(),
                 c_mr_ptr,
                 context,
             )
@@ -356,10 +354,8 @@ impl MemoryRegionImpl {
                 },
             )
         };
-        if err != 0 {
-            if self.bound_cntr.set(cntr.clone()).is_err() {
-                panic!("Memory Region already bound to an Endpoint");
-            }
+        if err != 0 && self.bound_cntr.set(cntr.clone()).is_err() {
+            panic!("Memory Region already bound to an Endpoint");
         }
         check_error(err.try_into().unwrap())
     }
@@ -374,10 +370,8 @@ impl MemoryRegionImpl {
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_bind(self.as_raw_typed_fid(), ep.as_raw_fid(), 0)
         };
-        if err != 0 {
-            if self.bound_ep.set(ep.clone()).is_err() {
-                panic!("Memory Region already bound to an Endpoint");
-            }
+        if err != 0 && self.bound_ep.set(ep.clone()).is_err() {
+            panic!("Memory Region already bound to an Endpoint");
         }
         check_error(err.try_into().unwrap())
     }
@@ -475,7 +469,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    fn from_buffer<T, T0, EQ: 'static>(
+    fn from_buffer<T, EQ: 'static>(
         domain: &crate::domain::DomainBase<EQ>,
         buf: &[T],
         access: &MrAccess,
@@ -512,7 +506,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    fn from_iovec<T0, EQ: 'static>(
+    fn from_iovec<EQ: 'static>(
         domain: &crate::domain::DomainBase<EQ>,
         iov: &[crate::iovec::IoVec],
         access: &MrAccess,

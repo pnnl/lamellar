@@ -970,7 +970,7 @@ impl EventError {
         &mut self.c_err
     }
 
-    pub fn get_fid<'a>(&'a self) -> BorrowedFid<'a> {
+    pub fn get_fid(&self) -> BorrowedFid {
         unsafe { BorrowedFid::borrow_raw(self.c_err.fid) }
     }
 
@@ -1062,15 +1062,15 @@ pub struct EventQueueCmEntry<const ETYPE: libfabric_sys::_bindgen_ty_18> {
 }
 
 impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
-    pub fn new() -> EventQueueCmEntry<ETYPE> {
-        let c_entry = libfabric_sys::fi_eq_cm_entry {
-            fid: std::ptr::null_mut(),
-            info: std::ptr::null_mut(),
-            data: libfabric_sys::__IncompleteArrayField::<u8>::new(),
-        };
+    // pub(crate) fn new() -> EventQueueCmEntry<ETYPE> {
+    //     let c_entry = libfabric_sys::fi_eq_cm_entry {
+    //         fid: std::ptr::null_mut(),
+    //         info: std::ptr::null_mut(),
+    //         data: libfabric_sys::__IncompleteArrayField::<u8>::new(),
+    //     };
 
-        Self { c_entry }
-    }
+    //     Self { c_entry }
+    // }
 
     pub fn get_fid(&self) -> libfabric_sys::fid_t {
         self.c_entry.fid

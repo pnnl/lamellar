@@ -518,7 +518,7 @@ impl DomainAttr {
     pub(crate) unsafe fn get(&self) -> libfabric_sys::fi_domain_attr {
         libfabric_sys::fi_domain_attr {
             domain: self.domain_id as *mut libfabric_sys::fid_domain,
-            name: std::mem::transmute(self._c_name.as_ptr()),
+            name: std::mem::transmute::<*const i8, *mut i8>(self._c_name.as_ptr()),
             threading: self.threading.as_raw(),
             control_progress: self.control_progress.as_raw(),
             data_progress: self.data_progress.as_raw(),
@@ -543,7 +543,7 @@ impl DomainAttr {
             mode: self.mode.as_raw(),
             tclass: self.traffic_class.as_raw(),
             auth_key: if let Some(auth_key) = &self.auth_key {
-                std::mem::transmute(auth_key.as_ptr())
+                std::mem::transmute::<*const u8, *mut u8>(auth_key.as_ptr())
             } else {
                 std::ptr::null_mut()
             },

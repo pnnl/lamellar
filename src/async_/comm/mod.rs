@@ -1,4 +1,4 @@
-pub mod message;
-pub mod tagged;
-pub mod rma;
 pub mod collective;
+pub mod message;
+pub mod rma;
+pub mod tagged;

@@ -193,15 +193,15 @@ impl FabricAttr {
     }
 
     pub(crate) unsafe fn get(&self) -> libfabric_sys::fi_fabric_attr {
-        let c_attr = libfabric_sys::fi_fabric_attr {
+        libfabric_sys::fi_fabric_attr {
             fabric: self.fabric_id as *mut libfabric_sys::fid_fabric,
-            prov_name: unsafe { std::mem::transmute(self._c_prov_name.as_ptr()) },
-            name: unsafe { std::mem::transmute(self._c_name.as_ptr()) },
+            prov_name: unsafe {
+                std::mem::transmute::<*const i8, *mut i8>(self._c_prov_name.as_ptr())
+            },
+            name: unsafe { std::mem::transmute::<*const i8, *mut i8>(self._c_name.as_ptr()) },
             prov_version: self.prov_version.as_raw(),
             api_version: self.api_version.as_raw(),
-        };
-
-        c_attr
+        }
     }
 
     pub fn fabric_id(&self) -> usize {

@@ -12,7 +12,7 @@ use libfabric::{
     cq::{CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq},
     domain::{BoundDomain, Domain},
     enums::AVOptions,
-    ep::{self, ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint},
+    ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint},
     eq::{EventQueueBuilder, ReadEq, WaitEq},
     fabric,
     info::{Info, InfoCapsImpl, InfoEntry, InfoHints},
@@ -652,11 +652,6 @@ pub enum EndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
     ConnlessTagged(ConnectionlessEndpoint<T>),
 }
 
-pub enum ConnEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
-    Msg(ConnectedEndpoint<M>),
-    Tagged(ConnectedEndpoint<T>),
-}
-
 pub enum PassiveEndpointCaps<M: MsgDefaultCap, T: TagDefaultCap> {
     Msg(PassiveEndpoint<M>),
     Tagged(PassiveEndpoint<T>),
@@ -978,21 +973,6 @@ pub fn ft_enable_ep_recv<EQ: ReadEq + 'static, CNTR: ReadCntr + 'static, E, T: '
         );
         ft_alloc_msgs(info, gl_ctx, domain, ep)
     };
-    //     EndpointCaps::ConnectedMsg(ep) => {
-    //     },
-    //     EndpointCaps::ConnlessMsg(ep) => {
-    //         ft_enable_ep(info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr);
-    //         ft_alloc_msgs(info, gl_ctx, domain, ep)
-    //     },
-    //     EndpointCaps::ConnectedTagged(ep) => {
-    //         ft_enable_ep(info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr);
-    //         ft_alloc_msgs(info, gl_ctx, domain, ep)
-    //     },
-    //     EndpointCaps::ConnlessTagged(ep) => {
-    //         ft_enable_ep(info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr);
-    //         ft_alloc_msgs(info, gl_ctx, domain, ep)
-    //     }
-    // };
 
     (mr, data_desc)
 }
@@ -1790,7 +1770,7 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
     ctx: &mut Context,
     ft_tag: u64,
     tx_cq: &impl ReadCq,
-    ep: &libfabric::conn_ep::ConnectedEndpoint<E>,
+    ep: &ConnectedEndpoint<E>,
     data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
     base: &mut [u8],
     data: u64,
@@ -1879,7 +1859,7 @@ pub fn conless_tagged_post<E: TagDefaultCap>(
     remote_address: &Option<MappedAddress>,
     ft_tag: u64,
     tx_cq: &impl ReadCq,
-    ep: &libfabric::connless_ep::ConnectionlessEndpoint<E>,
+    ep: &ConnectionlessEndpoint<E>,
     data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
     base: &mut [u8],
     data: u64,
@@ -1970,7 +1950,7 @@ pub fn conless_tagged_post<E: TagDefaultCap>(
     }
 }
 
-pub fn tagged_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
+pub fn connected_tagged_post_recv<T: TagDefaultCap>(
     op: TagRecvOp,
     rx_seq: &mut u64,
     rx_cq_cntr: &mut u64,
@@ -1978,7 +1958,7 @@ pub fn tagged_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
     remote_address: &Option<MappedAddress>,
     ft_tag: u64,
     rx_cq: &impl ReadCq,
-    ep: &EndpointCaps<M, T>,
+    ep: &ConnectedEndpoint<T>,
     data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
     base: &mut [u8],
     _data: u64,
@@ -1988,90 +1968,74 @@ pub fn tagged_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
     } else {
         &mut default_desc()
     };
-    match ep {
-        EndpointCaps::ConnectedTagged(ep) => match op {
-            TagRecvOp::TagMsgRecv => {
-                todo!()
-            }
-            TagRecvOp::TagRecv => {
-                let op_tag = if ft_tag != 0 { ft_tag } else { *rx_seq };
-                let zero = 0;
-                if let Some(fi_address) = remote_address {
-                    ft_post!(
-                        trecv_from_with_context,
-                        ft_progress,
-                        rx_cq,
-                        *rx_seq,
-                        rx_cq_cntr,
-                        "receive",
-                        ep,
-                        base,
-                        desc,
-                        fi_address,
-                        op_tag,
-                        zero,
-                        ctx
-                    );
-                } else {
-                    ft_post!(
-                        trecv_with_context,
-                        ft_progress,
-                        rx_cq,
-                        *rx_seq,
-                        rx_cq_cntr,
-                        "receive",
-                        ep,
-                        base,
-                        desc,
-                        op_tag,
-                        zero,
-                        ctx
-                    );
-                }
-            }
-        },
-        EndpointCaps::ConnlessTagged(ep) => match op {
-            TagRecvOp::TagMsgRecv => {
-                todo!()
-            }
-            TagRecvOp::TagRecv => {
-                let op_tag = if ft_tag != 0 { ft_tag } else { *rx_seq };
-                let zero = 0;
-                if let Some(fi_address) = remote_address {
-                    ft_post!(
-                        trecv_from_with_context,
-                        ft_progress,
-                        rx_cq,
-                        *rx_seq,
-                        rx_cq_cntr,
-                        "receive",
-                        ep,
-                        base,
-                        desc,
-                        fi_address,
-                        op_tag,
-                        zero,
-                        ctx
-                    );
-                } else {
-                    ft_post!(
-                        trecv_with_context,
-                        ft_progress,
-                        rx_cq,
-                        *rx_seq,
-                        rx_cq_cntr,
-                        "receive",
-                        ep,
-                        base,
-                        desc,
-                        op_tag,
-                        zero,
-                        ctx
-                    );
-                }
-            }
-        },
-        _ => panic!("Only tagged handled here"),
+    match op {
+        TagRecvOp::TagMsgRecv => {
+            todo!()
+        }
+        TagRecvOp::TagRecv => {
+            let op_tag = if ft_tag != 0 { ft_tag } else { *rx_seq };
+            let zero = 0;
+
+            ft_post!(
+                trecv_with_context,
+                ft_progress,
+                rx_cq,
+                *rx_seq,
+                rx_cq_cntr,
+                "receive",
+                ep,
+                base,
+                desc,
+                op_tag,
+                zero,
+                ctx
+            );
+        }
+    }
+}
+
+pub fn connless_tagged_post_recv<T: TagDefaultCap>(
+    op: TagRecvOp,
+    rx_seq: &mut u64,
+    rx_cq_cntr: &mut u64,
+    ctx: &mut Context,
+    remote_address: &Option<MappedAddress>,
+    ft_tag: u64,
+    rx_cq: &impl ReadCq,
+    ep: &ConnectionlessEndpoint<T>,
+    data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
+    base: &mut [u8],
+    _data: u64,
+) {
+    let desc = if let Some(mr_desc) = data_desc.as_mut() {
+        mr_desc
+    } else {
+        &mut default_desc()
+    };
+    match op {
+        TagRecvOp::TagMsgRecv => {
+            todo!()
+        }
+        TagRecvOp::TagRecv => {
+            let op_tag = if ft_tag != 0 { ft_tag } else { *rx_seq };
+            let zero = 0;
+            let fi_address = remote_address.as_ref().unwrap();
+            ft_post!(
+                trecv_from_with_context,
+                ft_progress,
+                rx_cq,
+                *rx_seq,
+                rx_cq_cntr,
+                "receive",
+                ep,
+                base,
+                desc,
+                fi_address,
+                op_tag,
+                zero,
+                ctx
+            );
+        }
     }
 }
 
@@ -2216,8 +2180,8 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
                 NO_CQ_DATA,
             );
         }
-        EndpointCaps::ConnlessTagged(epp) => {
-            tagged_post_recv(
+        EndpointCaps::ConnlessTagged(ep) => {
+            connless_tagged_post_recv(
                 TagRecvOp::TagRecv,
                 &mut gl_ctx.rx_seq,
                 &mut gl_ctx.rx_cq_cntr,
@@ -2245,8 +2209,8 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
                 NO_CQ_DATA,
             );
         }
-        EndpointCaps::ConnectedTagged(epp) => {
-            tagged_post_recv(
+        EndpointCaps::ConnectedTagged(ep) => {
+            connected_tagged_post_recv(
                 TagRecvOp::TagRecv,
                 &mut gl_ctx.rx_seq,
                 &mut gl_ctx.rx_cq_cntr,

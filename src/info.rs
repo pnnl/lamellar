@@ -828,7 +828,10 @@ impl<T> EndpointAttrIn<T> {
 
     pub fn auth_key(self, key: &[u8]) -> Self {
         unsafe { (*(*self.hints.c_info).ep_attr).auth_key_size = key.len() };
-        unsafe { (*(*self.hints.c_info).ep_attr).auth_key = std::mem::transmute(key.as_ptr()) };
+        unsafe {
+            (*(*self.hints.c_info).ep_attr).auth_key =
+                std::mem::transmute::<*const u8, *mut u8>(key.as_ptr())
+        };
         self
     }
 }
@@ -896,7 +899,8 @@ impl<T> DomainAttrIn<T> {
     pub fn auth_key(self, auth_key: &[u8]) -> Self {
         unsafe { (*(*self.hints.c_info).domain_attr).auth_key_size = auth_key.len() };
         unsafe {
-            (*(*self.hints.c_info).domain_attr).auth_key = std::mem::transmute(auth_key.as_ptr())
+            (*(*self.hints.c_info).domain_attr).auth_key =
+                std::mem::transmute::<*const u8, *mut u8>(auth_key.as_ptr())
         };
         self
     }
@@ -969,12 +973,12 @@ impl<T> TxAttrIn<T> {
     }
 
     pub fn msg_order(self, msg_order: MsgOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).msg_order = msg_order.as_raw() as u64 };
+        unsafe { (*(*self.hints.c_info).tx_attr).msg_order = msg_order.as_raw() };
         self
     }
 
     pub fn comp_order(self, comp_order: TxCompOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).comp_order = comp_order.as_raw() as u64 };
+        unsafe { (*(*self.hints.c_info).tx_attr).comp_order = comp_order.as_raw() };
         self
     }
 
@@ -1029,12 +1033,12 @@ impl<T> RxAttrIn<T> {
     }
 
     pub fn msg_order(self, msg_order: MsgOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).msg_order = msg_order.as_raw() as u64 };
+        unsafe { (*(*self.hints.c_info).rx_attr).msg_order = msg_order.as_raw() };
         self
     }
 
     pub fn comp_order(self, comp_order: RxCompOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).comp_order = comp_order.as_raw() as u64 };
+        unsafe { (*(*self.hints.c_info).rx_attr).comp_order = comp_order.as_raw() };
         self
     }
 
