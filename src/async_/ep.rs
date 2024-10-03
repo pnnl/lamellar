@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use super::{
-    conn_ep::UnconnectedEndpoint,
-    connless_ep::ConnectionlessEndpoint,
+    conn_ep::UninitUnconnectedEndpoint,
+    connless_ep::UninitConnectionlessEndpoint,
     cq::{AsyncReadCq, CompletionQueue},
     eq::AsyncReadEq,
 };
@@ -12,8 +12,9 @@ use crate::{
     domain::DomainBase,
     enums::EndpointType,
     ep::{
-        EndpointAttr, EndpointBase, EndpointImplBase, EpCq, EpState, IncompleteBindCntr,
-        PassiveEndpointBase, PassiveEndpointImplBase,
+        Connected, Connectionless, EndpointAttr, EndpointBase, EndpointImplBase, EpCq,
+        IncompleteBindCntr, PassiveEndpointBase, PassiveEndpointImplBase, UninitConnectionless,
+        UninitUnconnected,
     },
     eq::{Event, EventQueueBase, ReadEq},
     fid::{AsRawFid, AsRawTypedFid, Fid, RawFid},
@@ -44,20 +45,44 @@ impl ConnectionListener {
     }
 }
 pub enum Endpoint<EP> {
-    Connectionless(ConnectionlessEndpoint<EP>),
-    ConnectionOriented(UnconnectedEndpoint<EP>),
+    Connectionless(UninitConnectionlessEndpoint<EP>),
+    ConnectionOriented(UninitUnconnectedEndpoint<EP>),
 }
 
 // pub type Endpoint<T> = EndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
 
-impl<STATE: EpState> EndpointBase<EndpointImplBase<(), dyn AsyncReadEq, dyn AsyncReadCq>, STATE> {
+impl EndpointBase<EndpointImplBase<(), dyn AsyncReadEq, dyn AsyncReadCq>, UninitConnectionless> {
     pub(crate) fn new<E, DEQ: ?Sized + 'static>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
         context: Option<&mut Context>,
     ) -> Result<
-        EndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+        EndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>, UninitConnectionless>,
+        crate::error::Error,
+    > {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
+        Ok(EndpointBase::<
+            EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>,
+            UninitConnectionless,
+        > {
+            inner: MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
+            phantom: PhantomData,
+        })
+    }
+}
+impl EndpointBase<EndpointImplBase<(), dyn AsyncReadEq, dyn AsyncReadCq>, UninitUnconnected> {
+    pub(crate) fn new<E, DEQ: ?Sized + 'static>(
+        domain: &crate::domain::DomainBase<DEQ>,
+        info: &InfoEntry<E>,
+        flags: u64,
+        context: Option<&mut Context>,
+    ) -> Result<
+        EndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>, UninitUnconnected>,
         crate::error::Error,
     > {
         let c_void = match context {
@@ -66,7 +91,10 @@ impl<STATE: EpState> EndpointBase<EndpointImplBase<(), dyn AsyncReadEq, dyn Asyn
         };
 
         Ok(
-            EndpointBase::<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>, STATE> {
+            EndpointBase::<
+                EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>,
+                UninitUnconnected,
+            > {
                 inner: MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
                 phantom: PhantomData,
             },
@@ -235,8 +263,51 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
     //     )
 }
 
-impl<EP, STATE: EpState>
-    EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>
+impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, UninitUnconnected> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
+        self.inner.bind_cntr()
+    }
+
+    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+        &self,
+        av: &AddressVectorBase<EQ>,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.bind_av(av)
+    }
+
+    // pub fn alias(&self, flags: u64) -> Result<Self, crate::error::Error> {
+    //     Ok(
+    //         Self {
+    //             inner: MyRc::new (self.inner.alias(flags)?),
+    //         }
+    //     )
+    // }
+    pub fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static>(
+        &self,
+        cq: &CompletionQueue<T>,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.bind_shared_cq(&cq.inner, false)
+    }
+
+    pub fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static>(
+        &self,
+        tx_cq: &CompletionQueue<T>,
+        rx_cq: &CompletionQueue<T>,
+    ) -> Result<(), crate::error::Error> {
+        self.inner
+            .bind_separate_cqs(&tx_cq.inner, false, &rx_cq.inner, false)
+    }
+
+    pub fn bind_eq<T: AsyncReadEq + 'static>(
+        &self,
+        eq: &EventQueueBase<T>,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.bind_eq(&eq.inner)
+    }
+}
+
+impl<EP>
+    EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, UninitConnectionless>
 {
     pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
         self.inner.bind_cntr()
@@ -256,11 +327,6 @@ impl<EP, STATE: EpState>
     //         }
     //     )
     // }
-}
-
-impl<EP, STATE: EpState>
-    EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>
-{
     pub fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
@@ -276,11 +342,7 @@ impl<EP, STATE: EpState>
         self.inner
             .bind_separate_cqs(&tx_cq.inner, false, &rx_cq.inner, false)
     }
-}
 
-impl<EP, STATE: EpState>
-    EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>
-{
     pub fn bind_eq<T: AsyncReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
@@ -393,10 +455,10 @@ impl<'a, E> EndpointBuilder<'a, E> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
             EndpointType::Msg | EndpointType::SockStream => Ok(Endpoint::ConnectionOriented(
-                UnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
+                UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
             )),
             EndpointType::Dgram | EndpointType::Rdm | EndpointType::SockDgram => {
-                Ok(Endpoint::Connectionless(ConnectionlessEndpoint::new(
+                Ok(Endpoint::Connectionless(UninitConnectionlessEndpoint::new(
                     domain, self.info, self.flags, self.ctx,
                 )?))
             }
@@ -522,19 +584,37 @@ impl<EP, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncRxEp
     }
 }
 
-impl<EP: AsyncCmEp, STATE: EpState> AsyncCmEp for EndpointBase<EP, STATE> {
+impl<EP: AsyncCmEp> AsyncCmEp for EndpointBase<EP, Connected> {
     fn retrieve_eq(&self) -> &MyRc<impl AsyncReadEq + ?Sized> {
         self.inner.retrieve_eq()
     }
 }
 
-impl<EP: AsyncTxEp, STATE: EpState> AsyncTxEp for EndpointBase<EP, STATE> {
+impl<EP: AsyncTxEp> AsyncTxEp for EndpointBase<EP, Connected> {
     fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
         self.inner.retrieve_tx_cq()
     }
 }
 
-impl<EP: AsyncRxEp, STATE: EpState> AsyncRxEp for EndpointBase<EP, STATE> {
+impl<EP: AsyncRxEp> AsyncRxEp for EndpointBase<EP, Connected> {
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
+        self.inner.retrieve_rx_cq()
+    }
+}
+
+impl<EP: AsyncCmEp> AsyncCmEp for EndpointBase<EP, Connectionless> {
+    fn retrieve_eq(&self) -> &MyRc<impl AsyncReadEq + ?Sized> {
+        self.inner.retrieve_eq()
+    }
+}
+
+impl<EP: AsyncTxEp> AsyncTxEp for EndpointBase<EP, Connectionless> {
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
+        self.inner.retrieve_tx_cq()
+    }
+}
+
+impl<EP: AsyncRxEp> AsyncRxEp for EndpointBase<EP, Connectionless> {
     fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
         self.inner.retrieve_rx_cq()
     }

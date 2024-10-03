@@ -1,12 +1,17 @@
 use std::marker::PhantomData;
 
 use crate::{
-    ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected},
+    ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected, UninitUnconnected},
     eq::Event,
     fid::{AsRawFid, Fid},
 };
 
 use super::{cq::AsyncReadCq, eq::AsyncReadEq};
+
+pub type UninitUnconnectedEndpointBase<EP> = EndpointBase<EP, UninitUnconnected>;
+
+pub type UninitUnconnectedEndpoint<T> =
+    UninitUnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
 
 pub type UnconnectedEndpointBase<EP> = EndpointBase<EP, Unconnected>;
 

@@ -2,7 +2,7 @@ use crate::async_::ep::AsyncTxEp;
 use crate::comm::rma::{ConnectedWriteEp, ReadEpImpl, WriteEp, WriteEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{EndpointImplBase, EpState};
+use crate::ep::{Connected, Connectionless, EndpointImplBase};
 use crate::infocapsoptions::RmaCap;
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};
 use crate::utils::Either;
@@ -230,7 +230,8 @@ impl<EP: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
-impl<E: AsyncReadEpImpl, STATE: EpState> AsyncReadEpImpl for EndpointBase<E, STATE> {}
+impl<E: AsyncReadEpImpl> AsyncReadEpImpl for EndpointBase<E, Connected> {}
+impl<E: AsyncReadEpImpl> AsyncReadEpImpl for EndpointBase<E, Connectionless> {}
 
 impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
     async unsafe fn read_from_async<T0>(
@@ -672,7 +673,68 @@ impl<EP: RmaCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> 
 {
 }
 
-impl<E: AsyncWriteEpImpl, STATE: EpState> AsyncWriteEpImpl for EndpointBase<E, STATE> {
+impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
+    async unsafe fn write_async_impl<T>(
+        &self,
+        buf: &[T],
+        desc: &mut impl DataDescriptor,
+        dest_mapped_addr: Option<&MappedAddress>,
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        user_ctx: Option<*mut std::ffi::c_void>,
+    ) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner
+            .write_async_impl(buf, desc, dest_mapped_addr, mem_addr, mapped_key, user_ctx)
+            .await
+    }
+
+    async unsafe fn writev_async_impl<'a>(
+        &self,
+        iov: &[crate::iovec::IoVec<'a>],
+        desc: &mut [impl DataDescriptor],
+        dest_mapped_addr: Option<&MappedAddress>,
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        user_ctx: Option<*mut std::ffi::c_void>,
+    ) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner
+            .writev_async_impl(iov, desc, dest_mapped_addr, mem_addr, mapped_key, user_ctx)
+            .await
+    }
+
+    async unsafe fn writedata_async_impl<T>(
+        &self,
+        buf: &[T],
+        desc: &mut impl DataDescriptor,
+        data: u64,
+        dest_mapped_addr: Option<&MappedAddress>,
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        user_ctx: Option<*mut std::ffi::c_void>,
+    ) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner
+            .writedata_async_impl(
+                buf,
+                desc,
+                data,
+                dest_mapped_addr,
+                mem_addr,
+                mapped_key,
+                user_ctx,
+            )
+            .await
+    }
+
+    async unsafe fn writemsg_async_impl<'a>(
+        &self,
+        msg: Either<&mut crate::msg::MsgRma<'a>, &mut crate::msg::MsgRmaConnected<'a>>,
+        options: WriteMsgOptions,
+    ) -> Result<SingleCompletion, crate::error::Error> {
+        self.inner.writemsg_async_impl(msg, options).await
+    }
+}
+
+impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
     async unsafe fn write_async_impl<T>(
         &self,
         buf: &[T],

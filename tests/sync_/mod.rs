@@ -426,7 +426,7 @@ pub fn ft_alloc_active_res<E>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
+pub fn ft_prepare_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
     info: &InfoEntry<I>,
     gl_ctx: &mut TestsGlobalCtx,
     ep: &mut Endpoint<E>,
@@ -480,8 +480,6 @@ pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
                     bind_cntr.cntr(cntr).unwrap();
                 }
             }
-
-            ep.enable().unwrap();
         }
         Endpoint::ConnectionOriented(ep) => {
             ep.bind_eq(eq).unwrap();
@@ -526,7 +524,7 @@ pub fn ft_enable_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
                 }
             }
 
-            ep.enable().unwrap();
+            // ep.enable().unwrap();
         }
     }
 }
@@ -688,7 +686,7 @@ pub fn ft_server_connect<
                 &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -721,7 +719,7 @@ pub fn ft_server_connect<
                 &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -968,7 +966,7 @@ pub fn ft_enable_ep_recv<EQ: ReadEq + 'static, CNTR: ReadCntr + 'static, E, T: '
     Option<libfabric::mr::MemoryRegionDesc>,
 ) {
     let (mr, data_desc) = {
-        ft_enable_ep(
+        ft_prepare_ep(
             info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr,
         );
         ft_alloc_msgs(info, gl_ctx, domain, ep)
@@ -1015,7 +1013,7 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
                 &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessMsg(match ep {
-                Endpoint::Connectionless(ep) => ep,
+                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -1068,7 +1066,7 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
                 &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
-                Endpoint::Connectionless(ep) => ep,
+                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -3034,7 +3032,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
                 &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -3080,7 +3078,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
             );
 
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 

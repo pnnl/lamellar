@@ -392,7 +392,7 @@ pub fn ft_alloc_active_res<E, EQ: AsyncReadEq + 'static>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
+pub fn ft_prepare_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
     info: &InfoEntry<I>,
     gl_ctx: &mut TestsGlobalCtx,
     ep: &Endpoint<E>,
@@ -447,8 +447,6 @@ pub fn ft_enable_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
                     bind_cntr.cntr(cntr).unwrap();
                 }
             }
-
-            ep.enable().unwrap();
         }
         Endpoint::ConnectionOriented(ep) => {
             ep.bind_eq(eq).unwrap();
@@ -492,8 +490,6 @@ pub fn ft_enable_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
                     bind_cntr.cntr(cntr).unwrap();
                 }
             }
-
-            ep.enable().unwrap();
         }
     }
 }
@@ -595,7 +591,7 @@ pub async fn ft_server_connect<
             );
             let ep = match ep {
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
             };
             let ep = ft_accept_connection(ep, eq).await;
             let mut ep = EndpointCaps::ConnectedMsg(ep);
@@ -627,7 +623,7 @@ pub async fn ft_server_connect<
             );
             let ep = match ep {
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
             };
             let ep = ft_accept_connection(ep, eq).await;
             let mut ep = EndpointCaps::ConnectedTagged(ep);
@@ -833,7 +829,7 @@ pub fn ft_enable_ep_recv<EQ: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, E,
     Option<libfabric::mr::MemoryRegionDesc>,
 ) {
     let (mr, data_desc) = {
-        ft_enable_ep(
+        ft_prepare_ep(
             info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr,
         );
         ft_alloc_msgs(info, gl_ctx, domain, ep)
@@ -888,7 +884,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessMsg(match ep {
-                Endpoint::Connectionless(ep) => ep,
+                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -943,7 +939,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
-                Endpoint::Connectionless(ep) => ep,
+                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -2522,7 +2518,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
             );
 
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -2567,7 +2563,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
                 &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep,
+                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
             let ep = ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await;

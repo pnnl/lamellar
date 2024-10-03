@@ -6,6 +6,8 @@ use crate::cq::ReadCq;
 use crate::enums;
 use crate::enums::CollectiveOptions;
 use crate::enums::JoinOptions;
+use crate::ep::Connected;
+use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
 use crate::ep::EpState;
@@ -178,6 +180,7 @@ impl MulticastGroupCollective {
     pub fn join_collective<
         E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,
         STATE: EpState,
+        const INIT: bool,
     >(
         &self,
         ep: &EndpointBase<E, STATE>,
@@ -1320,7 +1323,8 @@ impl<EP: CollCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> CollectiveEpImpl
 {
 }
 
-impl<E: CollectiveEpImpl, STATE: EpState> CollectiveEpImpl for EndpointBase<E, STATE> {}
+impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E, Connected> {}
+impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E, Connectionless> {}
 
 impl AsFid for MulticastGroupCollective {
     fn as_fid(&self) -> fid::BorrowedFid<'_> {

@@ -5,7 +5,7 @@ use crate::async_::xcontext::{
 use crate::comm::tagged::{ConnectedTagSendEp, TagRecvEpImpl, TagSendEp, TagSendEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{EndpointImplBase, EpState};
+use crate::ep::{Connected, Connectionless, EndpointImplBase};
 use crate::infocapsoptions::{RecvMod, SendMod, TagCap};
 use crate::msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut};
 use crate::utils::Either;
@@ -200,7 +200,8 @@ impl<EP: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
-impl<E: AsyncTagRecvEpImpl, STATE: EpState> AsyncTagRecvEpImpl for EndpointBase<E, STATE> {}
+impl<E: AsyncTagRecvEpImpl> AsyncTagRecvEpImpl for EndpointBase<E, Connected> {}
+impl<E: AsyncTagRecvEpImpl> AsyncTagRecvEpImpl for EndpointBase<E, Connectionless> {}
 
 impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
     #[inline]
@@ -572,7 +573,8 @@ impl<EP: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
-impl<E: AsyncTagSendEpImpl, STATE: EpState> AsyncTagSendEpImpl for EndpointBase<E, STATE> {}
+impl<E: AsyncTagSendEpImpl> AsyncTagSendEpImpl for EndpointBase<E, Connected> {}
+impl<E: AsyncTagSendEpImpl> AsyncTagSendEpImpl for EndpointBase<E, Connectionless> {}
 
 impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP {
     #[inline]

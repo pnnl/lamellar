@@ -8,12 +8,10 @@ use libfabric_sys::{
     inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG,
 };
 
-use crate::fid::AsFid;
 use crate::{
     av::{AddressVector, AddressVectorBase, AddressVectorImplBase},
     cntr::{Counter, ReadCntr},
-    conn_ep::UnconnectedEndpoint,
-    connless_ep::ConnectionlessEndpoint,
+    conn_ep::UninitUnconnectedEndpoint,
     cq::{CompletionQueue, ReadCq},
     domain::DomainImplT,
     enums::{EndpointType, HmemIface, HmemP2p, Protocol, TransferOptions},
@@ -28,6 +26,7 @@ use crate::{
     utils::check_error,
     Context, MyOnceCell, MyRc, MyRefCell,
 };
+use crate::{connless_ep::UninitConnectionlessEndpoint, fid::AsFid};
 
 #[repr(C)]
 pub struct Address {
@@ -81,11 +80,15 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
 pub trait EpState {}
 pub struct Connected;
 pub struct Unconnected;
+pub struct UninitUnconnected;
 pub struct Connectionless;
+pub struct UninitConnectionless;
 
 impl EpState for Connected {}
 impl EpState for Unconnected {}
+impl EpState for UninitUnconnected {}
 impl EpState for Connectionless {}
+impl EpState for UninitConnectionless {}
 
 pub struct EndpointBase<EP, STATE: EpState> {
     pub(crate) inner: MyRc<EP>,
@@ -157,23 +160,6 @@ pub trait BaseEndpoint: AsRawFid {
         }
     }
 
-    fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
-        let mut res = size;
-        let mut len = std::mem::size_of::<usize>();
-
-        let err = unsafe {
-            libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
-                libfabric_sys::FI_OPT_ENDPOINT as i32,
-                libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32,
-                (&mut res as *mut usize).cast(),
-                &mut len,
-            )
-        };
-
-        check_error(err.try_into().unwrap())
-    }
-
     fn buffered_min(&self) -> Result<usize, crate::error::Error> {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
@@ -195,23 +181,6 @@ pub trait BaseEndpoint: AsRawFid {
         } else {
             Ok(res)
         }
-    }
-
-    fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
-        let mut res = size;
-        let mut len = std::mem::size_of::<usize>();
-
-        let err = unsafe {
-            libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
-                libfabric_sys::FI_OPT_ENDPOINT as i32,
-                libfabric_sys::FI_OPT_BUFFERED_MIN as i32,
-                (&mut res as *mut usize).cast(),
-                &mut len,
-            )
-        };
-
-        check_error(err.try_into().unwrap())
     }
 
     fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
@@ -237,23 +206,6 @@ pub trait BaseEndpoint: AsRawFid {
         }
     }
 
-    fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
-        let mut res = size;
-        let mut len = std::mem::size_of::<usize>();
-
-        let err = unsafe {
-            libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
-                libfabric_sys::FI_OPT_ENDPOINT as i32,
-                libfabric_sys::FI_OPT_CM_DATA_SIZE as i32,
-                (&mut res as *mut usize).cast(),
-                &mut len,
-            )
-        };
-
-        check_error(err.try_into().unwrap())
-    }
-
     fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
@@ -277,23 +229,6 @@ pub trait BaseEndpoint: AsRawFid {
         }
     }
 
-    fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
-        let mut res = size;
-        let mut len = std::mem::size_of::<usize>();
-
-        let err = unsafe {
-            libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
-                libfabric_sys::FI_OPT_ENDPOINT as i32,
-                libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32,
-                (&mut res as *mut usize).cast(),
-                &mut len,
-            )
-        };
-
-        check_error(err.try_into().unwrap())
-    }
-
     fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
         let mut res = 0_u32;
         let mut len = std::mem::size_of::<u32>();
@@ -315,6 +250,24 @@ pub trait BaseEndpoint: AsRawFid {
         } else {
             Ok(HmemP2p::from_raw(res))
         }
+    }
+
+    fn cuda_api_permitted(&self) -> Result<bool, crate::error::Error> {
+        let mut permitted = 0_u32;
+        let mut len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_getopt(
+                self.as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_CUDA_API_PERMITTED as i32,
+                (&mut permitted as *mut u32).cast(),
+                &mut len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())?;
+        Ok(permitted == 1)
     }
 
     fn xpu_trigger(&self, iface: &HmemIface) -> Result<TriggerXpu, crate::error::Error> {
@@ -382,39 +335,6 @@ pub trait BaseEndpoint: AsRawFid {
                 Ok(TriggerXpu::new(*iface, vars))
             }
         }
-    }
-
-    fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
-        let mut len = std::mem::size_of::<u32>();
-
-        let err = unsafe {
-            libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
-                libfabric_sys::FI_OPT_ENDPOINT as i32,
-                libfabric_sys::FI_OPT_FI_HMEM_P2P as i32,
-                (&mut hmem.as_raw() as *mut u32).cast(),
-                &mut len,
-            )
-        };
-
-        check_error(err.try_into().unwrap())
-    }
-
-    fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
-        let mut val = if permitted { 1_u32 } else { 0_u32 };
-        let mut len = std::mem::size_of::<u32>();
-
-        let err = unsafe {
-            libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
-                libfabric_sys::FI_OPT_ENDPOINT as i32,
-                libfabric_sys::FI_OPT_FI_HMEM_P2P as i32,
-                (&mut val as *mut u32).cast(),
-                &mut len,
-            )
-        };
-
-        check_error(err.try_into().unwrap())
     }
 
     fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
@@ -968,21 +888,49 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
     }
 }
 
-impl<STATE: EpState> EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, STATE> {
+impl EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, UninitConnectionless> {
+    #[allow(clippy::type_complexity)]
     pub fn new<E, DEQ: ?Sized + 'static>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
         context: Option<&mut Context>,
-    ) -> Result<EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>, crate::error::Error>
-    {
+    ) -> Result<
+        EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, UninitConnectionless>,
+        crate::error::Error,
+    > {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
             None => std::ptr::null_mut(),
         };
 
         Ok(
-            EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE> {
+            EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, UninitConnectionless> {
+                inner: MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
+                phantom: PhantomData,
+            },
+        )
+    }
+}
+
+impl EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, UninitUnconnected> {
+    #[allow(clippy::type_complexity)]
+    pub fn new<E, DEQ: ?Sized + 'static>(
+        domain: &crate::domain::DomainBase<DEQ>,
+        info: &InfoEntry<E>,
+        flags: u64,
+        context: Option<&mut Context>,
+    ) -> Result<
+        EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, UninitUnconnected>,
+        crate::error::Error,
+    > {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
+        Ok(
+            EndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, UninitUnconnected> {
                 inner: MyRc::new(EndpointImplBase::new(&domain.inner, info, flags, c_void)?),
                 phantom: PhantomData,
             },
@@ -1159,7 +1107,7 @@ impl<EP, EQ: ?Sized + AsRawFid + 'static + ReadEq, CQ: ?Sized + ReadCq>
     }
 }
 
-impl<EP, STATE: EpState> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, STATE> {
+impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnectionless> {
     pub fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
@@ -1178,18 +1126,61 @@ impl<EP, STATE: EpState> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadC
         self.inner
             .bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
     }
-}
 
-impl<EP, STATE: EpState> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, STATE> {
     pub fn bind_eq<T: ReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_eq(&eq.inner)
     }
+
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
+        self.inner.bind_cntr()
+    }
+
+    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+        &self,
+        av: &AddressVectorBase<EQ>,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.bind_av(av)
+    }
+
+    // pub fn alias(&self, flags: u64) -> Result<Self, crate::error::Error> {
+    //     Ok(
+    //         Self {
+    //             inner: MyRc::new (self.inner.alias(flags)?),
+    //         }
+    //     )
+    // }
 }
 
-impl<EP, STATE: EpState> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, STATE> {
+impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconnected> {
+    pub fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(
+        &self,
+        cq: &CompletionQueue<T>,
+        selective: bool,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.bind_shared_cq(&cq.inner, selective)
+    }
+
+    pub fn bind_separate_cqs<T: AsRawFid + ReadCq + 'static>(
+        &self,
+        tx_cq: &CompletionQueue<T>,
+        tx_selective: bool,
+        rx_cq: &CompletionQueue<T>,
+        rx_selective: bool,
+    ) -> Result<(), crate::error::Error> {
+        self.inner
+            .bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
+    }
+
+    pub fn bind_eq<T: ReadEq + 'static>(
+        &self,
+        eq: &EventQueueBase<T>,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.bind_eq(&eq.inner)
+    }
+
     pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
         self.inner.bind_cntr()
     }
@@ -1267,12 +1258,6 @@ impl<EP, EQ: ?Sized, CQ: ?Sized + ReadCq> AsRawTypedFid for EndpointImplBase<EP,
 }
 
 pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
-    fn enable(&self) -> Result<(), crate::error::Error> {
-        // TODO: Move this into an UninitEp struct
-        let err = unsafe { libfabric_sys::inlined_fi_enable(self.as_raw_typed_fid()) };
-        check_error(err.try_into().unwrap())
-    }
-
     fn cancel(&self, context: &mut Context) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_cancel(
@@ -1344,7 +1329,9 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
             Ok(TransferOptions::from_raw(ops))
         }
     }
+}
 
+pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
     fn set_transmit_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
         ops.transmit();
         let err = unsafe {
@@ -1370,7 +1357,109 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
 
         check_error(err.try_into().unwrap())
     }
+
+    fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
+        let mut res = size;
+        let len = std::mem::size_of::<usize>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32,
+                (&mut res as *mut usize).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
+        let mut res = size;
+        let len = std::mem::size_of::<usize>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_BUFFERED_MIN as i32,
+                (&mut res as *mut usize).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
+        let mut res = size;
+        let len = std::mem::size_of::<usize>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_CM_DATA_SIZE as i32,
+                (&mut res as *mut usize).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
+        let mut res = size;
+        let len = std::mem::size_of::<usize>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32,
+                (&mut res as *mut usize).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_FI_HMEM_P2P as i32,
+                (&mut hmem.as_raw() as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_CUDA_API_PERMITTED as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
 }
+
 //================== Endpoint attribute ==================//
 #[derive(Clone)]
 pub struct EndpointAttr {
@@ -1588,8 +1677,8 @@ impl<'a> EndpointBuilder<'a, ()> {
 }
 
 pub enum Endpoint<EP> {
-    Connectionless(ConnectionlessEndpoint<EP>),
-    ConnectionOriented(UnconnectedEndpoint<EP>),
+    Connectionless(UninitConnectionlessEndpoint<EP>),
+    ConnectionOriented(UninitUnconnectedEndpoint<EP>),
 }
 
 impl<'a, E> EndpointBuilder<'a, E> {
@@ -1600,10 +1689,10 @@ impl<'a, E> EndpointBuilder<'a, E> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
             EndpointType::Msg | EndpointType::SockStream => Ok(Endpoint::ConnectionOriented(
-                UnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
+                UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
             )),
             EndpointType::Dgram | EndpointType::Rdm | EndpointType::SockDgram => {
-                Ok(Endpoint::Connectionless(ConnectionlessEndpoint::new(
+                Ok(Endpoint::Connectionless(UninitConnectionlessEndpoint::new(
                     domain, self.info, self.flags, self.ctx,
                 )?))
             }

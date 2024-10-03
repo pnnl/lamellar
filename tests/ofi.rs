@@ -19,7 +19,7 @@ use libfabric::{
         AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType,
         FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions,
     },
-    ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder},
+    ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder, UninitEndpoint},
     eq::{EventQueueBuilder, WaitEq},
     error::{Error, ErrorKind},
     fabric::FabricBuilder,
@@ -231,13 +231,14 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     CqType::Shared(ref scq) => ep.bind_shared_cq(&scq, false).unwrap(),
                 }
 
-                ep.enable().unwrap();
+                let ep = ep.enable().unwrap();
 
                 if !server {
                     ep.connect(info_entry.dest_addr().unwrap()).unwrap();
                 } else {
                     ep.accept().unwrap();
                 }
+
                 let ep = match eq.sread(-1) {
                     Ok(event) => match event {
                         libfabric::eq::Event::Connected(event) => ep.connect_complete(event),
@@ -252,6 +253,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         }
                     }
                 };
+
                 (mr, key) = if info_entry.domain_attr().mr_mode().is_local()
                     || info_entry.caps().is_rma()
                 {
@@ -307,7 +309,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 .build(&domain)
                 .unwrap();
                 ep.bind_av(&av).unwrap();
-                ep.enable().unwrap();
+                let ep = ep.enable().unwrap();
 
                 (mr, key) = if info_entry.domain_attr().mr_mode().is_local()
                     || info_entry.caps().is_rma()

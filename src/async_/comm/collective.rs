@@ -10,7 +10,7 @@ use crate::{
     },
     cq::SingleCompletion,
     enums::{CollectiveOptions, JoinOptions},
-    ep::{EndpointBase, EndpointImplBase, EpState},
+    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
     eq::Event,
     error::Error,
     fid::{AsRawFid, AsRawTypedFid, EpRawFid, Fid},
@@ -555,7 +555,9 @@ impl<EP: CollCap, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncColle
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
-impl<E: AsyncCollectiveEpImpl, STATE: EpState> AsyncCollectiveEpImpl for EndpointBase<E, STATE> {}
+impl<E: AsyncCollectiveEpImpl> AsyncCollectiveEpImpl for EndpointBase<E, Connectionless> {}
+
+impl<E: AsyncCollectiveEpImpl> AsyncCollectiveEpImpl for EndpointBase<E, Connected> {}
 
 impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp> AsyncCollectiveEp for EP {
     #[inline]

@@ -4,9 +4,10 @@ use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::AtomicFetchMsgOptions;
 use crate::enums::AtomicMsgOptions;
+use crate::ep::Connected;
+use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
-use crate::ep::EpState;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::fid::EpRawFid;
@@ -560,7 +561,8 @@ impl<EP: AtomicCap + WriteMod, EQ: ?Sized, CQ: ?Sized + ReadCq> AtomicWriteEpImp
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
-impl<E: AtomicWriteEpImpl, STATE: EpState> AtomicWriteEpImpl for EndpointBase<E, STATE> {}
+impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connected> {}
+impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
 pub(crate) trait AtomicFetchEpImpl:
     AsRawTypedFid<Output = EpRawFid> + AtomicValidEp
@@ -1130,7 +1132,8 @@ impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicFe
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
-impl<E: AtomicFetchEpImpl, STATE: EpState> AtomicFetchEpImpl for EndpointBase<E, STATE> {}
+impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E, Connected> {}
+impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E, Connectionless> {}
 
 pub(crate) trait AtomicCASImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
@@ -1862,7 +1865,8 @@ impl<EP: AtomicCap + ReadMod + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadC
 {
 }
 
-impl<E: AtomicCASImpl, STATE: EpState> AtomicCASImpl for EndpointBase<E, STATE> {}
+impl<E: AtomicCASImpl> AtomicCASImpl for EndpointBase<E, Connected> {}
+impl<E: AtomicCASImpl> AtomicCASImpl for EndpointBase<E, Connectionless> {}
 
 pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
     unsafe fn atomicvalid<T: AsFiType>(
@@ -1935,7 +1939,8 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
     }
 }
 
-impl<E: AtomicValidEp, STATE: EpState> AtomicValidEp for EndpointBase<E, STATE> {}
+impl<E: AtomicValidEp> AtomicValidEp for EndpointBase<E, Connected> {}
+impl<E: AtomicValidEp> AtomicValidEp for EndpointBase<E, Connectionless> {}
 
 impl<EP: AtomicCap, EQ: ?Sized, CQ: ?Sized + ReadCq> AtomicValidEp
     for EndpointImplBase<EP, EQ, CQ>

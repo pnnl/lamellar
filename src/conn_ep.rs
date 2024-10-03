@@ -2,16 +2,41 @@ use std::marker::PhantomData;
 
 use crate::{
     cq::ReadCq,
-    ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected},
+    ep::{
+        Address, Connected, EndpointBase, EndpointImplBase, Unconnected, UninitEndpoint,
+        UninitUnconnected,
+    },
     eq::{ConnectedEvent, ReadEq},
     fid::{AsRawFid, AsRawTypedFid, EpRawFid},
     utils::check_error,
 };
 
+pub type UninitUnconnectedEndpointBase<EP> = EndpointBase<EP, UninitUnconnected>;
+
+pub type UninitUnconnectedEndpoint<T> =
+    UninitUnconnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
+
 pub type UnconnectedEndpointBase<EP> = EndpointBase<EP, Unconnected>;
 
 pub type UnconnectedEndpoint<T> =
     UnconnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
+
+impl<EP: AsRawTypedFid<Output = EpRawFid> + AsRawFid> UninitEndpoint
+    for UninitUnconnectedEndpointBase<EP>
+{
+}
+
+impl<EP: AsRawTypedFid<Output = EpRawFid>> UninitUnconnectedEndpointBase<EP> {
+    pub fn enable(self) -> Result<UnconnectedEndpointBase<EP>, crate::error::Error> {
+        // TODO: Move this into an UninitEp struct
+        let err = unsafe { libfabric_sys::inlined_fi_enable(self.as_raw_typed_fid()) };
+        check_error(err.try_into().unwrap())?;
+        Ok(UnconnectedEndpointBase::<EP> {
+            inner: self.inner.clone(),
+            phantom: PhantomData,
+        })
+    }
+}
 
 impl<EP: AsRawTypedFid<Output = EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {

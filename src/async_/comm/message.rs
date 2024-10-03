@@ -7,7 +7,7 @@ use crate::comm::message::{
 };
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{EndpointImplBase, EpState};
+use crate::ep::{Connected, Connectionless, EndpointImplBase};
 use crate::infocapsoptions::{MsgCap, RecvMod, SendMod};
 use crate::utils::Either;
 use crate::{
@@ -169,7 +169,8 @@ pub trait ConnectedAsyncRecvEp: ConnectedRecvEp {
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
-impl<E: AsyncRecvEpImpl, STATE: EpState> AsyncRecvEpImpl for EndpointBase<E, STATE> {}
+impl<E: AsyncRecvEpImpl> AsyncRecvEpImpl for EndpointBase<E, Connected> {}
+impl<E: AsyncRecvEpImpl> AsyncRecvEpImpl for EndpointBase<E, Connectionless> {}
 
 impl<EP: MsgCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncRecvEpImpl
     for EndpointImplBase<EP, EQ, CQ>
@@ -640,7 +641,9 @@ impl<EP: MsgCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
-impl<E: AsyncSendEpImpl, STATE: EpState> AsyncSendEpImpl for EndpointBase<E, STATE> {}
+impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connected> {}
+impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connectionless> {}
+
 impl AsyncSendEpImpl for TransmitContext {}
 impl AsyncSendEpImpl for TransmitContextImpl {}
 impl AsyncRecvEpImpl for ReceiveContext {}

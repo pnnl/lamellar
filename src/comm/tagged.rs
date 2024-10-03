@@ -4,9 +4,10 @@ use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::TaggedRecvMsgOptions;
 use crate::enums::TaggedSendMsgOptions;
+use crate::ep::Connected;
+use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
-use crate::ep::EpState;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::fid::EpRawFid;
@@ -536,7 +537,8 @@ impl<EP: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagRecvEpIm
 {
 }
 
-impl<E: TagRecvEpImpl, STATE: EpState> TagRecvEpImpl for EndpointBase<E, STATE> {}
+impl<E: TagRecvEpImpl> TagRecvEpImpl for EndpointBase<E, Connected> {}
+impl<E: TagRecvEpImpl> TagRecvEpImpl for EndpointBase<E, Connectionless> {}
 
 pub(crate) trait TagSendEpImpl: AsRawTypedFid<Output = EpRawFid> {
     fn tsend_impl<T>(
@@ -1140,7 +1142,8 @@ impl<EP: TagCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagSendEpIm
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
-impl<E: TagSendEpImpl, STATE: EpState> TagSendEpImpl for EndpointBase<E, STATE> {}
+impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E, Connected> {}
+impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E, Connectionless> {}
 
 impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextBase<CQ> {}
 impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextImplBase<CQ> {}
