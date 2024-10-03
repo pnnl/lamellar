@@ -1002,7 +1002,6 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
         HintsCaps::Msg(hints) => {
             let info = ft_getinfo(hints, node.clone(), service.clone(), false, source);
             let entry = info.into_iter().next().unwrap();
-            println!("{:?}", entry);
 
             gl_ctx.tx_ctx = Some(entry.allocate_context());
             gl_ctx.rx_ctx = Some(entry.allocate_context());
@@ -2955,7 +2954,6 @@ pub fn start_server<M: MsgDefaultCap, T: TagDefaultCap>(
         HintsCaps::Msg(hints) => {
             let info = ft_getinfo(hints, node, service, true, true);
             let entry = info.into_iter().next().unwrap();
-            println!("{:?}", entry.domain_attr());
 
             let fab = libfabric::fabric::FabricBuilder::new()
                 .build(&entry)
