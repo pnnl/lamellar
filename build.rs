@@ -46,7 +46,7 @@ fn iter_dir(
 fn build_ofi() -> std::path::PathBuf {
     match std::env::var("OFI_DIR") {
         Ok(val) => {
-            println!("cargo:rerun-if-changed={}/src", val);
+            println!("cargo:rerun-if-changed={}/lib", val);
             println!("cargo:rerun-if-changed={}/include", val);
             std::path::PathBuf::from(val)
         }
