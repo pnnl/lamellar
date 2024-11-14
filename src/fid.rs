@@ -1,10 +1,16 @@
 use std::marker::PhantomData;
 
+
+use parking_lot::{Mutex, MutexGuard};
+
 use crate::{error, MyRc};
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
 #[derive(Hash, Clone, Copy)]
-pub struct Fid(pub(crate) RawFid);
+pub struct Fid(pub(crate) usize);
+
+pub(crate) struct TypedFid<FID: AsRawFid>(FID);
+unsafe impl<FID: AsRawFid> Send for TypedFid<FID> {}
 
 impl PartialEq for Fid {
     fn eq(&self, other: &Self) -> bool {
@@ -14,71 +20,100 @@ impl PartialEq for Fid {
 
 impl Eq for Fid {}
 
-impl AsRawFid for Fid {
-    fn as_raw_fid(&self) -> RawFid {
-        self.0
-    }
+// impl AsRawFid for Fid {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.0
+//     }
+// }
+
+#[cfg(feature="threading-fid")]
+pub(crate) struct OwnedTypedFid<FID: AsRawFid> {
+    pub(crate) typed_fid: Mutex<TypedFid<FID>>,
 }
 
+#[cfg(not(feature="threading-fid"))]
 pub(crate) struct OwnedTypedFid<FID: AsRawFid> {
-    typed_fid: FID,
+    pub(crate) typed_fid: FID,
+}
+
+
+#[cfg(feature="thread-safe")]
+mod thread_safe {
+    unsafe impl<FID: super::AsRawFid> Send for super::OwnedTypedFid<FID> {}
+    unsafe impl Send for super::Fid{}
+}
+
+
+#[cfg(feature="threading-thread-safe")]
+mod threading_thread_safe {
+    unsafe impl<FID: super::AsRawFid> Sync for super::OwnedTypedFid<FID> {}
+    unsafe impl Sync for super::Fid{}
 }
 
 impl<FID: AsRawFid + AsRawTypedFid> OwnedTypedFid<FID> {
     pub(crate) fn from(typed_fid: FID) -> Self {
-        Self { typed_fid }
+        Self { typed_fid: Mutex::new(TypedFid(typed_fid)) }
     }
 }
 
-pub struct BorrowedFid<'a> {
-    fid: RawFid,
-    phantom: PhantomData<&'a OwnedTypedFid<RawFid>>,
+
+#[cfg(feature="threading-fid")]
+pub struct BorrowedTypedFid<'a, FID: AsRawFid > {
+    typed_fid: MutexGuard<'a, TypedFid<FID>>,
+    phantom: PhantomData<&'a OwnedTypedFid<FID>>,
+    
 }
 
-impl BorrowedFid<'_> {
-    #[inline]
-    pub const unsafe fn borrow_raw(fid: RawFid) -> Self {
-        Self {
-            fid,
-            phantom: PhantomData,
-        }
-    }
-}
-
-pub struct BorrowedTypedFid<'a, FID: AsRawFid + Copy> {
+#[cfg(not(feature="threading-fid"))]
+pub struct BorrowedTypedFid<'a, FID: AsRawFid > {
     typed_fid: FID,
     phantom: PhantomData<&'a OwnedTypedFid<FID>>,
 }
 
-impl<FID: AsRawFid + Copy> BorrowedTypedFid<'_, FID> {
-    #[inline]
-    pub const unsafe fn borrow_raw(typed_fid: FID) -> Self {
-        Self {
-            typed_fid,
-            phantom: PhantomData,
-        }
-    }
-}
+// impl BorrowedFid<'_> {
+//     #[inline]
+//     pub const unsafe fn borrow_raw(fid: RawFid) -> Self {
+//         Self {
+//             fid,
+//             phantom: PhantomData,
+//         }
+//     }
+// }
 
-impl<'a, FID: AsRawFid + Copy> AsRawTypedFid for BorrowedTypedFid<'a, FID> {
+// pub struct BorrowedTypedFid<'a, FID: AsRawFid > {
+//     typed_fid: FID,
+//     phantom: PhantomData<&'a OwnedTypedFid<FID>>,
+// }
+
+// impl<FID: AsRawFid > BorrowedTypedFid<'_, FID> {
+//     #[inline]
+//     pub const unsafe fn borrow_raw(typed_fid: FID) -> Self {
+//         Self {
+//             typed_fid,
+//             phantom: PhantomData,
+//         }
+//     }
+// }
+
+impl<'a, FID: AsRawFid + AsRawTypedFid<Output = FID> > AsRawTypedFid for BorrowedTypedFid<'a, FID> {
     type Output = FID;
     #[inline]
     fn as_raw_typed_fid(&self) -> Self::Output {
-        self.typed_fid
+        self.typed_fid.0.as_raw_typed_fid()
     }
 }
 
-impl<'a, FID: AsRawFid + Copy> AsRawFid for BorrowedTypedFid<'a, FID> {
+impl<'a, FID: AsRawFid > AsRawFid for BorrowedTypedFid<'a, FID> {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        self.typed_fid.as_raw_fid()
+        self.typed_fid.0.as_raw_fid()
     }
 }
 
 impl<FID: AsRawFid> Drop for OwnedTypedFid<FID> {
     #[inline]
     fn drop(&mut self) {
-        let err = unsafe { libfabric_sys::inlined_fi_close(self.typed_fid.as_raw_fid()) };
+        let err = unsafe { libfabric_sys::inlined_fi_close(self.as_typed_fid().as_raw_fid()) };
         if err != 0 {
             panic!(
                 "{}",
@@ -94,41 +129,47 @@ impl<T: AsRawFid> AsRawFid for MyRc<T> {
     }
 }
 
-impl<FID: AsRawFid + Copy> AsRawTypedFid for OwnedTypedFid<FID> {
-    type Output = FID;
+// impl<FID: AsRawFid > AsRawTypedFid for OwnedTypedFid<FID> {
+//     type Output = FID;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.typed_fid
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.typed_fid
+//     }
+// }
 
-impl<FID: AsRawFid> AsRawFid for OwnedTypedFid<FID> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.typed_fid.as_raw_fid()
-    }
-}
+// impl<FID: AsRawFid> AsRawFid for OwnedTypedFid<FID> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.typed_fid.as_raw_fid()
+//     }
+// }
 
-impl<FID: AsRawFid> AsFid for OwnedTypedFid<FID> {
-    fn as_fid(&self) -> BorrowedFid<'_> {
-        unsafe { BorrowedFid::borrow_raw(self.as_raw_fid()) }
-    }
-}
+// impl<FID: AsRawFid> AsFid for OwnedTypedFid<FID> {
+//     fn as_fid(&self) -> BorrowedFid<'_> {
+//         unsafe { BorrowedFid::borrow_raw(self.as_raw_fid()) }
+//     }
+// }
 
-impl<FID: AsRawFid + Copy> AsTypedFid<FID> for OwnedTypedFid<FID> {
+impl<FID: AsRawFid > AsTypedFid<FID> for OwnedTypedFid<FID> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FID> {
-        unsafe { BorrowedTypedFid::borrow_raw(self.as_raw_typed_fid()) }
+        BorrowedTypedFid {
+            typed_fid: self.typed_fid.lock(),
+            phantom: PhantomData,
+        }
     }
 }
 
-pub trait AsFid {
-    fn as_fid(&self) -> BorrowedFid;
-}
+// pub trait AsFid {
+//     fn as_fid(&self) -> BorrowedTypedFid<>;
+// }
+// pub trait AsTypedFid {
+//     fn as_fid(&self) -> BorrowedTypedFid<>;
+// }
 
 pub trait AsRawFid {
     fn as_raw_fid(&self) -> RawFid;
 }
 
-pub trait AsTypedFid<FID: AsRawFid + Copy> {
+pub trait AsTypedFid<FID: AsRawFid > {
     fn as_typed_fid(&self) -> BorrowedTypedFid<FID>;
 }
 
@@ -145,12 +186,12 @@ impl AsRawFid for RawFid {
     }
 }
 
-impl<'a> AsRawFid for BorrowedFid<'a> {
-    #[inline]
-    fn as_raw_fid(&self) -> RawFid {
-        self.fid
-    }
-}
+// impl<'a> AsRawFid for BorrowedFid<'a> {
+//     #[inline]
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.fid
+//     }
+// }
 
 pub(crate) type DomainRawFid = *mut libfabric_sys::fid_domain;
 

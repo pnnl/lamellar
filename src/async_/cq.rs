@@ -1,11 +1,13 @@
-use super::AsyncCtx;
 use crate::cq::ReadCq;
 use crate::cq::WaitCq;
 use crate::cq::WaitObjectRetrieve;
 use crate::cq::{CompletionEntry, SingleCompletion};
 use crate::domain::{DomainBase, DomainImplBase};
 use crate::error::ErrorKind;
-use crate::fid::{AsRawTypedFid, CqRawFid};
+use crate::fid::AsTypedFid;
+use crate::fid::BorrowedTypedFid;
+use crate::fid::CqRawFid;
+use crate::SyncSend;
 use crate::{
     cq::{
         Completion, CompletionError, CompletionQueueAttr, CompletionQueueBase, CompletionQueueImpl,
@@ -13,7 +15,7 @@ use crate::{
     },
     enums::WaitObjType,
     error::Error,
-    fid::{AsFid, AsRawFid, RawFid},
+    fid::{ AsRawFid},
     MappedAddress,
 };
 use crate::{Context, MyRc, MyRefCell};
@@ -60,11 +62,11 @@ pub type CompletionQueue<T> = CompletionQueueBase<T>;
 pub trait AsyncReadCq: ReadCq {
     fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead;
     fn read_async(&self, count: usize) -> CqAsyncReadOwned;
-    fn wait_for_ctx_async(&self, async_ctx: &mut AsyncCtx) -> AsyncTransferCq;
+    fn wait_for_ctx_async(&self, ctx: &mut Context) -> AsyncTransferCq;
 }
 
 impl CompletionQueue<AsyncCompletionQueueImpl> {
-    pub(crate) fn new<EQ: ?Sized + 'static>(
+    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
         domain: &DomainBase<EQ>,
         attr: CompletionQueueAttr,
         context: Option<&mut Context>,
@@ -125,7 +127,7 @@ impl<'a> WaitObjectRetrieve<'a> for AsyncCompletionQueueImpl {
                 let mut fd: i32 = 0;
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_raw_fid(),
+                        self.as_typed_fid().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut fd as *mut i32).cast(),
                     )
@@ -146,18 +148,19 @@ impl<'a> WaitObjectRetrieve<'a> for AsyncCompletionQueueImpl {
     }
 }
 
-impl AsRawTypedFid for AsyncCompletionQueueImpl {
-    type Output = CqRawFid;
+// impl AsRawTypedFid for AsyncCompletionQueueImpl {
+//     type Output = CqRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.base.get_ref().as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.base.get_ref().as_raw_typed_fid()
+//     }
+// }
 
 pub struct AsyncCompletionQueueImpl {
     pub(crate) base: Async<CompletionQueueImpl<true, true, true>>,
     pub(crate) pending_entries: MyRefCell<HashMap<usize, Result<SingleCompletion, Error>>>,
 }
+impl SyncSend for AsyncCompletionQueueImpl {}
 
 impl WaitCq for AsyncCompletionQueueImpl {
     fn sread_with_cond(
@@ -195,8 +198,8 @@ impl AsyncReadCq for AsyncCompletionQueueImpl {
         CqAsyncReadOwned::new(count, self)
     }
 
-    fn wait_for_ctx_async(&self, async_ctx: &mut AsyncCtx) -> AsyncTransferCq {
-        AsyncTransferCq::new(self, async_ctx as *mut AsyncCtx as usize)
+    fn wait_for_ctx_async(&self, ctx: &mut Context) -> AsyncTransferCq {
+        AsyncTransferCq::new(self, ctx.inner_mut() as usize)
     }
 }
 
@@ -219,8 +222,8 @@ impl<T: AsyncReadCq> AsyncReadCq for CompletionQueue<T> {
         self.inner.read_async(count)
     }
 
-    fn wait_for_ctx_async(&self, async_ctx: &mut AsyncCtx) -> AsyncTransferCq {
-        self.inner.wait_for_ctx_async(async_ctx)
+    fn wait_for_ctx_async(&self, ctx: &mut Context) -> AsyncTransferCq {
+        self.inner.wait_for_ctx_async(ctx)
     }
 
     // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
@@ -229,7 +232,7 @@ impl<T: AsyncReadCq> AsyncReadCq for CompletionQueue<T> {
 }
 
 impl AsyncCompletionQueueImpl {
-    pub(crate) fn new<EQ: ?Sized + 'static>(
+    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
         domain: &MyRc<DomainImplBase<EQ>>,
         attr: CompletionQueueAttr,
         context: *mut std::ffi::c_void,
@@ -288,44 +291,44 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 .remove(&mut_self.ctx);
             if let Some(queue_entry) = queue_entry {
                 match queue_entry {
-                    Ok(mut entry) => {
-                        match entry {
-                            SingleCompletion::Unspec(ref mut e) => {
-                                e.c_entry.op_context = unsafe {
-                                    (*(e.c_entry.op_context as *mut AsyncCtx))
-                                        .user_ctx
-                                        .unwrap_or(std::ptr::null_mut())
-                                }
-                            }
-                            SingleCompletion::Ctx(ref mut e) => {
-                                e.c_entry.op_context = unsafe {
-                                    (*(e.c_entry.op_context as *mut AsyncCtx))
-                                        .user_ctx
-                                        .unwrap_or(std::ptr::null_mut())
-                                }
-                            }
-                            SingleCompletion::Msg(ref mut e) => {
-                                e.c_entry.op_context = unsafe {
-                                    (*(e.c_entry.op_context as *mut AsyncCtx))
-                                        .user_ctx
-                                        .unwrap_or(std::ptr::null_mut())
-                                }
-                            }
-                            SingleCompletion::Data(ref mut e) => {
-                                e.c_entry.op_context = unsafe {
-                                    (*(e.c_entry.op_context as *mut AsyncCtx))
-                                        .user_ctx
-                                        .unwrap_or(std::ptr::null_mut())
-                                }
-                            }
-                            SingleCompletion::Tagged(ref mut e) => {
-                                e.c_entry.op_context = unsafe {
-                                    (*(e.c_entry.op_context as *mut AsyncCtx))
-                                        .user_ctx
-                                        .unwrap_or(std::ptr::null_mut())
-                                }
-                            }
-                        }
+                    Ok(entry) => {
+                        // match entry {
+                        //     SingleCompletion::Unspec(ref mut e) => {
+                        //         // e.c_entry.op_context = unsafe {
+                        //         //     (*(e.c_entry.op_context as *mut AsyncCtx))
+                        //         //         .user_ctx
+                        //         //         .unwrap_or(std::ptr::null_mut())
+                        //         // }
+                        //     }
+                        //     SingleCompletion::Ctx(ref mut e) => {
+                        //         // e.c_entry.op_context = unsafe {
+                        //         //     (*(e.c_entry.op_context as *mut AsyncCtx))
+                        //         //         .user_ctx
+                        //         //         .unwrap_or(std::ptr::null_mut())
+                        //         // }
+                        //     }
+                        //     SingleCompletion::Msg(ref mut e) => {
+                        //         // e.c_entry.op_context = unsafe {
+                        //         //     (*(e.c_entry.op_context as *mut AsyncCtx))
+                        //         //         .user_ctx
+                        //         //         .unwrap_or(std::ptr::null_mut())
+                        //         // }
+                        //     }
+                        //     SingleCompletion::Data(ref mut e) => {
+                        //         // e.c_entry.op_context = unsafe {
+                        //         //     (*(e.c_entry.op_context as *mut AsyncCtx))
+                        //         //         .user_ctx
+                        //         //         .unwrap_or(std::ptr::null_mut())
+                        //         // }
+                        //     }
+                        //     SingleCompletion::Tagged(ref mut e) => {
+                        //         // e.c_entry.op_context = unsafe {
+                        //         //     (*(e.c_entry.op_context as *mut AsyncCtx))
+                        //         //         .user_ctx
+                        //         //         .unwrap_or(std::ptr::null_mut())
+                        //         // }
+                        //     }
+                        // }
                         // println!("Completion Found in map");
                         return std::task::Poll::Ready(Ok(entry));
                     }
@@ -379,11 +382,6 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Unspec(entries) => {
                     for e in entries.iter() {
                         if e.c_entry.op_context as usize == mut_self.ctx {
-                            unsafe {
-                                (*(e.c_entry.op_context as *mut AsyncCtx))
-                                    .user_ctx
-                                    .unwrap_or(std::ptr::null_mut())
-                            };
                             found = Some(SingleCompletion::Unspec(e.clone()));
                         } else {
                             #[cfg(feature = "thread-safe")]
@@ -402,11 +400,6 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Ctx(entries) => {
                     for e in entries.iter() {
                         if e.c_entry.op_context as usize == mut_self.ctx {
-                            unsafe {
-                                (*(e.c_entry.op_context as *mut AsyncCtx))
-                                    .user_ctx
-                                    .unwrap_or(std::ptr::null_mut())
-                            };
                             found = Some(SingleCompletion::Ctx(e.clone()));
                         } else {
                             #[cfg(feature = "thread-safe")]
@@ -425,11 +418,6 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Msg(entries) => {
                     for e in entries.iter() {
                         if e.c_entry.op_context as usize == mut_self.ctx {
-                            unsafe {
-                                (*(e.c_entry.op_context as *mut AsyncCtx))
-                                    .user_ctx
-                                    .unwrap_or(std::ptr::null_mut())
-                            };
                             found = Some(SingleCompletion::Msg(e.clone()));
                         } else {
                             #[cfg(feature = "thread-safe")]
@@ -448,11 +436,6 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Data(entries) => {
                     for e in entries.iter() {
                         if e.c_entry.op_context as usize == mut_self.ctx {
-                            unsafe {
-                                (*(e.c_entry.op_context as *mut AsyncCtx))
-                                    .user_ctx
-                                    .unwrap_or(std::ptr::null_mut())
-                            };
                             found = Some(SingleCompletion::Data(e.clone()));
                         } else {
                             #[cfg(feature = "thread-safe")]
@@ -471,11 +454,6 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Tagged(entries) => {
                     for e in entries.iter() {
                         if e.c_entry.op_context as usize == mut_self.ctx {
-                            unsafe {
-                                (*(e.c_entry.op_context as *mut AsyncCtx))
-                                    .user_ctx
-                                    .unwrap_or(std::ptr::null_mut())
-                            };
                             found = Some(SingleCompletion::Tagged(e.clone()));
                         } else {
                             #[cfg(feature = "thread-safe")]
@@ -698,25 +676,31 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
     }
 }
 
-impl AsFid for AsyncCompletionQueueImpl {
-    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.base.get_ref().as_fid()
-    }
-}
-impl AsFid for &AsyncCompletionQueueImpl {
-    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.base.get_ref().as_fid()
-    }
-}
-impl AsFid for MyRc<AsyncCompletionQueueImpl> {
-    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.base.get_ref().as_fid()
-    }
-}
+// impl AsFid for AsyncCompletionQueueImpl {
+//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+//         self.base.get_ref().as_fid()
+//     }
+// }
+// impl AsFid for &AsyncCompletionQueueImpl {
+//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+//         self.base.get_ref().as_fid()
+//     }
+// }
+// impl AsFid for MyRc<AsyncCompletionQueueImpl> {
+//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+//         self.base.get_ref().as_fid()
+//     }
+// }
 
-impl AsRawFid for AsyncCompletionQueueImpl {
-    fn as_raw_fid(&self) -> RawFid {
-        self.base.get_ref().as_raw_fid()
+// impl AsRawFid for AsyncCompletionQueueImpl {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.base.get_ref().as_raw_fid()
+//     }
+// }
+
+impl AsTypedFid<CqRawFid> for AsyncCompletionQueueImpl {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<CqRawFid> {
+        self.base.get_ref().as_typed_fid()
     }
 }
 
@@ -789,7 +773,7 @@ impl<'a> CompletionQueueBuilder<'a> {
     ///
     /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cq_open` call with an optional `context`.
-    pub fn build<EQ: ?Sized + 'static>(
+    pub fn build<EQ: ?Sized + 'static + SyncSend>(
         mut self,
         domain: &'a DomainBase<EQ>,
     ) -> Result<CompletionQueue<AsyncCompletionQueueImpl>, crate::error::Error> {

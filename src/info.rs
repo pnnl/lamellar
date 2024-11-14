@@ -10,7 +10,7 @@ use crate::{
     },
     ep::Address,
     fabric::Fabric,
-    fid::AsRawTypedFid,
+    fid::{AsRawTypedFid, AsTypedFid},
     infocapsoptions::Caps,
     nic::Nic,
     trigger::{TriggeredContext, TriggeredContext1, TriggeredContext2, TriggeredContextType},
@@ -358,11 +358,10 @@ impl Default for InfoCapsImpl {
 
 pub struct Info<T> {
     entries: VecDeque<InfoEntry<T>>,
-    c_info: *mut libfabric_sys::fi_info,
 }
 
 pub struct InfoBuilder<T> {
-    c_hints: *mut libfabric_sys::fi_info,
+    hints_info: FabricInfo,
     c_version: u32,
     c_node: std::ffi::CString,
     c_service: std::ffi::CString,
@@ -442,13 +441,13 @@ impl<T> InfoBuilder<T> {
                 node,
                 service,
                 self.flags,
-                self.c_hints,
+                self.hints_info.0,
                 &mut c_info,
             )
         };
 
-        if !self.c_hints.is_null() {
-            let c_fabric_attr_ptr = unsafe { (*self.c_hints).fabric_attr };
+        if !self.hints_info.0.is_null() {
+            let c_fabric_attr_ptr = unsafe { (*self.hints_info.0).fabric_attr };
 
             let fabric_name = unsafe { *c_fabric_attr_ptr }.name;
             if !fabric_name.is_null() {
@@ -460,7 +459,7 @@ impl<T> InfoBuilder<T> {
                 drop(unsafe { std::ffi::CString::from_raw(prov_name) })
             }
 
-            let c_domain_attr_ptr = unsafe { (*self.c_hints).domain_attr };
+            let c_domain_attr_ptr = unsafe { (*self.hints_info.0).domain_attr };
             let domain_name = unsafe { *c_domain_attr_ptr }.name;
             if !domain_name.is_null() {
                 drop(unsafe { std::ffi::CString::from_raw(domain_name) })
@@ -482,13 +481,14 @@ impl<T> InfoBuilder<T> {
             }
         }
 
-        Ok(Info::<T> { entries, c_info })
+        Ok(Info::<T> { entries })
     }
 
     pub fn enter_hints(self) -> InfoHints<T> {
         InfoHints::new(self)
     }
 }
+
 
 // #[derive(Clone)]
 pub struct InfoEntry<T> {
@@ -502,9 +502,14 @@ pub struct InfoEntry<T> {
     rx_attr: crate::xcontext::RxAttr,
     ep_attr: crate::ep::EndpointAttr,
     nic: Option<Nic>,
-    pub(crate) c_info: *mut libfabric_sys::fi_info,
-    phantom: PhantomData<T>,
+    pub(crate) info: FabricInfo,
+    phantom: PhantomData<fn() -> T>, // fn() -> T because we only need to track the Endpoint capabilities requested but avoid requiring caps to implement Sync+Send
 }
+
+#[cfg(feature="thread-safe")]
+unsafe impl Send for FabricInfo {} // FabricInfo is send because we never copy the underlying pointer
+#[cfg(feature="thread-safe")]
+unsafe impl Sync for FabricInfo {}
 
 impl<T> InfoEntry<T> {
     pub(crate) fn new(c_info: *mut libfabric_sys::fi_info) -> Self {
@@ -549,7 +554,7 @@ impl<T> InfoEntry<T> {
             rx_attr,
             ep_attr,
             nic,
-            c_info,
+            info: FabricInfo(c_info),
             phantom: PhantomData,
         }
     }
@@ -696,7 +701,7 @@ impl<T> Iterator for InfoIntoIterator<T> {
 impl<T> std::fmt::Debug for InfoEntry<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c_str = unsafe {
-            libfabric_sys::fi_tostr(self.c_info.cast(), libfabric_sys::fi_type_FI_TYPE_INFO)
+            libfabric_sys::fi_tostr(self.info.0.cast(), libfabric_sys::fi_type_FI_TYPE_INFO)
         };
         if c_str.is_null() {
             panic!("String is null")
@@ -764,7 +769,7 @@ impl Info<()> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(version: &Version) -> InfoBuilder<()> {
         InfoBuilder::<()> {
-            c_hints: std::ptr::null_mut(),
+            hints_info: FabricInfo(unsafe {libfabric_sys::inlined_fi_allocinfo()}),
             c_version: version.as_raw(),
             c_node: std::ffi::CString::new("").unwrap(),
             c_service: std::ffi::CString::new("").unwrap(),
@@ -775,7 +780,7 @@ impl Info<()> {
 
     pub fn with_numeric_host(version: &Version, host: &str) -> InfoBuilder<()> {
         InfoBuilder::<()> {
-            c_hints: std::ptr::null_mut(),
+            hints_info: FabricInfo(unsafe {libfabric_sys::inlined_fi_allocinfo()}),
             c_version: version.as_raw(),
             c_node: std::ffi::CString::new(host).unwrap(),
             c_service: std::ffi::CString::new("").unwrap(),
@@ -784,18 +789,209 @@ impl Info<()> {
         }
     }
 }
-impl<T> Drop for Info<T> {
+// impl<T> Drop for Info<T> {
+//     fn drop(&mut self) {
+//         unsafe {
+//             libfabric_sys::fi_freeinfo(self.c_info);
+//         }
+//     }
+// }
+impl Drop for FabricInfo {
     fn drop(&mut self) {
         unsafe {
-            libfabric_sys::fi_freeinfo(self.c_info);
+            libfabric_sys::fi_freeinfo(self.0);
         }
     }
 }
 
 pub struct InfoHints<T> {
     info_builder: InfoBuilder<T>,
-    c_info: *mut libfabric_sys::fi_info,
 }
+pub(crate) struct FabricInfo(pub(crate) *mut libfabric_sys::fi_info);
+
+
+impl FabricInfo {
+
+    fn set_mode(&mut self, mode: Mode) {
+        unsafe { (*self.0).mode = mode.as_raw() };
+    }
+
+    fn set_addr_format(&mut self, addr_format: AddressFormat) {
+        unsafe { (*self.0).addr_format = addr_format.as_raw() };
+    }
+
+    fn set_eptype(&mut self, eptype: EndpointType) {
+        unsafe {(*(*self.0).ep_attr).type_ = eptype.as_raw()};
+    } 
+
+    fn set_ep_mem_tag_format(&mut self, tag: u64) {
+        unsafe {(*(*self.0).ep_attr).mem_tag_format = tag};
+    } 
+
+    fn set_ep_tx_ctx_cnt(&mut self, size: usize) {
+        unsafe { (*(*self.0).ep_attr).tx_ctx_cnt = size };
+    }
+
+    fn set_ep_rx_ctx_cnt(&mut self, size: usize) {
+        unsafe { (*(*self.0).ep_attr).rx_ctx_cnt = size };
+    }
+
+    fn set_ep_auth_key(&mut self, key: &[u8]) {
+        unsafe { (*(*self.0).ep_attr).auth_key_size = key.len() };
+        unsafe {
+            (*(*self.0).ep_attr).auth_key =
+                std::mem::transmute::<*const u8, *mut u8>(key.as_ptr())
+        };
+    }
+
+    fn set_domain<EQ>(&mut self, name: &DomainBase<EQ>) {
+        unsafe { (*(*self.0).domain_attr).domain = name.as_typed_fid().as_raw_typed_fid() };
+    }
+
+    fn set_domain_name(&mut self, name: &str) {
+        let c_str = CString::new(name.to_string()).unwrap();
+        unsafe { (*(*self.0).domain_attr).name = c_str.into_raw() };
+    }
+
+    fn set_domain_threading(&mut self, threading: Threading) {
+        unsafe { (*(*self.0).domain_attr).threading = threading.as_raw() };
+    }
+
+    fn set_domain_control_progress(&mut self, cntrl_progress: Progress) {
+        unsafe { (*(*self.0).domain_attr).control_progress = cntrl_progress.as_raw() };
+    }
+
+    fn set_domain_data_progress(&mut self, data_progress: Progress) {
+        unsafe { (*(*self.0).domain_attr).data_progress = data_progress.as_raw() };
+    }
+
+    fn set_domain_resource_mgmt(&mut self, resource_mgmt: ResourceMgmt) {
+        unsafe { (*(*self.0).domain_attr).resource_mgmt = resource_mgmt.as_raw() };
+    }
+
+    fn set_domain_av_type(&mut self, av_type: AddressVectorType) {
+        unsafe { (*(*self.0).domain_attr).av_type = av_type.as_raw() };
+    }
+
+    fn set_domain_mr_mode(&mut self, mr_mode: MrMode) {
+        unsafe { (*(*self.0).domain_attr).mr_mode = mr_mode.as_raw() as i32 };
+    }
+
+    fn set_domain_caps(&mut self, caps: DomainCaps) {
+        unsafe { (*(*self.0).domain_attr).caps = caps.as_raw() };
+    }
+
+    fn set_domain_mode(&mut self, mode: Mode) {
+        unsafe { (*(*self.0).domain_attr).mode = mode.as_raw() };
+    }
+
+    fn set_domain_auth_key(&mut self, auth_key: &[u8]) {
+        unsafe { (*(*self.0).domain_attr).auth_key_size = auth_key.len() };
+        unsafe {
+            (*(*self.0).domain_attr).auth_key =
+                std::mem::transmute::<*const u8, *mut u8>(auth_key.as_ptr())
+        };
+    }
+
+    fn set_domain_mr_count(&mut self, mr_count: usize) {
+        unsafe { (*(*self.0).domain_attr).mr_cnt = mr_count };
+    }
+
+    fn set_domain_traffic_class(&mut self, traffic_class: TrafficClass) {
+        unsafe { (*(*self.0).domain_attr).tclass = traffic_class.as_raw() };
+    }
+
+    fn set_fabric(&mut self, fabric: &Fabric) {
+        unsafe { (*(*self.0).fabric_attr).fabric = fabric.as_typed_fid().as_raw_typed_fid() };
+    }
+
+    fn set_fabric_name(&mut self, name: &str) {
+        let c_str = std::ffi::CString::new(name.to_string()).unwrap();
+        unsafe { (*(*self.0).fabric_attr).name = c_str.into_raw() };
+    }
+
+    fn set_fabric_prov_name(&mut self, prov_name: &str) {
+        let c_str = std::ffi::CString::new(prov_name.to_string()).unwrap();
+        unsafe { (*(*self.0).fabric_attr).prov_name = c_str.into_raw() };
+    }
+
+    fn set_fabric_api_version(&mut self, api_version: &Version) {
+        unsafe { (*(*self.0).fabric_attr).api_version = api_version.as_raw() };
+    }
+
+    fn set_tx_caps(&mut self, tx_caps: TxCaps) {
+        unsafe { (*(*self.0).tx_attr).caps = tx_caps.as_raw() };
+    }
+
+    fn set_tx_mode(&mut self, mode: Mode) {
+        unsafe { (*(*self.0).tx_attr).mode = mode.as_raw() };
+    }
+
+    fn set_tx_op_flags(&mut self, op_flags: TransferOptions) {
+        unsafe { (*(*self.0).tx_attr).op_flags = op_flags.as_raw() as u64 };
+    }
+
+    fn set_tx_msg_order(&mut self, msg_order: MsgOrder) {
+        unsafe { (*(*self.0).tx_attr).msg_order = msg_order.as_raw() };
+    }
+
+    fn set_tx_comp_order(&mut self, comp_order: TxCompOrder) {
+        unsafe { (*(*self.0).tx_attr).comp_order = comp_order.as_raw() };
+    }
+
+    fn set_tx_inject_size(&mut self, inject_size: usize) {
+        unsafe { (*(*self.0).tx_attr).inject_size = inject_size };
+    }
+
+    fn set_tx_size(&mut self, size: usize) {
+        unsafe { (*(*self.0).tx_attr).size = size };
+    }
+
+    fn set_tx_iov_limit(&mut self, iov_limit: usize) {
+        unsafe { (*(*self.0).tx_attr).iov_limit = iov_limit };
+    }
+
+    fn set_tx_rma_iov_limit(&mut self, rma_iov_limit: usize) {
+        unsafe { (*(*self.0).tx_attr).rma_iov_limit = rma_iov_limit };
+    }
+
+    fn set_tx_traffic_class(&mut self, traffic_class: TrafficClass) {
+        unsafe { (*(*self.0).tx_attr).tclass = traffic_class.as_raw() };
+    }
+
+    fn set_rx_caps(&mut self, rx_caps: RxCaps) {
+        unsafe { (*(*self.0).rx_attr).caps = rx_caps.as_raw() };
+    }
+
+    fn set_rx_mode(&mut self, mode: Mode) {
+        unsafe { (*(*self.0).rx_attr).mode = mode.as_raw() };
+    }
+
+    fn set_rx_op_flags(&mut self, op_flags: TransferOptions) {
+        unsafe { (*(*self.0).rx_attr).op_flags = op_flags.as_raw() as u64 };
+    }
+
+    fn set_rx_msg_order(&mut self, msg_order: MsgOrder) {
+        unsafe { (*(*self.0).rx_attr).msg_order = msg_order.as_raw() };
+    }
+
+    fn set_rx_comp_order(&mut self, comp_order: RxCompOrder) {
+        unsafe { (*(*self.0).rx_attr).comp_order = comp_order.as_raw() };
+    }
+
+    fn set_rx_total_buffered_recv(&mut self, total_buffered_recv: usize) {
+        unsafe { (*(*self.0).rx_attr).total_buffered_recv = total_buffered_recv };
+    }
+
+    fn set_rx_size(&mut self, size: usize) {
+        unsafe { (*(*self.0).rx_attr).size = size };
+    }
+
+    fn set_rx_iov_limit(&mut self, iov_limit: usize) {
+        unsafe { (*(*self.0).rx_attr).iov_limit = iov_limit };
+    }
+}
+
 
 pub struct EndpointAttrIn<T> {
     hints: InfoHints<T>,
@@ -806,32 +1002,28 @@ impl<T> EndpointAttrIn<T> {
         self.hints
     }
 
-    pub fn type_(self, eptype: EndpointType) -> Self {
-        unsafe { (*(*self.hints.c_info).ep_attr).type_ = eptype.as_raw() };
+    pub fn type_(mut self, eptype: EndpointType) -> Self {
+        self.hints.info_builder.hints_info.set_eptype(eptype);
         self
     }
 
-    pub fn mem_tag_format(self, tag: u64) -> Self {
-        unsafe { (*(*self.hints.c_info).ep_attr).mem_tag_format = tag };
+    pub fn mem_tag_format(mut self, tag: u64) -> Self {
+        self.hints.info_builder.hints_info.set_ep_mem_tag_format(tag);
         self
     }
 
-    pub fn tx_ctx_cnt(self, size: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).ep_attr).tx_ctx_cnt = size };
+    pub fn tx_ctx_cnt(mut self, size: usize) -> Self {
+        self.hints.info_builder.hints_info.set_ep_tx_ctx_cnt(size);
         self
     }
 
-    pub fn rx_ctx_cnt(self, size: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).ep_attr).rx_ctx_cnt = size };
+    pub fn rx_ctx_cnt(mut self, size: usize) -> Self {
+        self.hints.info_builder.hints_info.set_ep_rx_ctx_cnt(size);
         self
     }
 
-    pub fn auth_key(self, key: &[u8]) -> Self {
-        unsafe { (*(*self.hints.c_info).ep_attr).auth_key_size = key.len() };
-        unsafe {
-            (*(*self.hints.c_info).ep_attr).auth_key =
-                std::mem::transmute::<*const u8, *mut u8>(key.as_ptr())
-        };
+    pub fn auth_key(mut self, key: &[u8]) -> Self {
+        self.hints.info_builder.hints_info.set_ep_auth_key(key);
         self
     }
 }
@@ -845,73 +1037,68 @@ impl<T> DomainAttrIn<T> {
         self.hints
     }
 
-    pub fn domain<EQ>(self, name: &DomainBase<EQ>) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).domain = name.as_raw_typed_fid() };
+    pub fn domain<EQ>(mut self, name: &DomainBase<EQ>) -> Self {
+        self.hints.info_builder.hints_info.set_domain(name);
         self
     }
 
-    pub fn name(self, name: &str) -> Self {
-        let c_str = CString::new(name.to_string()).unwrap();
-        unsafe { (*(*self.hints.c_info).domain_attr).name = c_str.into_raw() };
+    pub fn name(mut self, name: &str) -> Self {
+        self.hints.info_builder.hints_info.set_domain_name( name);
         self
     }
 
-    pub fn threading(self, threading: Threading) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).threading = threading.as_raw() };
+    pub fn threading(mut self, threading: Threading) -> Self {
+        self.hints.info_builder.hints_info.set_domain_threading( threading);
         self
     }
 
-    pub fn control_progress(self, cntrl_progress: Progress) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).control_progress = cntrl_progress.as_raw() };
+    pub fn control_progress(mut self, cntrl_progress: Progress) -> Self {
+        self.hints.info_builder.hints_info.set_domain_control_progress( cntrl_progress);
         self
     }
 
-    pub fn data_progress(self, data_progress: Progress) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).data_progress = data_progress.as_raw() };
+    pub fn data_progress(mut self, data_progress: Progress) -> Self {
+        self.hints.info_builder.hints_info.set_domain_data_progress( data_progress);
         self
     }
 
-    pub fn resource_mgmt(self, resource_mgmt: ResourceMgmt) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).resource_mgmt = resource_mgmt.as_raw() };
+    pub fn resource_mgmt(mut self, resource_mgmt: ResourceMgmt) -> Self {
+        self.hints.info_builder.hints_info.set_domain_resource_mgmt( resource_mgmt);
         self
     }
 
-    pub fn av_type(self, av_type: AddressVectorType) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).av_type = av_type.as_raw() };
+    pub fn av_type(mut self, av_type: AddressVectorType) -> Self {
+        self.hints.info_builder.hints_info.set_domain_av_type( av_type);
         self
     }
 
-    pub fn mr_mode(self, mr_mode: MrMode) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).mr_mode = mr_mode.as_raw() as i32 };
+    pub fn mr_mode(mut self, mr_mode: MrMode) -> Self {
+        self.hints.info_builder.hints_info.set_domain_mr_mode( mr_mode);
         self
     }
 
-    pub fn caps(self, caps: DomainCaps) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).caps = caps.as_raw() };
+    pub fn caps(mut self, caps: DomainCaps) -> Self {
+        self.hints.info_builder.hints_info.set_domain_caps( caps);
         self
     }
 
-    pub fn mode(self, mode: Mode) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).mode = mode.as_raw() };
+    pub fn mode(mut self, mode: Mode) -> Self {
+        self.hints.info_builder.hints_info.set_domain_mode( mode);
         self
     }
 
-    pub fn auth_key(self, auth_key: &[u8]) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).auth_key_size = auth_key.len() };
-        unsafe {
-            (*(*self.hints.c_info).domain_attr).auth_key =
-                std::mem::transmute::<*const u8, *mut u8>(auth_key.as_ptr())
-        };
+    pub fn auth_key(mut self, auth_key: &[u8]) -> Self {
+        self.hints.info_builder.hints_info.set_domain_auth_key( auth_key);
         self
     }
 
-    pub fn mr_count(self, mr_count: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).mr_cnt = mr_count };
+    pub fn mr_count(mut self, mr_count: usize) -> Self {
+        self.hints.info_builder.hints_info.set_domain_mr_count( mr_count );
         self
     }
 
-    pub fn traffic_class(self, traffic_class: TrafficClass) -> Self {
-        unsafe { (*(*self.hints.c_info).domain_attr).tclass = traffic_class.as_raw() };
+    pub fn traffic_class(mut self, traffic_class: TrafficClass) -> Self {
+        self.hints.info_builder.hints_info.set_domain_traffic_class( traffic_class);
         self
     }
 }
@@ -925,25 +1112,23 @@ impl<T> FabricAttrIn<T> {
         self.hints
     }
 
-    pub fn fabric(self, fabric: &Fabric) -> Self {
-        unsafe { (*(*self.hints.c_info).fabric_attr).fabric = fabric.as_raw_typed_fid() };
+    pub fn fabric(mut self, fabric: &Fabric) -> Self {
+        self.hints.info_builder.hints_info.set_fabric(fabric);
         self
     }
 
-    pub fn name(self, name: &str) -> Self {
-        let c_str = std::ffi::CString::new(name.to_string()).unwrap();
-        unsafe { (*(*self.hints.c_info).fabric_attr).name = c_str.into_raw() };
+    pub fn name(mut self, name: &str) -> Self {
+        self.hints.info_builder.hints_info.set_fabric_name(name);
         self
     }
 
-    pub fn prov_name(self, prov_name: &str) -> Self {
-        let c_str = std::ffi::CString::new(prov_name.to_string()).unwrap();
-        unsafe { (*(*self.hints.c_info).fabric_attr).prov_name = c_str.into_raw() };
+    pub fn prov_name(mut self, prov_name: &str) -> Self {
+        self.hints.info_builder.hints_info.set_fabric_prov_name(prov_name);
         self
     }
 
-    pub fn api_version(self, api_version: &Version) -> Self {
-        unsafe { (*(*self.hints.c_info).fabric_attr).api_version = api_version.as_raw() };
+    pub fn api_version(mut self, api_version: &Version) -> Self {
+        self.hints.info_builder.hints_info.set_fabric_api_version(api_version);
         self
     }
 }
@@ -957,53 +1142,53 @@ impl<T> TxAttrIn<T> {
         self.hints
     }
 
-    pub fn caps(self, tx_caps: TxCaps) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).caps = tx_caps.as_raw() };
+    pub fn caps(mut self, tx_caps: TxCaps) -> Self {
+       self.hints.info_builder.hints_info.set_tx_caps(tx_caps);
         self
     }
 
-    pub fn mode(self, mode: Mode) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).mode = mode.as_raw() };
+    pub fn mode(mut self, mode: Mode) -> Self {
+       self.hints.info_builder.hints_info.set_tx_mode(mode);
         self
     }
 
-    pub fn op_flags(self, op_flags: TransferOptions) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).op_flags = op_flags.as_raw() as u64 };
+    pub fn op_flags(mut self, op_flags: TransferOptions) -> Self {
+       self.hints.info_builder.hints_info.set_tx_op_flags(op_flags);
         self
     }
 
-    pub fn msg_order(self, msg_order: MsgOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).msg_order = msg_order.as_raw() };
+    pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
+       self.hints.info_builder.hints_info.set_tx_msg_order(msg_order);
         self
     }
 
-    pub fn comp_order(self, comp_order: TxCompOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).comp_order = comp_order.as_raw() };
+    pub fn comp_order(mut self, comp_order: TxCompOrder) -> Self {
+       self.hints.info_builder.hints_info.set_tx_comp_order(comp_order);
         self
     }
 
-    pub fn inject_size(self, inject_size: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).inject_size = inject_size };
+    pub fn inject_size(mut self, inject_size: usize) -> Self {
+       self.hints.info_builder.hints_info.set_tx_inject_size(inject_size);
         self
     }
 
-    pub fn size(self, size: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).size = size };
+    pub fn size(mut self, size: usize) -> Self {
+       self.hints.info_builder.hints_info.set_tx_size(size);
         self
     }
 
-    pub fn iov_limit(self, iov_limit: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).iov_limit = iov_limit };
+    pub fn iov_limit(mut self, iov_limit: usize) -> Self {
+       self.hints.info_builder.hints_info.set_tx_iov_limit(iov_limit);
         self
     }
 
-    pub fn rma_iov_limit(self, rma_iov_limit: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).rma_iov_limit = rma_iov_limit };
+    pub fn rma_iov_limit(mut self, rma_iov_limit: usize) -> Self {
+       self.hints.info_builder.hints_info.set_tx_rma_iov_limit(rma_iov_limit);
         self
     }
 
-    pub fn traffic_class(self, traffic_class: TrafficClass) -> Self {
-        unsafe { (*(*self.hints.c_info).tx_attr).tclass = traffic_class.as_raw() };
+    pub fn traffic_class(mut self, traffic_class: TrafficClass) -> Self {
+       self.hints.info_builder.hints_info.set_tx_traffic_class(traffic_class);
         self
     }
 }
@@ -1017,67 +1202,60 @@ impl<T> RxAttrIn<T> {
         self.hints
     }
 
-    pub fn caps(self, rx_caps: RxCaps) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).caps = rx_caps.as_raw() };
+    pub fn caps(mut self, rx_caps: RxCaps) -> Self {
+        self.hints.info_builder.hints_info.set_rx_caps( rx_caps);
         self
     }
 
-    pub fn mode(self, mode: Mode) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).mode = mode.as_raw() };
+    pub fn mode(mut self, mode: Mode) -> Self {
+        self.hints.info_builder.hints_info.set_rx_mode( mode);
         self
     }
 
-    pub fn op_flags(self, op_flags: TransferOptions) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).op_flags = op_flags.as_raw() as u64 };
+    pub fn op_flags(mut self, op_flags: TransferOptions) -> Self {
+        self.hints.info_builder.hints_info.set_rx_op_flags( op_flags);
         self
     }
 
-    pub fn msg_order(self, msg_order: MsgOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).msg_order = msg_order.as_raw() };
+    pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
+        self.hints.info_builder.hints_info.set_rx_msg_order( msg_order);
         self
     }
 
-    pub fn comp_order(self, comp_order: RxCompOrder) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).comp_order = comp_order.as_raw() };
+    pub fn comp_order(mut self, comp_order: RxCompOrder) -> Self {
+        self.hints.info_builder.hints_info.set_rx_comp_order( comp_order);
         self
     }
 
-    pub fn total_buffered_recv(self, total_buffered_recv: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).total_buffered_recv = total_buffered_recv };
+    pub fn total_buffered_recv(mut self, total_buffered_recv: usize) -> Self {
+        self.hints.info_builder.hints_info.set_rx_total_buffered_recv( total_buffered_recv);
         self
     }
 
-    pub fn size(self, size: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).size = size };
+    pub fn size(mut self, size: usize) -> Self {
+        self.hints.info_builder.hints_info.set_rx_size( size);
         self
     }
 
-    pub fn iov_limit(self, iov_limit: usize) -> Self {
-        unsafe { (*(*self.hints.c_info).rx_attr).iov_limit = iov_limit };
+    pub fn iov_limit(mut self, iov_limit: usize) -> Self {
+        self.hints.info_builder.hints_info.set_rx_iov_limit( iov_limit);
         self
     }
 }
 
 impl<T> InfoHints<T> {
     pub fn new(info_builder: InfoBuilder<T>) -> Self {
-        let c_info = if info_builder.c_hints.is_null() {
-            unsafe { libfabric_sys::inlined_fi_allocinfo() }
-        } else {
-            info_builder.c_hints
-        };
         Self {
-            c_info,
             info_builder,
         }
     }
 
     pub fn caps<N: Caps>(self, _caps: N) -> InfoHints<N> {
-        unsafe { (*self.c_info).caps = N::bitfield() };
+        unsafe { (*self.info_builder.hints_info.0).caps = N::bitfield() };
 
         InfoHints::<N> {
-            c_info: self.c_info,
             info_builder: InfoBuilder::<N> {
-                c_hints: self.c_info,
+                hints_info: self.info_builder.hints_info,
                 c_version: self.info_builder.c_version,
                 c_node: self.info_builder.c_node,
                 c_service: self.info_builder.c_service,
@@ -1091,7 +1269,7 @@ impl<T> InfoHints<T> {
 impl<T> InfoHints<T> {
     pub fn leave_hints(self) -> InfoBuilder<T> {
         InfoBuilder::<T> {
-            c_hints: self.c_info,
+            hints_info: self.info_builder.hints_info,
             c_version: self.info_builder.c_version,
             c_node: self.info_builder.c_node,
             c_service: self.info_builder.c_service,
@@ -1100,38 +1278,38 @@ impl<T> InfoHints<T> {
         }
     }
 
-    pub fn mode(self, mode: Mode) -> Self {
-        unsafe { (*self.c_info).mode = mode.as_raw() };
+    pub fn mode(mut self, mode: Mode) -> Self {
+        self.info_builder.hints_info.set_mode(mode);
         self
     }
 
-    pub fn addr_format(self, addr_format: AddressFormat) -> Self {
-        unsafe { (*self.c_info).addr_format = addr_format.as_raw() };
+    pub fn addr_format(mut self, addr_format: AddressFormat) -> Self {
+        self.info_builder.hints_info.set_addr_format(addr_format);
         self
     }
 
     pub fn enter_ep_attr(self) -> EndpointAttrIn<T> {
-        assert!(!unsafe { (*self.c_info).ep_attr.is_null() });
+        assert!(!unsafe { (*self.info_builder.hints_info.0).ep_attr.is_null() });
         EndpointAttrIn { hints: self }
     }
 
     pub fn enter_domain_attr(self) -> DomainAttrIn<T> {
-        assert!(!unsafe { (*self.c_info).domain_attr.is_null() });
+        assert!(!unsafe { (*self.info_builder.hints_info.0).domain_attr.is_null() });
         DomainAttrIn { hints: self }
     }
 
     pub fn enter_fabric_attr(self) -> FabricAttrIn<T> {
-        assert!(!unsafe { (*self.c_info).fabric_attr.is_null() });
+        assert!(!unsafe { (*self.info_builder.hints_info.0).fabric_attr.is_null() });
         FabricAttrIn { hints: self }
     }
 
     pub fn enter_tx_attr(self) -> TxAttrIn<T> {
-        assert!(!unsafe { (*self.c_info).tx_attr.is_null() });
+        assert!(!unsafe { (*self.info_builder.hints_info.0).tx_attr.is_null() });
         TxAttrIn { hints: self }
     }
 
     pub fn enter_rx_attr(self) -> RxAttrIn<T> {
-        assert!(!unsafe { (*self.c_info).rx_attr.is_null() });
+        assert!(!unsafe { (*self.info_builder.hints_info.0).rx_attr.is_null() });
         RxAttrIn { hints: self }
     }
 }

@@ -10,6 +10,7 @@ use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
+use crate::fid::AsTypedFid;
 use crate::fid::EpRawFid;
 use crate::infocapsoptions::AtomicCap;
 use crate::infocapsoptions::ReadMod;
@@ -28,7 +29,7 @@ use crate::Context;
 use crate::FI_ADDR_UNSPEC;
 
 pub(crate) trait AtomicWriteEpImpl:
-    AsRawTypedFid<Output = EpRawFid> + AtomicValidEp
+    AsTypedFid<EpRawFid> + AtomicValidEp
 {
     #[allow(clippy::too_many_arguments)]
     fn atomic_impl<T: AsFiType>(
@@ -44,7 +45,7 @@ pub(crate) trait AtomicWriteEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_atomic(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 desc.get_desc(),
@@ -73,7 +74,7 @@ pub(crate) trait AtomicWriteEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_atomicv(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 ioc.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 ioc.len(),
@@ -100,7 +101,7 @@ pub(crate) trait AtomicWriteEpImpl:
 
         let err = unsafe {
             libfabric_sys::inlined_fi_atomicmsg(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 c_atomic_msg,
                 options.as_raw(),
             )
@@ -124,7 +125,7 @@ pub(crate) trait AtomicWriteEpImpl:
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_inject_atomic(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 raw_addr,
@@ -557,7 +558,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
 }
 
 // impl<E: AtomicCap+ WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
-impl<EP: AtomicCap + WriteMod, EQ: ?Sized, CQ: ?Sized + ReadCq> AtomicWriteEpImpl
+impl<EP: AtomicCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicWriteEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -565,7 +566,7 @@ impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
 pub(crate) trait AtomicFetchEpImpl:
-    AsRawTypedFid<Output = EpRawFid> + AtomicValidEp
+    AsTypedFid<EpRawFid> + AtomicValidEp
 {
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomic_impl<T: AsFiType>(
@@ -583,7 +584,7 @@ pub(crate) trait AtomicFetchEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomic(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 desc.get_desc().cast(),
@@ -616,7 +617,7 @@ pub(crate) trait AtomicFetchEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomicv(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 ioc.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 ioc.len(),
@@ -648,7 +649,7 @@ pub(crate) trait AtomicFetchEpImpl:
 
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomicmsg(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 c_atomic_msg,
                 resultv.as_mut_ptr().cast(),
                 res_desc.as_mut_ptr().cast(),
@@ -1135,7 +1136,7 @@ impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicFe
 impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E, Connected> {}
 impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E, Connectionless> {}
 
-pub(crate) trait AtomicCASImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp {
+pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
     unsafe fn compare_atomic_impl<T: AsFiType>(
         &self,
@@ -1154,7 +1155,7 @@ pub(crate) trait AtomicCASImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_compare_atomic(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 desc.get_desc().cast(),
@@ -1191,7 +1192,7 @@ pub(crate) trait AtomicCASImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_compare_atomicv(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 ioc.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 ioc.len(),
@@ -1229,7 +1230,7 @@ pub(crate) trait AtomicCASImpl: AsRawTypedFid<Output = EpRawFid> + AtomicValidEp
 
         let err: isize = unsafe {
             libfabric_sys::inlined_fi_compare_atomicmsg(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 c_atomic_msg,
                 comparev.as_ptr().cast(),
                 compare_desc.as_mut_ptr().cast(),
@@ -1868,7 +1869,7 @@ impl<EP: AtomicCap + ReadMod + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadC
 impl<E: AtomicCASImpl> AtomicCASImpl for EndpointBase<E, Connected> {}
 impl<E: AtomicCASImpl> AtomicCASImpl for EndpointBase<E, Connectionless> {}
 
-pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
+pub trait AtomicValidEp: AsTypedFid<EpRawFid> {
     unsafe fn atomicvalid<T: AsFiType>(
         &self,
         op: crate::enums::AtomicOp,
@@ -1876,7 +1877,7 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_atomicvalid(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 T::as_fi_datatype(),
                 op.as_raw(),
                 &mut count as *mut usize,
@@ -1899,7 +1900,7 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomicvalid(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 T::as_fi_datatype(),
                 op.as_raw(),
                 &mut count as *mut usize,
@@ -1922,7 +1923,7 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_compare_atomicvalid(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 T::as_fi_datatype(),
                 op.as_raw(),
                 &mut count as *mut usize,
@@ -1942,7 +1943,7 @@ pub trait AtomicValidEp: AsRawTypedFid<Output = EpRawFid> {
 impl<E: AtomicValidEp> AtomicValidEp for EndpointBase<E, Connected> {}
 impl<E: AtomicValidEp> AtomicValidEp for EndpointBase<E, Connectionless> {}
 
-impl<EP: AtomicCap, EQ: ?Sized, CQ: ?Sized + ReadCq> AtomicValidEp
+impl<EP: AtomicCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicValidEp
     for EndpointImplBase<EP, EQ, CQ>
 {
 }

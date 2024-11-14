@@ -6,12 +6,11 @@ use async_io::Async;
 use tokio::io::unix::AsyncFd as Async;
 
 use crate::{
-    async_::AsyncCtx,
     cq::WaitObjectRetrieve,
     eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
     error::{Error, ErrorKind},
-    fid::{self, AsFid, AsRawFid, AsRawTypedFid, EqRawFid, Fid, RawFid},
-    Context, MyRc, MyRefCell,
+    fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid},
+    Context, MyRc, MyRefCell, SyncSend,
 };
 
 use super::AsyncFid;
@@ -529,6 +528,8 @@ pub struct AsyncEventQueueImpl<const WRITE: bool> {
     pending_cm_entries: MyRefCell<HashMap<(u32, Fid), Vec<Result<Event, Error>>>>,
 }
 
+impl<const WRITE: bool> SyncSend for AsyncEventQueueImpl<WRITE> {}
+
 impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
     pub(crate) fn new(
         fabric: &MyRc<crate::fabric::FabricImpl>,
@@ -735,25 +736,7 @@ impl<'a> Future for AsyncEventEq<'a> {
                     return std::task::Poll::Ready(entry);
                 }
             } else if let Some(mut entry) = ev.fut.eq.remove_entry(ev.ctx) {
-                if ev.ctx != 0 {
-                    if let Ok(ref mut entry) = entry {
-                        match entry {
-                            crate::eq::Event::MrComplete(ref mut e)
-                            | crate::eq::Event::AVComplete(ref mut e)
-                            | crate::eq::Event::JoinComplete(ref mut e) => {
-                                e.c_entry.context = unsafe {
-                                    (*(e.c_entry.context as *mut AsyncCtx))
-                                        .user_ctx
-                                        .unwrap_or(std::ptr::null_mut())
-                                }
-                            }
-                            _ => panic!("Unexpected!"),
-                        }
-                    }
-                    return std::task::Poll::Ready(entry);
-                } else {
-                    return std::task::Poll::Ready(entry);
-                }
+                return std::task::Poll::Ready(entry);
             }
             if let Some(err) = ev.fut.eq.remove_err_entry(&ev.req_fid) {
                 return std::task::Poll::Ready(err);
@@ -783,13 +766,6 @@ impl<'a> Future for AsyncEventEq<'a> {
                         // crate::eq::Event::Notify(entry) |
                         crate::eq::Event::MrComplete(e) => {
                             if e.c_entry.context as usize == ev.ctx {
-                                if ev.ctx != 0 {
-                                    e.c_entry.context = unsafe {
-                                        (*(e.c_entry.context as *mut AsyncCtx))
-                                            .user_ctx
-                                            .unwrap_or(std::ptr::null_mut())
-                                    }
-                                };
                                 return std::task::Poll::Ready(res);
                             } else {
                                 ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
@@ -797,13 +773,6 @@ impl<'a> Future for AsyncEventEq<'a> {
                         }
                         crate::eq::Event::AVComplete(e) => {
                             if e.c_entry.context as usize == ev.ctx {
-                                if ev.ctx != 0 {
-                                    e.c_entry.context = unsafe {
-                                        (*(e.c_entry.context as *mut AsyncCtx))
-                                            .user_ctx
-                                            .unwrap_or(std::ptr::null_mut())
-                                    }
-                                };
                                 return std::task::Poll::Ready(res);
                             } else {
                                 ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
@@ -812,13 +781,6 @@ impl<'a> Future for AsyncEventEq<'a> {
                         crate::eq::Event::JoinComplete(e) => {
                             println!("Found join event");
                             if e.c_entry.context as usize == ev.ctx {
-                                if ev.ctx != 0 {
-                                    e.c_entry.context = unsafe {
-                                        (*(e.c_entry.context as *mut AsyncCtx))
-                                            .user_ctx
-                                            .unwrap_or(std::ptr::null_mut())
-                                    }
-                                };
                                 return std::task::Poll::Ready(res);
                             } else {
                                 ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
@@ -826,7 +788,7 @@ impl<'a> Future for AsyncEventEq<'a> {
                         }
                         crate::eq::Event::ConnReq(e) => {
                             if ev.event_type == libfabric_sys::FI_CONNREQ
-                                && ev.req_fid.0 == e.c_entry.fid
+                                && ev.req_fid.0 == e.c_entry.fid as usize
                             {
                                 return std::task::Poll::Ready(res);
                             } else {
@@ -839,7 +801,7 @@ impl<'a> Future for AsyncEventEq<'a> {
                         }
                         crate::eq::Event::Connected(e) => {
                             if ev.event_type == libfabric_sys::FI_CONNECTED
-                                && ev.req_fid.0 == e.c_entry.fid
+                                && ev.req_fid.0 == e.c_entry.fid as usize
                             {
                                 return std::task::Poll::Ready(res);
                             } else {
@@ -853,7 +815,7 @@ impl<'a> Future for AsyncEventEq<'a> {
                         crate::eq::Event::Shutdown(e) => {
                             // [TODO] No one will explcitly look for shutdown requests, should probably store it somewhere else
                             if ev.event_type == libfabric_sys::FI_SHUTDOWN
-                                && ev.req_fid.0 == e.c_entry.fid
+                                && ev.req_fid.0 == e.c_entry.fid as usize
                             {
                                 return std::task::Poll::Ready(res);
                             } else {
@@ -874,15 +836,15 @@ impl<'a> Future for AsyncEventEq<'a> {
                                 if e.c_err.context as usize == ev.ctx {
                                     return std::task::Poll::Ready(res);
                                 } else if e.c_err.context as usize == 0 {
-                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid), res)
+                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), res)
                                 } else {
                                     ev.fut.eq.insert_entry(e.c_err.context as usize, res)
                                 }
                             } else if e.c_err.context as usize == 0 {
-                                if e.c_err.fid == ev.req_fid.0 {
+                                if e.c_err.fid as usize== ev.req_fid.0  {
                                     return std::task::Poll::Ready(res);
                                 } else {
-                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid), res)
+                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), res)
                                 }
                             } else {
                                 ev.fut.eq.insert_entry(e.c_err.context as usize, res)
@@ -898,34 +860,33 @@ impl<'a> Future for AsyncEventEq<'a> {
     }
 }
 
-impl<const WRITE: bool> AsFid for AsyncEventQueueImpl<WRITE> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.base.get_ref().c_eq.as_fid()
-    }
-}
+// impl<const WRITE: bool> AsFid for AsyncEventQueueImpl<WRITE> {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.base.get_ref().c_eq.as_fid()
+//     }
+// }
 
-impl<const WRITE: bool> AsFid for &AsyncEventQueueImpl<WRITE> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.base.get_ref().as_fid()
-    }
-}
-impl<const WRITE: bool> AsFid for MyRc<AsyncEventQueueImpl<WRITE>> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.base.get_ref().as_fid()
-    }
-}
+// impl<const WRITE: bool> AsFid for &AsyncEventQueueImpl<WRITE> {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.base.get_ref().as_fid()
+//     }
+// }
+// impl<const WRITE: bool> AsFid for MyRc<AsyncEventQueueImpl<WRITE>> {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.base.get_ref().as_fid()
+//     }
+// }
 
-impl<const WRITE: bool> AsRawFid for AsyncEventQueueImpl<WRITE> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.base.get_ref().as_raw_fid()
-    }
-}
+// impl<const WRITE: bool> AsRawFid for AsyncEventQueueImpl<WRITE> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.base.get_ref().as_raw_fid()
+//     }
+// }
 
-impl<const WRITE: bool> AsRawTypedFid for AsyncEventQueueImpl<WRITE> {
-    type Output = EqRawFid;
+impl<const WRITE: bool> AsTypedFid<EqRawFid> for AsyncEventQueueImpl<WRITE> {
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.base.get_ref().as_raw_typed_fid()
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
+        self.base.get_ref().as_typed_fid()
     }
 }
 

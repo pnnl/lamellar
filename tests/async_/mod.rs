@@ -1,3 +1,4 @@
+use libfabric::domain::NoEventQueue;
 use libfabric::error::QueueError;
 use libfabric::{
     async_::{
@@ -30,7 +31,7 @@ use libfabric::{
         rma::{ReadEp, WriteEp},
         tagged::{ConnectedTagRecvEp, TagRecvEp},
     },
-    ep::{ActiveEndpoint, BaseEndpoint},
+    ep::BaseEndpoint,
     infocapsoptions::RmaDefaultCap,
     mr::MemoryRegionDesc,
 };
@@ -264,7 +265,7 @@ impl Default for TestsGlobalCtx {
 
 pub fn ft_open_fabric_res<E>(
     info: &InfoEntry<E>,
-) -> (Fabric, EventQueue<EventQueueOptions>, DomainBase<()>) {
+) -> (Fabric, EventQueue<EventQueueOptions>, DomainBase<NoEventQueue>) {
     let fab = libfabric::fabric::FabricBuilder::new().build(info).unwrap();
     let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
     let domain = ft_open_domain_res(info, &fab);
@@ -272,14 +273,14 @@ pub fn ft_open_fabric_res<E>(
     (fab, eq, domain)
 }
 
-pub fn ft_open_domain_res<E>(info: &InfoEntry<E>, fab: &fabric::Fabric) -> DomainBase<()> {
+pub fn ft_open_domain_res<E>(info: &InfoEntry<E>, fab: &fabric::Fabric) -> DomainBase<NoEventQueue> {
     DomainBuilder::new(fab, info).build().unwrap()
 }
 
 pub fn ft_alloc_ep_res<E, EQ: AsyncReadEq + 'static>(
     info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
-    domain: &DomainBase<()>,
+    domain: &DomainBase<NoEventQueue>,
     eq: &EventQueue<EQ>,
 ) -> (
     CqType,
@@ -374,7 +375,7 @@ pub fn ft_alloc_ep_res<E, EQ: AsyncReadEq + 'static>(
 pub fn ft_alloc_active_res<E, EQ: AsyncReadEq + 'static>(
     info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
-    domain: &DomainBase<()>,
+    domain: &DomainBase<NoEventQueue>,
     eq: &EventQueue<EQ>,
 ) -> (
     CqType,
@@ -494,7 +495,7 @@ pub fn ft_prepare_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
     }
 }
 
-fn bind_cq<E>(cq_type: &CqType, ep: &Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
+fn bind_cq<E>(cq_type: &CqType, ep: &Endpoint<E>, _gl_ctx: &mut TestsGlobalCtx) {
     match ep {
         Endpoint::Connectionless(ep) => match cq_type {
             CqType::WaitFd(cq_type) => match cq_type {
@@ -743,7 +744,7 @@ pub fn ft_set_tx_rx_sizes<E>(
 pub fn ft_alloc_msgs<I, E: 'static>(
     info: &InfoEntry<I>,
     gl_ctx: &mut TestsGlobalCtx,
-    domain: &DomainBase<()>,
+    domain: &DomainBase<NoEventQueue>,
     ep: &Endpoint<E>,
 ) -> (
     Option<MemoryRegion>,
@@ -788,16 +789,16 @@ pub fn ft_ep_recv<
     M: MsgDefaultCap,
     T: TagDefaultCap,
 >(
-    info: &InfoEntry<E>,
+    _info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
     ep: &mut EndpointCaps<M, T>,
-    domain: &DomainBase<()>,
+    _domain: &DomainBase<NoEventQueue>,
     cq_type: &CqType,
-    eq: &EventQueue<EQ>,
-    av: &Option<AddressVector>,
-    tx_cntr: &Option<Counter<CNTR>>,
-    rx_cntr: &Option<Counter<CNTR>>,
-    rma_cntr: &Option<Counter<CNTR>>,
+    _eq: &EventQueue<EQ>,
+    _av: &Option<AddressVector>,
+    _tx_cntr: &Option<Counter<CNTR>>,
+    _rx_cntr: &Option<Counter<CNTR>>,
+    _rma_cntr: &Option<Counter<CNTR>>,
     data_desc: &mut Option<MemoryRegionDesc>,
 ) {
     match cq_type {
@@ -817,7 +818,7 @@ pub fn ft_enable_ep_recv<EQ: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, E,
     info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
     ep: &Endpoint<T>,
-    domain: &DomainBase<()>,
+    domain: &DomainBase<NoEventQueue>,
     cq_type: &CqType,
     eq: &EventQueue<EQ>,
     av: &Option<AddressVector>,
@@ -863,7 +864,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
 ) -> (
     InfoWithCaps<M, T>,
     EndpointCaps<M, T>,
-    DomainBase<()>,
+    DomainBase<NoEventQueue>,
     CqType,
     Option<Counter<CounterOptions>>,
     Option<Counter<CounterOptions>>,
@@ -984,11 +985,12 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
     // (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mr_desc)
 }
 
-pub async fn ft_av_insert(av: &AddressVector, addr: &Address, options: AVOptions) -> MappedAddress {
-    // let mut added = av.insert(std::slice::from_ref(addr), options).unwrap();
-    // added.pop().unwrap().expect("Could not add address to address vector")
+pub async fn ft_av_insert<E>(info: &InfoEntry<E>, av: &AddressVector, addr: &Address, options: AVOptions) -> MappedAddress {
+
+    let mut ctx = info.allocate_context();
+
     let (_, mut added) = av
-        .insert_async(std::slice::from_ref(addr), options)
+        .insert_async(std::slice::from_ref(addr), options, &mut ctx)
         .await
         .unwrap();
     added
@@ -1161,7 +1163,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
             // unsafe{ ft_post!(write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
             unsafe {
-                ep.write_to_async(buf, data_desc, fi_addr, addr, key)
+                ep.write_to_async(buf, data_desc, fi_addr, addr, key, &mut gl_ctx.tx_ctx.as_mut().unwrap())
                     .await
                     .unwrap();
             }
@@ -1175,7 +1177,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
             let remote_cq_data = gl_ctx.remote_cq_data;
             // unsafe{ ft_post!(writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, remote_cq_data, fi_addr, addr, key); }
             unsafe {
-                ep.writedata_to_async(buf, data_desc, remote_cq_data, fi_addr, addr, key)
+                ep.writedata_to_async(buf, data_desc, remote_cq_data, fi_addr, addr, key, gl_ctx.tx_ctx.as_mut().unwrap())
                     .await
                     .unwrap();
             }
@@ -1211,7 +1213,7 @@ pub fn connected_msg_post_inject<CQ: ReadCq, E: MsgDefaultCap>(
     tx_seq: &mut u64,
     tx_cq_cntr: &mut u64,
     _ctx: &mut Context,
-    remote_address: &Option<MappedAddress>,
+    _remote_address: &Option<MappedAddress>,
     tx_cq: &CompletionQueue<CQ>,
     ep: &ConnectedEndpoint<E>,
     _data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
@@ -1280,13 +1282,13 @@ pub async fn connless_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
             let fi_addr = remote_address.as_ref().unwrap();
             let mut msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, 0);
             let msg_ref = &mut msg;
-            ft_post_async!(sendmsg_to_async, "sendmsg", ep, msg_ref, flag);
+            ft_post_async!(sendmsg_to_async, "sendmsg", ep, msg_ref, flag, ctx);
         }
         SendOp::Send => {
             if let Some(fi_address) = remote_address {
                 if data != NO_CQ_DATA {
                     ft_post_async!(
-                        senddata_to_with_context_async,
+                        senddata_to_async,
                         "",
                         ep,
                         base,
@@ -1297,7 +1299,7 @@ pub async fn connless_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
                     )
                 } else {
                     ft_post_async!(
-                        send_to_with_context_async,
+                        send_to_async,
                         "",
                         ep,
                         base,
@@ -1316,7 +1318,7 @@ pub async fn connected_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
     _tx_seq: &mut u64,
     _tx_cq_cntr: &mut u64,
     ctx: &mut Context,
-    remote_address: &Option<MappedAddress>,
+    _remote_address: &Option<MappedAddress>,
     _tx_cq: &CompletionQueue<CQ>,
     ep: &ConnectedEndpoint<E>,
     data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
@@ -1335,13 +1337,13 @@ pub async fn connected_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
 
             let mut msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, 0);
             let msg_ref = &mut msg;
-            ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag);
+            ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag, ctx);
         }
         SendOp::Send => {
             if data != NO_CQ_DATA {
-                ft_post_async!(senddata_with_context_async, "", ep, base, desc, data, ctx)
+                ft_post_async!(senddata_async, "", ep, base, desc, data, ctx)
             } else {
-                ft_post_async!(send_with_context_async, "", ep, base, desc, ctx)
+                ft_post_async!(send_async, "", ep, base, desc, ctx)
             }
         }
     }
@@ -1352,7 +1354,7 @@ pub fn connected_msg_post_recv<CQ: ReadCq, E: MsgDefaultCap>(
     rx_seq: &mut u64,
     rx_cq_cntr: &mut u64,
     ctx: &mut Context,
-    remote_address: &Option<MappedAddress>,
+    _remote_address: &Option<MappedAddress>,
     rx_cq: &CompletionQueue<CQ>,
     ep: &ConnectedEndpoint<E>,
     data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
@@ -1445,7 +1447,7 @@ pub fn connected_tagged_post_inject<CQ: ReadCq>(
     tx_seq: &mut u64,
     tx_cq_cntr: &mut u64,
     _ctx: &mut Context,
-    remote_address: &Option<MappedAddress>,
+    _remote_address: &Option<MappedAddress>,
     ft_tag: u64,
     tx_cq: &CompletionQueue<CQ>,
     ep: &impl ConnectedAsyncTagSendEp,
@@ -1524,13 +1526,13 @@ pub async fn connless_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
             let mut msg =
                 libfabric::msg::MsgTagged::from_iov(&iov, mr_desc, fi_address, 0, op_tag, 0);
             let msg_ref = &mut msg;
-            ep.tsendmsg_to_async(msg_ref, flag).await.unwrap();
+            ep.tsendmsg_to_async(msg_ref, flag, ctx).await.unwrap();
         }
         TagSendOp::TagSend => {
             if let Some(fi_address) = remote_address {
                 if data != NO_CQ_DATA {
                     ft_post_async!(
-                        tsend_to_with_context_async,
+                        tsend_to_async,
                         "transmit",
                         ep,
                         base,
@@ -1540,7 +1542,7 @@ pub async fn connless_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
                         ctx
                     );
                 } else {
-                    ep.tsend_to_with_context_async(base, mr_desc, fi_address, op_tag, ctx)
+                    ep.tsend_to_async(base, mr_desc, fi_address, op_tag, ctx)
                         .await
                         .unwrap();
                 }
@@ -1554,7 +1556,7 @@ pub async fn connected_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
     _tx_seq: &mut u64,
     _tx_cq_cntr: &mut u64,
     ctx: &mut Context,
-    remote_address: &Option<MappedAddress>,
+    _remote_address: &Option<MappedAddress>,
     ft_tag: u64,
     _tx_cq: &CompletionQueue<CQ>,
     ep: &ConnectedEndpoint<E>,
@@ -1575,15 +1577,15 @@ pub async fn connected_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
             let iov = libfabric::iovec::IoVec::from_slice(base);
             let mut msg = libfabric::msg::MsgTaggedConnected::from_iov(&iov, mr_desc, 0, op_tag, 0);
             let msg_ref = &mut msg;
-            ep.tsendmsg_async(msg_ref, flag).await.unwrap();
+            ep.tsendmsg_async(msg_ref, flag, ctx).await.unwrap();
         }
         TagSendOp::TagSend => {
             if data != NO_CQ_DATA {
-                ep.tsenddata_with_context_async(base, mr_desc, data, op_tag, ctx)
+                ep.tsenddata_async(base, mr_desc, data, op_tag, ctx)
                     .await
                     .unwrap();
             } else {
-                ep.tsenddata_with_context_async(base, mr_desc, data, op_tag, ctx)
+                ep.tsenddata_async(base, mr_desc, data, op_tag, ctx)
                     .await
                     .unwrap();
             }
@@ -1596,7 +1598,7 @@ pub fn connected_tagged_post_recv<CQ: ReadCq, E: TagDefaultCap>(
     rx_seq: &mut u64,
     rx_cq_cntr: &mut u64,
     ctx: &mut Context,
-    remote_address: &Option<MappedAddress>,
+    _remote_address: &Option<MappedAddress>,
     ft_tag: u64,
     rx_cq: &CompletionQueue<CQ>,
     ep: &ConnectedEndpoint<E>,
@@ -1994,7 +1996,7 @@ pub async fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefa
 ) {
     if !server {
         gl_ctx.remote_address =
-            Some(ft_av_insert(av, &info.dest_addr().unwrap(), AVOptions::new()).await);
+            Some(ft_av_insert(info, av, &info.dest_addr().unwrap(), AVOptions::new()).await);
         let epname = match ep {
             EndpointCaps::ConnectedMsg(ep) => ep.getname().unwrap(),
             EndpointCaps::ConnlessMsg(ep) => ep.getname().unwrap(),
@@ -2013,7 +2015,7 @@ pub async fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefa
         v.copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + FT_MAX_CTRL_MSG]);
         let address = unsafe { Address::from_bytes(&v) };
 
-        gl_ctx.remote_address = Some(ft_av_insert(av, &address, AVOptions::new()).await);
+        gl_ctx.remote_address = Some(ft_av_insert(info, av, &address, AVOptions::new()).await);
         // if matches!(info.domain_attr().get_av_type()(), libfabric::enums::AddressVectorType::Table ) {
         //     let mut zero = 0;
         //     ft_av_insert(av, &v, &mut zero, 0);
@@ -2215,7 +2217,7 @@ pub fn ft_rma_write_target_allowed(caps: &InfoCapsImpl) -> bool {
 }
 
 pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(
-    _domain: &'a DomainBase<()>,
+    _domain: &'a DomainBase<NoEventQueue>,
     buff: &'b [u8],
     info: &InfoEntry<E>,
 ) -> MemoryRegionBuilder<'a> {
@@ -2249,7 +2251,7 @@ pub fn ft_info_to_mr_builder<'a, 'b: 'a, E>(
 
 pub fn ft_reg_mr<I, E: 'static>(
     info: &InfoEntry<I>,
-    domain: &DomainBase<()>,
+    domain: &DomainBase<NoEventQueue>,
     ep: &Endpoint<E>,
     buf: &mut [u8],
     key: u64,
@@ -2284,7 +2286,7 @@ pub fn ft_reg_mr<I, E: 'static>(
         },
     };
 
-    let desc = mr.description();
+    let desc = mr.descriptor();
 
     if info.domain_attr().mr_mode().is_endpoint() {
         todo!();
@@ -2317,7 +2319,7 @@ pub async fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefault
     cq_type: &CqType,
     tx_cntr: &Option<Counter<CNTR>>,
     rx_cntr: &Option<Counter<CNTR>>,
-    domain: &DomainBase<()>,
+    domain: &DomainBase<NoEventQueue>,
     ep: &EndpointCaps<M, T>,
     mr_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
 ) -> RmaInfo {

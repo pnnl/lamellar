@@ -5,10 +5,9 @@ pub mod sync_; // Public to supress lint warnings (unused function) // Public to
 pub mod common; // Public to supress lint warnings (unused function)
 
 // Public to supress lint warnings (unused function)
-use common::IP;
 
 use libfabric::info::{Info, Version};
-use prefix::{call, define_test, ft_finalize, HintsCaps};
+use prefix::{define_test, ft_finalize, HintsCaps};
 
 use sync_ as prefix;
 
@@ -21,12 +20,7 @@ use sync_ as prefix;
 // 5. Run client (e.g. cargo test pp_client_msg -- --ignored --nocapture)
 
 define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
-    let hostname = std::process::Command::new("hostname")
-        .output()
-        .expect("Failed to execute hostname")
-        .stdout;
-    let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
-    let ip = "172.17.110.".to_string() + &hostname;
+
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
     gl_ctx.options = prefix::FT_OPT_RX_CNTR | prefix::FT_OPT_TX_CNTR;
     // todo!();

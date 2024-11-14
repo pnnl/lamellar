@@ -1,16 +1,17 @@
+use crate::fid::{AsTypedFid, BorrowedTypedFid};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
 #[allow(unused_imports)]
-use crate::fid::AsFid;
+// use crate::fid::AsFid;
 use crate::{
     cq::WaitObjectRetrieve,
-    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedFid, EqRawFid, OwnedEqFid},
-    Context, MyRc, MyRefCell,
+    fid::{AsRawFid, AsRawTypedFid, EqRawFid, OwnedEqFid},
+    Context, MyRc, MyRefCell, SyncSend,
 };
 use crate::{
     enums::WaitObjType,
     fabric::FabricImpl,
-    fid::{self, RawFid},
+    fid::RawFid,
     info::{InfoEntry, InfoHints},
     infocapsoptions::Caps,
 };
@@ -29,6 +30,12 @@ pub enum Event {
     AVComplete(EventQueueEntry<RawFid>),
     JoinComplete(EventQueueEntry<RawFid>),
 }
+
+// [TODO]
+// #[cfg(feature="threading-thread-safe")]
+#[cfg(feature="thread-safe")]
+unsafe impl Sync for Event{}
+unsafe impl Send for Event{}
 
 impl Event {
     #[allow(dead_code)]
@@ -113,12 +120,13 @@ pub struct EventQueueImpl<const WRITE: bool, const WAIT: bool, const RETRIEVE: b
     event_buffer: MyRefCell<Vec<u8>>,
     pub(crate) _fabric_rc: MyRc<FabricImpl>,
 }
+impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncSend for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
 
-pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
+pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_read(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -136,7 +144,7 @@ pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
     fn peek_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_read(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -156,7 +164,7 @@ pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
     fn readerr_in(&self, buff: &mut [u8]) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_readerr(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 buff.as_mut_ptr().cast(),
                 0,
             )
@@ -174,7 +182,7 @@ pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
     fn peekerr_in(&self, buff: &mut [u8]) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_readerr(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 buff.as_mut_ptr().cast(),
                 libfabric_sys::FI_PEEK.into(),
             )
@@ -192,7 +200,7 @@ pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
     fn strerror(&self, entry: &EventError) -> &str {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_strerror(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 -entry.c_err.prov_errno,
                 entry.c_err.err_data,
                 std::ptr::null_mut(),
@@ -210,7 +218,7 @@ pub trait ReadEq: AsRawTypedFid<Output = EqRawFid> + AsRawFid {
     fn peekerr(&self) -> Result<EventError, crate::error::Error>;
 }
 
-pub trait WaitEq: ReadEq + AsRawTypedFid<Output = EqRawFid> {
+pub trait WaitEq: ReadEq  {
     fn sread_in(
         &self,
         buff: &mut [u8],
@@ -219,7 +227,7 @@ pub trait WaitEq: ReadEq + AsRawTypedFid<Output = EqRawFid> {
     ) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_sread(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -245,7 +253,7 @@ pub trait WaitEq: ReadEq + AsRawTypedFid<Output = EqRawFid> {
     ) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_sread(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -267,11 +275,11 @@ pub trait WaitEq: ReadEq + AsRawTypedFid<Output = EqRawFid> {
     fn speek(&self, timeout: i32) -> Result<Event, crate::error::Error>;
 }
 
-pub trait WriteEq: AsRawTypedFid<Output = EqRawFid> {
+pub trait WriteEq: AsTypedFid<EqRawFid> {
     fn write_raw(&self, buff: &[u8], event: u32, flags: u64) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_write(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 event,
                 buff.as_ptr().cast(),
                 buff.len(),
@@ -293,7 +301,7 @@ pub trait WriteEq: AsRawTypedFid<Output = EqRawFid> {
 
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_write(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 event_val,
                 event_entry,
                 event_entry_size,
@@ -397,7 +405,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
                 let mut fd: i32 = 0;
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_raw_fid(),
+                        self.as_typed_fid().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut fd as *mut i32).cast(),
                     )
@@ -417,7 +425,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
 
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_raw_fid(),
+                        self.as_typed_fid().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut mutex_cond as *mut fi_mutex_cond).cast(),
                     )
@@ -486,7 +494,7 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
 
         let err = unsafe {
             libfabric_sys::inlined_fi_eq_open(
-                fabric.as_raw_typed_fid(),
+                fabric.as_typed_fid().as_raw_typed_fid(),
                 attr.get_mut(),
                 c_eq_ptr,
                 context,
@@ -592,6 +600,8 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
     }
 }
 
+impl<T: SyncSend> SyncSend for EventQueue<T> {}
+
 impl<T: ReadEq> ReadEq for EventQueue<T> {
     fn read(&self) -> Result<Event, crate::error::Error> {
         self.inner.read()
@@ -669,11 +679,11 @@ impl<'a, T: WaitObjectRetrieve<'a>> EventQueue<T> {
     }
 }
 
-impl<T: AsFid> AsFid for EventQueueBase<T> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.as_fid()
-    }
-}
+// impl<T: AsFid> AsFid for EventQueueBase<T> {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.inner.as_fid()
+//     }
+// }
 
 impl<T: AsRawFid> AsRawFid for EventQueueBase<T> {
     fn as_raw_fid(&self) -> RawFid {
@@ -681,24 +691,24 @@ impl<T: AsRawFid> AsRawFid for EventQueueBase<T> {
     }
 }
 
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsFid
-    for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
-{
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.c_eq.as_fid()
-    }
-}
+// impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsFid
+//     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
+// {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.c_eq.as_fid()
+//     }
+// }
 
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawFid
-    for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
-{
-    fn as_raw_fid(&self) -> RawFid {
-        self.c_eq.as_raw_fid()
-    }
-}
+// impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawFid
+//     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
+// {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.c_eq.as_raw_fid()
+//     }
+// }
 
 impl<T: AsTypedFid<EqRawFid>> AsTypedFid<EqRawFid> for EventQueueBase<T> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
         self.inner.as_typed_fid()
     }
 }
@@ -714,20 +724,20 @@ impl<T: AsRawTypedFid<Output = EqRawFid>> AsRawTypedFid for EventQueueBase<T> {
 impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsTypedFid<EqRawFid>
     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
 {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
         self.c_eq.as_typed_fid()
     }
 }
 
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawTypedFid
-    for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
-{
-    type Output = EqRawFid;
+// impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawTypedFid
+//     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
+// {
+//     type Output = EqRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.c_eq.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.c_eq.as_raw_typed_fid()
+//     }
+// }
 
 impl<'a, T: WaitObjectRetrieve<'a> + AsFd> AsFd for EventQueue<T> {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -756,11 +766,11 @@ impl<const WRITE: bool> AsRawFd for EventQueueImpl<WRITE, true, true, true> {
 }
 
 // impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> BindImpl for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
-impl<T: ReadEq + 'static> crate::Bind for EventQueue<T> {
-    fn inner(&self) -> MyRc<dyn AsRawFid> {
-        self.inner.clone()
-    }
-}
+// impl<T: ReadEq + 'static> crate::Bind for EventQueue<T> {
+//     fn inner(&self) -> MyRc<dyn AsRawFid> {
+//         self.inner.clone()
+//     }
+// }
 
 //================== EventQueue Attribute(fi_eq_attr) ==================//
 
@@ -945,6 +955,11 @@ pub struct EventError {
     pub(crate) c_err: libfabric_sys::fi_eq_err_entry,
 }
 
+//[TODO]
+#[cfg(feature="thread-safe")]
+unsafe impl Sync for EventError{}
+unsafe impl Send for EventError{}
+
 impl EventError {
     pub fn new() -> Self {
         let c_err = libfabric_sys::fi_eq_err_entry {
@@ -970,9 +985,9 @@ impl EventError {
         &mut self.c_err
     }
 
-    pub fn get_fid(&self) -> BorrowedFid {
-        unsafe { BorrowedFid::borrow_raw(self.c_err.fid) }
-    }
+    // pub fn get_fid(&self) -> BorrowedFid {
+    //     unsafe { BorrowedFid::borrow_raw(self.c_err.fid) }
+    // }
 
     pub fn get_data(&self) -> u64 {
         self.c_err.data

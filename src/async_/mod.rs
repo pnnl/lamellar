@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::{error::Error, Context, RawContext};
 
 pub mod av;
 pub mod comm;
@@ -11,10 +11,6 @@ pub mod eq;
 pub mod mr;
 mod xcontext;
 
-// [TODO] Remove user ctx and replace with a proper Context
-pub struct AsyncCtx {
-    pub(crate) user_ctx: Option<*mut std::ffi::c_void>,
-}
 
 pub trait AsyncFid {
     fn trywait(&self) -> Result<(), Error>;

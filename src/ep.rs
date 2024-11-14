@@ -9,7 +9,7 @@ use libfabric_sys::{
 };
 
 use crate::{
-    av::{AddressVector, AddressVectorBase, AddressVectorImplBase},
+    av::{AddressVector, AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
     cntr::{Counter, ReadCntr},
     conn_ep::UninitUnconnectedEndpoint,
     cq::{CompletionQueue, ReadCq},
@@ -18,15 +18,14 @@ use crate::{
     eq::{EventQueueBase, ReadEq},
     fabric::FabricImpl,
     fid::{
-        self, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid,
-        RawFid,
+        AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid
     },
     info::{InfoEntry, Version},
     trigger::TriggerXpu,
     utils::check_error,
-    Context, MyOnceCell, MyRc, MyRefCell,
+    Context, MyOnceCell, MyRc, MyRefCell, SyncSend,
 };
-use crate::{connless_ep::UninitConnectionlessEndpoint, fid::AsFid};
+use crate::{connless_ep::UninitConnectionlessEndpoint};
 
 #[repr(C)]
 pub struct Address {
@@ -68,21 +67,27 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     pub(crate) c_ep: OwnedEpFid,
     pub(crate) cq: MyOnceCell<EpCq<CQ>>,
     pub(crate) eq: MyOnceCell<MyRc<EQ>>,
-    _bound_cntrs: MyRefCell<Vec<MyRc<dyn AsRawFid>>>,
-    _bound_av: MyOnceCell<MyRc<dyn AsRawFid>>,
+    _bound_cntrs: MyRefCell<Vec<MyRc<dyn ReadCntr>>>,
+    _bound_av: MyOnceCell<MyRc<dyn AddressVectorImplT>>,
     _domain_rc: MyRc<dyn DomainImplT>,
-    phantom: PhantomData<T>,
+    phantom: PhantomData<fn() -> T>, // fn() -> T because we only need to track the Endpoint capabilities requested but avoid requiring caps to implement Sync+Send
 }
 
 // pub type Endpoint<T, STATE: EpState> =
 //     EndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>, STATE>;
 
-pub trait EpState {}
+pub trait EpState: SyncSend {}
 pub struct Connected;
 pub struct Unconnected;
 pub struct UninitUnconnected;
 pub struct Connectionless;
 pub struct UninitConnectionless;
+
+impl SyncSend for Connected {}
+impl SyncSend for Unconnected {}
+impl SyncSend for UninitUnconnected {}
+impl SyncSend for Connectionless {}
+impl SyncSend for UninitConnectionless {}
 
 impl EpState for Connected {}
 impl EpState for Unconnected {}
@@ -108,17 +113,17 @@ pub struct EndpointBase<EP, STATE: EpState> {
 //     }
 // }
 
-pub trait BaseEndpoint: AsRawFid {
+pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
     fn getname(&self) -> Result<Address, crate::error::Error> {
         let mut len = 0;
         let err: i32 = unsafe {
-            libfabric_sys::inlined_fi_getname(self.as_raw_fid(), std::ptr::null_mut(), &mut len)
+            libfabric_sys::inlined_fi_getname(self.as_typed_fid().as_raw_fid(), std::ptr::null_mut(), &mut len)
         };
         if -err as u32 == libfabric_sys::FI_ETOOSMALL {
             let mut address = vec![0; len];
             let err: i32 = unsafe {
                 libfabric_sys::inlined_fi_getname(
-                    self.as_raw_fid(),
+                    self.as_typed_fid().as_raw_fid(),
                     address.as_mut_ptr().cast(),
                     &mut len,
                 )
@@ -143,7 +148,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32,
                 (&mut res as *mut usize).cast(),
@@ -166,7 +171,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_BUFFERED_MIN as i32,
                 (&mut res as *mut usize).cast(),
@@ -189,7 +194,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_CM_DATA_SIZE as i32,
                 (&mut res as *mut usize).cast(),
@@ -212,7 +217,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32,
                 (&mut res as *mut usize).cast(),
@@ -235,7 +240,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_FI_HMEM_P2P as i32,
                 (&mut res as *mut u32).cast(),
@@ -258,7 +263,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_CUDA_API_PERMITTED as i32,
                 (&mut permitted as *mut u32).cast(),
@@ -294,7 +299,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_getopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_XPU_TRIGGER as i32,
                 (&mut res as *mut libfabric_sys::fi_trigger_xpu).cast(),
@@ -317,7 +322,7 @@ pub trait BaseEndpoint: AsRawFid {
         } else {
             let err = unsafe {
                 libfabric_sys::inlined_fi_getopt(
-                    self.as_raw_fid(),
+                    self.as_typed_fid().as_raw_fid(),
                     libfabric_sys::FI_OPT_ENDPOINT as i32,
                     libfabric_sys::FI_OPT_XPU_TRIGGER as i32,
                     (&mut res as *mut libfabric_sys::fi_trigger_xpu).cast(),
@@ -342,7 +347,7 @@ pub trait BaseEndpoint: AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_control(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 fi_wait_obj_FI_WAIT_FD as i32,
                 (&mut fd as *mut i32).cast(),
             )
@@ -357,12 +362,17 @@ pub trait BaseEndpoint: AsRawFid {
     }
 }
 
-impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> BaseEndpoint for EndpointImplBase<T, EQ, CQ> {}
-impl<T: BaseEndpoint, STATE: EpState> BaseEndpoint for EndpointBase<T, STATE> {}
+impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> BaseEndpoint<EpRawFid> for EndpointImplBase<T, EQ, CQ> {}
+// impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SyncSend for EndpointImplBase<T, EQ, CQ> {}
+impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> BaseEndpoint<EpRawFid> for EndpointBase<T, STATE> {}
+impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> SyncSend for EndpointBase<T, STATE> {}
+
 
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ActiveEndpoint for EndpointImplBase<T, EQ, CQ> {}
+impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SyncSend for EndpointImplBase<T, EQ, CQ> {}
 
-impl<T: ActiveEndpoint, STATE: EpState> ActiveEndpoint for EndpointBase<T, STATE> {}
+impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> ActiveEndpoint for EndpointBase<T, STATE> {}
+// impl<T: ActiveEndpoint, STATE: EpState> SyncSend for EndpointBase<T, STATE> {}
 
 impl<E: AsFd, STATE: EpState> AsFd for EndpointBase<E, STATE> {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -384,11 +394,11 @@ pub(crate) struct ScalableEndpointImpl {
 
 pub struct ScalableEndpoint<E> {
     inner: MyRc<ScalableEndpointImpl>,
-    phantom: PhantomData<E>,
+    phantom: PhantomData<fn() -> E>,
 }
 
 impl ScalableEndpoint<()> {
-    pub fn new<E, EQ: ?Sized + 'static>(
+    pub fn new<E, EQ: ?Sized + 'static + SyncSend>(
         domain: &crate::domain::DomainBase<EQ>,
         info: &InfoEntry<E>,
         context: Option<&mut Context>,
@@ -405,8 +415,10 @@ impl ScalableEndpoint<()> {
     }
 }
 
+impl SyncSend for ScalableEndpointImpl {}
+
 impl ScalableEndpointImpl {
-    pub fn new<E, EQ: ?Sized + 'static>(
+    pub fn new<E, EQ: ?Sized + 'static + SyncSend>(
         domain: &MyRc<crate::domain::DomainImplBase<EQ>>,
         info: &InfoEntry<E>,
         context: *mut std::ffi::c_void,
@@ -414,8 +426,8 @@ impl ScalableEndpointImpl {
         let mut c_sep: EpRawFid = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_scalable_ep(
-                domain.as_raw_typed_fid(),
-                info.c_info,
+                domain.as_typed_fid().as_raw_typed_fid(),
+                info.info.0,
                 &mut c_sep,
                 context,
             )
@@ -432,15 +444,15 @@ impl ScalableEndpointImpl {
             })
         }
     }
-    fn bind<T: crate::fid::AsFid + ?Sized>(
+    fn bind<T: crate::fid::AsTypedFid<impl AsRawFid> + ?Sized>(
         &self,
-        res: &T,
+        res: &MyRc<T>,
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_scalable_ep_bind(
-                self.as_raw_typed_fid(),
-                res.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
                 flags,
             )
         };
@@ -457,7 +469,7 @@ impl ScalableEndpointImpl {
         let mut c_sep: EpRawFid = std::ptr::null_mut();
         let c_sep_ptr: *mut EpRawFid = &mut c_sep;
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_alias(self.as_raw_typed_fid(), c_sep_ptr, flags)
+            libfabric_sys::inlined_fi_ep_alias(self.as_typed_fid().as_raw_typed_fid(), c_sep_ptr, flags)
         };
 
         if err != 0 {
@@ -486,58 +498,61 @@ impl<E> ScalableEndpoint<E> {
     }
 }
 
-impl AsFid for ScalableEndpointImpl {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.c_sep.as_fid()
-    }
-}
-impl<E> AsFid for ScalableEndpoint<E> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.as_fid()
-    }
-}
 
-impl AsRawFid for ScalableEndpointImpl {
-    fn as_raw_fid(&self) -> RawFid {
-        self.c_sep.as_raw_fid()
-    }
-}
-impl<E> AsRawFid for ScalableEndpoint<E> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.inner.as_raw_fid()
-    }
-}
+// impl AsFid for ScalableEndpointImpl {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.c_sep.as_fid()
+//     }
+// }
+// impl<E> AsFid for ScalableEndpoint<E> {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.inner.as_fid()
+//     }
+// }
+
+// impl AsRawFid for ScalableEndpointImpl {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.c_sep.as_raw_fid()
+//     }
+// }
+// impl<E> AsRawFid for ScalableEndpoint<E> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.inner.as_raw_fid()
+//     }
+// }
 
 impl AsTypedFid<EpRawFid> for ScalableEndpointImpl {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.c_sep.as_typed_fid()
     }
 }
+
 impl<E> AsTypedFid<EpRawFid> for ScalableEndpoint<E> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl AsRawTypedFid for ScalableEndpointImpl {
-    type Output = EpRawFid;
+// impl AsRawTypedFid for ScalableEndpointImpl {
+//     type Output = EpRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.c_sep.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.c_sep.as_raw_typed_fid()
+//     }
+// }
 
-impl<E> AsRawTypedFid for ScalableEndpoint<E> {
-    type Output = EpRawFid;
+// impl<E> AsRawTypedFid for ScalableEndpoint<E> {
+//     type Output = EpRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.inner.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.inner.as_raw_typed_fid()
+//     }
+// }
 
-impl<E> BaseEndpoint for ScalableEndpoint<E> {}
+impl<E> BaseEndpoint<EpRawFid> for ScalableEndpoint<E> {}
+impl<E> SyncSend for ScalableEndpoint<E> {}
 
-impl BaseEndpoint for ScalableEndpointImpl {}
+impl BaseEndpoint<EpRawFid> for ScalableEndpointImpl {}
 
 impl ActiveEndpoint for ScalableEndpointImpl {}
 
@@ -554,7 +569,7 @@ impl<E> AsFd for ScalableEndpoint<E> {
 pub(crate) struct PassiveEndpointImplBase<E, EQ: ?Sized> {
     pub(crate) c_pep: OwnedPepFid,
     pub(crate) eq: MyOnceCell<MyRc<EQ>>,
-    phantom: PhantomData<E>,
+    phantom: PhantomData<fn() -> E>,
     _fabric_rc: MyRc<FabricImpl>,
 }
 
@@ -590,8 +605,8 @@ impl<EQ: ?Sized> PassiveEndpointImplBase<(), EQ> {
         let mut c_pep: PepRawFid = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_passive_ep(
-                fabric.as_raw_typed_fid(),
-                info.c_info,
+                fabric.as_typed_fid().as_raw_typed_fid(),
+                info.info.0,
                 &mut c_pep,
                 context,
             )
@@ -619,7 +634,7 @@ impl<E> PassiveEndpointImplBase<E, dyn ReadEq> {
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_pep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_pep_bind(self.as_typed_fid().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
         };
         if err != 0 {
             Err(crate::error::Error::from_err_code(
@@ -646,16 +661,16 @@ impl<E> PassiveEndpointBase<E, dyn ReadEq> {
 
 impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
     pub fn listen(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_listen(self.as_raw_typed_fid()) };
+        let err = unsafe { libfabric_sys::inlined_fi_listen(self.as_typed_fid().as_raw_typed_fid()) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn reject<T0>(&self, fid: &impl AsFid, params: &[T0]) -> Result<(), crate::error::Error> {
+    pub fn reject<T0>(&self, fid: &impl AsRawFid, params: &[T0]) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_reject(
-                self.as_raw_typed_fid(),
-                fid.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                fid.as_raw_fid(),
                 params.as_ptr().cast(),
                 params.len(),
             )
@@ -667,7 +682,7 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
     pub fn set_backlog_size(&self, size: i32) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_control(
-                self.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 FI_BACKLOG as i32,
                 (&mut size.clone() as *mut i32).cast(),
             )
@@ -681,7 +696,7 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointBase<E, EQ> {
         self.inner.listen()
     }
 
-    pub fn reject<T0>(&self, fid: &impl AsFid, params: &[T0]) -> Result<(), crate::error::Error> {
+    pub fn reject<T0>(&self, fid: &impl AsRawFid, params: &[T0]) -> Result<(), crate::error::Error> {
         self.inner.reject(fid, params)
     }
 
@@ -690,61 +705,63 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointBase<E, EQ> {
     }
 }
 
-impl<E, EQ: ?Sized> BaseEndpoint for PassiveEndpointBase<E, EQ> {}
+impl<E, EQ: ?Sized + SyncSend> SyncSend for PassiveEndpointBase<E, EQ> {}
+impl<E, EQ: ?Sized + SyncSend + ReadEq> BaseEndpoint<PepRawFid> for PassiveEndpointBase<E, EQ> {}
 
-impl<E, EQ: ?Sized + ReadEq> BaseEndpoint for PassiveEndpointImplBase<E, EQ> {}
+impl<E, EQ: ?Sized + ReadEq> SyncSend for PassiveEndpointImplBase<E, EQ> {}
+impl<E, EQ: ?Sized + ReadEq> BaseEndpoint<PepRawFid>for PassiveEndpointImplBase<E, EQ> {}
 
-impl<E, EQ: ?Sized + ReadEq> AsFid for PassiveEndpointImplBase<E, EQ> {
-    fn as_fid(&self) -> fid::BorrowedFid {
-        self.c_pep.as_fid()
-    }
-}
+// impl<E, EQ: ?Sized + ReadEq> AsFid for PassiveEndpointImplBase<E, EQ> {
+//     fn as_fid(&self) -> fid::BorrowedFid {
+//         self.c_pep.as_fid()
+//     }
+// }
 
-impl<E, EQ: ?Sized + ReadEq> AsFid for PassiveEndpointBase<E, EQ> {
-    fn as_fid(&self) -> fid::BorrowedFid {
-        self.inner.as_fid()
-    }
-}
+// impl<E, EQ: ?Sized + ReadEq> AsFid for PassiveEndpointBase<E, EQ> {
+//     fn as_fid(&self) -> fid::BorrowedFid {
+//         self.inner.as_fid()
+//     }
+// }
 
-impl<E, EQ: ?Sized> AsRawFid for PassiveEndpointImplBase<E, EQ> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.c_pep.as_raw_fid()
-    }
-}
+// impl<E, EQ: ?Sized> AsRawFid for PassiveEndpointImplBase<E, EQ> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.c_pep.as_raw_fid()
+//     }
+// }
 
-impl<E, EQ: ?Sized> AsRawFid for PassiveEndpointBase<E, EQ> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.inner.as_raw_fid()
-    }
-}
+// impl<E, EQ: ?Sized> AsRawFid for PassiveEndpointBase<E, EQ> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.inner.as_raw_fid()
+//     }
+// }
 
 impl<E, EQ: ?Sized + ReadEq> AsTypedFid<PepRawFid> for PassiveEndpointImplBase<E, EQ> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<PepRawFid> {
         self.c_pep.as_typed_fid()
     }
 }
 
 impl<E, EQ: ?Sized + ReadEq> AsTypedFid<PepRawFid> for PassiveEndpointBase<E, EQ> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<PepRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<E, EQ: ?Sized + ReadEq> AsRawTypedFid for PassiveEndpointImplBase<E, EQ> {
-    type Output = PepRawFid;
+// impl<E, EQ: ?Sized + ReadEq> AsRawTypedFid for PassiveEndpointImplBase<E, EQ> {
+//     type Output = PepRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.c_pep.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.c_pep.as_raw_typed_fid()
+//     }
+// }
 
-impl<E, EQ: ?Sized + ReadEq> AsRawTypedFid for PassiveEndpointBase<E, EQ> {
-    type Output = PepRawFid;
+// impl<E, EQ: ?Sized + ReadEq> AsRawTypedFid for PassiveEndpointBase<E, EQ> {
+//     type Output = PepRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.inner.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.inner.as_raw_typed_fid()
+//     }
+// }
 
 impl<E, EQ: ?Sized + ReadEq> AsFd for PassiveEndpointImplBase<E, EQ> {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -754,7 +771,7 @@ impl<E, EQ: ?Sized + ReadEq> AsFd for PassiveEndpointImplBase<E, EQ> {
 
 impl<E> AsFd for PassiveEndpoint<E> {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        self.wait_fd().unwrap()
+        self.inner.wait_fd().unwrap()
     }
 }
 
@@ -805,7 +822,7 @@ pub struct IncompleteBindCntr<'a, EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> 
     pub(crate) flags: u64,
 }
 
-impl<'a, EP, EQ: ?Sized + ReadEq + AsRawFid + 'static, CQ: ?Sized + ReadCq>
+impl<'a, EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq>
     IncompleteBindCntr<'a, EP, EQ, CQ>
 {
     pub fn read(&mut self) -> &mut Self {
@@ -853,7 +870,7 @@ impl<'a, EP, EQ: ?Sized + ReadEq + AsRawFid + 'static, CQ: ?Sized + ReadCq>
 }
 
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
-    pub(crate) fn new<E, DEQ: ?Sized + 'static>(
+    pub(crate) fn new<E, DEQ: ?Sized + 'static + SyncSend>(
         domain: &MyRc<crate::domain::DomainImplBase<DEQ>>,
         info: &InfoEntry<E>,
         flags: u64,
@@ -862,8 +879,8 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
         let mut c_ep: EpRawFid = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_endpoint2(
-                domain.as_raw_typed_fid(),
-                info.c_info,
+                domain.as_typed_fid().as_raw_typed_fid(),
+                info.info.0,
                 &mut c_ep,
                 flags,
                 context,
@@ -890,7 +907,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
 
 impl EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, UninitConnectionless> {
     #[allow(clippy::type_complexity)]
-    pub fn new<E, DEQ: ?Sized + 'static>(
+    pub fn new<E, DEQ: ?Sized + 'static + SyncSend>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
@@ -915,7 +932,7 @@ impl EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, UninitConnection
 
 impl EndpointBase<EndpointImplBase<(), dyn ReadEq, dyn ReadCq>, UninitUnconnected> {
     #[allow(clippy::type_complexity)]
-    pub fn new<E, DEQ: ?Sized + 'static>(
+    pub fn new<E, DEQ: ?Sized + 'static + SyncSend>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
@@ -945,7 +962,7 @@ impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq> EndpointImplBase<EP
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
         };
 
         if err != 0 {
@@ -966,7 +983,7 @@ impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq> EndpointImplBase<EP
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
         };
 
         if err != 0 {
@@ -984,7 +1001,7 @@ impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq> EndpointImplBase<EP
 }
 
 impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
-    pub(crate) fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(
+    pub(crate) fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &MyRc<T>,
         selective: bool,
@@ -995,7 +1012,7 @@ impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), cq.as_typed_fid().as_raw_fid(), flags)
         };
 
         check_error(err as isize)?;
@@ -1006,7 +1023,7 @@ impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
         Ok(())
     }
 
-    pub(crate) fn bind_separate_cqs<T: AsRawFid + ReadCq + 'static>(
+    pub(crate) fn bind_separate_cqs<T: ReadCq + 'static>(
         &self,
         tx_cq: &MyRc<T>,
         tx_selective: bool,
@@ -1024,12 +1041,12 @@ impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), tx_cq.as_raw_fid(), tx_flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), tx_cq.as_typed_fid().as_raw_fid(), tx_flags)
         };
         check_error(err as isize)?;
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), rx_cq.as_raw_fid(), rx_flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), rx_cq.as_typed_fid().as_raw_fid(), rx_flags)
         };
         check_error(err as isize)?;
 
@@ -1051,7 +1068,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn ReadEq, CQ> {
         eq: &MyRc<T>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
         };
 
         if err != 0 {
@@ -1068,7 +1085,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn ReadEq, CQ> {
     }
 }
 
-impl<EP, EQ: ?Sized + AsRawFid + 'static + ReadEq, CQ: ?Sized + ReadCq>
+impl<EP, EQ: ?Sized + 'static + ReadEq, CQ: ?Sized + ReadCq>
     EndpointImplBase<EP, EQ, CQ>
 {
     pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<EP, EQ, CQ> {
@@ -1086,7 +1103,7 @@ impl<EP, EQ: ?Sized + AsRawFid + 'static + ReadEq, CQ: ?Sized + ReadCq>
     pub(crate) fn alias(&self, flags: u64) -> Result<Self, crate::error::Error> {
         let mut c_ep: EpRawFid = std::ptr::null_mut();
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_alias(self.as_raw_typed_fid(), &mut c_ep, flags)
+            libfabric_sys::inlined_fi_ep_alias(self.as_typed_fid().as_raw_typed_fid(), &mut c_ep, flags)
         };
 
         if err != 0 {
@@ -1108,7 +1125,7 @@ impl<EP, EQ: ?Sized + AsRawFid + 'static + ReadEq, CQ: ?Sized + ReadCq>
 }
 
 impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnectionless> {
-    pub fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(
+    pub fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
         selective: bool,
@@ -1116,7 +1133,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
         self.inner.bind_shared_cq(&cq.inner, selective)
     }
 
-    pub fn bind_separate_cqs<T: AsRawFid + ReadCq + 'static>(
+    pub fn bind_separate_cqs<T: ReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
         tx_selective: bool,
@@ -1155,7 +1172,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
 }
 
 impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconnected> {
-    pub fn bind_shared_cq<T: AsRawFid + ReadCq + 'static>(
+    pub fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
         selective: bool,
@@ -1163,7 +1180,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
         self.inner.bind_shared_cq(&cq.inner, selective)
     }
 
-    pub fn bind_separate_cqs<T: AsRawFid + ReadCq + 'static>(
+    pub fn bind_separate_cqs<T: ReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
         tx_selective: bool,
@@ -1201,67 +1218,67 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
     // }
 }
 
-impl<E: AsFid, STATE: EpState> AsFid for EndpointBase<E, STATE> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.inner.as_fid()
-    }
-}
+// impl<E: AsFid, STATE: EpState> AsFid for EndpointBase<E, STATE> {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.inner.as_fid()
+//     }
+// }
 
-impl<E: AsRawFid, STATE: EpState> AsRawFid for EndpointBase<E, STATE> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.inner.as_raw_fid()
-    }
-}
+// impl<E: AsRawFid, STATE: EpState> AsRawFid for EndpointBase<E, STATE> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.inner.as_raw_fid()
+//     }
+// }
 
 impl<E: AsTypedFid<EpRawFid>, STATE: EpState> AsTypedFid<EpRawFid> for EndpointBase<E, STATE> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<E: AsRawTypedFid<Output = *mut libfabric_sys::fid_ep>, STATE: EpState> AsRawTypedFid
-    for EndpointBase<E, STATE>
-{
-    type Output = EpRawFid;
+// impl<E: AsRawTypedFid<Output = *mut libfabric_sys::fid_ep>, STATE: EpState> AsRawTypedFid
+//     for EndpointBase<E, STATE>
+// {
+//     type Output = EpRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.inner.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.inner.as_raw_typed_fid()
+//     }
+// }
 
-impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsFid for EndpointImplBase<EP, EQ, CQ> {
-    fn as_fid(&self) -> fid::BorrowedFid<'_> {
-        self.c_ep.as_fid()
-    }
-}
+// impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsFid for EndpointImplBase<EP, EQ, CQ> {
+//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
+//         self.c_ep.as_fid()
+//     }
+// }
 
-impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsRawFid for EndpointImplBase<EP, EQ, CQ> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.c_ep.as_raw_fid()
-    }
-}
+// impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsRawFid for EndpointImplBase<EP, EQ, CQ> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.c_ep.as_raw_fid()
+//     }
+// }
 
 impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsTypedFid<EpRawFid>
     for EndpointImplBase<EP, EQ, CQ>
 {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.c_ep.as_typed_fid()
     }
 }
 
-impl<EP, EQ: ?Sized, CQ: ?Sized + ReadCq> AsRawTypedFid for EndpointImplBase<EP, EQ, CQ> {
-    type Output = EpRawFid;
+// impl<EP, EQ: ?Sized, CQ: ?Sized + ReadCq> AsRawTypedFid for EndpointImplBase<EP, EQ, CQ> {
+//     type Output = EpRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.c_ep.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.c_ep.as_raw_typed_fid()
+//     }
+// }
 
-pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
+pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend{
     fn cancel(&self, context: &mut Context) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_cancel(
-                self.as_raw_typed_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid().as_raw_fid(),
                 context.inner_mut(),
             )
         };
@@ -1269,7 +1286,7 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
     }
 
     fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
-        let ret = unsafe { libfabric_sys::inlined_fi_rx_size_left(self.as_raw_typed_fid()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_rx_size_left(self.as_typed_fid().as_raw_typed_fid()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code(
@@ -1281,7 +1298,7 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
     }
 
     fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
-        let ret = unsafe { libfabric_sys::inlined_fi_tx_size_left(self.as_raw_typed_fid()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_tx_size_left(self.as_typed_fid().as_raw_typed_fid()) };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code(
@@ -1296,7 +1313,7 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
         let mut ops = libfabric_sys::FI_TRANSMIT;
         let err = unsafe {
             inlined_fi_control(
-                self.as_raw_typed_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 FI_GETOPSFLAG as i32,
                 (&mut ops as *mut u32).cast(),
             )
@@ -1315,7 +1332,7 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
         let mut ops = libfabric_sys::FI_RECV;
         let err = unsafe {
             inlined_fi_control(
-                self.as_raw_typed_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid().as_raw_fid(),
                 FI_GETOPSFLAG as i32,
                 (&mut ops as *mut u32).cast(),
             )
@@ -1331,12 +1348,12 @@ pub trait ActiveEndpoint: AsRawTypedFid<Output = EpRawFid> {
     }
 }
 
-pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
+pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
     fn set_transmit_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
         ops.transmit();
         let err = unsafe {
             inlined_fi_control(
-                self.as_raw_typed_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_SETOPSFLAG as i32,
                 (&mut ops.as_raw() as *mut u32).cast(),
             )
@@ -1349,7 +1366,7 @@ pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
         ops.recv();
         let err = unsafe {
             inlined_fi_control(
-                self.as_raw_typed_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_SETOPSFLAG as i32,
                 (&mut ops.as_raw() as *mut u32).cast(),
             )
@@ -1364,7 +1381,7 @@ pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_setopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_BUFFERED_LIMIT as i32,
                 (&mut res as *mut usize).cast(),
@@ -1381,7 +1398,7 @@ pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_setopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_BUFFERED_MIN as i32,
                 (&mut res as *mut usize).cast(),
@@ -1398,7 +1415,7 @@ pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_setopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_CM_DATA_SIZE as i32,
                 (&mut res as *mut usize).cast(),
@@ -1415,7 +1432,7 @@ pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_setopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_MIN_MULTI_RECV as i32,
                 (&mut res as *mut usize).cast(),
@@ -1431,7 +1448,7 @@ pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_setopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_FI_HMEM_P2P as i32,
                 (&mut hmem.as_raw() as *mut u32).cast(),
@@ -1448,7 +1465,7 @@ pub trait UninitEndpoint: AsRawTypedFid<Output = EpRawFid> + AsRawFid {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_setopt(
-                self.as_raw_fid(),
+                self.as_typed_fid().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_CUDA_API_PERMITTED as i32,
                 (&mut val as *mut u32).cast(),
@@ -1682,7 +1699,7 @@ pub enum Endpoint<EP> {
 }
 
 impl<'a, E> EndpointBuilder<'a, E> {
-    pub fn build<EQ: ?Sized + 'static>(
+    pub fn build<EQ: ?Sized + 'static + SyncSend>(
         self,
         domain: &crate::domain::DomainBase<EQ>,
     ) -> Result<Endpoint<E>, crate::error::Error> {
@@ -1699,7 +1716,7 @@ impl<'a, E> EndpointBuilder<'a, E> {
         }
     }
 
-    pub fn build_scalable<EQ: ?Sized + 'static>(
+    pub fn build_scalable<EQ: ?Sized + 'static + SyncSend>(
         self,
         domain: &crate::domain::DomainBase<EQ>,
     ) -> Result<ScalableEndpoint<E>, crate::error::Error> {

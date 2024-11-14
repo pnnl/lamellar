@@ -1,6 +1,5 @@
 use super::{
     eq::{AsyncReadEq, EventQueue},
-    AsyncCtx,
 };
 use crate::{
     av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase},
@@ -8,8 +7,8 @@ use crate::{
     enums::AVOptions,
     ep::Address,
     eq::Event,
-    fid::{AsRawFid, AsRawTypedFid, Fid},
-    Context, MappedAddress, MyRc, RawMappedAddress,
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, Fid},
+    Context, MappedAddress, MyRc, RawMappedAddress, SyncSend,
 };
 
 pub(crate) type AsyncAddressVectorImpl = AddressVectorImplBase<dyn AsyncReadEq>;
@@ -19,10 +18,9 @@ impl AsyncAddressVectorImpl {
         &self,
         addr: &[Address],
         flags: u64,
-        user_ctx: Option<*mut std::ffi::c_void>,
+        ctx: &mut Context,
     ) -> Result<(Event, Vec<u64>), crate::error::Error> {
         // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async
-        let mut async_ctx = AsyncCtx { user_ctx };
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len());
         let mut serialized: Vec<u8> = Vec::with_capacity(total_size);
@@ -32,12 +30,12 @@ impl AsyncAddressVectorImpl {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_av_insert(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 serialized.as_ptr().cast(),
                 fi_addresses.len(),
                 fi_addresses.as_mut_ptr().cast(),
                 flags,
-                &mut async_ctx as *mut AsyncCtx as *mut std::ffi::c_void,
+                ctx.inner_mut(),
             )
         };
 
@@ -52,12 +50,11 @@ impl AsyncAddressVectorImpl {
                 panic!("Calling insert_async on unbound AV");
             };
 
-            // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_AV_COMPLETE}>::new(self.as_raw_fid(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
             let res = eq
                 .async_event_wait(
                     libfabric_sys::FI_AV_COMPLETE,
-                    Fid(self.as_raw_fid()),
-                    &mut async_ctx as *mut AsyncCtx as usize,
+                    Fid(self.as_typed_fid().as_raw_fid() as usize),
+                    ctx.inner_mut() as usize,
                 )
                 .await?;
             if let Event::AVComplete(ref entry) = res {
@@ -75,11 +72,12 @@ impl AddressVector {
         &self,
         addr: &[Address],
         options: AVOptions,
+        ctx: &mut Context,
     ) -> Result<(Event, Vec<MappedAddress>), crate::error::Error> {
         // [TODO] as_raw_typed_fid async
         let (event, fi_addresses) = self
             .inner
-            .insert_async(addr, options.as_raw(), None)
+            .insert_async(addr, options.as_raw(), ctx)
             .await?;
         Ok((
             event,
@@ -95,30 +93,6 @@ impl AddressVector {
         ))
     }
 
-    pub async fn insert_with_context_async<T>(
-        &self,
-        addr: &[Address],
-        options: AVOptions,
-        ctx: &mut T,
-    ) -> Result<(Event, Vec<MappedAddress>), crate::error::Error> {
-        // [TODO] as_raw_typed_fid async
-        let (event, fi_addresses) = self
-            .inner
-            .insert_async(addr, options.as_raw(), Some((ctx as *mut T).cast()))
-            .await?;
-        Ok((
-            event,
-            fi_addresses
-                .into_iter()
-                .map(|fi_addr| {
-                    MappedAddress::from_raw_addr(
-                        RawMappedAddress::from_raw(self.inner.type_, fi_addr),
-                        crate::AddressSource::Av(self.inner.clone()),
-                    )
-                })
-                .collect::<Vec<_>>(),
-        ))
-    }
 }
 
 pub struct AddressVectorBuilder<'a> {
@@ -239,7 +213,7 @@ impl<'a> AddressVectorBuilder<'a> {
     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
     /// calling `fi_av_open` with an optional `context`, and, if asynchronous, binding with
     /// the selected [EventQueue].
-    pub fn build<EQ: 'static + ?Sized>(
+    pub fn build<EQ: 'static + ?Sized + SyncSend>(
         self,
         domain: &DomainBase<EQ>,
     ) -> Result<AddressVector, crate::error::Error> {

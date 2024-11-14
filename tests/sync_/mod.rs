@@ -12,7 +12,7 @@ use libfabric::{
     cq::{CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq},
     domain::{BoundDomain, Domain},
     enums::AVOptions,
-    ep::{ActiveEndpoint, Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint},
+    ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder, PassiveEndpoint},
     eq::{EventQueueBuilder, ReadEq, WaitEq},
     fabric,
     info::{Info, InfoCapsImpl, InfoEntry, InfoHints},
@@ -277,7 +277,7 @@ pub fn ft_open_domain_res<E, EQ: ReadEq + 'static>(
     }
 }
 
-pub fn ft_alloc_ep_res<E, EQ: ?Sized + 'static>(
+pub fn ft_alloc_ep_res<E, EQ: ?Sized + 'static + libfabric::SyncSend>(
     info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
     domain: &libfabric::domain::DomainBase<EQ>,
@@ -883,16 +883,16 @@ pub fn ft_ep_recv<
     M: MsgDefaultCap,
     T: TagDefaultCap,
 >(
-    info: &InfoEntry<E>,
+    _info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
     ep: &mut EndpointCaps<M, T>,
-    domain: &ConfDomain,
+    _domain: &ConfDomain,
     cq_type: &CqType,
-    eq: &libfabric::eq::EventQueue<EQ>,
-    av: &Option<libfabric::av::AddressVector>,
-    tx_cntr: &Option<Counter<CNTR>>,
-    rx_cntr: &Option<Counter<CNTR>>,
-    rma_cntr: &Option<Counter<CNTR>>,
+    _eq: &libfabric::eq::EventQueue<EQ>,
+    _av: &Option<libfabric::av::AddressVector>,
+    _tx_cntr: &Option<Counter<CNTR>>,
+    _rx_cntr: &Option<Counter<CNTR>>,
+    _rma_cntr: &Option<Counter<CNTR>>,
     data_desc: &mut Option<MemoryRegionDesc>,
 ) {
     match cq_type {
@@ -1730,7 +1730,7 @@ pub fn tagged_post<M: MsgDefaultCap, T: TagDefaultCap>(
     tx_cq_cntr: &mut u64,
     ctx: &mut Context,
     remote_address: &Option<MappedAddress>,
-    ft_tag: u64,
+    _ft_tag: u64,
     tx_cq: &impl ReadCq,
     ep: &EndpointCaps<M, T>,
     data_desc: &mut Option<libfabric::mr::MemoryRegionDesc>,
@@ -1952,7 +1952,7 @@ pub fn connected_tagged_post_recv<T: TagDefaultCap>(
     rx_seq: &mut u64,
     rx_cq_cntr: &mut u64,
     ctx: &mut Context,
-    remote_address: &Option<MappedAddress>,
+    _remote_address: &Option<MappedAddress>,
     ft_tag: u64,
     rx_cq: &impl ReadCq,
     ep: &ConnectedEndpoint<T>,
@@ -2774,7 +2774,7 @@ pub fn ft_reg_mr<I, E: 'static>(
         },
     };
 
-    let desc = mr.description();
+    let desc = mr.descriptor();
 
     (mr.into(), desc.into())
 }

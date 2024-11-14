@@ -5,7 +5,7 @@ use super::{
 use crate::{
     cntr::{Counter, ReadCntr},
     ep::EpState,
-    fid::{AsFid, AsRawFid, AsRawTypedFid, EpRawFid},
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid},
     xcontext::{
         Receive, ReceiveContextBuilder, Transmit, TxContextBuilder, XContextBase, XContextBaseImpl,
     },
@@ -23,15 +23,15 @@ impl TransmitContextImpl {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: AsyncReadCq + AsFid + 'static>(
+    pub(crate) fn bind_cq_<T: AsyncReadCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_raw_typed_fid(),
-                res.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                res.as_raw_fid(),
                 flags,
             )
         };
@@ -90,7 +90,7 @@ impl<'a> TxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: AsyncReadCq + AsFid + 'static>(
+    pub fn cq<T: AsyncReadCq + AsRawFid + 'static>(
         &mut self,
         cq: &crate::cq::CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
@@ -124,7 +124,7 @@ impl<'a> TxIncompleteBindCntr<'a> {
 
     pub fn cntr(
         &self,
-        cntr: &Counter<impl AsFid + ReadCntr + 'static>,
+        cntr: &Counter<impl AsRawFid + ReadCntr + 'static>,
     ) -> Result<(), crate::error::Error> {
         self.ep.bind_cntr_(&cntr.inner, self.flags)
     }
@@ -142,15 +142,15 @@ impl ReceiveContextImpl {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: AsyncReadCq + AsFid + 'static>(
+    pub(crate) fn bind_cq_<T: AsyncReadCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_raw_typed_fid(),
-                res.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                res.as_raw_fid(),
                 flags,
             )
         };
@@ -220,7 +220,7 @@ impl<'a> RxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: AsyncReadCq + 'static + AsFid>(
+    pub fn cq<T: AsyncReadCq + 'static + AsRawFid>(
         &self,
         cq: &crate::cq::CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
@@ -254,7 +254,7 @@ impl<'a> RxIncompleteBindCntr<'a> {
 
     pub fn cntr(
         &mut self,
-        cntr: &Counter<impl AsFid + ReadCntr + 'static>,
+        cntr: &Counter<impl AsRawFid + ReadCntr + 'static>,
     ) -> Result<(), crate::error::Error> {
         self.ep.bind_cntr_(&cntr.inner, self.flags)
     }

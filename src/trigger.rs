@@ -94,6 +94,7 @@ impl<'a, 'b> TriggeredContext<'a, 'b> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner(&self) -> *const std::ffi::c_void {
         match &self.0 {
             TriggeredContextType::TriggeredContext1(ctx) => ctx.get() as *const std::ffi::c_void,

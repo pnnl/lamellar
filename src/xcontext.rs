@@ -6,8 +6,8 @@ use crate::{
     enums::{Mode, TrafficClass, TransferOptions},
     ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase, EpState},
     eq::ReadEq,
-    fid::{self, AsFid, AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, OwnedEpFid, RawFid},
-    Context, MyOnceCell, MyRc,
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid},
+    Context, MyOnceCell, MyRc, SyncSend,
 };
 
 pub struct Receive;
@@ -15,7 +15,7 @@ pub struct Transmit;
 //================== XContext Template ==================//
 pub(crate) struct XContextBaseImpl<T, CQ: ?Sized> {
     pub(crate) c_ep: OwnedEpFid,
-    phantom: PhantomData<T>,
+    phantom: PhantomData<fn() -> T>,
     pub(crate) cq: MyOnceCell<MyRc<CQ>>,
     pub(crate) cntr: MyOnceCell<MyRc<dyn ReadCntr>>,
 }
@@ -25,61 +25,63 @@ pub struct XContextBase<T, CQ: ?Sized> {
 }
 
 //================== XContext Trait Implementations ==================//
-impl<T, CQ> ActiveEndpoint for XContextBase<T, CQ> {}
-impl<T, CQ> ActiveEndpoint for XContextBaseImpl<T, CQ> {}
-impl<T, CQ> BaseEndpoint for XContextBaseImpl<T, CQ> {}
+impl<T, CQ: ReadCq> ActiveEndpoint for XContextBase<T, CQ> {}
+impl<T, CQ: ReadCq> ActiveEndpoint for XContextBaseImpl<T, CQ> {}
+impl<T, CQ: ReadCq> SyncSend for XContextBaseImpl<T, CQ> {}
+impl<T, CQ: ReadCq> SyncSend for XContextBase<T, CQ> {}
+impl<T, CQ: ReadCq> BaseEndpoint<EpRawFid> for XContextBaseImpl<T, CQ> {}
 
-impl<T, CQ> AsFid for XContextBase<T, CQ> {
-    fn as_fid(&self) -> fid::BorrowedFid {
-        self.inner.as_fid()
-    }
-}
+// impl<T, CQ> AsFid for XContextBase<T, CQ> {
+//     fn as_fid(&self) -> fid::BorrowedFid {
+//         self.inner.as_fid()
+//     }
+// }
 
-impl<T, CQ> AsFid for XContextBaseImpl<T, CQ> {
-    fn as_fid(&self) -> fid::BorrowedFid {
-        self.c_ep.as_fid()
-    }
-}
+// impl<T, CQ> AsFid for XContextBaseImpl<T, CQ> {
+//     fn as_fid(&self) -> fid::BorrowedFid {
+//         self.c_ep.as_fid()
+//     }
+// }
 
-impl<T, CQ> AsRawFid for XContextBase<T, CQ> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.inner.as_raw_fid()
-    }
-}
+// impl<T, CQ> AsRawFid for XContextBase<T, CQ> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.inner.as_raw_fid()
+//     }
+// }
 
-impl<T, CQ> AsRawFid for XContextBaseImpl<T, CQ> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.c_ep.as_raw_fid()
-    }
-}
+// impl<T, CQ> AsRawFid for XContextBaseImpl<T, CQ> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.c_ep.as_raw_fid()
+//     }
+// }
 
-impl<T, CQ> AsTypedFid<EpRawFid> for XContextBase<T, CQ> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
+impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBase<T, CQ> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
 }
 
-impl<T, CQ> AsTypedFid<EpRawFid> for XContextBaseImpl<T, CQ> {
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<EpRawFid> {
+impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBaseImpl<T, CQ> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.c_ep.as_typed_fid()
     }
 }
 
-impl<T, CQ: ?Sized> AsRawTypedFid for XContextBase<T, CQ> {
-    type Output = EpRawFid;
+// impl<T, CQ: ?Sized> AsRawTypedFid for XContextBase<T, CQ> {
+//     type Output = EpRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.inner.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.inner.as_raw_typed_fid()
+//     }
+// }
 
-impl<T, CQ: ?Sized> AsRawTypedFid for XContextBaseImpl<T, CQ> {
-    type Output = EpRawFid;
+// impl<T, CQ: ?Sized> AsRawTypedFid for XContextBaseImpl<T, CQ> {
+//     type Output = EpRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.c_ep.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.c_ep.as_raw_typed_fid()
+//     }
+// }
 
 //================== TxContext ==================//
 pub type TxContextBase<CQ> = XContextBase<Transmit, CQ>;
@@ -97,7 +99,7 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_tx_context(
-                ep.as_raw_typed_fid(),
+                ep.as_typed_fid().as_raw_typed_fid(),
                 index,
                 &mut attr.get(),
                 &mut c_ep,
@@ -119,15 +121,15 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
         }
     }
 
-    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(
+    pub(crate) fn bind_cntr_<T: ReadCntr + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_raw_typed_fid(),
-                res.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                res.as_raw_fid(),
                 flags,
             )
         };
@@ -154,15 +156,15 @@ impl TxContextImpl {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(
+    pub(crate) fn bind_cq_<T: ReadCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_raw_typed_fid(),
-                res.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                res.as_raw_fid(),
                 flags,
             )
         };
@@ -473,7 +475,7 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_rx_context(
-                ep.as_raw_typed_fid(),
+                ep.as_typed_fid().as_raw_typed_fid(),
                 index,
                 &mut attr.get(),
                 &mut c_ep,
@@ -495,15 +497,15 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
         }
     }
 
-    pub(crate) fn bind_cntr_<T: ReadCntr + AsFid + 'static>(
+    pub(crate) fn bind_cntr_<T: ReadCntr + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_raw_typed_fid(),
-                res.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                res.as_raw_fid(),
                 flags,
             )
         };
@@ -530,15 +532,15 @@ impl RxContextImplBase<dyn ReadCq> {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: ReadCq + AsFid + 'static>(
+    pub(crate) fn bind_cq_<T: ReadCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_raw_typed_fid(),
-                res.as_fid().as_raw_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
+                res.as_raw_fid(),
                 flags,
             )
         };
@@ -924,7 +926,7 @@ impl<'a> TxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: ReadCq + AsFid + 'static>(
+    pub fn cq<T: ReadCq + AsRawFid + 'static>(
         &mut self,
         cq: &crate::cq::CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
@@ -958,7 +960,7 @@ impl<'a> TxIncompleteBindCntr<'a> {
 
     pub fn cntr(
         &self,
-        cntr: &Counter<impl ReadCntr + AsFid + 'static>,
+        cntr: &Counter<impl ReadCntr + AsRawFid + 'static>,
     ) -> Result<(), crate::error::Error> {
         self.ep.bind_cntr_(&cntr.inner, self.flags)
     }
@@ -1117,7 +1119,7 @@ impl<'a> RxIncompleteBindCq<'a> {
         }
     }
 
-    pub fn cq<T: ReadCq + AsFid + 'static>(
+    pub fn cq<T: ReadCq + AsRawFid + 'static>(
         &self,
         cq: &crate::cq::CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
@@ -1151,7 +1153,7 @@ impl<'a> RxIncompleteBindCntr<'a> {
 
     pub fn cntr(
         &mut self,
-        cntr: &Counter<impl AsFid + ReadCntr + 'static>,
+        cntr: &Counter<impl AsRawFid + ReadCntr + 'static>,
     ) -> Result<(), crate::error::Error> {
         self.ep.bind_cntr_(&cntr.inner, self.flags)
     }

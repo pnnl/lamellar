@@ -33,7 +33,6 @@ pub type MyRc<T> = Rc<T>;
 pub type MyOnceCell<T> = OnceCell<T>;
 
 use av::{AddressVectorImplT, AddressVectorSetImpl};
-use fid::AsRawFid;
 
 pub mod av;
 pub mod cntr;
@@ -64,6 +63,15 @@ pub mod xcontext;
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
 pub mod connless_ep;
+
+pub(crate) struct RawContext {
+    pub(crate) ctx: *mut std::ffi::c_void,
+}
+
+// #[cfg(feature="threading-thread-safe")]
+// TODO
+#[cfg(feature="thread-safe")]
+unsafe impl Send for RawContext{}
 
 #[derive(Clone)]
 pub struct TableMappedAddress {
@@ -111,6 +119,7 @@ impl RawMappedAddress {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)] // We only keep these Rcs to prevent the AddressVector from being deallocated while the respective address is still in use.
 pub(crate) enum AddressSource {
     Av(MyRc<dyn AddressVectorImplT>),
     AvSet(MyRc<AddressVectorSetImpl>),
@@ -380,9 +389,9 @@ impl Context {
 }
 
 // pub trait BindImpl: AsRawFid {}
-pub trait Bind {
-    fn inner(&self) -> MyRc<dyn AsRawFid>;
-}
+// pub trait Bind {
+//     fn inner(&self) -> MyRc<dyn AsRawFid>;
+// }
 
 pub trait FdRetrievable {}
 pub trait Waitable {}
@@ -695,3 +704,8 @@ impl AsFiType for isize {
         }
     }
 }
+#[cfg(feature="thread-safe")]
+pub trait SyncSend: Sync + Send {}
+
+#[cfg(not(feature="thread-safe"))]
+pub trait SyncSend {}

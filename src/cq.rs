@@ -1,7 +1,7 @@
 use std::os::fd::{AsFd, BorrowedFd, RawFd, AsRawFd};
 
-use crate::{domain::{DomainBase, DomainImplT}, fid::AsFid, Context, MyRc, MyRefCell};
-use crate::{enums::{WaitObjType, CompletionFlags}, MappedAddress, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid, AsTypedFid}, RawMappedAddress, error::Error};
+use crate::{domain::{DomainBase, DomainImplT}, fid::AsTypedFid, Context, MyRc, MyRefCell, SyncSend};
+use crate::{enums::{WaitObjType, CompletionFlags}, MappedAddress, fid::{AsRawFid, AsRawTypedFid, RawFid, CqRawFid, OwnedCqFid}, RawMappedAddress, error::Error};
 //================== CompletionQueue (fi_cq) ==================//
 
 
@@ -73,6 +73,10 @@ pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD:
     pub(crate) _domain_rc: MyRc<dyn DomainImplT>,
 }
 
+
+
+
+
 /// Owned wrapper around a libfabric `fid_cq`.
 /// 
 /// This type wraps an instance of a `fid_cq`, monitoring its lifetime and closing it when it goes out of scope.
@@ -88,7 +92,7 @@ pub struct CompletionQueueBase<CQ: ?Sized> {
     pub(crate) inner: MyRc<CQ>,
 }
 
-pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
+pub trait WaitCq: AsTypedFid<CqRawFid> {
 
     /// Blocking version of [ReadCq::read_in]
     /// 
@@ -98,7 +102,7 @@ pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
     /// Corresponds to `fi_cq_sread` with `cond` set to `NULL`.
     fn sread_in(&self, count: usize, buffer: &mut Completion, cond: usize, timeout: i32) -> Result<(), crate::error::Error> {
         let p_cond = cond as *const usize as *const std::ffi::c_void;
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.as_raw_typed_fid(), count, buffer, p_cond, timeout);
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sread, self.as_typed_fid().as_raw_typed_fid(), count, buffer, p_cond, timeout);
 
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
@@ -120,7 +124,7 @@ pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
         let p_cond = cond as *const usize as *const std::ffi::c_void;
         let mut address = 0;
         let p_address = &mut address;   
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.as_raw_typed_fid(), count, buffer, p_address, p_cond, timeout);
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_sreadfrom, self.as_typed_fid().as_raw_typed_fid(), count, buffer, p_address, p_cond, timeout);
 
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
@@ -173,7 +177,7 @@ pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
     /// Corresponds to `fi_cq_signal`
     fn signal(&self) -> Result<(), crate::error::Error>{
         
-        let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.as_raw_typed_fid()) };
+        let err = unsafe { libfabric_sys::inlined_fi_cq_signal(self.as_typed_fid().as_raw_typed_fid()) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
@@ -183,7 +187,7 @@ pub trait WaitCq: AsRawTypedFid<Output = CqRawFid> {
         }
     }
 }
-pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
+pub trait ReadCq: AsTypedFid<CqRawFid> + SyncSend {
 
     /// Reads one or more completions from a completion queue
     /// 
@@ -191,7 +195,7 @@ pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
     /// 
     /// Corresponds to `fi_cq_read` with the `buf` maintained and casted automatically
     fn read_in(&self, count: usize, buffer: &mut Completion) -> Result<usize, crate::error::Error> {
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.as_raw_typed_fid(), count, buffer, );
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_read, self.as_typed_fid().as_raw_typed_fid(), count, buffer, );
         if err < 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) ) 
         }
@@ -209,7 +213,7 @@ pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
        
         let mut address = 0;
         let p_address = &mut address as *mut libfabric_sys::fi_addr_t;    
-        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.as_raw_typed_fid(), count, buffer, p_address);
+        let err = read_cq_entry!(libfabric_sys::inlined_fi_cq_readfrom, self.as_typed_fid().as_raw_typed_fid(), count, buffer, p_address);
         let address = if address == crate::FI_ADDR_NOTAVAIL {
             None
         }
@@ -230,7 +234,7 @@ pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
     fn readerr_in(&self, err_buff: &mut CompletionError, flags: u64) -> Result<(), crate::error::Error> {
         
         let ret = {
-            unsafe { libfabric_sys::inlined_fi_cq_readerr(self.as_raw_typed_fid(), err_buff.get_mut(), flags) }
+            unsafe { libfabric_sys::inlined_fi_cq_readerr(self.as_typed_fid().as_raw_typed_fid(), err_buff.get_mut(), flags) }
         };
 
         if ret < 0 {
@@ -242,7 +246,7 @@ pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
     }
 
     fn print_error(&self, err_entry: &crate::cq::CompletionError) {
-        let ret = unsafe { libfabric_sys::inlined_fi_cq_strerror(self.as_raw_typed_fid(), err_entry.prov_errno(), err_entry.err_data(), std::ptr::null_mut() , err_entry.err_data_size()) };
+        let ret = unsafe { libfabric_sys::inlined_fi_cq_strerror(self.as_typed_fid().as_raw_typed_fid(), err_entry.prov_errno(), err_entry.err_data(), std::ptr::null_mut() , err_entry.err_data_size()) };
         let err_str = unsafe{ std::ffi::CStr::from_ptr(ret).to_str().unwrap() };
         println!("{}", err_str );
     }
@@ -266,6 +270,9 @@ pub trait ReadCq: AsRawTypedFid<Output = CqRawFid> + AsRawFid{
     /// Corresponds to `fi_cq_readerr`
     fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> ;
 }
+
+impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> SyncSend for CompletionQueueImpl<WAIT, RETRIEVE, FD> {}
+
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> ReadCq for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
@@ -323,7 +330,7 @@ impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrieve<'a> for Completion
         if let Some(wait) = self.wait_obj {
             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
                 let mut fd: i32 = 0;
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast()) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_typed_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut fd as *mut i32).cast()) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -337,7 +344,7 @@ impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrieve<'a> for Completion
                     cond: std::ptr::null_mut(),
                 };
 
-                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut mutex_cond as *mut libfabric_sys::fi_mutex_cond).cast()) };
+                let err = unsafe { libfabric_sys::inlined_fi_control(self.as_typed_fid().as_raw_fid(), libfabric_sys::FI_GETWAIT as i32, (&mut mutex_cond as *mut libfabric_sys::fi_mutex_cond).cast()) };
                 if err < 0 {
                     Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
                 }
@@ -375,7 +382,7 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueueImp
         
         let mut c_cq: CqRawFid  = std::ptr::null_mut();
 
-        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.as_raw_typed_fid(), attr.get_mut(), &mut c_cq, context)};
+        let err = unsafe {libfabric_sys::inlined_fi_cq_open(domain.as_typed_fid().as_raw_typed_fid(), attr.get_mut(), &mut c_cq, context)};
 
         if err != 0 {
             Err(crate::error::Error::from_err_code((-err).try_into().unwrap()) )
@@ -431,6 +438,9 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> CompletionQueue<Co
     }
 }
 
+impl<T: ReadCq> SyncSend for CompletionQueue<T> {}
+
+
 impl<T: ReadCq>  ReadCq for CompletionQueue<T> {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
         self.inner.read(count)
@@ -462,23 +472,23 @@ impl<'a, T: WaitObjectRetrieve<'a>> CompletionQueue<T> { //[TODO] Make this a me
     }
 }
 
-impl<T: ReadCq + 'static> crate::Bind for CompletionQueue<T> {
-    fn inner(&self) -> MyRc<dyn AsRawFid> {
-        self.inner.clone()
-    }
-}
+// impl<T: ReadCq + 'static> crate::Bind for CompletionQueue<T> {
+//     fn inner(&self) -> MyRc<dyn AsRawFid> {
+//         self.inner.clone()
+//     }
+// }
 
-impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsFid for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
-    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.c_cq.as_fid()
-    }
-}
+// impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsFid for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
+//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+//         self.c_cq.as_fid()
+//     }
+// }
 
-impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsRawFid for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
-    fn as_raw_fid(&self) -> RawFid {
-        self.c_cq.as_raw_fid()
-    }
-}
+// impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsRawFid for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
+//     fn as_raw_fid(&self) -> RawFid {
+//         self.c_cq.as_raw_fid()
+//     }
+// }
 
 
 impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsTypedFid<CqRawFid> for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
@@ -487,20 +497,20 @@ impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsTypedFid<CqRawFi
     }
 }
 
-impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsRawTypedFid for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
-    type Output = CqRawFid;
+// impl<const WAIT: bool , const RETRIEVE: bool, const FD: bool> AsRawTypedFid for CompletionQueueImpl<WAIT, RETRIEVE, FD> {
+//     type Output = CqRawFid;
 
-    fn as_raw_typed_fid(&self) -> Self::Output {
-        self.c_cq.as_raw_typed_fid()
-    }
-}
+//     fn as_raw_typed_fid(&self) -> Self::Output {
+//         self.c_cq.as_raw_typed_fid()
+//     }
+// }
 
 
-impl<T: AsFid> AsFid for CompletionQueue<T> {
-    fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-        self.inner.as_fid()
-    }
-}
+// impl<T: AsFid> AsFid for CompletionQueue<T> {
+//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
+//         self.inner.as_fid()
+//     }
+// }
 
 
 impl<T: AsRawFid> AsRawFid for CompletionQueue<T> {
@@ -758,7 +768,7 @@ impl<'a, const WAIT: bool, const RETRIEVE: bool, const FD: bool> CompletionQueue
     /// 
     /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cq_open` call with an optional `context`.
-    pub fn build<EQ: ?Sized + 'static>(self, domain: &DomainBase<EQ>) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
+    pub fn build<EQ: ?Sized + 'static + SyncSend>(self, domain: &DomainBase<EQ>) ->  Result<CompletionQueue<CompletionQueueImpl<WAIT, RETRIEVE, FD>>, crate::error::Error> {
         // CompletionQueue::new(self.options, self.domain, self.cq_attr, self.ctx, self.default_buff_size)   
         CompletionQueue::<CompletionQueueImpl<WAIT, RETRIEVE, FD>>::new(domain.inner.clone(), self.cq_attr, self.ctx, self.default_buff_size)   
     }
@@ -846,7 +856,6 @@ impl CompletionEntry<()> {
         }
     }
 }
-
 impl CompletionEntry<CtxEntry> {
     fn new() -> Self {
         Self {
@@ -854,6 +863,23 @@ impl CompletionEntry<CtxEntry> {
         }
     }
 }
+
+// Since we never use the inner pointers of these structures directly 
+#[cfg(feature="thread-safe")] 
+mod thread_safe { 
+    unsafe impl Sync for super::SingleCompletion {}
+    unsafe impl Sync for super::CompletionEntry<super::CtxEntry> {}
+    unsafe impl Send for super::CompletionEntry<super::CtxEntry> {}
+    unsafe impl Sync for super::CompletionEntry<super::DataEntry> {}
+    unsafe impl Send for super::CompletionEntry<super::DataEntry> {}
+    unsafe impl Sync for super::CompletionEntry<super::TaggedEntry> {}
+    unsafe impl Send for super::CompletionEntry<super::TaggedEntry> {}
+    unsafe impl Sync for super::CompletionEntry<super::MsgEntry> {}
+    unsafe impl Send for super::CompletionEntry<super::MsgEntry> {}
+    unsafe impl Send for super::CompletionError {}
+    unsafe impl Sync for super::CompletionError {}
+}
+
 
 impl CompletionEntry<MsgEntry> {
     fn new() -> Self {
@@ -1005,8 +1031,6 @@ impl Default for CompletionEntry<TaggedEntry> {
 pub struct CompletionError {
     pub(crate) c_err: libfabric_sys::fi_cq_err_entry,
 }
-
-//[TODO] Verify if true!
 
 
 impl CompletionError {

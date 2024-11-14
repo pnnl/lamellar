@@ -3,11 +3,11 @@ use std::marker::PhantomData;
 use crate::{
     cq::ReadCq,
     ep::{
-        Address, Connected, EndpointBase, EndpointImplBase, Unconnected, UninitEndpoint,
+        Address, Connected, EndpointBase, EndpointImplBase, Unconnected,
         UninitUnconnected,
     },
     eq::{ConnectedEvent, ReadEq},
-    fid::{AsRawFid, AsRawTypedFid, EpRawFid},
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid},
     utils::check_error,
 };
 
@@ -21,15 +21,15 @@ pub type UnconnectedEndpointBase<EP> = EndpointBase<EP, Unconnected>;
 pub type UnconnectedEndpoint<T> =
     UnconnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
 
-impl<EP: AsRawTypedFid<Output = EpRawFid> + AsRawFid> UninitEndpoint
-    for UninitUnconnectedEndpointBase<EP>
-{
-}
+// impl<EP: AsRawTypedFid<Output = EpRawFid> + AsRawFid> UninitEndpoint
+//     for UninitUnconnectedEndpointBase<EP>
+// {
+// }
 
-impl<EP: AsRawTypedFid<Output = EpRawFid>> UninitUnconnectedEndpointBase<EP> {
+impl<EP: AsTypedFid<EpRawFid>> UninitUnconnectedEndpointBase<EP> {
     pub fn enable(self) -> Result<UnconnectedEndpointBase<EP>, crate::error::Error> {
         // TODO: Move this into an UninitEp struct
-        let err = unsafe { libfabric_sys::inlined_fi_enable(self.as_raw_typed_fid()) };
+        let err = unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
         Ok(UnconnectedEndpointBase::<EP> {
             inner: self.inner.clone(),
@@ -38,11 +38,11 @@ impl<EP: AsRawTypedFid<Output = EpRawFid>> UninitUnconnectedEndpointBase<EP> {
     }
 }
 
-impl<EP: AsRawTypedFid<Output = EpRawFid>> UnconnectedEndpointBase<EP> {
+impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_connect(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 addr.as_bytes().as_ptr().cast(),
                 param.as_ptr().cast(),
                 param.len(),
@@ -55,7 +55,7 @@ impl<EP: AsRawTypedFid<Output = EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_connect(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 addr.as_bytes().as_ptr().cast(),
                 std::ptr::null_mut(),
                 0,
@@ -68,7 +68,7 @@ impl<EP: AsRawTypedFid<Output = EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_accept(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 param.as_ptr().cast(),
                 param.len(),
             )
@@ -79,7 +79,7 @@ impl<EP: AsRawTypedFid<Output = EpRawFid>> UnconnectedEndpointBase<EP> {
 
     pub fn accept(&self) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_accept(self.as_raw_typed_fid(), std::ptr::null_mut(), 0)
+            libfabric_sys::inlined_fi_accept(self.as_typed_fid().as_raw_typed_fid(), std::ptr::null_mut(), 0)
         };
 
         check_error(err.try_into().unwrap())
@@ -90,7 +90,7 @@ impl<E> UnconnectedEndpoint<E> {
     pub fn connect_complete(self, event: ConnectedEvent) -> ConnectedEndpoint<E> {
         // TODO: Create a type specifically for each event type
 
-        assert_eq!(event.get_fid(), self.as_raw_fid());
+        assert_eq!(event.get_fid(), self.as_typed_fid().as_raw_fid());
 
         ConnectedEndpoint {
             inner: self.inner.clone(),
@@ -107,9 +107,9 @@ pub type ConnectedEndpoint<T> = ConnectedEndpointBase<EndpointImplBase<T, dyn Re
 
 impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
 
-impl<EP: AsRawTypedFid<Output = EpRawFid>> ConnectedEndpointBase<EP> {
+impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
     pub fn shutdown(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_shutdown(self.as_raw_typed_fid(), 0) };
+        let err = unsafe { libfabric_sys::inlined_fi_shutdown(self.as_typed_fid().as_raw_typed_fid(), 0) };
 
         check_error(err.try_into().unwrap())
     }
@@ -118,7 +118,7 @@ impl<EP: AsRawTypedFid<Output = EpRawFid>> ConnectedEndpointBase<EP> {
         let mut len = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_getpeer(
-                self.as_raw_typed_fid(),
+                self.as_typed_fid().as_raw_typed_fid(),
                 std::ptr::null_mut(),
                 &mut len,
             )
@@ -128,7 +128,7 @@ impl<EP: AsRawTypedFid<Output = EpRawFid>> ConnectedEndpointBase<EP> {
             let mut address = vec![0; len];
             let err = unsafe {
                 libfabric_sys::inlined_fi_getpeer(
-                    self.as_raw_typed_fid(),
+                    self.as_typed_fid().as_raw_typed_fid(),
                     address.as_mut_ptr().cast(),
                     &mut len,
                 )

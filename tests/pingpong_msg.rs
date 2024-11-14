@@ -4,13 +4,11 @@ pub mod sync_; // Public to supress lint warnings (unused function)
 pub mod async_; // Public to supress lint warnings (unused function)
 pub mod common; // Public to supress lint warnings (unused function)
 
-use common::IP;
 use libfabric::{
-    ep::ActiveEndpoint,
     info::{Info, Version},
 };
 use prefix::{call, define_test, EndpointCaps, HintsCaps};
-use sync_ as prefix;
+use async_ as prefix;
 
 // To run the following tests do:
 // 1. export FI_LOG_LEVEL="info" .

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected, UninitUnconnected},
     eq::Event,
-    fid::{AsRawFid, Fid},
+    fid::{AsRawFid, AsTypedFid, Fid},
 };
 
 use super::{cq::AsyncReadCq, eq::AsyncReadEq};
@@ -40,12 +40,12 @@ impl<EP> UnconnectedEndpoint<EP> {
             .get()
             .expect("Endpoint not bound to an EventQueue");
         let res = eq
-            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_raw_fid()), 0)
+            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_typed_fid().as_raw_fid() as usize), 0)
             .await?;
 
         match res {
             Event::Connected(event) => {
-                assert_eq!(event.get_fid(), self.as_raw_fid())
+                assert_eq!(event.get_fid(), self.as_typed_fid().as_raw_fid())
             }
             _ => panic!("Unexpected Event Type"),
         }
@@ -65,12 +65,12 @@ impl<EP> UnconnectedEndpoint<EP> {
             .get()
             .expect("Endpoint not bound to an EventQueue");
         let res = eq
-            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_raw_fid()), 0)
+            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_typed_fid().as_raw_fid() as usize), 0)
             .await?;
 
         match res {
             Event::Connected(event) => {
-                assert_eq!(event.get_fid(), self.as_raw_fid())
+                assert_eq!(event.get_fid(), self.as_typed_fid().as_raw_fid())
             }
             _ => panic!("Unexpected Event Type"),
         }

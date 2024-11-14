@@ -17,10 +17,10 @@ use crate::{
         UninitUnconnected,
     },
     eq::{Event, EventQueueBase, ReadEq},
-    fid::{AsRawFid, AsRawTypedFid, Fid, RawFid},
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, Fid, RawFid},
     info::InfoEntry,
     utils::check_error,
-    Context, MyRc,
+    Context, MyRc, SyncSend,
 };
 
 pub struct ConnectionListener {
@@ -39,7 +39,7 @@ impl ConnectionListener {
     pub async fn next(&self) -> Result<Event, crate::error::Error> {
         let res = self
             .eq
-            .async_event_wait(libfabric_sys::FI_CONNREQ, Fid(self.ep_fid), 0)
+            .async_event_wait(libfabric_sys::FI_CONNREQ, Fid(self.ep_fid as usize), 0)
             .await?;
         Ok(res)
     }
@@ -52,7 +52,7 @@ pub enum Endpoint<EP> {
 // pub type Endpoint<T> = EndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
 
 impl EndpointBase<EndpointImplBase<(), dyn AsyncReadEq, dyn AsyncReadCq>, UninitConnectionless> {
-    pub(crate) fn new<E, DEQ: ?Sized + 'static>(
+    pub(crate) fn new<E, DEQ: ?Sized + 'static + SyncSend>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
@@ -76,7 +76,7 @@ impl EndpointBase<EndpointImplBase<(), dyn AsyncReadEq, dyn AsyncReadCq>, Uninit
     }
 }
 impl EndpointBase<EndpointImplBase<(), dyn AsyncReadEq, dyn AsyncReadCq>, UninitUnconnected> {
-    pub(crate) fn new<E, DEQ: ?Sized + 'static>(
+    pub(crate) fn new<E, DEQ: ?Sized + 'static + SyncSend>(
         domain: &crate::domain::DomainBase<DEQ>,
         info: &InfoEntry<E>,
         flags: u64,
@@ -172,7 +172,7 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
     //     }
     // }
 
-    pub(crate) fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static>(
+    pub(crate) fn bind_shared_cq<T: AsyncReadCq + 'static>(
         &self,
         cq: &MyRc<T>,
         selective: bool,
@@ -183,7 +183,7 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), cq.as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), cq.as_typed_fid().as_raw_fid(), flags)
         };
 
         check_error(err as isize)?;
@@ -194,7 +194,7 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
         Ok(())
     }
 
-    pub(crate) fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static>(
+    pub(crate) fn bind_separate_cqs<T: AsyncReadCq + 'static>(
         &self,
         tx_cq: &MyRc<T>,
         tx_selective: bool,
@@ -212,12 +212,12 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), tx_cq.as_raw_fid(), tx_flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), tx_cq.as_typed_fid().as_raw_fid(), tx_flags)
         };
         check_error(err as isize)?;
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), rx_cq.as_raw_fid(), rx_flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), rx_cq.as_typed_fid().as_raw_fid(), rx_flags)
         };
         check_error(err as isize)?;
 
@@ -239,7 +239,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
         eq: &MyRc<T>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_raw_typed_fid(), eq.as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
         };
 
         if err != 0 {
@@ -282,14 +282,14 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, Un
     //         }
     //     )
     // }
-    pub fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static>(
+    pub fn bind_shared_cq<T: AsyncReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_shared_cq(&cq.inner, false)
     }
 
-    pub fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static>(
+    pub fn bind_separate_cqs<T: AsyncReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
         rx_cq: &CompletionQueue<T>,
@@ -327,14 +327,14 @@ impl<EP>
     //         }
     //     )
     // }
-    pub fn bind_shared_cq<T: AsRawFid + AsyncReadCq + 'static>(
+    pub fn bind_shared_cq<T: AsyncReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_shared_cq(&cq.inner, false)
     }
 
-    pub fn bind_separate_cqs<T: AsRawFid + AsyncReadCq + 'static>(
+    pub fn bind_separate_cqs<T: AsyncReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
         rx_cq: &CompletionQueue<T>,
@@ -391,7 +391,7 @@ impl<T> PassiveEndpoint<T> {
         self.listen()?;
 
         Ok(ConnectionListener::new(
-            self.as_raw_fid(),
+            self.as_typed_fid().as_raw_fid(),
             self.inner.eq.get().unwrap(),
         ))
     }
@@ -404,7 +404,7 @@ impl<E> PassiveEndpointImplBase<E, dyn AsyncReadEq> {
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_pep_bind(self.as_raw_typed_fid(), res.as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_pep_bind(self.as_typed_fid().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
         };
         if err != 0 {
             Err(crate::error::Error::from_err_code(
@@ -448,7 +448,7 @@ impl<'a> EndpointBuilder<'a, ()> {
 }
 
 impl<'a, E> EndpointBuilder<'a, E> {
-    pub fn build<DEQ: ?Sized + 'static>(
+    pub fn build<DEQ: ?Sized + 'static + SyncSend>(
         self,
         domain: &DomainBase<DEQ>,
     ) -> Result<Endpoint<E>, crate::error::Error> {

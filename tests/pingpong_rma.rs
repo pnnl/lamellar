@@ -1,5 +1,4 @@
 pub mod common; // Public to supress lint warnings (unused function)
-use common::IP;
 
 use libfabric::info::{Info, Version};
 use prefix::{call, define_test, HintsCaps};
@@ -8,7 +7,7 @@ use prefix::{call, define_test, HintsCaps};
 pub mod async_;
 pub mod sync_; // Public to supress lint warnings (unused function) // Public to supress lint warnings (unused function)
 
-use sync_ as prefix;
+use async_ as prefix;
 
 define_test!(pp_server_rma, async_pp_server_rma, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();

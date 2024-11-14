@@ -1,15 +1,10 @@
-use std::ops::Deref;
-
 use libfabric::{
     av::AddressVectorBuilder,
     comm::{
         atomic::{
             AtomicCASEp, AtomicFetchEp, AtomicWriteEp, ConnectedAtomicCASEp,
             ConnectedAtomicFetchEp, ConnectedAtomicWriteEp,
-        },
-        message::{ConnectedRecvEp, ConnectedSendEp, RecvEp, SendEp},
-        rma::{ConnectedReadEp, ConnectedWriteEp, ReadEp, WriteEp},
-        tagged::{ConnectedTagRecvEp, ConnectedTagSendEp, TagRecvEp, TagSendEp},
+        }, message::{ConnectedRecvEp, ConnectedSendEp, RecvEp, SendEp}, rma::{ConnectedReadEp, ConnectedWriteEp, ReadEp, WriteEp}, tagged::{ConnectedTagRecvEp, ConnectedTagSendEp, TagRecvEp, TagSendEp}
     },
     conn_ep::ConnectedEndpoint,
     connless_ep::ConnectionlessEndpoint,
@@ -19,7 +14,7 @@ use libfabric::{
         AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType,
         FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions,
     },
-    ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder, UninitEndpoint},
+    ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder},
     eq::{EventQueueBuilder, WaitEq},
     error::{Error, ErrorKind},
     fabric::FabricBuilder,
@@ -96,6 +91,12 @@ pub struct Ofi<I> {
     // pub rx_pending_cnt: AtomicUsize,
     // pub rx_complete_cnt: AtomicUsize,
 }
+
+#[cfg(feature="threading-fid")]
+pub trait IsSyncSend: Send + Sync {}
+
+#[cfg(feature="threading-fid")]
+impl<I> IsSyncSend for Ofi<I> {}
 
 impl<I> Drop for Ofi<I> {
     fn drop(&mut self) {
@@ -374,7 +375,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     let addrlen = epname.as_bytes().len();
 
                     let mut mr_desc = if let Some(ref mr) = mr {
-                        mr.description()
+                        mr.descriptor()
                     } else {
                         default_desc()
                     };
@@ -900,7 +901,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             }
         };
 
-        let mut desc = mr.description();
+        let mut desc = mr.descriptor();
         self.send(
             &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
             &mut desc,
@@ -1814,7 +1815,7 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = [mr.description(), mr.description()];
+    let mut desc = [mr.descriptor(), mr.descriptor()];
     let mut ctx = ofi.info_entry.allocate_context();
 
     if server {
@@ -1930,7 +1931,7 @@ fn sendrecvdata(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = [mr.description(), mr.description()];
+    let mut desc = [mr.descriptor(), mr.descriptor()];
     let data = Some(128u64);
     if server {
         // Send a single buffer
@@ -2007,7 +2008,7 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = [mr.description(), mr.description()];
+    let mut desc = [mr.descriptor(), mr.descriptor()];
     let data = Some(128u64);
 
     if server {
@@ -2127,7 +2128,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let desc = mr.description();
+    let desc = mr.descriptor();
     let mut descs = [desc.clone(), desc];
     let mapped_addr = ofi.mapped_addr.clone();
 
@@ -2338,7 +2339,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let desc = mr.description();
+    let desc = mr.descriptor();
     let mut descs = [desc.clone(), desc];
     let mapped_addr = ofi.mapped_addr.clone();
 
@@ -2593,7 +2594,7 @@ fn writeread(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let desc = mr.description();
+    let desc = mr.descriptor();
     let mut descs = [desc.clone(), desc];
     // let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
@@ -2720,7 +2721,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let desc = mr.description();
+    let desc = mr.descriptor();
     let mut descs = [desc.clone(), desc];
     let mapped_addr = ofi.mapped_addr.clone();
 
@@ -2955,7 +2956,7 @@ fn atomic(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let desc = mr.description();
+    let desc = mr.descriptor();
     let mut descs = [desc.clone(), desc];
     // let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
@@ -3118,8 +3119,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc0 = mr.description();
-    let mut desc1 = mr.description();
+    let mut desc0 = mr.descriptor();
+    let mut desc1 = mr.descriptor();
     // let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
@@ -3236,10 +3237,10 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             IocMut::from_slice(write_mems.1),
         ];
 
-        let desc0 = mr.description();
-        let desc1 = mr.description();
-        let desc2 = mr.description();
-        let desc3 = mr.description();
+        let desc0 = mr.descriptor();
+        let desc1 = mr.descriptor();
+        let desc2 = mr.descriptor();
+        let desc3 = mr.descriptor();
         let mut descs = [desc0, desc1];
         let mut res_descs = [desc2, desc3];
         ofi.fetch_atomicv(
@@ -3348,9 +3349,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let mut desc = mr.description();
-    let mut comp_desc = mr.description();
-    let mut res_desc = mr.description();
+    let mut desc = mr.descriptor();
+    let mut comp_desc = mr.descriptor();
+    let mut res_desc = mr.descriptor();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
     if server {
@@ -3462,9 +3463,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         let buf_iocs = [Ioc::from_slice(&buf0), Ioc::from_slice(&buf1)];
         let comp_iocs = [Ioc::from_slice(&comp0), Ioc::from_slice(&comp1)];
         let mut res_iocs = [IocMut::from_slice(res0), IocMut::from_slice(res1)];
-        let mut buf_descs = [mr.description(), mr.description()];
-        let mut comp_descs = [mr.description(), mr.description()];
-        let mut res_descs = [mr.description(), mr.description()];
+        let mut buf_descs = [mr.descriptor(), mr.descriptor()];
+        let mut comp_descs = [mr.descriptor(), mr.descriptor()];
+        let mut res_descs = [mr.descriptor(), mr.descriptor()];
 
         ofi.compare_atomicv(
             &buf_iocs,
@@ -3558,7 +3559,7 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let desc = mr.description();
+    let desc = mr.descriptor();
     let mut descs = [desc.clone(), desc];
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
@@ -3683,10 +3684,10 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
             IocMut::from_slice(write_mems.1),
         ];
 
-        let desc0 = mr.description();
-        let desc1 = mr.description();
-        let desc2 = mr.description();
-        let desc3 = mr.description();
+        let desc0 = mr.descriptor();
+        let desc1 = mr.descriptor();
+        let desc2 = mr.descriptor();
+        let desc3 = mr.descriptor();
         let mut descs = [desc0, desc1];
         let mut res_descs = [desc2, desc3];
         let rma_ioc0 = RmaIoc::new(start, 128, ofi.remote_key.as_ref().unwrap());
@@ -3724,7 +3725,7 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut ack_mem[..512], &mut descs[0]);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
-        let mut desc0 = mr.description();
+        let mut desc0 = mr.descriptor();
         let expected = vec![2u8; 256];
 
         // Recv a completion ack
@@ -3789,7 +3790,7 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = mr.description();
+    let mut desc = mr.descriptor();
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
@@ -3810,9 +3811,9 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         let buf_iocs = [Ioc::from_slice(&buf0), Ioc::from_slice(&buf1)];
         let comp_iocs = [Ioc::from_slice(&comp0), Ioc::from_slice(&comp1)];
         let mut res_iocs = [IocMut::from_slice(res0), IocMut::from_slice(res1)];
-        let mut buf_descs = [mr.description(), mr.description()];
-        let mut comp_descs = [mr.description(), mr.description()];
-        let mut res_descs = [mr.description(), mr.description()];
+        let mut buf_descs = [mr.descriptor(), mr.descriptor()];
+        let mut comp_descs = [mr.descriptor(), mr.descriptor()];
+        let mut res_descs = [mr.descriptor(), mr.descriptor()];
         let rma_ioc0 = RmaIoc::new(start, 128, ofi.remote_key.as_ref().unwrap());
         let rma_ioc1 = RmaIoc::new(start + 128, 128, ofi.remote_key.as_ref().unwrap());
         let rma_iocs = [rma_ioc0, rma_ioc1];

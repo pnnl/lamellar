@@ -1,8 +1,7 @@
-use super::AsyncCtx;
 use crate::domain::DomainBase;
 use crate::enums::{MrMode, MrRegOpt};
 use crate::eq::Event;
-use crate::fid::{AsRawTypedFid, Fid, OwnedMrFid};
+use crate::fid::{AsRawTypedFid, AsTypedFid, Fid, OwnedMrFid};
 use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder};
 use crate::{
     enums::MrAccess,
@@ -20,15 +19,14 @@ impl MemoryRegionImpl {
         access: &MrAccess,
         requested_key: u64,
         flags: MrMode,
-        user_ctx: Option<*mut std::ffi::c_void>,
+        ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
-        let mut async_ctx = AsyncCtx { user_ctx };
 
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_reg(
-                domain.as_raw_typed_fid(),
+                domain.as_typed_fid().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 access.as_raw().into(),
@@ -36,7 +34,7 @@ impl MemoryRegionImpl {
                 requested_key,
                 flags.as_raw() as u64,
                 c_mr_ptr,
-                (&mut async_ctx as *mut AsyncCtx).cast(),
+                ctx.inner_mut(),
             )
         };
 
@@ -49,8 +47,8 @@ impl MemoryRegionImpl {
                     let res = eq
                         .async_event_wait(
                             libfabric_sys::FI_MR_COMPLETE,
-                            Fid(std::ptr::null_mut()),
-                            &mut async_ctx as *mut AsyncCtx as usize,
+                            Fid(0),
+                            ctx.inner_mut() as usize,
                         )
                         .await?;
 
@@ -79,23 +77,17 @@ impl MemoryRegionImpl {
         domain: &MyRc<crate::async_::domain::AsyncDomainImpl>,
         mut attr: MemoryRegionAttr,
         flags: MrRegOpt,
+        ctx: &mut Context
     ) -> Result<(Event, Self), crate::error::Error> {
         // [TODO] Add context version
 
-        let mut async_ctx = if attr.c_attr.context.is_null() {
-            AsyncCtx { user_ctx: None }
-        } else {
-            AsyncCtx {
-                user_ctx: Some(attr.c_attr.context),
-            }
-        };
-        attr.c_attr.context = (&mut async_ctx as *mut AsyncCtx).cast();
+        attr.c_attr.context = ctx.inner_mut();
 
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_regattr(
-                domain.as_raw_typed_fid(),
+                domain.as_typed_fid().as_raw_typed_fid(),
                 attr.get(),
                 flags.as_raw(),
                 c_mr_ptr,
@@ -111,7 +103,7 @@ impl MemoryRegionImpl {
                     let res = eq
                         .async_event_wait(
                             libfabric_sys::FI_MR_COMPLETE,
-                            Fid(std::ptr::null_mut()),
+                            Fid(0),
                             attr.c_attr.context as usize,
                         )
                         .await?;
@@ -143,14 +135,14 @@ impl MemoryRegionImpl {
         access: &MrAccess,
         requested_key: u64,
         flags: MrRegOpt,
-        user_ctx: Option<*mut std::ffi::c_void>,
+        ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
-        let mut async_ctx = AsyncCtx { user_ctx };
+        // let mut async_ctx = AsyncCtx { user_ctx };
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_regv(
-                domain.as_raw_typed_fid(),
+                domain.as_typed_fid().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 iov.len(),
                 access.as_raw().into(),
@@ -158,7 +150,7 @@ impl MemoryRegionImpl {
                 requested_key,
                 flags.as_raw(),
                 c_mr_ptr,
-                (&mut async_ctx as *mut AsyncCtx).cast(),
+                ctx.inner_mut(),
             )
         };
 
@@ -171,8 +163,8 @@ impl MemoryRegionImpl {
                     let res = eq
                         .async_event_wait(
                             libfabric_sys::FI_MR_COMPLETE,
-                            Fid(std::ptr::null_mut()),
-                            &mut async_ctx as *mut AsyncCtx as usize,
+                            Fid(0),
+                            ctx.inner_mut() as usize,
                         )
                         .await?;
 
@@ -205,9 +197,8 @@ impl MemoryRegion {
         access: &MrAccess,
         requested_key: u64,
         flags: MrMode,
-        user_ctx: Option<&mut Context>,
+        ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
-        let ctx = user_ctx.map(|ctx| ctx.inner_mut());
         let (event, mr) = MemoryRegionImpl::from_buffer_async(
             &domain.inner,
             buf,
@@ -230,9 +221,10 @@ impl MemoryRegion {
         domain: &crate::async_::domain::Domain,
         attr: MemoryRegionAttr,
         flags: MrRegOpt,
+        ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
         // [TODO] Add context version
-        let (event, mr) = MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags).await?;
+        let (event, mr) = MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags, ctx).await?;
         Ok((
             event,
             Self {
@@ -248,9 +240,8 @@ impl MemoryRegion {
         access: &MrAccess,
         requested_key: u64,
         flags: MrRegOpt,
-        user_ctx: Option<&mut Context>,
+        ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
-        let ctx = user_ctx.map(|ctx| ctx.inner_mut());
         let (event, mr) = MemoryRegionImpl::from_iovec_async(
             &domain.inner,
             iov,
@@ -278,10 +269,11 @@ impl<'a> MemoryRegionBuilder<'a> {
     pub async fn build_async(
         self,
         domain: &DomainBase<dyn AsyncReadEq>,
+        ctx: &mut Context,
     ) -> Result<(Event, MemoryRegion), crate::error::Error> {
         panic!("Async memory registration is currently not supported due to a potential bug in libfabric");
         self.mr_attr.iov(&self.iovs);
-        MemoryRegion::from_attr_async(domain, self.mr_attr, self.flags).await
+        MemoryRegion::from_attr_async(domain, self.mr_attr, self.flags, ctx).await
     }
 }
 
