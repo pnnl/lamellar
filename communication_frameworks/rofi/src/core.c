@@ -308,6 +308,7 @@ int rofi_init_internal(char *provs, char *domains) {
         for (int i = 0; i < prov_names->num; i++) {
             free(prov_names->names[i]);
         }
+        free(prov_names->names);
         free(prov_names);
     }
 
@@ -315,6 +316,7 @@ int rofi_init_internal(char *provs, char *domains) {
         for (int i = 0; i < domain_names->num; i++) {
             free(domain_names->names[i]);
         }
+        free(domain_names->names);
         free(domain_names);
     }
 

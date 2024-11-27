@@ -124,7 +124,7 @@ int rofi_transport_fini(rofi_transport_t *rofi) {
         rofi->fabric = NULL;
     }
     DEBUG_MSG("fabric closed");
-    free(rofi->info);
+    fi_freeinfo(rofi->info);
     DEBUG_MSG("info freed");
     return 0;
 }
@@ -181,9 +181,8 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         ROFI_TRANSPORT_ERR_MSG("fi_getinfo", ret);
     }
 
-    struct fi_info *prov_cur = prov; // rofi->info;
-
 #ifdef _DEBUG
+    struct fi_info *prov_cur = prov; // rofi->info;
     while (prov_cur != NULL) {
         DEBUG_MSG("Available Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
                   prov_cur->fabric_attr->prov_name,
@@ -213,6 +212,8 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
     if (rofi->info == NULL) {
         rofi_transport_select_provider(prov, rofi, NULL, NULL);
     }
+
+    fi_freeinfo(prov);
     DEBUG_MSG("Selected Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
               rofi->info->fabric_attr->prov_name,
               FI_MAJOR(rofi->info->fabric_attr->prov_version),
@@ -232,7 +233,7 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
               rofi->info->caps & FI_RMA_EVENT ? "yes" : "no",
               rofi->info->caps & FI_ATOMIC ? "yes" : "no",
               rofi->info->caps & FI_COLLECTIVE ? "yes" : "no");
-    fi_freeinfo(prov);
+
     if (rofi->info == NULL) {
         ERR_MSG("Error initializing ROFI. No matching provider found. Aborting.");
         return -1;
@@ -483,6 +484,7 @@ int rofi_transport_init_av(rofi_transport_t *rofi) {
         DEBUG_MSG("Got EP address name from %i (%s).", i, fi_av_straddr(rofi->av, addr_ptr, buf, &buflen));
         if (ret) {
             ERR_MSG("Error getting EP address name from %i (%d).", i, ret);
+            free(all_addrs);
             return ret;
         }
     }
@@ -491,12 +493,14 @@ int rofi_transport_init_av(rofi_transport_t *rofi) {
     int ret = fi_av_insert(rofi->av, all_addrs, rofi->desc.nodes, rofi->remote_addrs, 0, NULL);
     if (ret < 0) {
         ROFI_TRANSPORT_ERR_MSG("ft_av_insert", ret);
+        free(all_addrs);
         return ret;
     }
     else if (ret != rofi->desc.nodes) {
         ERR_MSG("fi_av_insert: number of addresses inserted = %d;"
                 " number of addresses given = %d\n",
                 ret, rofi->desc.nodes);
+        free(all_addrs);
         return ret;
     }
     return 0;
