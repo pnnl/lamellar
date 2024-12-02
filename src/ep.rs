@@ -368,10 +368,18 @@ impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> BaseEndpoint<EpRawFid> for Endpo
 impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> SyncSend for EndpointBase<T, STATE> {}
 
 
-impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ActiveEndpoint for EndpointImplBase<T, EQ, CQ> {}
+impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ActiveEndpoint for EndpointImplBase<T, EQ, CQ> {
+    fn fid(&self) -> &OwnedEpFid {
+        &self.c_ep
+    }
+}
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SyncSend for EndpointImplBase<T, EQ, CQ> {}
 
-impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> ActiveEndpoint for EndpointBase<T, STATE> {}
+impl<T: BaseEndpoint<EpRawFid> + ActiveEndpoint, STATE: EpState> ActiveEndpoint for EndpointBase<T, STATE> {
+    fn fid(&self) -> &OwnedEpFid {
+        self.inner.fid()
+    }
+}
 // impl<T: ActiveEndpoint, STATE: EpState> SyncSend for EndpointBase<T, STATE> {}
 
 impl<E: AsFd, STATE: EpState> AsFd for EndpointBase<E, STATE> {
@@ -554,9 +562,17 @@ impl<E> SyncSend for ScalableEndpoint<E> {}
 
 impl BaseEndpoint<EpRawFid> for ScalableEndpointImpl {}
 
-impl ActiveEndpoint for ScalableEndpointImpl {}
+impl ActiveEndpoint for ScalableEndpointImpl {
+    fn fid(&self) -> &OwnedEpFid {
+        &self.c_sep
+    }
+}
 
-impl<E> ActiveEndpoint for ScalableEndpoint<E> {}
+impl<E: ActiveEndpoint> ActiveEndpoint for ScalableEndpoint<E> {
+    fn fid(&self) -> &OwnedEpFid {
+        self.inner.fid()
+    }
+}
 
 impl<E> AsFd for ScalableEndpoint<E> {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -1275,6 +1291,8 @@ impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsTypedFid<EpRawFid>
 // }
 
 pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend{
+    fn fid(&self) -> &OwnedEpFid;
+
     fn cancel(&self, context: &mut Context) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_cancel(

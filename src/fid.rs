@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-
+#[cfg(feature="threading-fid")]
 use parking_lot::{Mutex, MutexGuard};
-
+use std::sync::Arc;
 use crate::{error, MyRc};
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
@@ -28,14 +28,19 @@ impl Eq for Fid {}
 
 #[cfg(feature="threading-fid")]
 pub(crate) struct OwnedTypedFid<FID: AsRawFid> {
-    pub(crate) typed_fid: Mutex<TypedFid<FID>>,
+    pub(crate) typed_fid: Arc<Mutex<TypedFid<FID>>>,
 }
 
 #[cfg(not(feature="threading-fid"))]
 pub(crate) struct OwnedTypedFid<FID: AsRawFid> {
-    pub(crate) typed_fid: FID,
+    pub(crate) typed_fid: TypedFid<FID>,
 }
 
+#[cfg(feature="threading-endpoint")]
+pub(crate) struct XContextOwnedTypedFid<FID: AsRawFid> {
+    pub(crate) typed_fid: OwnedTypedFid<FID>,
+    pub(crate) parent_ep: Arc<Mutex<TypedFid<EpRawFid>>>,
+}
 
 #[cfg(feature="thread-safe")]
 mod thread_safe {
@@ -50,23 +55,50 @@ mod threading_thread_safe {
     unsafe impl Sync for super::Fid{}
 }
 
+// #[cfg(feature="threading-fid")]
 impl<FID: AsRawFid + AsRawTypedFid> OwnedTypedFid<FID> {
     pub(crate) fn from(typed_fid: FID) -> Self {
-        Self { typed_fid: Mutex::new(TypedFid(typed_fid)) }
+        #[cfg(feature="threading-fid")]
+        return Self { typed_fid: Arc::new(Mutex::new(TypedFid(typed_fid))) };
+        #[cfg(not(feature="threading-fid"))]
+        return Self { typed_fid: TypedFid(typed_fid) };
+
+    }
+}
+
+#[cfg(feature="threading-endpoint")]
+impl<FID: AsRawFid + AsRawTypedFid> XContextOwnedTypedFid<FID> {
+    pub(crate) fn from(typed_fid: FID, parent_ep: Arc<Mutex<TypedFid<EpRawFid>>>) -> Self {
+        return Self { 
+            typed_fid: OwnedTypedFid::from(typed_fid),
+            parent_ep, 
+        };
     }
 }
 
 
 #[cfg(feature="threading-fid")]
-pub struct BorrowedTypedFid<'a, FID: AsRawFid > {
+pub struct ProtectedBorrowedTypedFid<'a, FID: AsRawFid > {
     typed_fid: MutexGuard<'a, TypedFid<FID>>,
     phantom: PhantomData<&'a OwnedTypedFid<FID>>,
-    
 }
 
-#[cfg(not(feature="threading-fid"))]
-pub struct BorrowedTypedFid<'a, FID: AsRawFid > {
-    typed_fid: FID,
+pub enum BorrowedTypedFid<'a, FID: AsRawFid > {
+    Unprotected(UnprotectedBorrowedTypedFid<'a, FID>),
+    Protected(ProtectedBorrowedTypedFid<'a, FID>),
+    XContext(XContextBorrowedTypedFid<'a, FID>),
+}
+
+#[cfg(feature="threading-endpoint")]
+pub(crate) struct XContextBorrowedTypedFid<'a, FID: AsRawFid> {
+    typed_fid: MutexGuard<'a, TypedFid<FID>>,
+    parent_ep: MutexGuard<'a, TypedFid<EpRawFid>>,
+    phantom: PhantomData<&'a OwnedTypedFid<EpRawFid>>,
+}
+
+// #[cfg(not(feature="threading-fid"))]
+pub struct UnprotectedBorrowedTypedFid<'a, FID: AsRawFid > {
+    typed_fid: &'a TypedFid<FID>,
     phantom: PhantomData<&'a OwnedTypedFid<FID>>,
 }
 
@@ -99,14 +131,22 @@ impl<'a, FID: AsRawFid + AsRawTypedFid<Output = FID> > AsRawTypedFid for Borrowe
     type Output = FID;
     #[inline]
     fn as_raw_typed_fid(&self) -> Self::Output {
-        self.typed_fid.0.as_raw_typed_fid()
+        match self {
+            Self::Protected(this) => this.typed_fid.0.as_raw_typed_fid(),
+            Self::Unprotected(this) => this.typed_fid.0.as_raw_typed_fid(),
+            Self::XContext(this) => this.typed_fid.0.as_raw_typed_fid(),
+        }
     }
 }
 
 impl<'a, FID: AsRawFid > AsRawFid for BorrowedTypedFid<'a, FID> {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        self.typed_fid.0.as_raw_fid()
+        match self {
+            Self::Protected(this) => this.typed_fid.0.as_raw_fid(),
+            Self::Unprotected(this) => this.typed_fid.0.as_raw_fid(),
+            Self::XContext(this) => this.typed_fid.0.as_raw_fid(),
+        }
     }
 }
 
@@ -151,10 +191,30 @@ impl<T: AsRawFid> AsRawFid for MyRc<T> {
 
 impl<FID: AsRawFid > AsTypedFid<FID> for OwnedTypedFid<FID> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FID> {
-        BorrowedTypedFid {
+        #[cfg(feature="threading-fid")]
+        return BorrowedTypedFid::Protected(ProtectedBorrowedTypedFid {
             typed_fid: self.typed_fid.lock(),
             phantom: PhantomData,
-        }
+        });
+        #[cfg(not(feature="threading-fid"))]
+        return BorrowedTypedFid::Unprotected(UnprotectedBorrowedTypedFid {
+            typed_fid: &self.typed_fid.lock(),
+            phantom: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature="threading-endpoint")]
+impl<FID: AsRawFid > AsTypedFid<FID> for  XContextOwnedTypedFid<FID> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FID> {
+        BorrowedTypedFid::XContext(
+
+            XContextBorrowedTypedFid {
+                parent_ep: self.parent_ep.lock(),
+                typed_fid: self.typed_fid.typed_fid.lock(),
+                phantom: PhantomData,
+            }
+        )
     }
 }
 

@@ -190,15 +190,15 @@ impl AsyncRxEp for ReceiveContextImpl {
     }
 }
 
-impl<'a, E, STATE: EpState> ReceiveContextBuilder<'a, E, STATE> {
+impl<'a, E: 'static, STATE: EpState> ReceiveContextBuilder<'a, E, STATE> {
     pub fn build_async(self) -> Result<ReceiveContext, crate::error::Error> {
-        ReceiveContext::new(self.ep, self.index, self.rx_attr, self.ctx)
+        ReceiveContext::new(self.ep.inner.clone(), self.index, self.rx_attr, self.ctx)
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid>, STATE: EpState> TxContextBuilder<'a, E, STATE> {
+impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState> TxContextBuilder<'a, E, STATE> {
     pub fn build_async(self) -> Result<TransmitContext, crate::error::Error> {
-        TransmitContext::new(self.ep, self.index, self.tx_attr, self.ctx)
+        TransmitContext::new(self.ep.inner.clone(), self.index, self.tx_attr, self.ctx)
     }
 }
 
