@@ -32,7 +32,7 @@ impl MulticastGroupCollectiveImpl {
         eq.async_event_wait(
             libfabric_sys::FI_JOIN_COMPLETE,
             Fid(self.as_typed_fid().as_raw_fid() as usize),
-            ctx.inner_mut() as usize,
+            Some(ctx),
         )
         .await
     }

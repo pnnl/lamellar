@@ -5,12 +5,15 @@ compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive
 use std::cell::OnceCell;
 #[cfg(not(feature = "thread-safe"))]
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
 #[cfg(feature = "thread-safe")]
 use std::sync::Arc;
 #[cfg(feature = "thread-safe")]
 use std::sync::OnceLock;
 
+use cq::SingleCompletion;
 use enums::AddressVectorType;
+use eq::Event;
 #[cfg(feature = "thread-safe")]
 use parking_lot::RwLock;
 
@@ -31,6 +34,8 @@ pub type MyOnceCell<T> = OnceLock<T>;
 pub type MyRc<T> = Rc<T>;
 #[cfg(not(feature = "thread-safe"))]
 pub type MyOnceCell<T> = OnceCell<T>;
+
+use std::sync::atomic;
 
 use av::{AddressVectorImplT, AddressVectorSetImpl};
 
@@ -296,10 +301,22 @@ const FI_ADDR_UNSPEC: u64 = u64::MAX;
 // pub struct Param {
 //     c_param: libfabric_sys::fi_param,
 // }
+// #[cfg(feature = "thread-safe")]
+// pub type CtxState = AtomicI8;
+// #[cfg(not(feature = "thread-safe"))]
+// pub type CtxState = i8;
 
+pub(crate) enum ContextState {
+    Cq(Result<SingleCompletion, crate::error::Error>),
+    Eq(Result<Event, crate::error::Error>),
+}
+
+#[repr(C)]
 struct Context1 {
     #[allow(dead_code)]
     c_val: libfabric_sys::fi_context,
+    pub(crate) ready: AtomicBool,
+    pub(crate) state: MyOnceCell<ContextState>,
 }
 
 impl Context1 {
@@ -310,18 +327,29 @@ impl Context1 {
                     internal: [std::ptr::null_mut(); 4],
                 }
             },
+            ready: AtomicBool::new(false),
+            state: MyOnceCell::new(),
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_context {
-        &self.c_val
+    // pub(crate) fn reset(&mut self) {
+    //     self.state = MyOnceCell::new();
+    // }
+
+    pub(crate) fn set_completion_done(&mut self, completion: Result<SingleCompletion, crate::error::Error>) {
+        if self.state.set(ContextState::Cq(completion)).is_err() {
+            panic!("Already initialized")
+        }
+        self.ready.store(true, atomic::Ordering::Relaxed)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context {
-        &mut self.c_val
+    pub(crate) fn set_event_done(&mut self, event: Result<Event, crate::error::Error>) {
+        if self.state.set(ContextState::Eq(event)).is_err() {
+            panic!("Already initialized")
+        }
+        self.ready.store(true, atomic::Ordering::Relaxed)
     }
+
 }
 
 impl Default for Context1 {
@@ -330,8 +358,11 @@ impl Default for Context1 {
     }
 }
 
+#[repr(C)]
 struct Context2 {
     c_val: libfabric_sys::fi_context2,
+    state: MyOnceCell<ContextState>, 
+    pub(crate) ready: AtomicBool,
 }
 
 impl Context2 {
@@ -342,17 +373,28 @@ impl Context2 {
                     internal: [std::ptr::null_mut(); 8],
                 }
             },
+            ready: AtomicBool::new(false),
+            state: MyOnceCell::new(),
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_context2 {
-        &mut self.c_val
+    // pub(crate) fn reset(&mut self) {
+    //     self.state = None
+    // }
+
+
+    pub(crate) fn set_completion_done(&mut self, completion: Result<SingleCompletion, crate::error::Error>) {
+        if self.state.set(ContextState::Cq(completion)).is_err() {
+            panic!("Already initialized")
+        }
+        self.ready.store(true, atomic::Ordering::Relaxed)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_context2 {
-        &self.c_val
+    pub(crate) fn set_event_done(&mut self, event: Result<Event, crate::error::Error>) {
+        if self.state.set(ContextState::Eq(event)).is_err() {
+            panic!("Already initialized")
+        }
+        self.ready.store(true, atomic::Ordering::Relaxed)
     }
 }
 
@@ -367,24 +409,92 @@ enum ContextType {
     Context2(Box<Context2>),
 }
 
+
 // We use heap allocated data to allow moving the wrapper field
 // without affecting the pointer used by libfabric
 
 pub struct Context(ContextType);
 
-impl Context {
+impl ContextType {
     fn inner_mut(&mut self) -> *mut std::ffi::c_void {
-        match &mut self.0 {
-            ContextType::Context1(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
-            ContextType::Context2(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
+        match self {
+            ContextType::Context1(ctx) => &mut *(*(ctx)) as *mut Context1 as *mut std::ffi::c_void,
+            ContextType::Context2(ctx) => &mut *(*(ctx)) as *mut Context2 as *mut std::ffi::c_void,
         }
     }
 
     fn inner(&self) -> *const std::ffi::c_void {
-        match &self.0 {
-            ContextType::Context1(ctx) => ctx.get() as *const std::ffi::c_void,
-            ContextType::Context2(ctx) => ctx.get() as *const std::ffi::c_void,
+        match self {
+            ContextType::Context1(ctx) => &*(*(ctx)) as *const Context1 as *const std::ffi::c_void,
+            ContextType::Context2(ctx) => &*(*(ctx)) as *const Context2 as *const std::ffi::c_void,
         }
+    }
+
+    pub(crate) fn set_completion_done(&mut self, comp: Result<SingleCompletion, crate::error::Error>) {
+        match self {
+            ContextType::Context1(ctx) => ctx.set_completion_done(comp),
+            ContextType::Context2(ctx) => ctx.set_completion_done(comp),
+        }
+    }
+
+    pub(crate) fn set_event_done(&mut self, event: Result<Event, crate::error::Error>) {
+        match self {
+            ContextType::Context1(ctx) => ctx.set_event_done(event),
+            ContextType::Context2(ctx) => ctx.set_event_done(event),
+        }
+    }
+
+    pub(crate) fn ready(&self) -> bool {
+        match self {
+            ContextType::Context1(ctx) => ctx.ready.load(atomic::Ordering::Relaxed) == true,
+            ContextType::Context2(ctx) => ctx.ready.load(atomic::Ordering::Relaxed) == true,
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        match self {
+            ContextType::Context1(ctx) => ctx.ready.store(false, atomic::Ordering::Relaxed),
+            ContextType::Context2(ctx) => ctx.ready.store(false, atomic::Ordering::Relaxed),
+        }
+    }
+
+    pub(crate) fn state(&mut self) -> &mut MyOnceCell<ContextState> {
+        match self {
+            ContextType::Context1(ctx) => &mut ctx.state,
+            ContextType::Context2(ctx) => &mut ctx.state,
+        }
+    }
+}
+
+impl Context {
+    fn inner_mut(&mut self) -> *mut std::ffi::c_void {
+        self.0.inner_mut()
+    }
+
+    fn inner(&self) -> *const std::ffi::c_void {
+        self.0.inner()
+    }
+
+    pub(crate) fn state(&mut self) -> &mut MyOnceCell<ContextState> {
+        self.0.state()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_completion_done(&mut self, comp: Result<SingleCompletion, crate::error::Error>) {
+        self.0.set_completion_done(comp)
+    }
+    
+    #[allow(dead_code)]
+    pub(crate) fn set_event_done(&mut self, comp: Result<Event, crate::error::Error>) {
+        self.0.set_event_done(comp)
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.0.reset()
+    }
+
+    pub(crate) fn ready(&self) -> bool {
+        self.0.ready()
     }
 }
 

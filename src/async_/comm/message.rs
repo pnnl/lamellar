@@ -11,7 +11,6 @@ use crate::ep::{Connected, Connectionless, EndpointImplBase};
 use crate::infocapsoptions::{MsgCap, RecvMod, SendMod};
 use crate::utils::Either;
 use crate::Context;
-use crate::RawContext;
 use crate::{
     async_::{cq::AsyncReadCq, eq::AsyncReadEq},
     cq::SingleCompletion,

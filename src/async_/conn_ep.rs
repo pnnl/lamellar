@@ -40,7 +40,7 @@ impl<EP> UnconnectedEndpoint<EP> {
             .get()
             .expect("Endpoint not bound to an EventQueue");
         let res = eq
-            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_typed_fid().as_raw_fid() as usize), 0)
+            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_typed_fid().as_raw_fid() as usize), None)
             .await?;
 
         match res {
@@ -65,7 +65,7 @@ impl<EP> UnconnectedEndpoint<EP> {
             .get()
             .expect("Endpoint not bound to an EventQueue");
         let res = eq
-            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_typed_fid().as_raw_fid() as usize), 0)
+            .async_event_wait(libfabric_sys::FI_CONNECTED, Fid(self.as_typed_fid().as_raw_fid() as usize), None)
             .await?;
 
         match res {

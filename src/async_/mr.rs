@@ -48,7 +48,7 @@ impl MemoryRegionImpl {
                         .async_event_wait(
                             libfabric_sys::FI_MR_COMPLETE,
                             Fid(0),
-                            ctx.inner_mut() as usize,
+                            Some(ctx),
                         )
                         .await?;
 
@@ -104,7 +104,7 @@ impl MemoryRegionImpl {
                         .async_event_wait(
                             libfabric_sys::FI_MR_COMPLETE,
                             Fid(0),
-                            attr.c_attr.context as usize,
+                            Some(ctx),
                         )
                         .await?;
 
@@ -164,7 +164,7 @@ impl MemoryRegionImpl {
                         .async_event_wait(
                             libfabric_sys::FI_MR_COMPLETE,
                             Fid(0),
-                            ctx.inner_mut() as usize,
+                            Some(ctx),
                         )
                         .await?;
 

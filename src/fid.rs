@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-
+#[cfg(feature="threading-fid")]
 use parking_lot::{Mutex, MutexGuard};
 
 use crate::{error, MyRc};
@@ -52,7 +52,10 @@ mod threading_thread_safe {
 
 impl<FID: AsRawFid + AsRawTypedFid> OwnedTypedFid<FID> {
     pub(crate) fn from(typed_fid: FID) -> Self {
-        Self { typed_fid: Mutex::new(TypedFid(typed_fid)) }
+        #[cfg(feature="threading-fid")]
+        return Self { typed_fid: Mutex::new(TypedFid(typed_fid)) };
+        #[cfg(not(feature="threading-fid"))]
+        return Self { typed_fid: typed_fid };
     }
 }
 
@@ -66,7 +69,7 @@ pub struct BorrowedTypedFid<'a, FID: AsRawFid > {
 
 #[cfg(not(feature="threading-fid"))]
 pub struct BorrowedTypedFid<'a, FID: AsRawFid > {
-    typed_fid: FID,
+    typed_fid: &'a FID,
     phantom: PhantomData<&'a OwnedTypedFid<FID>>,
 }
 
@@ -99,14 +102,20 @@ impl<'a, FID: AsRawFid + AsRawTypedFid<Output = FID> > AsRawTypedFid for Borrowe
     type Output = FID;
     #[inline]
     fn as_raw_typed_fid(&self) -> Self::Output {
-        self.typed_fid.0.as_raw_typed_fid()
+        #[cfg(feature="threading-fid")]
+        return self.typed_fid.0.as_raw_typed_fid();
+        #[cfg(not(feature="threading-fid"))]
+        return self.typed_fid.as_raw_typed_fid();
     }
 }
 
 impl<'a, FID: AsRawFid > AsRawFid for BorrowedTypedFid<'a, FID> {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
-        self.typed_fid.0.as_raw_fid()
+        #[cfg(feature="threading-fid")]
+        return self.typed_fid.0.as_raw_fid();
+        #[cfg(not(feature="threading-fid"))]
+        return self.typed_fid.as_raw_fid();
     }
 }
 
@@ -152,7 +161,10 @@ impl<T: AsRawFid> AsRawFid for MyRc<T> {
 impl<FID: AsRawFid > AsTypedFid<FID> for OwnedTypedFid<FID> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FID> {
         BorrowedTypedFid {
+            #[cfg(feature="threading-fid")]
             typed_fid: self.typed_fid.lock(),
+            #[cfg(not(feature="threading-fid"))]
+            typed_fid: &self.typed_fid,
             phantom: PhantomData,
         }
     }

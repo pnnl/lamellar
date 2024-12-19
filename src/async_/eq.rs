@@ -1,10 +1,10 @@
-use std::{collections::HashMap, future::Future, pin::Pin, task::ready};
+use std::{collections::HashMap, future::Future, pin::Pin, sync::atomic::Ordering, task::ready};
 
 #[cfg(feature = "use-async-std")]
 use async_io::Async;
 #[cfg(feature = "use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
-
+use std::sync::atomic::AtomicUsize;
 use crate::{
     cq::WaitObjectRetrieve,
     eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
@@ -90,20 +90,36 @@ impl<'a> EqType<'a> {
     }
 
     #[inline]
-    pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>> {
+    pub(crate) fn remove_pending_entry(&self) {
         match self {
-            EqType::Write(e) => e.remove_entry(ctx),
-            EqType::NoWrite(e) => e.remove_entry(ctx),
-        }
+            EqType::Write(e) => e.remove_pending_entry(),
+            EqType::NoWrite(e) => e.remove_pending_entry(),
+        };
     }
 
     #[inline]
-    pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>) {
+    pub(crate) fn insert_pending_entry(&self) {
         match self {
-            EqType::Write(e) => e.insert_entry(ctx, entry),
-            EqType::NoWrite(e) => e.insert_entry(ctx, entry),
-        }
+            EqType::Write(e) => e.insert_pending_entry(),
+            EqType::NoWrite(e) => e.insert_pending_entry(),
+        };
     }
+
+    // #[inline]
+    // pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>> {
+    //     match self {
+    //         EqType::Write(e) => e.remove_entry(ctx),
+    //         EqType::NoWrite(e) => e.remove_entry(ctx),
+    //     }
+    // }
+
+    // #[inline]
+    // pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>) {
+    //     match self {
+    //         EqType::Write(e) => e.insert_entry(ctx, entry),
+    //         EqType::NoWrite(e) => e.insert_entry(ctx, entry),
+    //     }
+    // }
 
     #[inline]
     pub(crate) fn read_eq_entry(&self, bytes_read: usize, buffer: &[u8], event: &u32) -> Event {
@@ -123,6 +139,14 @@ impl<'a> EqType<'a> {
         match self {
             EqType::Write(e) => e.remove_err_entry(req_fid),
             EqType::NoWrite(e) => e.remove_err_entry(req_fid),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn using_context2(&self) -> bool {
+        match self {
+            EqType::Write(e) => e.base.as_ref()._fabric_rc.using_context2,
+            EqType::NoWrite(e) => e.base.as_ref()._fabric_rc.using_context2,
         }
     }
 }
@@ -258,7 +282,7 @@ impl<'a> Future for EqAsyncRead<'a> {
                                 #[cfg(feature = "thread-safe")]
                                 EqType::Write(e) => {
                                     if e.pending_cm_entries.read().is_empty()
-                                        && e.pending_entries.read().is_empty()
+                                        && e.pending_entries.load(Ordering::SeqCst) == 0
                                     {
                                         guard.clear_ready()
                                     }
@@ -274,7 +298,7 @@ impl<'a> Future for EqAsyncRead<'a> {
                                 #[cfg(feature = "thread-safe")]
                                 EqType::NoWrite(e) => {
                                     if e.pending_cm_entries.read().is_empty()
-                                        && e.pending_entries.read().is_empty()
+                                        && e.pending_entries.load(Ordering::SeqCst) == 0
                                     {
                                         guard.clear_ready()
                                     }
@@ -372,7 +396,7 @@ impl<'a> Future for EqAsyncReadOwned<'a> {
                                 #[cfg(feature = "thread-safe")]
                                 EqType::Write(e) => {
                                     if e.pending_cm_entries.read().is_empty()
-                                        && e.pending_entries.read().is_empty()
+                                        && e.pending_entries.load(Ordering::SeqCst) == 0
                                     {
                                         guard.clear_ready()
                                     }
@@ -396,7 +420,7 @@ impl<'a> Future for EqAsyncReadOwned<'a> {
                                 #[cfg(not(feature = "thread-safe"))]
                                 EqType::NoWrite(e) => {
                                     if e.pending_cm_entries.read().is_empty()
-                                        && e.pending_entries.read().is_empty()
+                                        && e.pending_entries.load(Ordering::SeqCst) == 0
                                     {
                                         guard.clear_ready()
                                     }
@@ -432,12 +456,12 @@ impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
 
 pub trait AsyncReadEq: ReadEq + AsyncFid {
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead;
-    fn async_event_wait(
-        &self,
+    fn async_event_wait<'a>(
+        &'a self,
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
-        ctx: usize,
-    ) -> AsyncEventEq;
+        ctx: Option<&'a mut crate::Context>,
+    ) -> AsyncEventEq<'a>;
 }
 
 impl AsyncEventQueueImpl<true> {
@@ -469,12 +493,12 @@ impl AsyncReadEq for AsyncEventQueueImpl<true> {
         EqAsyncRead::new(buf, event, EqType::Write(self))
     }
 
-    fn async_event_wait(
-        &self,
+    fn async_event_wait<'a>(
+        &'a self,
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
-        ctx: usize,
-    ) -> AsyncEventEq {
+        ctx: Option<&'a mut crate::Context>,
+    ) -> AsyncEventEq<'a> {
         AsyncEventEq::new(event_type, req_fid, EqType::Write(self), ctx)
     }
 }
@@ -484,12 +508,12 @@ impl AsyncReadEq for AsyncEventQueueImpl<false> {
         EqAsyncRead::new(buf, event, EqType::NoWrite(self))
     }
 
-    fn async_event_wait(
-        &self,
+    fn async_event_wait<'a>(
+        &'a self,
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
-        ctx: usize,
-    ) -> AsyncEventEq {
+        ctx: Option<&'a mut crate::Context>,
+    ) -> AsyncEventEq<'a> {
         AsyncEventEq::new(event_type, req_fid, EqType::NoWrite(self), ctx)
     }
 }
@@ -499,12 +523,12 @@ impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
         self.inner.read_in_async(buf, event)
     }
 
-    fn async_event_wait(
-        &self,
+    fn async_event_wait<'a>(
+        &'a self,
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
-        ctx: usize,
-    ) -> AsyncEventEq {
+        ctx: Option<&'a mut crate::Context>,
+    ) -> AsyncEventEq<'a> {
         self.inner.async_event_wait(event_type, req_fid, ctx)
     }
 }
@@ -522,7 +546,7 @@ impl<EQ: AsyncReadEq> EventQueue<EQ> {
 
 pub struct AsyncEventQueueImpl<const WRITE: bool> {
     pub(crate) base: Async<EventQueueImpl<WRITE, true, true, true>>,
-    pending_entries: MyRefCell<HashMap<usize, Result<Event, Error>>>,
+    pending_entries: AtomicUsize,
     pending_err_entries: MyRefCell<HashMap<Fid, Vec<Result<Event, Error>>>>,
     #[allow(clippy::type_complexity)]
     pending_cm_entries: MyRefCell<HashMap<(u32, Fid), Vec<Result<Event, Error>>>>,
@@ -538,7 +562,7 @@ impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
     ) -> Result<Self, crate::error::Error> {
         Ok(Self {
             base: Async::new(EventQueueImpl::new(fabric, attr, context)?).unwrap(),
-            pending_entries: MyRefCell::new(HashMap::new()),
+            pending_entries:AtomicUsize::new(0),
             pending_cm_entries: MyRefCell::new(HashMap::new()),
             pending_err_entries: MyRefCell::new(HashMap::new()),
         })
@@ -569,13 +593,13 @@ impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
         }
     }
 
-    #[inline]
-    pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>) {
-        #[cfg(feature = "thread-safe")]
-        self.pending_entries.write().insert(ctx, entry);
-        #[cfg(not(feature = "thread-safe"))]
-        self.pending_entries.borrow_mut().insert(ctx, entry);
-    }
+    // #[inline]
+    // pub(crate) fn insert_entry(&self, ctx: usize, entry: Result<Event, Error>) {
+    //     #[cfg(feature = "thread-safe")]
+    //     self.pending_entries.write().insert(ctx, entry);
+    //     #[cfg(not(feature = "thread-safe"))]
+    //     self.pending_entries.borrow_mut().insert(ctx, entry);
+    // }
 
     #[inline]
     pub(crate) fn remove_cm_entry(
@@ -594,17 +618,27 @@ impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
     }
 
     #[inline]
-    pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>> {
-        #[cfg(feature = "thread-safe")]
-        {
-            self.pending_entries.write().remove(&ctx)
-        }
-
-        #[cfg(not(feature = "thread-safe"))]
-        {
-            self.pending_entries.borrow_mut().remove(&ctx)
-        }
+    pub(crate) fn remove_pending_entry(&self) {
+        self.pending_entries.fetch_sub(1, Ordering::SeqCst);
     }
+
+    #[inline]
+    pub(crate) fn insert_pending_entry(&self) {
+        self.pending_entries.fetch_add(1, Ordering::SeqCst);
+    }
+
+    // #[inline]
+    // pub(crate) fn remove_entry(&self, ctx: usize) -> Option<Result<Event, Error>> {
+    //     #[cfg(feature = "thread-safe")]
+    //     {
+    //         self.pending_entries.write().remove(&ctx)
+    //     }
+
+    //     #[cfg(not(feature = "thread-safe"))]
+    //     {
+    //         self.pending_entries.borrow_mut().remove(&ctx)
+    //     }
+    // }
 
     #[inline]
     pub(crate) fn insert_err_entry(&self, req_fid: &Fid, entry: Result<Event, Error>) {
@@ -697,7 +731,7 @@ impl<'a, const WRITE: bool> WaitObjectRetrieve<'a> for AsyncEventQueueImpl<WRITE
 
 pub struct AsyncEventEq<'a> {
     pub(crate) req_fid: Fid,
-    pub(crate) ctx: usize,
+    pub(crate) ctx: Option<&'a mut crate::Context>,
     event_type: libfabric_sys::_bindgen_ty_18,
     fut: Pin<Box<EqAsyncReadOwned<'a>>>,
 }
@@ -707,7 +741,7 @@ impl<'a> AsyncEventEq<'a> {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         eq: EqType<'a>,
-        ctx: usize,
+        ctx: Option<&'a mut crate::Context>,
     ) -> Self {
         Self {
             event_type,
@@ -726,21 +760,41 @@ impl<'a> Future for AsyncEventEq<'a> {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         let ev = self.get_mut();
-
+        let using_ctx2 = ev.fut.eq.using_context2();
         loop {
-            if ev.event_type == libfabric_sys::FI_CONNREQ
-                || ev.event_type == libfabric_sys::FI_CONNECTED
-                || ev.event_type == libfabric_sys::FI_SHUTDOWN
-            {
-                if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, &ev.req_fid) {
-                    return std::task::Poll::Ready(entry);
+            let ctx_id = match &mut ev.ctx {
+                None => {
+                    if ev.event_type == libfabric_sys::FI_CONNREQ
+                    || ev.event_type == libfabric_sys::FI_CONNECTED
+                    || ev.event_type == libfabric_sys::FI_SHUTDOWN
+                    {
+                        if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, &ev.req_fid) {
+                            return std::task::Poll::Ready(entry);
+                        }
+                        else if let Some(err_entry) = ev.fut.eq.remove_err_entry(&ev.req_fid) {
+                            return std::task::Poll::Ready(err_entry);
+                        }
+                    } 
+                    0
                 }
-            } else if let Some(mut entry) = ev.fut.eq.remove_entry(ev.ctx) {
-                return std::task::Poll::Ready(entry);
-            }
-            if let Some(err) = ev.fut.eq.remove_err_entry(&ev.req_fid) {
-                return std::task::Poll::Ready(err);
-            }
+                Some(ctx) => {
+                    if ctx.ready() {
+                        let state = ctx.state().take();
+                        ctx.reset();
+                        ev.fut.eq.remove_pending_entry();
+                        match state {
+                            Some(state) => {
+                                match state {
+                                    crate::ContextState::Cq(_) => panic!("Should never find completions here"),
+                                    crate::ContextState::Eq(event) => return std::task::Poll::Ready(event),
+                                }
+                            },
+                            None => {panic!("Should always be set when context is ready")},
+                        }
+                    }
+                    ctx.inner() as usize
+                }
+            };
 
             let mut res = match ready!(ev.fut.as_mut().poll(cx)) {
                 // Ok(len) => len,
@@ -760,69 +814,88 @@ impl<'a> Future for AsyncEventEq<'a> {
                 }
             };
 
-            match &mut res {
+            match res {
                 Ok(entry) => {
                     match entry {
                         // crate::eq::Event::Notify(entry) |
-                        crate::eq::Event::MrComplete(e) => {
-                            if e.c_entry.context as usize == ev.ctx {
-                                return std::task::Poll::Ready(res);
+                        crate::eq::Event::MrComplete(ref e) => {
+                            if e.c_entry.context as usize == ctx_id {
+                                return std::task::Poll::Ready(Ok(entry));
                             } else {
-                                ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
+                                ev.fut.eq.insert_pending_entry();
+
+                                if using_ctx2 {
+                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                }
+                                else {
+                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                }
                             }
                         }
-                        crate::eq::Event::AVComplete(e) => {
-                            if e.c_entry.context as usize == ev.ctx {
-                                return std::task::Poll::Ready(res);
+                        crate::eq::Event::AVComplete(ref e) => {
+                            if e.c_entry.context as usize == ctx_id {
+                                return std::task::Poll::Ready(Ok(entry));
                             } else {
-                                ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
+                                ev.fut.eq.insert_pending_entry();
+
+                                if using_ctx2 {
+                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                }
+                                else {
+                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                }
                             }
                         }
-                        crate::eq::Event::JoinComplete(e) => {
-                            println!("Found join event");
-                            if e.c_entry.context as usize == ev.ctx {
-                                return std::task::Poll::Ready(res);
+                        crate::eq::Event::JoinComplete(ref e) => {
+                            if e.c_entry.context as usize == ctx_id {
+                                return std::task::Poll::Ready(Ok(entry));
                             } else {
-                                ev.fut.eq.insert_entry(e.c_entry.context as usize, res);
+                                ev.fut.eq.insert_pending_entry();
+                                if using_ctx2 {
+                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                }
+                                else {
+                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                }
                             }
                         }
-                        crate::eq::Event::ConnReq(e) => {
+                        crate::eq::Event::ConnReq(ref e) => {
                             if ev.event_type == libfabric_sys::FI_CONNREQ
                                 && ev.req_fid.0 == e.c_entry.fid as usize
                             {
-                                return std::task::Poll::Ready(res);
+                                return std::task::Poll::Ready(Ok(entry));
                             } else {
                                 ev.fut.eq.insert_cm_entry(
                                     libfabric_sys::FI_CONNREQ,
                                     &ev.req_fid,
-                                    res,
+                                    Ok(entry),
                                 );
                             }
                         }
-                        crate::eq::Event::Connected(e) => {
+                        crate::eq::Event::Connected(ref e) => {
                             if ev.event_type == libfabric_sys::FI_CONNECTED
                                 && ev.req_fid.0 == e.c_entry.fid as usize
                             {
-                                return std::task::Poll::Ready(res);
+                                return std::task::Poll::Ready(Ok(entry));
                             } else {
                                 ev.fut.eq.insert_cm_entry(
                                     libfabric_sys::FI_CONNECTED,
                                     &ev.req_fid,
-                                    res,
+                                    Ok(entry),
                                 );
                             }
                         }
-                        crate::eq::Event::Shutdown(e) => {
+                        crate::eq::Event::Shutdown(ref e) => {
                             // [TODO] No one will explcitly look for shutdown requests, should probably store it somewhere else
                             if ev.event_type == libfabric_sys::FI_SHUTDOWN
                                 && ev.req_fid.0 == e.c_entry.fid as usize
                             {
-                                return std::task::Poll::Ready(res);
+                                return std::task::Poll::Ready(Ok(entry));
                             } else {
                                 ev.fut.eq.insert_cm_entry(
                                     libfabric_sys::FI_SHUTDOWN,
                                     &ev.req_fid,
-                                    res,
+                                    Ok(entry),
                                 );
                             }
                         }
@@ -832,22 +905,36 @@ impl<'a> Future for AsyncEventEq<'a> {
                     ErrorKind::ErrorInQueue(ref err) => match err {
                         crate::error::QueueError::Completion(_) => todo!(),
                         crate::error::QueueError::Event(e) => {
-                            if ev.ctx != 0 {
-                                if e.c_err.context as usize == ev.ctx {
-                                    return std::task::Poll::Ready(res);
+                            if ctx_id != 0 {
+                                if e.c_err.context as usize == ctx_id {
+                                    return std::task::Poll::Ready(Err(err_entry));
                                 } else if e.c_err.context as usize == 0 {
-                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), res)
+                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), Err(err_entry))
                                 } else {
-                                    ev.fut.eq.insert_entry(e.c_err.context as usize, res)
+                                    ev.fut.eq.insert_pending_entry();
+
+                                    if using_ctx2 {
+                                        unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Err(err_entry));
+                                    }
+                                    else {
+                                        unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Err(err_entry));
+                                    }
                                 }
                             } else if e.c_err.context as usize == 0 {
                                 if e.c_err.fid as usize== ev.req_fid.0  {
-                                    return std::task::Poll::Ready(res);
+                                    return std::task::Poll::Ready(Err(err_entry));
                                 } else {
-                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), res)
+                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), Err(err_entry))
                                 }
                             } else {
-                                ev.fut.eq.insert_entry(e.c_err.context as usize, res)
+                                ev.fut.eq.insert_pending_entry();
+
+                                if using_ctx2 {
+                                    unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Err(err_entry));
+                                }
+                                else {
+                                    unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Err(err_entry));
+                                }
                             }
                         }
                     },

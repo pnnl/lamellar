@@ -16,6 +16,7 @@ use crate::{
 
 pub(crate) struct FabricImpl {
     pub(crate) c_fabric: OwnedFabricFid,
+    pub(crate) using_context2: bool,
 }
 
 /// Owned wrapper around a libfabric `fid_fabric`.
@@ -32,6 +33,7 @@ pub struct Fabric {
 impl FabricImpl {
     pub(crate) fn new(
         attr: FabricAttr,
+        using_context2: bool,
         context: *mut std::ffi::c_void,
     ) -> Result<Self, crate::error::Error> {
         let mut c_fabric: FabricRawFid = std::ptr::null_mut();
@@ -45,6 +47,7 @@ impl FabricImpl {
         } else {
             Ok(Self {
                 c_fabric: OwnedFabricFid::from(c_fabric),
+                using_context2,
             })
         }
     }
@@ -77,6 +80,7 @@ impl FabricImpl {
 impl Fabric {
     pub(crate) fn new(
         attr: FabricAttr,
+        context2: bool,
         context: Option<&mut Context>,
     ) -> Result<Self, crate::error::Error> {
         let c_void = match context {
@@ -85,7 +89,7 @@ impl Fabric {
         };
 
         Ok(Self {
-            inner: MyRc::new(FabricImpl::new(attr, c_void)?),
+            inner: MyRc::new(FabricImpl::new(attr, context2, c_void)?),
         })
     }
 
@@ -268,6 +272,6 @@ impl<'a> FabricBuilder<'a> {
     /// Corresponds to retrieving the `fabric_attr` field of the provided `fi_info` entry (from [`new`](Self::new))
     /// and passing it along with an optional `context` to `fi_fabric`
     pub fn build<E>(self, info: &InfoEntry<E>) -> Result<Fabric, crate::error::Error> {
-        Fabric::new(info.fabric_attr().clone(), self.ctx)
+        Fabric::new(info.fabric_attr().clone(), info.mode().is_context2(), self.ctx)
     }
 }
