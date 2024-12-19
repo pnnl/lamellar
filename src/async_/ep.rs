@@ -39,7 +39,7 @@ impl ConnectionListener {
     pub async fn next(&self) -> Result<Event, crate::error::Error> {
         let res = self
             .eq
-            .async_event_wait(libfabric_sys::FI_CONNREQ, Fid(self.ep_fid as usize), 0)
+            .async_event_wait(libfabric_sys::FI_CONNREQ, Fid(self.ep_fid as usize), None)
             .await?;
         Ok(res)
     }

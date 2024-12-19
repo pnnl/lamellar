@@ -1,4 +1,4 @@
-use crate::{error::Error};
+use crate::error::Error;
 
 pub mod av;
 pub mod comm;

@@ -54,7 +54,7 @@ impl AsyncAddressVectorImpl {
                 .async_event_wait(
                     libfabric_sys::FI_AV_COMPLETE,
                     Fid(self.as_typed_fid().as_raw_fid() as usize),
-                    ctx.inner_mut() as usize,
+                    Some(ctx),
                 )
                 .await?;
             if let Event::AVComplete(ref entry) = res {
