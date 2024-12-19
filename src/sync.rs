@@ -54,7 +54,7 @@ impl WaitSetImpl {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_wait_open(
-                fabric.as_typed_fid().as_raw_typed_fid(),
+                fabric.as_typed_fid_mut().as_raw_typed_fid(),
                 attr.get_mut(),
                 &mut c_wait,
             )
@@ -72,7 +72,7 @@ impl WaitSetImpl {
     }
 
     pub(crate) fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_wait(self.as_typed_fid().as_raw_typed_fid(), timeout) };
+        let err = unsafe { libfabric_sys::inlined_fi_wait(self.as_typed_fid_mut().as_raw_typed_fid(), timeout) };
 
         check_error(err.try_into().unwrap())
     }
@@ -81,7 +81,7 @@ impl WaitSetImpl {
         let mut res: libfabric_sys::fi_wait_obj = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_control(
-                self.as_typed_fid().as_raw_fid(),
+                self.as_typed_fid_mut().as_raw_fid(),
                 libfabric_sys::FI_GETWAITOBJ as i32,
                 (&mut res as *mut libfabric_sys::fi_wait_obj).cast(),
             )
@@ -98,7 +98,7 @@ impl WaitSetImpl {
                 let mut fd = 0;
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut fd as *mut i32).cast(),
                     )
@@ -116,7 +116,7 @@ impl WaitSetImpl {
                 };
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut cond as *mut libfabric_sys::fi_mutex_cond).cast(),
                     )
@@ -137,7 +137,7 @@ impl WaitSetImpl {
                 };
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut wait as *mut libfabric_sys::fi_wait_pollfd).cast(),
                     )
@@ -203,11 +203,19 @@ impl AsTypedFid<WaitRawFid> for WaitSetImpl {
     fn as_typed_fid(&self) -> BorrowedTypedFid<WaitRawFid> {
         self.c_wait.as_typed_fid()
     }
+
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<WaitRawFid> {
+        self.c_wait.as_typed_fid_mut()
+    }
 }
 
 impl AsTypedFid<WaitRawFid> for WaitSet {
     fn as_typed_fid(&self) -> BorrowedTypedFid<WaitRawFid> {
         self.inner.as_typed_fid()
+    }
+
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<WaitRawFid> {
+        self.inner.as_typed_fid_mut()
     }
 }
 
@@ -301,7 +309,7 @@ impl PollSetImpl {
         let mut c_poll: PollRawFid = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_poll_open(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 attr.get_mut(),
                 &mut c_poll,
             )
@@ -313,7 +321,10 @@ impl PollSetImpl {
             ))
         } else {
             Ok(Self {
+                #[cfg(not(feature="threading-domain"))]
                 c_poll: OwnedPollFid::from(c_poll),
+                #[cfg(feature="threading-domain")]
+                c_poll: OwnedPollFid::from(c_poll, domain.inner.c_domain.domain.clone()),
             })
         }
     }
@@ -321,7 +332,7 @@ impl PollSetImpl {
     pub(crate) fn poll<T0>(&self, contexts: &mut [T0]) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_poll(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 contexts.as_mut_ptr().cast(),
                 contexts.len() as i32,
             )
@@ -340,7 +351,7 @@ impl PollSetImpl {
         //[TODO] fid should implement Waitable trait
         let err = unsafe {
             libfabric_sys::inlined_fi_poll_add(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 fid.as_raw_fid(),
                 flags,
             )
@@ -353,7 +364,7 @@ impl PollSetImpl {
         //[TODO] fid should implement Waitable trait
         let err = unsafe {
             libfabric_sys::inlined_fi_poll_del(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 fid.as_raw_fid(),
                 flags,
             )
@@ -366,7 +377,7 @@ impl PollSetImpl {
         let mut res: libfabric_sys::fi_wait_obj = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_control(
-                self.as_typed_fid().as_raw_fid(),
+                self.as_typed_fid_mut().as_raw_fid(),
                 libfabric_sys::FI_GETWAITOBJ as i32,
                 (&mut res as *mut libfabric_sys::fi_wait_obj).cast(),
             )
@@ -383,7 +394,7 @@ impl PollSetImpl {
                 let mut fd = 0;
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut fd as *mut i32).cast(),
                     )
@@ -401,7 +412,7 @@ impl PollSetImpl {
                 };
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut cond as *mut libfabric_sys::fi_mutex_cond).cast(),
                     )
@@ -422,7 +433,7 @@ impl PollSetImpl {
                 };
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut wait as *mut libfabric_sys::fi_wait_pollfd).cast(),
                     )
@@ -498,11 +509,17 @@ impl AsTypedFid<PollRawFid> for PollSetImpl {
     fn as_typed_fid(&self) -> BorrowedTypedFid<PollRawFid> {
         self.c_poll.as_typed_fid()
     }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PollRawFid> {
+        self.c_poll.as_typed_fid_mut()
+    }
 }
 
 impl AsTypedFid<PollRawFid> for PollSet {
     fn as_typed_fid(&self) -> BorrowedTypedFid<PollRawFid> {
         self.inner.as_typed_fid()
+    }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PollRawFid> {
+        self.inner.as_typed_fid_mut()
     }
 }
 

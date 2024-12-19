@@ -23,7 +23,7 @@ use crate::MyRc;
 use crate::MyRefCell;
 use crate::RawMappedAddress;
 use crate::SyncSend;
-
+use crate::fid::MutBorrowedTypedFid;
 use super::message::extract_raw_addr_and_ctx;
 use super::message::extract_raw_ctx;
 use crate::fid::EpRawFid;
@@ -107,7 +107,7 @@ impl MulticastGroupCollectiveImpl {
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_join_collective(
-                ep.as_typed_fid().as_raw_typed_fid(),
+                ep.as_typed_fid_mut().as_raw_typed_fid(),
                 raw_addr.get(),
                 self.avset.as_typed_fid().as_raw_typed_fid(),
                 options.as_raw(),
@@ -201,7 +201,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let err = if let Some(opt) = options {
             unsafe {
                 libfabric_sys::inlined_fi_barrier2(
-                    self.as_typed_fid().as_raw_typed_fid(),
+                    self.as_typed_fid_mut().as_raw_typed_fid(),
                     mc_group.raw_addr().get(),
                     opt.as_raw(),
                     ctx,
@@ -210,7 +210,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         } else {
             unsafe {
                 libfabric_sys::inlined_fi_barrier(
-                    self.as_typed_fid().as_raw_typed_fid(),
+                    self.as_typed_fid_mut().as_raw_typed_fid(),
                     mc_group.raw_addr().get(),
                     ctx,
                 )
@@ -232,7 +232,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_broadcast(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -260,7 +260,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let ctx = extract_raw_ctx(context);
         let err = unsafe {
             libfabric_sys::inlined_fi_alltoall(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -289,7 +289,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let ctx = extract_raw_ctx(context);
         let err = unsafe {
             libfabric_sys::inlined_fi_allgather(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -319,7 +319,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let ctx = extract_raw_ctx(context);
         let err = unsafe {
             libfabric_sys::inlined_fi_allreduce(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -350,7 +350,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let ctx = extract_raw_ctx(context);
         let err = unsafe {
             libfabric_sys::inlined_fi_reduce_scatter(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -382,7 +382,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_reduce(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -414,7 +414,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_scatter(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -445,7 +445,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         let (root_raw_addr, ctx) = extract_raw_addr_and_ctx(root_mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_gather(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -1352,11 +1352,17 @@ impl AsTypedFid<McRawFid> for MulticastGroupCollective {
     fn as_typed_fid(&self) -> BorrowedTypedFid<McRawFid> {
         self.inner.as_typed_fid()
     }
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<McRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
 }
 
 impl AsTypedFid<McRawFid> for MulticastGroupCollectiveImpl {
     fn as_typed_fid(&self) -> BorrowedTypedFid<McRawFid> {
         self.c_mc.get().unwrap().as_typed_fid()
+    }
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<McRawFid> {
+        self.c_mc.get().unwrap().as_typed_fid_mut()
     }
 }
 

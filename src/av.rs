@@ -9,7 +9,7 @@ use crate::{
         OwnedAVSetFid, RawFid,
     }, AddressSource, Context, MappedAddress, MyOnceCell, MyRc, RawMappedAddress, SyncSend, FI_ADDR_NOTAVAIL
 };
-
+use crate::fid::MutBorrowedTypedFid;
 
 pub(crate) trait AddressVectorImplT: SyncSend {
     fn type_(&self) -> AddressVectorType;
@@ -40,7 +40,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_av_open(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 attr.get_mut(),
                 &mut c_av,
                 context,
@@ -53,7 +53,10 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
             ))
         } else {
             Ok(Self {
+                #[cfg(not(feature="threading-domain"))]
                 c_av: OwnedAVFid::from(c_av),
+                #[cfg(feature="threading-domain")]
+                c_av: OwnedAVFid::from(c_av, domain.c_domain.domain.clone()),
                 type_: AddressVectorType::from_raw(attr.c_attr.type_),
                 _eq_rc: MyOnceCell::new(),
                 _domain_rc: domain.clone(),
@@ -71,7 +74,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
     /// This function will return an error if the underlying library call fails.
     pub(crate) fn bind(&self, eq: &MyRc<EQ>) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_bind(self.as_typed_fid().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_av_bind(self.as_typed_fid_mut().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
         };
 
         if err != 0 {
@@ -105,7 +108,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         let err = if let Some(ctx) = ctx {
             unsafe {
                 libfabric_sys::inlined_fi_av_insert(
-                    self.as_typed_fid().as_raw_typed_fid(),
+                    self.as_typed_fid_mut().as_raw_typed_fid(),
                     serialized.as_ptr().cast(),
                     fi_addresses.len(),
                     fi_addresses.as_mut_ptr().cast(),
@@ -116,7 +119,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         } else {
             unsafe {
                 libfabric_sys::inlined_fi_av_insert(
-                    self.as_typed_fid().as_raw_typed_fid(),
+                    self.as_typed_fid_mut().as_raw_typed_fid(),
                     serialized.as_ptr().cast(),
                     fi_addresses.len(),
                     fi_addresses.as_mut_ptr().cast(),
@@ -151,7 +154,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_av_insertsvc(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 node.as_bytes().as_ptr().cast(),
                 service.as_bytes().as_ptr().cast(),
                 &mut fi_addr,
@@ -185,7 +188,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         let c_str = CString::new(service_str).unwrap();
         let err = unsafe {
             libfabric_sys::inlined_fi_av_insertsvc(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 c_str.as_ptr(),
                 std::ptr::null(),
                 &mut fi_addr,
@@ -225,7 +228,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_av_insertsym(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 c_node_str.as_ptr(),
                 nodecnt,
                 c_svc_str.as_ptr(),
@@ -257,7 +260,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_av_remove(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 fi_addresses.as_mut_ptr().cast(),
                 fi_addresses.len(),
                 0,
@@ -280,7 +283,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         let mut addrlen: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_av_lookup(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 mapped_addr.raw_addr(),
                 std::ptr::null_mut(),
                 &mut addrlen,
@@ -291,7 +294,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
             let mut addr = vec![0u8; addrlen];
             let err = unsafe {
                 libfabric_sys::inlined_fi_av_lookup(
-                    self.as_typed_fid().as_raw_typed_fid(),
+                    self.as_typed_fid_mut().as_raw_typed_fid(),
                     mapped_addr.raw_addr(),
                     addr.as_mut_ptr().cast(),
                     &mut addrlen,
@@ -318,7 +321,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         let strlen_ptr: *mut usize = &mut strlen;
         unsafe {
             libfabric_sys::inlined_fi_av_straddr(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 addr.as_bytes().as_ptr().cast(),
                 addr_str.as_mut_ptr().cast(),
                 strlen_ptr,
@@ -330,7 +333,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         let strlen_ptr: *mut usize = &mut strlen;
         unsafe {
             libfabric_sys::inlined_fi_av_straddr(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 addr.as_bytes().as_ptr().cast(),
                 addr_str.as_mut_ptr().cast(),
                 strlen_ptr,
@@ -769,7 +772,7 @@ impl AddressVectorSetImpl {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_av_set(
-                av.as_typed_fid().as_raw_typed_fid(),
+                av.as_typed_fid_mut().as_raw_typed_fid(),
                 attr.get_mut(),
                 &mut c_set,
                 context,
@@ -791,7 +794,7 @@ impl AddressVectorSetImpl {
     pub(crate) fn union(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_av_set_union(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 other.as_typed_fid().as_raw_typed_fid(),
             )
         };
@@ -811,7 +814,7 @@ impl AddressVectorSetImpl {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_av_set_intersect(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 other.as_typed_fid().as_raw_typed_fid(),
             )
         };
@@ -827,7 +830,7 @@ impl AddressVectorSetImpl {
 
     pub(crate) fn diff(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_set_diff(self.as_typed_fid().as_raw_typed_fid(), other.as_typed_fid().as_raw_typed_fid())
+            libfabric_sys::inlined_fi_av_set_diff(self.as_typed_fid_mut().as_raw_typed_fid(), other.as_typed_fid().as_raw_typed_fid())
         };
 
         if err != 0 {
@@ -844,7 +847,7 @@ impl AddressVectorSetImpl {
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_set_insert(self.as_typed_fid().as_raw_typed_fid(), mapped_addr.raw_addr())
+            libfabric_sys::inlined_fi_av_set_insert(self.as_typed_fid_mut().as_raw_typed_fid(), mapped_addr.raw_addr())
         };
 
         if err != 0 {
@@ -861,7 +864,7 @@ impl AddressVectorSetImpl {
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_set_remove(self.as_typed_fid().as_raw_typed_fid(), mapped_addr.raw_addr())
+            libfabric_sys::inlined_fi_av_set_remove(self.as_typed_fid_mut().as_raw_typed_fid(), mapped_addr.raw_addr())
         };
 
         if err != 0 {
@@ -877,7 +880,7 @@ impl AddressVectorSetImpl {
         let mut addr = 0u64;
         // let addr_ptr: *mut crate::MappedAddress = &mut addr;
         let err =
-            unsafe { libfabric_sys::inlined_fi_av_set_addr(self.as_typed_fid().as_raw_typed_fid(), &mut addr) };
+            unsafe { libfabric_sys::inlined_fi_av_set_addr(self.as_typed_fid_mut().as_raw_typed_fid(), &mut addr) };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code(
@@ -1249,6 +1252,11 @@ impl AsTypedFid<AVSetRawFid> for AddressVectorSet {
     fn as_typed_fid(&self) -> BorrowedTypedFid<AVSetRawFid> {
         self.inner.as_typed_fid()
     }
+
+    #[inline]
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<AVSetRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
 }
 
 // impl AsRawTypedFid for AddressVectorSet {
@@ -1263,6 +1271,10 @@ impl AsTypedFid<AVSetRawFid> for AddressVectorSetImpl {
     #[inline]
     fn as_typed_fid(&self) -> BorrowedTypedFid<AVSetRawFid> {
         self.c_set.as_typed_fid()
+    }
+    #[inline]
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<AVSetRawFid> {
+        self.c_set.as_typed_fid_mut()
     }
 }
 
@@ -1291,6 +1303,10 @@ impl<EQ: ?Sized + ReadEq> AsTypedFid<AvRawFid> for AddressVectorBase<EQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AvRawFid> {
         self.inner.as_typed_fid()
     }
+    #[inline]
+    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<AvRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
 }
 
 // impl<EQ: ?Sized + AsRawFid + ReadEq> AsRawTypedFid for AddressVectorBase<EQ> {
@@ -1305,6 +1321,10 @@ impl<EQ: ?Sized + ReadEq> AsTypedFid<AvRawFid> for AddressVectorImplBase<EQ> {
     #[inline]
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AvRawFid> {
         self.c_av.as_typed_fid()
+    }
+    #[inline]
+    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<AvRawFid> {
+        self.c_av.as_typed_fid_mut()
     }
 }
 

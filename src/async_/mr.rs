@@ -26,7 +26,7 @@ impl MemoryRegionImpl {
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_reg(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 access.as_raw().into(),
@@ -55,7 +55,10 @@ impl MemoryRegionImpl {
                     return Ok((
                         res,
                         Self {
+                            #[cfg(not(feature="threading-domain"))]
                             c_mr: OwnedMrFid::from(c_mr),
+                            #[cfg(feature="threading-domain")]
+                            c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
@@ -87,7 +90,7 @@ impl MemoryRegionImpl {
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_regattr(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 attr.get(),
                 flags.as_raw(),
                 c_mr_ptr,
@@ -111,7 +114,10 @@ impl MemoryRegionImpl {
                     return Ok((
                         res,
                         Self {
+                            #[cfg(not(feature="threading-domain"))]
                             c_mr: OwnedMrFid::from(c_mr),
+                            #[cfg(feature="threading-domain")]
+                            c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
@@ -142,7 +148,7 @@ impl MemoryRegionImpl {
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_regv(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 iov.len(),
                 access.as_raw().into(),
@@ -171,6 +177,9 @@ impl MemoryRegionImpl {
                     return Ok((
                         res,
                         Self {
+                            #[cfg(feature="threading-domain")]
+                            c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
+                            #[cfg(not(feature="threading-domain"))]
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),

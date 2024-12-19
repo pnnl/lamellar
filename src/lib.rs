@@ -64,15 +64,6 @@ pub mod xcontext;
 pub mod async_;
 pub mod connless_ep;
 
-pub(crate) struct RawContext {
-    pub(crate) ctx: *mut std::ffi::c_void,
-}
-
-// #[cfg(feature="threading-thread-safe")]
-// TODO
-#[cfg(feature="thread-safe")]
-unsafe impl Send for RawContext{}
-
 #[derive(Clone)]
 pub struct TableMappedAddress {
     raw_mapped_addr: libfabric_sys::fi_addr_t,

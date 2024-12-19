@@ -207,7 +207,7 @@ impl MemoryRegionImpl {
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_reg(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 access.as_raw().into(),
@@ -225,7 +225,10 @@ impl MemoryRegionImpl {
             ))
         } else {
             Ok(Self {
+                #[cfg(not(feature="threading-domain"))]
                 c_mr: OwnedMrFid::from(c_mr),
+                #[cfg(feature="threading-domain")]
+                c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
@@ -243,7 +246,7 @@ impl MemoryRegionImpl {
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_regattr(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 attr.get(),
                 flags.as_raw(),
                 c_mr_ptr,
@@ -256,6 +259,9 @@ impl MemoryRegionImpl {
             ))
         } else {
             Ok(Self {
+                #[cfg(feature="threading-domain")]
+                c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
+                #[cfg(not(feature="threading-domain"))]
                 c_mr: OwnedMrFid::from(c_mr),
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
@@ -277,7 +283,7 @@ impl MemoryRegionImpl {
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_regv(
-                domain.as_typed_fid().as_raw_typed_fid(),
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 iov.len(),
                 access.as_raw().into(),
@@ -295,6 +301,9 @@ impl MemoryRegionImpl {
             ))
         } else {
             Ok(Self {
+                #[cfg(feature="threading-domain")]
+                c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
+                #[cfg(not(feature="threading-domain"))]
                 c_mr: OwnedMrFid::from(c_mr),
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
@@ -307,7 +316,7 @@ impl MemoryRegionImpl {
         if self._domain_rc.get_mr_mode().is_raw() {
             self.raw_key(0)
         } else {
-            let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.as_typed_fid().as_raw_typed_fid()) };
+            let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.as_typed_fid_mut().as_raw_typed_fid()) };
             if ret == crate::FI_KEY_NOTAVAIL {
                 Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
             } else {
@@ -322,7 +331,7 @@ impl MemoryRegionImpl {
         let mut raw_key = vec![0u8; key_size];
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_raw_attr(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 &mut base_addr,
                 raw_key.as_mut_ptr().cast(),
                 &mut key_size,
@@ -346,7 +355,7 @@ impl MemoryRegionImpl {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_bind(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 cntr.as_typed_fid().as_raw_fid(),
                 if remote_write_event {
                     libfabric_sys::FI_REMOTE_WRITE as u64
@@ -369,7 +378,7 @@ impl MemoryRegionImpl {
         ep: &MyRc<EP>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_mr_bind(self.as_typed_fid().as_raw_typed_fid(), ep.as_typed_fid().as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_mr_bind(self.as_typed_fid_mut().as_raw_typed_fid(), ep.as_typed_fid().as_raw_fid(), 0)
         };
         if err != 0 && self.bound_ep.set(ep.clone()).is_err() {
             panic!("Memory Region already bound to an Endpoint");
@@ -386,7 +395,7 @@ impl MemoryRegionImpl {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_refresh(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 iov.len(),
                 flags,
@@ -397,7 +406,7 @@ impl MemoryRegionImpl {
     }
 
     pub(crate) fn enable(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.as_typed_fid().as_raw_typed_fid()) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
 
         check_error(err.try_into().unwrap())
     }
@@ -407,7 +416,7 @@ impl MemoryRegionImpl {
         let mut key_size = 0usize;
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_raw_attr(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 &mut base_addr,
                 std::ptr::null_mut(),
                 &mut key_size,
@@ -447,7 +456,7 @@ impl MemoryRegionImpl {
     // }
 
     pub(crate) fn descriptor(&self) -> MemoryRegionDesc {
-        let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.as_typed_fid().as_raw_typed_fid()) };
+        let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.as_typed_fid_mut().as_raw_typed_fid()) };
         // if c_desc.is_null() {
         //     panic!("fi_mr_desc returned NULL");
         // }
@@ -457,11 +466,6 @@ impl MemoryRegionImpl {
 }
 
 impl MemoryRegion {
-    #[allow(dead_code)]
-    pub(crate) fn handle(&self) -> *mut libfabric_sys::fid_mr {
-        self.inner.as_typed_fid().as_raw_typed_fid()
-    }
-
     #[allow(dead_code)]
     pub(crate) fn from_impl(mr_impl: &MyRc<MemoryRegionImpl>) -> Self {
         MemoryRegion {
@@ -633,11 +637,19 @@ impl AsTypedFid<MrRawFid> for MemoryRegion {
     fn as_typed_fid(&self) -> BorrowedTypedFid<MrRawFid> {
         self.inner.as_typed_fid()
     }
+
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<MrRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
 }
 
 impl AsTypedFid<MrRawFid> for MemoryRegionImpl {
     fn as_typed_fid(&self) -> BorrowedTypedFid<MrRawFid> {
         self.c_mr.as_typed_fid()
+    }
+
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<MrRawFid> {
+        self.c_mr.as_typed_fid_mut()
     }
 }
 

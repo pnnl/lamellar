@@ -40,7 +40,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_trecv(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr() as *mut std::ffi::c_void,
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -65,7 +65,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_trecvv(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 iov.len(),
@@ -90,7 +90,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_trecvmsg(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 &c_tagged_msg,
                 options.as_raw(),
             )
@@ -553,7 +553,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_tsend(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -576,7 +576,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_tsendv(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 iov.len(),
@@ -599,7 +599,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_tsendmsg(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 &c_tagged_msg as *const libfabric_sys::fi_msg_tagged,
                 options.as_raw(),
             )
@@ -619,7 +619,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_tsenddata(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -645,7 +645,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_tinject(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
                 raw_addr,
@@ -669,7 +669,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_tinjectdata(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
                 data,

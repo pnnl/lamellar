@@ -41,7 +41,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_read(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -66,7 +66,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_readv(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 iov.len(),
@@ -90,7 +90,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
         };
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_readmsg(self.as_typed_fid().as_raw_typed_fid(), c_rma_msg, options.as_raw())
+            libfabric_sys::inlined_fi_readmsg(self.as_typed_fid_mut().as_raw_typed_fid(), c_rma_msg, options.as_raw())
         };
         check_error(err)
     }
@@ -526,7 +526,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_write(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -554,7 +554,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_inject_write(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 raw_addr,
@@ -577,7 +577,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_writev(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 iov.len(),
@@ -604,7 +604,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_writedata(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 desc.get_desc(),
@@ -633,7 +633,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_inject_writedata(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 data,
@@ -655,7 +655,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
             Either::Right(msg) => msg.get(),
         };
         let err = unsafe {
-            libfabric_sys::inlined_fi_writemsg(self.as_typed_fid().as_raw_typed_fid(), c_msg_rma, options.as_raw())
+            libfabric_sys::inlined_fi_writemsg(self.as_typed_fid_mut().as_raw_typed_fid(), c_msg_rma, options.as_raw())
         };
         check_error(err)
     }

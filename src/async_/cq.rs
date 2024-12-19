@@ -118,6 +118,10 @@ impl ReadCq for AsyncCompletionQueueImpl {
         self.readerr_in(&mut entry, flags)?;
         Ok(entry.clone())
     }
+    
+    fn fid(&self) -> &crate::fid::OwnedCqFid {
+        &self.base.as_ref().c_cq
+    }
 }
 
 impl<'a> WaitObjectRetrieve<'a> for AsyncCompletionQueueImpl {
@@ -127,7 +131,7 @@ impl<'a> WaitObjectRetrieve<'a> for AsyncCompletionQueueImpl {
                 let mut fd: i32 = 0;
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut fd as *mut i32).cast(),
                     )
@@ -701,6 +705,9 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
 impl AsTypedFid<CqRawFid> for AsyncCompletionQueueImpl {
     fn as_typed_fid(&self) -> BorrowedTypedFid<CqRawFid> {
         self.base.get_ref().as_typed_fid()
+    }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<CqRawFid> {
+        self.base.get_ref().as_typed_fid_mut()
     }
 }
 

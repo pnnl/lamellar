@@ -126,7 +126,7 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_read(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -144,7 +144,7 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn peek_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_read(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -164,7 +164,7 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn readerr_in(&self, buff: &mut [u8]) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_readerr(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buff.as_mut_ptr().cast(),
                 0,
             )
@@ -182,7 +182,7 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn peekerr_in(&self, buff: &mut [u8]) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_readerr(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buff.as_mut_ptr().cast(),
                 libfabric_sys::FI_PEEK.into(),
             )
@@ -200,7 +200,7 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn strerror(&self, entry: &EventError) -> &str {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_strerror(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 -entry.c_err.prov_errno,
                 entry.c_err.err_data,
                 std::ptr::null_mut(),
@@ -227,7 +227,7 @@ pub trait WaitEq: ReadEq  {
     ) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_sread(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -253,7 +253,7 @@ pub trait WaitEq: ReadEq  {
     ) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_sread(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 event,
                 buff.as_mut_ptr().cast(),
                 buff.len(),
@@ -279,7 +279,7 @@ pub trait WriteEq: AsTypedFid<EqRawFid> {
     fn write_raw(&self, buff: &[u8], event: u32, flags: u64) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_write(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 event,
                 buff.as_ptr().cast(),
                 buff.len(),
@@ -301,7 +301,7 @@ pub trait WriteEq: AsTypedFid<EqRawFid> {
 
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_write(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 event_val,
                 event_entry,
                 event_entry_size,
@@ -405,7 +405,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
                 let mut fd: i32 = 0;
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut fd as *mut i32).cast(),
                     )
@@ -425,7 +425,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
 
                 let err = unsafe {
                     libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid().as_raw_fid(),
+                        self.as_typed_fid_mut().as_raw_fid(),
                         libfabric_sys::FI_GETWAIT as i32,
                         (&mut mutex_cond as *mut fi_mutex_cond).cast(),
                     )
@@ -494,7 +494,7 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
 
         let err = unsafe {
             libfabric_sys::inlined_fi_eq_open(
-                fabric.as_typed_fid().as_raw_typed_fid(),
+                fabric.as_typed_fid_mut().as_raw_typed_fid(),
                 attr.get_mut(),
                 c_eq_ptr,
                 context,
@@ -711,6 +711,9 @@ impl<T: AsTypedFid<EqRawFid>> AsTypedFid<EqRawFid> for EventQueueBase<T> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
         self.inner.as_typed_fid()
     }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
 }
 
 impl<T: AsRawTypedFid<Output = EqRawFid>> AsRawTypedFid for EventQueueBase<T> {
@@ -726,6 +729,9 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
 {
     fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
         self.c_eq.as_typed_fid()
+    }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+        self.c_eq.as_typed_fid_mut()
     }
 }
 

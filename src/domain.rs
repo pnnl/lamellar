@@ -1,6 +1,5 @@
 use core::slice;
 use std::ffi::CString;
-
 use crate::fid::{AsTypedFid, BorrowedTypedFid};
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -68,7 +67,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
         let err = if flags == 0 {
             unsafe {
                 libfabric_sys::inlined_fi_domain(
-                    fabric.as_typed_fid().as_raw_typed_fid(),
+                    fabric.as_typed_fid_mut().as_raw_typed_fid(),
                     info.info.0,
                     &mut c_domain,
                     context,
@@ -77,7 +76,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
         } else {
             unsafe {
                 libfabric_sys::inlined_fi_domain2(
-                    fabric.as_typed_fid().as_raw_typed_fid(),
+                    fabric.as_typed_fid_mut().as_raw_typed_fid(),
                     info.info.0,
                     &mut c_domain,
                     flags,
@@ -92,6 +91,9 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
             ))
         } else {
             Ok(Self {
+                #[cfg(feature="threading-domain")]
+                c_domain: OwnedDomainFid::from(c_domain, std::sync::Arc::new(parking_lot::Mutex::new(fid::TypedFid(c_domain)))),
+                #[cfg(not(feature="threading-domain"))]
                 c_domain: OwnedDomainFid::from(c_domain),
                 mr_key_size: domain_attr.mr_key_size,
                 mr_mode: domain_attr.mr_mode,
@@ -110,7 +112,7 @@ impl DomainImplBase<dyn ReadEq> {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_domain_bind(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 eq.as_typed_fid().as_raw_fid(),
                 if async_mem_reg {
                     libfabric_sys::FI_REG_MR
@@ -150,7 +152,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_query_atomic(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 T::as_fi_datatype(),
                 op.as_raw(),
                 attr.get_mut(),
@@ -174,7 +176,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
             }
             crate::mr::MemoryRegionKey::RawKey(raw_key) => unsafe {
                 libfabric_sys::inlined_fi_mr_map_raw(
-                    self.as_typed_fid().as_raw_typed_fid(),
+                    self.as_typed_fid_mut().as_raw_typed_fid(),
                     raw_key.1,
                     raw_key.0.as_mut_ptr().cast(),
                     raw_key.0.len(),
@@ -200,7 +202,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
     // }
 
     pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.as_typed_fid().as_raw_typed_fid(), key) };
+        let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.as_typed_fid_mut().as_raw_typed_fid(), key) };
 
         check_error(err.try_into().unwrap())
     }
@@ -220,7 +222,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
     ) -> Result<bool, crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_query_collective(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 coll.as_raw(),
                 attr.get_mut(),
                 0,
@@ -243,7 +245,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
     ) -> Result<bool, crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_query_collective(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 coll.as_raw(),
                 attr.get_mut(),
                 libfabric_sys::fi_collective_op_FI_SCATTER.into(),
@@ -396,6 +398,9 @@ impl<EQ: ?Sized> AsTypedFid<DomainRawFid> for DomainImplBase<EQ> {
     fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, DomainRawFid> {
         self.c_domain.as_typed_fid()
     }
+    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<'_, DomainRawFid> {
+        self.c_domain.as_typed_fid_mut()
+    }
 }
 
 // impl<EQ: ?Sized> AsRawTypedFid for DomainImplBase<EQ> {
@@ -427,6 +432,9 @@ impl<EQ: ?Sized> AsTypedFid<DomainRawFid> for DomainImplBase<EQ> {
 impl<EQ:?Sized> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<'_, DomainRawFid> {
         self.inner.as_typed_fid()
+    }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, DomainRawFid> {
+        self.inner.as_typed_fid_mut()
     }
 }
 
@@ -785,7 +793,7 @@ impl PeerDomainCtx {
         Self {
             c_ctx: {
                 libfabric_sys::fi_peer_domain_context {
-                    domain: domain.as_typed_fid().as_raw_typed_fid(),
+                    domain: domain.as_typed_fid_mut().as_raw_typed_fid(),
                     size,
                 }
             },

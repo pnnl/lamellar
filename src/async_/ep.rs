@@ -183,7 +183,7 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), cq.as_typed_fid().as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), cq.as_typed_fid().as_raw_fid(), flags)
         };
 
         check_error(err as isize)?;
@@ -212,12 +212,12 @@ impl<EP> EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), tx_cq.as_typed_fid().as_raw_fid(), tx_flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), tx_cq.as_typed_fid().as_raw_fid(), tx_flags)
         };
         check_error(err as isize)?;
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), rx_cq.as_typed_fid().as_raw_fid(), rx_flags)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), rx_cq.as_typed_fid().as_raw_fid(), rx_flags)
         };
         check_error(err as isize)?;
 
@@ -239,7 +239,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
         eq: &MyRc<T>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
         };
 
         if err != 0 {
@@ -404,7 +404,7 @@ impl<E> PassiveEndpointImplBase<E, dyn AsyncReadEq> {
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_pep_bind(self.as_typed_fid().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_pep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
         };
         if err != 0 {
             Err(crate::error::Error::from_err_code(

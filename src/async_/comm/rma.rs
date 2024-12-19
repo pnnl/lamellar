@@ -15,7 +15,7 @@ use crate::{
     mr::{DataDescriptor, MappedMemoryRegionKey},
     MappedAddress,
 };
-use crate::{Context, RawContext};
+use crate::Context;
 
 pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
     async unsafe fn read_async_impl<T>(

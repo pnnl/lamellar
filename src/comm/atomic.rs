@@ -45,7 +45,7 @@ pub(crate) trait AtomicWriteEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_atomic(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 desc.get_desc(),
@@ -74,7 +74,7 @@ pub(crate) trait AtomicWriteEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_atomicv(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 ioc.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 ioc.len(),
@@ -101,7 +101,7 @@ pub(crate) trait AtomicWriteEpImpl:
 
         let err = unsafe {
             libfabric_sys::inlined_fi_atomicmsg(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 c_atomic_msg,
                 options.as_raw(),
             )
@@ -125,7 +125,7 @@ pub(crate) trait AtomicWriteEpImpl:
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_inject_atomic(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 raw_addr,
@@ -584,7 +584,7 @@ pub(crate) trait AtomicFetchEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomic(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 desc.get_desc().cast(),
@@ -617,7 +617,7 @@ pub(crate) trait AtomicFetchEpImpl:
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomicv(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 ioc.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 ioc.len(),
@@ -649,7 +649,7 @@ pub(crate) trait AtomicFetchEpImpl:
 
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomicmsg(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 c_atomic_msg,
                 resultv.as_mut_ptr().cast(),
                 res_desc.as_mut_ptr().cast(),
@@ -1155,7 +1155,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_compare_atomic(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 buf.len(),
                 desc.get_desc().cast(),
@@ -1192,7 +1192,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(dest_addr, context);
         let err = unsafe {
             libfabric_sys::inlined_fi_compare_atomicv(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 ioc.as_ptr().cast(),
                 desc.as_mut_ptr().cast(),
                 ioc.len(),
@@ -1230,7 +1230,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
 
         let err: isize = unsafe {
             libfabric_sys::inlined_fi_compare_atomicmsg(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 c_atomic_msg,
                 comparev.as_ptr().cast(),
                 compare_desc.as_mut_ptr().cast(),
@@ -1877,7 +1877,7 @@ pub trait AtomicValidEp: AsTypedFid<EpRawFid> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_atomicvalid(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 T::as_fi_datatype(),
                 op.as_raw(),
                 &mut count as *mut usize,
@@ -1900,7 +1900,7 @@ pub trait AtomicValidEp: AsTypedFid<EpRawFid> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_fetch_atomicvalid(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 T::as_fi_datatype(),
                 op.as_raw(),
                 &mut count as *mut usize,
@@ -1923,7 +1923,7 @@ pub trait AtomicValidEp: AsTypedFid<EpRawFid> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_compare_atomicvalid(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 T::as_fi_datatype(),
                 op.as_raw(),
                 &mut count as *mut usize,

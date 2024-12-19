@@ -30,7 +30,7 @@ impl AsyncAddressVectorImpl {
 
         let err = unsafe {
             libfabric_sys::inlined_fi_av_insert(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 serialized.as_ptr().cast(),
                 fi_addresses.len(),
                 fi_addresses.as_mut_ptr().cast(),

@@ -5,7 +5,7 @@ use crate::{
         eq::AsyncReadEq,
     }, comm::collective::{
         CollectiveEp, CollectiveEpImpl, MulticastGroupCollective, MulticastGroupCollectiveImpl,
-    }, cq::SingleCompletion, enums::{CollectiveOptions, JoinOptions}, ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, eq::Event, error::Error, fid::{AsRawFid, AsTypedFid, EpRawFid, Fid}, infocapsoptions::CollCap, mr::DataDescriptor, AsFiType, Context, MyRc, RawContext, SyncSend
+    }, cq::SingleCompletion, enums::{CollectiveOptions, JoinOptions}, ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, eq::Event, error::Error, fid::{AsRawFid, AsTypedFid, EpRawFid, Fid}, infocapsoptions::CollCap, mr::DataDescriptor, AsFiType, Context, MyRc, SyncSend
 };
 
 impl MulticastGroupCollectiveImpl {

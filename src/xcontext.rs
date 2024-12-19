@@ -1,27 +1,29 @@
 use std::marker::PhantomData;
 
 use crate::{
-    cntr::{Counter, ReadCntr},
-    cq::ReadCq,
-    enums::{Mode, TrafficClass, TransferOptions},
-    ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase, EpState},
-    eq::ReadEq,
-    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid, XContextOwnedTypedFid},
-    Context, MyOnceCell, MyRc, SyncSend,
+    cntr::{Counter, ReadCntr}, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase, EpState}, eq::ReadEq, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid}, Context, MyOnceCell, MyRc, SyncSend
 };
+
+#[cfg(feature="threading-endpoint")]
+use crate::fid::XContextOwnedTypedFid;
+
+#[cfg(feature="threading-completion")]
+use crate::fid::EpCompletionOwnedTypedFid;
 
 pub struct Receive;
 pub struct Transmit;
 //================== XContext Template ==================//
 pub(crate) struct XContextBaseImpl<T, CQ: ?Sized> {
-    #[cfg(not(feature="threading-endpoint"))]
+    #[cfg(not(any(feature="threading-endpoint", feature="threading-completion")))]
     pub(crate) c_ep: OwnedEpFid,
     #[cfg(feature="threading-endpoint")]
     pub(crate) c_ep: XContextOwnedTypedFid<EpRawFid>,
+    #[cfg(feature="threading-completion")]
+    pub(crate) c_ep: EpCompletionOwnedTypedFid<EpRawFid>,
     phantom: PhantomData<fn() -> T>,
     pub(crate) cq: MyOnceCell<MyRc<CQ>>,
     pub(crate) cntr: MyOnceCell<MyRc<dyn ReadCntr>>,
-    pub(crate) parent_ep: MyRc<dyn ActiveEndpoint>,
+    pub(crate) _parent_ep: MyRc<dyn ActiveEndpoint>,
 }
 
 pub struct XContextBase<T, CQ: ?Sized> {
@@ -36,7 +38,10 @@ impl<T: ActiveEndpoint, CQ: ReadCq> ActiveEndpoint for XContextBase<T, CQ> {
 }
 impl<T, CQ: ReadCq> ActiveEndpoint for XContextBaseImpl<T, CQ> {
     fn fid(&self) -> &OwnedEpFid {
-        &self.c_ep.typed_fid
+        #[cfg(any(feature="threading-endpoint", feature="threading-completion"))]
+        return &self.c_ep.typed_fid;
+        #[cfg(not(any(feature="threading-endpoint", feature="threading-completion")))]
+        return &self.c_ep;
     }
 }
 impl<T, CQ: ReadCq> SyncSend for XContextBaseImpl<T, CQ> {}
@@ -71,11 +76,18 @@ impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBase<T, CQ> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
+
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
 }
 
 impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBaseImpl<T, CQ> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.c_ep.as_typed_fid()
+    }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+        self.c_ep.as_typed_fid_mut()
     }
 }
 
@@ -111,7 +123,7 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_tx_context(
-                parent_ep.as_typed_fid().as_raw_typed_fid(),
+                parent_ep.as_typed_fid_mut().as_raw_typed_fid(),
                 index,
                 &mut attr.get(),
                 &mut c_ep,
@@ -125,14 +137,18 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
             ))
         } else {
             Ok(Self {
-                #[cfg(not(feature="threading-endpoint"))]
+                #[cfg(not(any(feature="threading-domain", feature="threading-completion", feature="threading-endpoint")))]
                 c_ep: OwnedEpFid::from(c_ep),
+                #[cfg(feature="threading-completion")]
+                c_ep: EpCompletionOwnedTypedFid::from(c_ep),
                 #[cfg(feature="threading-endpoint")]
                 c_ep: XContextOwnedTypedFid::from(c_ep, parent_ep.fid().typed_fid.clone()),
+                #[cfg(feature="threading-domain")]
+                c_ep: OwnedEpFid::from(c_ep, parent_ep.fid().domain.clone()),
                 phantom: PhantomData,
                 cq: MyOnceCell::new(),
                 cntr: MyOnceCell::new(),
-                parent_ep,
+                _parent_ep: parent_ep,
             })
         }
     }
@@ -144,8 +160,8 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_typed_fid().as_raw_typed_fid(),
-                res.as_raw_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
                 flags,
             )
         };
@@ -158,6 +174,8 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
             if self.cntr.set(res.clone()).is_err() {
                 panic!("TransmitContext already bound to a Counter");
             }
+            #[cfg(feature="threading-completion")]
+            let _ = self.c_ep.bound_cntr.set(res.fid().typed_fid.clone());
             Ok(())
         }
     }
@@ -179,8 +197,8 @@ impl TxContextImpl {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_typed_fid().as_raw_typed_fid(),
-                res.as_raw_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
                 flags,
             )
         };
@@ -491,7 +509,7 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_rx_context(
-                parent_ep.as_typed_fid().as_raw_typed_fid(),
+                parent_ep.as_typed_fid_mut().as_raw_typed_fid(),
                 index,
                 &mut attr.get(),
                 &mut c_ep,
@@ -505,14 +523,18 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
             ))
         } else {
             Ok(Self {
-                #[cfg(not(feature="threading-endpoint"))]
+                #[cfg(not(any(feature="threading-domain", feature="threading-completion", feature="threading-endpoint")))]
                 c_ep: OwnedEpFid::from(c_ep),
+                #[cfg(feature="threading-completion")]
+                c_ep: EpCompletionOwnedTypedFid::from(c_ep),
+                #[cfg(feature="threading-domain")]
+                c_ep: OwnedEpFid::from(c_ep, parent_ep.fid().domain.clone()),
                 #[cfg(feature="threading-endpoint")]
                 c_ep: XContextOwnedTypedFid::from(c_ep, parent_ep.fid().typed_fid.clone()),
                 phantom: PhantomData,
                 cq: MyOnceCell::new(),
                 cntr: MyOnceCell::new(),
-                parent_ep,
+                _parent_ep: parent_ep,
             })
         }
     }
@@ -524,8 +546,8 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_typed_fid().as_raw_typed_fid(),
-                res.as_raw_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
                 flags,
             )
         };
@@ -559,8 +581,8 @@ impl RxContextImplBase<dyn ReadCq> {
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_ep_bind(
-                self.as_typed_fid().as_raw_typed_fid(),
-                res.as_raw_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
                 flags,
             )
         };
@@ -572,6 +594,11 @@ impl RxContextImplBase<dyn ReadCq> {
         } else {
             if self.cq.set(res.clone()).is_err() {
                 panic!("TransmitContext already bound to a CompletionQueueu");
+            }
+            #[cfg(feature="threading-completion")]
+            match self.c_ep.bound_cq0.set(res.fid().typed_fid.clone()) {
+                Ok(_) => {},
+                Err(_) => {panic!("Rx is already bound to a Completion Queue")},
             }
             Ok(())
         }

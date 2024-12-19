@@ -55,7 +55,7 @@ impl FabricImpl {
             fids.iter().map(|x| x.as_typed_fid().as_raw_fid()).collect();
         let err = unsafe {
             libfabric_sys::inlined_fi_trywait(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 raw_fids.as_mut_ptr(),
                 raw_fids.len() as i32,
             )
@@ -68,7 +68,7 @@ impl FabricImpl {
         // [TODO] Move this into the WaitSet struct
         let mut raw_fid = fid.as_typed_fid().as_raw_fid();
         let err =
-            unsafe { libfabric_sys::inlined_fi_trywait(self.as_typed_fid().as_raw_typed_fid(), &mut raw_fid, 1) };
+            unsafe { libfabric_sys::inlined_fi_trywait(self.as_typed_fid_mut().as_raw_typed_fid(), &mut raw_fid, 1) };
 
         check_error(err.try_into().unwrap())
     }
@@ -116,6 +116,9 @@ impl AsTypedFid<FabricRawFid> for FabricImpl {
     fn as_typed_fid(&self) -> BorrowedTypedFid<FabricRawFid> {
         self.c_fabric.as_typed_fid()
     }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<FabricRawFid> {
+        self.c_fabric.as_typed_fid_mut()
+    }
 }
 
 // impl AsRawTypedFid for FabricImpl {
@@ -141,6 +144,10 @@ impl AsTypedFid<FabricRawFid> for FabricImpl {
 impl AsTypedFid<FabricRawFid> for Fabric {
     fn as_typed_fid(&self) -> BorrowedTypedFid<FabricRawFid> {
         self.inner.as_typed_fid()
+    }
+    
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<FabricRawFid> {
+        self.inner.as_typed_fid_mut()
     }
 }
 

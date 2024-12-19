@@ -29,7 +29,7 @@ pub type UnconnectedEndpoint<T> =
 impl<EP: AsTypedFid<EpRawFid>> UninitUnconnectedEndpointBase<EP> {
     pub fn enable(self) -> Result<UnconnectedEndpointBase<EP>, crate::error::Error> {
         // TODO: Move this into an UninitEp struct
-        let err = unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid().as_raw_typed_fid()) };
+        let err = unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
         Ok(UnconnectedEndpointBase::<EP> {
             inner: self.inner.clone(),
@@ -42,7 +42,7 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_connect(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 addr.as_bytes().as_ptr().cast(),
                 param.as_ptr().cast(),
                 param.len(),
@@ -55,7 +55,7 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_connect(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 addr.as_bytes().as_ptr().cast(),
                 std::ptr::null_mut(),
                 0,
@@ -68,7 +68,7 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
     pub fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_accept(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 param.as_ptr().cast(),
                 param.len(),
             )
@@ -79,7 +79,7 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
 
     pub fn accept(&self) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_accept(self.as_typed_fid().as_raw_typed_fid(), std::ptr::null_mut(), 0)
+            libfabric_sys::inlined_fi_accept(self.as_typed_fid_mut().as_raw_typed_fid(), std::ptr::null_mut(), 0)
         };
 
         check_error(err.try_into().unwrap())
@@ -90,7 +90,7 @@ impl<E> UnconnectedEndpoint<E> {
     pub fn connect_complete(self, event: ConnectedEvent) -> ConnectedEndpoint<E> {
         // TODO: Create a type specifically for each event type
 
-        assert_eq!(event.get_fid(), self.as_typed_fid().as_raw_fid());
+        assert_eq!(event.get_fid(), self.as_typed_fid_mut().as_raw_fid());
 
         ConnectedEndpoint {
             inner: self.inner.clone(),
@@ -109,7 +109,7 @@ impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
 
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
     pub fn shutdown(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_shutdown(self.as_typed_fid().as_raw_typed_fid(), 0) };
+        let err = unsafe { libfabric_sys::inlined_fi_shutdown(self.as_typed_fid_mut().as_raw_typed_fid(), 0) };
 
         check_error(err.try_into().unwrap())
     }
@@ -118,7 +118,7 @@ impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
         let mut len = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_getpeer(
-                self.as_typed_fid().as_raw_typed_fid(),
+                self.as_typed_fid_mut().as_raw_typed_fid(),
                 std::ptr::null_mut(),
                 &mut len,
             )
@@ -128,7 +128,7 @@ impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
             let mut address = vec![0; len];
             let err = unsafe {
                 libfabric_sys::inlined_fi_getpeer(
-                    self.as_typed_fid().as_raw_typed_fid(),
+                    self.as_typed_fid_mut().as_raw_typed_fid(),
                     address.as_mut_ptr().cast(),
                     &mut len,
                 )

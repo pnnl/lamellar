@@ -735,7 +735,7 @@ impl<'a> Future for AsyncEventEq<'a> {
                 if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, &ev.req_fid) {
                     return std::task::Poll::Ready(entry);
                 }
-            } else if let Some(mut entry) = ev.fut.eq.remove_entry(ev.ctx) {
+            } else if let Some(entry) = ev.fut.eq.remove_entry(ev.ctx) {
                 return std::task::Poll::Ready(entry);
             }
             if let Some(err) = ev.fut.eq.remove_err_entry(&ev.req_fid) {
@@ -887,6 +887,9 @@ impl<const WRITE: bool> AsTypedFid<EqRawFid> for AsyncEventQueueImpl<WRITE> {
 
     fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
         self.base.get_ref().as_typed_fid()
+    }
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+        self.base.get_ref().as_typed_fid_mut()
     }
 }
 

@@ -2049,7 +2049,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
     let fi_addr = &gl_ctx.remote_address;
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + size];
     match ep {
-        EndpointCaps::ConnectedMsg(epp) => {
+        EndpointCaps::ConnectedMsg(_epp) => {
             msg_post(
                 SendOp::Send,
                 &mut gl_ctx.tx_seq,
@@ -2063,7 +2063,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
                 data,
             );
         }
-        EndpointCaps::ConnectedTagged(epp) => {
+        EndpointCaps::ConnectedTagged(_epp) => {
             tagged_post(
                 TagSendOp::TagSend,
                 &mut gl_ctx.tx_seq,
@@ -2078,7 +2078,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
                 data,
             );
         }
-        EndpointCaps::ConnlessMsg(epp) => {
+        EndpointCaps::ConnlessMsg(_epp) => {
             msg_post(
                 SendOp::Send,
                 &mut gl_ctx.tx_seq,
@@ -2092,7 +2092,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
                 data,
             );
         }
-        EndpointCaps::ConnlessTagged(epp) => {
+        EndpointCaps::ConnlessTagged(_epp) => {
             tagged_post(
                 TagSendOp::TagSend,
                 &mut gl_ctx.tx_seq,
@@ -2163,7 +2163,7 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
     let buf = &mut gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + size];
 
     match ep {
-        EndpointCaps::ConnlessMsg(epp) => {
+        EndpointCaps::ConnlessMsg(_epp) => {
             msg_post_recv(
                 RecvOp::Recv,
                 &mut gl_ctx.rx_seq,
@@ -2192,7 +2192,7 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
                 NO_CQ_DATA,
             );
         }
-        EndpointCaps::ConnectedMsg(epp) => {
+        EndpointCaps::ConnectedMsg(_epp) => {
             msg_post_recv(
                 RecvOp::Recv,
                 &mut gl_ctx.rx_seq,
@@ -2274,7 +2274,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
     let fi_addr = &gl_ctx.remote_address;
 
     match ep {
-        EndpointCaps::ConnlessMsg(epp) => {
+        EndpointCaps::ConnlessMsg(_epp) => {
             msg_post(
                 SendOp::Inject,
                 &mut gl_ctx.tx_seq,
@@ -2288,7 +2288,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
                 NO_CQ_DATA,
             );
         }
-        EndpointCaps::ConnectedMsg(epp) => {
+        EndpointCaps::ConnectedMsg(_epp) => {
             msg_post(
                 SendOp::Inject,
                 &mut gl_ctx.tx_seq,
@@ -2302,7 +2302,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
                 NO_CQ_DATA,
             );
         }
-        EndpointCaps::ConnlessTagged(epp) => tagged_post(
+        EndpointCaps::ConnlessTagged(_epp) => tagged_post(
             TagSendOp::TagInject,
             &mut gl_ctx.tx_seq,
             &mut gl_ctx.tx_cq_cntr,
@@ -2315,7 +2315,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
             buf,
             NO_CQ_DATA,
         ),
-        EndpointCaps::ConnectedTagged(epp) => tagged_post(
+        EndpointCaps::ConnectedTagged(_epp) => tagged_post(
             TagSendOp::TagInject,
             &mut gl_ctx.tx_seq,
             &mut gl_ctx.tx_cq_cntr,
@@ -3124,7 +3124,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
         &mut gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + 4 + ft_tx_prefix_size(info)];
 
     match ep {
-        EndpointCaps::ConnectedMsg(epp) => match cq_type {
+        EndpointCaps::ConnectedMsg(_epp) => match cq_type {
             CqType::Spin(cq_type) => match cq_type {
                 EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => msg_post(
                     SendOp::MsgSend,
@@ -3196,7 +3196,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                 ),
             },
         },
-        EndpointCaps::ConnectedTagged(epp) => match cq_type {
+        EndpointCaps::ConnectedTagged(_epp) => match cq_type {
             CqType::Spin(cq_type) => match cq_type {
                 EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => tagged_post(
                     TagSendOp::TagMsgSend,
@@ -3273,7 +3273,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                 ),
             },
         },
-        EndpointCaps::ConnlessMsg(epp) => match cq_type {
+        EndpointCaps::ConnlessMsg(_epp) => match cq_type {
             CqType::Spin(cq_type) => match cq_type {
                 EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => msg_post(
                     SendOp::MsgSend,
@@ -3345,7 +3345,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                 ),
             },
         },
-        EndpointCaps::ConnlessTagged(epp) => match cq_type {
+        EndpointCaps::ConnlessTagged(_epp) => match cq_type {
             CqType::Spin(cq_type) => match cq_type {
                 EqCqOpt::Shared(tx_cq) | EqCqOpt::Separate(tx_cq, _) => tagged_post(
                     TagSendOp::TagMsgSend,
