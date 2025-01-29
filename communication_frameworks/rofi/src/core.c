@@ -119,7 +119,11 @@ int rofi_put_internal(void *dst, void *src, size_t size, unsigned int id, unsign
         ERR_MSG("\t No mr found for address %p on node %u", dst, id);
         return -1;
     }
-    DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
+    DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx for dst address %p", el->start, el->start + el->size, el->mr_key, dst);
+
+    for (int i = 0; i < rofi.desc.nodes; i++) {
+        DEBUG_MSG("remote addr: %d %p", i, el->iov[id].addr);
+    }
 
     rma_iov.addr = (uint64_t)(dst - el->start + el->iov[id].addr);
     rma_iov.key = el->iov[id].key;
@@ -304,6 +308,7 @@ int rofi_init_internal(char *provs, char *domains) {
         for (int i = 0; i < prov_names->num; i++) {
             free(prov_names->names[i]);
         }
+        free(prov_names->names);
         free(prov_names);
     }
 
@@ -311,6 +316,7 @@ int rofi_init_internal(char *provs, char *domains) {
         for (int i = 0; i < domain_names->num; i++) {
             free(domain_names->names[i]);
         }
+        free(domain_names->names);
         free(domain_names);
     }
 

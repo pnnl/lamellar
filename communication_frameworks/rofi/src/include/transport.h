@@ -46,14 +46,19 @@
 
 #define ROFI_TRANSPORT_ERR_MSG(call, retv)                                               \
     do {                                                                                 \
-        fprintf(stderr, "[PE %d][ROFI TRANSPORT ERR][%s:%d] " call " failed: %s (%d)\n", \
-                rt_get_rank(), __FILE__, __LINE__, fi_strerror(retv), (int)(retv));      \
+        fprintf(stderr, "[ROFI TRANSPORT ERR][PE: %d][TID: %d][%s:%d] " call " failed: %s (%d)\n", \
+                rt_get_rank(), syscall(__NR_gettid), __FILE__, __LINE__, fi_strerror(retv), (int)(retv));      \
     } while (0)
 
 #define MIN(a, b) \
     ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a < _b ? _a : _b; })
+
+#define MAX(a, b) \
+    ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
 
 int rofi_transport_fini(rofi_transport_t *rofi);
 int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_names_t *prov_names, rofi_names_t *domain_names);

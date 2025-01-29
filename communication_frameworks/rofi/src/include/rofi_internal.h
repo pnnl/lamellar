@@ -20,6 +20,7 @@ typedef struct rofi_transport_t rofi_transport_t;
 #include "context.h"
 #include "mr.h"
 #include "rt.h"
+#include "rofi.h"
 
 #define ROFI_STATUS_NONE 0
 #define ROFI_STATUS_START 1
@@ -76,6 +77,7 @@ struct rofi_transport_t {
     uint64_t pending_get_cntr;
     uint64_t pending_send_cntr;
     uint64_t pending_recv_cntr;
+    uint64_t error_cnt;
     rofi_desc_t desc;
     rofi_mr_desc *mr;
     uint64_t global_barrier_id;

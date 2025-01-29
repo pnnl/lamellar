@@ -83,6 +83,20 @@ int rofi_transport_fini(rofi_transport_t *rofi) {
     }
     DEBUG_MSG("get_cntr closed");
 
+    ret = fi_close(&rofi->send_cntr->fid);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
+        rofi->put_cntr = NULL;
+    }
+    DEBUG_MSG("send_cntr closed");
+
+    ret = fi_close(&rofi->recv_cntr->fid);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
+        rofi->get_cntr = NULL;
+    }
+    DEBUG_MSG("recv_cntr closed");
+
     ret = fi_close(&rofi->av->fid);
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
@@ -110,64 +124,51 @@ int rofi_transport_fini(rofi_transport_t *rofi) {
         rofi->fabric = NULL;
     }
     DEBUG_MSG("fabric closed");
-    free(rofi->info);
+    fi_freeinfo(rofi->info);
     DEBUG_MSG("info freed");
     return 0;
 }
 
-void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi, rofi_names_t *names) {
+void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi, rofi_names_t *prov_names, rofi_names_t *domain_names) {
+    DEBUG_MSG("Selecting Provider: %p %p", prov_names, domain_names);
     struct fi_info *prov_cur = prov;
-    if (names == NULL) {
+    if (prov_names == NULL && domain_names == NULL) {
         rofi->info = fi_dupinfo(prov_cur);
-        WARN_MSG("No matches for the specified provider and/or domain, using Provider:  %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
-                 prov_cur->fabric_attr->prov_name,
-                 FI_MAJOR(prov_cur->fabric_attr->prov_version),
-                 FI_MINOR(prov_cur->fabric_attr->prov_version),
-                 prov_cur->fabric_attr->name,
-                 prov_cur->domain_attr->name,
-                 prov_cur->tx_attr->inject_size,
-                 prov_cur->ep_attr->max_msg_size,
-                 prov_cur->domain_attr->max_ep_stx_ctx == 0 ? "no" : "yes",
-                 prov_cur->domain_attr->mr_mode & FI_MR_RMA_EVENT ? "yes" : " no",
-                 prov_cur->caps & FI_MSG ? "yes" : "no",
-                 prov_cur->caps & FI_RMA ? "yes" : "no",
-                 prov_cur->caps & FI_READ ? "yes" : "no",
-                 prov_cur->caps & FI_WRITE ? "yes" : "no",
-                 prov_cur->caps & FI_REMOTE_READ ? "yes" : "no",
-                 prov_cur->caps & FI_REMOTE_WRITE ? "yes" : "no",
-                 prov_cur->caps & FI_RMA_EVENT ? "yes" : "no",
-                 prov_cur->caps & FI_ATOMIC ? "yes" : "no",
-                 prov_cur->caps & FI_COLLECTIVE ? "yes" : "no");
+        WARN_MSG("No matches for the specified provider and/or domain");
+        return;
     }
     else {
-        for (int i = 0; i < names->num; i++) {
-            while (prov_cur != NULL) {
-
-                if (strncmp(prov_cur->fabric_attr->prov_name, names->names[i], strlen(names->names[i])) == 0 || strncmp(prov_cur->domain_attr->name, names->names[i], strlen(names->names[i])) == 0) {
-                    DEBUG_MSG("Selected Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
-                              prov_cur->fabric_attr->prov_name,
-                              FI_MAJOR(prov_cur->fabric_attr->prov_version),
-                              FI_MINOR(prov_cur->fabric_attr->prov_version),
-                              prov_cur->fabric_attr->name,
-                              prov_cur->domain_attr->name,
-                              prov_cur->tx_attr->inject_size,
-                              prov_cur->ep_attr->max_msg_size,
-                              prov_cur->domain_attr->max_ep_stx_ctx == 0 ? "no" : "yes",
-                              prov_cur->domain_attr->mr_mode & FI_MR_RMA_EVENT ? "yes" : " no",
-                              prov_cur->caps & FI_MSG ? "yes" : "no",
-                              prov_cur->caps & FI_RMA ? "yes" : "no",
-                              prov_cur->caps & FI_READ ? "yes" : "no",
-                              prov_cur->caps & FI_WRITE ? "yes" : "no",
-                              prov_cur->caps & FI_REMOTE_READ ? "yes" : "no",
-                              prov_cur->caps & FI_REMOTE_WRITE ? "yes" : "no",
-                              prov_cur->caps & FI_RMA_EVENT ? "yes" : "no",
-                              prov_cur->caps & FI_ATOMIC ? "yes" : "no",
-                              prov_cur->caps & FI_COLLECTIVE ? "yes" : "no");
-                    rofi->info = fi_dupinfo(prov_cur);
-                    break;
+        while (prov_cur != NULL) {
+            if (prov_names != NULL) {
+                for (int i = 0; i < prov_names->num; i++) {
+                    DEBUG_MSG("checking Provider: %s %s %s", prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name, prov_names->names[i]);
+                    if (strncmp(prov_cur->fabric_attr->prov_name, prov_names->names[i], strlen(prov_names->names[i])) == 0) {
+                        if (domain_names == NULL) {
+                            rofi->info = fi_dupinfo(prov_cur);
+                            return;
+                        }
+                        else {
+                            for (int j = 0; j < domain_names->num; j++) {
+                                if (strncmp(prov_cur->domain_attr->name, domain_names->names[j], strlen(domain_names->names[j])) == 0) {
+                                    rofi->info = fi_dupinfo(prov_cur);
+                                    return;
+                                }
+                            }
+                        }
+                    }
                 }
-                prov_cur = prov_cur->next;
             }
+            else {
+                if (domain_names) {
+                    for (int j = 0; j < domain_names->num; j++) {
+                        if (strncmp(prov_cur->domain_attr->name, domain_names->names[j], strlen(domain_names->names[j])) == 0) {
+                            rofi->info = fi_dupinfo(prov_cur);
+                            return;
+                        }
+                    }
+                }
+            }
+            prov_cur = prov_cur->next;
         }
     }
 }
@@ -180,9 +181,8 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         ROFI_TRANSPORT_ERR_MSG("fi_getinfo", ret);
     }
 
-    struct fi_info *prov_cur = prov; // rofi->info;
-
 #ifdef _DEBUG
+    struct fi_info *prov_cur = prov; // rofi->info;
     while (prov_cur != NULL) {
         DEBUG_MSG("Available Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
                   prov_cur->fabric_attr->prov_name,
@@ -206,18 +206,34 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         prov_cur = prov_cur->next;
     }
 #endif
-    if (prov_names != NULL) {
-        rofi_transport_select_provider(prov, rofi, prov_names);
-    }
+
+    rofi_transport_select_provider(prov, rofi, prov_names, domain_names);
+
     if (rofi->info == NULL) {
-        if (domain_names != NULL) {
-            rofi_transport_select_provider(prov, rofi, domain_names);
-        }
+        rofi_transport_select_provider(prov, rofi, NULL, NULL);
     }
-    if (rofi->info == NULL) {
-        rofi_transport_select_provider(prov, rofi, NULL);
-    }
+
     fi_freeinfo(prov);
+    DEBUG_MSG("Selected Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
+              rofi->info->fabric_attr->prov_name,
+              FI_MAJOR(rofi->info->fabric_attr->prov_version),
+              FI_MINOR(rofi->info->fabric_attr->prov_version),
+              rofi->info->fabric_attr->name,
+              rofi->info->domain_attr->name,
+              rofi->info->tx_attr->inject_size,
+              rofi->info->ep_attr->max_msg_size,
+              rofi->info->domain_attr->max_ep_stx_ctx == 0 ? "no" : "yes",
+              rofi->info->domain_attr->mr_mode & FI_MR_RMA_EVENT ? "yes" : " no",
+              rofi->info->caps & FI_MSG ? "yes" : "no",
+              rofi->info->caps & FI_RMA ? "yes" : "no",
+              rofi->info->caps & FI_READ ? "yes" : "no",
+              rofi->info->caps & FI_WRITE ? "yes" : "no",
+              rofi->info->caps & FI_REMOTE_READ ? "yes" : "no",
+              rofi->info->caps & FI_REMOTE_WRITE ? "yes" : "no",
+              rofi->info->caps & FI_RMA_EVENT ? "yes" : "no",
+              rofi->info->caps & FI_ATOMIC ? "yes" : "no",
+              rofi->info->caps & FI_COLLECTIVE ? "yes" : "no");
+
     if (rofi->info == NULL) {
         ERR_MSG("Error initializing ROFI. No matching provider found. Aborting.");
         return -1;
@@ -252,8 +268,6 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         rofi->fi_collective = FI_COLLECTIVE;
         DEBUG_MSG("fi_query_collective: FI_ALLGATHER supported");
     }
-
-    rofi->fi_collective = 0;
 
     ret = rofi_transport_init_endpoint_resources(rofi);
     if (ret) {
@@ -411,7 +425,7 @@ int rofi_transport_init_endpoint_resources(rofi_transport_t *rofi) {
 
     // bind put cntr
     DEBUG_MSG("FI_EP_BIND put_cntr");
-    ret = fi_ep_bind(rofi->ep, &rofi->put_cntr->fid, FI_WRITE | FI_REMOTE_WRITE);
+    ret = fi_ep_bind(rofi->ep, &rofi->put_cntr->fid, FI_WRITE ); // we dont include FI_REMOTE_WRITE as this would update the counter whenever a remote request comes in, i.e. we only care about local requests
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_ep_bind put_cntr", ret);
         return ret;
@@ -419,7 +433,7 @@ int rofi_transport_init_endpoint_resources(rofi_transport_t *rofi) {
 
     // bind get cntr
     DEBUG_MSG("FI_EP_BIND get_cntr");
-    ret = fi_ep_bind(rofi->ep, &rofi->get_cntr->fid, FI_READ | FI_REMOTE_READ);
+    ret = fi_ep_bind(rofi->ep, &rofi->get_cntr->fid, FI_READ );// we dont include FI_REMOTE_READ as this would update the counter whenever a remote request comes in, i.e. we only care about local requests
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_ep_bind get_cntr", ret);
         return ret;
@@ -470,6 +484,7 @@ int rofi_transport_init_av(rofi_transport_t *rofi) {
         DEBUG_MSG("Got EP address name from %i (%s).", i, fi_av_straddr(rofi->av, addr_ptr, buf, &buflen));
         if (ret) {
             ERR_MSG("Error getting EP address name from %i (%d).", i, ret);
+            free(all_addrs);
             return ret;
         }
     }
@@ -478,12 +493,14 @@ int rofi_transport_init_av(rofi_transport_t *rofi) {
     int ret = fi_av_insert(rofi->av, all_addrs, rofi->desc.nodes, rofi->remote_addrs, 0, NULL);
     if (ret < 0) {
         ROFI_TRANSPORT_ERR_MSG("ft_av_insert", ret);
+        free(all_addrs);
         return ret;
     }
     else if (ret != rofi->desc.nodes) {
         ERR_MSG("fi_av_insert: number of addresses inserted = %d;"
                 " number of addresses given = %d\n",
                 ret, rofi->desc.nodes);
+        free(all_addrs);
         return ret;
     }
     return 0;
@@ -497,47 +514,108 @@ int rofi_transport_init_av(rofi_transport_t *rofi) {
 int rofi_transport_progress(rofi_transport_t *rofi) {
     struct fi_cq_entry buf = {0};
     int ret = fi_cq_read(rofi->cq, &buf, 1);
+    int err =ret;
     if (ret == 1) {
-        printf("unexpected cq event\n"); // warnd
+        WARN_MSG("unexpected cq event"); // warnd
     }
     else if (ret < 0 && ret != -FI_EAGAIN) {
-        ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
-        struct fi_cq_err_entry ebuf = {0};
-        int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-        if (ret > 0) {
-            const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-            ERR_MSG("Error: %s\n", errmsg);
-            abort();
-            return ret;
-        }
-        else if (ret && ret != -FI_EAGAIN) {
-            ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
-            return ret;
-        }
-        return (ret);
+        ROFI_TRANSPORT_ERR_MSG("rofi_transport_progress", ret);
+        do {
+            struct fi_cq_err_entry ebuf = {0};
+            int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+            if (ret > 0) {
+                const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+                const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+                ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
+                );
+                err = ebuf.err;
+            }
+            else if (ret < 0) {
+                ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
+                return ret;
+            }
+            else{
+                PRINT_MSG("ret: %d", ret);
+            }
+        } while (ret == 1);
+        // if (ret > 0 && ebuf.err == -FI_EACCES) {
+            // ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
+            // const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+            // ERR_MSG("Error: %s %d %d \n", errmsg, ebuf.prov_errno, ebuf.err);
+            
+            // return -1;
+        // }
+        // else if (ret < 0 && ret != -FI_EAGAIN) {
+        //     ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
+        //     ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
+        //     return ret;
+        // }
+        // return (ret);
+        return (err);
     }
     return 0;
 }
 
 // checks the rma return status, and aborts if not -FI_EAGAIN
 // note this does not try to make progress
-int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err) {
-    if (err == -FI_EAGAIN) {
-        struct fi_cq_err_entry ebuf = {0};
-        int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-        if (ret > 0) {
-            const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-            ERR_MSG("Error: %s\n", errmsg);
-            return ret;
+int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err, struct fid_cntr *cntr) {
+    int err_cnt = fi_cntr_readerr(cntr);
+
+    if (err_cnt > rofi->error_cnt){
+        DEBUG_MSG(" found  %lu  errors cnts... ", err_cnt);
+        rofi->error_cnt = err_cnt;
+        if (err == -FI_EAGAIN) {
+            for (int j=0;j<err_cnt;j++){
+                struct fi_cq_err_entry ebuf = {0};
+                int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+                const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+                const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+                DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
+                );
+                // struct fi_cq_err_entry ebuf = {0};
+                // int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+                // if (ret > 0 && ebuf.err == -FI_EACCES) {
+                //     const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+                //     const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+                //     ERR_MSG("Error: %s %s %d %d \n", errmsg, ebuf.prov_errno, ebuf.err);
+                    
+                //     return ret;
+                // }
+                // else if (ret < 0 && ret != -FI_EAGAIN) {
+                //     ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
+                //     return ret;
+                // }
+            }
+            return err;
         }
-        else if (ret && ret != -FI_EAGAIN) {
-            ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
-            return ret;
+        else if (err) {
+            for (int j=0;j<err_cnt;j++){
+                struct fi_cq_err_entry ebuf = {0};
+                int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+                const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+                const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+                DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1
+                );
+            }
+            // ROFI_TRANSPORT_ERR_MSG("", err);
+            // struct fi_cq_err_entry ebuf = {0};
+            // int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+            // if (ret > 0){//} && ebuf.err == -FI_EACCES) {
+            //     const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+            //     ERR_MSG("Error: %s %d %d \n", errmsg, ebuf.prov_errno, ebuf.err);
+            //     abort();
+            //     return ret;
+            // }
+            // else if (ret < 0 && ret != -FI_EAGAIN) {
+            //     ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
+            //     return ret;
+            // }
+            // return err;
+            return err;
         }
-    }
-    else if (err) {
-        ROFI_TRANSPORT_ERR_MSG("", err);
-        return err;
     }
     return 0;
 }
@@ -545,17 +623,19 @@ int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err) {
 // checks the rma return status, and aborts if not -FI_EAGAIN
 // note this does not try to make progress
 int rofi_transport_ctx_check_err(rofi_transport_t *rofi, int err) {
-    if (err == -FI_EAGAIN) {
+  
+    if (err == -FI_EAGAIN || err == -FI_EAVAIL) {
         struct fi_cq_err_entry ebuf = {0};
         pthread_mutex_lock(&rofi->lock);
         int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
         pthread_mutex_unlock(&rofi->lock);
-        if (ret > 0) {
+        if (ret > 0 && ebuf.err == -FI_EACCES) {
             const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-            ERR_MSG("Error: %s\n", errmsg);
+            ERR_MSG("Error: %s %d %d \n", errmsg, ebuf.prov_errno, ebuf.err);
+            
             return ret;
         }
-        else if (ret && ret != -FI_EAGAIN) {
+        else if (ret < 0 && ret != -FI_EAGAIN) {
             ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
             return ret;
         }
@@ -564,6 +644,7 @@ int rofi_transport_ctx_check_err(rofi_transport_t *rofi, int err) {
         ROFI_TRANSPORT_ERR_MSG("", err);
         return err;
     }
+    
     return 0;
 }
 
@@ -573,12 +654,13 @@ int rofi_transport_check_rma_err(rofi_transport_t *rofi, int err) {
     if (err == -FI_EAGAIN) {
         struct fi_cq_err_entry ebuf = {0};
         int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-        if (ret > 0) {
+        if (ret > 0 && ebuf.err == -FI_EACCES) {
             const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-            printf("Error: %s\n", errmsg);
+            ERR_MSG("Error: %s %d %d \n", errmsg, ebuf.prov_errno, ebuf.err);
+            
             return ret;
         }
-        else if (ret && ret != -FI_EAGAIN) {
+        else if (ret < 0 && ret != -FI_EAGAIN) {
             ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
             return ret;
         }
@@ -596,26 +678,47 @@ int rofi_transport_check_rma_err(rofi_transport_t *rofi, int err) {
 
 int rofi_transport_locked_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending_cntr, struct fid_cntr *cntr) {
     uint64_t cnt = *pending_cntr;
+    uint64_t orig_cnt = cnt;
     uint64_t prev_cnt = cnt;
     uint64_t cur_cnt = fi_cntr_read(cntr);
     uint64_t err_cnt = fi_cntr_readerr(cntr);
-    DEBUG_MSG("Waiting for  %lu  cnts... cur_cnt: %lu err_cnt: %lu", cnt, cur_cnt, err_cnt);
+    uint64_t old_cnt = cur_cnt;
+    
+    // if (err_cnt > rofi->error_cnt) {
+    //     rofi->error_cnt = err_cnt;
+    //     DEBUG_MSG(" Waiting for  %lu  cnts... cur_cnt: %lu err_cnt: %lu", cnt, cur_cnt, err_cnt);
+    //     for (int j=0;j<err_cnt+1;j++){
+    //         struct fi_cq_err_entry ebuf = {0};
+    //         int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+    //         const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+    //         const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+    //         DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s",
+    //              ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1);
+            
+    //     }
+    // }
     do {
         prev_cnt = cnt;
-        int ret = fi_cntr_wait(cntr, prev_cnt, -1);
+        old_cnt = cur_cnt;
+        int ret = fi_cntr_wait(cntr, prev_cnt, 100);
+        cur_cnt = fi_cntr_read(cntr);
         cnt = *pending_cntr; // this could be updated by another thread
-        ret = rofi_transport_locked_ctx_check_err(rofi, ret);
-        ret = rofi_transport_progress(rofi);
-        if (ret) {
-            return ret;
+        if (ret != -FI_ETIMEDOUT){
+            ret = rofi_transport_progress(rofi);
+            if (ret) {
+                DEBUG_MSG("rofi_transport_progress error!!!");
+            }
+            ret = rofi_transport_locked_ctx_check_err(rofi, ret, cntr);
+            DEBUG_MSG("Checking orig_cnt: %lu prev_cnt: %lu old_cnt: %lu cur_cnt: %lu cnt: %lu err_cnt: %lu ",orig_cnt, prev_cnt, old_cnt, cur_cnt, cnt, rofi->error_cnt);
         }
-    } while (prev_cnt < cnt);
+        
+    } while (cnt < cur_cnt || prev_cnt < cnt || cur_cnt != old_cnt);
     // pthread_mutex_lock(&rofi->lock);
     // uint64_t cnt = fi_cntr_read(cntr);
     // uint64_t err_cnt = fi_cntr_readerr(cntr);
     // pthread_mutex_unlock(&rofi->lock);
-    // DEBUG_MSG("Done Waiting for  %lu  prev_cnt: %lu gets to complete... cnt: %lu err_cnt: %lu", *pending_cntr, prev_cnt, cnt, err_cnt);
-    assert(prev_cnt == cnt);
+    DEBUG_MSG("Done Waiting for  %lu  prev_cnt: %lu gets to complete... cnt: %lu err_cnt: %lu", *pending_cntr, prev_cnt, cnt, err_cnt);
+    assert(prev_cnt <= cnt);
     return 0;
 }
 
@@ -626,24 +729,41 @@ int rofi_transport_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending_cntr, 
     uint64_t cur_cnt = fi_cntr_read(cntr);
     uint64_t err_cnt = fi_cntr_readerr(cntr);
     pthread_mutex_unlock(&rofi->lock);
-    DEBUG_MSG("Waiting for  %lu  cnts... cur_cnt: %lu err_cnt: %lu", cnt, cur_cnt, err_cnt);
+    uint64_t old_cnt = cur_cnt;
     do {
+        DEBUG_MSG("Waiting for  %lu  cnts... cur_cnt: %lu err_cnt: %lu", cnt, cur_cnt, err_cnt);
         prev_cnt = cnt;
+        old_cnt = cur_cnt;
         pthread_mutex_lock(&rofi->lock);
-        int ret = fi_cntr_wait(cntr, prev_cnt, -1);
+        int ret = rofi_transport_progress(rofi);
+        // if (ret) {
+        //     return ret;
+        // }
+        ret = fi_cntr_wait(cntr, prev_cnt, 100);
+        
+        cur_cnt = fi_cntr_read(cntr);
+        if (ret != -FI_ETIMEDOUT){
+            int ret = rofi_transport_progress(rofi);
+            if (ret) {
+                DEBUG_MSG("rofi_transport_progress error!!!");
+            }
+            ret = rofi_transport_locked_ctx_check_err(rofi, ret, cntr);
+            DEBUG_MSG("Checking orig_cnt: %lu prev_cnt: %lu old_cnt: %lu cur_cnt: %lu cnt: %lu err_cnt: %lu ",orig_cnt, prev_cnt, old_cnt, cur_cnt, cnt, rofi->error_cnt);
+        }
+       
         pthread_mutex_unlock(&rofi->lock);
         cnt = *pending_cntr; // this could be updated by another thread
-        ret = rofi_transport_ctx_check_err(rofi, ret);
-        if (ret) {
-            return ret;
-        }
-    } while (prev_cnt < cnt);
+        // ret = rofi_transport_ctx_check_err(rofi, ret);
+        // if (ret) {
+        //     return ret;
+        // }
+    } while (cnt < cur_cnt || prev_cnt < cnt || cur_cnt != old_cnt);
     // pthread_mutex_lock(&rofi->lock);
-    // uint64_t cnt = fi_cntr_read(cntr);
-    // uint64_t err_cnt = fi_cntr_readerr(cntr);
+    // uint64_t ncnt = fi_cntr_read(cntr);
+    // err_cnt = fi_cntr_readerr(cntr);
     // pthread_mutex_unlock(&rofi->lock);
-    // DEBUG_MSG("Done Waiting for  %lu  prev_cnt: %lu gets to complete... cnt: %lu err_cnt: %lu", *pending_cntr, prev_cnt, cnt, err_cnt);
-    assert(prev_cnt == cnt);
+    // DEBUG_MSG("Done Waiting for  %lu  prev_cnt: %lu gets to complete... cnt: %lu err_cnt: %lu", *pending_cntr, prev_cnt, ncnt, err_cnt);
+    assert(prev_cnt <= cnt);
     return 0;
 }
 
@@ -683,8 +803,19 @@ int rofi_transport_wait_on_context_comp(rofi_transport_t *rofi, void *context) {
     while (true) {
         int ret = fi_cq_read(rofi->cq, &buf, 1);
         if (ret < 0 && ret != -FI_EAGAIN) {
-            ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
-            return ret;
+            if (ret == -FI_EAVAIL) {
+                ret = fi_cq_readerr(rofi->cq, &err_entry, 0);
+                if (ret > 0 && err_entry.err == -FI_EACCES) {
+                    const char *errmsg = fi_cq_strerror(rofi->cq, err_entry.prov_errno, err_entry.err_data, NULL, 0);
+                    ERR_MSG("Error: %s %d %d\n", errmsg, err_entry.prov_errno, err_entry.err);
+                    
+                    return ret;
+                }
+            }
+            else{
+                ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
+                return ret;
+            }
         }
         if (buf.op_context && buf.op_context == context) {
             return 0;
@@ -697,7 +828,8 @@ int rofi_transport_wait_on_context_comp(rofi_transport_t *rofi, void *context) {
 
 int rofi_transport_put_inject(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, fi_addr_t pe, const void *src_addr, size_t len) {
     pthread_mutex_lock(&rofi->lock);
-    rofi->pending_put_cntr += 1;
+    
+    rofi->pending_put_cntr = MAX(rofi->pending_put_cntr+1, fi_cntr_read(rofi->put_cntr) + 1);
     DEBUG_MSG("fi_inject_write %p %p %d %d %p 0x%lx", rofi->ep, src_addr, len, pe, rma_iov->addr, rma_iov->key);
     int ret = fi_inject_write(rofi->ep, src_addr, len, pe, rma_iov->addr, rma_iov->key);
     while (ret) { // retry while FI_EAGAIN
@@ -718,6 +850,8 @@ int rofi_transport_put_large(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov,
     uint8_t *src_end_addr = src_cur_addr + len;
     uint64_t dst_cur_addr = (uint64_t)rma_iov->addr;
     pthread_mutex_lock(&rofi->lock);
+    
+    rofi->pending_put_cntr = MAX(rofi->pending_put_cntr, fi_cntr_read(rofi->put_cntr));
     DEBUG_MSG("fi_write %p %p %d %d %p 0x%lx", rofi->ep, src_cur_addr, len, pe, rma_iov->addr, rma_iov->key);
     while (src_cur_addr < src_end_addr) {
         uint64_t cur_len = MIN(src_end_addr - src_cur_addr, rofi->desc.max_message_size);
@@ -736,7 +870,7 @@ int rofi_transport_put_large(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov,
         dst_cur_addr += cur_len;
     }
     pthread_mutex_unlock(&rofi->lock);
-    DEBUG_MSG("fi_inject_write %p %p %d %d %p 0x%lx", rofi->ep, src_addr, len, pe, rma_iov->addr, rma_iov->key);
+    DEBUG_MSG("fi_write %p %p %d %d %p 0x%lx", rofi->ep, src_addr, len, pe, rma_iov->addr, rma_iov->key);
     return 0;
 }
 
@@ -757,7 +891,7 @@ int rofi_transport_put_wait_all(rofi_transport_t *rofi) {
 int rofi_transport_get_small(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov, uint64_t pe, void *dst_addr, size_t len, void *desc, void *context) {
 
     pthread_mutex_lock(&rofi->lock);
-    rofi->pending_get_cntr += 1;
+    rofi->pending_get_cntr = MAX(rofi->pending_get_cntr + 1, fi_cntr_read(rofi->get_cntr) + 1);
     int ret = fi_read(rofi->ep, dst_addr, len, desc, pe, rma_iov->addr, rma_iov->key, context);
     while (ret) { // retry while FI_EAGAIN
         ret = rofi_transport_check_rma_err(rofi, ret);
@@ -776,6 +910,7 @@ int rofi_transport_get_large(rofi_transport_t *rofi, struct fi_rma_iov *rma_iov,
     uint8_t *dst_cur_addr = (uint8_t *)dst_addr;
     uint8_t *dst_end_addr = dst_cur_addr + len;
     pthread_mutex_lock(&rofi->lock);
+    rofi->pending_get_cntr = MAX(rofi->pending_get_cntr , fi_cntr_read(rofi->get_cntr));
     while (dst_cur_addr < dst_end_addr) {
         uint64_t cur_len = MIN(dst_end_addr - dst_cur_addr, rofi->desc.max_message_size);
         rofi->pending_get_cntr += 1;
@@ -874,45 +1009,46 @@ int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr) {
 
 // for use when FI_COLLECTIVE not available
 int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes) {
-    int me = rofi->desc.nid;
+    int global_me = rofi->desc.nid;
+    int team_me = global_me;
     if (pes != NULL) { // doing sub barrier, figure out team pe id
         for (int i = 0; i < num_pes; i++) {
-            if (pes[i] == me) {
-                me = i;
+            if (pes[i] == global_me) {
+                team_me = i;
                 break;
             }
         }
     }
     struct fi_rma_iov *sub_alloc_buf = rofi->sub_alloc_buf;
-    sub_alloc_buf[me].addr = (uint64_t)mr->start;
-    sub_alloc_buf[me].key = fi_mr_key(mr->fid);
-    DEBUG_MSG("Placing mr info (key: 0x%lx, addr: 0x%lx)....", sub_alloc_buf[me].key, sub_alloc_buf[me].addr);
+    sub_alloc_buf[global_me].addr = (uint64_t)mr->start;
+    sub_alloc_buf[global_me].key = fi_mr_key(mr->fid);
+    DEBUG_MSG("Placing mr info (key: 0x%lx, addr: 0x%lx)... at local address: %p", sub_alloc_buf[global_me].key, sub_alloc_buf[global_me].addr, &sub_alloc_buf[global_me]);
     uint64_t sub_alloc_barrier_id = 0;
-    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, me, num_pes);
+    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, team_me, num_pes);
 
-    for (int pe = me + 1; pe < num_pes; pe++) {
-        uint64_t actual_pe = pes[pe];
-        void *src = (void *)&sub_alloc_buf[actual_pe]; // this will be translated to the remote PE
+    for (int pe = team_me + 1; pe < num_pes; pe++) {
+        uint64_t global_pe = pes[pe];
+        void *src = (void *)&sub_alloc_buf[global_pe]; // this will be translated to the remote PE
         void *dst = src;                               // this will be our local data
 
-        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), actual_pe, 0);
+        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
     }
-    for (int pe = 0; pe < me; pe++) {
-        uint64_t actual_pe = pes[pe];
-        void *src = (void *)&sub_alloc_buf[actual_pe]; // this will be translated to the remote PE
+    for (int pe = 0; pe < team_me; pe++) {
+        uint64_t global_pe = pes[pe];
+        void *src = (void *)&sub_alloc_buf[global_pe]; // this will be translated to the remote PE
         void *dst = src;                               // this will be our local data
 
-        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), actual_pe, 0);
+        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
     }
     if (rofi_transport_get_wait_all(rofi)) {
         ERR_MSG("\t Error waiting for get");
     }
     for (int pe = 0; pe < num_pes; pe++) {
-        uint64_t actual_pe = pes[pe];
-        mr->iov[actual_pe] = sub_alloc_buf[actual_pe];
-        DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", pe, actual_pe, sub_alloc_buf[actual_pe].addr, sub_alloc_buf[actual_pe].key);
+        uint64_t global_pe = pes[pe];
+        mr->iov[global_pe] = sub_alloc_buf[global_pe];
+        DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", pe, global_pe, sub_alloc_buf[global_pe].addr, sub_alloc_buf[global_pe].key);
     }
-    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, me, num_pes);
+    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, team_me, num_pes);
 
     return 0;
 }
@@ -1062,6 +1198,9 @@ int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, u
 
     *barrier_id += 1;
     void *src = (void *)barrier_id;
+    pthread_mutex_lock(&rofi->lock);
+    ret = rofi_transport_progress(rofi);
+    pthread_mutex_unlock(&rofi->lock);
     for (int round = 0; round < num_rounds; round++) {
         for (int i = 1; i <= n; i++) {
             int send_pe = euclid_rem((int)(me + i * pow(n + 1, round)), num_pes);
