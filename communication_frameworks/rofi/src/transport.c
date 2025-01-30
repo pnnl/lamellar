@@ -179,7 +179,7 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
     int ret = fi_getinfo(ROFI_FI_VERSION, NULL, NULL, 0, hints, &prov);
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_getinfo", ret);
-    }
+    }    
 
 #ifdef _DEBUG
     struct fi_info *prov_cur = prov; // rofi->info;
@@ -207,13 +207,15 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
     }
 #endif
 
+
     rofi_transport_select_provider(prov, rofi, prov_names, domain_names);
+    
 
     if (rofi->info == NULL) {
         rofi_transport_select_provider(prov, rofi, NULL, NULL);
     }
-
     fi_freeinfo(prov);
+
     DEBUG_MSG("Selected Provider: %s  Version: (%u.%u) Fabric: %s Domain: %s max_inject: %zu, max_msg: %zu, stx: %s, MR_RMA_EVENT: %s, msg: %s, rma: %s, read: %s, write: %s, remote_read: %s, remote_write: %s, rma_event: %s, atomic: %s, collective: %s",
               rofi->info->fabric_attr->prov_name,
               FI_MAJOR(rofi->info->fabric_attr->prov_version),
@@ -503,6 +505,7 @@ int rofi_transport_init_av(rofi_transport_t *rofi) {
         free(all_addrs);
         return ret;
     }
+    free(all_addrs);
     return 0;
 }
 
@@ -526,9 +529,9 @@ int rofi_transport_progress(rofi_transport_t *rofi) {
             if (ret > 0) {
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
-                ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
-                );
+                // ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                //             ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
+                // );
                 err = ebuf.err;
             }
             else if (ret < 0) {
@@ -571,9 +574,9 @@ int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err, struct 
                 int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
-                DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
-                );
+                // DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                //             ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
+                // );
                 // struct fi_cq_err_entry ebuf = {0};
                 // int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 // if (ret > 0 && ebuf.err == -FI_EACCES) {
@@ -596,9 +599,9 @@ int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err, struct 
                 int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
-                DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1
-                );
+                // DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                //             ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1
+                // );
             }
             // ROFI_TRANSPORT_ERR_MSG("", err);
             // struct fi_cq_err_entry ebuf = {0};
@@ -748,7 +751,7 @@ int rofi_transport_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending_cntr, 
                 DEBUG_MSG("rofi_transport_progress error!!!");
             }
             ret = rofi_transport_locked_ctx_check_err(rofi, ret, cntr);
-            DEBUG_MSG("Checking orig_cnt: %lu prev_cnt: %lu old_cnt: %lu cur_cnt: %lu cnt: %lu err_cnt: %lu ",orig_cnt, prev_cnt, old_cnt, cur_cnt, cnt, rofi->error_cnt);
+            DEBUG_MSG("Checking cnt: %lu prev_cnt: %lu old_cnt: %lu cur_cnt: %lu cnt: %lu err_cnt: %lu ",cnt, prev_cnt, old_cnt, cur_cnt, cnt, rofi->error_cnt);
         }
        
         pthread_mutex_unlock(&rofi->lock);

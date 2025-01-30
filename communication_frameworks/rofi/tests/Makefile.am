@@ -43,4 +43,4 @@ rofi_barrier_SOURCES      = barrier.c utils.c utils.h
 rofi_barrier_LDFLAGS      = $(linker_flags)
 rofi_barrier_LDADD        = ../src/librofi.la -lm
 
-AM_LDFLAGS = $(LDFLAGS)
+AM_LDFLAGS = $(LDFLAGS) 

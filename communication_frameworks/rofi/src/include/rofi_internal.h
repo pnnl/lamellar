@@ -12,7 +12,7 @@
 #include <uthash.h>
 
 #ifndef ROFI_FI_VERSION
-#define ROFI_FI_VERSION FI_VERSION(1, 20)
+#define ROFI_FI_VERSION FI_VERSION(1, 15)
 #endif
 
 typedef struct rofi_transport_t rofi_transport_t;

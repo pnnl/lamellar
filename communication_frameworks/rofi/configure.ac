@@ -31,7 +31,27 @@ AC_ARG_WITH([ofi-provider],
 		     AC_DEFINE(ROFI_OFI_PROVIDER,[$with_ofi_provider],[OFI Provider])],
 		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, false)])
 
-LDFLAGS="$LDFLAGS -L$OFI_PATH/lib -Wl,-rpath,$OFI_PATH/lib"
+AC_ARG_ENABLE([asan],
+    AS_HELP_STRING([--enable-asan], [Enable Address Sanitizer @<:@default=no@:>@]),
+    [enable_asan=$enableval], [enable_asan=no])
+
+if test "x$enable_asan" = "xyes"; then
+    AC_MSG_CHECKING([whether GCC supports Address Sanitizer])
+    save_CFLAGS="$CFLAGS"
+    CFLAGS="$CFLAGS -fsanitize=address -fno-omit-frame-pointer"
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [])],
+        [asan_cflags="-fsanitize=address -fno-omit-frame-pointer"],
+        [asan_cflags=""])
+    CFLAGS="$save_CFLAGS"
+    AS_VAR_APPEND(CFLAGS, "-fsanitize=address -fno-omit-frame-pointer")
+    AC_MSG_RESULT([$asan_cflags])
+else
+  asan_cflags=""
+fi
+
+AC_SUBST([ASAN_CFLAGS], [$asan_cflags])
+
+LDFLAGS="$LDFLAGS -L$OFI_PATH/lib -Wl,-rpath,$OFI_PATH/lib $ASAN_CFLAGS"
 CPPFLAGS="$CPPFLAGS -I$OFI_PATH/include"
 
 AC_CHECK_HEADERS([stdio.h],       [],[AC_MSG_ERROR[stdio.h  not found!]])
