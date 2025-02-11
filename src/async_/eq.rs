@@ -796,7 +796,7 @@ impl<'a> Future for AsyncEventEq<'a> {
                 }
             };
 
-            let mut res = match ready!(ev.fut.as_mut().poll(cx)) {
+            let res = match ready!(ev.fut.as_mut().poll(cx)) {
                 // Ok(len) => len,
                 Err(error) => {
                     if let ErrorKind::ErrorInQueue(ref q_err) = error.kind {

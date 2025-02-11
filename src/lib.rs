@@ -297,6 +297,9 @@ const FI_ADDR_UNSPEC: u64 = u64::MAX;
 // #[cfg(not(feature = "thread-safe"))]
 // pub type CtxState = i8;
 
+unsafe impl Send for Context{}
+unsafe impl Sync for Context{}
+
 pub(crate) enum ContextState {
     Cq(Result<SingleCompletion, crate::error::Error>),
     Eq(Result<Event, crate::error::Error>),
@@ -305,14 +308,16 @@ pub(crate) enum ContextState {
 #[repr(C)]
 struct Context1 {
     #[allow(dead_code)]
+    pub(crate) id: usize,
     c_val: libfabric_sys::fi_context,
     pub(crate) ready: AtomicBool,
     pub(crate) state: MyOnceCell<ContextState>,
 }
 
 impl Context1 {
-    pub fn new() -> Self {
+    pub fn new(id: usize) -> Self {
         Self {
+            id,
             c_val: {
                 libfabric_sys::fi_context {
                     internal: [std::ptr::null_mut(); 4],
@@ -343,22 +348,24 @@ impl Context1 {
 
 }
 
-impl Default for Context1 {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for Context1 {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 #[repr(C)]
 struct Context2 {
+    pub(crate) id: usize,
     c_val: libfabric_sys::fi_context2,
     state: MyOnceCell<ContextState>, 
     pub(crate) ready: AtomicBool,
 }
 
 impl Context2 {
-    pub fn new() -> Self {
+    pub fn new(id: usize) -> Self {
         Self {
+            id,
             c_val: {
                 libfabric_sys::fi_context2 {
                     internal: [std::ptr::null_mut(); 8],
@@ -389,11 +396,11 @@ impl Context2 {
     }
 }
 
-impl Default for Context2 {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for Context2 {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
 
 enum ContextType {
     Context1(Box<Context1>),
@@ -409,9 +416,17 @@ pub struct Context(ContextType);
 impl ContextType {
     fn inner_mut(&mut self) -> *mut std::ffi::c_void {
         match self {
-            ContextType::Context1(ctx) => &mut *(*(ctx)) as *mut Context1 as *mut std::ffi::c_void,
+            ContextType::Context1(ctx) =>  &mut *(*(ctx)) as *mut Context1 as *mut std::ffi::c_void,
             ContextType::Context2(ctx) => &mut *(*(ctx)) as *mut Context2 as *mut std::ffi::c_void,
         }
+    }
+
+    fn id(&self) -> usize {
+        match self {
+            ContextType::Context1(ctx) => ctx.id,
+            ContextType::Context2(ctx) => ctx.id,
+        }
+
     }
 
     fn inner(&self) -> *const std::ffi::c_void {
@@ -444,8 +459,8 @@ impl ContextType {
 
     pub(crate) fn reset(&mut self) {
         match self {
-            ContextType::Context1(ctx) => ctx.ready.store(false, atomic::Ordering::Relaxed),
-            ContextType::Context2(ctx) => ctx.ready.store(false, atomic::Ordering::Relaxed),
+            ContextType::Context1(ctx) => {ctx.ready.store(false, atomic::Ordering::Relaxed); ctx.state.take();},
+            ContextType::Context2(ctx) => {ctx.ready.store(false, atomic::Ordering::Relaxed); ctx.state.take();},
         }
     }
 

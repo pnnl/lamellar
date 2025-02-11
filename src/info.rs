@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ffi::CString, marker::PhantomData};
+use std::{collections::VecDeque, ffi::CString, marker::PhantomData, sync::atomic::AtomicUsize};
 
 use libfabric_sys::FI_SOURCE;
 
@@ -492,6 +492,7 @@ impl<T> InfoBuilder<T> {
 
 // #[derive(Clone)]
 pub struct InfoEntry<T> {
+    ctx_id: AtomicUsize,
     caps: InfoCapsImpl,
     mode: crate::enums::Mode,
     src_address: Option<Address>,
@@ -544,6 +545,7 @@ impl<T> InfoEntry<T> {
             None
         };
         Self {
+            ctx_id: AtomicUsize::new(0),
             caps: InfoCapsImpl::from(caps),
             mode,
             src_address,
@@ -585,10 +587,11 @@ impl<T> InfoEntry<T> {
     }
 
     pub fn allocate_context(&self) -> Context {
+        let ctx_id = self.ctx_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if self.mode.is_context() {
-            Context(ContextType::Context1(Box::new(Context1::new())))
+            Context(ContextType::Context1(Box::new(Context1::new(ctx_id))))
         } else {
-            Context(ContextType::Context2(Box::new(Context2::new())))
+            Context(ContextType::Context2(Box::new(Context2::new(ctx_id))))
         }
     }
 
