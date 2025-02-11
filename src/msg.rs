@@ -406,7 +406,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
 }
 
 pub struct MsgAtomicBase<'a, T: AsFiType, OP: AtomicOperation> {
-    c_msg_atomic: libfabric_sys::fi_msg_atomic,
+    pub(crate) c_msg_atomic: libfabric_sys::fi_msg_atomic,
     phantom: PhantomData<&'a T>,
     phantom_op: PhantomData<OP>,
 }
@@ -474,7 +474,7 @@ pub type MsgFetchAtomic<'a, T> = MsgAtomicBase<'a, T, FetchAtomicOp>;
 pub type MsgCompareAtomic<'a, T> = MsgAtomicBase<'a, T, CompareAtomicOp>;
 
 pub struct MsgAtomicConnectedBase<'a, T: AsFiType, OP: AtomicOperation> {
-    c_msg_atomic: libfabric_sys::fi_msg_atomic,
+    pub(crate) c_msg_atomic: libfabric_sys::fi_msg_atomic,
     phantom: PhantomData<&'a T>,
     phantom_op: PhantomData<OP>,
 }

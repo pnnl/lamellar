@@ -100,7 +100,7 @@ pub trait AsyncReadEp {
     /// Async version of [crate::comm::rma::ReadEp::readv_from]
     /// # Safety
     /// See [crate::comm::rma::ReadEp::readv_from]
-    unsafe fn readv_from_async<'a, T>(
+    unsafe fn readv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
@@ -134,7 +134,7 @@ pub trait ConnectedAsyncReadEp {
     /// Async version of [crate::comm::rma::ReadEp::readv]
     /// # Safety
     /// See [crate::comm::rma::ReadEp::readv]
-    unsafe fn readv_async<'a, T>(
+    unsafe fn readv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
@@ -177,7 +177,7 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
             .await
     }
 
-    async unsafe fn readv_from_async<'a, T>(
+    async unsafe fn readv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
@@ -215,7 +215,7 @@ impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
             .await
     }
 
-    async unsafe fn readv_async<'a, T>(
+    async unsafe fn readv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],

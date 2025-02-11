@@ -79,6 +79,12 @@ pub trait AsyncRecvEp: RecvEp {
         mapped_addr: &MappedAddress,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+    fn recv_from_any_async<T>(
+        &self,
+        buf: &mut [T],
+        desc: &mut impl DataDescriptor,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn recvv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
@@ -132,6 +138,15 @@ impl<EP: AsyncRecvEpImpl + ConnlessEp> AsyncRecvEp for EP {
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.recv_async_imp(buf, desc, Some(mapped_addr), ctx)
+    }
+
+    fn recv_from_any_async<T>(
+        &self,
+        buf: &mut [T],
+        desc: &mut impl DataDescriptor,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.recv_async_imp(buf, desc, None, ctx)
     }
 
     fn recvv_from_async<'a>(

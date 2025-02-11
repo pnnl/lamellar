@@ -93,7 +93,7 @@ pub trait AsyncTagRecvEp {
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    fn trecvv_from_async<'a, T0>(
+    fn trecvv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
@@ -121,7 +121,7 @@ pub trait ConnectedAsyncTagRecvEp {
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    fn trecvv_async<'a, T0>(
+    fn trecvv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
@@ -164,7 +164,7 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
     }
 
     #[inline]
-    async fn trecvv_from_async<'a, T0>(
+    async fn trecvv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
@@ -204,7 +204,7 @@ impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
     }
 
     #[inline]
-    async fn trecvv_async<'a, T0>(
+    async fn trecvv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
@@ -303,7 +303,7 @@ pub trait AsyncTagSendEp: TagSendEp {
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    fn tsendv_to_async<'a, T>(
+    fn tsendv_to_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
         desc: &mut [impl DataDescriptor],
@@ -338,7 +338,7 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    fn tsendv_async<'a, T>(
+    fn tsendv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
         desc: &mut [impl DataDescriptor],
@@ -386,7 +386,7 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
     }
 
     #[inline]
-    async fn tsendv_to_async<'a, T>(
+    async fn tsendv_to_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
         desc: &mut [impl DataDescriptor],
@@ -438,7 +438,7 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     }
 
     #[inline]
-    async fn tsendv_async<'a, T>(
+    async fn tsendv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
         desc: &mut [impl DataDescriptor],
