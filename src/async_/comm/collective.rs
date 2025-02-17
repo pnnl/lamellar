@@ -3,9 +3,19 @@ use crate::{
         cq::AsyncReadCq,
         ep::{AsyncCmEp, AsyncTxEp},
         eq::AsyncReadEq,
-    }, comm::collective::{
+    },
+    comm::collective::{
         CollectiveEp, CollectiveEpImpl, MulticastGroupCollective, MulticastGroupCollectiveImpl,
-    }, cq::SingleCompletion, enums::{CollectiveOptions, JoinOptions}, ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, eq::Event, error::Error, fid::{AsRawFid, AsTypedFid, EpRawFid, Fid}, infocapsoptions::CollCap, mr::DataDescriptor, AsFiType, Context, MyRc, SyncSend
+    },
+    cq::SingleCompletion,
+    enums::{CollectiveOptions, JoinOptions},
+    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
+    eq::Event,
+    error::Error,
+    fid::{AsRawFid, AsTypedFid, EpRawFid, Fid},
+    infocapsoptions::CollCap,
+    mr::DataDescriptor,
+    AsFiType, Context, MyRc, SyncSend,
 };
 
 impl MulticastGroupCollectiveImpl {
@@ -23,11 +33,7 @@ impl MulticastGroupCollectiveImpl {
         ctx: &mut Context,
     ) -> Result<Event, Error> {
         // let mut async_ctx = AsyncCtx::new(user_ctx );
-        self.join_collective_impl(
-            ep,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
+        self.join_collective_impl(ep, options, Some(ctx.inner_mut()))?;
         let eq = ep.retrieve_eq();
         eq.async_event_wait(
             libfabric_sys::FI_JOIN_COMPLETE,
@@ -65,11 +71,7 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: Option<CollectiveOptions>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.barrier_impl(
-            mc_group,
-            Some(ctx.inner_mut()),
-            options,
-        )?;
+        self.barrier_impl(mc_group, Some(ctx.inner_mut()), options)?;
         let cq = self.retrieve_tx_cq();
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
@@ -289,7 +291,7 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     }
 }
 
-pub trait AsyncCollectiveEp: CollectiveEp + AsyncTxEp + AsyncCmEp + SyncSend{
+pub trait AsyncCollectiveEp: CollectiveEp + AsyncTxEp + AsyncCmEp + SyncSend {
     fn barrier_async(
         &self,
         mc_group: &MulticastGroupCollective,

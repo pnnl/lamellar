@@ -90,7 +90,11 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
         };
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_readmsg(self.as_typed_fid_mut().as_raw_typed_fid(), c_rma_msg, options.as_raw())
+            libfabric_sys::inlined_fi_readmsg(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                c_rma_msg,
+                options.as_raw(),
+            )
         };
         check_error(err)
     }
@@ -655,7 +659,11 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
             Either::Right(msg) => msg.get(),
         };
         let err = unsafe {
-            libfabric_sys::inlined_fi_writemsg(self.as_typed_fid_mut().as_raw_typed_fid(), c_msg_rma, options.as_raw())
+            libfabric_sys::inlined_fi_writemsg(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                c_msg_rma,
+                options.as_raw(),
+            )
         };
         check_error(err)
     }

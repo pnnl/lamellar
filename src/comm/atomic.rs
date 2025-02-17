@@ -28,9 +28,7 @@ use crate::AsFiType;
 use crate::Context;
 use crate::FI_ADDR_UNSPEC;
 
-pub(crate) trait AtomicWriteEpImpl:
-    AsTypedFid<EpRawFid> + AtomicValidEp
-{
+pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
     fn atomic_impl<T: AsFiType>(
         &self,
@@ -565,9 +563,7 @@ impl<EP: AtomicCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicW
 impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
-pub(crate) trait AtomicFetchEpImpl:
-    AsTypedFid<EpRawFid> + AtomicValidEp
-{
+pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
     fn fetch_atomic_impl<T: AsFiType>(
         &self,

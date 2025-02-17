@@ -1,24 +1,30 @@
 use std::marker::PhantomData;
 
 use crate::{
-    cntr::{Counter, ReadCntr}, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase, EpState}, eq::ReadEq, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid}, Context, MyOnceCell, MyRc, SyncSend
+    cntr::{Counter, ReadCntr},
+    cq::ReadCq,
+    enums::{Mode, TrafficClass, TransferOptions},
+    ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase, EpState},
+    eq::ReadEq,
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid},
+    Context, MyOnceCell, MyRc, SyncSend,
 };
 
-#[cfg(feature="threading-endpoint")]
+#[cfg(feature = "threading-endpoint")]
 use crate::fid::XContextOwnedTypedFid;
 
-#[cfg(feature="threading-completion")]
+#[cfg(feature = "threading-completion")]
 use crate::fid::EpCompletionOwnedTypedFid;
 
 pub struct Receive;
 pub struct Transmit;
 //================== XContext Template ==================//
 pub(crate) struct XContextBaseImpl<T, CQ: ?Sized> {
-    #[cfg(not(any(feature="threading-endpoint", feature="threading-completion")))]
+    #[cfg(not(any(feature = "threading-endpoint", feature = "threading-completion")))]
     pub(crate) c_ep: OwnedEpFid,
-    #[cfg(feature="threading-endpoint")]
+    #[cfg(feature = "threading-endpoint")]
     pub(crate) c_ep: XContextOwnedTypedFid<EpRawFid>,
-    #[cfg(feature="threading-completion")]
+    #[cfg(feature = "threading-completion")]
     pub(crate) c_ep: EpCompletionOwnedTypedFid<EpRawFid>,
     phantom: PhantomData<fn() -> T>,
     pub(crate) cq: MyOnceCell<MyRc<CQ>>,
@@ -38,9 +44,9 @@ impl<T: ActiveEndpoint, CQ: ReadCq> ActiveEndpoint for XContextBase<T, CQ> {
 }
 impl<T, CQ: ReadCq> ActiveEndpoint for XContextBaseImpl<T, CQ> {
     fn fid(&self) -> &OwnedEpFid {
-        #[cfg(any(feature="threading-endpoint", feature="threading-completion"))]
+        #[cfg(any(feature = "threading-endpoint", feature = "threading-completion"))]
         return &self.c_ep.typed_fid;
-        #[cfg(not(any(feature="threading-endpoint", feature="threading-completion")))]
+        #[cfg(not(any(feature = "threading-endpoint", feature = "threading-completion")))]
         return &self.c_ep;
     }
 }
@@ -137,13 +143,17 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
             ))
         } else {
             Ok(Self {
-                #[cfg(not(any(feature="threading-domain", feature="threading-completion", feature="threading-endpoint")))]
+                #[cfg(not(any(
+                    feature = "threading-domain",
+                    feature = "threading-completion",
+                    feature = "threading-endpoint"
+                )))]
                 c_ep: OwnedEpFid::from(c_ep),
-                #[cfg(feature="threading-completion")]
+                #[cfg(feature = "threading-completion")]
                 c_ep: EpCompletionOwnedTypedFid::from(c_ep),
-                #[cfg(feature="threading-endpoint")]
+                #[cfg(feature = "threading-endpoint")]
                 c_ep: XContextOwnedTypedFid::from(c_ep, parent_ep.fid().typed_fid.clone()),
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_ep: OwnedEpFid::from(c_ep, parent_ep.fid().domain.clone()),
                 phantom: PhantomData,
                 cq: MyOnceCell::new(),
@@ -174,7 +184,7 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
             if self.cntr.set(res.clone()).is_err() {
                 panic!("TransmitContext already bound to a Counter");
             }
-            #[cfg(feature="threading-completion")]
+            #[cfg(feature = "threading-completion")]
             let _ = self.c_ep.bound_cntr.set(res.fid().typed_fid.clone());
             Ok(())
         }
@@ -266,7 +276,9 @@ impl<'a, STATE: EpState> TxContextBuilder<'a, (), STATE> {
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState> TxContextBuilder<'a, E, STATE> {
+impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
+    TxContextBuilder<'a, E, STATE>
+{
     // pub fn caps(mut self, caps: TxCaps) -> Self {
     //     self.tx_attr.caps(caps);
     //     self
@@ -523,13 +535,17 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
             ))
         } else {
             Ok(Self {
-                #[cfg(not(any(feature="threading-domain", feature="threading-completion", feature="threading-endpoint")))]
+                #[cfg(not(any(
+                    feature = "threading-domain",
+                    feature = "threading-completion",
+                    feature = "threading-endpoint"
+                )))]
                 c_ep: OwnedEpFid::from(c_ep),
-                #[cfg(feature="threading-completion")]
+                #[cfg(feature = "threading-completion")]
                 c_ep: EpCompletionOwnedTypedFid::from(c_ep),
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_ep: OwnedEpFid::from(c_ep, parent_ep.fid().domain.clone()),
-                #[cfg(feature="threading-endpoint")]
+                #[cfg(feature = "threading-endpoint")]
                 c_ep: XContextOwnedTypedFid::from(c_ep, parent_ep.fid().typed_fid.clone()),
                 phantom: PhantomData,
                 cq: MyOnceCell::new(),
@@ -595,10 +611,12 @@ impl RxContextImplBase<dyn ReadCq> {
             if self.cq.set(res.clone()).is_err() {
                 panic!("TransmitContext already bound to a CompletionQueueu");
             }
-            #[cfg(feature="threading-completion")]
+            #[cfg(feature = "threading-completion")]
             match self.c_ep.bound_cq0.set(res.fid().typed_fid.clone()) {
-                Ok(_) => {},
-                Err(_) => {panic!("Rx is already bound to a Completion Queue")},
+                Ok(_) => {}
+                Err(_) => {
+                    panic!("Rx is already bound to a Completion Queue")
+                }
             }
             Ok(())
         }
@@ -607,7 +625,7 @@ impl RxContextImplBase<dyn ReadCq> {
 
 impl<CQ: ?Sized> RxContextBase<CQ> {
     pub(crate) fn new(
-        ep: MyRc<impl ActiveEndpoint+ 'static>,
+        ep: MyRc<impl ActiveEndpoint + 'static>,
         index: i32,
         attr: RxAttr,
         context: Option<&mut Context>,
@@ -655,7 +673,9 @@ impl<'a, STATE: EpState> ReceiveContextBuilder<'a, (), STATE> {
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState> ReceiveContextBuilder<'a, E, STATE> {
+impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
+    ReceiveContextBuilder<'a, E, STATE>
+{
     // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
     //     self.rx_attr.caps(caps);
     //     self

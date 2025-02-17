@@ -5,10 +5,7 @@ use crate::fid::{AsTypedFid, BorrowedTypedFid};
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
 use crate::{
-    fid::{
-        AsRawFid, AsRawTypedFid, FabricRawFid,
-        OwnedFabricFid, RawFid,
-    },
+    fid::{AsRawFid, AsRawTypedFid, FabricRawFid, OwnedFabricFid, RawFid},
     info::{InfoEntry, Version},
     utils::check_error,
     Context, MyRc,
@@ -52,7 +49,10 @@ impl FabricImpl {
         }
     }
 
-    pub(crate) fn trywait_slice<FID: AsRawFid>(&self, fids: &[&impl AsTypedFid<FID>]) -> Result<(), crate::error::Error> {
+    pub(crate) fn trywait_slice<FID: AsRawFid>(
+        &self,
+        fids: &[&impl AsTypedFid<FID>],
+    ) -> Result<(), crate::error::Error> {
         // [TODO] Move this into the WaitSet struct
         let mut raw_fids: Vec<*mut libfabric_sys::fid> =
             fids.iter().map(|x| x.as_typed_fid().as_raw_fid()).collect();
@@ -67,11 +67,19 @@ impl FabricImpl {
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn trywait<FID: AsRawFid>(&self, fid: &impl AsTypedFid<FID>) -> Result<(), crate::error::Error> {
+    pub(crate) fn trywait<FID: AsRawFid>(
+        &self,
+        fid: &impl AsTypedFid<FID>,
+    ) -> Result<(), crate::error::Error> {
         // [TODO] Move this into the WaitSet struct
         let mut raw_fid = fid.as_typed_fid().as_raw_fid();
-        let err =
-            unsafe { libfabric_sys::inlined_fi_trywait(self.as_typed_fid_mut().as_raw_typed_fid(), &mut raw_fid, 1) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_trywait(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                &mut raw_fid,
+                1,
+            )
+        };
 
         check_error(err.try_into().unwrap())
     }
@@ -93,12 +101,18 @@ impl Fabric {
         })
     }
 
-    pub fn trywait_slice<FID: AsRawFid>(&self, fids: &[&impl AsTypedFid<FID>]) -> Result<(), crate::error::Error> {
+    pub fn trywait_slice<FID: AsRawFid>(
+        &self,
+        fids: &[&impl AsTypedFid<FID>],
+    ) -> Result<(), crate::error::Error> {
         // [TODO] Move this into the WaitSet struct
         self.inner.trywait_slice(fids)
     }
 
-    pub fn trywait<FID: AsRawFid>(&self, fid: &impl AsTypedFid<FID>) -> Result<(), crate::error::Error> {
+    pub fn trywait<FID: AsRawFid>(
+        &self,
+        fid: &impl AsTypedFid<FID>,
+    ) -> Result<(), crate::error::Error> {
         // [TODO] Move this into the WaitSet struct
         self.inner.trywait(fid)
     }
@@ -149,7 +163,7 @@ impl AsTypedFid<FabricRawFid> for Fabric {
     fn as_typed_fid(&self) -> BorrowedTypedFid<FabricRawFid> {
         self.inner.as_typed_fid()
     }
-    
+
     fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<FabricRawFid> {
         self.inner.as_typed_fid_mut()
     }
@@ -279,6 +293,10 @@ impl<'a> FabricBuilder<'a> {
     /// Corresponds to retrieving the `fabric_attr` field of the provided `fi_info` entry (from [`new`](Self::new))
     /// and passing it along with an optional `context` to `fi_fabric`
     pub fn build<E>(self, info: &InfoEntry<E>) -> Result<Fabric, crate::error::Error> {
-        Fabric::new(info.fabric_attr().clone(), info.mode().is_context2(), self.ctx)
+        Fabric::new(
+            info.fabric_attr().clone(),
+            info.mode().is_context2(),
+            self.ctx,
+        )
     }
 }

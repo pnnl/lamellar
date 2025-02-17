@@ -1,5 +1,3 @@
-use core::slice;
-use std::ffi::CString;
 use crate::fid::{AsTypedFid, BorrowedTypedFid};
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -10,11 +8,13 @@ use crate::{
     },
     eq::{EventQueue, EventQueueBase, ReadEq},
     fabric::FabricImpl,
-    fid::{self, AsRawFid, AsRawTypedFid,  DomainRawFid, OwnedDomainFid},
+    fid::{self, AsRawFid, AsRawTypedFid, DomainRawFid, OwnedDomainFid},
     info::InfoEntry,
     utils::check_error,
     AsFiType, Context, MyOnceCell, MyRc, SyncSend,
 };
+use core::slice;
+use std::ffi::CString;
 pub struct NoEventQueue {}
 impl SyncSend for NoEventQueue {}
 
@@ -91,9 +91,12 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
             ))
         } else {
             Ok(Self {
-                #[cfg(feature="threading-domain")]
-                c_domain: OwnedDomainFid::from(c_domain, std::sync::Arc::new(parking_lot::Mutex::new(fid::TypedFid(c_domain)))),
-                #[cfg(not(feature="threading-domain"))]
+                #[cfg(feature = "threading-domain")]
+                c_domain: OwnedDomainFid::from(
+                    c_domain,
+                    std::sync::Arc::new(parking_lot::Mutex::new(fid::TypedFid(c_domain))),
+                ),
+                #[cfg(not(feature = "threading-domain"))]
                 c_domain: OwnedDomainFid::from(c_domain),
                 mr_key_size: domain_attr.mr_key_size,
                 mr_mode: domain_attr.mr_mode,
@@ -202,7 +205,9 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
     // }
 
     pub(crate) fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_unmap_key(self.as_typed_fid_mut().as_raw_typed_fid(), key) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_mr_unmap_key(self.as_typed_fid_mut().as_raw_typed_fid(), key)
+        };
 
         check_error(err.try_into().unwrap())
     }
@@ -429,7 +434,7 @@ impl<EQ: ?Sized> AsTypedFid<DomainRawFid> for DomainImplBase<EQ> {
 //     }
 // }
 
-impl<EQ:?Sized> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
+impl<EQ: ?Sized> AsTypedFid<DomainRawFid> for DomainBase<EQ> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<'_, DomainRawFid> {
         self.inner.as_typed_fid()
     }

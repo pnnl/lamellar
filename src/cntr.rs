@@ -33,7 +33,7 @@ pub struct CounterImpl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     _domain_rc: MyRc<dyn DomainImplT>,
 }
 
-pub trait ReadCntr: AsTypedFid<CntrRawFid>  + SyncSend {
+pub trait ReadCntr: AsTypedFid<CntrRawFid> + SyncSend {
     fn fid(&self) -> &OwnedCntrFid;
 
     fn read(&self) -> u64 {
@@ -41,29 +41,39 @@ pub trait ReadCntr: AsTypedFid<CntrRawFid>  + SyncSend {
     }
 
     fn readerr(&self) -> u64 {
-        unsafe { libfabric_sys::inlined_fi_cntr_readerr(self.as_typed_fid_mut().as_raw_typed_fid()) }
+        unsafe {
+            libfabric_sys::inlined_fi_cntr_readerr(self.as_typed_fid_mut().as_raw_typed_fid())
+        }
     }
 
     fn add(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_add(self.as_typed_fid_mut().as_raw_typed_fid(), val) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_cntr_add(self.as_typed_fid_mut().as_raw_typed_fid(), val)
+        };
 
         check_error(err.try_into().unwrap())
     }
 
     fn adderr(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_adderr(self.as_typed_fid_mut().as_raw_typed_fid(), val) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_cntr_adderr(self.as_typed_fid_mut().as_raw_typed_fid(), val)
+        };
 
         check_error(err.try_into().unwrap())
     }
 
     fn set(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_set(self.as_typed_fid_mut().as_raw_typed_fid(), val) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_cntr_set(self.as_typed_fid_mut().as_raw_typed_fid(), val)
+        };
 
         check_error(err.try_into().unwrap())
     }
 
     fn seterr(&self, val: u64) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_cntr_seterr(self.as_typed_fid_mut().as_raw_typed_fid(), val) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_cntr_seterr(self.as_typed_fid_mut().as_raw_typed_fid(), val)
+        };
 
         check_error(err.try_into().unwrap())
     }
@@ -73,7 +83,11 @@ pub trait WaitCntr: AsTypedFid<CntrRawFid> + ReadCntr {
     fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> {
         // [TODO]
         let err = unsafe {
-            libfabric_sys::inlined_fi_cntr_wait(self.as_typed_fid_mut().as_raw_typed_fid(), threshold, timeout)
+            libfabric_sys::inlined_fi_cntr_wait(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                threshold,
+                timeout,
+            )
         };
 
         check_error(err.try_into().unwrap())
@@ -88,7 +102,10 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> ReadCntr
     }
 }
 
-impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncSend for CounterImpl<WAIT, RETRIEVE, FD> {}
+impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncSend
+    for CounterImpl<WAIT, RETRIEVE, FD>
+{
+}
 
 impl<const RETRIEVE: bool, const FD: bool> WaitCntr for CounterImpl<true, RETRIEVE, FD> {}
 
@@ -173,9 +190,9 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> CounterImpl<WAIT, R
             ))
         } else {
             Ok(Self {
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_cntr: OwnedCntrFid::from(c_cntr, domain.c_domain.domain.clone()),
-                #[cfg(not(feature="threading-domain"))]
+                #[cfg(not(feature = "threading-domain"))]
                 c_cntr: OwnedCntrFid::from(c_cntr),
                 wait_obj: Some(attr.c_attr.wait_obj),
                 _domain_rc: domain.clone() as MyRc<dyn DomainImplT>,
@@ -381,9 +398,7 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsTypedFid<CntrRawF
     }
 }
 
-impl<T: AsTypedFid<CntrRawFid>> AsTypedFid<CntrRawFid>
-    for Counter<T>
-{
+impl<T: AsTypedFid<CntrRawFid>> AsTypedFid<CntrRawFid> for Counter<T> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<'_, CntrRawFid> {
         self.inner.as_typed_fid()
     }
@@ -495,10 +510,10 @@ mod tests {
             minor: 18,
         })
         .enter_hints()
-            .enter_domain_attr()
-                .mode(crate::enums::Mode::all())
-                .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-            .leave_domain_attr()
+        .enter_domain_attr()
+        .mode(crate::enums::Mode::all())
+        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+        .leave_domain_attr()
         .leave_hints()
         .get()
         .unwrap();
@@ -556,10 +571,10 @@ mod libfabric_lifetime_tests {
             minor: 18,
         })
         .enter_hints()
-            .enter_domain_attr()
-                .mode(crate::enums::Mode::all())
-                .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-            .leave_domain_attr()
+        .enter_domain_attr()
+        .mode(crate::enums::Mode::all())
+        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+        .leave_domain_attr()
         .leave_hints()
         .get()
         .unwrap();

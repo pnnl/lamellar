@@ -4,7 +4,10 @@ use libfabric::{
         atomic::{
             AtomicCASEp, AtomicFetchEp, AtomicWriteEp, ConnectedAtomicCASEp,
             ConnectedAtomicFetchEp, ConnectedAtomicWriteEp,
-        }, message::{ConnectedRecvEp, ConnectedSendEp, RecvEp, SendEp}, rma::{ConnectedReadEp, ConnectedWriteEp, ReadEp, WriteEp}, tagged::{ConnectedTagRecvEp, ConnectedTagSendEp, TagRecvEp, TagSendEp}
+        },
+        message::{ConnectedRecvEp, ConnectedSendEp, RecvEp, SendEp},
+        rma::{ConnectedReadEp, ConnectedWriteEp, ReadEp, WriteEp},
+        tagged::{ConnectedTagRecvEp, ConnectedTagSendEp, TagRecvEp, TagSendEp},
     },
     conn_ep::ConnectedEndpoint,
     connless_ep::ConnectionlessEndpoint,
@@ -92,10 +95,10 @@ pub struct Ofi<I> {
     // pub rx_complete_cnt: AtomicUsize,
 }
 
-#[cfg(feature="threading-fid")]
+#[cfg(feature = "threading-fid")]
 pub trait IsSyncSend: Send + Sync {}
 
-#[cfg(feature="threading-fid")]
+#[cfg(feature = "threading-fid")]
 impl<I> IsSyncSend for Ofi<I> {}
 
 impl<I> Drop for Ofi<I> {

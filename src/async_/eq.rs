@@ -1,10 +1,5 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::atomic::Ordering, task::ready};
 
-#[cfg(feature = "use-async-std")]
-use async_io::Async;
-#[cfg(feature = "use-tokio")]
-use tokio::io::unix::AsyncFd as Async;
-use std::sync::atomic::AtomicUsize;
 use crate::{
     cq::WaitObjectRetrieve,
     eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
@@ -12,6 +7,11 @@ use crate::{
     fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid},
     Context, MyRc, MyRefCell, SyncSend,
 };
+#[cfg(feature = "use-async-std")]
+use async_io::Async;
+use std::sync::atomic::AtomicUsize;
+#[cfg(feature = "use-tokio")]
+use tokio::io::unix::AsyncFd as Async;
 
 use super::AsyncFid;
 
@@ -562,7 +562,7 @@ impl<const WRITE: bool> AsyncEventQueueImpl<WRITE> {
     ) -> Result<Self, crate::error::Error> {
         Ok(Self {
             base: Async::new(EventQueueImpl::new(fabric, attr, context)?).unwrap(),
-            pending_entries:AtomicUsize::new(0),
+            pending_entries: AtomicUsize::new(0),
             pending_cm_entries: MyRefCell::new(HashMap::new()),
             pending_err_entries: MyRefCell::new(HashMap::new()),
         })
@@ -765,16 +765,15 @@ impl<'a> Future for AsyncEventEq<'a> {
             let ctx_id = match &mut ev.ctx {
                 None => {
                     if ev.event_type == libfabric_sys::FI_CONNREQ
-                    || ev.event_type == libfabric_sys::FI_CONNECTED
-                    || ev.event_type == libfabric_sys::FI_SHUTDOWN
+                        || ev.event_type == libfabric_sys::FI_CONNECTED
+                        || ev.event_type == libfabric_sys::FI_SHUTDOWN
                     {
                         if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, &ev.req_fid) {
                             return std::task::Poll::Ready(entry);
-                        }
-                        else if let Some(err_entry) = ev.fut.eq.remove_err_entry(&ev.req_fid) {
+                        } else if let Some(err_entry) = ev.fut.eq.remove_err_entry(&ev.req_fid) {
                             return std::task::Poll::Ready(err_entry);
                         }
-                    } 
+                    }
                     0
                 }
                 Some(ctx) => {
@@ -783,13 +782,17 @@ impl<'a> Future for AsyncEventEq<'a> {
                         ctx.reset();
                         ev.fut.eq.remove_pending_entry();
                         match state {
-                            Some(state) => {
-                                match state {
-                                    crate::ContextState::Cq(_) => panic!("Should never find completions here"),
-                                    crate::ContextState::Eq(event) => return std::task::Poll::Ready(event),
+                            Some(state) => match state {
+                                crate::ContextState::Cq(_) => {
+                                    panic!("Should never find completions here")
+                                }
+                                crate::ContextState::Eq(event) => {
+                                    return std::task::Poll::Ready(event)
                                 }
                             },
-                            None => {panic!("Should always be set when context is ready")},
+                            None => {
+                                panic!("Should always be set when context is ready")
+                            }
                         }
                     }
                     ctx.inner() as usize
@@ -825,10 +828,21 @@ impl<'a> Future for AsyncEventEq<'a> {
                                 ev.fut.eq.insert_pending_entry();
 
                                 if using_ctx2 {
-                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Ok(entry));
-                                }
-                                else {
-                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                    unsafe {
+                                        (e.c_entry.context as *mut std::ffi::c_void
+                                            as *mut crate::Context2)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Ok(entry));
+                                } else {
+                                    unsafe {
+                                        (e.c_entry.context as *mut std::ffi::c_void
+                                            as *mut crate::Context1)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Ok(entry));
                                 }
                             }
                         }
@@ -839,10 +853,21 @@ impl<'a> Future for AsyncEventEq<'a> {
                                 ev.fut.eq.insert_pending_entry();
 
                                 if using_ctx2 {
-                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Ok(entry));
-                                }
-                                else {
-                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                    unsafe {
+                                        (e.c_entry.context as *mut std::ffi::c_void
+                                            as *mut crate::Context2)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Ok(entry));
+                                } else {
+                                    unsafe {
+                                        (e.c_entry.context as *mut std::ffi::c_void
+                                            as *mut crate::Context1)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Ok(entry));
                                 }
                             }
                         }
@@ -852,10 +877,21 @@ impl<'a> Future for AsyncEventEq<'a> {
                             } else {
                                 ev.fut.eq.insert_pending_entry();
                                 if using_ctx2 {
-                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Ok(entry));
-                                }
-                                else {
-                                    unsafe{(e.c_entry.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Ok(entry));
+                                    unsafe {
+                                        (e.c_entry.context as *mut std::ffi::c_void
+                                            as *mut crate::Context2)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Ok(entry));
+                                } else {
+                                    unsafe {
+                                        (e.c_entry.context as *mut std::ffi::c_void
+                                            as *mut crate::Context1)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Ok(entry));
                                 }
                             }
                         }
@@ -909,31 +945,59 @@ impl<'a> Future for AsyncEventEq<'a> {
                                 if e.c_err.context as usize == ctx_id {
                                     return std::task::Poll::Ready(Err(err_entry));
                                 } else if e.c_err.context as usize == 0 {
-                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), Err(err_entry))
+                                    ev.fut.eq.insert_err_entry(
+                                        &Fid(e.c_err.fid as usize),
+                                        Err(err_entry),
+                                    )
                                 } else {
                                     ev.fut.eq.insert_pending_entry();
 
                                     if using_ctx2 {
-                                        unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Err(err_entry));
-                                    }
-                                    else {
-                                        unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Err(err_entry));
+                                        unsafe {
+                                            (e.c_err.context as *mut std::ffi::c_void
+                                                as *mut crate::Context2)
+                                                .as_mut()
+                                                .unwrap()
+                                        }
+                                        .set_event_done(Err(err_entry));
+                                    } else {
+                                        unsafe {
+                                            (e.c_err.context as *mut std::ffi::c_void
+                                                as *mut crate::Context1)
+                                                .as_mut()
+                                                .unwrap()
+                                        }
+                                        .set_event_done(Err(err_entry));
                                     }
                                 }
                             } else if e.c_err.context as usize == 0 {
-                                if e.c_err.fid as usize== ev.req_fid.0  {
+                                if e.c_err.fid as usize == ev.req_fid.0 {
                                     return std::task::Poll::Ready(Err(err_entry));
                                 } else {
-                                    ev.fut.eq.insert_err_entry(&Fid(e.c_err.fid as usize), Err(err_entry))
+                                    ev.fut.eq.insert_err_entry(
+                                        &Fid(e.c_err.fid as usize),
+                                        Err(err_entry),
+                                    )
                                 }
                             } else {
                                 ev.fut.eq.insert_pending_entry();
 
                                 if using_ctx2 {
-                                    unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context2).as_mut().unwrap()}.set_event_done(Err(err_entry));
-                                }
-                                else {
-                                    unsafe{(e.c_err.context as *mut std::ffi::c_void  as *mut crate::Context1).as_mut().unwrap()}.set_event_done(Err(err_entry));
+                                    unsafe {
+                                        (e.c_err.context as *mut std::ffi::c_void
+                                            as *mut crate::Context2)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Err(err_entry));
+                                } else {
+                                    unsafe {
+                                        (e.c_err.context as *mut std::ffi::c_void
+                                            as *mut crate::Context1)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_event_done(Err(err_entry));
                                 }
                             }
                         }
@@ -971,7 +1035,6 @@ impl<'a> Future for AsyncEventEq<'a> {
 // }
 
 impl<const WRITE: bool> AsTypedFid<EqRawFid> for AsyncEventQueueImpl<WRITE> {
-
     fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
         self.base.get_ref().as_typed_fid()
     }

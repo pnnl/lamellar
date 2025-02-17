@@ -17,27 +17,27 @@ define_test!(pp_server_rma, async_pp_server_rma, {
         minor: 19,
     })
     .enter_hints()
-        .mode(libfabric::enums::Mode::new().context())
-        .enter_ep_attr()
-            .type_(libfabric::enums::EndpointType::Rdm)
-        .leave_ep_attr()
-        .enter_domain_attr()
-            .threading(libfabric::enums::Threading::Domain)
-            .mr_mode(
-                libfabric::enums::MrMode::new()
-                    .prov_key()
-                    .allocated()
-                    .virt_addr()
-                    .local()
-                    .endpoint()
-                    .raw(),
-            )
-            .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled)
-        .leave_domain_attr()
-        .enter_tx_attr()
-            .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-        .leave_tx_attr()
-        .addr_format(libfabric::enums::AddressFormat::Unspec);
+    .mode(libfabric::enums::Mode::new().context())
+    .enter_ep_attr()
+    .type_(libfabric::enums::EndpointType::Rdm)
+    .leave_ep_attr()
+    .enter_domain_attr()
+    .threading(libfabric::enums::Threading::Domain)
+    .mr_mode(
+        libfabric::enums::MrMode::new()
+            .prov_key()
+            .allocated()
+            .virt_addr()
+            .local()
+            .endpoint()
+            .raw(),
+    )
+    .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled)
+    .leave_domain_attr()
+    .enter_tx_attr()
+    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+    .leave_tx_attr()
+    .addr_format(libfabric::enums::AddressFormat::Unspec);
 
     let hintscaps = if true {
         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma()))
@@ -162,27 +162,27 @@ define_test!(pp_client_rma, async_pp_client_rma, {
         minor: 19,
     })
     .enter_hints()
-        .mode(libfabric::enums::Mode::new().context())
-        .enter_ep_attr()
-            .type_(libfabric::enums::EndpointType::Rdm)
-        .leave_ep_attr()
-        .enter_domain_attr()
-            .threading(libfabric::enums::Threading::Domain)
-            .mr_mode(
-                libfabric::enums::MrMode::new()
-                    .prov_key()
-                    .allocated()
-                    .virt_addr()
-                    .local()
-                    .endpoint()
-                    .raw(),
-            )
-            .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled)
-        .leave_domain_attr()
-        .enter_tx_attr()
-            .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-        .leave_tx_attr()
-        .addr_format(libfabric::enums::AddressFormat::Unspec);
+    .mode(libfabric::enums::Mode::new().context())
+    .enter_ep_attr()
+    .type_(libfabric::enums::EndpointType::Rdm)
+    .leave_ep_attr()
+    .enter_domain_attr()
+    .threading(libfabric::enums::Threading::Domain)
+    .mr_mode(
+        libfabric::enums::MrMode::new()
+            .prov_key()
+            .allocated()
+            .virt_addr()
+            .local()
+            .endpoint()
+            .raw(),
+    )
+    .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled)
+    .leave_domain_attr()
+    .enter_tx_attr()
+    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+    .leave_tx_attr()
+    .addr_format(libfabric::enums::AddressFormat::Unspec);
 
     let hintscaps = if true {
         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma()))

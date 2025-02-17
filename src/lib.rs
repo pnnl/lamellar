@@ -297,8 +297,8 @@ const FI_ADDR_UNSPEC: u64 = u64::MAX;
 // #[cfg(not(feature = "thread-safe"))]
 // pub type CtxState = i8;
 
-unsafe impl Send for Context{}
-unsafe impl Sync for Context{}
+unsafe impl Send for Context {}
+unsafe impl Sync for Context {}
 
 pub(crate) enum ContextState {
     Cq(Result<SingleCompletion, crate::error::Error>),
@@ -332,7 +332,10 @@ impl Context1 {
     //     self.state = MyOnceCell::new();
     // }
 
-    pub(crate) fn set_completion_done(&mut self, completion: Result<SingleCompletion, crate::error::Error>) {
+    pub(crate) fn set_completion_done(
+        &mut self,
+        completion: Result<SingleCompletion, crate::error::Error>,
+    ) {
         if self.state.set(ContextState::Cq(completion)).is_err() {
             panic!("Already initialized")
         }
@@ -345,7 +348,6 @@ impl Context1 {
         }
         self.ready.store(true, atomic::Ordering::Relaxed)
     }
-
 }
 
 // impl Default for Context1 {
@@ -358,7 +360,7 @@ impl Context1 {
 struct Context2 {
     pub(crate) id: usize,
     c_val: libfabric_sys::fi_context2,
-    state: MyOnceCell<ContextState>, 
+    state: MyOnceCell<ContextState>,
     pub(crate) ready: AtomicBool,
 }
 
@@ -380,8 +382,10 @@ impl Context2 {
     //     self.state = None
     // }
 
-
-    pub(crate) fn set_completion_done(&mut self, completion: Result<SingleCompletion, crate::error::Error>) {
+    pub(crate) fn set_completion_done(
+        &mut self,
+        completion: Result<SingleCompletion, crate::error::Error>,
+    ) {
         if self.state.set(ContextState::Cq(completion)).is_err() {
             panic!("Already initialized")
         }
@@ -407,7 +411,6 @@ enum ContextType {
     Context2(Box<Context2>),
 }
 
-
 // We use heap allocated data to allow moving the wrapper field
 // without affecting the pointer used by libfabric
 
@@ -416,7 +419,7 @@ pub struct Context(ContextType);
 impl ContextType {
     fn inner_mut(&mut self) -> *mut std::ffi::c_void {
         match self {
-            ContextType::Context1(ctx) =>  &mut *(*(ctx)) as *mut Context1 as *mut std::ffi::c_void,
+            ContextType::Context1(ctx) => &mut *(*(ctx)) as *mut Context1 as *mut std::ffi::c_void,
             ContextType::Context2(ctx) => &mut *(*(ctx)) as *mut Context2 as *mut std::ffi::c_void,
         }
     }
@@ -426,7 +429,6 @@ impl ContextType {
             ContextType::Context1(ctx) => ctx.id,
             ContextType::Context2(ctx) => ctx.id,
         }
-
     }
 
     fn inner(&self) -> *const std::ffi::c_void {
@@ -436,7 +438,10 @@ impl ContextType {
         }
     }
 
-    pub(crate) fn set_completion_done(&mut self, comp: Result<SingleCompletion, crate::error::Error>) {
+    pub(crate) fn set_completion_done(
+        &mut self,
+        comp: Result<SingleCompletion, crate::error::Error>,
+    ) {
         match self {
             ContextType::Context1(ctx) => ctx.set_completion_done(comp),
             ContextType::Context2(ctx) => ctx.set_completion_done(comp),
@@ -459,8 +464,14 @@ impl ContextType {
 
     pub(crate) fn reset(&mut self) {
         match self {
-            ContextType::Context1(ctx) => {ctx.ready.store(false, atomic::Ordering::Relaxed); ctx.state.take();},
-            ContextType::Context2(ctx) => {ctx.ready.store(false, atomic::Ordering::Relaxed); ctx.state.take();},
+            ContextType::Context1(ctx) => {
+                ctx.ready.store(false, atomic::Ordering::Relaxed);
+                ctx.state.take();
+            }
+            ContextType::Context2(ctx) => {
+                ctx.ready.store(false, atomic::Ordering::Relaxed);
+                ctx.state.take();
+            }
         }
     }
 
@@ -486,10 +497,13 @@ impl Context {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn set_completion_done(&mut self, comp: Result<SingleCompletion, crate::error::Error>) {
+    pub(crate) fn set_completion_done(
+        &mut self,
+        comp: Result<SingleCompletion, crate::error::Error>,
+    ) {
         self.0.set_completion_done(comp)
     }
-    
+
     #[allow(dead_code)]
     pub(crate) fn set_event_done(&mut self, comp: Result<Event, crate::error::Error>) {
         self.0.set_event_done(comp)
@@ -820,8 +834,8 @@ impl AsFiType for isize {
         }
     }
 }
-#[cfg(feature="thread-safe")]
+#[cfg(feature = "thread-safe")]
 pub trait SyncSend: Sync + Send {}
 
-#[cfg(not(feature="thread-safe"))]
+#[cfg(not(feature = "thread-safe"))]
 pub trait SyncSend {}

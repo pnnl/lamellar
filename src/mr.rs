@@ -1,4 +1,3 @@
-use crate::{ep::ActiveEndpoint, fid::{AsTypedFid, BorrowedTypedFid}};
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
 use crate::{
@@ -10,6 +9,10 @@ use crate::{
     iovec::IoVec,
     utils::check_error,
     Context, MyOnceCell, MyRc, SyncSend,
+};
+use crate::{
+    ep::ActiveEndpoint,
+    fid::{AsTypedFid, BorrowedTypedFid},
 };
 
 /// Represents a key needed to access a remote [MemoryRegion].
@@ -225,9 +228,9 @@ impl MemoryRegionImpl {
             ))
         } else {
             Ok(Self {
-                #[cfg(not(feature="threading-domain"))]
+                #[cfg(not(feature = "threading-domain"))]
                 c_mr: OwnedMrFid::from(c_mr),
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
@@ -259,9 +262,9 @@ impl MemoryRegionImpl {
             ))
         } else {
             Ok(Self {
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
-                #[cfg(not(feature="threading-domain"))]
+                #[cfg(not(feature = "threading-domain"))]
                 c_mr: OwnedMrFid::from(c_mr),
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
@@ -301,9 +304,9 @@ impl MemoryRegionImpl {
             ))
         } else {
             Ok(Self {
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
-                #[cfg(not(feature="threading-domain"))]
+                #[cfg(not(feature = "threading-domain"))]
                 c_mr: OwnedMrFid::from(c_mr),
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
@@ -316,7 +319,9 @@ impl MemoryRegionImpl {
         if self._domain_rc.get_mr_mode().is_raw() {
             self.raw_key(0)
         } else {
-            let ret = unsafe { libfabric_sys::inlined_fi_mr_key(self.as_typed_fid_mut().as_raw_typed_fid()) };
+            let ret = unsafe {
+                libfabric_sys::inlined_fi_mr_key(self.as_typed_fid_mut().as_raw_typed_fid())
+            };
             if ret == crate::FI_KEY_NOTAVAIL {
                 Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
             } else {
@@ -378,7 +383,11 @@ impl MemoryRegionImpl {
         ep: &MyRc<EP>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_mr_bind(self.as_typed_fid_mut().as_raw_typed_fid(), ep.as_typed_fid().as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_mr_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                ep.as_typed_fid().as_raw_fid(),
+                0,
+            )
         };
         if err != 0 && self.bound_ep.set(ep.clone()).is_err() {
             panic!("Memory Region already bound to an Endpoint");
@@ -406,7 +415,9 @@ impl MemoryRegionImpl {
     }
 
     pub(crate) fn enable(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_mr_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_mr_enable(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
 
         check_error(err.try_into().unwrap())
     }
@@ -456,7 +467,9 @@ impl MemoryRegionImpl {
     // }
 
     pub(crate) fn descriptor(&self) -> MemoryRegionDesc {
-        let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(self.as_typed_fid_mut().as_raw_typed_fid()) };
+        let c_desc = unsafe {
+            libfabric_sys::inlined_fi_mr_desc(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
         // if c_desc.is_null() {
         //     panic!("fi_mr_desc returned NULL");
         // }
@@ -596,7 +609,7 @@ pub struct MemoryRegionDesc {
 unsafe impl Send for MemoryRegionDesc {}
 // #[cfg(feature="threading-thread-safe")]
 // TODO
-#[cfg(feature="thread-safe")]
+#[cfg(feature = "thread-safe")]
 unsafe impl Sync for MemoryRegionDesc {}
 
 impl DataDescriptor for MemoryRegionDesc {

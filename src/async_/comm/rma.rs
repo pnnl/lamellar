@@ -6,6 +6,7 @@ use crate::ep::{Connected, Connectionless, EndpointImplBase};
 use crate::infocapsoptions::RmaCap;
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};
 use crate::utils::Either;
+use crate::Context;
 use crate::{
     async_::{cq::AsyncReadCq, eq::AsyncReadEq},
     cq::SingleCompletion,
@@ -15,7 +16,6 @@ use crate::{
     mr::{DataDescriptor, MappedMemoryRegionKey},
     MappedAddress,
 };
-use crate::Context;
 
 pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
     async unsafe fn read_async_impl<T>(

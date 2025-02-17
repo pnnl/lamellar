@@ -1,15 +1,20 @@
 use std::ffi::CString;
 
+use crate::fid::MutBorrowedTypedFid;
 use crate::fid::{AsTypedFid, BorrowedTypedFid};
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
 use crate::{
-    domain::{DomainBase, DomainImplT}, enums::{AVOptions, AVSetOptions, AddressVectorType}, ep::Address, eq::ReadEq, fid::{
-        self, AVSetRawFid, AsRawFid, AsRawTypedFid,  AvRawFid, OwnedAVFid,
-        OwnedAVSetFid, RawFid,
-    }, AddressSource, Context, MappedAddress, MyOnceCell, MyRc, RawMappedAddress, SyncSend, FI_ADDR_NOTAVAIL
+    domain::{DomainBase, DomainImplT},
+    enums::{AVOptions, AVSetOptions, AddressVectorType},
+    ep::Address,
+    eq::ReadEq,
+    fid::{
+        self, AVSetRawFid, AsRawFid, AsRawTypedFid, AvRawFid, OwnedAVFid, OwnedAVSetFid, RawFid,
+    },
+    AddressSource, Context, MappedAddress, MyOnceCell, MyRc, RawMappedAddress, SyncSend,
+    FI_ADDR_NOTAVAIL,
 };
-use crate::fid::MutBorrowedTypedFid;
 
 pub(crate) trait AddressVectorImplT: SyncSend {
     fn type_(&self) -> AddressVectorType;
@@ -23,7 +28,10 @@ impl<EQ: ?Sized + SyncSend> AddressVectorImplT for AddressVectorImplBase<EQ> {
 
 impl<EQ: ?Sized + SyncSend> SyncSend for AddressVectorImplBase<EQ> {}
 
-pub(crate) struct AddressVectorImplBase<EQ> where EQ: ?Sized + SyncSend {
+pub(crate) struct AddressVectorImplBase<EQ>
+where
+    EQ: ?Sized + SyncSend,
+{
     pub(crate) c_av: OwnedAVFid,
     pub(crate) type_: AddressVectorType,
     pub(crate) _eq_rc: MyOnceCell<MyRc<EQ>>,
@@ -53,9 +61,9 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
             ))
         } else {
             Ok(Self {
-                #[cfg(not(feature="threading-domain"))]
+                #[cfg(not(feature = "threading-domain"))]
                 c_av: OwnedAVFid::from(c_av),
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_av: OwnedAVFid::from(c_av, domain.c_domain.domain.clone()),
                 type_: AddressVectorType::from_raw(attr.c_attr.type_),
                 _eq_rc: MyOnceCell::new(),
@@ -74,7 +82,11 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
     /// This function will return an error if the underlying library call fails.
     pub(crate) fn bind(&self, eq: &MyRc<EQ>) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_bind(self.as_typed_fid_mut().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_av_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                eq.as_typed_fid().as_raw_fid(),
+                0,
+            )
         };
 
         if err != 0 {
@@ -830,7 +842,10 @@ impl AddressVectorSetImpl {
 
     pub(crate) fn diff(&self, other: &AddressVectorSetImpl) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_set_diff(self.as_typed_fid_mut().as_raw_typed_fid(), other.as_typed_fid().as_raw_typed_fid())
+            libfabric_sys::inlined_fi_av_set_diff(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                other.as_typed_fid().as_raw_typed_fid(),
+            )
         };
 
         if err != 0 {
@@ -847,7 +862,10 @@ impl AddressVectorSetImpl {
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_set_insert(self.as_typed_fid_mut().as_raw_typed_fid(), mapped_addr.raw_addr())
+            libfabric_sys::inlined_fi_av_set_insert(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                mapped_addr.raw_addr(),
+            )
         };
 
         if err != 0 {
@@ -864,7 +882,10 @@ impl AddressVectorSetImpl {
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_av_set_remove(self.as_typed_fid_mut().as_raw_typed_fid(), mapped_addr.raw_addr())
+            libfabric_sys::inlined_fi_av_set_remove(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                mapped_addr.raw_addr(),
+            )
         };
 
         if err != 0 {
@@ -879,8 +900,12 @@ impl AddressVectorSetImpl {
     pub(crate) fn get_addr(&self) -> Result<RawMappedAddress, crate::error::Error> {
         let mut addr = 0u64;
         // let addr_ptr: *mut crate::MappedAddress = &mut addr;
-        let err =
-            unsafe { libfabric_sys::inlined_fi_av_set_addr(self.as_typed_fid_mut().as_raw_typed_fid(), &mut addr) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_av_set_addr(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                &mut addr,
+            )
+        };
 
         if err != 0 {
             Err(crate::error::Error::from_err_code(
@@ -1377,13 +1402,13 @@ mod tests {
             minor: 19,
         })
         .enter_hints()
-            .enter_ep_attr()
-                .type_(crate::enums::EndpointType::Rdm)
-            .leave_ep_attr()
-            .enter_domain_attr()
-                .mode(crate::enums::Mode::all())
-                .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-            .leave_domain_attr()
+        .enter_ep_attr()
+        .type_(crate::enums::EndpointType::Rdm)
+        .leave_ep_attr()
+        .enter_domain_attr()
+        .mode(crate::enums::Mode::all())
+        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+        .leave_domain_attr()
         .leave_hints()
         .get()
         .unwrap();
@@ -1412,13 +1437,13 @@ mod tests {
             minor: 19,
         })
         .enter_hints()
-            .enter_ep_attr()
-                .type_(crate::enums::EndpointType::Rdm)
-            .leave_ep_attr()
-            .enter_domain_attr()
-                .mode(crate::enums::Mode::all())
-                .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-            .leave_domain_attr()
+        .enter_ep_attr()
+        .type_(crate::enums::EndpointType::Rdm)
+        .leave_ep_attr()
+        .enter_domain_attr()
+        .mode(crate::enums::Mode::all())
+        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+        .leave_domain_attr()
         .leave_hints()
         .get()
         .unwrap();
@@ -1450,13 +1475,13 @@ mod libfabric_lifetime_tests {
             minor: 19,
         })
         .enter_hints()
-            .enter_ep_attr()
-                .type_(crate::enums::EndpointType::Rdm)
-            .leave_ep_attr()
-            .enter_domain_attr()
-                .mode(crate::enums::Mode::all())
-                .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-            .leave_domain_attr()
+        .enter_ep_attr()
+        .type_(crate::enums::EndpointType::Rdm)
+        .leave_ep_attr()
+        .enter_domain_attr()
+        .mode(crate::enums::Mode::all())
+        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+        .leave_domain_attr()
         .leave_hints()
         .get()
         .unwrap();

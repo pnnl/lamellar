@@ -33,16 +33,50 @@ use libfabric::cq::WaitCq;
 use libfabric::domain::DomainBase;
 use libfabric::domain::NoEventQueue;
 use libfabric::ep::BaseEndpoint;
-use libfabric::info::Version;
 use libfabric::info::Info;
+use libfabric::info::Version;
 use libfabric::infocapsoptions::InfoCaps;
 use libfabric::iovec::Ioc;
 use libfabric::iovec::IocMut;
 use libfabric::iovec::RmaIoVec;
 use libfabric::iovec::RmaIoc;
 use libfabric::mr::DisabledMemoryRegion;
-use libfabric::{async_::{av::AddressVectorBuilder, conn_ep::ConnectedEndpoint, connless_ep::ConnectionlessEndpoint, cq::{CompletionQueue, CompletionQueueBuilder}, domain::Domain, ep::{Endpoint, EndpointBuilder}, eq::EventQueueBuilder}, cq::ReadCq, domain::DomainBuilder, enums::{AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType, FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions}, ep::Address, error::{Error, ErrorKind}, fabric::FabricBuilder, info::InfoEntry, infocapsoptions::{AtomicDefaultCap, Caps, CollCap, MsgDefaultCap, RmaDefaultCap, TagDefaultCap}, iovec::{IoVec, IoVecMut}, mr::{default_desc, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc, MemoryRegionKey}, msg::{Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected, MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut, MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut}, Context, CqCaps, EqCaps, MappedAddress};
-
+use libfabric::{
+    async_::{
+        av::AddressVectorBuilder,
+        conn_ep::ConnectedEndpoint,
+        connless_ep::ConnectionlessEndpoint,
+        cq::{CompletionQueue, CompletionQueueBuilder},
+        domain::Domain,
+        ep::{Endpoint, EndpointBuilder},
+        eq::EventQueueBuilder,
+    },
+    cq::ReadCq,
+    domain::DomainBuilder,
+    enums::{
+        AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType,
+        FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions,
+    },
+    ep::Address,
+    error::{Error, ErrorKind},
+    fabric::FabricBuilder,
+    info::InfoEntry,
+    infocapsoptions::{
+        AtomicDefaultCap, Caps, CollCap, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
+    },
+    iovec::{IoVec, IoVecMut},
+    mr::{
+        default_desc, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc,
+        MemoryRegionKey,
+    },
+    msg::{
+        Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected,
+        MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma,
+        MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut, MsgTagged, MsgTaggedConnected,
+        MsgTaggedConnectedMut, MsgTaggedMut,
+    },
+    Context, CqCaps, EqCaps, MappedAddress,
+};
 
 pub type SpinCq = libfabric::async_cq_caps_type!(CqCaps::FD);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::FD);
@@ -101,10 +135,10 @@ pub struct Ofi<I> {
     // pub rx_complete_cnt: AtomicUsize,
 }
 
-#[cfg(feature="threading-fid")]
+#[cfg(feature = "threading-fid")]
 pub trait IsSyncSend: Send + Sync {}
 
-#[cfg(feature="threading-fid")]
+#[cfg(feature = "threading-fid")]
 impl<I> IsSyncSend for Ofi<I> {}
 
 impl<I> Drop for Ofi<I> {
@@ -188,13 +222,15 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
         let (info_entry, ep, mapped_addr) = match ep_type {
             EndpointType::Msg | EndpointType::SockStream => {
-
                 let info_entry = if server {
                     let pep = EndpointBuilder::new(&info_entry)
                         .build_passive(&fabric)
                         .unwrap();
                     pep.bind(&eq, 0).unwrap();
-                    let event = async_std::task::block_on(async {pep.listen_async().unwrap().next().await}).unwrap();
+                    let event = async_std::task::block_on(async {
+                        pep.listen_async().unwrap().next().await
+                    })
+                    .unwrap();
                     match event {
                         libfabric::eq::Event::ConnReq(entry) => entry.get_info().unwrap(),
                         _ => panic!("Unexpected event"),
@@ -228,11 +264,13 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 let ep = ep.enable().unwrap();
 
                 let ep = if !server {
-                    async_std::task::block_on(async {ep.connect_async(info_entry.dest_addr().unwrap()).await}).unwrap()
+                    async_std::task::block_on(async {
+                        ep.connect_async(info_entry.dest_addr().unwrap()).await
+                    })
+                    .unwrap()
                 } else {
-                    async_std::task::block_on(async {ep.accept_async().await}).unwrap()
+                    async_std::task::block_on(async { ep.accept_async().await }).unwrap()
                 };
-
 
                 (mr, key) = if info_entry.domain_attr().mr_mode().is_local()
                     || info_entry.caps().is_rma()
@@ -325,28 +363,32 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     let epname_bytes = epname.as_bytes();
                     let addrlen = epname_bytes.len();
                     reg_mem[..addrlen].copy_from_slice(epname_bytes);
-                    
-                    let mut ctx = info_entry.allocate_context();
-                    async_std::task::block_on(async {post_async!(
-                        send_to_async,
-                        ft_progress,
-                        cq_type.tx_cq(),
-                        ep,
-                        &reg_mem[..addrlen],
-                        &mut default_desc(),
-                        &mapped_address,
-                        &mut ctx
-                    )});
 
-                    async_std::task::block_on( async {post_async!(
-                        recv_from_any_async,
-                        ft_progress,
-                        cq_type.rx_cq(),
-                        ep,
-                        std::slice::from_mut(&mut reg_mem[0]),
-                        &mut default_desc(),
-                        &mut ctx
-                    )});
+                    let mut ctx = info_entry.allocate_context();
+                    async_std::task::block_on(async {
+                        post_async!(
+                            send_to_async,
+                            ft_progress,
+                            cq_type.tx_cq(),
+                            ep,
+                            &reg_mem[..addrlen],
+                            &mut default_desc(),
+                            &mapped_address,
+                            &mut ctx
+                        )
+                    });
+
+                    async_std::task::block_on(async {
+                        post_async!(
+                            recv_from_any_async,
+                            ft_progress,
+                            cq_type.rx_cq(),
+                            ep,
+                            std::slice::from_mut(&mut reg_mem[0]),
+                            &mut default_desc(),
+                            &mut ctx
+                        )
+                    });
 
                     mapped_address
                 } else {
@@ -359,16 +401,18 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         default_desc()
                     };
                     let mut ctx = info_entry.allocate_context();
-                    
-                    async_std::task::block_on( async {post_async!(
-                        recv_from_any_async,
-                        ft_progress,
-                        cq_type.rx_cq(),
-                        ep,
-                        &mut reg_mem[..addrlen],
-                        &mut mr_desc,
-                        &mut ctx
-                    )});
+
+                    async_std::task::block_on(async {
+                        post_async!(
+                            recv_from_any_async,
+                            ft_progress,
+                            cq_type.rx_cq(),
+                            ep,
+                            &mut reg_mem[..addrlen],
+                            &mut mr_desc,
+                            &mut ctx
+                        )
+                    });
 
                     let remote_address = unsafe { Address::from_bytes(&reg_mem) };
                     let mapped_address = av
@@ -382,7 +426,6 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         .unwrap();
 
                     async_std::task::block_on(async {
-
                         post_async!(
                             send_to_async,
                             ft_progress,
@@ -428,7 +471,14 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 }
 
 impl<I: TagDefaultCap> Ofi<I> {
-    pub fn tsend<T>(&self, buf: &[T], desc: &mut MemoryRegionDesc, tag: u64, data: Option<u64>, ctx: &mut Context) {
+    pub fn tsend<T>(
+        &self,
+        buf: &[T],
+        desc: &mut MemoryRegionDesc,
+        tag: u64,
+        data: Option<u64>,
+        ctx: &mut Context,
+    ) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -445,22 +495,30 @@ impl<I: TagDefaultCap> Ofi<I> {
                         }
                     } else {
                         if data.is_some() {
-                                async_std::task::block_on(async {
-
-                                    ep.tsenddata_to_async(
-                                        &buf,
-                                        desc,
-                                        data.unwrap(),
-                                        self.mapped_addr.as_ref().unwrap(),
-                                        tag,
-                                        ctx
-                                    ).await
-                                })
+                            async_std::task::block_on(async {
+                                ep.tsenddata_to_async(
+                                    &buf,
+                                    desc,
+                                    data.unwrap(),
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    tag,
+                                    ctx,
+                                )
+                                .await
+                            })
                         } else {
                             async_std::task::block_on(async {
-                                ep.tsend_to_async(&buf, desc, self.mapped_addr.as_ref().unwrap(), tag, ctx).await
+                                ep.tsend_to_async(
+                                    &buf,
+                                    desc,
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    tag,
+                                    ctx,
+                                )
+                                .await
                             })
-                        }.map(|_| {})
+                        }
+                        .map(|_| {})
                     }
                 }
                 MyEndpoint::Connected(ep) => {
@@ -473,13 +531,15 @@ impl<I: TagDefaultCap> Ofi<I> {
                     } else {
                         if data.is_some() {
                             async_std::task::block_on(async {
-                                ep.tsenddata_async(&buf, desc, data.unwrap(), tag, ctx).await
+                                ep.tsenddata_async(&buf, desc, data.unwrap(), tag, ctx)
+                                    .await
                             })
                         } else {
                             async_std::task::block_on(async {
                                 ep.tsend_async(&buf, desc, tag, ctx).await
                             })
-                        }.map(|_| {})
+                        }
+                        .map(|_| {})
                     }
                 }
             };
@@ -494,19 +554,22 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn tsendv(&mut self, iov: &[IoVec], desc: &mut [MemoryRegionDesc], tag: u64, ctx: &mut Context) {
+    pub fn tsendv(
+        &mut self,
+        iov: &[IoVec],
+        desc: &mut [MemoryRegionDesc],
+        tag: u64,
+        ctx: &mut Context,
+    ) {
         loop {
             let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    async_std::task::block_on(async {
-                        ep.tsendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, ctx).await
-                    })
-                }
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.tsendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, ctx)
+                        .await
+                }),
                 MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async {
-                        ep.tsendv_async(iov, desc, tag, ctx).await
-                    })
-                },
+                    async_std::task::block_on(async { ep.tsendv_async(iov, desc, tag, ctx).await })
+                }
             };
             match err {
                 Ok(_) => break,
@@ -519,14 +582,22 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn trecvv(&mut self, iov: &[IoVecMut], desc: &mut [MemoryRegionDesc], tag: u64, ctx: &mut Context) {
+    pub fn trecvv(
+        &mut self,
+        iov: &[IoVecMut],
+        desc: &mut [MemoryRegionDesc],
+        tag: u64,
+        ctx: &mut Context,
+    ) {
         loop {
             let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    async_std::task::block_on(async {
-                    ep.trecvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, 0, ctx).await})
-                }
-                MyEndpoint::Connected(ep) => async_std::task::block_on(async {ep.trecvv_async(iov, desc, 0, tag, ctx).await}),
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.trecvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, 0, ctx)
+                        .await
+                }),
+                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
+                    ep.trecvv_async(iov, desc, 0, tag, ctx).await
+                }),
             };
             match err {
                 Ok(_) => break,
@@ -539,15 +610,22 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn trecv<T>(&mut self, buf: &mut [T], desc: &mut MemoryRegionDesc, tag: u64, ctx: &mut Context) {
+    pub fn trecv<T>(
+        &mut self,
+        buf: &mut [T],
+        desc: &mut MemoryRegionDesc,
+        tag: u64,
+        ctx: &mut Context,
+    ) {
         loop {
             let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    async_std::task::block_on(async {ep.trecv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), tag, 0, ctx).await})
-                }
-                MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async {ep.trecv_async(buf, desc, tag, 0, ctx).await})
-                },
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.trecv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), tag, 0, ctx)
+                        .await
+                }),
+                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
+                    ep.trecv_async(buf, desc, tag, 0, ctx).await
+                }),
             };
             match err {
                 Ok(_) => break,
@@ -564,20 +642,18 @@ impl<I: TagDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => {
-                        async_std::task::block_on(async {
-                            ep.tsendmsg_to_async(msg, TferOptions::new().remote_cq_data(), ctx).await
-                        })
-                    },
+                    Either::Left(msg) => async_std::task::block_on(async {
+                        ep.tsendmsg_to_async(msg, TferOptions::new().remote_cq_data(), ctx)
+                            .await
+                    }),
                     Either::Right(_) => panic!("Wrong message type used"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type used"),
-                    Either::Right(msg) => 
-                        async_std::task::block_on(async {
-                            ep.tsendmsg_async(msg, TferOptions::new().remote_cq_data(), ctx).await
-                        })
-                    ,
+                    Either::Right(msg) => async_std::task::block_on(async {
+                        ep.tsendmsg_async(msg, TferOptions::new().remote_cq_data(), ctx)
+                            .await
+                    }),
                 },
             };
 
@@ -592,20 +668,24 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn trecvmsg(&mut self, msg: &mut Either<MsgTaggedMut, MsgTaggedConnectedMut>, ctx: &mut Context) {
+    pub fn trecvmsg(
+        &mut self,
+        msg: &mut Either<MsgTaggedMut, MsgTaggedConnectedMut>,
+        ctx: &mut Context,
+    ) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => {
-                        async_std::task::block_on(async {ep.trecvmsg_from_async(msg, TferOptions::new(), ctx).await})
-                    },
+                    Either::Left(msg) => async_std::task::block_on(async {
+                        ep.trecvmsg_from_async(msg, TferOptions::new(), ctx).await
+                    }),
                     Either::Right(_) => panic!("Wrong message type"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type"),
-                    Either::Right(msg) => {
-                        async_std::task::block_on(async {ep.trecvmsg_async(msg, TferOptions::new(), ctx).await})
-                    },
+                    Either::Right(msg) => async_std::task::block_on(async {
+                        ep.trecvmsg_async(msg, TferOptions::new(), ctx).await
+                    }),
                 },
             };
 
@@ -622,7 +702,13 @@ impl<I: TagDefaultCap> Ofi<I> {
 }
 
 impl<I: MsgDefaultCap + 'static> Ofi<I> {
-    pub fn send<T>(&self, buf: &[T], desc: &mut MemoryRegionDesc, data: Option<u64>, ctx: &mut Context) {
+    pub fn send<T>(
+        &self,
+        buf: &[T],
+        desc: &mut MemoryRegionDesc,
+        data: Option<u64>,
+        ctx: &mut Context,
+    ) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -640,14 +726,22 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                                     desc,
                                     data.unwrap(),
                                     self.mapped_addr.as_ref().unwrap(),
-                                    ctx
-                                ).await
+                                    ctx,
+                                )
+                                .await
                             })
                         } else {
                             async_std::task::block_on(async {
-                                ep.send_to_async(&buf, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
+                                ep.send_to_async(
+                                    &buf,
+                                    desc,
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    ctx,
+                                )
+                                .await
                             })
-                        }.map(|_| {})
+                        }
+                        .map(|_| {})
                     }
                 }
                 MyEndpoint::Connected(ep) => {
@@ -666,7 +760,8 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                             async_std::task::block_on(async {
                                 ep.send_async(&buf, desc, ctx).await
                             })
-                        }.map(|_| {})
+                        }
+                        .map(|_| {})
                     }
                 }
             };
@@ -684,15 +779,13 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn sendv(&mut self, iov: &[IoVec], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
         loop {
             let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    async_std::task::block_on(async {
-                        ep.sendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
-                    })
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.sendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx)
+                        .await
+                }),
+                MyEndpoint::Connected(ep) => {
+                    async_std::task::block_on(async { ep.sendv_async(iov, desc, ctx).await })
                 }
-                MyEndpoint::Connected(ep) => 
-                    async_std::task::block_on(async {
-                        ep.sendv_async(iov, desc, ctx).await
-                    })
             };
             match err {
                 Ok(_) => break,
@@ -708,15 +801,12 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn recvv(&mut self, iov: &[IoVecMut], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
         loop {
             let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    async_std::task::block_on(async {
-                        ep.recvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
-                    })
-                }
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.recvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx)
+                        .await
+                }),
                 MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async {
-                        ep.recvv_async(iov, desc, ctx).await
-                    })
+                    async_std::task::block_on(async { ep.recvv_async(iov, desc, ctx).await })
                 }
             };
             match err {
@@ -733,16 +823,13 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn recv<T>(&mut self, buf: &mut [T], desc: &mut MemoryRegionDesc, ctx: &mut Context) {
         loop {
             let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    async_std::task::block_on(async {
-                        ep.recv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
-                    })
-                }
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.recv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), ctx)
+                        .await
+                }),
                 MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async {
-                        ep.recv_async(buf, desc, ctx).await
-                    })
-                },
+                    async_std::task::block_on(async { ep.recv_async(buf, desc, ctx).await })
+                }
             };
             match err {
                 Ok(_) => break,
@@ -759,21 +846,18 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => {
-                        async_std::task::block_on(async {
-                            ep.sendmsg_to_async(msg, TferOptions::new().remote_cq_data(), ctx).await
-                        })
-                    },
+                    Either::Left(msg) => async_std::task::block_on(async {
+                        ep.sendmsg_to_async(msg, TferOptions::new().remote_cq_data(), ctx)
+                            .await
+                    }),
                     Either::Right(_) => panic!("Wrong msg type"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong msg type"),
-                    Either::Right(msg) => {
-                        async_std::task::block_on(async {
-                        
-                            ep.sendmsg_async(msg, TferOptions::new().remote_cq_data(), ctx).await
-                        })
-                    },
+                    Either::Right(msg) => async_std::task::block_on(async {
+                        ep.sendmsg_async(msg, TferOptions::new().remote_cq_data(), ctx)
+                            .await
+                    }),
                 },
             };
 
@@ -792,21 +876,16 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => {
-                        async_std::task::block_on(async {
-
-                            ep.recvmsg_from_async(msg, TferOptions::new(), ctx).await
-                        })
-                    },
+                    Either::Left(msg) => async_std::task::block_on(async {
+                        ep.recvmsg_from_async(msg, TferOptions::new(), ctx).await
+                    }),
                     Either::Right(_) => panic!("Wrong message type"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type"),
-                    Either::Right(msg) => {
-                        async_std::task::block_on(async {
-                            ep.recvmsg_async(msg, TferOptions::new(), ctx).await
-                        })
-                    },
+                    Either::Right(msg) => async_std::task::block_on(async {
+                        ep.recvmsg_async(msg, TferOptions::new(), ctx).await
+                    }),
                 },
             };
 
@@ -865,13 +944,13 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
             &mut desc,
             None,
-            &mut ctx
+            &mut ctx,
         );
         self.recv(
             &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
                 ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
             &mut desc,
-            &mut ctx
+            &mut ctx,
         );
 
         let remote_key = unsafe {
@@ -911,7 +990,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         dest_addr: u64,
         desc: &mut MemoryRegionDesc,
         data: Option<u64>,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
@@ -941,17 +1020,15 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     } else {
                         if data.is_some() {
                             unsafe {
-                                async_std::task::block_on(
-                                    ep.writedata_to_async(
-                                        buf,
-                                        desc,
-                                        data.unwrap(),
-                                        self.mapped_addr.as_ref().unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
-                                        ctx
-                                    )
-                                )
+                                async_std::task::block_on(ep.writedata_to_async(
+                                    buf,
+                                    desc,
+                                    data.unwrap(),
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    start + dest_addr,
+                                    self.remote_key.as_ref().unwrap(),
+                                    ctx,
+                                ))
                             }
                         } else {
                             unsafe {
@@ -962,11 +1039,12 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                                         self.mapped_addr.as_ref().unwrap(),
                                         start + dest_addr,
                                         self.remote_key.as_ref().unwrap(),
-                                        ctx
+                                        ctx,
                                     )
                                 })
                             }
-                        }.map(|_| {})
+                        }
+                        .map(|_| {})
                     }
                 }
                 MyEndpoint::Connected(ep) => {
@@ -993,32 +1071,32 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                         if data.is_some() {
                             unsafe {
                                 async_std::task::block_on(async {
-
                                     ep.writedata_async(
                                         buf,
                                         desc,
                                         data.unwrap(),
                                         start + dest_addr,
                                         self.remote_key.as_ref().unwrap(),
-                                        ctx
-                                    ).await
+                                        ctx,
+                                    )
+                                    .await
                                 })
                             }
                         } else {
                             unsafe {
                                 async_std::task::block_on(async {
-
                                     ep.write_async(
                                         buf,
                                         desc,
                                         start + dest_addr,
                                         self.remote_key.as_ref().unwrap(),
-                                        ctx
-                                    ).await
+                                        ctx,
+                                    )
+                                    .await
                                 })
-
                             }
-                        }.map(|_| {})
+                        }
+                        .map(|_| {})
                     }
                 }
             };
@@ -1033,7 +1111,13 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn read<T>(&mut self, buf: &mut [T], dest_addr: u64, desc: &mut MemoryRegionDesc, ctx: &mut Context) {
+    pub fn read<T>(
+        &mut self,
+        buf: &mut [T],
+        dest_addr: u64,
+        desc: &mut MemoryRegionDesc,
+        ctx: &mut Context,
+    ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
 
         loop {
@@ -1046,8 +1130,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             self.mapped_addr.as_ref().unwrap(),
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
@@ -1057,8 +1142,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             desc,
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1073,32 +1159,39 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn writev(&mut self, iov: &[IoVec], dest_addr: u64, desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
+    pub fn writev(
+        &mut self,
+        iov: &[IoVec],
+        dest_addr: u64,
+        desc: &mut [MemoryRegionDesc],
+        ctx: &mut Context,
+    ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
                     async_std::task::block_on(async {
-
                         ep.writev_to_async(
                             iov,
                             desc,
                             self.mapped_addr.as_ref().unwrap(),
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {    
+                    async_std::task::block_on(async {
                         ep.writev_async(
                             iov,
                             desc,
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1113,33 +1206,39 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn readv(&mut self, iov: &[IoVecMut], dest_addr: u64, desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
+    pub fn readv(
+        &mut self,
+        iov: &[IoVecMut],
+        dest_addr: u64,
+        desc: &mut [MemoryRegionDesc],
+        ctx: &mut Context,
+    ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
                     async_std::task::block_on(async {
-
                         ep.readv_from_async(
                             iov,
                             desc,
                             self.mapped_addr.as_ref().unwrap(),
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
                     async_std::task::block_on(async {
-                    
                         ep.readv_async(
                             iov,
                             desc,
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1160,7 +1259,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => unsafe { 
+                    Either::Left(msg) => unsafe {
                         async_std::task::block_on(async {
                             ep.writemsg_to_async(msg, WriteMsgOptions::new(), ctx).await
                         })
@@ -1169,7 +1268,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type"),
-                    Either::Right(msg) => unsafe { 
+                    Either::Right(msg) => unsafe {
                         async_std::task::block_on(async {
                             ep.writemsg_async(msg, WriteMsgOptions::new(), ctx).await
                         })
@@ -1191,7 +1290,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => unsafe { 
+                    Either::Left(msg) => unsafe {
                         async_std::task::block_on(async {
                             ep.readmsg_from_async(msg, ReadMsgOptions::new(), ctx).await
                         })
@@ -1226,7 +1325,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         dest_addr: u64,
         desc: &mut MemoryRegionDesc,
         op: AtomicOp,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
@@ -1245,16 +1344,19 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     } else {
                         unsafe {
                             async_std::task::block_on(async {
-                            ep.atomic_to_async(
-                                buf,
-                                desc,
-                                self.mapped_addr.as_ref().unwrap(),
-                                start + dest_addr,
-                                self.remote_key.as_ref().unwrap(),
-                                op,
-                                ctx
-                            ).await})
-                        }.map(|_| {})
+                                ep.atomic_to_async(
+                                    buf,
+                                    desc,
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    start + dest_addr,
+                                    self.remote_key.as_ref().unwrap(),
+                                    op,
+                                    ctx,
+                                )
+                                .await
+                            })
+                        }
+                        .map(|_| {})
                     }
                 }
                 MyEndpoint::Connected(ep) => {
@@ -1276,10 +1378,12 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                                     start + dest_addr,
                                     self.remote_key.as_ref().unwrap(),
                                     op,
-                                    ctx
-                                ).await
+                                    ctx,
+                                )
+                                .await
                             })
-                        }.map(|_| {})
+                        }
+                        .map(|_| {})
                     }
                 }
             };
@@ -1300,7 +1404,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         dest_addr: u64,
         desc: &mut [MemoryRegionDesc],
         op: AtomicOp,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
@@ -1314,8 +1418,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
@@ -1326,8 +1431,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1345,18 +1451,26 @@ impl<I: AtomicDefaultCap> Ofi<I> {
     pub fn atomicmsg<T: libfabric::AsFiType + 'static>(
         &mut self,
         msg: &mut Either<MsgAtomic<T>, MsgAtomicConnected<T>>,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let opts = AtomicMsgOptions::new();
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => unsafe { async_std::task::block_on(async { ep.atomicmsg_to_async(msg, opts, ctx).await}) },
+                    Either::Left(msg) => unsafe {
+                        async_std::task::block_on(async {
+                            ep.atomicmsg_to_async(msg, opts, ctx).await
+                        })
+                    },
                     Either::Right(_) => todo!(),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => todo!(),
-                    Either::Right(msg) => unsafe { async_std::task::block_on(async { ep.atomicmsg_async(msg, opts, ctx).await}) },
+                    Either::Right(msg) => unsafe {
+                        async_std::task::block_on(async {
+                            ep.atomicmsg_async(msg, opts, ctx).await
+                        })
+                    },
                 },
             };
             match err {
@@ -1378,7 +1492,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         desc: &mut MemoryRegionDesc,
         res_desc: &mut MemoryRegionDesc,
         op: FetchAtomicOp,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
@@ -1394,8 +1508,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
@@ -1408,8 +1523,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1421,7 +1537,6 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     }
                 }
             }
-
         }
     }
 
@@ -1433,7 +1548,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         desc: &mut [MemoryRegionDesc],
         res_desc: &mut [MemoryRegionDesc],
         op: FetchAtomicOp,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
@@ -1449,8 +1564,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
@@ -1463,8 +1579,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1484,7 +1601,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         msg: &mut Either<MsgFetchAtomic<T>, MsgFetchAtomicConnected<T>>,
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         res_desc: &mut [MemoryRegionDesc],
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let opts = AtomicMsgOptions::new();
         loop {
@@ -1492,7 +1609,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                 MyEndpoint::Connectionless(ep) => match msg {
                     Either::Left(msg) => unsafe {
                         async_std::task::block_on(async {
-                            ep.fetch_atomicmsg_from_async(msg, res_ioc, res_desc, opts,ctx).await
+                            ep.fetch_atomicmsg_from_async(msg, res_ioc, res_desc, opts, ctx)
+                                .await
                         })
                     },
                     Either::Right(_) => todo!(),
@@ -1501,7 +1619,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     Either::Left(_) => todo!(),
                     Either::Right(msg) => unsafe {
                         async_std::task::block_on(async {
-                            ep.fetch_atomicmsg_async(msg, res_ioc, res_desc, opts, ctx).await
+                            ep.fetch_atomicmsg_async(msg, res_ioc, res_desc, opts, ctx)
+                                .await
                         })
                     },
                 },
@@ -1527,7 +1646,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp_desc: &mut MemoryRegionDesc,
         res_desc: &mut MemoryRegionDesc,
         op: CompareAtomicOp,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
@@ -1545,8 +1664,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
@@ -1561,8 +1681,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1587,7 +1708,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp_desc: &mut [MemoryRegionDesc],
         res_desc: &mut [MemoryRegionDesc],
         op: CompareAtomicOp,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
@@ -1605,8 +1726,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
                 MyEndpoint::Connected(ep) => unsafe {
@@ -1621,8 +1743,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                             start + dest_addr,
                             self.remote_key.as_ref().unwrap(),
                             op,
-                            ctx
-                        ).await
+                            ctx,
+                        )
+                        .await
                     })
                 },
             };
@@ -1644,7 +1767,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         comp_desc: &mut [MemoryRegionDesc],
         res_desc: &mut [MemoryRegionDesc],
-        ctx: &mut Context
+        ctx: &mut Context,
     ) {
         let opts = AtomicMsgOptions::new();
         loop {
@@ -1652,7 +1775,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                 MyEndpoint::Connectionless(ep) => match msg {
                     Either::Left(msg) => unsafe {
                         async_std::task::block_on(async {
-                            ep.compare_atomicmsg_to_async(msg, comp_ioc, comp_desc, res_ioc, res_desc, opts, ctx).await
+                            ep.compare_atomicmsg_to_async(
+                                msg, comp_ioc, comp_desc, res_ioc, res_desc, opts, ctx,
+                            )
+                            .await
                         })
                     },
                     Either::Right(_) => todo!(),
@@ -1661,7 +1787,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     Either::Left(_) => todo!(),
                     Either::Right(msg) => unsafe {
                         async_std::task::block_on(async {
-                            ep.compare_atomicmsg_async(msg, comp_ioc, comp_desc, res_ioc, res_desc, opts, ctx).await
+                            ep.compare_atomicmsg_async(
+                                msg, comp_ioc, comp_desc, res_ioc, res_desc, opts, ctx,
+                            )
+                            .await
                         })
                     },
                 },
@@ -1886,7 +2015,6 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         let (mem0, mem1) = reg_mem[..1024].split_at_mut(512);
         let iov = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
         ofi.recvv(&iov, &mut desc, &mut ctx);
-
 
         assert_eq!(mem0, &expected[..512]);
         assert_eq!(mem1, &expected[512..1024]);
@@ -2203,7 +2331,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         };
 
         ofi.recvmsg(&mut msg, &mut ctx);
-        
+
         assert_eq!(mem0.len(), expected[..512].len());
         assert_eq!(mem0, &expected[..512]);
 
@@ -2561,7 +2689,6 @@ fn writeread(server: bool, name: &str, connected: bool) {
         // Send completion ack
         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
 
-
         // Write a single buffer
         ofi.write(&reg_mem[..512], 0, &mut descs[0], None, &mut ctx);
 
@@ -2724,7 +2851,6 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         // Write a single buffer
         ofi.writemsg(&mut msg, &mut ctx);
-
 
         // Send completion ack
         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
@@ -2907,7 +3033,7 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Bor, &mut ctx);
 
         ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Band, &mut ctx);
-        
+
         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
 
         // Recv a completion ack
@@ -2926,7 +3052,13 @@ fn atomic(server: bool, name: &str, connected: bool) {
 
         ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Lxor, &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::AtomicWrite, &mut ctx);
+        ofi.atomic(
+            &reg_mem[..512],
+            0,
+            &mut descs[0],
+            AtomicOp::AtomicWrite,
+            &mut ctx,
+        );
         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
 
         let iocs = [
@@ -2958,14 +3090,12 @@ fn atomic(server: bool, name: &str, connected: bool) {
         // Send completion ack
         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
 
-
         expected = vec![3; 1024 * 2];
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
 
         assert_eq!(&reg_mem[..512], &expected[..512]);
         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
-
 
         // expected = vec![2;1024*2];
         // Recv a completion ack
@@ -3043,32 +3173,80 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         let mut expected: Vec<_> = vec![1; 256];
         let (op_mem, ack_mem) = reg_mem.split_at_mut(512);
         let (mem0, mem1) = op_mem.split_at_mut(256);
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Min, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Min,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected[..256]);
 
         expected = vec![1; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Max, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Max,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
         expected = vec![2; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Sum, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Sum,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
         expected = vec![4; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Prod, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Prod,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
         expected = vec![8; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Bor, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Bor,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
         expected = vec![10; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Band, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Band,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
@@ -3078,15 +3256,30 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         // Send a done ack
 
         ofi.recv(&mut ack_mem[..512], &mut desc0, &mut ctx);
-
 
         expected = vec![2; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Lor, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Lor,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
         expected = vec![1; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Bxor, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Bxor,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
@@ -3097,14 +3290,29 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         ofi.recv(&mut ack_mem[..512], &mut desc0, &mut ctx);
 
-
         expected = vec![3; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Land, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Land,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
         expected = vec![1; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, &mut desc0, &mut desc1, FetchAtomicOp::Lxor, &mut ctx);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            &mut desc0,
+            &mut desc1,
+            FetchAtomicOp::Lxor,
+            &mut ctx,
+        );
 
         assert_eq!(mem1, &expected);
 
@@ -3116,7 +3324,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mut desc0,
             &mut desc1,
             FetchAtomicOp::AtomicWrite,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(mem1, &expected);
@@ -3126,7 +3334,6 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         ofi.recv(&mut ack_mem[..512], &mut desc0, &mut ctx);
 
-
         expected = vec![2; 256];
         ofi.fetch_atomic(
             &mem0,
@@ -3135,7 +3342,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mut desc0,
             &mut desc1,
             FetchAtomicOp::AtomicRead,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(mem1, &expected);
@@ -3165,7 +3372,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mut descs,
             &mut res_descs,
             FetchAtomicOp::Prod,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(write_mem, &expected);
@@ -3173,10 +3380,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         // Send a done ack
         ofi.send(&ack_mem[..512], &mut descs[0], None, &mut ctx);
 
-
         // Recv a completion ack
         ofi.recv(&mut ack_mem[..512], &mut descs[0], &mut ctx);
-
     } else {
         let mut expected = vec![2u8; 256];
 
@@ -3188,14 +3393,12 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         // Send completion ack
         ofi.send(&reg_mem[512..1024], &mut desc0, None, &mut ctx);
 
-
         expected = vec![3; 256];
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], &mut desc0, &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
         ofi.send(&reg_mem[512..1024], &mut desc0, None, &mut ctx);
-
 
         expected = vec![2; 256];
         // Recv a completion ack
@@ -3286,7 +3489,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             &mut comp_desc,
             &mut res_desc,
             CompareAtomicOp::Cswap,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected[..256]);
@@ -3301,7 +3504,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             &mut comp_desc,
             &mut res_desc,
             CompareAtomicOp::CswapNe,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected);
@@ -3317,7 +3520,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             &mut comp_desc,
             &mut res_desc,
             CompareAtomicOp::CswapLe,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected);
@@ -3333,7 +3536,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             &mut comp_desc,
             &mut res_desc,
             CompareAtomicOp::CswapLt,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected);
@@ -3349,7 +3552,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             &mut comp_desc,
             &mut res_desc,
             CompareAtomicOp::CswapGe,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected);
@@ -3364,7 +3567,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             &mut comp_desc,
             &mut res_desc,
             CompareAtomicOp::CswapGt,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected);
@@ -3375,7 +3578,6 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         // Send a done ack
 
         ofi.recv(&mut ack_mem[..512], &mut desc, &mut ctx);
-
 
         // expected = vec![2; 256];
         let (buf0, buf1) = buf.split_at_mut(128);
@@ -3398,7 +3600,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             &mut comp_descs,
             &mut res_descs,
             CompareAtomicOp::CswapLe,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected);
@@ -3406,10 +3608,8 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         // Send a done ack
         ofi.send(&ack_mem[..512], &mut desc, None, &mut ctx);
 
-
         // Recv a completion ack
         ofi.recv(&mut ack_mem[..512], &mut desc, &mut ctx);
-
     } else {
         let mut expected = vec![2u8; 256];
 
@@ -3486,9 +3686,9 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
     let (start, _end) = ofi.remote_mem_addr.unwrap();
-    
+
     let mut ctx = ofi.info_entry.allocate_context();
-    
+
     if server {
         let iocs = [
             Ioc::from_slice(&reg_mem[..256]),
@@ -3519,13 +3719,10 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
 
         ofi.atomicmsg(&mut msg, &mut ctx);
 
-
         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
-
 
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
-
     } else {
         let expected = vec![3u8; 1024 * 2];
 
@@ -3644,10 +3841,8 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         // Send a done ack
         ofi.send(&ack_mem[..512], &mut descs[0], None, &mut ctx);
 
-
         // Recv a completion ack
         ofi.recv(&mut ack_mem[..512], &mut descs[0], &mut ctx);
-
     } else {
         let mut desc0 = mr.descriptor();
         let expected = vec![2u8; 256];
@@ -3767,14 +3962,13 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
             &mut res_iocs,
             &mut comp_descs,
             &mut res_descs,
-            &mut ctx
+            &mut ctx,
         );
 
         assert_eq!(res, &expected);
 
         // Send a done ack
         ofi.send(&ack_mem[..512], &mut desc, None, &mut ctx);
-
 
         // Recv a completion ack
         ofi.recv(&mut ack_mem[..512], &mut desc, &mut ctx);

@@ -24,7 +24,7 @@
 // }
 
 // impl<WAIT, WAITFD> Options <WAIT, WAITFD> {
-    
+
 //     pub(crate) fn wait_retrievable(self) -> Options<WaitRetrieve, Off> {
 //         Options::<WaitRetrieve, Off> {
 //             wait: PhantomData,
@@ -57,7 +57,6 @@
 // impl<WAITFD> crate::Waitable for Options<WaitNoRetrieve, WAITFD> {}
 // impl<WAITFD> crate::Waitable for Options<WaitRetrieve, WAITFD> {}
 // impl<WAITFD> crate::WaitRetrievable for Options<WaitRetrieve, WAITFD> {}
-
 
 // // impl<WAIT, WAITFD> Options<Off, WAIT, WAITFD> {}
 

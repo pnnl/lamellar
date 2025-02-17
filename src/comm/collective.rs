@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use super::message::extract_raw_addr_and_ctx;
+use super::message::extract_raw_ctx;
 use crate::av::AddressVectorSet;
 use crate::av::AddressVectorSetImpl;
 use crate::cq::ReadCq;
@@ -13,9 +15,17 @@ use crate::ep::EndpointImplBase;
 use crate::ep::EpState;
 use crate::eq::ReadEq;
 use crate::error::Error;
+use crate::fid::AsRawTypedFid;
 use crate::fid::AsTypedFid;
 use crate::fid::BorrowedTypedFid;
+use crate::fid::EpRawFid;
+use crate::fid::McRawFid;
+use crate::fid::MutBorrowedTypedFid;
+use crate::fid::OwnedMcFid;
+use crate::infocapsoptions::CollCap;
+use crate::mr::DataDescriptor;
 use crate::trigger::TriggeredContext;
+use crate::utils::check_error;
 use crate::AsFiType;
 use crate::Context;
 use crate::MyOnceCell;
@@ -23,16 +33,6 @@ use crate::MyRc;
 use crate::MyRefCell;
 use crate::RawMappedAddress;
 use crate::SyncSend;
-use crate::fid::MutBorrowedTypedFid;
-use super::message::extract_raw_addr_and_ctx;
-use super::message::extract_raw_ctx;
-use crate::fid::EpRawFid;
-use crate::fid::McRawFid;
-use crate::fid::OwnedMcFid;
-use crate::fid::AsRawTypedFid;
-use crate::infocapsoptions::CollCap;
-use crate::mr::DataDescriptor;
-use crate::utils::check_error;
 
 pub struct MulticastGroupCollective {
     pub(crate) inner: MyRc<MulticastGroupCollectiveImpl>,

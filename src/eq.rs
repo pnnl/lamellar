@@ -33,9 +33,9 @@ pub enum Event {
 
 // [TODO]
 // #[cfg(feature="threading-thread-safe")]
-#[cfg(feature="thread-safe")]
-unsafe impl Sync for Event{}
-unsafe impl Send for Event{}
+#[cfg(feature = "thread-safe")]
+unsafe impl Sync for Event {}
+unsafe impl Send for Event {}
 
 impl Event {
     #[allow(dead_code)]
@@ -120,7 +120,10 @@ pub struct EventQueueImpl<const WRITE: bool, const WAIT: bool, const RETRIEVE: b
     event_buffer: MyRefCell<Vec<u8>>,
     pub(crate) _fabric_rc: MyRc<FabricImpl>,
 }
-impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncSend for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
+impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncSend
+    for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
+{
+}
 
 pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
@@ -218,7 +221,7 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     fn peekerr(&self) -> Result<EventError, crate::error::Error>;
 }
 
-pub trait WaitEq: ReadEq  {
+pub trait WaitEq: ReadEq {
     fn sread_in(
         &self,
         buff: &mut [u8],
@@ -962,9 +965,9 @@ pub struct EventError {
 }
 
 //[TODO]
-#[cfg(feature="thread-safe")]
-unsafe impl Sync for EventError{}
-unsafe impl Send for EventError{}
+#[cfg(feature = "thread-safe")]
+unsafe impl Sync for EventError {}
+unsafe impl Send for EventError {}
 
 impl EventError {
     pub fn new() -> Self {

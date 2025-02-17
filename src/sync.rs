@@ -5,7 +5,8 @@ use crate::{
     enums::{self, WaitObjType2},
     fabric::FabricImpl,
     fid::{
-        AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, OwnedPollFid, OwnedWaitFid, PollRawFid, WaitRawFid
+        AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, OwnedPollFid, OwnedWaitFid,
+        PollRawFid, WaitRawFid,
     },
     utils::check_error,
     MyRc,
@@ -72,7 +73,9 @@ impl WaitSetImpl {
     }
 
     pub(crate) fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_wait(self.as_typed_fid_mut().as_raw_typed_fid(), timeout) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_wait(self.as_typed_fid_mut().as_raw_typed_fid(), timeout)
+        };
 
         check_error(err.try_into().unwrap())
     }
@@ -321,9 +324,9 @@ impl PollSetImpl {
             ))
         } else {
             Ok(Self {
-                #[cfg(not(feature="threading-domain"))]
+                #[cfg(not(feature = "threading-domain"))]
                 c_poll: OwnedPollFid::from(c_poll),
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_poll: OwnedPollFid::from(c_poll, domain.inner.c_domain.domain.clone()),
             })
         }

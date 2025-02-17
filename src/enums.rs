@@ -28,10 +28,9 @@ macro_rules! gen_enum {
     };
 }
 
-
-
-
-gen_enum!(AtomicOp, u32, 
+gen_enum!(
+    AtomicOp,
+    u32,
     (Min, libfabric_sys::fi_op_FI_MIN),
     (Max, libfabric_sys::fi_op_FI_MAX),
     (Sum, libfabric_sys::fi_op_FI_SUM),
@@ -44,7 +43,9 @@ gen_enum!(AtomicOp, u32,
     (Bxor, libfabric_sys::fi_op_FI_BXOR),
     (AtomicWrite, libfabric_sys::fi_op_FI_ATOMIC_WRITE)
 );
-gen_enum!(FetchAtomicOp, u32, 
+gen_enum!(
+    FetchAtomicOp,
+    u32,
     (Min, libfabric_sys::fi_op_FI_MIN),
     (Max, libfabric_sys::fi_op_FI_MAX),
     (Sum, libfabric_sys::fi_op_FI_SUM),
@@ -59,7 +60,9 @@ gen_enum!(FetchAtomicOp, u32,
     (AtomicWrite, libfabric_sys::fi_op_FI_ATOMIC_WRITE)
 );
 
-gen_enum!(CompareAtomicOp, u32, 
+gen_enum!(
+    CompareAtomicOp,
+    u32,
     (Cswap, libfabric_sys::fi_op_FI_CSWAP),
     (CswapNe, libfabric_sys::fi_op_FI_CSWAP_NE),
     (CswapLe, libfabric_sys::fi_op_FI_CSWAP_LE),
@@ -69,7 +72,9 @@ gen_enum!(CompareAtomicOp, u32,
     (Mswap, libfabric_sys::fi_op_FI_MSWAP)
 );
 
-gen_enum!(CollAtomicOp, u32, 
+gen_enum!(
+    CollAtomicOp,
+    u32,
     (Min, libfabric_sys::fi_op_FI_MIN),
     (Max, libfabric_sys::fi_op_FI_MAX),
     (Sum, libfabric_sys::fi_op_FI_SUM),
@@ -112,24 +117,31 @@ impl AtomicOperation for CompareAtomicOp {
 //     }
 // }
 
-gen_enum!(CollectiveOp, u32,
-    (Barrier,libfabric_sys::fi_collective_op_FI_BARRIER),
-    (Broadcast,libfabric_sys::fi_collective_op_FI_BROADCAST),
-    (AllToAll,libfabric_sys::fi_collective_op_FI_ALLTOALL),
-    (AllReduce,libfabric_sys::fi_collective_op_FI_ALLREDUCE),
-    (AllGather,libfabric_sys::fi_collective_op_FI_ALLGATHER),
-    (ReduceScatter,libfabric_sys::fi_collective_op_FI_REDUCE_SCATTER),
-    (Reduce,libfabric_sys::fi_collective_op_FI_REDUCE),
-    (Scatter,libfabric_sys::fi_collective_op_FI_SCATTER),
-    (Gather,libfabric_sys::fi_collective_op_FI_GATHER)
+gen_enum!(
+    CollectiveOp,
+    u32,
+    (Barrier, libfabric_sys::fi_collective_op_FI_BARRIER),
+    (Broadcast, libfabric_sys::fi_collective_op_FI_BROADCAST),
+    (AllToAll, libfabric_sys::fi_collective_op_FI_ALLTOALL),
+    (AllReduce, libfabric_sys::fi_collective_op_FI_ALLREDUCE),
+    (AllGather, libfabric_sys::fi_collective_op_FI_ALLGATHER),
+    (
+        ReduceScatter,
+        libfabric_sys::fi_collective_op_FI_REDUCE_SCATTER
+    ),
+    (Reduce, libfabric_sys::fi_collective_op_FI_REDUCE),
+    (Scatter, libfabric_sys::fi_collective_op_FI_SCATTER),
+    (Gather, libfabric_sys::fi_collective_op_FI_GATHER)
 );
 
-gen_enum!(CqFormat, u32,
-    (Unspec,libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC),
-    (Context,libfabric_sys::fi_cq_format_FI_CQ_FORMAT_CONTEXT),
-    (Msg,libfabric_sys::fi_cq_format_FI_CQ_FORMAT_MSG),
-    (Data,libfabric_sys::fi_cq_format_FI_CQ_FORMAT_DATA),
-    (Tagged,libfabric_sys::fi_cq_format_FI_CQ_FORMAT_TAGGED)
+gen_enum!(
+    CqFormat,
+    u32,
+    (Unspec, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC),
+    (Context, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_CONTEXT),
+    (Msg, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_MSG),
+    (Data, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_DATA),
+    (Tagged, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_TAGGED)
 );
 
 #[derive(Copy, Clone)]
@@ -144,7 +156,6 @@ pub enum WaitObj<'a> {
 }
 
 impl<'a> WaitObj<'a> {
-
     pub(crate) fn as_raw(&self) -> u32 {
         match self {
             WaitObj::None => libfabric_sys::fi_wait_obj_FI_WAIT_NONE,
@@ -158,7 +169,9 @@ impl<'a> WaitObj<'a> {
     }
 }
 
-gen_enum!(WaitObj2, u32, 
+gen_enum!(
+    WaitObj2,
+    u32,
     (Unspec, libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC),
     (Fd, libfabric_sys::fi_wait_obj_FI_WAIT_FD),
     (MutexCond, libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND),
@@ -166,12 +179,17 @@ gen_enum!(WaitObj2, u32,
     (PollFd, libfabric_sys::fi_wait_obj_FI_WAIT_POLLFD)
 );
 
-gen_enum!(WaitCond, u32, 
+gen_enum!(
+    WaitCond,
+    u32,
     (None, libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_NONE),
-    (Threshold, libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_THRESHOLD)
+    (
+        Threshold,
+        libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_THRESHOLD
+    )
 );
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum HmemIface {
     System,
     Cuda(i32),
@@ -182,7 +200,7 @@ pub enum HmemIface {
 }
 impl HmemIface {
     #[allow(dead_code)]
-    pub(crate)fn as_raw(&self) -> libfabric_sys::fi_hmem_iface {
+    pub(crate) fn as_raw(&self) -> libfabric_sys::fi_hmem_iface {
         match self {
             HmemIface::System => libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM,
             HmemIface::Cuda(_) => libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA,
@@ -190,32 +208,36 @@ impl HmemIface {
             HmemIface::Ze(_, _) => libfabric_sys::fi_hmem_iface_FI_HMEM_ZE,
             HmemIface::Neuron(_) => libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON,
             HmemIface::SynapseAi(_) => libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI,
-        
-            }
-    }
- 
-    #[allow(dead_code)]
-    pub(crate)fn from_raw(value:libfabric_sys::fi_hmem_iface, id: i32, additional_id: i32) -> HmemIface {
-        if value==libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM {
-            HmemIface::System
-        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA {
-            HmemIface::Cuda(id)
-        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR {
-            HmemIface::Rocr(id)
-        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_ZE {
-            HmemIface::Ze(id, additional_id)
-        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON {
-            HmemIface::Neuron(id)
-        }else if value==libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI {
-            HmemIface::SynapseAi(id)
-        }else {
-            panic!("Invalid value {}",value);
         }
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn from_raw(
+        value: libfabric_sys::fi_hmem_iface,
+        id: i32,
+        additional_id: i32,
+    ) -> HmemIface {
+        if value == libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM {
+            HmemIface::System
+        } else if value == libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA {
+            HmemIface::Cuda(id)
+        } else if value == libfabric_sys::fi_hmem_iface_FI_HMEM_ROCR {
+            HmemIface::Rocr(id)
+        } else if value == libfabric_sys::fi_hmem_iface_FI_HMEM_ZE {
+            HmemIface::Ze(id, additional_id)
+        } else if value == libfabric_sys::fi_hmem_iface_FI_HMEM_NEURON {
+            HmemIface::Neuron(id)
+        } else if value == libfabric_sys::fi_hmem_iface_FI_HMEM_SYNAPSEAI {
+            HmemIface::SynapseAi(id)
+        } else {
+            panic!("Invalid value {}", value);
+        }
+    }
 }
 
-gen_enum!(EndpointOptName, libfabric_sys::_bindgen_ty_20, 
+gen_enum!(
+    EndpointOptName,
+    libfabric_sys::_bindgen_ty_20,
     (MinMultiRecv, libfabric_sys::FI_OPT_MIN_MULTI_RECV),
     (CmDataSize, libfabric_sys::FI_OPT_CM_DATA_SIZE),
     (BufferedMin, libfabric_sys::FI_OPT_BUFFERED_MIN),
@@ -229,11 +251,15 @@ gen_enum!(EndpointOptName, libfabric_sys::_bindgen_ty_20,
     (CudaApiPermitted, libfabric_sys::FI_OPT_CUDA_API_PERMITTED)
 );
 
-gen_enum!(EndpointOptLevel, libfabric_sys::_bindgen_ty_19, 
+gen_enum!(
+    EndpointOptLevel,
+    libfabric_sys::_bindgen_ty_19,
     (Endpoint, libfabric_sys::FI_OPT_ENDPOINT)
 );
 
-gen_enum!(EndpointType, libfabric_sys::fi_ep_type, 
+gen_enum!(
+    EndpointType,
+    libfabric_sys::fi_ep_type,
     (Unspec, libfabric_sys::fi_ep_type_FI_EP_UNSPEC),
     (Msg, libfabric_sys::fi_ep_type_FI_EP_MSG),
     (Dgram, libfabric_sys::fi_ep_type_FI_EP_DGRAM),
@@ -242,14 +268,18 @@ gen_enum!(EndpointType, libfabric_sys::fi_ep_type,
     (SockDgram, libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM)
 );
 
-gen_enum!(HmemP2p, libfabric_sys::_bindgen_ty_21, 
-    (Enabled,libfabric_sys::FI_HMEM_P2P_ENABLED),
-    (Required,libfabric_sys::FI_HMEM_P2P_REQUIRED),
-    (Preferred,libfabric_sys::FI_HMEM_P2P_PREFERRED),
-    (Disabled,libfabric_sys::FI_HMEM_P2P_DISABLED)
+gen_enum!(
+    HmemP2p,
+    libfabric_sys::_bindgen_ty_21,
+    (Enabled, libfabric_sys::FI_HMEM_P2P_ENABLED),
+    (Required, libfabric_sys::FI_HMEM_P2P_REQUIRED),
+    (Preferred, libfabric_sys::FI_HMEM_P2P_PREFERRED),
+    (Disabled, libfabric_sys::FI_HMEM_P2P_DISABLED)
 );
 
-gen_enum!(ControlOpt, libfabric_sys::_bindgen_ty_7,
+gen_enum!(
+    ControlOpt,
+    libfabric_sys::_bindgen_ty_7,
     (GetFidFlag, libfabric_sys::FI_GETFIDFLAG),
     (SetFidFlag, libfabric_sys::FI_SETFIDFLAG),
     (GetOpsFlag, libfabric_sys::FI_GETOPSFLAG),
@@ -272,10 +302,12 @@ gen_enum!(ControlOpt, libfabric_sys::_bindgen_ty_7,
     (ExportFid, libfabric_sys::FI_EXPORT_FID)
 );
 
-gen_enum!(AddressVectorType, libfabric_sys::fi_av_type,
-    (Unspec,libfabric_sys::fi_av_type_FI_AV_UNSPEC),
-    (Map,libfabric_sys::fi_av_type_FI_AV_MAP),
-    (Table,libfabric_sys::fi_av_type_FI_AV_TABLE)
+gen_enum!(
+    AddressVectorType,
+    libfabric_sys::fi_av_type,
+    (Unspec, libfabric_sys::fi_av_type_FI_AV_UNSPEC),
+    (Map, libfabric_sys::fi_av_type_FI_AV_MAP),
+    (Table, libfabric_sys::fi_av_type_FI_AV_TABLE)
 );
 
 macro_rules! gen_set_get_flag {
@@ -284,23 +316,22 @@ macro_rules! gen_set_get_flag {
         $(#[$attr0])*
         pub fn $set_method_name(mut self) -> Self {
             self.c_flags |= $flag;
-            
+
             self
         }
 
         $(#[$attr1])*
         pub fn $get_method_name(&self) -> bool {
             self.c_flags & $flag != 0
-        } 
+        }
     };
 }
 
 macro_rules! gen_get_flag {
     ($get_method_name:ident, $flag:expr) => {
-
         pub fn $get_method_name(&self) -> bool {
             self.c_flags & $flag != 0
-        } 
+        }
     };
 }
 
@@ -310,25 +341,20 @@ use crate::trigger::{TriggerThreshold, TriggerXpu};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Mode {
-    c_flags: u64
+    c_flags: u64,
 }
 
 impl Mode {
-
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     pub fn all() -> Self {
-        Self {c_flags: !0}
+        Self { c_flags: !0 }
     }
 
     pub(crate) fn from_raw(val: u64) -> Self {
-        Self {
-            c_flags: val,
-        }
+        Self { c_flags: val }
     }
 
     pub(crate) fn as_raw(&self) -> u64 {
@@ -340,10 +366,22 @@ impl Mode {
     gen_set_get_flag!(async_iov, is_async_iov, libfabric_sys::FI_ASYNC_IOV);
     gen_set_get_flag!(rx_cq_data, is_rx_cq_data, libfabric_sys::FI_RX_CQ_DATA);
     gen_set_get_flag!(local_mr, is_local_mr, libfabric_sys::FI_LOCAL_MR);
-    gen_set_get_flag!(notify_flags_only, is_notify_flags_only, libfabric_sys::FI_NOTIFY_FLAGS_ONLY);
-    gen_set_get_flag!(restricted_comp, is_restricted_comp, libfabric_sys::FI_RESTRICTED_COMP);
+    gen_set_get_flag!(
+        notify_flags_only,
+        is_notify_flags_only,
+        libfabric_sys::FI_NOTIFY_FLAGS_ONLY
+    );
+    gen_set_get_flag!(
+        restricted_comp,
+        is_restricted_comp,
+        libfabric_sys::FI_RESTRICTED_COMP
+    );
     gen_set_get_flag!(context2, is_context2, libfabric_sys::FI_CONTEXT2);
-    gen_set_get_flag!(buffered_recv, is_buffered_recv, libfabric_sys::FI_BUFFERED_RECV);
+    gen_set_get_flag!(
+        buffered_recv,
+        is_buffered_recv,
+        libfabric_sys::FI_BUFFERED_RECV
+    );
 }
 
 impl From<Mode> for u64 {
@@ -351,7 +389,6 @@ impl From<Mode> for u64 {
         val.c_flags
     }
 }
-
 
 impl Default for Mode {
     fn default() -> Self {
@@ -361,31 +398,34 @@ impl Default for Mode {
 
 #[derive(Clone, Copy, Debug)]
 pub struct MrMode {
-    c_flags: u32
+    c_flags: u32,
 }
 
 impl MrMode {
-    
     pub fn new() -> Self {
-        Self {c_flags: 0}
+        Self { c_flags: 0 }
     }
 
     pub(crate) fn from_raw(value: u32) -> Self {
-        Self {c_flags: value}
+        Self { c_flags: value }
     }
 
     pub fn is_unspec(&self) -> bool {
         self.c_flags == libfabric_sys::fi_mr_mode_FI_MR_UNSPEC
     }
-    
+
     pub fn inverse(mut self) -> Self {
-        self.c_flags = ! self.c_flags;
+        self.c_flags = !self.c_flags;
 
         self
     }
 
     gen_set_get_flag!(basic, is_basic, libfabric_sys::fi_mr_mode_FI_MR_BASIC);
-    gen_set_get_flag!(scalable, is_scalable, libfabric_sys::fi_mr_mode_FI_MR_SCALABLE);
+    gen_set_get_flag!(
+        scalable,
+        is_scalable,
+        libfabric_sys::fi_mr_mode_FI_MR_SCALABLE
+    );
     gen_set_get_flag!(local, is_local, libfabric_sys::FI_MR_LOCAL);
     gen_set_get_flag!(raw, is_raw, libfabric_sys::FI_MR_RAW);
     gen_set_get_flag!(virt_addr, is_virt_addr, libfabric_sys::FI_MR_VIRT_ADDR);
@@ -400,9 +440,7 @@ impl MrMode {
     pub fn as_raw(&self) -> u32 {
         self.c_flags
     }
-
 }
-
 
 impl Default for MrMode {
     fn default() -> Self {
@@ -416,12 +454,12 @@ pub struct MrRegOpt {
 
 impl MrRegOpt {
     pub fn new() -> Self {
-        Self{c_flags: 0}
+        Self { c_flags: 0 }
     }
 
     #[allow(dead_code)]
     pub(crate) fn from_raw(value: u64) -> Self {
-        Self{c_flags: value}
+        Self { c_flags: value }
     }
 
     pub fn as_raw(&self) -> u64 {
@@ -430,8 +468,16 @@ impl MrRegOpt {
 
     gen_set_get_flag!(rma_event, is_rma_event, libfabric_sys::FI_RMA_EVENT);
     gen_set_get_flag!(rma_pmem, is_rma_pmem, libfabric_sys::FI_RMA_PMEM);
-    gen_set_get_flag!(hmem_device_only, is_hmem_device_only, libfabric_sys::FI_HMEM_DEVICE_ONLY);
-    gen_set_get_flag!(hmem_host_alloc, is_hmem_host_alloc, libfabric_sys::FI_HMEM_HOST_ALLOC);
+    gen_set_get_flag!(
+        hmem_device_only,
+        is_hmem_device_only,
+        libfabric_sys::FI_HMEM_DEVICE_ONLY
+    );
+    gen_set_get_flag!(
+        hmem_host_alloc,
+        is_hmem_host_alloc,
+        libfabric_sys::FI_HMEM_HOST_ALLOC
+    );
 }
 
 impl Default for MrRegOpt {
@@ -446,12 +492,12 @@ pub struct MrAccess {
 
 impl MrAccess {
     pub fn new() -> Self {
-        Self{c_flags: 0}
+        Self { c_flags: 0 }
     }
 
     #[allow(dead_code)]
     pub(crate) fn from_raw(value: u32) -> Self {
-        Self {c_flags: value}
+        Self { c_flags: value }
     }
 
     gen_set_get_flag!(send, is_send, libfabric_sys::FI_SEND);
@@ -459,7 +505,11 @@ impl MrAccess {
     gen_set_get_flag!(read, is_read, libfabric_sys::FI_READ);
     gen_set_get_flag!(write, is_write, libfabric_sys::FI_WRITE);
     gen_set_get_flag!(remote_read, is_remote_read, libfabric_sys::FI_REMOTE_READ);
-    gen_set_get_flag!(remote_write, is_remote_write, libfabric_sys::FI_REMOTE_WRITE);
+    gen_set_get_flag!(
+        remote_write,
+        is_remote_write,
+        libfabric_sys::FI_REMOTE_WRITE
+    );
     gen_set_get_flag!(collective, is_collective, libfabric_sys::FI_COLLECTIVE);
 
     pub fn as_raw(&self) -> u32 {
@@ -473,13 +523,17 @@ impl Default for MrAccess {
     }
 }
 
-gen_enum!(Progress, libfabric_sys::fi_progress,
+gen_enum!(
+    Progress,
+    libfabric_sys::fi_progress,
     (Unspec, libfabric_sys::fi_progress_FI_PROGRESS_UNSPEC),
     (Auto, libfabric_sys::fi_progress_FI_PROGRESS_AUTO),
     (Manual, libfabric_sys::fi_progress_FI_PROGRESS_MANUAL)
 );
 
-gen_enum!(Threading, libfabric_sys::fi_threading,
+gen_enum!(
+    Threading,
+    libfabric_sys::fi_threading,
     (Unspec, libfabric_sys::fi_threading_FI_THREAD_UNSPEC),
     (Safe, libfabric_sys::fi_threading_FI_THREAD_SAFE),
     (Fid, libfabric_sys::fi_threading_FI_THREAD_FID),
@@ -488,29 +542,37 @@ gen_enum!(Threading, libfabric_sys::fi_threading,
     (Endpoint, libfabric_sys::fi_threading_FI_THREAD_ENDPOINT)
 );
 
-gen_enum!(ResourceMgmt, libfabric_sys::fi_resource_mgmt,
+gen_enum!(
+    ResourceMgmt,
+    libfabric_sys::fi_resource_mgmt,
     (Unspec, libfabric_sys::fi_resource_mgmt_FI_RM_UNSPEC),
     (Disabled, libfabric_sys::fi_resource_mgmt_FI_RM_DISABLED),
     (Enabled, libfabric_sys::fi_resource_mgmt_FI_RM_ENABLED)
 );
 
-gen_enum!(CounterEvents, libfabric_sys::fi_cntr_events,
+gen_enum!(
+    CounterEvents,
+    libfabric_sys::fi_cntr_events,
     (Comp, libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP)
 );
 
-gen_enum!(TrafficClass, libfabric_sys::_bindgen_ty_5, 
-    (Unspec,libfabric_sys::FI_TC_UNSPEC),
-    (Dscp,libfabric_sys::FI_TC_DSCP),
-    (Label,libfabric_sys::FI_TC_LABEL),
-    (BestEffort,libfabric_sys::FI_TC_BEST_EFFORT),
-    (LowLatency,libfabric_sys::FI_TC_LOW_LATENCY),
-    (DedicatedAccess,libfabric_sys::FI_TC_DEDICATED_ACCESS),
-    (BulkData,libfabric_sys::FI_TC_BULK_DATA),
-    (Scavenger,libfabric_sys::FI_TC_SCAVENGER),
-    (NetworkCtrl,libfabric_sys::FI_TC_NETWORK_CTRL)
+gen_enum!(
+    TrafficClass,
+    libfabric_sys::_bindgen_ty_5,
+    (Unspec, libfabric_sys::FI_TC_UNSPEC),
+    (Dscp, libfabric_sys::FI_TC_DSCP),
+    (Label, libfabric_sys::FI_TC_LABEL),
+    (BestEffort, libfabric_sys::FI_TC_BEST_EFFORT),
+    (LowLatency, libfabric_sys::FI_TC_LOW_LATENCY),
+    (DedicatedAccess, libfabric_sys::FI_TC_DEDICATED_ACCESS),
+    (BulkData, libfabric_sys::FI_TC_BULK_DATA),
+    (Scavenger, libfabric_sys::FI_TC_SCAVENGER),
+    (NetworkCtrl, libfabric_sys::FI_TC_NETWORK_CTRL)
 );
 
-gen_enum!(AddressFormat, libfabric_sys::_bindgen_ty_3,
+gen_enum!(
+    AddressFormat,
+    libfabric_sys::_bindgen_ty_3,
     (Unspec, libfabric_sys::FI_FORMAT_UNSPEC),
     (SockAddr, libfabric_sys::FI_SOCKADDR),
     (SockaddrIn, libfabric_sys::FI_SOCKADDR_IN),
@@ -530,46 +592,49 @@ gen_enum!(AddressFormat, libfabric_sys::_bindgen_ty_3,
     (Ucx, libfabric_sys::FI_ADDR_UCX)
 );
 
-
-
 pub enum TriggerEvent<'a> {
     Threshold(TriggerThreshold<'a>),
     Xpu(TriggerXpu),
 }
 
 impl<'a> TriggerEvent<'a> {
-
-    pub fn as_raw(&mut self) -> (libfabric_sys::fi_trigger_event, libfabric_sys::fi_triggered_context__bindgen_ty_1) {
+    pub fn as_raw(
+        &mut self,
+    ) -> (
+        libfabric_sys::fi_trigger_event,
+        libfabric_sys::fi_triggered_context__bindgen_ty_1,
+    ) {
         match self {
-            Self::Threshold(thold) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD, 
-                libfabric_sys::fi_triggered_context__bindgen_ty_1{
-                    threshold: thold.c_thold
-                }) 
-            ,
-            Self::Xpu(xpu) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU, 
-                    
-                    libfabric_sys::fi_triggered_context__bindgen_ty_1{
-                        xpu: xpu.as_raw(),
-                    }
-                )
-            ,
+            Self::Threshold(thold) => (
+                libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD,
+                libfabric_sys::fi_triggered_context__bindgen_ty_1 {
+                    threshold: thold.c_thold,
+                },
+            ),
+            Self::Xpu(xpu) => (
+                libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU,
+                libfabric_sys::fi_triggered_context__bindgen_ty_1 { xpu: xpu.as_raw() },
+            ),
         }
     }
 
-    pub fn as_raw2(&mut self) -> (libfabric_sys::fi_trigger_event, libfabric_sys::fi_triggered_context2__bindgen_ty_1) {
+    pub fn as_raw2(
+        &mut self,
+    ) -> (
+        libfabric_sys::fi_trigger_event,
+        libfabric_sys::fi_triggered_context2__bindgen_ty_1,
+    ) {
         match self {
-            Self::Threshold(thold) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD, 
-                libfabric_sys::fi_triggered_context2__bindgen_ty_1{
-                    threshold: thold.c_thold
-                }) 
-            ,
-            Self::Xpu(xpu) => (libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU, 
-                    
-                    libfabric_sys::fi_triggered_context2__bindgen_ty_1{
-                        xpu: xpu.as_raw(),
-                    }
-                )
-            ,
+            Self::Threshold(thold) => (
+                libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD,
+                libfabric_sys::fi_triggered_context2__bindgen_ty_1 {
+                    threshold: thold.c_thold,
+                },
+            ),
+            Self::Xpu(xpu) => (
+                libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU,
+                libfabric_sys::fi_triggered_context2__bindgen_ty_1 { xpu: xpu.as_raw() },
+            ),
         }
     }
 }
@@ -579,30 +644,27 @@ impl<'a> TriggerEvent<'a> {
 
 pub struct AVOptions {
     c_flags: u64,
-} 
+}
 
 impl AVOptions {
-    
     /// Create a new [AVOptions] object with the default configuration.
     pub fn new() -> Self {
-        Self{
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     gen_set_get_flag!(
         /// Hint to the provider that more insertion requests will follow, allowing the provider to aggregate insertion requests if desired.
         /// 
         /// Corresponds to setting the bitflag `FI_MORE`.
-        more, 
+        more,
         /// Check if the `FI_MORE` bitflag is set.
         is_more, libfabric_sys::FI_MORE as u64);
-    
+
     gen_set_get_flag!(
         /// This flag applies to synchronous insertions only, and is used to retrieve error details of failed insertions.alloc
         /// 
         /// Corrsponds to setting the bitflag `FI_SYNC_ERR`.
-        sync_err, 
+        sync_err,
         /// Check if the `FI_SYNC_ERR` bitflag is set.
         is_sync_err, libfabric_sys::FI_SYNC_ERR);
     gen_set_get_flag!(user_id, is_user_id, libfabric_sys::FI_AV_USER_ID);
@@ -619,81 +681,147 @@ impl Default for AVOptions {
 }
 
 #[derive(Clone, Copy)]
-pub struct TferOptions<const OUT: bool, const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> {
+pub struct TferOptions<
+    const OUT: bool,
+    const MSG: bool,
+    const RMA: bool,
+    const DATA: bool,
+    const TAGGED: bool,
+    const ATOMIC: bool,
+> {
     c_flags: u64,
 }
 
-
-
-impl<const OUT: bool, const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> TferOptions<OUT, MSG, RMA, DATA, TAGGED, ATOMIC> { // All transfer types
+impl<
+        const OUT: bool,
+        const MSG: bool,
+        const RMA: bool,
+        const DATA: bool,
+        const TAGGED: bool,
+        const ATOMIC: bool,
+    > TferOptions<OUT, MSG, RMA, DATA, TAGGED, ATOMIC>
+{
+    // All transfer types
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
-    gen_set_get_flag!(completion, is_completion, libfabric_sys::FI_COMPLETION as u64);
+    gen_set_get_flag!(
+        completion,
+        is_completion,
+        libfabric_sys::FI_COMPLETION as u64
+    );
     gen_set_get_flag!(more, is_more, libfabric_sys::FI_MORE as u64);
 }
 
-impl<const OUT: bool, const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> Default for TferOptions<OUT, MSG, RMA, DATA, TAGGED, ATOMIC> {
+impl<
+        const OUT: bool,
+        const MSG: bool,
+        const RMA: bool,
+        const DATA: bool,
+        const TAGGED: bool,
+        const ATOMIC: bool,
+    > Default for TferOptions<OUT, MSG, RMA, DATA, TAGGED, ATOMIC>
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const OUT: bool, const MSG: bool> TferOptions<OUT, MSG, false, false, false, true> { // All atomic transfers
+impl<const OUT: bool, const MSG: bool> TferOptions<OUT, MSG, false, false, false, true> {
+    // All atomic transfers
     gen_set_get_flag!(tagged, is_tagged, libfabric_sys::FI_TAGGED as u64);
 }
 
-impl<const OUT: bool> TferOptions<OUT, true, false, false, false, true> { // All atomic msg transfers
+impl<const OUT: bool> TferOptions<OUT, true, false, false, false, true> {
+    // All atomic msg transfers
     gen_set_get_flag!(inject, is_inject, libfabric_sys::FI_INJECT as u64);
 }
 
-
-impl<const MSG: bool, const RMA: bool, const DATA: bool, const TAGGED: bool, const ATOMIC: bool> TferOptions<true, MSG, RMA, DATA, TAGGED, ATOMIC> { // All transmits
+impl<
+        const MSG: bool,
+        const RMA: bool,
+        const DATA: bool,
+        const TAGGED: bool,
+        const ATOMIC: bool,
+    > TferOptions<true, MSG, RMA, DATA, TAGGED, ATOMIC>
+{
+    // All transmits
     gen_set_get_flag!(fence, is_fence, libfabric_sys::FI_FENCE as u64);
 }
 
-impl<const RMA: bool, const DATA: bool, const TAGGED: bool> TferOptions<true, true, RMA, DATA, TAGGED, false> { // Only data transmits (no msg)
-    gen_set_get_flag!(remote_cq_data, is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
+impl<const RMA: bool, const DATA: bool, const TAGGED: bool>
+    TferOptions<true, true, RMA, DATA, TAGGED, false>
+{
+    // Only data transmits (no msg)
+    gen_set_get_flag!(
+        remote_cq_data,
+        is_remote_cq_data,
+        libfabric_sys::FI_REMOTE_CQ_DATA as u64
+    );
 }
 
-
-
-impl<const RMA: bool, const TAGGED: bool> TferOptions<true, true, RMA, false, TAGGED, false> { // Only msg transmits (no data)
+impl<const RMA: bool, const TAGGED: bool> TferOptions<true, true, RMA, false, TAGGED, false> {
+    // Only msg transmits (no data)
     gen_set_get_flag!(inject, is_inject, libfabric_sys::FI_INJECT as u64);
-    gen_set_get_flag!(inject_complete, is_inject_complete, libfabric_sys::FI_INJECT_COMPLETE as u64);
-    gen_set_get_flag!(transmit_complete, is_transmit_complete, libfabric_sys::FI_TRANSMIT_COMPLETE as u64);
-    gen_set_get_flag!(delivery_complete, is_delivery_complete, libfabric_sys::FI_DELIVERY_COMPLETE as u64);
+    gen_set_get_flag!(
+        inject_complete,
+        is_inject_complete,
+        libfabric_sys::FI_INJECT_COMPLETE as u64
+    );
+    gen_set_get_flag!(
+        transmit_complete,
+        is_transmit_complete,
+        libfabric_sys::FI_TRANSMIT_COMPLETE as u64
+    );
+    gen_set_get_flag!(
+        delivery_complete,
+        is_delivery_complete,
+        libfabric_sys::FI_DELIVERY_COMPLETE as u64
+    );
     // gen_set_get_flag!(remote_cq_data, is_remote_cq_data, libfabric_sys::FI_REMOTE_CQ_DATA as u64);
 }
 
-
-
-impl TferOptions<true, true, false, false, true, false> { // Only tagged msg transmits (no data)
-    gen_set_get_flag!(match_complete, is_match_complete, libfabric_sys::FI_MATCH_COMPLETE as u64);
+impl TferOptions<true, true, false, false, true, false> {
+    // Only tagged msg transmits (no data)
+    gen_set_get_flag!(
+        match_complete,
+        is_match_complete,
+        libfabric_sys::FI_MATCH_COMPLETE as u64
+    );
 }
 
-impl TferOptions<true, true, true, false, false, false> { // Only RMA msg transmits (no data)
-    gen_set_get_flag!(commit_complete, is_commit_complete, libfabric_sys::FI_COMMIT_COMPLETE as u64);
+impl TferOptions<true, true, true, false, false, false> {
+    // Only RMA msg transmits (no data)
+    gen_set_get_flag!(
+        commit_complete,
+        is_commit_complete,
+        libfabric_sys::FI_COMMIT_COMPLETE as u64
+    );
 }
 
-impl<const MSG: bool, const DATA: bool> TferOptions<true, MSG, false, DATA, false, false> { // Non-RMA or Tagged transmits
+impl<const MSG: bool, const DATA: bool> TferOptions<true, MSG, false, DATA, false, false> {
+    // Non-RMA or Tagged transmits
     gen_set_get_flag!(multicast, is_multicast, libfabric_sys::FI_MULTICAST as u64);
 }
 
-impl<const MSG: bool> TferOptions<false, MSG, false, false, false, false> { // All Posted Receive Operations (i.e. recv, recvmsg)
+impl<const MSG: bool> TferOptions<false, MSG, false, false, false, false> {
+    // All Posted Receive Operations (i.e. recv, recvmsg)
     gen_set_get_flag!(claim, is_claim, libfabric_sys::FI_CLAIM);
     gen_set_get_flag!(discard, is_discard, libfabric_sys::FI_DISCARD);
-    gen_set_get_flag!(multi_recv, is_multi_recv, libfabric_sys::FI_MULTI_RECV as u64);
+    gen_set_get_flag!(
+        multi_recv,
+        is_multi_recv,
+        libfabric_sys::FI_MULTI_RECV as u64
+    );
 }
 
-impl TferOptions<false, true, false, false, true, false> { // Only tagged Posted Receive Operations
+impl TferOptions<false, true, false, false, true, false> {
+    // Only tagged Posted Receive Operations
     gen_set_get_flag!(peek, is_peek, libfabric_sys::FI_PEEK as u64);
     gen_set_get_flag!(claim, is_claim, libfabric_sys::FI_CLAIM);
     gen_set_get_flag!(discard, is_discard, libfabric_sys::FI_DISCARD);
@@ -709,7 +837,6 @@ pub type TaggedSendMsgOptions = TferOptions<true, true, false, false, true, fals
 // pub type WriteOptions = TferOptions<true, false, true, false, false>;
 pub type WriteMsgOptions = TferOptions<true, true, true, false, false, false>;
 // pub type WriteDataOptions = TferOptions<true, false, true, true, false>;
-
 
 // pub type RecvOptions = TferOptions<false, false, false, false, false>;
 pub type RecvMsgOptions = TferOptions<false, true, false, false, false, false>;
@@ -727,23 +854,19 @@ pub type AtomicFetchMsgOptions = TferOptions<true, true, false, false, false, tr
 
 pub type CollectiveOptions = AtomicMsgOptions;
 
-#[derive(Clone,Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct TransferOptions {
     c_flags: u32,
 }
 
 impl TransferOptions {
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     #[allow(dead_code)]
     pub(crate) fn from_raw(val: u32) -> Self {
-        Self {
-            c_flags: val,
-        }
+        Self { c_flags: val }
     }
 
     pub(crate) fn transmit(mut self) -> Self {
@@ -756,14 +879,30 @@ impl TransferOptions {
         self
     }
 
-    gen_set_get_flag!(commit_complete, is_commit_complete, libfabric_sys::FI_COMMIT_COMPLETE);
+    gen_set_get_flag!(
+        commit_complete,
+        is_commit_complete,
+        libfabric_sys::FI_COMMIT_COMPLETE
+    );
     gen_set_get_flag!(completion, is_completion, libfabric_sys::FI_COMPLETION);
-    gen_set_get_flag!(delivery_complete, is_delivery_complete, libfabric_sys::FI_DELIVERY_COMPLETE);
+    gen_set_get_flag!(
+        delivery_complete,
+        is_delivery_complete,
+        libfabric_sys::FI_DELIVERY_COMPLETE
+    );
     gen_set_get_flag!(inject, is_inject, libfabric_sys::FI_INJECT);
-    gen_set_get_flag!(inject_complete, is_inject_complete, libfabric_sys::FI_INJECT_COMPLETE);
+    gen_set_get_flag!(
+        inject_complete,
+        is_inject_complete,
+        libfabric_sys::FI_INJECT_COMPLETE
+    );
     gen_set_get_flag!(multicast, is_multicast, libfabric_sys::FI_MULTICAST);
     gen_set_get_flag!(multi_recv, is_multi_recv, libfabric_sys::FI_MULTI_RECV);
-    gen_set_get_flag!(transmit_complete, is_transmit_complete, libfabric_sys::FI_TRANSMIT_COMPLETE);
+    gen_set_get_flag!(
+        transmit_complete,
+        is_transmit_complete,
+        libfabric_sys::FI_TRANSMIT_COMPLETE
+    );
 
     pub(crate) fn as_raw(&self) -> libfabric_sys::_bindgen_ty_3 {
         self.c_flags
@@ -776,15 +915,18 @@ impl Default for TransferOptions {
     }
 }
 
-gen_enum!(ParamType, libfabric_sys::fi_param_type,
+gen_enum!(
+    ParamType,
+    libfabric_sys::fi_param_type,
     (String, libfabric_sys::fi_param_type_FI_PARAM_STRING),
     (Int, libfabric_sys::fi_param_type_FI_PARAM_INT),
     (Bool, libfabric_sys::fi_param_type_FI_PARAM_BOOL),
     (SizeT, libfabric_sys::fi_param_type_FI_PARAM_SIZE_T)
 );
 
-gen_enum!(Protocol, libfabric_sys::_bindgen_ty_4, 
-
+gen_enum!(
+    Protocol,
+    libfabric_sys::_bindgen_ty_4,
     (Unspec, libfabric_sys::FI_PROTO_UNSPEC),
     (RdmaCmIbRc, libfabric_sys::FI_PROTO_RDMA_CM_IB_RC),
     (Iwarp, libfabric_sys::FI_PROTO_IWARP),
@@ -838,28 +980,27 @@ pub struct DomainCaps {
 
 impl DomainCaps {
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     pub(crate) fn from_raw(value: u64) -> Self {
-        DomainCaps {
-            c_flags: value,
-        }
-    }   
+        DomainCaps { c_flags: value }
+    }
 
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
-    }   
+    }
 
-    gen_set_get_flag!(directed_recv, is_directed_recv, libfabric_sys::FI_DIRECTED_RECV);
+    gen_set_get_flag!(
+        directed_recv,
+        is_directed_recv,
+        libfabric_sys::FI_DIRECTED_RECV
+    );
     gen_set_get_flag!(av_user_id, is_av_user_id, libfabric_sys::FI_AV_USER_ID);
     gen_set_get_flag!(local_comm, is_local_comm, libfabric_sys::FI_LOCAL_COMM);
     gen_set_get_flag!(remote_comm, is_remote_comm, libfabric_sys::FI_REMOTE_COMM);
     gen_set_get_flag!(shared_av, is_shared_av, libfabric_sys::FI_SHARED_AV);
 }
-
 
 impl From<DomainCaps> for u64 {
     fn from(val: DomainCaps) -> Self {
@@ -873,9 +1014,7 @@ pub struct CompletionFlags {
 
 impl CompletionFlags {
     pub(crate) fn from_raw(c_flags: u64) -> Self {
-        Self{
-            c_flags
-        }
+        Self { c_flags }
     }
 
     gen_get_flag!(is_send, libfabric_sys::FI_SEND as u64);
@@ -901,22 +1040,40 @@ pub struct AVSetOptions {
 
 impl AVSetOptions {
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
-    
+
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
 
     gen_set_get_flag!(universe, is_universe, libfabric_sys::FI_UNIVERSE);
     gen_set_get_flag!(barrier_set, is_barrier_set, libfabric_sys::FI_BARRIER_SET);
-    gen_set_get_flag!(broadcast_set, is_broadcast_set, libfabric_sys::FI_BROADCAST_SET);
-    gen_set_get_flag!(alltoall_set, is_alltoall_set, libfabric_sys::FI_ALLTOALL_SET);
-    gen_set_get_flag!(allreduce_set, is_allreduce_set, libfabric_sys::FI_ALLREDUCE_SET);
-    gen_set_get_flag!(allgather_set, is_allgather_set, libfabric_sys::FI_ALLGATHER_SET);
-    gen_set_get_flag!(reduce_scatter_set, is_reduce_scatter_set, libfabric_sys::FI_REDUCE_SCATTER_SET);
+    gen_set_get_flag!(
+        broadcast_set,
+        is_broadcast_set,
+        libfabric_sys::FI_BROADCAST_SET
+    );
+    gen_set_get_flag!(
+        alltoall_set,
+        is_alltoall_set,
+        libfabric_sys::FI_ALLTOALL_SET
+    );
+    gen_set_get_flag!(
+        allreduce_set,
+        is_allreduce_set,
+        libfabric_sys::FI_ALLREDUCE_SET
+    );
+    gen_set_get_flag!(
+        allgather_set,
+        is_allgather_set,
+        libfabric_sys::FI_ALLGATHER_SET
+    );
+    gen_set_get_flag!(
+        reduce_scatter_set,
+        is_reduce_scatter_set,
+        libfabric_sys::FI_REDUCE_SCATTER_SET
+    );
     gen_set_get_flag!(reduce_set, is_reduce_set, libfabric_sys::FI_REDUCE_SET);
     gen_set_get_flag!(scatter_set, is_scatter_set, libfabric_sys::FI_SCATTER_SET);
     gen_set_get_flag!(gather_set, is_gather_set, libfabric_sys::FI_GATHER_SET);
@@ -934,9 +1091,7 @@ pub struct JoinOptions {
 
 impl JoinOptions {
     pub fn new() -> Self {
-        Self {
-            c_flags: 0,
-        }
+        Self { c_flags: 0 }
     }
 
     pub(crate) fn as_raw(&self) -> u64 {

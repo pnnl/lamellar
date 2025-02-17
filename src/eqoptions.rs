@@ -7,7 +7,6 @@
 // pub struct WaitNoRetrieve;
 // pub struct WaitRetrieve;
 
-
 // pub trait EqWritable{}
 // pub trait EqConfig{}
 
@@ -28,7 +27,7 @@
 // }
 
 // impl<WRITE, WAIT, WAITFD> Options <WRITE, WAIT, WAITFD> {
-    
+
 //     pub(crate) fn wait_retrievable(self) -> Options<WRITE, WaitRetrieve, Off> {
 //         Options::<WRITE, WaitRetrieve, Off> {
 //             write: PhantomData,
@@ -73,7 +72,6 @@
 // impl<WRITE, WAITFD> crate::Waitable for Options<WRITE, WaitNoRetrieve, WAITFD> {}
 // impl<WRITE, WAITFD> crate::Waitable for Options<WRITE, WaitRetrieve, WAITFD> {}
 // impl<WRITE, WAITFD> crate::WaitRetrievable for Options<WRITE, WaitRetrieve, WAITFD> {}
-
 
 // impl<WAIT, WAITFD> Options<Off, WAIT, WAITFD> {}
 

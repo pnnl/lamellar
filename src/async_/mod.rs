@@ -11,7 +11,6 @@ pub mod eq;
 pub mod mr;
 mod xcontext;
 
-
 pub trait AsyncFid {
     fn trywait(&self) -> Result<(), Error>;
 }

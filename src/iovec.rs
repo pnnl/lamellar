@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 
 use crate::mr::MappedMemoryRegionKey;
 
+unsafe impl<'a> Send for IoVec<'a> {}
+unsafe impl<'a> Sync for IoVec<'a> {}
 #[repr(C)]
 pub struct IoVec<'a> {
     c_iovec: libfabric_sys::iovec,
@@ -38,6 +40,9 @@ impl<'a> IoVec<'a> {
         &self.c_iovec
     }
 }
+
+unsafe impl<'a> Send for IoVecMut<'a> {}
+unsafe impl<'a> Sync for IoVecMut<'a> {}
 
 #[repr(C)]
 pub struct IoVecMut<'a> {

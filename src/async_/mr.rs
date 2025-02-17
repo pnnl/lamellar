@@ -21,7 +21,6 @@ impl MemoryRegionImpl {
         flags: MrMode,
         ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
-
         let mut c_mr: *mut libfabric_sys::fid_mr = std::ptr::null_mut();
         let c_mr_ptr: *mut *mut libfabric_sys::fid_mr = &mut c_mr;
         let err = unsafe {
@@ -45,19 +44,15 @@ impl MemoryRegionImpl {
                 } else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(),&mut async_ctx as *mut AsyncCtx as usize).await?;
                     let res = eq
-                        .async_event_wait(
-                            libfabric_sys::FI_MR_COMPLETE,
-                            Fid(0),
-                            Some(ctx),
-                        )
+                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
                         .await?;
 
                     return Ok((
                         res,
                         Self {
-                            #[cfg(not(feature="threading-domain"))]
+                            #[cfg(not(feature = "threading-domain"))]
                             c_mr: OwnedMrFid::from(c_mr),
-                            #[cfg(feature="threading-domain")]
+                            #[cfg(feature = "threading-domain")]
                             c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
@@ -80,7 +75,7 @@ impl MemoryRegionImpl {
         domain: &MyRc<crate::async_::domain::AsyncDomainImpl>,
         mut attr: MemoryRegionAttr,
         flags: MrRegOpt,
-        ctx: &mut Context
+        ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
         // [TODO] Add context version
 
@@ -104,19 +99,15 @@ impl MemoryRegionImpl {
                 } else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), attr.c_attr.context as usize).await?;
                     let res = eq
-                        .async_event_wait(
-                            libfabric_sys::FI_MR_COMPLETE,
-                            Fid(0),
-                            Some(ctx),
-                        )
+                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
                         .await?;
 
                     return Ok((
                         res,
                         Self {
-                            #[cfg(not(feature="threading-domain"))]
+                            #[cfg(not(feature = "threading-domain"))]
                             c_mr: OwnedMrFid::from(c_mr),
-                            #[cfg(feature="threading-domain")]
+                            #[cfg(feature = "threading-domain")]
                             c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
@@ -167,19 +158,15 @@ impl MemoryRegionImpl {
                 } else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
                     let res = eq
-                        .async_event_wait(
-                            libfabric_sys::FI_MR_COMPLETE,
-                            Fid(0),
-                            Some(ctx),
-                        )
+                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
                         .await?;
 
                     return Ok((
                         res,
                         Self {
-                            #[cfg(feature="threading-domain")]
+                            #[cfg(feature = "threading-domain")]
                             c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
-                            #[cfg(not(feature="threading-domain"))]
+                            #[cfg(not(feature = "threading-domain"))]
                             c_mr: OwnedMrFid::from(c_mr),
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
@@ -233,7 +220,8 @@ impl MemoryRegion {
         ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
         // [TODO] Add context version
-        let (event, mr) = MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags, ctx).await?;
+        let (event, mr) =
+            MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags, ctx).await?;
         Ok((
             event,
             Self {

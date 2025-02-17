@@ -1,6 +1,4 @@
-use super::{
-    eq::{AsyncReadEq, EventQueue},
-};
+use super::eq::{AsyncReadEq, EventQueue};
 use crate::{
     av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase},
     domain::DomainBase,
@@ -75,10 +73,7 @@ impl AddressVector {
         ctx: &mut Context,
     ) -> Result<(Event, Vec<MappedAddress>), crate::error::Error> {
         // [TODO] as_raw_typed_fid async
-        let (event, fi_addresses) = self
-            .inner
-            .insert_async(addr, options.as_raw(), ctx)
-            .await?;
+        let (event, fi_addresses) = self.inner.insert_async(addr, options.as_raw(), ctx).await?;
         Ok((
             event,
             fi_addresses
@@ -92,7 +87,6 @@ impl AddressVector {
                 .collect::<Vec<_>>(),
         ))
     }
-
 }
 
 pub struct AddressVectorBuilder<'a> {

@@ -8,6 +8,7 @@ use libfabric_sys::{
     inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG,
 };
 
+use crate::connless_ep::UninitConnectionlessEndpoint;
 use crate::{
     av::{AddressVector, AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
     cntr::{Counter, ReadCntr},
@@ -18,16 +19,16 @@ use crate::{
     eq::{EventQueueBase, ReadEq},
     fabric::FabricImpl,
     fid::{
-        AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid, PepRawFid
+        AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid, OwnedPepFid,
+        PepRawFid,
     },
     info::{InfoEntry, Version},
     trigger::TriggerXpu,
     utils::check_error,
     Context, MyOnceCell, MyRc, MyRefCell, SyncSend,
 };
-use crate::{connless_ep::UninitConnectionlessEndpoint};
 
-#[cfg(feature="threading-completion")]
+#[cfg(feature = "threading-completion")]
 use crate::fid::EpCompletionOwnedTypedFid;
 
 #[repr(C)]
@@ -67,9 +68,9 @@ pub(crate) enum EpCq<CQ: ?Sized> {
 }
 
 pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
-    #[cfg(not(feature="threading-completion"))]
+    #[cfg(not(feature = "threading-completion"))]
     pub(crate) c_ep: OwnedEpFid,
-    #[cfg(feature="threading-completion")]
+    #[cfg(feature = "threading-completion")]
     pub(crate) c_ep: EpCompletionOwnedTypedFid<EpRawFid>,
     pub(crate) cq: MyOnceCell<EpCq<CQ>>,
     pub(crate) eq: MyOnceCell<MyRc<EQ>>,
@@ -123,7 +124,11 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
     fn getname(&self) -> Result<Address, crate::error::Error> {
         let mut len = 0;
         let err: i32 = unsafe {
-            libfabric_sys::inlined_fi_getname(self.as_typed_fid_mut().as_raw_fid(), std::ptr::null_mut(), &mut len)
+            libfabric_sys::inlined_fi_getname(
+                self.as_typed_fid_mut().as_raw_fid(),
+                std::ptr::null_mut(),
+                &mut len,
+            )
         };
         if -err as u32 == libfabric_sys::FI_ETOOSMALL {
             let mut address = vec![0; len];
@@ -368,23 +373,27 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
     }
 }
 
-impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> BaseEndpoint<EpRawFid> for EndpointImplBase<T, EQ, CQ> {}
+impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> BaseEndpoint<EpRawFid>
+    for EndpointImplBase<T, EQ, CQ>
+{
+}
 // impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SyncSend for EndpointImplBase<T, EQ, CQ> {}
 impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> BaseEndpoint<EpRawFid> for EndpointBase<T, STATE> {}
 impl<T: BaseEndpoint<EpRawFid>, STATE: EpState> SyncSend for EndpointBase<T, STATE> {}
 
-
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ActiveEndpoint for EndpointImplBase<T, EQ, CQ> {
     fn fid(&self) -> &OwnedEpFid {
-        #[cfg(feature="threading-completion")]
+        #[cfg(feature = "threading-completion")]
         return &self.c_ep.typed_fid;
-        #[cfg(not(feature="threading-completion"))]
+        #[cfg(not(feature = "threading-completion"))]
         return &self.c_ep;
     }
 }
 impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SyncSend for EndpointImplBase<T, EQ, CQ> {}
 
-impl<T: BaseEndpoint<EpRawFid> + ActiveEndpoint, STATE: EpState> ActiveEndpoint for EndpointBase<T, STATE> {
+impl<T: BaseEndpoint<EpRawFid> + ActiveEndpoint, STATE: EpState> ActiveEndpoint
+    for EndpointBase<T, STATE>
+{
     fn fid(&self) -> &OwnedEpFid {
         self.inner.fid()
     }
@@ -405,9 +414,9 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsFd for EndpointImplBase<T, E
 
 //================== Scalable Endpoint (fi_scalable_ep) ==================//
 pub(crate) struct ScalableEndpointImpl {
-    #[cfg(not(feature="threading-completion"))]
+    #[cfg(not(feature = "threading-completion"))]
     pub(crate) c_sep: OwnedEpFid,
-    #[cfg(feature="threading-completion")]
+    #[cfg(feature = "threading-completion")]
     pub(crate) c_sep: EpCompletionOwnedTypedFid<EpRawFid>,
     _domain_rc: MyRc<dyn DomainImplT>,
 }
@@ -459,11 +468,11 @@ impl ScalableEndpointImpl {
             ))
         } else {
             Ok(ScalableEndpointImpl {
-                #[cfg(not(any(feature="threading-domain", feature="threading-completion")))]
+                #[cfg(not(any(feature = "threading-domain", feature = "threading-completion")))]
                 c_sep: OwnedEpFid::from(c_sep),
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_sep: OwnedEpFid::from(c_sep, domain.c_domain.domain.clone()),
-                #[cfg(feature="threading-completion")]
+                #[cfg(feature = "threading-completion")]
                 c_sep: EpCompletionOwnedTypedFid::from(c_sep),
 
                 // #[cfg(not(feature="threading-domain"))]
@@ -528,7 +537,6 @@ impl<E> ScalableEndpoint<E> {
     // }
 }
 
-
 // impl AsFid for ScalableEndpointImpl {
 //     fn as_fid(&self) -> fid::BorrowedFid<'_> {
 //         self.c_sep.as_fid()
@@ -592,9 +600,9 @@ impl BaseEndpoint<EpRawFid> for ScalableEndpointImpl {}
 
 impl ActiveEndpoint for ScalableEndpointImpl {
     fn fid(&self) -> &OwnedEpFid {
-        #[cfg(feature="threading-completion")]
+        #[cfg(feature = "threading-completion")]
         return &self.c_sep.typed_fid;
-        #[cfg(not(feature="threading-completion"))]
+        #[cfg(not(feature = "threading-completion"))]
         return &self.c_sep;
     }
 }
@@ -681,7 +689,11 @@ impl<E> PassiveEndpointImplBase<E, dyn ReadEq> {
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_pep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_pep_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
+                flags,
+            )
         };
         if err != 0 {
             Err(crate::error::Error::from_err_code(
@@ -708,12 +720,17 @@ impl<E> PassiveEndpointBase<E, dyn ReadEq> {
 
 impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
     pub fn listen(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_listen(self.as_typed_fid_mut().as_raw_typed_fid()) };
+        let err =
+            unsafe { libfabric_sys::inlined_fi_listen(self.as_typed_fid_mut().as_raw_typed_fid()) };
 
         check_error(err.try_into().unwrap())
     }
 
-    pub fn reject<T0>(&self, fid: &impl AsRawFid, params: &[T0]) -> Result<(), crate::error::Error> {
+    pub fn reject<T0>(
+        &self,
+        fid: &impl AsRawFid,
+        params: &[T0],
+    ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_reject(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
@@ -743,7 +760,11 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointBase<E, EQ> {
         self.inner.listen()
     }
 
-    pub fn reject<T0>(&self, fid: &impl AsRawFid, params: &[T0]) -> Result<(), crate::error::Error> {
+    pub fn reject<T0>(
+        &self,
+        fid: &impl AsRawFid,
+        params: &[T0],
+    ) -> Result<(), crate::error::Error> {
         self.inner.reject(fid, params)
     }
 
@@ -756,7 +777,7 @@ impl<E, EQ: ?Sized + SyncSend> SyncSend for PassiveEndpointBase<E, EQ> {}
 impl<E, EQ: ?Sized + SyncSend + ReadEq> BaseEndpoint<PepRawFid> for PassiveEndpointBase<E, EQ> {}
 
 impl<E, EQ: ?Sized + ReadEq> SyncSend for PassiveEndpointImplBase<E, EQ> {}
-impl<E, EQ: ?Sized + ReadEq> BaseEndpoint<PepRawFid>for PassiveEndpointImplBase<E, EQ> {}
+impl<E, EQ: ?Sized + ReadEq> BaseEndpoint<PepRawFid> for PassiveEndpointImplBase<E, EQ> {}
 
 // impl<E, EQ: ?Sized + ReadEq> AsFid for PassiveEndpointImplBase<E, EQ> {
 //     fn as_fid(&self) -> fid::BorrowedFid {
@@ -946,12 +967,11 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
             ))
         } else {
             Ok(Self {
-
-                #[cfg(not(any(feature="threading-domain", feature="threading-completion")))]
+                #[cfg(not(any(feature = "threading-domain", feature = "threading-completion")))]
                 c_ep: OwnedEpFid::from(c_ep),
-                #[cfg(feature="threading-domain")]
+                #[cfg(feature = "threading-domain")]
                 c_ep: OwnedEpFid::from(c_ep, domain.c_domain.domain.clone()),
-                #[cfg(feature="threading-completion")]
+                #[cfg(feature = "threading-completion")]
                 c_ep: EpCompletionOwnedTypedFid::from(c_ep),
                 _bound_av: MyOnceCell::new(),
                 _bound_cntrs: MyRefCell::new(Vec::new()),
@@ -1021,7 +1041,11 @@ impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq> EndpointImplBase<EP
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
+                flags,
+            )
         };
 
         if err != 0 {
@@ -1042,7 +1066,11 @@ impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq> EndpointImplBase<EP
         flags: u64,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), res.as_typed_fid().as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                res.as_typed_fid().as_raw_fid(),
+                flags,
+            )
         };
 
         if err != 0 {
@@ -1054,7 +1082,7 @@ impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq> EndpointImplBase<EP
             self._bound_cntrs.borrow_mut().push(res.clone());
             #[cfg(feature = "thread-safe")]
             self._bound_cntrs.write().push(res.clone());
-            #[cfg(feature="threading-completion")]
+            #[cfg(feature = "threading-completion")]
             let _ = self.c_ep.bound_cntr.set(res.fid().typed_fid.clone());
             Ok(())
         }
@@ -1073,7 +1101,11 @@ impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), cq.as_typed_fid().as_raw_fid(), flags)
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                cq.as_typed_fid().as_raw_fid(),
+                flags,
+            )
         };
 
         check_error(err as isize)?;
@@ -1081,7 +1113,7 @@ impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
             panic!("Endpoint already bound with another shared Completion Queueu");
         }
 
-        #[cfg(feature="threading-completion")]
+        #[cfg(feature = "threading-completion")]
         let _ = self.c_ep.bound_cq0.set(cq.fid().typed_fid.clone());
 
         Ok(())
@@ -1105,12 +1137,20 @@ impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
         }
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), tx_cq.as_typed_fid().as_raw_fid(), tx_flags)
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                tx_cq.as_typed_fid().as_raw_fid(),
+                tx_flags,
+            )
         };
         check_error(err as isize)?;
 
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), rx_cq.as_typed_fid().as_raw_fid(), rx_flags)
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                rx_cq.as_typed_fid().as_raw_fid(),
+                rx_flags,
+            )
         };
         check_error(err as isize)?;
 
@@ -1121,9 +1161,9 @@ impl<EP, EQ: ?Sized + ReadEq + 'static> EndpointImplBase<EP, EQ, dyn ReadCq> {
         {
             panic!("Endpoint already bound with other  Completion Queueus");
         }
-        #[cfg(feature="threading-completion")]
+        #[cfg(feature = "threading-completion")]
         let _ = self.c_ep.bound_cq0.set(tx_cq.fid().typed_fid.clone());
-        #[cfg(feature="threading-completion")]
+        #[cfg(feature = "threading-completion")]
         let _ = self.c_ep.bound_cq1.set(rx_cq.fid().typed_fid.clone());
 
         Ok(())
@@ -1136,7 +1176,11 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn ReadEq, CQ> {
         eq: &MyRc<T>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_ep_bind(self.as_typed_fid_mut().as_raw_typed_fid(), eq.as_typed_fid().as_raw_fid(), 0)
+            libfabric_sys::inlined_fi_ep_bind(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                eq.as_typed_fid().as_raw_fid(),
+                0,
+            )
         };
 
         if err != 0 {
@@ -1153,9 +1197,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn ReadEq, CQ> {
     }
 }
 
-impl<EP, EQ: ?Sized + 'static + ReadEq, CQ: ?Sized + ReadCq>
-    EndpointImplBase<EP, EQ, CQ>
-{
+impl<EP, EQ: ?Sized + 'static + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<EP, EQ, CQ> {
     pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<EP, EQ, CQ> {
         IncompleteBindCntr { ep: self, flags: 0 }
     }
@@ -1352,7 +1394,7 @@ impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsTypedFid<EpRawFid>
 //     }
 // }
 
-pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend{
+pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
     fn fid(&self) -> &OwnedEpFid;
 
     fn cancel(&self, context: &mut Context) -> Result<(), crate::error::Error> {
@@ -1366,7 +1408,9 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend{
     }
 
     fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
-        let ret = unsafe { libfabric_sys::inlined_fi_rx_size_left(self.as_typed_fid_mut().as_raw_typed_fid()) };
+        let ret = unsafe {
+            libfabric_sys::inlined_fi_rx_size_left(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code(
@@ -1378,7 +1422,9 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend{
     }
 
     fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
-        let ret = unsafe { libfabric_sys::inlined_fi_tx_size_left(self.as_typed_fid_mut().as_raw_typed_fid()) };
+        let ret = unsafe {
+            libfabric_sys::inlined_fi_tx_size_left(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
 
         if ret < 0 {
             Err(crate::error::Error::from_err_code(

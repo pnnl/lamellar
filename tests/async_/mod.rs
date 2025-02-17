@@ -265,7 +265,11 @@ impl Default for TestsGlobalCtx {
 
 pub fn ft_open_fabric_res<E>(
     info: &InfoEntry<E>,
-) -> (Fabric, EventQueue<EventQueueOptions>, DomainBase<NoEventQueue>) {
+) -> (
+    Fabric,
+    EventQueue<EventQueueOptions>,
+    DomainBase<NoEventQueue>,
+) {
     let fab = libfabric::fabric::FabricBuilder::new().build(info).unwrap();
     let eq = EventQueueBuilder::new(&fab).write().build().unwrap();
     let domain = ft_open_domain_res(info, &fab);
@@ -273,7 +277,10 @@ pub fn ft_open_fabric_res<E>(
     (fab, eq, domain)
 }
 
-pub fn ft_open_domain_res<E>(info: &InfoEntry<E>, fab: &fabric::Fabric) -> DomainBase<NoEventQueue> {
+pub fn ft_open_domain_res<E>(
+    info: &InfoEntry<E>,
+    fab: &fabric::Fabric,
+) -> DomainBase<NoEventQueue> {
     DomainBuilder::new(fab, info).build().unwrap()
 }
 
@@ -985,8 +992,12 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
     // (info, fabric, ep, domain, tx_cq, rx_cq, tx_cntr, rx_cntr, eq, mr, av, mr_desc)
 }
 
-pub async fn ft_av_insert<E>(info: &InfoEntry<E>, av: &AddressVector, addr: &Address, options: AVOptions) -> MappedAddress {
-
+pub async fn ft_av_insert<E>(
+    info: &InfoEntry<E>,
+    av: &AddressVector,
+    addr: &Address,
+    options: AVOptions,
+) -> MappedAddress {
     let mut ctx = info.allocate_context();
 
     let (_, mut added) = av
@@ -1163,9 +1174,16 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
             // unsafe{ ft_post!(write, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, fi_addr, addr, key); }
             unsafe {
-                ep.write_to_async(buf, data_desc, fi_addr, addr, key, &mut gl_ctx.tx_ctx.as_mut().unwrap())
-                    .await
-                    .unwrap();
+                ep.write_to_async(
+                    buf,
+                    data_desc,
+                    fi_addr,
+                    addr,
+                    key,
+                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                )
+                .await
+                .unwrap();
             }
         }
 
@@ -1177,9 +1195,17 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
             let remote_cq_data = gl_ctx.remote_cq_data;
             // unsafe{ ft_post!(writedata, ft_progress, tx_cq, gl_ctx.tx_seq, &mut gl_ctx.tx_cq_cntr, "fi_write", ep, buf, data_desc, remote_cq_data, fi_addr, addr, key); }
             unsafe {
-                ep.writedata_to_async(buf, data_desc, remote_cq_data, fi_addr, addr, key, gl_ctx.tx_ctx.as_mut().unwrap())
-                    .await
-                    .unwrap();
+                ep.writedata_to_async(
+                    buf,
+                    data_desc,
+                    remote_cq_data,
+                    fi_addr,
+                    addr,
+                    key,
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
+                )
+                .await
+                .unwrap();
             }
         }
 
@@ -1287,26 +1313,9 @@ pub async fn connless_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
         SendOp::Send => {
             if let Some(fi_address) = remote_address {
                 if data != NO_CQ_DATA {
-                    ft_post_async!(
-                        senddata_to_async,
-                        "",
-                        ep,
-                        base,
-                        desc,
-                        data,
-                        fi_address,
-                        ctx
-                    )
+                    ft_post_async!(senddata_to_async, "", ep, base, desc, data, fi_address, ctx)
                 } else {
-                    ft_post_async!(
-                        send_to_async,
-                        "",
-                        ep,
-                        base,
-                        desc,
-                        fi_address,
-                        ctx
-                    )
+                    ft_post_async!(send_to_async, "", ep, base, desc, fi_address, ctx)
                 }
             }
         }

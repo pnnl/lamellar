@@ -2,10 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{
     cq::ReadCq,
-    ep::{
-        Address, Connected, EndpointBase, EndpointImplBase, Unconnected,
-        UninitUnconnected,
-    },
+    ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected, UninitUnconnected},
     eq::{ConnectedEvent, ReadEq},
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid},
     utils::check_error,
@@ -29,7 +26,8 @@ pub type UnconnectedEndpoint<T> =
 impl<EP: AsTypedFid<EpRawFid>> UninitUnconnectedEndpointBase<EP> {
     pub fn enable(self) -> Result<UnconnectedEndpointBase<EP>, crate::error::Error> {
         // TODO: Move this into an UninitEp struct
-        let err = unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
+        let err =
+            unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
         Ok(UnconnectedEndpointBase::<EP> {
             inner: self.inner.clone(),
@@ -79,7 +77,11 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
 
     pub fn accept(&self) -> Result<(), crate::error::Error> {
         let err = unsafe {
-            libfabric_sys::inlined_fi_accept(self.as_typed_fid_mut().as_raw_typed_fid(), std::ptr::null_mut(), 0)
+            libfabric_sys::inlined_fi_accept(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                std::ptr::null_mut(),
+                0,
+            )
         };
 
         check_error(err.try_into().unwrap())
@@ -109,7 +111,9 @@ impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
 
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
     pub fn shutdown(&self) -> Result<(), crate::error::Error> {
-        let err = unsafe { libfabric_sys::inlined_fi_shutdown(self.as_typed_fid_mut().as_raw_typed_fid(), 0) };
+        let err = unsafe {
+            libfabric_sys::inlined_fi_shutdown(self.as_typed_fid_mut().as_raw_typed_fid(), 0)
+        };
 
         check_error(err.try_into().unwrap())
     }
