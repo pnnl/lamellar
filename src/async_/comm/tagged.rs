@@ -62,20 +62,18 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
             &mut crate::msg::MsgTaggedConnectedMut<'a>,
         >,
         options: TaggedRecvMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        let imm_msg = match msg {
-            Either::Left(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgTaggedMut, &MsgTaggedConnectedMut>::Left(msg)
-            }
-            Either::Right(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgTaggedMut, &MsgTaggedConnectedMut>::Right(msg)
-            }
+        let imm_msg = match &msg {
+            Either::Left(msg) => Either::<&MsgTaggedMut, &MsgTaggedConnectedMut>::Left(msg),
+            Either::Right(msg) => Either::<&MsgTaggedMut, &MsgTaggedConnectedMut>::Right(msg),
         };
 
         self.trecvmsg_impl(imm_msg, options)?;
+
+        let ctx = match &mut msg {
+            Either::Left(msg) => msg.context(),
+            Either::Right(msg) => msg.context(),
+        };
 
         let cq = self.retrieve_rx_cq();
         cq.wait_for_ctx_async(ctx).await
@@ -107,7 +105,6 @@ pub trait AsyncTagRecvEp {
         &self,
         msg: &mut crate::msg::MsgTaggedMut<'a>,
         options: TaggedRecvMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -134,7 +131,6 @@ pub trait ConnectedAsyncTagRecvEp {
         &self,
         msg: &mut crate::msg::MsgTaggedConnectedMut<'a>,
         options: TaggedRecvMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -182,10 +178,8 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
         &self,
         msg: &mut crate::msg::MsgTaggedMut<'a>,
         options: TaggedRecvMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.trecvmsg_async_impl(Either::Left(msg), options, ctx)
-            .await
+        self.trecvmsg_async_impl(Either::Left(msg), options).await
     }
 }
 
@@ -221,10 +215,8 @@ impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
         &self,
         msg: &mut crate::msg::MsgTaggedConnectedMut<'a>,
         options: TaggedRecvMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.trecvmsg_async_impl(Either::Right(msg), options, ctx)
-            .await
+        self.trecvmsg_async_impl(Either::Right(msg), options).await
     }
 }
 
@@ -259,20 +251,18 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
         &self,
         mut msg: Either<&mut crate::msg::MsgTagged<'a>, &mut crate::msg::MsgTaggedConnected<'a>>,
         options: TaggedSendMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        let imm_msg = match msg {
-            Either::Left(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgTagged, &MsgTaggedConnected>::Left(msg)
-            }
-            Either::Right(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgTagged, &MsgTaggedConnected>::Right(msg)
-            }
+        let imm_msg = match &msg {
+            Either::Left(ref msg) => Either::<&MsgTagged, &MsgTaggedConnected>::Left(msg),
+            Either::Right(ref msg) => Either::<&MsgTagged, &MsgTaggedConnected>::Right(msg),
         };
 
         self.tsendmsg_impl(imm_msg, options)?;
+
+        let ctx = match &mut msg {
+            Either::Left(msg) => msg.context(),
+            Either::Right(msg) => msg.context(),
+        };
 
         let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
@@ -316,7 +306,6 @@ pub trait AsyncTagSendEp: TagSendEp {
         &self,
         msg: &mut crate::msg::MsgTagged<'a>,
         options: TaggedSendMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsenddata_to_async<T>(
         &self,
@@ -350,7 +339,6 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
         &self,
         msg: &mut crate::msg::MsgTaggedConnected<'a>,
         options: TaggedSendMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn tsenddata_async<T>(
         &self,
@@ -404,10 +392,8 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
         &self,
         msg: &mut crate::msg::MsgTagged<'a>,
         options: TaggedSendMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsendmsg_async_impl(Either::Left(msg), options, ctx)
-            .await
+        self.tsendmsg_async_impl(Either::Left(msg), options).await
     }
 
     #[inline]
@@ -454,10 +440,8 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
         &self,
         msg: &mut crate::msg::MsgTaggedConnected<'a>,
         options: TaggedSendMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsendmsg_async_impl(Either::Right(msg), options, ctx)
-            .await
+        self.tsendmsg_async_impl(Either::Right(msg), options).await
     }
 
     #[inline]

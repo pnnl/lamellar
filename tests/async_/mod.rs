@@ -1306,9 +1306,9 @@ pub async fn connless_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
             let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
 
             let fi_addr = remote_address.as_ref().unwrap();
-            let mut msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, None);
+            let mut msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, None, ctx);
             let msg_ref = &mut msg;
-            ft_post_async!(sendmsg_to_async, "sendmsg", ep, msg_ref, flag, ctx);
+            ft_post_async!(sendmsg_to_async, "sendmsg", ep, msg_ref, flag);
         }
         SendOp::Send => {
             if let Some(fi_address) = remote_address {
@@ -1344,9 +1344,9 @@ pub async fn connected_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
             let iov = libfabric::iovec::IoVec::from_slice(base);
             let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
 
-            let mut msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, None);
+            let mut msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, None, ctx);
             let msg_ref = &mut msg;
-            ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag, ctx);
+            ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag);
         }
         SendOp::Send => {
             if data != NO_CQ_DATA {
@@ -1532,10 +1532,11 @@ pub async fn connless_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
             let fi_address = remote_address.as_ref().unwrap();
-            let mut msg =
-                libfabric::msg::MsgTagged::from_iov(&iov, mr_desc, fi_address, None, op_tag, None);
+            let mut msg = libfabric::msg::MsgTagged::from_iov(
+                &iov, mr_desc, fi_address, None, op_tag, None, ctx,
+            );
             let msg_ref = &mut msg;
-            ep.tsendmsg_to_async(msg_ref, flag, ctx).await.unwrap();
+            ep.tsendmsg_to_async(msg_ref, flag).await.unwrap();
         }
         TagSendOp::TagSend => {
             if let Some(fi_address) = remote_address {
@@ -1584,9 +1585,11 @@ pub async fn connected_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
     match op {
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
-            let mut msg = libfabric::msg::MsgTaggedConnected::from_iov(&iov, mr_desc, None, op_tag, None);
+            let mut msg = libfabric::msg::MsgTaggedConnected::from_iov(
+                &iov, mr_desc, None, op_tag, None, ctx,
+            );
             let msg_ref = &mut msg;
-            ep.tsendmsg_async(msg_ref, flag, ctx).await.unwrap();
+            ep.tsendmsg_async(msg_ref, flag).await.unwrap();
         }
         TagSendOp::TagSend => {
             if data != NO_CQ_DATA {

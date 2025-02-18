@@ -204,6 +204,7 @@ impl RmaIoVec {
         self.c_rma_iovec.key
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_rma_iov {
         &self.c_rma_iovec
     }
@@ -238,6 +239,7 @@ impl RmaIoc {
         self.c_rma_ioc.addr
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_rma_ioc {
         &self.c_rma_ioc
     }

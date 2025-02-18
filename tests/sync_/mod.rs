@@ -1338,7 +1338,7 @@ pub fn connected_msg_post(
             } else {
                 &mut default_desc()
             };
-            let msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, None);
+            let msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, None, ctx);
             let msg_ref = &msg;
             ft_post!(
                 sendmsg,
@@ -1453,7 +1453,7 @@ pub fn conless_msg_post(
                 } else {
                     &mut default_desc()
                 };
-                let msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, None);
+                let msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, None, ctx);
                 let msg_ref = &msg;
                 ft_post!(
                     sendmsg_to,
@@ -1783,7 +1783,8 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
             // let mut mem_descs = vec![default_desc()];
-            let msg = libfabric::msg::MsgTaggedConnected::from_iov(&iov, desc, None, *tx_seq, None);
+            let msg =
+                libfabric::msg::MsgTaggedConnected::from_iov(&iov, desc, None, *tx_seq, None, ctx);
             let msg_ref = &msg;
             ft_post!(
                 tsendmsg,
@@ -1880,6 +1881,7 @@ pub fn conless_tagged_post<E: TagDefaultCap>(
                 None,
                 *tx_seq,
                 None,
+                ctx,
             );
             let msg_ref = &msg;
             ft_post!(

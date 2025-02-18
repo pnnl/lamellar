@@ -71,21 +71,18 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
             &mut crate::msg::MsgAtomicConnected<'_, T>,
         >,
         options: AtomicMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        let c_msg = match &mut msg {
-            Either::Left(msg) => msg.inner_mut(),
-            Either::Right(msg) => msg.inner_mut(),
-        };
-
-        c_msg.context = ctx.inner_mut();
-
         let imm_msg = match &msg {
             Either::Left(msg) => Either::Left(&**msg),
             Either::Right(msg) => Either::Right(&**msg),
         };
 
         self.atomicmsg_impl(imm_msg, options)?;
+
+        let ctx = match &mut msg {
+            Either::Left(msg) => msg.context(),
+            Either::Right(msg) => msg.context(),
+        };
 
         let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
@@ -121,7 +118,6 @@ pub trait AsyncAtomicWriteEp {
         &self,
         msg: &mut crate::msg::MsgAtomic<T>,
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -150,7 +146,6 @@ pub trait ConnectedAsyncAtomicWriteEp {
         &self,
         msg: &mut crate::msg::MsgAtomicConnected<T>,
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -212,9 +207,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
         &self,
         msg: &mut crate::msg::MsgAtomic<T>,
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomicmsg_async_impl(Either::Left(msg), options, context)
+        self.atomicmsg_async_impl(Either::Left(msg), options)
     }
 }
 
@@ -251,9 +245,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
         &self,
         msg: &mut crate::msg::MsgAtomicConnected<T>,
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomicmsg_async_impl(Either::Right(msg), options, context)
+        self.atomicmsg_async_impl(Either::Right(msg), options)
     }
 }
 
@@ -323,21 +316,18 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
         resultv: &mut [crate::iovec::IocMut<'_, T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicFetchMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        let c_atomic_msg = match &mut msg {
-            Either::Left(msg) => msg.inner_mut(),
-            Either::Right(msg) => msg.inner_mut(),
-        };
-
-        c_atomic_msg.context = ctx.inner_mut();
-
         let imm_msg = match &msg {
             Either::Left(msg) => Either::Left(&**msg),
             Either::Right(msg) => Either::Right(&**msg),
         };
 
         self.fetch_atomicmsg_impl(imm_msg, resultv, res_desc, options)?;
+
+        let ctx = match &mut msg {
+            Either::Left(msg) => msg.context(),
+            Either::Right(msg) => msg.context(),
+        };
 
         let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
@@ -379,7 +369,6 @@ pub trait AsyncAtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicFetchMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -416,7 +405,6 @@ pub trait ConnectedAsyncAtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicFetchMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -486,9 +474,8 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicFetchMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.fetch_atomicmsg_async_impl(Either::Left(msg), resultv, res_desc, options, context)
+        self.fetch_atomicmsg_async_impl(Either::Left(msg), resultv, res_desc, options)
     }
 }
 
@@ -533,9 +520,8 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicFetchMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.fetch_atomicmsg_async_impl(Either::Right(msg), resultv, res_desc, options, context)
+        self.fetch_atomicmsg_async_impl(Either::Right(msg), resultv, res_desc, options)
     }
 }
 
@@ -616,21 +602,18 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
         resultv: &mut [crate::iovec::IocMut<'_, T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        let c_atomic_msg = match &mut msg {
-            Either::Left(msg) => msg.inner_mut(),
-            Either::Right(msg) => msg.inner_mut(),
-        };
-
-        c_atomic_msg.context = ctx.inner_mut();
-
         let imm_msg = match &msg {
             Either::Left(msg) => Either::Left(&**msg),
             Either::Right(msg) => Either::Right(&**msg),
         };
 
         self.compare_atomicmsg_impl(imm_msg, comparev, compare_desc, resultv, res_desc, options)?;
+
+        let ctx = match &mut msg {
+            Either::Left(msg) => msg.context(),
+            Either::Right(msg) => msg.context(),
+        };
 
         let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
@@ -679,7 +662,6 @@ pub trait AsyncAtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -723,7 +705,6 @@ pub trait ConnectedAsyncAtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -808,7 +789,6 @@ impl<EP: AsyncAtomicCASImpl + ConnlessEp> AsyncAtomicCASEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.compare_atomicmsg_async_impl(
             Either::Left(msg),
@@ -817,7 +797,6 @@ impl<EP: AsyncAtomicCASImpl + ConnlessEp> AsyncAtomicCASEp for EP {
             resultv,
             res_desc,
             options,
-            context,
         )
     }
 }
@@ -893,7 +872,6 @@ impl<EP: AsyncAtomicCASImpl + ConnectedEp> ConnectedAsyncAtomicCASEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: &mut [impl DataDescriptor],
         options: AtomicMsgOptions,
-        context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.compare_atomicmsg_async_impl(
             Either::Right(msg),
@@ -902,7 +880,6 @@ impl<EP: AsyncAtomicCASImpl + ConnectedEp> ConnectedAsyncAtomicCASEp for EP {
             resultv,
             res_desc,
             options,
-            context,
         )
     }
 }

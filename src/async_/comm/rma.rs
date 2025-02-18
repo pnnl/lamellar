@@ -64,19 +64,17 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
         &self,
         mut msg: Either<&mut crate::msg::MsgRmaMut<'a>, &mut crate::msg::MsgRmaConnectedMut<'a>>,
         options: ReadMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match msg {
-            Either::Left(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgRmaMut, &MsgRmaConnectedMut>::Left(msg)
-            }
-            Either::Right(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgRmaMut, &MsgRmaConnectedMut>::Right(msg)
-            }
+            Either::Left(ref mut msg) => Either::<&MsgRmaMut, &MsgRmaConnectedMut>::Left(msg),
+            Either::Right(ref mut msg) => Either::<&MsgRmaMut, &MsgRmaConnectedMut>::Right(msg),
         };
         self.readmsg_impl(imm_msg, options)?;
+
+        let ctx = match msg {
+            Either::Left(ref mut msg) => msg.context(),
+            Either::Right(ref mut msg) => msg.context(),
+        };
 
         let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
@@ -114,7 +112,6 @@ pub trait AsyncReadEp {
         &self,
         msg: &mut crate::msg::MsgRmaMut,
         options: ReadMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -150,7 +147,6 @@ pub trait ConnectedAsyncReadEp {
         &self,
         msg: &mut crate::msg::MsgRmaConnectedMut,
         options: ReadMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
@@ -195,10 +191,8 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
         &self,
         msg: &mut crate::msg::MsgRmaMut<'a>,
         options: ReadMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.readmsg_async_impl(Either::Left(msg), options, ctx)
-            .await
+        self.readmsg_async_impl(Either::Left(msg), options).await
     }
 }
 
@@ -231,10 +225,8 @@ impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
         &self,
         msg: &mut crate::msg::MsgRmaConnectedMut<'a>,
         options: ReadMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.readmsg_async_impl(Either::Right(msg), options, ctx)
-            .await
+        self.readmsg_async_impl(Either::Right(msg), options).await
     }
 }
 
@@ -309,20 +301,18 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         &self,
         mut msg: Either<&mut crate::msg::MsgRma<'a>, &mut crate::msg::MsgRmaConnected<'a>>,
         options: WriteMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match msg {
-            Either::Left(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgRma, &MsgRmaConnected>::Left(msg)
-            }
-            Either::Right(ref mut msg) => {
-                msg.inner_mut().context = ctx.inner_mut();
-                Either::<&MsgRma, &MsgRmaConnected>::Right(msg)
-            }
+            Either::Left(ref mut msg) => Either::<&MsgRma, &MsgRmaConnected>::Left(msg),
+            Either::Right(ref mut msg) => Either::<&MsgRma, &MsgRmaConnected>::Right(msg),
         };
 
         self.writemsg_impl(imm_msg, options)?;
+
+        let ctx = match msg {
+            Either::Left(ref mut msg) => msg.context(),
+            Either::Right(ref mut msg) => msg.context(),
+        };
 
         let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
@@ -363,7 +353,6 @@ pub trait AsyncWriteEp: WriteEp {
         &self,
         msg: &mut crate::msg::MsgRma,
         options: WriteMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
     /// Async version of [crate::comm::rma::WriteEp::writedata_to]
@@ -413,7 +402,6 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
         &self,
         msg: &mut crate::msg::MsgRmaConnected,
         options: WriteMsgOptions,
-        ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
     /// Async version of [crate::comm::rma::WriteEp::writedata]
@@ -484,9 +472,8 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
         &self,
         msg: Either<&mut crate::msg::MsgRma<'a>, &mut crate::msg::MsgRmaConnected<'a>>,
         options: WriteMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.inner.writemsg_async_impl(msg, options, ctx).await
+        self.inner.writemsg_async_impl(msg, options).await
     }
 }
 
@@ -538,9 +525,8 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
         &self,
         msg: Either<&mut crate::msg::MsgRma<'a>, &mut crate::msg::MsgRmaConnected<'a>>,
         options: WriteMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.inner.writemsg_async_impl(msg, options, ctx).await
+        self.inner.writemsg_async_impl(msg, options).await
     }
 }
 
@@ -578,10 +564,8 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
         &self,
         msg: &mut crate::msg::MsgRma<'a>,
         options: WriteMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.writemsg_async_impl(Either::Left(msg), options, ctx)
-            .await
+        self.writemsg_async_impl(Either::Left(msg), options).await
     }
 
     #[inline]
@@ -633,10 +617,8 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
         &self,
         msg: &mut crate::msg::MsgRmaConnected<'a>,
         options: WriteMsgOptions,
-        ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.writemsg_async_impl(Either::Right(msg), options, ctx)
-            .await
+        self.writemsg_async_impl(Either::Right(msg), options).await
     }
 
     #[inline]
