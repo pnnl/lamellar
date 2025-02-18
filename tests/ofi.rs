@@ -1,3 +1,4 @@
+use libfabric::xcontext::RxCaps;
 use libfabric::{
     av::AddressVectorBuilder,
     comm::{
@@ -1672,6 +1673,7 @@ macro_rules! gen_info {
                 })
                 .enter_hints()
                 .enter_ep_attr()
+                .tx_ctx_cnt(0)
                 .type_($ep_type)
                 .leave_ep_attr()
                 .enter_domain_attr()
@@ -1688,7 +1690,13 @@ macro_rules! gen_info {
                 .leave_domain_attr()
                 .enter_tx_attr()
                 .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+                .op_flags(libfabric::enums::TransferOptions::new().delivery_complete())
+                .size(1024)
                 .leave_tx_attr()
+                .enter_rx_attr()
+                .caps(RxCaps::new().recv().collective())
+                .size(1024)
+                .leave_rx_attr()
                 .addr_format(libfabric::enums::AddressFormat::Unspec)
                 .caps($caps)
                 .leave_hints();

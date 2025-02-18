@@ -1,12 +1,11 @@
 use crate::async_::cq::AsyncReadCq;
 use crate::async_::eq::AsyncReadEq;
-use crate::comm::atomic::{AtomicCASImpl, AtomicFetchEpImpl, AtomicValidEp};
+use crate::comm::atomic::{AtomicCASImpl, AtomicFetchEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::enums::{AtomicFetchMsgOptions, AtomicMsgOptions};
 use crate::ep::{Connected, Connectionless, EndpointBase, EndpointImplBase};
-use crate::fid::{AsTypedFid, EpRawFid};
-use crate::infocapsoptions::{AtomicCap, MsgCap, ReadMod, RecvMod, WriteMod};
+use crate::infocapsoptions::{AtomicCap, ReadMod, WriteMod};
 use crate::utils::Either;
 use crate::{
     async_::ep::AsyncTxEp,

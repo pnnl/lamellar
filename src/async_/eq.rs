@@ -455,7 +455,7 @@ impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
 }
 
 pub trait AsyncReadEq: ReadEq + AsyncFid {
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead;
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a>;
     fn async_event_wait<'a>(
         &'a self,
         event_type: libfabric_sys::_bindgen_ty_18,
@@ -489,7 +489,7 @@ impl AsyncEventQueueImpl<false> {
 }
 
 impl AsyncReadEq for AsyncEventQueueImpl<true> {
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a> {
         EqAsyncRead::new(buf, event, EqType::Write(self))
     }
 
@@ -504,7 +504,7 @@ impl AsyncReadEq for AsyncEventQueueImpl<true> {
 }
 
 impl AsyncReadEq for AsyncEventQueueImpl<false> {
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a> {
         EqAsyncRead::new(buf, event, EqType::NoWrite(self))
     }
 
@@ -519,7 +519,7 @@ impl AsyncReadEq for AsyncEventQueueImpl<false> {
 }
 
 impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead {
+    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a> {
         self.inner.read_in_async(buf, event)
     }
 
