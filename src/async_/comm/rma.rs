@@ -68,11 +68,11 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match msg {
             Either::Left(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgRmaMut, &MsgRmaConnectedMut>::Left(msg)
             }
             Either::Right(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgRmaMut, &MsgRmaConnectedMut>::Right(msg)
             }
         };
@@ -313,11 +313,11 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match msg {
             Either::Left(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgRma, &MsgRmaConnected>::Left(msg)
             }
             Either::Right(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgRma, &MsgRmaConnected>::Right(msg)
             }
         };

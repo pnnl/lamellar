@@ -1338,7 +1338,7 @@ pub fn connected_msg_post(
             } else {
                 &mut default_desc()
             };
-            let msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, 0);
+            let msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, None);
             let msg_ref = &msg;
             ft_post!(
                 sendmsg,
@@ -1453,7 +1453,7 @@ pub fn conless_msg_post(
                 } else {
                     &mut default_desc()
                 };
-                let msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, 0);
+                let msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, None);
                 let msg_ref = &msg;
                 ft_post!(
                     sendmsg_to,
@@ -1783,7 +1783,7 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
             // let mut mem_descs = vec![default_desc()];
-            let msg = libfabric::msg::MsgTaggedConnected::from_iov(&iov, desc, 0, *tx_seq, 0);
+            let msg = libfabric::msg::MsgTaggedConnected::from_iov(&iov, desc, None, *tx_seq, None);
             let msg_ref = &msg;
             ft_post!(
                 tsendmsg,
@@ -1877,9 +1877,9 @@ pub fn conless_tagged_post<E: TagDefaultCap>(
                 &iov,
                 desc,
                 remote_address.as_ref().unwrap(),
-                0,
+                None,
                 *tx_seq,
-                0,
+                None,
             );
             let msg_ref = &msg;
             ft_post!(
@@ -1971,7 +1971,6 @@ pub fn connected_tagged_post_recv<T: TagDefaultCap>(
         }
         TagRecvOp::TagRecv => {
             let op_tag = if ft_tag != 0 { ft_tag } else { *rx_seq };
-            let zero = 0;
 
             ft_post!(
                 trecv_with_context,
@@ -1984,7 +1983,7 @@ pub fn connected_tagged_post_recv<T: TagDefaultCap>(
                 base,
                 desc,
                 op_tag,
-                zero,
+                None,
                 ctx
             );
         }
@@ -2015,7 +2014,6 @@ pub fn connless_tagged_post_recv<T: TagDefaultCap>(
         }
         TagRecvOp::TagRecv => {
             let op_tag = if ft_tag != 0 { ft_tag } else { *rx_seq };
-            let zero = 0;
             let fi_address = remote_address.as_ref().unwrap();
             ft_post!(
                 trecv_from_with_context,
@@ -2029,7 +2027,7 @@ pub fn connless_tagged_post_recv<T: TagDefaultCap>(
                 desc,
                 fi_address,
                 op_tag,
-                zero,
+                None,
                 ctx
             );
         }

@@ -34,7 +34,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
         desc: &mut impl DataDescriptor,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(mapped_addr, context);
@@ -46,7 +46,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
                 desc.get_desc(),
                 raw_addr,
                 tag,
-                ignore,
+                ignore.unwrap_or(0),
                 ctx,
             )
         };
@@ -59,7 +59,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: Option<&MappedAddress>,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
         let (raw_addr, ctx) = extract_raw_addr_and_ctx(src_mapped_addr, context);
@@ -71,7 +71,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
                 iov.len(),
                 raw_addr,
                 tag,
-                ignore,
+                ignore.unwrap_or(0),
                 ctx,
             )
         };
@@ -84,14 +84,14 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
         options: TaggedRecvMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_tagged_msg = match msg {
-            Either::Left(msg) => msg.c_msg_tagged,
-            Either::Right(msg) => msg.c_msg_tagged,
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
 
         let err = unsafe {
             libfabric_sys::inlined_fi_trecvmsg(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
-                &c_tagged_msg,
+                c_tagged_msg,
                 options.as_raw(),
             )
         };
@@ -106,7 +106,7 @@ pub trait TagRecvEp {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecv_from_with_context<T>(
         &self,
@@ -114,7 +114,7 @@ pub trait TagRecvEp {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn trecv_from_triggered<T>(
@@ -123,7 +123,7 @@ pub trait TagRecvEp {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_from(
@@ -132,7 +132,7 @@ pub trait TagRecvEp {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_from_with_context(
         &self,
@@ -140,7 +140,7 @@ pub trait TagRecvEp {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_from_triggered(
@@ -149,7 +149,7 @@ pub trait TagRecvEp {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn trecvmsg_from(
@@ -162,14 +162,14 @@ pub trait TagRecvEp {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecv_from_any_with_context<T>(
         &self,
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn trecv_from_any_triggered<T>(
@@ -177,7 +177,7 @@ pub trait TagRecvEp {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_from_any(
@@ -185,14 +185,14 @@ pub trait TagRecvEp {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         src_tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_from_any_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         src_tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_from_any_triggered(
@@ -200,7 +200,7 @@ pub trait TagRecvEp {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         src_tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
 }
@@ -211,14 +211,14 @@ pub trait ConnectedTagRecvEp {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecv_with_context<T>(
         &self,
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn trecv_triggered<T>(
@@ -226,7 +226,7 @@ pub trait ConnectedTagRecvEp {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn trecvv(
@@ -234,14 +234,14 @@ pub trait ConnectedTagRecvEp {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_triggered(
@@ -249,7 +249,7 @@ pub trait ConnectedTagRecvEp {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn trecvmsg(
@@ -267,7 +267,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, Some(mapped_addr), tag, ignore, None)
     }
@@ -278,7 +278,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, None)
     }
@@ -290,7 +290,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(
@@ -309,7 +309,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
@@ -322,7 +322,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(
@@ -341,7 +341,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
@@ -354,7 +354,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
         self.trecvv_impl(iov, desc, Some(src_mapped_addr), tag, ignore, None)
     }
@@ -365,7 +365,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
         self.trecvv_impl(iov, desc, None, tag, ignore, None)
     }
@@ -377,7 +377,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         //[TODO]
@@ -397,7 +397,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         //[TODO]
@@ -411,7 +411,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         //[TODO]
@@ -431,7 +431,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         //[TODO]
@@ -455,7 +455,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, None)
     }
@@ -466,7 +466,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
@@ -478,7 +478,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.trecv_impl(buf, desc, None, tag, ignore, Some(context.inner_mut()))
@@ -490,7 +490,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
         //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, None)
@@ -502,7 +502,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         //[TODO]
@@ -515,7 +515,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         //[TODO]
@@ -594,13 +594,13 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
         options: TaggedSendMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_tagged_msg = match msg {
-            Either::Left(msg) => msg.c_msg_tagged,
-            Either::Right(msg) => msg.c_msg_tagged,
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_tsendmsg(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
-                &c_tagged_msg as *const libfabric_sys::fi_msg_tagged,
+                c_tagged_msg,
                 options.as_raw(),
             )
         };

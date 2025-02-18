@@ -1306,7 +1306,7 @@ pub async fn connless_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
             let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
 
             let fi_addr = remote_address.as_ref().unwrap();
-            let mut msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, 0);
+            let mut msg = libfabric::msg::Msg::from_iov(&iov, desc, fi_addr, None);
             let msg_ref = &mut msg;
             ft_post_async!(sendmsg_to_async, "sendmsg", ep, msg_ref, flag, ctx);
         }
@@ -1344,7 +1344,7 @@ pub async fn connected_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
             let iov = libfabric::iovec::IoVec::from_slice(base);
             let flag = libfabric::enums::SendMsgOptions::new().transmit_complete();
 
-            let mut msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, 0);
+            let mut msg = libfabric::msg::MsgConnected::from_iov(&iov, desc, None);
             let msg_ref = &mut msg;
             ft_post_async!(sendmsg_async, "sendmsg", ep, msg_ref, flag, ctx);
         }
@@ -1533,7 +1533,7 @@ pub async fn connless_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
             let iov = libfabric::iovec::IoVec::from_slice(base);
             let fi_address = remote_address.as_ref().unwrap();
             let mut msg =
-                libfabric::msg::MsgTagged::from_iov(&iov, mr_desc, fi_address, 0, op_tag, 0);
+                libfabric::msg::MsgTagged::from_iov(&iov, mr_desc, fi_address, None, op_tag, None);
             let msg_ref = &mut msg;
             ep.tsendmsg_to_async(msg_ref, flag, ctx).await.unwrap();
         }
@@ -1584,7 +1584,7 @@ pub async fn connected_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
     match op {
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
-            let mut msg = libfabric::msg::MsgTaggedConnected::from_iov(&iov, mr_desc, 0, op_tag, 0);
+            let mut msg = libfabric::msg::MsgTaggedConnected::from_iov(&iov, mr_desc, None, op_tag, None);
             let msg_ref = &mut msg;
             ep.tsendmsg_async(msg_ref, flag, ctx).await.unwrap();
         }
@@ -1628,7 +1628,6 @@ pub fn connected_tagged_post_recv<CQ: ReadCq, E: TagDefaultCap>(
         TagRecvOp::TagRecv => {
             // let op_tag = if ft_tag != 0 {ft_tag} else {*rx_seq};
             let op_tag = ft_tag;
-            let zero = 0;
             ft_post!(
                 trecv_with_context,
                 ft_progress,
@@ -1640,7 +1639,7 @@ pub fn connected_tagged_post_recv<CQ: ReadCq, E: TagDefaultCap>(
                 base,
                 desc,
                 op_tag,
-                zero,
+                None,
                 ctx
             );
         }
@@ -1672,7 +1671,6 @@ pub fn connless_tagged_post_recv<CQ: ReadCq, E: TagDefaultCap>(
         TagRecvOp::TagRecv => {
             // let op_tag = if ft_tag != 0 {ft_tag} else {*rx_seq};
             let op_tag = ft_tag;
-            let zero = 0;
             let fi_address = remote_address.as_ref().unwrap();
             ft_post!(
                 trecv_from_with_context,
@@ -1686,7 +1684,7 @@ pub fn connless_tagged_post_recv<CQ: ReadCq, E: TagDefaultCap>(
                 desc,
                 fi_address,
                 op_tag,
-                zero,
+                None,
                 ctx
             );
         }

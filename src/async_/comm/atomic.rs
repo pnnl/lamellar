@@ -75,8 +75,8 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let c_msg = match &mut msg {
-            Either::Left(msg) => &mut msg.c_msg_atomic,
-            Either::Right(msg) => &mut msg.c_msg_atomic,
+            Either::Left(msg) => msg.inner_mut(),
+            Either::Right(msg) => msg.inner_mut(),
         };
 
         c_msg.context = ctx.inner_mut();
@@ -327,8 +327,8 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let c_atomic_msg = match &mut msg {
-            Either::Left(msg) => &mut msg.c_msg_atomic,
-            Either::Right(msg) => &mut msg.c_msg_atomic,
+            Either::Left(msg) => msg.inner_mut(),
+            Either::Right(msg) => msg.inner_mut(),
         };
 
         c_atomic_msg.context = ctx.inner_mut();
@@ -620,8 +620,8 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let c_atomic_msg = match &mut msg {
-            Either::Left(msg) => &mut msg.c_msg_atomic,
-            Either::Right(msg) => &mut msg.c_msg_atomic,
+            Either::Left(msg) => msg.inner_mut(),
+            Either::Right(msg) => msg.inner_mut(),
         };
 
         c_atomic_msg.context = ctx.inner_mut();

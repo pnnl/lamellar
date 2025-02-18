@@ -308,8 +308,8 @@ pub(crate) enum ContextState {
 #[repr(C)]
 struct Context1 {
     #[allow(dead_code)]
-    pub(crate) id: usize,
     c_val: libfabric_sys::fi_context,
+    pub(crate) id: usize,
     pub(crate) ready: AtomicBool,
     pub(crate) state: MyOnceCell<ContextState>,
 }
@@ -358,8 +358,8 @@ impl Context1 {
 
 #[repr(C)]
 struct Context2 {
-    pub(crate) id: usize,
     c_val: libfabric_sys::fi_context2,
+    pub(crate) id: usize,
     state: MyOnceCell<ContextState>,
     pub(crate) ready: AtomicBool,
 }

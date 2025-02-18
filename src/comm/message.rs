@@ -90,14 +90,14 @@ pub(crate) trait RecvEpImpl: AsTypedFid<EpRawFid> {
         options: RecvMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_msg = match msg {
-            Either::Left(msg) => msg.c_msg,
-            Either::Right(msg) => msg.c_msg,
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
 
         let err = unsafe {
             libfabric_sys::inlined_fi_recvmsg(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
-                &c_msg,
+                c_msg,
                 options.as_raw(),
             )
         };
@@ -483,14 +483,14 @@ pub(crate) trait SendEpImpl: AsTypedFid<EpRawFid> {
         options: SendMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_msg = match msg {
-            Either::Left(msg) => msg.c_msg,
-            Either::Right(msg) => msg.c_msg,
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
 
         let err = unsafe {
             libfabric_sys::inlined_fi_sendmsg(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
-                &c_msg,
+                c_msg,
                 options.as_raw(),
             )
         };

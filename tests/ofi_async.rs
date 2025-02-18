@@ -592,11 +592,11 @@ impl<I: TagDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
-                    ep.trecvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, 0, ctx)
+                    ep.trecvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, None, ctx)
                         .await
                 }),
                 MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                    ep.trecvv_async(iov, desc, 0, tag, ctx).await
+                    ep.trecvv_async(iov, desc, tag, None, ctx).await
                 }),
             };
             match err {
@@ -620,11 +620,11 @@ impl<I: TagDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
-                    ep.trecv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), tag, 0, ctx)
+                    ep.trecv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), tag, None, ctx)
                         .await
                 }),
                 MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                    ep.trecv_async(buf, desc, tag, 0, ctx).await
+                    ep.trecv_async(buf, desc, tag, None, ctx).await
                 }),
             };
             match err {
@@ -2255,14 +2255,15 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let (mem0, mem1) = (&reg_mem[..512], &reg_mem[1024..1536]);
         let iov0 = IoVec::from_slice(mem0);
         let iov1 = IoVec::from_slice(mem1);
+        let data = Some(128);
         let mut msg = if connected {
-            Either::Right(MsgConnected::from_iov(&iov0, &mut descs[0], 128))
+            Either::Right(MsgConnected::from_iov(&iov0, &mut descs[0], data))
         } else {
             Either::Left(Msg::from_iov(
                 &iov0,
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
-                128,
+                data,
             ))
         };
         ofi.sendmsg(&mut msg, &mut ctx);
@@ -2276,13 +2277,13 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         // Multi iov message with stride
         let iovs = [iov0, iov1];
         let mut msg = if connected {
-            Either::Right(MsgConnected::from_iov_slice(&iovs, &mut descs, 128))
+            Either::Right(MsgConnected::from_iov_slice(&iovs, &mut descs, data))
         } else {
             Either::Left(Msg::from_iov_slice(
                 &iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
-                128,
+                data,
             ))
         };
 
@@ -2290,26 +2291,26 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
 
         // Single iov message
         let mut msg = if connected {
-            Either::Right(MsgConnected::from_iov(&iovs[0], &mut descs[0], 0))
+            Either::Right(MsgConnected::from_iov(&iovs[0], &mut descs[0], None))
         } else {
             Either::Left(Msg::from_iov(
                 &iovs[0],
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
-                0,
+                None,
             ))
         };
 
         ofi.sendmsg(&mut msg, &mut ctx);
 
         let mut msg = if connected {
-            Either::Right(MsgConnected::from_iov_slice(&iovs, &mut descs, 0))
+            Either::Right(MsgConnected::from_iov_slice(&iovs, &mut descs, None))
         } else {
             Either::Left(Msg::from_iov_slice(
                 &iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
-                0,
+                None,
             ))
         };
         ofi.sendmsg(&mut msg, &mut ctx);
@@ -2321,12 +2322,13 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         // Receive a single message in a single buffer
         let mut iov = IoVecMut::from_slice(mem0);
         let mut msg = if connected {
-            Either::Right(MsgConnectedMut::from_iov(&mut iov, &mut descs[0]))
+            Either::Right(MsgConnectedMut::from_iov(&mut iov, &mut descs[0], None))
         } else {
             Either::Left(MsgMut::from_iov(
                 &mut iov,
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
+                None,
             ))
         };
 
@@ -2338,12 +2340,13 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         // Receive a multi iov message in a single buffer
         let mut iov = IoVecMut::from_slice(&mut mem1[..1024]);
         let mut msg = if connected {
-            Either::Right(MsgConnectedMut::from_iov(&mut iov, &mut descs[0]))
+            Either::Right(MsgConnectedMut::from_iov(&mut iov, &mut descs[0], None))
         } else {
             Either::Left(MsgMut::from_iov(
                 &mut iov,
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
+                None,
             ))
         };
 
@@ -2357,12 +2360,13 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let iov1 = IoVecMut::from_slice(&mut mem1[..256]);
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
-            Either::Right(MsgConnectedMut::from_iov_slice(&mut iovs, &mut descs))
+            Either::Right(MsgConnectedMut::from_iov_slice(&mut iovs, &mut descs, None))
         } else {
             Either::Left(MsgMut::from_iov_slice(
                 &mut iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
+                None,
             ))
         };
 
@@ -2377,12 +2381,13 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let iov1 = IoVecMut::from_slice(&mut mem1[..512]);
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
-            Either::Right(MsgConnectedMut::from_iov_slice(&mut iovs, &mut descs))
+            Either::Right(MsgConnectedMut::from_iov_slice(&mut iovs, &mut descs, None))
         } else {
             Either::Left(MsgMut::from_iov_slice(
                 &mut iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
+                None,
             ))
         };
 
@@ -2440,7 +2445,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
     let mut descs = [desc.clone(), desc];
     let mapped_addr = ofi.mapped_addr.clone();
     let mut ctx = ofi.info_entry.allocate_context();
-
+    let data = Some(128);
     if server {
         // Single iov message
         let (mem0, mem1) = (&reg_mem[..512], &reg_mem[1024..1536]);
@@ -2450,18 +2455,18 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             Either::Right(MsgTaggedConnected::from_iov(
                 &iov0,
                 &mut descs[0],
-                128,
+                data,
                 0,
-                0,
+                None,
             ))
         } else {
             Either::Left(MsgTagged::from_iov(
                 &iov0,
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
-                128,
+                data,
                 0,
-                0,
+                None,
             ))
         };
         ofi.tsendmsg(&mut msg, &mut ctx);
@@ -2470,16 +2475,16 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let iovs = [iov0, iov1];
         let mut msg = if connected {
             Either::Right(MsgTaggedConnected::from_iov_slice(
-                &iovs, &mut descs, 0, 1, 0,
+                &iovs, &mut descs, None, 1, None,
             ))
         } else {
             Either::Left(MsgTagged::from_iov_slice(
                 &iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
-                0,
+                None,
                 1,
-                0,
+                None,
             ))
         };
 
@@ -2490,18 +2495,18 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             Either::Right(MsgTaggedConnected::from_iov(
                 &iovs[0],
                 &mut descs[0],
-                0,
+                None,
                 2,
-                0,
+                None,
             ))
         } else {
             Either::Left(MsgTagged::from_iov(
                 &iovs[0],
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
-                0,
+                Some(0),
                 2,
-                0,
+                None,
             ))
         };
 
@@ -2509,16 +2514,16 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
 
         let mut msg = if connected {
             Either::Right(MsgTaggedConnected::from_iov_slice(
-                &iovs, &mut descs, 0, 3, 0,
+                &iovs, &mut descs, None, 3, None,
             ))
         } else {
             Either::Left(MsgTagged::from_iov_slice(
                 &iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
-                0,
+                None,
                 3,
-                0,
+                None,
             ))
         };
         ofi.tsendmsg(&mut msg, &mut ctx);
@@ -2533,16 +2538,18 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             Either::Right(MsgTaggedConnectedMut::from_iov(
                 &mut iov,
                 &mut descs[0],
+                None,
                 0,
-                0,
+                None,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov(
                 &mut iov,
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
+                None,
                 0,
-                0,
+                None,
             ))
         };
 
@@ -2556,16 +2563,18 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             Either::Right(MsgTaggedConnectedMut::from_iov(
                 &mut iov,
                 &mut descs[0],
+                None,
                 1,
-                0,
+                None,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov(
                 &mut iov,
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
+                None,
                 1,
-                0,
+                None,
             ))
         };
 
@@ -2580,15 +2589,20 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, 2, 0,
+                &mut iovs,
+                &mut descs,
+                None,
+                2,
+                None,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov_slice(
                 &mut iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
+                None,
                 2,
-                0,
+                None,
             ))
         };
 
@@ -2604,15 +2618,20 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, 3, 0,
+                &mut iovs,
+                &mut descs,
+                None,
+                3,
+                None,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov_slice(
                 &mut iovs,
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
+                None,
                 3,
-                0,
+                None,
             ))
         };
 
@@ -2809,14 +2828,14 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let iov = IoVec::from_slice(&reg_mem[..128]);
         let mut msg = if connected {
-            Either::Right(MsgRmaConnected::from_iov(&iov, &mut descs[0], &rma_iov, 0))
+            Either::Right(MsgRmaConnected::from_iov(&iov, &mut descs[0], &rma_iov, None))
         } else {
             Either::Left(MsgRma::from_iov(
                 &iov,
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
                 &rma_iov,
-                0,
+                None,
             ))
         };
 
@@ -2837,7 +2856,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
                 &iov,
                 &mut descs[0],
                 &rma_iov,
-                128,
+                Some(128),
             ))
         } else {
             Either::Left(MsgRma::from_iov(
@@ -2845,7 +2864,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
                 &mut descs[0],
                 mapped_addr.as_ref().unwrap(),
                 &rma_iov,
-                128,
+                Some(128),
             ))
         };
 
@@ -2871,7 +2890,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let mut msg = if connected {
             Either::Right(MsgRmaConnected::from_iov_slice(
-                &iovs, &mut descs, &rma_iovs, 0,
+                &iovs, &mut descs, &rma_iovs, None,
             ))
         } else {
             Either::Left(MsgRma::from_iov_slice(
@@ -2879,7 +2898,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
                 &rma_iovs,
-                0,
+                None,
             ))
         };
 
@@ -2917,6 +2936,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
                     &mut iov,
                     &mut descs[0],
                     &rma_iov,
+                    None
                 ))
             } else {
                 Either::Left(MsgRmaMut::from_iov(
@@ -2924,6 +2944,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
                     &mut descs[0],
                     mapped_addr.as_ref().unwrap(),
                     &rma_iov,
+                    None
                 ))
             };
             ofi.readmsg(&mut msg, &mut ctx);
@@ -2945,7 +2966,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let mut msg = if connected {
             Either::Right(MsgRmaConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, &rma_iovs,
+                &mut iovs, &mut descs, &rma_iovs,None
             ))
         } else {
             Either::Left(MsgRmaMut::from_iov_slice(
@@ -2953,6 +2974,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
                 &mut descs,
                 mapped_addr.as_ref().unwrap(),
                 &rma_iovs,
+                None
             ))
         };
         ofi.readmsg(&mut msg, &mut ctx);
@@ -3704,7 +3726,7 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
                 &mut descs,
                 &rma_iocs,
                 AtomicOp::Bor,
-                128,
+                Some(128),
             ))
         } else {
             Either::Left(MsgAtomic::from_ioc_slice(
@@ -3713,7 +3735,7 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
                 mapped_addr.as_ref().unwrap(),
                 &rma_iocs,
                 AtomicOp::Bor,
-                128,
+                Some(128),
             ))
         };
 
@@ -3821,7 +3843,7 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
                 &mut descs,
                 &rma_iocs,
                 FetchAtomicOp::Prod,
-                0,
+                None,
             ))
         } else {
             Either::Left(MsgFetchAtomic::from_ioc_slice(
@@ -3830,7 +3852,7 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
                 mapped_addr.as_ref().unwrap(),
                 &rma_iocs,
                 FetchAtomicOp::Prod,
-                0,
+                None,
             ))
         };
 
@@ -3943,7 +3965,7 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
                 &mut buf_descs,
                 &rma_iocs,
                 CompareAtomicOp::CswapGe,
-                0,
+                None,
             ))
         } else {
             Either::Left(MsgCompareAtomic::from_ioc_slice(
@@ -3952,7 +3974,7 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
                 mapped_addr.as_ref().unwrap(),
                 &rma_iocs,
                 CompareAtomicOp::CswapGe,
-                0,
+                None,
             ))
         };
 

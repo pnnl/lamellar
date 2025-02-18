@@ -85,8 +85,8 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
         options: ReadMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_rma_msg = match msg {
-            Either::Left(msg) => msg.get(),
-            Either::Right(msg) => msg.get(),
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
 
         let err = unsafe {
@@ -655,8 +655,8 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         options: WriteMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_msg_rma = match msg {
-            Either::Left(msg) => msg.get(),
-            Either::Right(msg) => msg.get(),
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
         let err = unsafe {
             libfabric_sys::inlined_fi_writemsg(

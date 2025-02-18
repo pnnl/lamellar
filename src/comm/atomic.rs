@@ -93,8 +93,8 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         options: AtomicMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_atomic_msg = match msg {
-            Either::Left(msg) => msg.get(),
-            Either::Right(msg) => msg.get(),
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
 
         let err = unsafe {
@@ -639,8 +639,8 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         options: AtomicFetchMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_atomic_msg = match msg {
-            Either::Left(msg) => msg.get(),
-            Either::Right(msg) => msg.get(),
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
 
         let err = unsafe {
@@ -1220,8 +1220,8 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         options: AtomicMsgOptions,
     ) -> Result<(), crate::error::Error> {
         let c_atomic_msg = match msg {
-            Either::Left(msg) => msg.get(),
-            Either::Right(msg) => msg.get(),
+            Either::Left(msg) => msg.inner(),
+            Either::Right(msg) => msg.inner(),
         };
 
         let err: isize = unsafe {

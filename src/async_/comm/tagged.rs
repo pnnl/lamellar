@@ -26,7 +26,7 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
         desc: &mut impl DataDescriptor,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.trecv_impl(buf, desc, mapped_addr, tag, ignore, Some(ctx.inner_mut()))?;
@@ -40,7 +40,7 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: Option<&MappedAddress>,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.trecvv_impl(
@@ -66,11 +66,11 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match msg {
             Either::Left(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgTaggedMut, &MsgTaggedConnectedMut>::Left(msg)
             }
             Either::Right(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgTaggedMut, &MsgTaggedConnectedMut>::Right(msg)
             }
         };
@@ -89,7 +89,7 @@ pub trait AsyncTagRecvEp {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
@@ -99,7 +99,7 @@ pub trait AsyncTagRecvEp {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
@@ -117,7 +117,7 @@ pub trait ConnectedAsyncTagRecvEp {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
@@ -126,7 +126,7 @@ pub trait ConnectedAsyncTagRecvEp {
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
@@ -156,7 +156,7 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
         desc: &mut impl DataDescriptor,
         mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.trecv_async_impl(buf, desc, Some(mapped_addr), tag, ignore, ctx)
@@ -170,7 +170,7 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
         desc: &mut [impl DataDescriptor],
         src_mapped_addr: &MappedAddress,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.trecvv_async_impl(iov, desc, Some(src_mapped_addr), tag, ignore, ctx)
@@ -196,7 +196,7 @@ impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
         buf: &mut [T],
         desc: &mut impl DataDescriptor,
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.trecv_async_impl(buf, desc, None, tag, ignore, ctx)
@@ -209,7 +209,7 @@ impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: &mut [impl DataDescriptor],
         tag: u64,
-        ignore: u64,
+        ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.trecvv_async_impl(iov, desc, None, tag, ignore, ctx)
@@ -263,11 +263,11 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match msg {
             Either::Left(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgTagged, &MsgTaggedConnected>::Left(msg)
             }
             Either::Right(ref mut msg) => {
-                msg.get_mut().context = ctx.inner_mut();
+                msg.inner_mut().context = ctx.inner_mut();
                 Either::<&MsgTagged, &MsgTaggedConnected>::Right(msg)
             }
         };

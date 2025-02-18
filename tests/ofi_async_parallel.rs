@@ -1895,7 +1895,7 @@ fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
 // }
 
 fn sendrecv(server: bool, name: &str, connected: bool) {
-    let mut ofi = if connected {
+    let ofi = if connected {
         handshake(server, name, Some(InfoCaps::new().msg()))
     } else {
         handshake_connectionless(server, name, Some(InfoCaps::new().msg()))

@@ -53,8 +53,8 @@ pub(crate) trait AsyncRecvEpImpl: AsyncRxEp + RecvEpImpl {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let c_msg = match &mut msg {
-            Either::Left(msg) => &mut msg.c_msg,
-            Either::Right(msg) => &mut msg.c_msg,
+            Either::Left(msg) => msg.inner_mut(),
+            Either::Right(msg) => msg.inner_mut(),
         };
 
         c_msg.context = ctx.inner_mut();
@@ -230,8 +230,8 @@ pub(crate) trait AsyncSendEpImpl: AsyncTxEp + SendEpImpl {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let c_msg = match &mut msg {
-            Either::Left(msg) => &mut msg.c_msg,
-            Either::Right(msg) => &mut msg.c_msg,
+            Either::Left(msg) => msg.inner_mut(),
+            Either::Right(msg) => msg.inner_mut(),
         };
 
         c_msg.context = ctx.inner_mut();
