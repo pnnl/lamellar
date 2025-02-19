@@ -490,88 +490,118 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
     }
 }
 
-impl<I: TagDefaultCap> Ofi<I> {
-    pub fn tsend<T>(
-        &self,
-        buf: &[T],
-        desc: &mut MemoryRegionDesc,
-        tag: u64,
-        data: Option<u64>,
-        ctx: &mut Context,
-    ) {
-        loop {
-            let err = match self.ep.as_ref() {
-                MyEndpoint::Connectionless(ep) => {
-                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            ep.tinjectdata_to(
-                                &buf,
-                                data.unwrap(),
-                                self.mapped_addr.as_ref().unwrap(),
-                                tag,
-                            )
-                        } else {
-                            ep.tinject_to(&buf, self.mapped_addr.as_ref().unwrap(), tag)
-                        }
-                    } else {
-                        if data.is_some() {
-                            async_std::task::block_on(async {
-                                ep.tsenddata_to_async(
-                                    &buf,
-                                    desc,
-                                    data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
-                                    tag,
-                                    ctx,
-                                )
-                                .await
-                            })
-                        } else {
-                            async_std::task::block_on(async {
-                                ep.tsend_to_async(
-                                    &buf,
-                                    desc,
-                                    self.mapped_addr.as_ref().unwrap(),
-                                    tag,
-                                    ctx,
-                                )
-                                .await
-                            })
-                        }
-                        .map(|_| {})
+impl<I: TagDefaultCap + 'static> Ofi<I> {
+    pub fn tsend(&self, buf: &[u8], tag: u64, data: Option<u64>) {
+        let handles: Vec<_> = (0..100)
+            .map(|_| {
+                let mut ctx = self.info_entry.allocate_context();
+
+                let reg_mem = buf.to_vec();
+
+                let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+                    .access_recv()
+                    .access_send()
+                    .build(&self.domain)
+                    .unwrap();
+
+                let mr = match mr {
+                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+                        bind_mr(&self.ep, &mr);
+                        mr.enable().unwrap()
                     }
-                }
-                MyEndpoint::Connected(ep) => {
-                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            ep.tinjectdata(&buf, data.unwrap(), tag)
-                        } else {
-                            ep.tinject(&buf, tag)
+                };
+                let mut desc = mr.descriptor();
+                let ep = self.ep.clone();
+                let inject_size = self.info_entry.tx_attr().inject_size();
+                let mapped_addr = Arc::new(self.mapped_addr.clone());
+
+                (
+                    async_std::task::spawn(async move {
+                        loop {
+                            let err = match &ep.as_ref() {
+                                MyEndpoint::Connectionless(ep) => {
+                                    if reg_mem.len() <= inject_size {
+                                        if data.is_some() {
+                                            ep.tinjectdata_to(
+                                                &reg_mem,
+                                                data.unwrap(),
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                                tag,
+                                            )
+                                        } else {
+                                            ep.tinject_to(
+                                                &reg_mem,
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                                tag,
+                                            )
+                                        }
+                                    } else {
+                                        if data.is_some() {
+                                            ep.tsenddata_to_async(
+                                                &reg_mem,
+                                                &mut desc,
+                                                data.unwrap(),
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                                tag,
+                                                &mut ctx,
+                                            )
+                                            .await
+                                        } else {
+                                            ep.tsend_to_async(
+                                                &reg_mem,
+                                                &mut desc,
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                                tag,
+                                                &mut ctx,
+                                            )
+                                            .await
+                                        }
+                                        .map(|_| {})
+                                    }
+                                }
+                                MyEndpoint::Connected(ep) => {
+                                    if reg_mem.len() <= inject_size {
+                                        if data.is_some() {
+                                            ep.tinjectdata(&reg_mem, data.unwrap(), tag)
+                                        } else {
+                                            ep.tinject(&reg_mem, tag)
+                                        }
+                                    } else {
+                                        if data.is_some() {
+                                            ep.tsenddata_async(
+                                                &reg_mem,
+                                                &mut desc,
+                                                data.unwrap(),
+                                                tag,
+                                                &mut ctx,
+                                            )
+                                            .await
+                                        } else {
+                                            ep.tsend_async(&reg_mem, &mut desc, tag, &mut ctx).await
+                                        }
+                                        .map(|_| {})
+                                    }
+                                }
+                            };
+                            match err {
+                                Ok(_) => break,
+                                Err(err) => {
+                                    if !matches!(err.kind, ErrorKind::TryAgain) {
+                                        panic!("{:?}", err);
+                                    }
+                                }
+                            }
                         }
-                    } else {
-                        if data.is_some() {
-                            async_std::task::block_on(async {
-                                ep.tsenddata_async(&buf, desc, data.unwrap(), tag, ctx)
-                                    .await
-                            })
-                        } else {
-                            async_std::task::block_on(async {
-                                ep.tsend_async(&buf, desc, tag, ctx).await
-                            })
-                        }
-                        .map(|_| {})
-                    }
-                }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
-            }
-        }
+                    }),
+                    mr,
+                )
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .for_each(|h| async_std::task::block_on(h.0));
     }
 
     pub fn tsendv(
@@ -622,26 +652,73 @@ impl<I: TagDefaultCap> Ofi<I> {
     //         }
     //     }
 
-    //     pub fn trecv<T>(&mut self, buf: &mut [T], desc: &mut MemoryRegionDesc, tag: u64, ctx: &mut Context) {
-    //         loop {
-    //             let err = match &self.ep {
-    //                 MyEndpoint::Connectionless(ep) => {
-    //                     async_std::task::block_on(async {ep.trecv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), tag, 0, ctx).await})
-    //                 }
-    //                 MyEndpoint::Connected(ep) => {
-    //                     async_std::task::block_on(async {ep.trecv_async(buf, desc, tag, 0, ctx).await})
-    //                 },
-    //             };
-    //             match err {
-    //                 Ok(_) => break,
-    //                 Err(err) => {
-    //                     if !matches!(err.kind, ErrorKind::TryAgain) {
-    //                         panic!("{:?}", err);
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
+    pub fn trecv(&mut self, buf: &mut [u8], tag: u64) -> Vec<Vec<u8>> {
+        let handles: Vec<_> = (0..100)
+            .map(|_| {
+                let ep = self.ep.clone();
+                let mapped_addr = Arc::new(self.mapped_addr.clone());
+
+                let mut ctx = self.info_entry.allocate_context();
+
+                let mut reg_mem = buf.to_vec();
+
+                let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+                    .access_recv()
+                    .access_send()
+                    .build(&self.domain)
+                    .unwrap();
+
+                let mr = match mr {
+                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+                        bind_mr(&self.ep, &mr);
+                        mr.enable().unwrap()
+                    }
+                };
+                let mut desc = mr.descriptor();
+
+                (
+                    async_std::task::spawn(async move {
+                        loop {
+                            let err = match ep.as_ref() {
+                                MyEndpoint::Connected(ep) => {
+                                    ep.trecv_async(&mut reg_mem, &mut desc, tag, None, &mut ctx)
+                                        .await
+                                }
+                                MyEndpoint::Connectionless(ep) => {
+                                    ep.trecv_from_async(
+                                        &mut reg_mem,
+                                        &mut desc,
+                                        mapped_addr.as_ref().as_ref().unwrap(),
+                                        tag,
+                                        None,
+                                        &mut ctx,
+                                    )
+                                    .await
+                                }
+                            };
+
+                            match err {
+                                Ok(_) => break,
+                                Err(err) => {
+                                    if !matches!(err.kind, ErrorKind::TryAgain) {
+                                        panic!("{:?}", err);
+                                    }
+                                }
+                            }
+                        }
+                        reg_mem
+                    }),
+                    mr,
+                )
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .map(|h| async_std::task::block_on(h.0))
+            .collect()
+    }
 
     //     pub fn tsendmsg(&mut self, msg: &mut Either<MsgTagged, MsgTaggedConnected>, ctx: &mut Context) {
     //         loop {
@@ -704,457 +781,701 @@ impl<I: TagDefaultCap> Ofi<I> {
     //     }
 }
 
-// impl<I: MsgDefaultCap + 'static> Ofi<I> {
-//     pub fn send<T>(&self, buf: &[T], desc: &mut MemoryRegionDesc, data: Option<u64>, ctx: &mut Context) {
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => {
-//                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-//                         if data.is_some() {
-//                             ep.injectdata_to(buf, data.unwrap(), self.mapped_addr.as_ref().unwrap())
-//                         } else {
-//                             ep.inject_to(&buf, self.mapped_addr.as_ref().unwrap())
-//                         }
-//                     } else {
-//                         if data.is_some() {
-//                             async_std::task::block_on(async {
-//                                 ep.senddata_to_async(
-//                                     &buf,
-//                                     desc,
-//                                     data.unwrap(),
-//                                     self.mapped_addr.as_ref().unwrap(),
-//                                     ctx
-//                                 ).await
-//                             })
-//                         } else {
-//                             async_std::task::block_on(async {
-//                                 ep.send_to_async(&buf, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
-//                             })
-//                         }.map(|_| {})
-//                     }
-//                 }
-//                 MyEndpoint::Connected(ep) => {
-//                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-//                         if data.is_some() {
-//                             ep.injectdata(&buf, data.unwrap())
-//                         } else {
-//                             ep.inject(&buf)
-//                         }
-//                     } else {
-//                         if data.is_some() {
-//                             async_std::task::block_on(async {
-//                                 ep.senddata_async(&buf, desc, data.unwrap(), ctx).await
-//                             })
-//                         } else {
-//                             async_std::task::block_on(async {
-//                                 ep.send_async(&buf, desc, ctx).await
-//                             })
-//                         }.map(|_| {})
-//                     }
-//                 }
-//             };
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+impl<I: MsgDefaultCap + 'static> Ofi<I> {
+    pub fn send(&self, buf: &[u8], data: Option<u64>) {
+        let handles: Vec<_> = (0..100)
+            .map(|_| {
+                let mut ctx = self.info_entry.allocate_context();
 
-//     pub fn sendv(&mut self, iov: &[IoVec], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => {
-//                     async_std::task::block_on(async {
-//                         ep.sendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
-//                     })
-//                 }
-//                 MyEndpoint::Connected(ep) =>
-//                     async_std::task::block_on(async {
-//                         ep.sendv_async(iov, desc, ctx).await
-//                     })
-//             };
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+                let reg_mem = buf.to_vec();
 
-//     pub fn recvv(&mut self, iov: &[IoVecMut], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => {
-//                     async_std::task::block_on(async {
-//                         ep.recvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
-//                     })
-//                 }
-//                 MyEndpoint::Connected(ep) => {
-//                     async_std::task::block_on(async {
-//                         ep.recvv_async(iov, desc, ctx).await
-//                     })
-//                 }
-//             };
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+                let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+                    .access_recv()
+                    .access_send()
+                    .build(&self.domain)
+                    .unwrap();
 
-//     pub fn recv<T>(&mut self, buf: &mut [T], desc: &mut MemoryRegionDesc, ctx: &mut Context) {
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => {
-//                     async_std::task::block_on(async {
-//                         ep.recv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
-//                     })
-//                 }
-//                 MyEndpoint::Connected(ep) => {
-//                     async_std::task::block_on(async {
-//                         ep.recv_async(buf, desc, ctx).await
-//                     })
-//                 },
-//             };
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+                let mr = match mr {
+                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+                        bind_mr(&self.ep, &mr);
+                        mr.enable().unwrap()
+                    }
+                };
+                let mut desc = mr.descriptor();
+                let ep = self.ep.clone();
+                let inject_size = self.info_entry.tx_attr().inject_size();
+                let mapped_addr = Arc::new(self.mapped_addr.clone());
 
-//     pub fn sendmsg(&mut self, msg: &mut Either<Msg, MsgConnected>, ctx: &mut Context) {
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => match msg {
-//                     Either::Left(msg) => {
-//                         async_std::task::block_on(async {
-//                             ep.sendmsg_to_async(msg, TferOptions::new().remote_cq_data(), ctx).await
-//                         })
-//                     },
-//                     Either::Right(_) => panic!("Wrong msg type"),
-//                 },
-//                 MyEndpoint::Connected(ep) => match msg {
-//                     Either::Left(_) => panic!("Wrong msg type"),
-//                     Either::Right(msg) => {
-//                         async_std::task::block_on(async {
+                (
+                    async_std::task::spawn(async move {
+                        loop {
+                            let err = match &ep.as_ref() {
+                                MyEndpoint::Connectionless(ep) => {
+                                    if reg_mem.len() <= inject_size {
+                                        if data.is_some() {
+                                            ep.injectdata_to(
+                                                &reg_mem,
+                                                data.unwrap(),
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                            )
+                                        } else {
+                                            ep.inject_to(
+                                                &reg_mem,
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                            )
+                                        }
+                                    } else {
+                                        if data.is_some() {
+                                            ep.senddata_to_async(
+                                                &reg_mem,
+                                                &mut desc,
+                                                data.unwrap(),
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                                &mut ctx,
+                                            )
+                                            .await
+                                        } else {
+                                            ep.send_to_async(
+                                                &reg_mem,
+                                                &mut desc,
+                                                mapped_addr.as_ref().as_ref().unwrap(),
+                                                &mut ctx,
+                                            )
+                                            .await
+                                        }
+                                        .map(|_| {})
+                                    }
+                                }
+                                MyEndpoint::Connected(ep) => {
+                                    if reg_mem.len() <= inject_size {
+                                        if data.is_some() {
+                                            ep.injectdata(&reg_mem, data.unwrap())
+                                        } else {
+                                            ep.inject(&reg_mem)
+                                        }
+                                    } else {
+                                        if data.is_some() {
+                                            ep.senddata_async(
+                                                &reg_mem,
+                                                &mut desc,
+                                                data.unwrap(),
+                                                &mut ctx,
+                                            )
+                                            .await
+                                        } else {
+                                            ep.send_async(&reg_mem, &mut desc, &mut ctx).await
+                                        }
+                                        .map(|_| {})
+                                    }
+                                }
+                            };
+                            match err {
+                                Ok(_) => break,
+                                Err(err) => {
+                                    if !matches!(err.kind, ErrorKind::TryAgain) {
+                                        panic!("{:?}", err);
+                                    }
+                                }
+                            }
+                        }
+                    }),
+                    mr,
+                )
+            })
+            .collect();
 
-//                             ep.sendmsg_async(msg, TferOptions::new().remote_cq_data(), ctx).await
-//                         })
-//                     },
-//                 },
-//             };
+        handles
+            .into_iter()
+            .for_each(|h| async_std::task::block_on(h.0));
+    }
 
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+    //     pub fn sendv(&mut self, iov: &[IoVec], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
+    //         loop {
+    //             let err = match &self.ep {
+    //                 MyEndpoint::Connectionless(ep) => {
+    //                     async_std::task::block_on(async {
+    //                         ep.sendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
+    //                     })
+    //                 }
+    //                 MyEndpoint::Connected(ep) =>
+    //                     async_std::task::block_on(async {
+    //                         ep.sendv_async(iov, desc, ctx).await
+    //                     })
+    //             };
+    //             match err {
+    //                 Ok(_) => break,
+    //                 Err(err) => {
+    //                     if !matches!(err.kind, ErrorKind::TryAgain) {
+    //                         panic!("{:?}", err);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
 
-//     pub fn recvmsg(&mut self, msg: &mut Either<MsgMut, MsgConnectedMut>, ctx: &mut Context) {
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => match msg {
-//                     Either::Left(msg) => {
-//                         async_std::task::block_on(async {
+    //     pub fn recvv(&mut self, iov: &[IoVecMut], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
+    //         loop {
+    //             let err = match &self.ep {
+    //                 MyEndpoint::Connectionless(ep) => {
+    //                     async_std::task::block_on(async {
+    //                         ep.recvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx).await
+    //                     })
+    //                 }
+    //                 MyEndpoint::Connected(ep) => {
+    //                     async_std::task::block_on(async {
+    //                         ep.recvv_async(iov, desc, ctx).await
+    //                     })
+    //                 }
+    //             };
+    //             match err {
+    //                 Ok(_) => break,
+    //                 Err(err) => {
+    //                     if !matches!(err.kind, ErrorKind::TryAgain) {
+    //                         panic!("{:?}", err);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
 
-//                             ep.recvmsg_from_async(msg, TferOptions::new(), ctx).await
-//                         })
-//                     },
-//                     Either::Right(_) => panic!("Wrong message type"),
-//                 },
-//                 MyEndpoint::Connected(ep) => match msg {
-//                     Either::Left(_) => panic!("Wrong message type"),
-//                     Either::Right(msg) => {
-//                         async_std::task::block_on(async {
-//                             ep.recvmsg_async(msg, TferOptions::new(), ctx).await
-//                         })
-//                     },
-//                 },
-//             };
+    pub fn recv(&mut self, buff: &[u8]) -> Vec<Vec<u8>> {
+        let handles: Vec<_> = (0..100)
+            .map(|_| {
+                let ep = self.ep.clone();
+                let mapped_addr = Arc::new(self.mapped_addr.clone());
 
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+                let mut ctx = self.info_entry.allocate_context();
 
-//     pub fn exchange_keys(&mut self, key: MemoryRegionKey, addr: usize, len: usize) {
-//         let mut len = unsafe {
-//             std::slice::from_raw_parts(
-//                 &len as *const usize as *const u8,
-//                 std::mem::size_of::<usize>(),
-//             )
-//         }
-//         .to_vec();
-//         let mut addr = unsafe {
-//             std::slice::from_raw_parts(
-//                 &addr as *const usize as *const u8,
-//                 std::mem::size_of::<usize>(),
-//             )
-//         }
-//         .to_vec();
+                let mut reg_mem = buff.to_vec();
 
-//         let key_bytes = key.to_bytes();
-//         let mut reg_mem = Vec::new();
-//         reg_mem.append(&mut key_bytes.clone());
-//         reg_mem.append(&mut len);
-//         reg_mem.append(&mut addr);
-//         let total_len = reg_mem.len();
-//         reg_mem.append(&mut vec![0; total_len]);
+                let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+                    .access_recv()
+                    .access_send()
+                    .build(&self.domain)
+                    .unwrap();
 
-//         let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-//             .access_recv()
-//             .access_send()
-//             .build(&self.domain)
-//             .unwrap();
+                let mr = match mr {
+                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+                        bind_mr(&self.ep, &mr);
+                        mr.enable().unwrap()
+                    }
+                };
+                let mut desc = mr.descriptor();
 
-//         let mr = match mr {
-//             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-//             libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-//                 bind_mr(&self.ep, &mr);
-//                 mr.enable().unwrap()
-//             }
-//         };
-//         let mut ctx = self.info_entry.allocate_context();
+                (
+                    async_std::task::spawn(async move {
+                        loop {
+                            let err = match ep.as_ref() {
+                                MyEndpoint::Connected(ep) => {
+                                    ep.recv_async(&mut reg_mem, &mut desc, &mut ctx).await
+                                }
+                                MyEndpoint::Connectionless(ep) => {
+                                    ep.recv_from_async(
+                                        &mut reg_mem,
+                                        &mut desc,
+                                        mapped_addr.as_ref().as_ref().unwrap(),
+                                        &mut ctx,
+                                    )
+                                    .await
+                                }
+                            };
 
-//         let mut desc = mr.descriptor();
-//         self.send(
-//             &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
-//             &mut desc,
-//             None,
-//             &mut ctx
-//         );
-//         self.recv(
-//             &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-//                 ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
-//             &mut desc,
-//             &mut ctx
-//         );
+                            match err {
+                                Ok(_) => break,
+                                Err(err) => {
+                                    if !matches!(err.kind, ErrorKind::TryAgain) {
+                                        panic!("{:?}", err);
+                                    }
+                                }
+                            }
+                        }
+                        reg_mem
+                    }),
+                    mr,
+                )
+            })
+            .collect();
 
-//         let remote_key = unsafe {
-//             MemoryRegionKey::from_bytes(
-//                 &reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-//                     ..2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()],
-//                 &self.domain,
-//             )
-//         }
-//         .into_mapped(&self.domain)
-//         .unwrap();
-//         let len = unsafe {
-//             std::slice::from_raw_parts(
-//                 reg_mem[2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()
-//                     ..2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()]
-//                     .as_ptr() as *const u8 as *const u64,
-//                 1,
-//             )
-//         }[0];
-//         let addr = unsafe {
-//             std::slice::from_raw_parts(
-//                 reg_mem[2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()
-//                     ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()]
-//                     .as_ptr() as *const u8 as *const u64,
-//                 1,
-//             )
-//         }[0];
-//         self.remote_key = Some(remote_key);
-//         self.remote_mem_addr = Some((addr, addr + len));
-//     }
-// }
+        handles
+            .into_iter()
+            .map(|h| async_std::task::block_on(h.0))
+            .collect()
+    }
+    // }
 
-// impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
-//     pub fn write<T>(
-//         &mut self,
-//         buf: &[T],
-//         dest_addr: u64,
-//         desc: &mut MemoryRegionDesc,
-//         data: Option<u64>,
-//         ctx: &mut Context
-//     ) {
-//         let (start, _end) = self.remote_mem_addr.unwrap();
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => {
-//                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-//                         if data.is_some() {
-//                             unsafe {
-//                                 ep.inject_writedata_to(
-//                                     buf,
-//                                     data.unwrap(),
-//                                     self.mapped_addr.as_ref().unwrap(),
-//                                     start + dest_addr,
-//                                     self.remote_key.as_ref().unwrap(),
-//                                 )
-//                             }
-//                         } else {
-//                             unsafe {
-//                                 ep.inject_write_to(
-//                                     buf,
-//                                     self.mapped_addr.as_ref().unwrap(),
-//                                     start + dest_addr,
-//                                     self.remote_key.as_ref().unwrap(),
-//                                 )
-//                             }
-//                         }
-//                     } else {
-//                         if data.is_some() {
-//                             unsafe {
-//                                 async_std::task::block_on(async {
-//                                     ep.writedata_to_async(
-//                                         buf,
-//                                         desc,
-//                                         data.unwrap(),
-//                                         self.mapped_addr.as_ref().unwrap(),
-//                                         start + dest_addr,
-//                                         self.remote_key.as_ref().unwrap(),
-//                                         ctx
-//                                     ).await
-//                                 })
-//                             }
-//                         } else {
-//                             unsafe {
-//                                 async_std::task::block_on(async {
-//                                     ep.write_to_async(
-//                                         buf,
-//                                         desc,
-//                                         self.mapped_addr.as_ref().unwrap(),
-//                                         start + dest_addr,
-//                                         self.remote_key.as_ref().unwrap(),
-//                                         ctx
-//                                     ).await
-//                                 })
-//                             }
-//                         }.map(|_| {})
-//                     }
-//                 }
-//                 MyEndpoint::Connected(ep) => {
-//                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-//                         if data.is_some() {
-//                             unsafe {
-//                                 ep.inject_writedata(
-//                                     buf,
-//                                     data.unwrap(),
-//                                     start + dest_addr,
-//                                     self.remote_key.as_ref().unwrap(),
-//                                 )
-//                             }
-//                         } else {
-//                             unsafe {
-//                                 ep.inject_write(
-//                                     buf,
-//                                     start + dest_addr,
-//                                     self.remote_key.as_ref().unwrap(),
-//                                 )
-//                             }
-//                         }
-//                     } else {
-//                         if data.is_some() {
-//                             unsafe {
-//                                 async_std::task::block_on(async {
+    //     pub fn sendmsg(&mut self, msg: &mut Either<Msg, MsgConnected>, ctx: &mut Context) {
+    //         loop {
+    //             let err = match &self.ep {
+    //                 MyEndpoint::Connectionless(ep) => match msg {
+    //                     Either::Left(msg) => {
+    //                         async_std::task::block_on(async {
+    //                             ep.sendmsg_to_async(msg, TferOptions::new().remote_cq_data(), ctx).await
+    //                         })
+    //                     },
+    //                     Either::Right(_) => panic!("Wrong msg type"),
+    //                 },
+    //                 MyEndpoint::Connected(ep) => match msg {
+    //                     Either::Left(_) => panic!("Wrong msg type"),
+    //                     Either::Right(msg) => {
+    //                         async_std::task::block_on(async {
 
-//                                     ep.writedata_async(
-//                                         buf,
-//                                         desc,
-//                                         data.unwrap(),
-//                                         start + dest_addr,
-//                                         self.remote_key.as_ref().unwrap(),
-//                                         ctx
-//                                     ).await
-//                                 })
-//                             }
-//                         } else {
-//                             unsafe {
-//                                 async_std::task::block_on(async {
+    //                             ep.sendmsg_async(msg, TferOptions::new().remote_cq_data(), ctx).await
+    //                         })
+    //                     },
+    //                 },
+    //             };
 
-//                                     ep.write_async(
-//                                         buf,
-//                                         desc,
-//                                         start + dest_addr,
-//                                         self.remote_key.as_ref().unwrap(),
-//                                         ctx
-//                                     ).await
-//                                 })
+    //             match err {
+    //                 Ok(_) => break,
+    //                 Err(err) => {
+    //                     if !matches!(err.kind, ErrorKind::TryAgain) {
+    //                         panic!("{:?}", err);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
 
-//                             }
-//                         }.map(|_| {})
-//                     }
-//                 }
-//             };
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+    //     pub fn recvmsg(&mut self, msg: &mut Either<MsgMut, MsgConnectedMut>, ctx: &mut Context) {
+    //         loop {
+    //             let err = match &self.ep {
+    //                 MyEndpoint::Connectionless(ep) => match msg {
+    //                     Either::Left(msg) => {
+    //                         async_std::task::block_on(async {
 
-//     pub fn read<T>(&mut self, buf: &mut [T], dest_addr: u64, desc: &mut MemoryRegionDesc, ctx: &mut Context) {
-//         let (start, _end) = self.remote_mem_addr.unwrap();
+    //                             ep.recvmsg_from_async(msg, TferOptions::new(), ctx).await
+    //                         })
+    //                     },
+    //                     Either::Right(_) => panic!("Wrong message type"),
+    //                 },
+    //                 MyEndpoint::Connected(ep) => match msg {
+    //                     Either::Left(_) => panic!("Wrong message type"),
+    //                     Either::Right(msg) => {
+    //                         async_std::task::block_on(async {
+    //                             ep.recvmsg_async(msg, TferOptions::new(), ctx).await
+    //                         })
+    //                     },
+    //                 },
+    //             };
 
-//         loop {
-//             let err = match &self.ep {
-//                 MyEndpoint::Connectionless(ep) => unsafe {
-//                     async_std::task::block_on(async {
-//                         ep.read_from_async(
-//                             buf,
-//                             desc,
-//                             self.mapped_addr.as_ref().unwrap(),
-//                             start + dest_addr,
-//                             self.remote_key.as_ref().unwrap(),
-//                             ctx
-//                         ).await
-//                     })
-//                 },
-//                 MyEndpoint::Connected(ep) => unsafe {
-//                     async_std::task::block_on(async {
-//                         ep.read_async(
-//                             buf,
-//                             desc,
-//                             start + dest_addr,
-//                             self.remote_key.as_ref().unwrap(),
-//                             ctx
-//                         ).await
-//                     })
-//                 },
-//             };
-//             match err {
-//                 Ok(_) => break,
-//                 Err(err) => {
-//                     if !matches!(err.kind, ErrorKind::TryAgain) {
-//                         panic!("{:?}", err);
-//                     }
-//                 }
-//             }
-//         }
-//     }
+    //             match err {
+    //                 Ok(_) => break,
+    //                 Err(err) => {
+    //                     if !matches!(err.kind, ErrorKind::TryAgain) {
+    //                         panic!("{:?}", err);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    pub fn exchange_keys(&mut self, server: bool, key: MemoryRegionKey, addr: usize, len: usize) {
+        let mut len = unsafe {
+            std::slice::from_raw_parts(
+                &len as *const usize as *const u8,
+                std::mem::size_of::<usize>(),
+            )
+        }
+        .to_vec();
+        let mut addr = unsafe {
+            std::slice::from_raw_parts(
+                &addr as *const usize as *const u8,
+                std::mem::size_of::<usize>(),
+            )
+        }
+        .to_vec();
+
+        let key_bytes = key.to_bytes();
+        let mut reg_mem = Vec::new();
+        reg_mem.append(&mut key_bytes.clone());
+        reg_mem.append(&mut len);
+        reg_mem.append(&mut addr);
+        let total_len = reg_mem.len();
+        reg_mem.append(&mut vec![0; total_len]);
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .build(&self.domain)
+            .unwrap();
+
+        let mr = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+                bind_mr(&self.ep, &mr);
+                mr.enable().unwrap()
+            }
+        };
+        let mut ctx = self.info_entry.allocate_context();
+
+        let mut desc = mr.descriptor();
+        if server {
+            let _res = match self.ep.as_ref() {
+                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
+                    ep.send_async(
+                        &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.send_to_async(
+                        &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+            };
+
+            let _res = match self.ep.as_ref() {
+                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
+                    ep.recv_async(
+                        &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
+                            ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.recv_from_async(
+                        &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
+                            ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+            };
+        } else {
+            let _res = match self.ep.as_ref() {
+                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
+                    ep.recv_async(
+                        &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
+                            ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.recv_from_async(
+                        &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
+                            ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+            };
+
+            let _res = match self.ep.as_ref() {
+                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
+                    ep.send_async(
+                        &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+                    ep.send_to_async(
+                        &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                        &mut desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        &mut ctx,
+                    )
+                    .await
+                })
+                .unwrap(),
+            };
+
+
+        }
+        let remote_key = unsafe {
+            MemoryRegionKey::from_bytes(
+                &reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
+                    ..2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                &self.domain,
+            )
+        }
+        .into_mapped(&self.domain)
+        .unwrap();
+        let len = unsafe {
+            std::slice::from_raw_parts(
+                reg_mem[2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()
+                    ..2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()]
+                    .as_ptr() as *const u8 as *const u64,
+                1,
+            )
+        }[0];
+        let addr = unsafe {
+            std::slice::from_raw_parts(
+                reg_mem[2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()
+                    ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()]
+                    .as_ptr() as *const u8 as *const u64,
+                1,
+            )
+        }[0];
+        self.remote_key = Some(remote_key);
+        self.remote_mem_addr = Some((addr, addr + len));
+    }
+}
+
+impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
+    pub fn write(&mut self, buf: &[u8], dest_addr: u64, data: Option<u64>) {
+        let (start, _end) = self.remote_mem_addr.unwrap();
+        let handles: Vec<_> = (0..100)
+            .map(|_| {
+                let ep = self.ep.clone();
+                let mapped_addr = Arc::new(self.mapped_addr.clone());
+                let key = Arc::new(self.remote_key.clone());
+
+                let mut ctx = self.info_entry.allocate_context();
+
+                let reg_mem = buf.to_vec();
+
+                let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+                    .access_recv()
+                    .access_send()
+                    .build(&self.domain)
+                    .unwrap();
+
+                let mr = match mr {
+                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+                        bind_mr(&self.ep, &mr);
+                        mr.enable().unwrap()
+                    }
+                };
+                let mut desc = mr.descriptor();
+                let injec_size = self.info_entry.tx_attr().inject_size();
+
+                (
+                    async_std::task::spawn(async move {
+                        loop {
+                            let err = match &ep.as_ref() {
+                                MyEndpoint::Connectionless(ep) => {
+                                    if &reg_mem.len() <= &injec_size {
+                                        if data.is_some() {
+                                            unsafe {
+                                                ep.inject_writedata_to(
+                                                    &reg_mem,
+                                                    data.unwrap(),
+                                                    mapped_addr.as_ref().as_ref().unwrap(),
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                )
+                                            }
+                                        } else {
+                                            unsafe {
+                                                ep.inject_write_to(
+                                                    &reg_mem,
+                                                    mapped_addr.as_ref().as_ref().unwrap(),
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        if data.is_some() {
+                                            unsafe {
+                                                async_std::task::block_on(async {
+                                                    ep.writedata_to_async(
+                                                        &reg_mem,
+                                                        &mut desc,
+                                                        data.unwrap(),
+                                                        mapped_addr.as_ref().as_ref().unwrap(),
+                                                        start + dest_addr,
+                                                        key.as_ref().as_ref().unwrap(),
+                                                        &mut ctx,
+                                                    )
+                                                    .await
+                                                })
+                                            }
+                                        } else {
+                                            unsafe {
+                                                async_std::task::block_on(async {
+                                                    ep.write_to_async(
+                                                        &reg_mem,
+                                                        &mut desc,
+                                                        mapped_addr.as_ref().as_ref().unwrap(),
+                                                        start + dest_addr,
+                                                        key.as_ref().as_ref().unwrap(),
+                                                        &mut ctx,
+                                                    )
+                                                    .await
+                                                })
+                                            }
+                                        }
+                                        .map(|_| {})
+                                    }
+                                }
+                                MyEndpoint::Connected(ep) => {
+                                    if &reg_mem.len() <= &injec_size {
+                                        if data.is_some() {
+                                            unsafe {
+                                                ep.inject_writedata(
+                                                    &reg_mem,
+                                                    data.unwrap(),
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                )
+                                            }
+                                        } else {
+                                            unsafe {
+                                                ep.inject_write(
+                                                    &reg_mem,
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        if data.is_some() {
+                                            unsafe {
+                                                async_std::task::block_on(async {
+                                                    ep.writedata_async(
+                                                        &reg_mem,
+                                                        &mut desc,
+                                                        data.unwrap(),
+                                                        start + dest_addr,
+                                                        key.as_ref().as_ref().unwrap(),
+                                                        &mut ctx,
+                                                    )
+                                                    .await
+                                                })
+                                            }
+                                        } else {
+                                            unsafe {
+                                                async_std::task::block_on(async {
+                                                    ep.write_async(
+                                                        &reg_mem,
+                                                        &mut desc,
+                                                        start + dest_addr,
+                                                        key.as_ref().as_ref().unwrap(),
+                                                        &mut ctx,
+                                                    )
+                                                    .await
+                                                })
+                                            }
+                                        }
+                                        .map(|_| {})
+                                    }
+                                }
+                            };
+                            match err {
+                                Ok(_) => break,
+                                Err(err) => {
+                                    if !matches!(err.kind, ErrorKind::TryAgain) {
+                                        panic!("{:?}", err);
+                                    }
+                                }
+                            }
+                        }
+                    }),
+                    mr,
+                )
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .for_each(|h| async_std::task::block_on(h.0))
+    }
+    // }
+    pub fn read(&mut self, buf: &mut [u8], dest_addr: u64) -> Vec<Vec<u8>> {
+        let (start, _end) = self.remote_mem_addr.unwrap();
+        let handles: Vec<_> = (0..100)
+            .map(|_| {
+                let ep = self.ep.clone();
+                let mapped_addr = Arc::new(self.mapped_addr.clone());
+                let key = Arc::new(self.remote_key.clone());
+
+                let mut ctx = self.info_entry.allocate_context();
+
+                let mut reg_mem = buf.to_vec();
+
+                let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+                    .access_recv()
+                    .access_send()
+                    .build(&self.domain)
+                    .unwrap();
+
+                let mr = match mr {
+                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+                        bind_mr(&self.ep, &mr);
+                        mr.enable().unwrap()
+                    }
+                };
+                let mut desc = mr.descriptor();
+
+                (
+                    async_std::task::spawn(async move {
+                        loop {
+                            let err = match ep.as_ref() {
+                                MyEndpoint::Connectionless(ep) => unsafe {
+                                    async_std::task::block_on(async {
+                                        ep.read_from_async(
+                                            &mut reg_mem,
+                                            &mut desc,
+                                            mapped_addr.as_ref().as_ref().unwrap(),
+                                            start + dest_addr,
+                                            key.as_ref().as_ref().unwrap(),
+                                            &mut ctx,
+                                        )
+                                        .await
+                                    })
+                                },
+                                MyEndpoint::Connected(ep) => unsafe {
+                                    async_std::task::block_on(async {
+                                        ep.read_async(
+                                            &mut reg_mem,
+                                            &mut desc,
+                                            start + dest_addr,
+                                            key.as_ref().as_ref().unwrap(),
+                                            &mut ctx,
+                                        )
+                                        .await
+                                    })
+                                },
+                            };
+                            match err {
+                                Ok(_) => break,
+                                Err(err) => {
+                                    if !matches!(err.kind, ErrorKind::TryAgain) {
+                                        panic!("{:?}", err);
+                                    }
+                                }
+                            }
+                        }
+                        reg_mem
+                    }),
+                    mr,
+                )
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| async_std::task::block_on(h.0))
+            .collect()
+    }
+}
 
 //     pub fn writev(&mut self, iov: &[IoVec], dest_addr: u64, desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
 //         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1843,12 +2164,12 @@ fn handshake<I: Caps + MsgDefaultCap + 'static>(
 }
 
 #[test]
-fn async_handshake_connected0() {
+fn parallel_async_handshake_connected0() {
     handshake(true, "handshake_connected0", Some(InfoCaps::new().msg()));
 }
 
 #[test]
-fn async_handshake_connected1() {
+fn parallel_async_handshake_connected1() {
     handshake(false, "handshake_connected0", Some(InfoCaps::new().msg()));
 }
 
@@ -1876,26 +2197,26 @@ fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
     )
 }
 
-// #[test]
-// fn parallel_async_handshake_connectionless0() {
-//     handshake_connectionless(
-//         true,
-//         "handshake_connectionless0",
-//         Some(InfoCaps::new().msg()),
-//     );
-// }
+#[test]
+fn parallel_async_handshake_connectionless0() {
+    handshake_connectionless(
+        true,
+        "handshake_connectionless0",
+        Some(InfoCaps::new().msg()),
+    );
+}
 
-// #[test]
-// fn parallel_async_handshake_connectionless1() {
-//     handshake_connectionless(
-//         false,
-//         "handshake_connectionless0",
-//         Some(InfoCaps::new().msg()),
-//     );
-// }
+#[test]
+fn parallel_async_handshake_connectionless1() {
+    handshake_connectionless(
+        false,
+        "handshake_connectionless0",
+        Some(InfoCaps::new().msg()),
+    );
+}
 
 fn sendrecv(server: bool, name: &str, connected: bool) {
-    let ofi = if connected {
+    let mut ofi = if connected {
         handshake(server, name, Some(InfoCaps::new().msg()))
     } else {
         handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
@@ -1923,45 +2244,12 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = Arc::new(async_std::sync::Mutex::new(vec![
-        mr.descriptor(),
-        mr.descriptor(),
-    ]));
-    let mut ctx = Arc::new(async_std::sync::Mutex::new(
-        ofi.info_entry.allocate_context(),
-    ));
-
-    let mut desc0 = desc.clone();
-    let mut ctx0 = ctx.clone();
     if server {
-        // let handles: Vec<_> = (0..100).map(|_| {
-        //     let ep = ofi.ep.clone();
-        //     let mapped_addr = Arc::new(ofi.mapped_addr.clone());
-        //     let reg_mem_0 = reg_mem.clone();
-        //     async_std::task::spawn(async move {
-        //         loop {
-        //             let err = match ep.as_ref() {
-        //                 MyEndpoint::Connected(ep) => ep.inject(&reg_mem_0[..128]),
-        //                 MyEndpoint::Connectionless(ep) => ep.inject_to(&reg_mem_0[..128], mapped_addr.as_ref().as_ref().unwrap()),
-        //             };
+        ofi.send(&reg_mem[..128], None);
+        println!("Injects completed");
 
-        //             match err {
-        //                 Ok(_) => break,
-        //                 Err(err) => {
-        //                     if !matches!(err.kind, ErrorKind::TryAgain) {
-        //                         panic!("{:?}", err);
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     })
-        // }).collect();
-
-        // for hdl in handles {
-        //     async_std::task::block_on(hdl);
-        // }
-
-        // println!("Injects completed");
+        ofi.send(&reg_mem[..512], None);
+        println!("Send asyncs completed");
 
         let handles: Vec<_> = (0..100)
             .map(|_| {
@@ -1972,12 +2260,12 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
                 let mut ctx = ofi.info_entry.allocate_context();
 
                 async_std::task::spawn(async move {
-                    println!("Submitting send");
-
+                    let iov = [IoVec::from_slice(&reg_mem_0[..512])];
                     loop {
                         let err = match ep.as_ref() {
                             MyEndpoint::Connected(ep) => {
-                                ep.send_async(&reg_mem_0[..512], &mut desc, &mut ctx).await
+                                ep.sendv_async(&iov, std::slice::from_mut(&mut desc), &mut ctx)
+                                    .await
                             }
                             MyEndpoint::Connectionless(ep) => {
                                 ep.send_to_async(
@@ -1994,12 +2282,11 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
                             Ok(_) => break,
                             Err(err) => {
                                 if !matches!(err.kind, ErrorKind::TryAgain) {
-                                    panic!("THE FOLLOWING {:?}", err);
+                                    panic!("{:?}", err);
                                 }
                             }
                         }
                     }
-                    println!("Submitted send");
                 })
             })
             .collect();
@@ -2007,209 +2294,34 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         for hdl in handles {
             async_std::task::block_on(hdl);
         }
-
-        println!("Send asyncs completed");
-
-        // let handles: Vec<_> = (0..100).map(|_| {
-        //     let ep = ofi.ep.clone();
-        //     let mapped_addr = Arc::new(ofi.mapped_addr.clone());
-        //     let reg_mem_0 = reg_mem.clone();
-        //     let mut desc = mr.descriptor();
-        //     let mut ctx = ofi.info_entry.allocate_context();
-
-        //     async_std::task::spawn(async move {
-        //         let iov = [IoVec::from_slice(&reg_mem_0[..512])];
-        //         loop {
-        //             let err = match ep.as_ref() {
-        //                 MyEndpoint::Connected(ep) => ep.sendv_async(&iov, std::slice::from_mut(&mut desc), &mut ctx).await,
-        //                 MyEndpoint::Connectionless(ep) => ep.send_to_async(&reg_mem_0[..512], &mut desc, mapped_addr.as_ref().as_ref().unwrap(), &mut ctx).await,
-        //             };
-
-        //             match err {
-        //                 Ok(_) => break,
-        //                 Err(err) => {
-        //                     if !matches!(err.kind, ErrorKind::TryAgain) {
-        //                         panic!("{:?}", err);
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     })
-        // }).collect();
-
-        // for hdl in handles {
-        //     async_std::task::block_on(hdl);
-        // }
     } else {
         let expected: Vec<_> = (0..1024 * 2)
             .into_iter()
             .map(|v: usize| (v % 256) as u8)
             .collect();
 
-        // let handles: Vec<_> = (0..100).map(|_| {
-        //     let ep = ofi.ep.clone();
-        //     let mapped_addr = Arc::new(ofi.mapped_addr.clone());
+        let mem: Vec<_> = vec![0u8; 512];
 
-        //     let mut ctx = ofi.info_entry.allocate_context();
+        let results = ofi.recv(&mem[..128]);
 
-        //     let mut reg_mem: Vec<_> = vec![0u8; 512];
+        for res in results {
+            assert_eq!(&res[..128], &expected[..128]);
+        }
 
-        //     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-        //         .access_recv()
-        //         .access_send()
-        //         .build(&ofi.domain)
-        //         .unwrap();
+        println!("Recv asyncs 1 completed");
 
-        //     let mr = match mr {
-        //         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-        //         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-        //             bind_mr(&ofi.ep, &mr);
-        //             mr.enable().unwrap()
-        //         }
-        //     };
-        //     let mut desc = mr.descriptor();
+        let results = ofi.recv(&mem[..512]);
 
-        //     (async_std::task::spawn(async move {
-        //         loop {
-        //             let err = match ep.as_ref() {
-        //                 MyEndpoint::Connected(ep) => ep.recv_async(&mut reg_mem[..128], &mut desc, &mut ctx).await,
-        //                 MyEndpoint::Connectionless(ep) => ep.recv_from_async(&mut reg_mem[..128], &mut desc, mapped_addr.as_ref().as_ref().unwrap(), &mut ctx).await,
-        //             };
-
-        //             match err {
-        //                 Ok(_) => break,
-        //                 Err(err) => {
-        //                     if !matches!(err.kind, ErrorKind::TryAgain) {
-        //                         panic!("{:?}", err);
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //         reg_mem
-        //     }),mr)
-        // }).collect();
-
-        // for hdl in handles {
-        //     let res = async_std::task::block_on(hdl.0);
-        //     assert_eq!(&res[..128], &expected[..128]);
-        // }
-
-        // println!("Recv asyncs 1 completed");
-
-        let handles: Vec<_> = (0..100)
-            .map(|id| {
-                let ep = ofi.ep.clone();
-                let mapped_addr = Arc::new(ofi.mapped_addr.clone());
-                let mut ctx = ofi.info_entry.allocate_context();
-                let mut reg_mem: Vec<_> = vec![0u8; 512];
-
-                let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-                    .access_recv()
-                    .access_send()
-                    .build(&ofi.domain)
-                    .unwrap();
-
-                let mr = match mr {
-                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                        bind_mr(&ofi.ep, &mr);
-                        mr.enable().unwrap()
-                    }
-                };
-                let mut desc = mr.descriptor();
-                println!("Creating recv task {id}");
-                (
-                    async_std::task::spawn(async move {
-                        println!("Submiting recv");
-
-                        loop {
-                            let err = match ep.as_ref() {
-                                MyEndpoint::Connected(ep) => {
-                                    ep.recv_async(&mut reg_mem[..512], &mut desc, &mut ctx)
-                                        .await
-                                }
-                                MyEndpoint::Connectionless(ep) => {
-                                    ep.recv_from_async(
-                                        &mut reg_mem[..512],
-                                        &mut desc,
-                                        mapped_addr.as_ref().as_ref().unwrap(),
-                                        &mut ctx,
-                                    )
-                                    .await
-                                }
-                            };
-
-                            match err {
-                                Ok(_) => break,
-                                Err(err) => {
-                                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                                        panic!("{:?}", err);
-                                    }
-                                }
-                            }
-                        }
-                        println!("Submitted recv");
-                        reg_mem
-                    }),
-                    mr,
-                )
-            })
-            .collect();
-
-        for hdl in handles {
-            let res = async_std::task::block_on(hdl.0);
-            assert_eq!(res, &expected[..512]);
+        for res in results {
+            assert_eq!(&res[..512], &expected[..512]);
         }
 
         println!("Recv asyncs 2 completed");
+        let results = ofi.recv(&mem[..512]);
 
-        // let handles: Vec<_> = (0..100).map(|_| {
-        //     let ep = ofi.ep.clone();
-        //     let mapped_addr = Arc::new(ofi.mapped_addr.clone());
-        //     let mut reg_mem: Vec<_> = vec![0u8; 512];
-
-        //     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-        //         .access_recv()
-        //         .access_send()
-        //         .build(&ofi.domain)
-        //         .unwrap();
-
-        //     let mr = match mr {
-        //         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-        //         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-        //             bind_mr(&ofi.ep, &mr);
-        //             mr.enable().unwrap()
-        //         }
-        //     };
-        //     let mut desc: MemoryRegionDesc = mr.descriptor();
-
-        //     let mut ctx = ofi.info_entry.allocate_context();
-
-        //     (async_std::task::spawn(async move {
-        //         let iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-        //         loop {
-        //             let err = match ep.as_ref() {
-        //                 MyEndpoint::Connected(ep) => ep.recvv_async(&iov, std::slice::from_mut(&mut desc), &mut ctx).await,
-        //                 MyEndpoint::Connectionless(ep) => ep.recvv_from_async(&iov, std::slice::from_mut(&mut desc), mapped_addr.as_ref().as_ref().unwrap(), &mut ctx).await,
-        //             };
-
-        //             match err {
-        //                 Ok(_) => break,
-        //                 Err(err) => {
-        //                     if !matches!(err.kind, ErrorKind::TryAgain) {
-        //                         panic!("{:?}", err);
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //         reg_mem
-        //     }),mr)
-        // }).collect();
-
-        // for hdl in handles {
-        //     let res = async_std::task::block_on(hdl.0);
-        //     assert_eq!(res, &expected[..512]);
-        // }
+        for res in results {
+            assert_eq!(&res[..512], &expected[..512]);
+        }
 
         // assert_eq!(mem0, &expected[..512]);
         // assert_eq!(mem1, &expected[512..1024]);
@@ -2307,111 +2419,101 @@ fn bind_mr<E: 'static>(ep: &MyEndpoint<E>, mr: &DisabledMemoryRegion) {
     }
 }
 
-// fn tsendrecv(server: bool, name: &str, connected: bool) {
-//     let mut ofi = if connected {
-//         handshake(server, name, Some(InfoCaps::new().msg().tagged()))
-//     } else {
-//         handshake_connectionless(server, name, Some(InfoCaps::new().msg().tagged()))
-//     };
+fn tsendrecv(server: bool, name: &str, connected: bool) {
+    let mut ofi = if connected {
+        handshake(server, name, Some(InfoCaps::new().msg().tagged()))
+    } else {
+        handshake_connectionless(server, name, Some(InfoCaps::new().msg().tagged()))
+    };
 
-//     let mut reg_mem: Vec<_> = (0..1024 * 2)
-//         .into_iter()
-//         .map(|v: usize| (v % 256) as u8)
-//         .collect();
-//     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-//         .access_recv()
-//         .access_send()
-//         .build(&ofi.domain)
-//         .unwrap();
+    let mut reg_mem: Vec<_> = (0..1024 * 2)
+        .into_iter()
+        .map(|v: usize| (v % 256) as u8)
+        .collect();
 
-//     let mr = match mr {
-//         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-//         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-//             bind_mr(&ofi.ep, &mr);
-//             mr.enable().unwrap()
-//         }
-//     };
+    let data = Some(128u64);
 
-//     let mut desc = [mr.descriptor(), mr.descriptor()];
-//     let data = Some(128u64);
-//     let mut ctx = ofi.info_entry.allocate_context();
+    if server {
+        // Send a single buffer
+        ofi.tsend(&reg_mem[..512], 10, data);
 
-//     if server {
-//         // Send a single buffer
-//         ofi.tsend(&reg_mem[..512], &mut desc[0], 10, data, &mut ctx);
-//         // match entry {
-//         //     Completion::Tagged(entry) => {assert_eq!(entry[0].data(), data.unwrap()); assert_eq!(entry[0].tag(), 10)},
-//         //     _ => panic!("Unexpected CQ entry format"),
-//         // }
+        // Inject a buffer
+        ofi.tsend(&reg_mem[..128], 1, data);
 
-//         assert!(std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size());
+        // Send a single buffer
+        ofi.tsend(&reg_mem[..512], 10, data);
 
-//         // Inject a buffer
-//         ofi.tsend(&reg_mem[..128], &mut desc[0], 1, data, &mut ctx);
-//         // No cq.sread since inject does not generate completions
+        // // // Send single Iov
+        // let iov = [IoVec::from_slice(&reg_mem[..512])];
+        // ofi.tsendv(&iov, &mut desc[..1], 2, &mut ctx);
 
-//         // // Send single Iov
-//         let iov = [IoVec::from_slice(&reg_mem[..512])];
-//         ofi.tsendv(&iov, &mut desc[..1], 2, &mut ctx);
+        // // Send multi Iov
+        // let iov = [
+        //     IoVec::from_slice(&reg_mem[..512]),
+        //     IoVec::from_slice(&reg_mem[512..1024]),
+        // ];
+        // ofi.tsendv(&iov, &mut desc, 3, &mut ctx);
+    } else {
+        let expected: Vec<_> = (0..1024 * 2)
+            .into_iter()
+            .map(|v: usize| (v % 256) as u8)
+            .collect();
+        reg_mem.iter_mut().for_each(|v| *v = 0);
 
-//         // Send multi Iov
-//         let iov = [
-//             IoVec::from_slice(&reg_mem[..512]),
-//             IoVec::from_slice(&reg_mem[512..1024]),
-//         ];
-//         ofi.tsendv(&iov, &mut desc, 3, &mut ctx);
-//     } else {
-//         let expected: Vec<_> = (0..1024 * 2)
-//             .into_iter()
-//             .map(|v: usize| (v % 256) as u8)
-//             .collect();
-//         reg_mem.iter_mut().for_each(|v| *v = 0);
+        // Receive a single buffer
+        let results = ofi.trecv(&mut reg_mem[..512], 10);
 
-//         // Receive a single buffer
-//         ofi.trecv(&mut reg_mem[..512], &mut desc[0], 10, &mut ctx);
+        for res in results {
+            assert_eq!(res[..], expected[..512]);
+        }
 
-//         assert_eq!(reg_mem[..512], expected[..512]);
+        // // Receive inject
+        let results = ofi.trecv(&mut reg_mem[..128], 1);
 
-//         // Receive inject
-//         reg_mem.iter_mut().for_each(|v| *v = 0);
-//         ofi.trecv(&mut reg_mem[..128], &mut desc[0], 1, &mut ctx);
-//         assert_eq!(reg_mem[..128], expected[..128]);
+        for res in results {
+            assert_eq!(res[..], expected[..128]);
+        }
 
-//         reg_mem.iter_mut().for_each(|v| *v = 0);
-//         // // Receive into a single Iov
-//         let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-//         ofi.trecvv(&mut iov, &mut desc[..1], 2, &mut ctx);
-//         assert_eq!(reg_mem[..512], expected[..512]);
+        let results = ofi.trecv(&mut reg_mem[..512], 10);
 
-//         reg_mem.iter_mut().for_each(|v| *v = 0);
+        for res in results {
+            assert_eq!(res[..], expected[..512]);
+        }
 
-//         // // Receive into multiple Iovs
-//         let (mem0, mem1) = reg_mem[..1024].split_at_mut(512);
-//         let iov = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-//         ofi.trecvv(&iov, &mut desc, 3, &mut ctx);
+        // // // Receive into a single Iov
+        // let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
+        // ofi.trecvv(&mut iov, &mut desc[..1], 2, &mut ctx);
+        // assert_eq!(reg_mem[..512], expected[..512]);
 
-//         assert_eq!(mem0, &expected[..512]);
-//         assert_eq!(mem1, &expected[512..1024]);
-//     }
-// }
+        // reg_mem.iter_mut().for_each(|v| *v = 0);
 
-// #[test]
-// fn async_tsendrecv0() {
-//     tsendrecv(true, "tsendrecv0", false);
-// }
+        // // // Receive into multiple Iovs
+        // let (mem0, mem1) = reg_mem[..1024].split_at_mut(512);
+        // let iov = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
+        // ofi.trecvv(&iov, &mut desc, 3, &mut ctx);
+
+        // assert_eq!(mem0, &expected[..512]);
+        // assert_eq!(mem1, &expected[512..1024]);
+    }
+}
+
+#[test]
+fn parallel_async_tsendrecv0() {
+    tsendrecv(true, "tsendrecv0", false);
+}
+
+#[test]
+fn parallel_async_tsendrecv1() {
+    tsendrecv(false, "tsendrecv0", false);
+}
 
 // #[test]
-// fn async_tsendrecv1() {
-//     tsendrecv(false, "tsendrecv0", false);
-// }
-
-// #[test]
-// fn async_conn_tsendrecv0() {
+// fn parallel_async_conn_tsendrecv0() {
 //     tsendrecv(true, "conn_tsendrecv0", true);
 // }
 
 // #[test]
-// fn async_conn_tsendrecv1() {
+// fn parallel_async_conn_tsendrecv1() {
 //     tsendrecv(false, "conn_tsendrecv0", true);
 // }
 
@@ -2837,122 +2939,120 @@ fn bind_mr<E: 'static>(ep: &MyEndpoint<E>, mr: &DisabledMemoryRegion) {
 //     tsendrecvmsg(false, "conn_tsendrecvmsg0", true);
 // }
 
-// fn writeread(server: bool, name: &str, connected: bool) {
-//     let mut ofi = if connected {
-//         handshake(server, name, Some(InfoCaps::new().msg().rma()))
-//     } else {
-//         handshake_connectionless(server, name, Some(InfoCaps::new().msg().rma()))
-//     };
+fn writeread(server: bool, name: &str, connected: bool) {
+    let mut ofi = if connected {
+        handshake(server, name, Some(InfoCaps::new().msg().rma()))
+    } else {
+        handshake_connectionless(server, name, Some(InfoCaps::new().msg().rma()))
+    };
 
-//     let mut reg_mem: Vec<_> = if server {
-//         (0..1024 * 2)
-//             .into_iter()
-//             .map(|v: usize| (v % 256) as u8)
-//             .collect()
-//     } else {
-//         vec![0; 1024 * 2]
-//     };
-//     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-//         .access_recv()
-//         .access_send()
-//         .access_write()
-//         .access_read()
-//         .access_remote_write()
-//         .access_remote_read()
-//         .build(&ofi.domain)
-//         .unwrap();
-//     let mr = match mr {
-//         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-//         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-//             bind_mr(&ofi.ep, &mr);
-//             mr.enable().unwrap()
-//         }
-//     };
+    let mut reg_mem: Vec<_> = if server {
+        (0..1024 * 2)
+            .into_iter()
+            .map(|v: usize| (v % 256) as u8)
+            .collect()
+    } else {
+        vec![0; 1024 * 2]
+    };
+    let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+        .access_recv()
+        .access_send()
+        .access_write()
+        .access_read()
+        .access_remote_write()
+        .access_remote_read()
+        .build(&ofi.domain)
+        .unwrap();
+    let mr = match mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
+            bind_mr(&ofi.ep, &mr);
+            mr.enable().unwrap()
+        }
+    };
 
-//     let desc = mr.descriptor();
-//     let mut descs = [desc.clone(), desc];
-//     // let mapped_addr = ofi.mapped_addr.clone();
-//     let key = mr.key().unwrap();
-//     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
-//     let expected: Vec<_> = (0..1024).map(|v: usize| (v % 256) as u8).collect();
-//     let mut ctx = ofi.info_entry.allocate_context();
+    // let mapped_addr = ofi.mapped_addr.clone();
+    let key = mr.key().unwrap();
+    ofi.exchange_keys(server, key, reg_mem.as_ptr() as usize, 1024 * 2);
+    let expected: Vec<_> = (0..1024).map(|v: usize| (v % 256) as u8).collect();
 
-//     if server {
-//         // Write inject a single buffer
-//         ofi.write(&reg_mem[..128], 0, &mut descs[0], None, &mut ctx);
+    if server {
+        // Write a single buffer
+        ofi.write(&reg_mem[..512], 0, None);
 
-//         // Send completion ack
-//         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        // Send completion ack
+        ofi.send(&reg_mem[512..1024], None);
 
-//         // Write a single buffer
-//         ofi.write(&reg_mem[..512], 0, &mut descs[0], None, &mut ctx);
+        // Write inject a single buffer
+        ofi.write(&reg_mem[..128], 0, None);
+        // Send completion ack
+        ofi.send(&reg_mem[512..1024], None);
 
-//         // Send completion ack
-//         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        // // Write vector of buffers
+        // let iovs = [
+        //     IoVec::from_slice(&reg_mem[..512]),
+        //     IoVec::from_slice(&reg_mem[512..1024]),
+        // ];
+        // ofi.writev(&iovs, 0, &mut descs, &mut ctx);
 
-//         // Write vector of buffers
-//         let iovs = [
-//             IoVec::from_slice(&reg_mem[..512]),
-//             IoVec::from_slice(&reg_mem[512..1024]),
-//         ];
-//         ofi.writev(&iovs, 0, &mut descs, &mut ctx);
+        // // Send completion ack
+        // ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
 
-//         // Send completion ack
-//         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        // // Recv a completion ack
+        ofi.recv(&mut reg_mem[512..1024]);
+    } else {
+        // Recv a completion ack
+        ofi.recv(&mut reg_mem[512..1024]);
+        assert_eq!(&reg_mem[..128], &expected[..128]);
 
-//         // Recv a completion ack
-//         ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
-//     } else {
-//         // Recv a completion ack
-//         ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
-//         assert_eq!(&reg_mem[..128], &expected[..128]);
+        // Recv a completion ack
+        ofi.recv(&mut reg_mem[512..1024]);
+        assert_eq!(&reg_mem[..512], &expected[..512]);
 
-//         // Recv a completion ack
-//         ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
-//         assert_eq!(&reg_mem[..512], &expected[..512]);
+        // // Recv a completion ack
+        // ofi.recv(&mut reg_mem[1024..1536]);
+        // assert_eq!(&reg_mem[..1024], &expected[..1024]);
 
-//         // Recv a completion ack
-//         ofi.recv(&mut reg_mem[1024..1536], &mut descs[0], &mut ctx);
-//         assert_eq!(&reg_mem[..1024], &expected[..1024]);
+        // reg_mem.iter_mut().for_each(|v| *v = 0);
 
-//         reg_mem.iter_mut().for_each(|v| *v = 0);
+        // // Read buffer from remote memory
+        let results = ofi.read(&mut reg_mem[1024..1536], 0);
+        for res in results {
+            assert_eq!(&res[..512], &expected[512..1024]);
+        }
 
-//         // Read buffer from remote memory
-//         ofi.read(&mut reg_mem[1024..1536], 0, &mut descs[0], &mut ctx);
-//         assert_eq!(&reg_mem[1024..1536], &expected[512..1024]);
+        // // Read vector of buffers from remote memory
+        // let (mem0, mem1) = reg_mem[1536..].split_at_mut(256);
+        // let iovs = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
+        // ofi.readv(&iovs, 0, &mut descs, &mut ctx);
 
-//         // Read vector of buffers from remote memory
-//         let (mem0, mem1) = reg_mem[1536..].split_at_mut(256);
-//         let iovs = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-//         ofi.readv(&iovs, 0, &mut descs, &mut ctx);
+        // assert_eq!(mem0, &expected[..256]);
+        // assert_eq!(mem1, &expected[..256]);
 
-//         assert_eq!(mem0, &expected[..256]);
-//         assert_eq!(mem1, &expected[..256]);
+        // // Send completion ack
+        ofi.send(&reg_mem[512..1024], None);
+    }
+}
 
-//         // Send completion ack
-//         ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
-//     }
-// }
+#[test]
+fn paralle_async_conn_writeread0() {
+    writeread(true, "conn_writeread0", true);
+}
 
-// #[test]
-// fn async_conn_writeread0() {
-//     writeread(true, "conn_writeread0", true);
-// }
+#[test]
+fn paralle_async_conn_writeread1() {
+    writeread(false, "conn_writeread0", true);
+}
 
-// #[test]
-// fn async_conn_writeread1() {
-//     writeread(false, "conn_writeread0", true);
-// }
+#[test]
+fn paralle_async_writeread0() {
+    writeread(true, "writeread0", false);
+}
 
-// #[test]
-// fn async_writeread0() {
-//     writeread(true, "writeread0", false);
-// }
-
-// #[test]
-// fn async_writeread1() {
-//     writeread(false, "writeread0", false);
-// }
+#[test]
+fn paralle_async_writeread1() {
+    writeread(false, "writeread0", false);
+}
 
 // fn writereadmsg(server: bool, name: &str, connected: bool) {
 //     let mut ofi = if connected {

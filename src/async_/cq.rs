@@ -361,7 +361,6 @@ impl<'a> Future for AsyncTransferCq<'a> {
                             mut_self.ctx.0.id(),
                             mut_self.ctx.inner() as usize
                         );
-
                         if let ErrorKind::ErrorInQueue(ref q_error) = error.kind {
                             match q_error {
                                 crate::error::QueueError::Event(_) => todo!(), // Should never be the case
@@ -766,9 +765,9 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
         // let mut first = true;
         loop {
             let mut cannot_block = false;
-            println!("About to block in CQ");
+            // println!("About to block in CQ");
             let (err, _guard) = if mut_self.cq.trywait().is_err() {
-                println!("Cannot block");
+                // println!("Cannot block");
                 cannot_block = true;
                 (
                     mut_self.cq.read_in(mut_self.num_entries, &mut mut_self.buf),
@@ -783,10 +782,9 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
 
                 #[allow(clippy::let_underscore_future)]
                 let _ = mut_self.fut.take().unwrap();
-                println!("Did not block");
+                // println!("Did not block");
                 (mut_self.cq.read_in(1, &mut mut_self.buf), Some(_guard))
             };
-            // let err = mut_self.cq.read_in(1, &mut mut_self.buf);
             match err {
                 Err(error) => {
                     if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
@@ -801,7 +799,7 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                             )));
                         }
                     } else {
-                        println!("Will continue");
+                        // println!("Will continue");
                         #[cfg(feature = "use-tokio")]
                         if let Some(mut guard) = _guard {
                             if mut_self.cq.pending_entries.load(Ordering::SeqCst) == 0 {
