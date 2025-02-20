@@ -19,6 +19,8 @@ use crate::{
     MappedAddress,
 };
 
+use super::while_try_again;
+
 pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
     async fn trecv_async_impl<T>(
         &self,
@@ -29,8 +31,11 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
         ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.trecv_impl(buf, desc, mapped_addr, tag, ignore, Some(ctx.inner_mut()))?;
         let cq = self.retrieve_rx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.trecv_impl(buf, desc, mapped_addr, tag, ignore, Some(ctx.inner_mut()))
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -43,15 +48,18 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
         ignore: Option<u64>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.trecvv_impl(
-            iov,
-            desc,
-            src_mapped_addr,
-            tag,
-            ignore,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_rx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.trecvv_impl(
+                iov,
+                desc,
+                src_mapped_addr,
+                tag,
+                ignore,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -68,14 +76,17 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
             Either::Right(msg) => Either::<&MsgTaggedMut, &MsgTaggedConnectedMut>::Right(msg),
         };
 
-        self.trecvmsg_impl(imm_msg, options)?;
+        let cq = self.retrieve_rx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.trecvmsg_impl(imm_msg.to_owned(), options)
+        })
+        .await?;
 
         let ctx = match &mut msg {
             Either::Left(msg) => msg.context(),
             Either::Right(msg) => msg.context(),
         };
 
-        let cq = self.retrieve_rx_cq();
         cq.wait_for_ctx_async(ctx).await
     }
 }
@@ -229,9 +240,22 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsend_impl(buf, desc, mapped_addr, tag, Some(ctx.inner_mut()))?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.tsend_impl(buf, desc, mapped_addr, tag, Some(ctx.inner_mut()))
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
+    }
+
+    async fn tinject_async_impl<T>(
+        &self,
+        buf: &[T],
+        mapped_addr: Option<&MappedAddress>,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || self.tinject_impl(buf, mapped_addr, tag)).await
     }
 
     async fn tsendv_async_impl<'a>(
@@ -242,8 +266,11 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsendv_impl(iov, desc, dest_mapped_addr, tag, Some(ctx.inner_mut()))?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.tsendv_impl(iov, desc, dest_mapped_addr, tag, Some(ctx.inner_mut()))
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -256,15 +283,18 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
             Either::Left(ref msg) => Either::<&MsgTagged, &MsgTaggedConnected>::Left(msg),
             Either::Right(ref msg) => Either::<&MsgTagged, &MsgTaggedConnected>::Right(msg),
         };
+        let cq = self.retrieve_tx_cq();
 
-        self.tsendmsg_impl(imm_msg, options)?;
+        while_try_again(cq.as_ref(), || {
+            self.tsendmsg_impl(imm_msg.to_owned(), options)
+        })
+        .await?;
 
         let ctx = match &mut msg {
             Either::Left(msg) => msg.context(),
             Either::Right(msg) => msg.context(),
         };
 
-        let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -277,9 +307,26 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.tsenddata_impl(buf, desc, data, mapped_addr, tag, Some(ctx.inner_mut()))?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.tsenddata_impl(buf, desc, data, mapped_addr, tag, Some(ctx.inner_mut()))
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
+    }
+
+    async fn tinjectdata_async_impl<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        mapped_addr: Option<&MappedAddress>,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.tinjectdata_impl(buf, data, mapped_addr, tag)
+        })
+        .await
     }
 }
 
@@ -292,6 +339,13 @@ pub trait AsyncTagSendEp: TagSendEp {
         tag: u64,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+    fn tinject_to_async<T>(
+        &self,
+        buf: &[T],
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
     fn tsendv_to_async<'a>(
         &self,
@@ -307,6 +361,7 @@ pub trait AsyncTagSendEp: TagSendEp {
         msg: &mut crate::msg::MsgTagged<'a>,
         options: TaggedSendMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
     fn tsenddata_to_async<T>(
         &self,
         buf: &[T],
@@ -316,6 +371,14 @@ pub trait AsyncTagSendEp: TagSendEp {
         tag: u64,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+    fn tinjectdata_to_async<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
 
 pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
@@ -326,6 +389,12 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
         tag: u64,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+    fn tinject_async<T>(
+        &self,
+        buf: &[T],
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
     fn tsendv_async<'a>(
         &self,
@@ -348,6 +417,12 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
         tag: u64,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+    fn tinjectdata_async<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
 
 // impl<E: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
@@ -371,6 +446,16 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.tsend_async_impl(buf, desc, Some(mapped_addr), tag, ctx)
             .await
+    }
+
+    #[inline]
+    async fn tinject_to_async<T>(
+        &self,
+        buf: &[T],
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tinject_async_impl(buf, Some(mapped_addr), tag).await
     }
 
     #[inline]
@@ -409,6 +494,18 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
         self.tsenddata_async_impl(buf, desc, data, Some(mapped_addr), tag, ctx)
             .await
     }
+
+    #[inline]
+    async fn tinjectdata_to_async<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tinjectdata_async_impl(buf, data, Some(mapped_addr), tag)
+            .await
+    }
 }
 
 impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
@@ -421,6 +518,11 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.tsend_async_impl(buf, desc, None, tag, ctx).await
+    }
+
+    #[inline]
+    async fn tinject_async<T>(&self, buf: &[T], tag: u64) -> Result<(), crate::error::Error> {
+        self.tinject_async_impl(buf, None, tag).await
     }
 
     #[inline]
@@ -455,6 +557,16 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     ) -> Result<SingleCompletion, crate::error::Error> {
         self.tsenddata_async_impl(buf, desc, data, None, tag, ctx)
             .await
+    }
+
+    #[inline]
+    async fn tinjectdata_async<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tinjectdata_async_impl(buf, data, None, tag).await
     }
 }
 

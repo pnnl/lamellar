@@ -518,81 +518,74 @@ impl<I: TagDefaultCap + 'static> Ofi<I> {
 
                 (
                     async_std::task::spawn(async move {
-                        loop {
-                            let err = match &ep.as_ref() {
-                                MyEndpoint::Connectionless(ep) => {
-                                    if reg_mem.len() <= inject_size {
-                                        if data.is_some() {
-                                            ep.tinjectdata_to(
-                                                &reg_mem,
-                                                data.unwrap(),
-                                                mapped_addr.as_ref().as_ref().unwrap(),
-                                                tag,
-                                            )
-                                        } else {
-                                            ep.tinject_to(
-                                                &reg_mem,
-                                                mapped_addr.as_ref().as_ref().unwrap(),
-                                                tag,
-                                            )
-                                        }
+                        match &ep.as_ref() {
+                            MyEndpoint::Connectionless(ep) => {
+                                if reg_mem.len() <= inject_size {
+                                    if data.is_some() {
+                                        ep.tinjectdata_to_async(
+                                            &reg_mem,
+                                            data.unwrap(),
+                                            mapped_addr.as_ref().as_ref().unwrap(),
+                                            tag,
+                                        )
+                                        .await
                                     } else {
-                                        if data.is_some() {
-                                            ep.tsenddata_to_async(
-                                                &reg_mem,
-                                                &mut desc,
-                                                data.unwrap(),
-                                                mapped_addr.as_ref().as_ref().unwrap(),
-                                                tag,
-                                                &mut ctx,
-                                            )
-                                            .await
-                                        } else {
-                                            ep.tsend_to_async(
-                                                &reg_mem,
-                                                &mut desc,
-                                                mapped_addr.as_ref().as_ref().unwrap(),
-                                                tag,
-                                                &mut ctx,
-                                            )
-                                            .await
-                                        }
-                                        .map(|_| {})
+                                        ep.tinject_to_async(
+                                            &reg_mem,
+                                            mapped_addr.as_ref().as_ref().unwrap(),
+                                            tag,
+                                        )
+                                        .await
                                     }
-                                }
-                                MyEndpoint::Connected(ep) => {
-                                    if reg_mem.len() <= inject_size {
-                                        if data.is_some() {
-                                            ep.tinjectdata(&reg_mem, data.unwrap(), tag)
-                                        } else {
-                                            ep.tinject(&reg_mem, tag)
-                                        }
+                                } else {
+                                    if data.is_some() {
+                                        ep.tsenddata_to_async(
+                                            &reg_mem,
+                                            &mut desc,
+                                            data.unwrap(),
+                                            mapped_addr.as_ref().as_ref().unwrap(),
+                                            tag,
+                                            &mut ctx,
+                                        )
+                                        .await
                                     } else {
-                                        if data.is_some() {
-                                            ep.tsenddata_async(
-                                                &reg_mem,
-                                                &mut desc,
-                                                data.unwrap(),
-                                                tag,
-                                                &mut ctx,
-                                            )
-                                            .await
-                                        } else {
-                                            ep.tsend_async(&reg_mem, &mut desc, tag, &mut ctx).await
-                                        }
-                                        .map(|_| {})
+                                        ep.tsend_to_async(
+                                            &reg_mem,
+                                            &mut desc,
+                                            mapped_addr.as_ref().as_ref().unwrap(),
+                                            tag,
+                                            &mut ctx,
+                                        )
+                                        .await
                                     }
+                                    .map(|_| {})
                                 }
-                            };
-                            match err {
-                                Ok(_) => break,
-                                Err(err) => {
-                                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                                        panic!("{:?}", err);
+                            }
+                            MyEndpoint::Connected(ep) => {
+                                if reg_mem.len() <= inject_size {
+                                    if data.is_some() {
+                                        ep.tinjectdata_async(&reg_mem, data.unwrap(), tag).await
+                                    } else {
+                                        ep.tinject_async(&reg_mem, tag).await
                                     }
+                                } else {
+                                    if data.is_some() {
+                                        ep.tsenddata_async(
+                                            &reg_mem,
+                                            &mut desc,
+                                            data.unwrap(),
+                                            tag,
+                                            &mut ctx,
+                                        )
+                                        .await
+                                    } else {
+                                        ep.tsend_async(&reg_mem, &mut desc, tag, &mut ctx).await
+                                    }
+                                    .map(|_| {})
                                 }
                             }
                         }
+                        .unwrap()
                     }),
                     mr,
                 )
@@ -814,16 +807,18 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                                 MyEndpoint::Connectionless(ep) => {
                                     if reg_mem.len() <= inject_size {
                                         if data.is_some() {
-                                            ep.injectdata_to(
+                                            ep.injectdata_to_async(
                                                 &reg_mem,
                                                 data.unwrap(),
                                                 mapped_addr.as_ref().as_ref().unwrap(),
                                             )
+                                            .await
                                         } else {
-                                            ep.inject_to(
+                                            ep.inject_to_async(
                                                 &reg_mem,
                                                 mapped_addr.as_ref().as_ref().unwrap(),
                                             )
+                                            .await
                                         }
                                     } else {
                                         if data.is_some() {
@@ -850,9 +845,9 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                                 MyEndpoint::Connected(ep) => {
                                     if reg_mem.len() <= inject_size {
                                         if data.is_some() {
-                                            ep.injectdata(&reg_mem, data.unwrap())
+                                            ep.injectdata_async(&reg_mem, data.unwrap()).await
                                         } else {
-                                            ep.inject(&reg_mem)
+                                            ep.inject_async(&reg_mem).await
                                         }
                                     } else {
                                         if data.is_some() {
@@ -1203,8 +1198,6 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 })
                 .unwrap(),
             };
-
-
         }
         let remote_key = unsafe {
             MemoryRegionKey::from_bytes(
@@ -1273,53 +1266,51 @@ impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
                                     if &reg_mem.len() <= &injec_size {
                                         if data.is_some() {
                                             unsafe {
-                                                ep.inject_writedata_to(
+                                                ep.inject_writedata_to_async(
                                                     &reg_mem,
                                                     data.unwrap(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
                                                     start + dest_addr,
                                                     key.as_ref().as_ref().unwrap(),
                                                 )
+                                                .await
                                             }
                                         } else {
                                             unsafe {
-                                                ep.inject_write_to(
+                                                ep.inject_write_to_async(
                                                     &reg_mem,
                                                     mapped_addr.as_ref().as_ref().unwrap(),
                                                     start + dest_addr,
                                                     key.as_ref().as_ref().unwrap(),
                                                 )
+                                                .await
                                             }
                                         }
                                     } else {
                                         if data.is_some() {
                                             unsafe {
-                                                async_std::task::block_on(async {
-                                                    ep.writedata_to_async(
-                                                        &reg_mem,
-                                                        &mut desc,
-                                                        data.unwrap(),
-                                                        mapped_addr.as_ref().as_ref().unwrap(),
-                                                        start + dest_addr,
-                                                        key.as_ref().as_ref().unwrap(),
-                                                        &mut ctx,
-                                                    )
-                                                    .await
-                                                })
+                                                ep.writedata_to_async(
+                                                    &reg_mem,
+                                                    &mut desc,
+                                                    data.unwrap(),
+                                                    mapped_addr.as_ref().as_ref().unwrap(),
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                    &mut ctx,
+                                                )
+                                                .await
                                             }
                                         } else {
                                             unsafe {
-                                                async_std::task::block_on(async {
-                                                    ep.write_to_async(
-                                                        &reg_mem,
-                                                        &mut desc,
-                                                        mapped_addr.as_ref().as_ref().unwrap(),
-                                                        start + dest_addr,
-                                                        key.as_ref().as_ref().unwrap(),
-                                                        &mut ctx,
-                                                    )
-                                                    .await
-                                                })
+                                                ep.write_to_async(
+                                                    &reg_mem,
+                                                    &mut desc,
+                                                    mapped_addr.as_ref().as_ref().unwrap(),
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                    &mut ctx,
+                                                )
+                                                .await
                                             }
                                         }
                                         .map(|_| {})
@@ -1329,49 +1320,47 @@ impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
                                     if &reg_mem.len() <= &injec_size {
                                         if data.is_some() {
                                             unsafe {
-                                                ep.inject_writedata(
+                                                ep.inject_writedata_async(
                                                     &reg_mem,
                                                     data.unwrap(),
                                                     start + dest_addr,
                                                     key.as_ref().as_ref().unwrap(),
                                                 )
+                                                .await
                                             }
                                         } else {
                                             unsafe {
-                                                ep.inject_write(
+                                                ep.inject_write_async(
                                                     &reg_mem,
                                                     start + dest_addr,
                                                     key.as_ref().as_ref().unwrap(),
                                                 )
+                                                .await
                                             }
                                         }
                                     } else {
                                         if data.is_some() {
                                             unsafe {
-                                                async_std::task::block_on(async {
-                                                    ep.writedata_async(
-                                                        &reg_mem,
-                                                        &mut desc,
-                                                        data.unwrap(),
-                                                        start + dest_addr,
-                                                        key.as_ref().as_ref().unwrap(),
-                                                        &mut ctx,
-                                                    )
-                                                    .await
-                                                })
+                                                ep.writedata_async(
+                                                    &reg_mem,
+                                                    &mut desc,
+                                                    data.unwrap(),
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                    &mut ctx,
+                                                )
+                                                .await
                                             }
                                         } else {
                                             unsafe {
-                                                async_std::task::block_on(async {
-                                                    ep.write_async(
-                                                        &reg_mem,
-                                                        &mut desc,
-                                                        start + dest_addr,
-                                                        key.as_ref().as_ref().unwrap(),
-                                                        &mut ctx,
-                                                    )
-                                                    .await
-                                                })
+                                                ep.write_async(
+                                                    &reg_mem,
+                                                    &mut desc,
+                                                    start + dest_addr,
+                                                    key.as_ref().as_ref().unwrap(),
+                                                    &mut ctx,
+                                                )
+                                                .await
                                             }
                                         }
                                         .map(|_| {})

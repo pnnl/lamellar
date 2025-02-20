@@ -16,14 +16,6 @@ use libfabric::async_::comm::tagged::AsyncTagRecvEp;
 use libfabric::async_::comm::tagged::AsyncTagSendEp;
 use libfabric::async_::comm::tagged::ConnectedAsyncTagRecvEp;
 use libfabric::async_::comm::tagged::ConnectedAsyncTagSendEp;
-use libfabric::comm::atomic::AtomicWriteEp;
-use libfabric::comm::atomic::ConnectedAtomicWriteEp;
-use libfabric::comm::message::ConnectedSendEp;
-use libfabric::comm::message::SendEp;
-use libfabric::comm::rma::ConnectedWriteEp;
-use libfabric::comm::rma::WriteEp;
-use libfabric::comm::tagged::ConnectedTagSendEp;
-use libfabric::comm::tagged::TagSendEp;
 use libfabric::domain::DomainBase;
 use libfabric::domain::NoEventQueue;
 use libfabric::ep::BaseEndpoint;
@@ -50,7 +42,7 @@ use libfabric::{
         FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions,
     },
     ep::Address,
-    error::{Error, ErrorKind},
+    error::Error,
     fabric::FabricBuilder,
     info::InfoEntry,
     infocapsoptions::{
@@ -146,23 +138,6 @@ impl<I> Drop for Ofi<I> {
             | EndpointType::SockDgram => {}
         }
     }
-}
-
-macro_rules!  post_async{
-    ($post_fn:ident, $prog_fn:ident, $cq:expr, $ep:ident, $( $x:expr),* ) => {
-        loop {
-            let ret = $ep.$post_fn($($x,)*).await;
-            if ret.is_ok() {
-                break;
-            }
-            else if let Err(ref err) = ret {
-                if !matches!(err.kind, libfabric::error::ErrorKind::TryAgain) {
-                    panic!("Unexpected error!")
-                }
-
-            }
-        }
-    };
 }
 
 impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
@@ -357,30 +332,20 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     reg_mem[..addrlen].copy_from_slice(epname_bytes);
 
                     let mut ctx = info_entry.allocate_context();
-                    async_std::task::block_on(async {
-                        post_async!(
-                            send_to_async,
-                            ft_progress,
-                            cq_type.tx_cq(),
-                            ep,
-                            &reg_mem[..addrlen],
-                            &mut default_desc(),
-                            &mapped_address,
-                            &mut ctx
-                        )
-                    });
+                    async_std::task::block_on(ep.send_to_async(
+                        &reg_mem[..addrlen],
+                        &mut default_desc(),
+                        &mapped_address,
+                        &mut ctx,
+                    ))
+                    .unwrap();
 
-                    async_std::task::block_on(async {
-                        post_async!(
-                            recv_from_any_async,
-                            ft_progress,
-                            cq_type.rx_cq(),
-                            ep,
-                            std::slice::from_mut(&mut reg_mem[0]),
-                            &mut default_desc(),
-                            &mut ctx
-                        )
-                    });
+                    async_std::task::block_on(ep.recv_from_any_async(
+                        std::slice::from_mut(&mut reg_mem[0]),
+                        &mut default_desc(),
+                        &mut ctx,
+                    ))
+                    .unwrap();
 
                     mapped_address
                 } else {
@@ -394,17 +359,12 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     };
                     let mut ctx = info_entry.allocate_context();
 
-                    async_std::task::block_on(async {
-                        post_async!(
-                            recv_from_any_async,
-                            ft_progress,
-                            cq_type.rx_cq(),
-                            ep,
-                            &mut reg_mem[..addrlen],
-                            &mut mr_desc,
-                            &mut ctx
-                        )
-                    });
+                    async_std::task::block_on(ep.recv_from_any_async(
+                        &mut reg_mem[..addrlen],
+                        &mut mr_desc,
+                        &mut ctx,
+                    ))
+                    .unwrap();
 
                     let remote_address = unsafe { Address::from_bytes(&reg_mem) };
                     let mapped_address = av
@@ -417,18 +377,13 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         .unwrap()
                         .unwrap();
 
-                    async_std::task::block_on(async {
-                        post_async!(
-                            send_to_async,
-                            ft_progress,
-                            cq_type.tx_cq(),
-                            ep,
-                            &std::slice::from_ref(&reg_mem[0]),
-                            &mut mr_desc,
-                            &mapped_address,
-                            &mut ctx
-                        )
-                    });
+                    async_std::task::block_on(ep.send_to_async(
+                        &std::slice::from_ref(&reg_mem[0]),
+                        &mut mr_desc,
+                        &mapped_address,
+                        &mut ctx,
+                    ))
+                    .unwrap();
 
                     mapped_address
                 };
@@ -471,44 +426,42 @@ impl<I: TagDefaultCap> Ofi<I> {
         data: Option<u64>,
         ctx: &mut Context,
     ) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         if data.is_some() {
-                            ep.tinjectdata_to(
+                            ep.tinjectdata_to_async(
                                 &buf,
                                 data.unwrap(),
                                 self.mapped_addr.as_ref().unwrap(),
                                 tag,
                             )
+                            .await
                         } else {
-                            ep.tinject_to(&buf, self.mapped_addr.as_ref().unwrap(), tag)
+                            ep.tinject_to_async(&buf, self.mapped_addr.as_ref().unwrap(), tag)
+                                .await
                         }
                     } else {
                         if data.is_some() {
-                            async_std::task::block_on(async {
-                                ep.tsenddata_to_async(
-                                    &buf,
-                                    desc,
-                                    data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
-                                    tag,
-                                    ctx,
-                                )
-                                .await
-                            })
+                            ep.tsenddata_to_async(
+                                &buf,
+                                desc,
+                                data.unwrap(),
+                                self.mapped_addr.as_ref().unwrap(),
+                                tag,
+                                ctx,
+                            )
+                            .await
                         } else {
-                            async_std::task::block_on(async {
-                                ep.tsend_to_async(
-                                    &buf,
-                                    desc,
-                                    self.mapped_addr.as_ref().unwrap(),
-                                    tag,
-                                    ctx,
-                                )
-                                .await
-                            })
+                            ep.tsend_to_async(
+                                &buf,
+                                desc,
+                                self.mapped_addr.as_ref().unwrap(),
+                                tag,
+                                ctx,
+                            )
+                            .await
                         }
                         .map(|_| {})
                     }
@@ -516,34 +469,23 @@ impl<I: TagDefaultCap> Ofi<I> {
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         if data.is_some() {
-                            ep.tinjectdata(&buf, data.unwrap(), tag)
+                            ep.tinjectdata_async(&buf, data.unwrap(), tag).await
                         } else {
-                            ep.tinject(&buf, tag)
+                            ep.tinject_async(&buf, tag).await
                         }
                     } else {
                         if data.is_some() {
-                            async_std::task::block_on(async {
-                                ep.tsenddata_async(&buf, desc, data.unwrap(), tag, ctx)
-                                    .await
-                            })
+                            ep.tsenddata_async(&buf, desc, data.unwrap(), tag, ctx)
+                                .await
                         } else {
-                            async_std::task::block_on(async {
-                                ep.tsend_async(&buf, desc, tag, ctx).await
-                            })
+                            ep.tsend_async(&buf, desc, tag, ctx).await
                         }
                         .map(|_| {})
                     }
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap()
     }
 
     pub fn tsendv(
@@ -553,25 +495,16 @@ impl<I: TagDefaultCap> Ofi<I> {
         tag: u64,
         ctx: &mut Context,
     ) {
-        loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+        async_std::task::block_on(async {
+            match &self.ep {
+                MyEndpoint::Connectionless(ep) => {
                     ep.tsendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, ctx)
                         .await
-                }),
-                MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async { ep.tsendv_async(iov, desc, tag, ctx).await })
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+                MyEndpoint::Connected(ep) => ep.tsendv_async(iov, desc, tag, ctx).await,
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn trecvv(
@@ -581,9 +514,9 @@ impl<I: TagDefaultCap> Ofi<I> {
         tag: u64,
         ctx: &mut Context,
     ) {
-        loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+        async_std::task::block_on(async {
+            match &self.ep {
+                MyEndpoint::Connectionless(ep) => {
                     ep.trecvv_from_async(
                         iov,
                         desc,
@@ -593,20 +526,11 @@ impl<I: TagDefaultCap> Ofi<I> {
                         ctx,
                     )
                     .await
-                }),
-                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                    ep.trecvv_async(iov, desc, tag, None, ctx).await
-                }),
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
                 }
+                MyEndpoint::Connected(ep) => ep.trecvv_async(iov, desc, tag, None, ctx).await,
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn trecv<T>(
@@ -616,9 +540,9 @@ impl<I: TagDefaultCap> Ofi<I> {
         tag: u64,
         ctx: &mut Context,
     ) {
-        loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+        async_std::task::block_on(async {
+            match &self.ep {
+                MyEndpoint::Connectionless(ep) => {
                     ep.trecv_from_async(
                         buf,
                         desc,
@@ -628,78 +552,49 @@ impl<I: TagDefaultCap> Ofi<I> {
                         ctx,
                     )
                     .await
-                }),
-                MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                    ep.trecv_async(buf, desc, tag, None, ctx).await
-                }),
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
                 }
+                MyEndpoint::Connected(ep) => ep.trecv_async(buf, desc, tag, None, ctx).await,
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn tsendmsg(&mut self, msg: &mut Either<MsgTagged, MsgTaggedConnected>) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => async_std::task::block_on(async {
+                    Either::Left(msg) => {
                         ep.tsendmsg_to_async(msg, TferOptions::new().remote_cq_data())
                             .await
-                    }),
+                    }
                     Either::Right(_) => panic!("Wrong message type used"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type used"),
-                    Either::Right(msg) => async_std::task::block_on(async {
+                    Either::Right(msg) => {
                         ep.tsendmsg_async(msg, TferOptions::new().remote_cq_data())
                             .await
-                    }),
-                },
-            };
-
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
                     }
-                }
+                },
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn trecvmsg(&mut self, msg: &mut Either<MsgTaggedMut, MsgTaggedConnectedMut>) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => async_std::task::block_on(async {
-                        ep.trecvmsg_from_async(msg, TferOptions::new()).await
-                    }),
+                    Either::Left(msg) => ep.trecvmsg_from_async(msg, TferOptions::new()).await,
                     Either::Right(_) => panic!("Wrong message type"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type"),
-                    Either::Right(msg) => async_std::task::block_on(async {
-                        ep.trecvmsg_async(msg, TferOptions::new()).await
-                    }),
+                    Either::Right(msg) => ep.trecvmsg_async(msg, TferOptions::new()).await,
                 },
-            };
-
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 }
 
@@ -711,37 +606,34 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         data: Option<u64>,
         ctx: &mut Context,
     ) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         if data.is_some() {
-                            ep.injectdata_to(buf, data.unwrap(), self.mapped_addr.as_ref().unwrap())
+                            ep.injectdata_to_async(
+                                buf,
+                                data.unwrap(),
+                                self.mapped_addr.as_ref().unwrap(),
+                            )
+                            .await
                         } else {
-                            ep.inject_to(&buf, self.mapped_addr.as_ref().unwrap())
+                            ep.inject_to_async(&buf, self.mapped_addr.as_ref().unwrap())
+                                .await
                         }
                     } else {
                         if data.is_some() {
-                            async_std::task::block_on(async {
-                                ep.senddata_to_async(
-                                    &buf,
-                                    desc,
-                                    data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
-                                    ctx,
-                                )
-                                .await
-                            })
+                            ep.senddata_to_async(
+                                &buf,
+                                desc,
+                                data.unwrap(),
+                                self.mapped_addr.as_ref().unwrap(),
+                                ctx,
+                            )
+                            .await
                         } else {
-                            async_std::task::block_on(async {
-                                ep.send_to_async(
-                                    &buf,
-                                    desc,
-                                    self.mapped_addr.as_ref().unwrap(),
-                                    ctx,
-                                )
+                            ep.send_to_async(&buf, desc, self.mapped_addr.as_ref().unwrap(), ctx)
                                 .await
-                            })
                         }
                         .map(|_| {})
                     }
@@ -749,157 +641,99 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         if data.is_some() {
-                            ep.injectdata(&buf, data.unwrap())
+                            ep.injectdata_async(&buf, data.unwrap()).await
                         } else {
-                            ep.inject(&buf)
+                            ep.inject_async(&buf).await
                         }
                     } else {
                         if data.is_some() {
-                            async_std::task::block_on(async {
-                                ep.senddata_async(&buf, desc, data.unwrap(), ctx).await
-                            })
+                            ep.senddata_async(&buf, desc, data.unwrap(), ctx).await
                         } else {
-                            async_std::task::block_on(async {
-                                ep.send_async(&buf, desc, ctx).await
-                            })
+                            ep.send_async(&buf, desc, ctx).await
                         }
                         .map(|_| {})
                     }
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap()
     }
 
     pub fn sendv(&mut self, iov: &[IoVec], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-        loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+        async_std::task::block_on(async {
+            match &self.ep {
+                MyEndpoint::Connectionless(ep) => {
                     ep.sendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx)
                         .await
-                }),
-                MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async { ep.sendv_async(iov, desc, ctx).await })
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+                MyEndpoint::Connected(ep) => ep.sendv_async(iov, desc, ctx).await,
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn recvv(&mut self, iov: &[IoVecMut], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-        loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+        async_std::task::block_on(async {
+            match &self.ep {
+                MyEndpoint::Connectionless(ep) => {
                     ep.recvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx)
                         .await
-                }),
-                MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async { ep.recvv_async(iov, desc, ctx).await })
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+                MyEndpoint::Connected(ep) => ep.recvv_async(iov, desc, ctx).await,
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn recv<T>(&mut self, buf: &mut [T], desc: &mut MemoryRegionDesc, ctx: &mut Context) {
-        loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
+        async_std::task::block_on(async {
+            match &self.ep {
+                MyEndpoint::Connectionless(ep) => {
                     ep.recv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), ctx)
                         .await
-                }),
-                MyEndpoint::Connected(ep) => {
-                    async_std::task::block_on(async { ep.recv_async(buf, desc, ctx).await })
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+                MyEndpoint::Connected(ep) => ep.recv_async(buf, desc, ctx).await,
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn sendmsg(&mut self, msg: &mut Either<Msg, MsgConnected>) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => async_std::task::block_on(async {
+                    Either::Left(msg) => {
                         ep.sendmsg_to_async(msg, TferOptions::new().remote_cq_data())
                             .await
-                    }),
+                    }
                     Either::Right(_) => panic!("Wrong msg type"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong msg type"),
-                    Either::Right(msg) => async_std::task::block_on(async {
+                    Either::Right(msg) => {
                         ep.sendmsg_async(msg, TferOptions::new().remote_cq_data())
                             .await
-                    }),
-                },
-            };
-
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
                     }
-                }
+                },
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn recvmsg(&mut self, msg: &mut Either<MsgMut, MsgConnectedMut>) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => async_std::task::block_on(async {
-                        ep.recvmsg_from_async(msg, TferOptions::new()).await
-                    }),
+                    Either::Left(msg) => ep.recvmsg_from_async(msg, TferOptions::new()).await,
                     Either::Right(_) => panic!("Wrong message type"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type"),
-                    Either::Right(msg) => async_std::task::block_on(async {
-                        ep.recvmsg_async(msg, TferOptions::new()).await
-                    }),
+                    Either::Right(msg) => ep.recvmsg_async(msg, TferOptions::new()).await,
                 },
-            };
-
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn exchange_keys(&mut self, key: MemoryRegionKey, addr: usize, len: usize) {
@@ -995,34 +829,36 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         if data.is_some() {
                             unsafe {
-                                ep.inject_writedata_to(
+                                ep.inject_writedata_to_async(
                                     buf,
                                     data.unwrap(),
                                     self.mapped_addr.as_ref().unwrap(),
                                     start + dest_addr,
                                     self.remote_key.as_ref().unwrap(),
                                 )
+                                .await
                             }
                         } else {
                             unsafe {
-                                ep.inject_write_to(
+                                ep.inject_write_to_async(
                                     buf,
                                     self.mapped_addr.as_ref().unwrap(),
                                     start + dest_addr,
                                     self.remote_key.as_ref().unwrap(),
                                 )
+                                .await
                             }
                         }
                     } else {
                         if data.is_some() {
                             unsafe {
-                                async_std::task::block_on(ep.writedata_to_async(
+                                ep.writedata_to_async(
                                     buf,
                                     desc,
                                     data.unwrap(),
@@ -1030,20 +866,20 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                                     start + dest_addr,
                                     self.remote_key.as_ref().unwrap(),
                                     ctx,
-                                ))
+                                )
+                                .await
                             }
                         } else {
                             unsafe {
-                                async_std::task::block_on({
-                                    ep.write_to_async(
-                                        buf,
-                                        desc,
-                                        self.mapped_addr.as_ref().unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
-                                        ctx,
-                                    )
-                                })
+                                ep.write_to_async(
+                                    buf,
+                                    desc,
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    start + dest_addr,
+                                    self.remote_key.as_ref().unwrap(),
+                                    ctx,
+                                )
+                                .await
                             }
                         }
                         .map(|_| {})
@@ -1053,64 +889,55 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         if data.is_some() {
                             unsafe {
-                                ep.inject_writedata(
+                                ep.inject_writedata_async(
                                     buf,
                                     data.unwrap(),
                                     start + dest_addr,
                                     self.remote_key.as_ref().unwrap(),
                                 )
+                                .await
                             }
                         } else {
                             unsafe {
-                                ep.inject_write(
+                                ep.inject_write_async(
                                     buf,
                                     start + dest_addr,
                                     self.remote_key.as_ref().unwrap(),
                                 )
+                                .await
                             }
                         }
                     } else {
                         if data.is_some() {
                             unsafe {
-                                async_std::task::block_on(async {
-                                    ep.writedata_async(
-                                        buf,
-                                        desc,
-                                        data.unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
-                                        ctx,
-                                    )
-                                    .await
-                                })
+                                ep.writedata_async(
+                                    buf,
+                                    desc,
+                                    data.unwrap(),
+                                    start + dest_addr,
+                                    self.remote_key.as_ref().unwrap(),
+                                    ctx,
+                                )
+                                .await
                             }
                         } else {
                             unsafe {
-                                async_std::task::block_on(async {
-                                    ep.write_async(
-                                        buf,
-                                        desc,
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
-                                        ctx,
-                                    )
-                                    .await
-                                })
+                                ep.write_async(
+                                    buf,
+                                    desc,
+                                    start + dest_addr,
+                                    self.remote_key.as_ref().unwrap(),
+                                    ctx,
+                                )
+                                .await
                             }
                         }
                         .map(|_| {})
                     }
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn read<T>(
@@ -1122,10 +949,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
 
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
+                    {
                         ep.read_from_async(
                             buf,
                             desc,
@@ -1135,10 +962,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             ctx,
                         )
                         .await
-                    })
+                    }
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
+                    {
                         ep.read_async(
                             buf,
                             desc,
@@ -1147,18 +974,11 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             ctx,
                         )
                         .await
-                    })
-                },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
                     }
-                }
+                },
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn writev(
@@ -1169,10 +989,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
+                    {
                         ep.writev_to_async(
                             iov,
                             desc,
@@ -1182,10 +1002,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             ctx,
                         )
                         .await
-                    })
+                    }
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
+                    {
                         ep.writev_async(
                             iov,
                             desc,
@@ -1194,18 +1014,11 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             ctx,
                         )
                         .await
-                    })
-                },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
                     }
-                }
+                },
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn readv(
@@ -1216,10 +1029,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
+                    {
                         ep.readv_from_async(
                             iov,
                             desc,
@@ -1229,10 +1042,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             ctx,
                         )
                         .await
-                    })
+                    }
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
+                    {
                         ep.readv_async(
                             iov,
                             desc,
@@ -1241,82 +1054,61 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                             ctx,
                         )
                         .await
-                    })
-                },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
                     }
-                }
+                },
             }
-        }
+        })
+        .unwrap();
     }
 
     // [TODO] Enabling .remote_cq_data causes the buffer not being written correctly
     // on the remote side.
     pub fn writemsg(&mut self, msg: &mut Either<MsgRma, MsgRmaConnected>) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
                     Either::Left(msg) => unsafe {
-                        async_std::task::block_on(async {
+                        {
                             ep.writemsg_to_async(msg, WriteMsgOptions::new()).await
-                        })
+                        }
                     },
                     Either::Right(_) => panic!("Wrong message type"),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type"),
                     Either::Right(msg) => unsafe {
-                        async_std::task::block_on(async {
+                        {
                             ep.writemsg_async(msg, WriteMsgOptions::new()).await
-                        })
+                        }
                     },
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn readmsg(&mut self, msg: &mut Either<MsgRmaMut, MsgRmaConnectedMut>) {
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
                     Either::Left(msg) => unsafe {
-                        async_std::task::block_on(async {
+                        {
                             ep.readmsg_from_async(msg, ReadMsgOptions::new()).await
-                        })
+                        }
                     },
                     Either::Right(_) => todo!(),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => panic!("Wrong message type"),
                     Either::Right(msg) => unsafe {
-                        async_std::task::block_on(async {
+                        {
                             ep.readmsg_async(msg, ReadMsgOptions::new()).await
-                        })
+                        }
                     },
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 }
 
@@ -1330,33 +1122,32 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         unsafe {
-                            ep.inject_atomic_to(
+                            ep.inject_atomic_to_async(
                                 buf,
                                 self.mapped_addr.as_ref().unwrap(),
                                 start + dest_addr,
                                 self.remote_key.as_ref().unwrap(),
                                 op,
                             )
+                            .await
                         }
                     } else {
                         unsafe {
-                            async_std::task::block_on(async {
-                                ep.atomic_to_async(
-                                    buf,
-                                    desc,
-                                    self.mapped_addr.as_ref().unwrap(),
-                                    start + dest_addr,
-                                    self.remote_key.as_ref().unwrap(),
-                                    op,
-                                    ctx,
-                                )
-                                .await
-                            })
+                            ep.atomic_to_async(
+                                buf,
+                                desc,
+                                self.mapped_addr.as_ref().unwrap(),
+                                start + dest_addr,
+                                self.remote_key.as_ref().unwrap(),
+                                op,
+                                ctx,
+                            )
+                            .await
                         }
                         .map(|_| {})
                     }
@@ -1364,40 +1155,32 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         unsafe {
-                            ep.inject_atomic(
+                            ep.inject_atomic_async(
                                 buf,
                                 start + dest_addr,
                                 self.remote_key.as_ref().unwrap(),
                                 op,
                             )
+                            .await
                         }
                     } else {
                         unsafe {
-                            async_std::task::block_on(async {
-                                ep.atomic_async(
-                                    buf,
-                                    desc,
-                                    start + dest_addr,
-                                    self.remote_key.as_ref().unwrap(),
-                                    op,
-                                    ctx,
-                                )
-                                .await
-                            })
+                            ep.atomic_async(
+                                buf,
+                                desc,
+                                start + dest_addr,
+                                self.remote_key.as_ref().unwrap(),
+                                op,
+                                ctx,
+                            )
+                            .await
                         }
                         .map(|_| {})
                     }
                 }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap()
     }
 
     pub fn atomicv<T: libfabric::AsFiType>(
@@ -1409,45 +1192,34 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.atomicv_to_async(
-                            ioc,
-                            desc,
-                            self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.atomicv_to_async(
+                        ioc,
+                        desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.atomicv_async(
-                            ioc,
-                            desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.atomicv_async(
+                        ioc,
+                        desc,
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn atomicmsg<T: libfabric::AsFiType + 'static>(
@@ -1455,30 +1227,19 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         msg: &mut Either<MsgAtomic<T>, MsgAtomicConnected<T>>,
     ) {
         let opts = AtomicMsgOptions::new();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => unsafe {
-                        async_std::task::block_on(async { ep.atomicmsg_to_async(msg, opts).await })
-                    },
+                    Either::Left(msg) => unsafe { ep.atomicmsg_to_async(msg, opts).await },
                     Either::Right(_) => todo!(),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => todo!(),
-                    Either::Right(msg) => unsafe {
-                        async_std::task::block_on(async { ep.atomicmsg_async(msg, opts).await })
-                    },
+                    Either::Right(msg) => unsafe { ep.atomicmsg_async(msg, opts).await },
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn fetch_atomic<T: libfabric::AsFiType>(
@@ -1492,49 +1253,38 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.fetch_atomic_from_async(
-                            buf,
-                            desc,
-                            res,
-                            res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.fetch_atomic_from_async(
+                        buf,
+                        desc,
+                        res,
+                        res_desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.fetch_atomic_async(
-                            buf,
-                            desc,
-                            res,
-                            res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.fetch_atomic_async(
+                        buf,
+                        desc,
+                        res,
+                        res_desc,
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn fetch_atomicv<T: libfabric::AsFiType>(
@@ -1548,49 +1298,38 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.fetch_atomicv_from_async(
-                            ioc,
-                            desc,
-                            res_ioc,
-                            res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.fetch_atomicv_from_async(
+                        ioc,
+                        desc,
+                        res_ioc,
+                        res_desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.fetch_atomicv_async(
-                            ioc,
-                            desc,
-                            res_ioc,
-                            res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.fetch_atomicv_async(
+                        ioc,
+                        desc,
+                        res_ioc,
+                        res_desc,
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn fetch_atomicmsg<T: libfabric::AsFiType + 'static>(
@@ -1600,35 +1339,24 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         res_desc: &mut [MemoryRegionDesc],
     ) {
         let opts = AtomicMsgOptions::new();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
                     Either::Left(msg) => unsafe {
-                        async_std::task::block_on(async {
-                            ep.fetch_atomicmsg_from_async(msg, res_ioc, res_desc, opts)
-                                .await
-                        })
+                        ep.fetch_atomicmsg_from_async(msg, res_ioc, res_desc, opts)
+                            .await
                     },
                     Either::Right(_) => todo!(),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => todo!(),
                     Either::Right(msg) => unsafe {
-                        async_std::task::block_on(async {
-                            ep.fetch_atomicmsg_async(msg, res_ioc, res_desc, opts).await
-                        })
+                        ep.fetch_atomicmsg_async(msg, res_ioc, res_desc, opts).await
                     },
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn compare_atomic<T: libfabric::AsFiType>(
@@ -1644,53 +1372,42 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.compare_atomic_to_async(
-                            buf,
-                            desc,
-                            comp,
-                            comp_desc,
-                            res,
-                            res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.compare_atomic_to_async(
+                        buf,
+                        desc,
+                        comp,
+                        comp_desc,
+                        res,
+                        res_desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.compare_atomic_async(
-                            buf,
-                            desc,
-                            comp,
-                            comp_desc,
-                            res,
-                            res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.compare_atomic_async(
+                        buf,
+                        desc,
+                        comp,
+                        comp_desc,
+                        res,
+                        res_desc,
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn compare_atomicv<T: libfabric::AsFiType>(
@@ -1706,53 +1423,42 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.compare_atomicv_to_async(
-                            ioc,
-                            desc,
-                            comp_ioc,
-                            comp_desc,
-                            res_ioc,
-                            res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.compare_atomicv_to_async(
+                        ioc,
+                        desc,
+                        comp_ioc,
+                        comp_desc,
+                        res_ioc,
+                        res_desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    async_std::task::block_on(async {
-                        ep.compare_atomicv_async(
-                            ioc,
-                            desc,
-                            comp_ioc,
-                            comp_desc,
-                            res_ioc,
-                            res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
-                            op,
-                            ctx,
-                        )
-                        .await
-                    })
+                    ep.compare_atomicv_async(
+                        ioc,
+                        desc,
+                        comp_ioc,
+                        comp_desc,
+                        res_ioc,
+                        res_desc,
+                        start + dest_addr,
+                        self.remote_key.as_ref().unwrap(),
+                        op,
+                        ctx,
+                    )
+                    .await
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 
     pub fn compare_atomicmsg<T: libfabric::AsFiType + 'static>(
@@ -1764,40 +1470,29 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         res_desc: &mut [MemoryRegionDesc],
     ) {
         let opts = AtomicMsgOptions::new();
-        loop {
-            let err = match &self.ep {
+        async_std::task::block_on(async {
+            match &self.ep {
                 MyEndpoint::Connectionless(ep) => match msg {
                     Either::Left(msg) => unsafe {
-                        async_std::task::block_on(async {
-                            ep.compare_atomicmsg_to_async(
-                                msg, comp_ioc, comp_desc, res_ioc, res_desc, opts,
-                            )
-                            .await
-                        })
+                        ep.compare_atomicmsg_to_async(
+                            msg, comp_ioc, comp_desc, res_ioc, res_desc, opts,
+                        )
+                        .await
                     },
                     Either::Right(_) => todo!(),
                 },
                 MyEndpoint::Connected(ep) => match msg {
                     Either::Left(_) => todo!(),
                     Either::Right(msg) => unsafe {
-                        async_std::task::block_on(async {
-                            ep.compare_atomicmsg_async(
-                                msg, comp_ioc, comp_desc, res_ioc, res_desc, opts,
-                            )
-                            .await
-                        })
+                        ep.compare_atomicmsg_async(
+                            msg, comp_ioc, comp_desc, res_ioc, res_desc, opts,
+                        )
+                        .await
                     },
                 },
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
             }
-        }
+        })
+        .unwrap();
     }
 }
 

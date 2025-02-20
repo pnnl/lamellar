@@ -18,6 +18,8 @@ use crate::{
     AsFiType, Context, MyRc, SyncSend,
 };
 
+use super::while_try_again;
+
 impl MulticastGroupCollectiveImpl {
     // pub(crate) async fn join_async_impl(&self, ep: &MyRc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event, Error> {
     //     let mut async_ctx = AsyncCtx{user_ctx};
@@ -71,8 +73,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: Option<CollectiveOptions>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.barrier_impl(mc_group, Some(ctx.inner_mut()), options)?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.barrier_impl(mc_group, Some(ctx.inner_mut()), options)
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }
@@ -86,15 +91,18 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.broadcast_impl(
-            buf,
-            desc,
-            mc_group,
-            root_mapped_addr,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.broadcast_impl(
+                buf,
+                desc,
+                mc_group,
+                root_mapped_addr,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }
@@ -110,16 +118,19 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.alltoall_impl(
-            buf,
-            desc,
-            result,
-            result_desc,
-            mc_group,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.alltoall_impl(
+                buf,
+                desc,
+                result,
+                result_desc,
+                mc_group,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }
@@ -136,17 +147,20 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.allreduce_impl(
-            buf,
-            desc,
-            result,
-            result_desc,
-            mc_group,
-            op,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.allreduce_impl(
+                buf,
+                desc,
+                result,
+                result_desc,
+                mc_group,
+                op,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }
@@ -162,21 +176,19 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.allgather_impl(
-            buf,
-            desc,
-            result,
-            result_desc,
-            mc_group,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
-        // while tx_cq.trywait().is_err() {tx_cq.read(0);}
-        // while rx_cq.trywait().is_err() {rx_cq.read(0);}
-        // while cq.read(1).is_err() {}
-        // while rxcq.read(1).is_err() {}
-        // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
+        while_try_again(cq.as_ref(), || {
+            self.allgather_impl(
+                buf,
+                desc,
+                result,
+                result_desc,
+                mc_group,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -192,17 +204,20 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.reduce_scatter_impl(
-            buf,
-            desc,
-            result,
-            result_desc,
-            mc_group,
-            op,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.reduce_scatter_impl(
+                buf,
+                desc,
+                result,
+                result_desc,
+                mc_group,
+                op,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }
@@ -220,18 +235,21 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.reduce_impl(
-            buf,
-            desc,
-            result,
-            result_desc,
-            mc_group,
-            root_mapped_addr,
-            op,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.reduce_impl(
+                buf,
+                desc,
+                result,
+                result_desc,
+                mc_group,
+                root_mapped_addr,
+                op,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }
@@ -248,17 +266,20 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.scatter_impl(
-            buf,
-            desc,
-            result,
-            result_desc,
-            mc_group,
-            root_mapped_addr,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.scatter_impl(
+                buf,
+                desc,
+                result,
+                result_desc,
+                mc_group,
+                root_mapped_addr,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }
@@ -275,17 +296,20 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.gather_impl(
-            buf,
-            desc,
-            result,
-            result_desc,
-            mc_group,
-            root_mapped_addr,
-            options,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.gather_impl(
+                buf,
+                desc,
+                result,
+                result_desc,
+                mc_group,
+                root_mapped_addr,
+                options,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         // crate::async_::cq::AsyncTransferCq::new(cq, &mut async_ctx as *mut AsyncCtx as usize).await
         cq.wait_for_ctx_async(ctx).await
     }

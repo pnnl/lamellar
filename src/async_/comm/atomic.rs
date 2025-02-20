@@ -15,6 +15,8 @@ use crate::{
     AsFiType, Context,
 };
 
+use super::while_try_again;
+
 pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     #[allow(clippy::too_many_arguments)]
     async fn atomic_async_impl<T: AsFiType>(
@@ -27,17 +29,42 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
         op: crate::enums::AtomicOp,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.atomic_impl(
-            buf,
-            desc,
-            dest_addr,
-            mem_addr,
-            mapped_key,
-            op,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.atomic_impl(
+                buf,
+                desc,
+                dest_addr,
+                mem_addr,
+                mapped_key,
+                op,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn inject_atomic_async_impl<T: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: Option<&crate::MappedAddress>,
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.inject_atomic_impl(
+                buf,
+                dest_addr,
+                mem_addr,
+                mapped_key,
+                op,
+            )
+        })
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -51,16 +78,19 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
         op: crate::enums::AtomicOp,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.atomicv_impl(
-            ioc,
-            desc,
-            dest_addr,
-            mem_addr,
-            mapped_key,
-            op,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.atomicv_impl(
+                ioc,
+                desc,
+                dest_addr,
+                mem_addr,
+                mapped_key,
+                op,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -77,14 +107,17 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
             Either::Right(msg) => Either::Right(&**msg),
         };
 
-        self.atomicmsg_impl(imm_msg, options)?;
+        let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.atomicmsg_impl(imm_msg.to_owned(), options)
+        })
+        .await?;
 
         let ctx = match &mut msg {
             Either::Left(msg) => msg.context(),
             Either::Right(msg) => msg.context(),
         };
 
-        let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
     }
 }
@@ -101,6 +134,16 @@ pub trait AsyncAtomicWriteEp {
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn inject_atomic_to_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
     #[allow(clippy::too_many_arguments)]
     unsafe fn atomicv_to_async<T: AsFiType>(
@@ -131,6 +174,14 @@ pub trait ConnectedAsyncAtomicWriteEp {
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+    unsafe fn inject_atomic_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
     unsafe fn atomicv_async<T: AsFiType>(
         &self,
@@ -177,6 +228,24 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
             mapped_key,
             op,
             context,
+        )
+    }
+
+    #[inline]
+    unsafe fn inject_atomic_to_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.inject_atomic_async_impl(
+            buf,
+            Some(dest_addr),
+            mem_addr,
+            mapped_key,
+            op,
         )
     }
 
@@ -229,6 +298,18 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
+    unsafe fn inject_atomic_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        mem_addr: u64,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.inject_atomic_async_impl(buf, None, mem_addr, mapped_key, op)
+    }
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
     unsafe fn atomicv_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -264,18 +345,21 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
         op: crate::enums::FetchAtomicOp,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.fetch_atomic_impl(
-            buf,
-            desc,
-            res,
-            res_desc,
-            dest_addr,
-            mem_addr,
-            mapped_key,
-            op,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.fetch_atomic_impl(
+                buf,
+                desc,
+                res,
+                res_desc,
+                dest_addr,
+                mem_addr,
+                mapped_key,
+                op,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -292,18 +376,21 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
         op: crate::enums::FetchAtomicOp,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.fetch_atomicv_impl(
-            ioc,
-            desc,
-            resultv,
-            res_desc,
-            dest_addr,
-            mem_addr,
-            mapped_key,
-            op,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.fetch_atomicv_impl(
+                ioc,
+                desc,
+                resultv,
+                res_desc,
+                dest_addr,
+                mem_addr,
+                mapped_key,
+                op,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -322,14 +409,17 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
             Either::Right(msg) => Either::Right(&**msg),
         };
 
-        self.fetch_atomicmsg_impl(imm_msg, resultv, res_desc, options)?;
+        let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.fetch_atomicmsg_impl(imm_msg.to_owned(), resultv, res_desc, options)
+        })
+        .await?;
 
         let ctx = match &mut msg {
             Either::Left(msg) => msg.context(),
             Either::Right(msg) => msg.context(),
         };
 
-        let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
     }
 }
@@ -541,20 +631,23 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
         op: crate::enums::CompareAtomicOp,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.compare_atomic_impl(
-            buf,
-            desc,
-            compare,
-            compare_desc,
-            result,
-            result_desc,
-            dest_addr,
-            mem_addr,
-            mapped_key,
-            op,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.compare_atomic_impl(
+                buf,
+                desc,
+                compare,
+                compare_desc,
+                result,
+                result_desc,
+                dest_addr,
+                mem_addr,
+                mapped_key,
+                op,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -573,20 +666,23 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
         op: crate::enums::CompareAtomicOp,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        self.compare_atomicv_impl(
-            ioc,
-            desc,
-            comparetv,
-            compare_desc,
-            resultv,
-            res_desc,
-            dest_addr,
-            mem_addr,
-            mapped_key,
-            op,
-            Some(ctx.inner_mut()),
-        )?;
         let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(), || {
+            self.compare_atomicv_impl(
+                ioc,
+                desc,
+                comparetv,
+                compare_desc,
+                resultv,
+                res_desc,
+                dest_addr,
+                mem_addr,
+                mapped_key,
+                op,
+                Some(ctx.inner_mut()),
+            )
+        })
+        .await?;
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -608,14 +704,16 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
             Either::Right(msg) => Either::Right(&**msg),
         };
 
-        self.compare_atomicmsg_impl(imm_msg, comparev, compare_desc, resultv, res_desc, options)?;
+        let cq = self.retrieve_tx_cq();
+        while_try_again(cq.as_ref(),|| {
+            self.compare_atomicmsg_impl(imm_msg.to_owned(), comparev, compare_desc, resultv, res_desc, options)
+        }).await?;
 
         let ctx = match &mut msg {
             Either::Left(msg) => msg.context(),
             Either::Right(msg) => msg.context(),
         };
 
-        let cq = self.retrieve_tx_cq();
         cq.wait_for_ctx_async(ctx).await
     }
 }
