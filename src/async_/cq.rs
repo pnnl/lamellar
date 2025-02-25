@@ -215,7 +215,7 @@ impl AsyncFid for AsyncCompletionQueueImpl {
         self.base
             .get_ref()
             ._domain_rc
-            .get_fabric_impl()
+            .fabric_impl()
             .trywait(self.base.get_ref())
     }
 }

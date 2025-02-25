@@ -55,7 +55,7 @@ pub(crate) trait RecvEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 raw_addr,
                 ctx,
             )
@@ -469,7 +469,7 @@ pub(crate) trait SendEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 raw_addr,
                 ctx,
             )
@@ -511,7 +511,7 @@ pub(crate) trait SendEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 data,
                 raw_addr,
                 ctx,
@@ -727,7 +727,6 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.sendv_impl(iov, desc, Some(mapped_addr), Some(context.inner_mut()))
     }
 
@@ -739,7 +738,6 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.sendv_impl(iov, desc, Some(mapped_addr), Some(context.inner_mut()))
     }
 
@@ -868,7 +866,6 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
         desc: &mut [impl DataDescriptor],
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.sendv_impl(iov, desc, None, Some(context.inner_mut()))
     }
 
@@ -879,7 +876,6 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
         desc: &mut [impl DataDescriptor],
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.sendv_impl(iov, desc, None, Some(context.inner_mut()))
     }
 

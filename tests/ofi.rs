@@ -203,7 +203,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     pep.listen().unwrap();
                     let event = eq.sread(-1).unwrap();
                     match event {
-                        libfabric::eq::Event::ConnReq(entry) => entry.get_info().unwrap(),
+                        libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
                         _ => panic!("Unexpected event"),
                     }
                 } else {

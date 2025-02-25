@@ -998,15 +998,15 @@ impl EventError {
     //     unsafe { BorrowedFid::borrow_raw(self.c_err.fid) }
     // }
 
-    pub fn get_data(&self) -> u64 {
+    pub fn data(&self) -> u64 {
         self.c_err.data
     }
 
-    pub fn get_error(&self) -> crate::error::Error {
+    pub fn error(&self) -> crate::error::Error {
         crate::error::Error::from_err_code(self.c_err.err as u32)
     }
 
-    pub fn get_prov_errno(&self) -> i32 {
+    pub fn prov_errno(&self) -> i32 {
         self.c_err.prov_errno
     }
 }
@@ -1096,11 +1096,11 @@ impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
     //     Self { c_entry }
     // }
 
-    pub fn get_fid(&self) -> libfabric_sys::fid_t {
+    pub fn fid(&self) -> libfabric_sys::fid_t {
         self.c_entry.fid
     }
 
-    pub fn get_info<E: Caps>(&self) -> Result<InfoEntry<E>, crate::error::Error> {
+    pub fn info<E: Caps>(&self) -> Result<InfoEntry<E>, crate::error::Error> {
         //[TODO] Should returen the proper type of info entry
         let caps = E::bitfield();
         if caps & unsafe { (*self.c_entry.info).caps } == caps {
@@ -1109,7 +1109,7 @@ impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
             Err(crate::error::Error::caps_error())
         }
     }
-    pub fn get_info_from_caps<E: Caps>(
+    pub fn info_from_caps<E: Caps>(
         &self,
         _caps: &InfoHints<E>,
     ) -> Result<InfoEntry<E>, crate::error::Error> {

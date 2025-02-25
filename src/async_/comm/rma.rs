@@ -117,7 +117,7 @@ pub trait AsyncReadEp {
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>; //[TODO]
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
     unsafe fn readmsg_from_async(
         &self,
@@ -193,7 +193,6 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        //[TODO]
         self.readv_async_impl(iov, desc, Some(src_addr), mem_addr, mapped_key, ctx)
             .await
     }
@@ -798,7 +797,6 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        //[TODO]
         self.writev_async_impl(iov, desc, None, mem_addr, mapped_key, ctx)
             .await
     }

@@ -43,7 +43,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr() as *mut std::ffi::c_void,
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 raw_addr,
                 tag,
                 ignore.unwrap_or(0),
@@ -380,7 +380,6 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.trecvv_impl(
             iov,
             desc,
@@ -400,7 +399,6 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
     }
 
@@ -414,7 +412,6 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.trecvv_impl(
             iov,
             desc,
@@ -434,7 +431,6 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
         ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
     }
 
@@ -492,7 +488,6 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, None)
     }
 
@@ -505,7 +500,6 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         ignore: Option<u64>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
     }
 
@@ -518,7 +512,6 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
         ignore: Option<u64>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.trecvv_impl(iov, desc, None, tag, ignore, Some(context.inner_mut()))
     }
 
@@ -556,7 +549,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 raw_addr,
                 tag,
                 ctx,
@@ -622,7 +615,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 data,
                 raw_addr,
                 tag,
@@ -891,7 +884,6 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
         dest_mapped_addr: &MappedAddress,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.tsendv_impl(iov, desc, Some(dest_mapped_addr), tag, None)
     }
 
@@ -904,7 +896,6 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.tsendv_impl(
             iov,
             desc,
@@ -923,7 +914,6 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.tsendv_impl(
             iov,
             desc,
@@ -1056,7 +1046,6 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
         desc: &mut [impl DataDescriptor],
         tag: u64,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.tsendv_impl(iov, desc, None, tag, None)
     }
 
@@ -1068,7 +1057,6 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.tsendv_impl(iov, desc, None, tag, Some(context.inner_mut()))
     }
 
@@ -1080,7 +1068,6 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        // [TODO]
         self.tsendv_impl(iov, desc, None, tag, Some(context.inner_mut()))
     }
 

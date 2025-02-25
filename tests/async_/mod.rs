@@ -550,7 +550,7 @@ pub async fn ft_retrieve_conn_req<E: infocapsoptions::Caps>(
     let event = listener.next().await;
 
     if let libfabric::eq::Event::ConnReq(entry) = event.unwrap() {
-        entry.get_info::<E>().unwrap()
+        entry.info::<E>().unwrap()
     } else {
         panic!("Unexpected EventQueueEntry type")
     }
@@ -701,7 +701,7 @@ pub async fn ft_connect_ep<T: AsyncReadEq, E>(
     match res {
         Err(error) => match error.kind {
             libfabric::error::ErrorKind::ErrorInEventQueue(err_entry) => {
-                println!("Event Queue error: {}", err_entry.get_error());
+                println!("Event Queue error: {}", err_entry.error());
                 panic!("Provider error: {}", eq.strerror(&err_entry));
             }
             _ => panic!("{:?}", error),

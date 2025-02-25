@@ -233,7 +233,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     println!("Done!");
 
                     match event {
-                        libfabric::eq::Event::ConnReq(entry) => entry.get_info().unwrap(),
+                        libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
                         _ => panic!("Unexpected event"),
                     }
                 } else {
@@ -272,7 +272,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         Ok(ep) => ep,
                         Err(error) => match error.kind {
                             ErrorKind::ErrorInEventQueue(q_error) => {
-                                panic!("{:?}", q_error.get_error())
+                                panic!("{:?}", q_error.error())
                             }
                             _ => panic!("Other error"),
                         },

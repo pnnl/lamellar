@@ -49,7 +49,7 @@ impl<EP> UnconnectedEndpoint<EP> {
 
         match res {
             Event::Connected(event) => {
-                assert_eq!(event.get_fid(), self.as_typed_fid().as_raw_fid())
+                assert_eq!(event.fid(), self.as_typed_fid().as_raw_fid())
             }
             _ => panic!("Unexpected Event Type"),
         }
@@ -78,7 +78,7 @@ impl<EP> UnconnectedEndpoint<EP> {
 
         match res {
             Event::Connected(event) => {
-                assert_eq!(event.get_fid(), self.as_typed_fid().as_raw_fid())
+                assert_eq!(event.fid(), self.as_typed_fid().as_raw_fid())
             }
             _ => panic!("Unexpected Event Type"),
         }

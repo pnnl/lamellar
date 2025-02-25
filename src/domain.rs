@@ -30,9 +30,9 @@ impl<EQ: ?Sized + SyncSend> SyncSend for DomainImplBase<EQ> {}
 pub(crate) trait DomainImplT: AsTypedFid<DomainRawFid> + SyncSend {
     fn unmap_key(&self, key: u64) -> Result<(), crate::error::Error>;
     #[allow(unused)]
-    fn get_fabric_impl(&self) -> MyRc<FabricImpl>;
-    fn get_mr_mode(&self) -> MrMode;
-    fn get_mr_key_size(&self) -> usize;
+    fn fabric_impl(&self) -> MyRc<FabricImpl>;
+    fn mr_mode(&self) -> MrMode;
+    fn mr_key_size(&self) -> usize;
 }
 
 impl<EQ: ?Sized + SyncSend> DomainImplT for DomainImplBase<EQ> {
@@ -40,15 +40,15 @@ impl<EQ: ?Sized + SyncSend> DomainImplT for DomainImplBase<EQ> {
         self.unmap_key(key)
     }
 
-    fn get_fabric_impl(&self) -> MyRc<FabricImpl> {
+    fn fabric_impl(&self) -> MyRc<FabricImpl> {
         self._fabric_rc.clone()
     }
 
-    fn get_mr_mode(&self) -> MrMode {
+    fn mr_mode(&self) -> MrMode {
         self.mr_mode
     }
 
-    fn get_mr_key_size(&self) -> usize {
+    fn mr_key_size(&self) -> usize {
         self.mr_key_size
     }
 }
@@ -287,16 +287,16 @@ impl<EQ: ?Sized + SyncSend> DomainImplT for DomainBase<EQ> {
         self.inner.unmap_key(key)
     }
 
-    fn get_fabric_impl(&self) -> MyRc<FabricImpl> {
-        self.inner.get_fabric_impl()
+    fn fabric_impl(&self) -> MyRc<FabricImpl> {
+        self.inner.fabric_impl()
     }
 
-    fn get_mr_mode(&self) -> MrMode {
-        self.inner.get_mr_mode()
+    fn mr_mode(&self) -> MrMode {
+        self.inner.mr_mode()
     }
 
-    fn get_mr_key_size(&self) -> usize {
-        self.inner.get_mr_key_size()
+    fn mr_key_size(&self) -> usize {
+        self.inner.mr_key_size()
     }
 }
 

@@ -188,7 +188,7 @@ impl RmaIoVec {
     }
 
     pub fn mapped_key(mut self, key: &MappedMemoryRegionKey) -> Self {
-        self.c_rma_iovec.key = key.get_key();
+        self.c_rma_iovec.key = key.key();
         self
     }
 
@@ -226,7 +226,7 @@ impl RmaIoc {
             c_rma_ioc: libfabric_sys::fi_rma_ioc {
                 addr,
                 count,
-                key: key.get_key(),
+                key: key.key(),
             },
         }
     }

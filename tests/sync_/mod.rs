@@ -611,7 +611,7 @@ pub fn ft_complete_connect<E>(
         }
     } else {
         let _err_entry = eq.readerr().unwrap();
-        panic!("{:?}", _err_entry.get_error())
+        panic!("{:?}", _err_entry.error())
     }
 }
 
@@ -637,7 +637,7 @@ pub fn ft_retrieve_conn_req<E: infocapsoptions::Caps>(
     let event = eq.sread(-1).unwrap();
 
     if let libfabric::eq::Event::ConnReq(entry) = event {
-        entry.get_info().unwrap()
+        entry.info().unwrap()
     } else {
         panic!("Unexpected EventQueueEntry type");
     }

@@ -467,7 +467,6 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        // [TODO]
         self.tsendv_async_impl(iov, desc, Some(dest_mapped_addr), tag, ctx)
             .await
     }
@@ -533,7 +532,6 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
-        // [TODO]
         self.tsendv_async_impl(iov, desc, None, tag, ctx).await
     }
 

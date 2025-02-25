@@ -73,8 +73,8 @@ impl MemoryRegionKey {
     }
 
     unsafe fn from_bytes_impl(raw: &[u8], domain: &(impl DomainImplT + ?Sized)) -> Self {
-        if domain.get_mr_mode().is_raw() {
-            assert!(raw.len() == domain.get_mr_key_size());
+        if domain.mr_mode().is_raw() {
+            assert!(raw.len() == domain.mr_key_size());
             let base_addr = *(raw[raw.len() - std::mem::size_of::<u64>()..].as_ptr() as *const u64);
             Self::RawKey((
                 raw[0..raw.len() - std::mem::size_of::<u64>()].to_vec(),
@@ -136,7 +136,7 @@ pub struct MappedMemoryRegionKey {
 }
 
 impl MappedMemoryRegionKey {
-    pub(crate) fn get_key(&self) -> u64 {
+    pub(crate) fn key(&self) -> u64 {
         match self.inner {
             MappedMemoryRegionKeyImpl::Key(key)
             | MappedMemoryRegionKeyImpl::MappedRawKey((key, _)) => key,
@@ -156,8 +156,8 @@ impl Drop for MappedMemoryRegionKey {
 }
 
 pub trait DataDescriptor {
-    fn get_desc(&mut self) -> *mut std::ffi::c_void;
-    fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void;
+    fn desc(&mut self) -> *mut std::ffi::c_void;
+    fn desc_ptr(&mut self) -> *mut *mut std::ffi::c_void;
 }
 
 pub fn default_desc() -> MemoryRegionDesc {
@@ -321,7 +321,7 @@ impl MemoryRegionImpl {
     }
 
     pub(crate) fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
-        if self._domain_rc.get_mr_mode().is_raw() {
+        if self._domain_rc.mr_mode().is_raw() {
             self.raw_key(0)
         } else {
             let ret = unsafe {
@@ -337,7 +337,7 @@ impl MemoryRegionImpl {
 
     fn raw_key(&self, flags: u64) -> Result<MemoryRegionKey, crate::error::Error> {
         let mut base_addr = 0u64;
-        let mut key_size = self._domain_rc.get_mr_key_size();
+        let mut key_size = self._domain_rc.mr_key_size();
         let mut raw_key = vec![0u8; key_size];
         let err = unsafe {
             libfabric_sys::inlined_fi_mr_raw_attr(
@@ -618,11 +618,11 @@ unsafe impl Send for MemoryRegionDesc {}
 unsafe impl Sync for MemoryRegionDesc {}
 
 impl DataDescriptor for MemoryRegionDesc {
-    fn get_desc(&mut self) -> *mut std::ffi::c_void {
+    fn desc(&mut self) -> *mut std::ffi::c_void {
         self.c_desc
     }
 
-    fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void {
+    fn desc_ptr(&mut self) -> *mut *mut std::ffi::c_void {
         &mut self.c_desc
     }
 }
@@ -1067,7 +1067,7 @@ impl<'a> MemoryRegionBuilder<'a> {
 
         let mr = MemoryRegion::from_attr(domain, self.mr_attr, self.flags)?;
 
-        if domain.get_mr_mode().is_endpoint() {
+        if domain.mr_mode().is_endpoint() {
             Ok(MaybeDisabledMemoryRegion::Disabled(DisabledMemoryRegion {
                 mr,
             }))

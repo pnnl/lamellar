@@ -1001,7 +1001,7 @@ impl AddressVectorSetImpl {
         }
     }
 
-    pub(crate) fn get_addr(&self) -> Result<RawMappedAddress, crate::error::Error> {
+    pub(crate) fn address(&self) -> Result<RawMappedAddress, crate::error::Error> {
         let mut addr = 0u64;
         // let addr_ptr: *mut crate::MappedAddress = &mut addr;
         let err = unsafe {
@@ -1100,8 +1100,8 @@ impl AddressVectorSet {
         self.inner.remove(mapped_addr)
     }
 
-    pub fn get_addr(&self) -> Result<crate::MappedAddress, crate::error::Error> {
-        let raw_addr = self.inner.get_addr()?;
+    pub fn address(&self) -> Result<crate::MappedAddress, crate::error::Error> {
+        let raw_addr = self.inner.address()?;
         Ok(MappedAddress::from_raw_addr(
             raw_addr,
             AddressSource::AvSet(self.inner.clone()),

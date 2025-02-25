@@ -44,10 +44,10 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr().cast(),
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 raw_addr,
                 mem_addr,
-                mapped_key.get_key(),
+                mapped_key.key(),
                 ctx,
             )
         };
@@ -72,7 +72,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
                 iov.len(),
                 raw_addr,
                 mem_addr,
-                mapped_key.get_key(),
+                mapped_key.key(),
                 ctx,
             )
         };
@@ -356,7 +356,6 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.readv_impl(iov, desc, Some(src_addr), mem_addr, mapped_key, None)
     }
     unsafe fn readv_from_with_context(
@@ -368,7 +367,6 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.readv_impl(
             iov,
             desc,
@@ -387,7 +385,6 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.readv_impl(
             iov,
             desc,
@@ -459,7 +456,6 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.readv_impl(iov, desc, None, mem_addr, mapped_key, None)
     }
 
@@ -471,7 +467,6 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.readv_impl(
             iov,
             desc,
@@ -490,7 +485,6 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.readv_impl(
             iov,
             desc,
@@ -533,10 +527,10 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 raw_addr,
                 mem_addr,
-                mapped_key.get_key(),
+                mapped_key.key(),
                 ctx,
             )
         };
@@ -563,7 +557,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 std::mem::size_of_val(buf),
                 raw_addr,
                 mem_addr,
-                mapped_key.get_key(),
+                mapped_key.key(),
             )
         };
         check_error(err)
@@ -587,7 +581,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 iov.len(),
                 raw_addr,
                 mem_addr,
-                mapped_key.get_key(),
+                mapped_key.key(),
                 ctx,
             )
         };
@@ -611,11 +605,11 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
-                desc.get_desc(),
+                desc.desc(),
                 data,
                 raw_addr,
                 mem_addr,
-                mapped_key.get_key(),
+                mapped_key.key(),
                 ctx,
             )
         };
@@ -643,7 +637,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 data,
                 raw_addr,
                 mem_addr,
-                mapped_key.get_key(),
+                mapped_key.key(),
             )
         };
         check_error(err)
@@ -1128,7 +1122,6 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.writev_impl(iov, desc, Some(dest_addr), mem_addr, mapped_key, None)
     }
     #[inline]
@@ -1141,7 +1134,6 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.writev_impl(
             iov,
             desc,
@@ -1161,7 +1153,6 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.writev_impl(
             iov,
             desc,
@@ -1319,7 +1310,6 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.writev_impl(iov, desc, None, mem_addr, mapped_key, None)
     }
 
@@ -1332,7 +1322,6 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.writev_impl(
             iov,
             desc,
@@ -1352,7 +1341,6 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        //[TODO]
         self.writev_impl(
             iov,
             desc,
