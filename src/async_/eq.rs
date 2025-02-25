@@ -269,8 +269,8 @@ impl<'a> Future for EqAsyncRead<'a> {
                             let _len = ev.eq.readerr_in(ev.buf)?;
                             let mut err_event = EventError::new();
                             err_event.c_err = unsafe { std::ptr::read(ev.buf.as_ptr().cast()) };
-                            return std::task::Poll::Ready(Err(Error::from_queue_err(
-                                crate::error::QueueError::Event(err_event),
+                            return std::task::Poll::Ready(Err(Error::from_event_queue_err(
+                                err_event,
                             )));
                         }
                     } else {
@@ -382,8 +382,8 @@ impl<'a> Future for EqAsyncReadOwned<'a> {
                             let _len = ev.eq.readerr_in(&mut ev.buf)?;
                             let mut err_event = EventError::new();
                             err_event.c_err = unsafe { std::ptr::read(ev.buf.as_ptr().cast()) };
-                            return std::task::Poll::Ready(Err(Error::from_queue_err(
-                                crate::error::QueueError::Event(err_event),
+                            return std::task::Poll::Ready(Err(Error::from_event_queue_err(
+                                err_event,
                             )));
                         } else {
                             return std::task::Poll::Ready(Err(error));
@@ -802,11 +802,8 @@ impl<'a> Future for AsyncEventEq<'a> {
             let res = match ready!(ev.fut.as_mut().poll(cx)) {
                 // Ok(len) => len,
                 Err(error) => {
-                    if let ErrorKind::ErrorInQueue(ref q_err) = error.kind {
-                        match q_err {
-                            crate::error::QueueError::Event(_) => Err(error),
-                            crate::error::QueueError::Completion(_) => todo!(), // Should never be the case
-                        }
+                    if matches!(error.kind,ErrorKind::ErrorInEventQueue(_))  {
+                        Err(error)
                     } else {
                         return std::task::Poll::Ready(Err(error));
                     }
@@ -938,53 +935,20 @@ impl<'a> Future for AsyncEventEq<'a> {
                     }
                 }
                 Err(err_entry) => match err_entry.kind {
-                    ErrorKind::ErrorInQueue(ref err) => match err {
-                        crate::error::QueueError::Completion(_) => todo!(),
-                        crate::error::QueueError::Event(e) => {
-                            if ctx_id != 0 {
-                                if e.c_err.context as usize == ctx_id {
-                                    return std::task::Poll::Ready(Err(err_entry));
-                                } else if e.c_err.context as usize == 0 {
-                                    ev.fut.eq.insert_err_entry(
-                                        &Fid(e.c_err.fid as usize),
-                                        Err(err_entry),
-                                    )
-                                } else {
-                                    ev.fut.eq.insert_pending_entry();
-
-                                    if using_ctx2 {
-                                        unsafe {
-                                            (e.c_err.context as *mut std::ffi::c_void
-                                                as *mut crate::Context2)
-                                                .as_mut()
-                                                .unwrap()
-                                        }
-                                        .set_event_done(Err(err_entry));
-                                    } else {
-                                        unsafe {
-                                            (e.c_err.context as *mut std::ffi::c_void
-                                                as *mut crate::Context1)
-                                                .as_mut()
-                                                .unwrap()
-                                        }
-                                        .set_event_done(Err(err_entry));
-                                    }
-                                }
-                            } else if e.c_err.context as usize == 0 {
-                                if e.c_err.fid as usize == ev.req_fid.0 {
-                                    return std::task::Poll::Ready(Err(err_entry));
-                                } else {
-                                    ev.fut.eq.insert_err_entry(
-                                        &Fid(e.c_err.fid as usize),
-                                        Err(err_entry),
-                                    )
-                                }
+                    ErrorKind::ErrorInEventQueue(ref err) => {
+                        if ctx_id != 0 {
+                            if err.c_err.context as usize == ctx_id {
+                                return std::task::Poll::Ready(Err(err_entry));
+                            } else if err.c_err.context as usize == 0 {
+                                ev.fut
+                                    .eq
+                                    .insert_err_entry(&Fid(err.c_err.fid as usize), Err(err_entry))
                             } else {
                                 ev.fut.eq.insert_pending_entry();
 
                                 if using_ctx2 {
                                     unsafe {
-                                        (e.c_err.context as *mut std::ffi::c_void
+                                        (err.c_err.context as *mut std::ffi::c_void
                                             as *mut crate::Context2)
                                             .as_mut()
                                             .unwrap()
@@ -992,7 +956,7 @@ impl<'a> Future for AsyncEventEq<'a> {
                                     .set_event_done(Err(err_entry));
                                 } else {
                                     unsafe {
-                                        (e.c_err.context as *mut std::ffi::c_void
+                                        (err.c_err.context as *mut std::ffi::c_void
                                             as *mut crate::Context1)
                                             .as_mut()
                                             .unwrap()
@@ -1000,8 +964,36 @@ impl<'a> Future for AsyncEventEq<'a> {
                                     .set_event_done(Err(err_entry));
                                 }
                             }
+                        } else if err.c_err.context as usize == 0 {
+                            if err.c_err.fid as usize == ev.req_fid.0 {
+                                return std::task::Poll::Ready(Err(err_entry));
+                            } else {
+                                ev.fut
+                                    .eq
+                                    .insert_err_entry(&Fid(err.c_err.fid as usize), Err(err_entry))
+                            }
+                        } else {
+                            ev.fut.eq.insert_pending_entry();
+
+                            if using_ctx2 {
+                                unsafe {
+                                    (err.c_err.context as *mut std::ffi::c_void
+                                        as *mut crate::Context2)
+                                        .as_mut()
+                                        .unwrap()
+                                }
+                                .set_event_done(Err(err_entry));
+                            } else {
+                                unsafe {
+                                    (err.c_err.context as *mut std::ffi::c_void
+                                        as *mut crate::Context1)
+                                        .as_mut()
+                                        .unwrap()
+                                }
+                                .set_event_done(Err(err_entry));
+                            }
                         }
-                    },
+                    }
                     _ => panic!("Unexpected error"),
                 },
             }
@@ -1290,9 +1282,7 @@ mod tests {
 
     #[test]
     fn eq_open_close_sizes() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1312,9 +1302,7 @@ mod libfabric_lifetime_tests {
 
     #[test]
     fn eq_drops_before_fabric() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

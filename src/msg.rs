@@ -79,6 +79,7 @@ impl<'a> Msg<'a> {
         &self.c_msg
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg {
         &mut self.c_msg
     }
@@ -129,6 +130,7 @@ impl<'a> MsgConnected<'a> {
         self.msg.inner()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg {
         self.msg.inner_mut()
     }
@@ -206,6 +208,7 @@ impl<'a> MsgMut<'a> {
         &self.c_msg
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg {
         &mut self.c_msg
     }
@@ -256,6 +259,7 @@ impl<'a> MsgConnectedMut<'a> {
         self.msg.inner()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg {
         self.msg.inner_mut()
     }
@@ -399,6 +403,7 @@ impl<'a> MsgTaggedConnected<'a> {
         self.msg.inner()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_tagged {
         self.msg.inner_mut()
     }
@@ -478,7 +483,7 @@ impl<'a> MsgTaggedMut<'a> {
         }
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.context
     }
 
@@ -486,6 +491,7 @@ impl<'a> MsgTaggedMut<'a> {
         &self.c_msg_tagged
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_tagged {
         &mut self.c_msg_tagged
     }
@@ -530,7 +536,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
         }
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.msg.context
     }
 
@@ -546,6 +552,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
         self.msg.inner()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_tagged {
         self.msg.inner_mut()
     }
@@ -621,7 +628,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
         )
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.context
     }
 
@@ -629,6 +636,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
         &self.c_msg_atomic
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_atomic {
         &mut self.c_msg_atomic
     }
@@ -677,7 +685,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
         }
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.msg.context
     }
 
@@ -685,6 +693,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
         self.msg.inner()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_atomic {
         self.msg.inner_mut()
     }
@@ -770,7 +779,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
         }
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.context
     }
 
@@ -832,7 +841,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedMutBase<'a, T, OP> 
         self.msg.data()
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.msg.context
     }
 
@@ -913,7 +922,7 @@ impl<'a> MsgRma<'a> {
         )
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.context
     }
 
@@ -921,6 +930,7 @@ impl<'a> MsgRma<'a> {
         &self.c_msg_rma
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_rma {
         &mut self.c_msg_rma
     }
@@ -962,7 +972,7 @@ impl<'a> MsgRmaConnected<'a> {
         }
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.msg.context
     }
 
@@ -970,6 +980,7 @@ impl<'a> MsgRmaConnected<'a> {
         self.msg.inner()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_rma {
         self.msg.inner_mut()
     }
@@ -1045,7 +1056,7 @@ impl<'a> MsgRmaMut<'a> {
         }
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.context
     }
 
@@ -1053,6 +1064,7 @@ impl<'a> MsgRmaMut<'a> {
         &self.c_msg_rma
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_rma {
         &mut self.c_msg_rma
     }
@@ -1098,7 +1110,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
         self.msg.data()
     }
 
-    pub(crate) fn context(&mut self) -> &mut Context {
+    pub fn context(&mut self) -> &mut Context {
         &mut self.msg.context
     }
 
@@ -1106,6 +1118,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
         self.msg.inner()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut libfabric_sys::fi_msg_rma {
         self.msg.inner_mut()
     }

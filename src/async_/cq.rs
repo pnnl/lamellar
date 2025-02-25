@@ -361,43 +361,34 @@ impl<'a> Future for AsyncTransferCq<'a> {
                             mut_self.ctx.0.id(),
                             mut_self.ctx.inner() as usize
                         );
-                        if let ErrorKind::ErrorInQueue(ref q_error) = error.kind {
-                            match q_error {
-                                crate::error::QueueError::Event(_) => todo!(), // Should never be the case
-                                crate::error::QueueError::Completion(q_err_entry) => {
-                                    if q_err_entry.c_err.op_context as usize
-                                        == mut_self.ctx.inner() as usize
-                                    {
-                                        return std::task::Poll::Ready(Err(error));
-                                    } else {
-                                        mut_self
-                                            .fut
-                                            .cq
-                                            .pending_entries
-                                            .fetch_add(1, Ordering::SeqCst);
-                                        match &mut_self.ctx.0 {
-                                            ContextType::Context1(_) => unsafe {
-                                                (q_err_entry.c_err.op_context
-                                                    as *mut std::ffi::c_void
-                                                    as *mut crate::Context1)
-                                                    .as_mut()
-                                                    .unwrap()
-                                            }
-                                            .set_completion_done(Err(error)),
-                                            ContextType::Context2(_) => unsafe {
-                                                (q_err_entry.c_err.op_context
-                                                    as *mut std::ffi::c_void
-                                                    as *mut crate::Context2)
-                                                    .as_mut()
-                                                    .unwrap()
-                                            }
-                                            .set_completion_done(Err(error)),
-                                        }
-                                        // mut_self.fut =
-                                        //     Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
-                                        continue;
+                        if let ErrorKind::ErrorInCompletionQueue(ref q_error) = error.kind {
+                            if q_error.c_err.op_context as usize == mut_self.ctx.inner() as usize {
+                                return std::task::Poll::Ready(Err(error));
+                            } else {
+                                mut_self
+                                    .fut
+                                    .cq
+                                    .pending_entries
+                                    .fetch_add(1, Ordering::SeqCst);
+                                match &mut_self.ctx.0 {
+                                    ContextType::Context1(_) => unsafe {
+                                        (q_error.c_err.op_context as *mut std::ffi::c_void
+                                            as *mut crate::Context1)
+                                            .as_mut()
+                                            .unwrap()
                                     }
+                                    .set_completion_done(Err(error)),
+                                    ContextType::Context2(_) => unsafe {
+                                        (q_error.c_err.op_context as *mut std::ffi::c_void
+                                            as *mut crate::Context2)
+                                            .as_mut()
+                                            .unwrap()
+                                    }
+                                    .set_completion_done(Err(error)),
                                 }
+                                // mut_self.fut =
+                                //     Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
+                                continue;
                             }
                         } else {
                             return std::task::Poll::Ready(Err(error));
@@ -687,8 +678,8 @@ impl<'a> Future for CqAsyncRead<'a> {
                         if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
                             let mut err = CompletionError::new();
                             mut_self.cq.readerr_in(&mut err, 0)?;
-                            return std::task::Poll::Ready(Err(Error::from_queue_err(
-                                crate::error::QueueError::Completion(err),
+                            return std::task::Poll::Ready(Err(Error::from_completion_queue_err(
+                                err,
                             )));
                         }
                     } else {
@@ -794,8 +785,8 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                             mut_self.cq.readerr_in(&mut err, 0)?;
                             // println!("Found error Avail!");
                             // panic!("Error {:?}", err.error());
-                            return std::task::Poll::Ready(Err(Error::from_queue_err(
-                                crate::error::QueueError::Completion(err),
+                            return std::task::Poll::Ready(Err(Error::from_completion_queue_err(
+                                err,
                             )));
                         }
                     } else {
@@ -969,9 +960,7 @@ mod tests {
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -985,9 +974,7 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1010,9 +997,7 @@ mod libfabric_lifetime_tests {
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

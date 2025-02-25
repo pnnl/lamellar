@@ -1,5 +1,4 @@
 use libfabric::domain::NoEventQueue;
-use libfabric::error::QueueError;
 use libfabric::{
     async_::{
         av::{AddressVector, AddressVectorBuilder},
@@ -701,13 +700,10 @@ pub async fn ft_connect_ep<T: AsyncReadEq, E>(
     let res = ep.connect_async(addr).await;
     match res {
         Err(error) => match error.kind {
-            libfabric::error::ErrorKind::ErrorInQueue(err_entry) => match err_entry {
-                libfabric::error::QueueError::Event(event_error) => {
-                    println!("Event Queue error: {}", event_error.get_error());
-                    panic!("Provider error: {}", eq.strerror(&event_error));
-                }
-                libfabric::error::QueueError::Completion(_) => todo!(),
-            },
+            libfabric::error::ErrorKind::ErrorInEventQueue(err_entry) => {
+                println!("Event Queue error: {}", err_entry.get_error());
+                panic!("Provider error: {}", eq.strerror(&err_entry));
+            }
             _ => panic!("{:?}", error),
         },
         Ok(conn_ep) => conn_ep,
@@ -1038,13 +1034,8 @@ macro_rules!  ft_post_async{
                 break;
             }
             else if let Err(ref err) = ret {
-                if let libfabric::error::ErrorKind::ErrorInQueue(ref q_error) = err.kind {
-                    match q_error {
-                        QueueError::Event(e) => {println!("{:?}", e.get_error())}
-                        QueueError::Completion(e) => {println!("{:?}", e.error())}
-                    }
-                    // println!("{:?}", q_error);
-
+                if let libfabric::error::ErrorKind::ErrorInCompletionQueue(ref q_error)  = err.kind{
+                    println!("{:?}", q_error.error())
                 }
                 if !matches!(err.kind, libfabric::error::ErrorKind::TryAgain) {
                     ret.unwrap();

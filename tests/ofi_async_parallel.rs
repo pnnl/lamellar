@@ -150,9 +150,7 @@ impl<I> Drop for Ofi<I> {
                 MyEndpoint::Connected(ep) => ep.shutdown().unwrap(),
                 MyEndpoint::Connectionless(_) => todo!(),
             },
-            EndpointType::Unspec
-            | EndpointType::Dgram
-            | EndpointType::Rdm  => {}
+            EndpointType::Unspec | EndpointType::Dgram | EndpointType::Rdm => {}
         }
     }
 }
@@ -222,7 +220,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         let eq = EventQueueBuilder::new(&fabric).build().unwrap();
 
         let (info_entry, ep, mapped_addr) = match ep_type {
-            EndpointType::Msg  => {
+            EndpointType::Msg => {
                 let info_entry = if server {
                     let pep = EndpointBuilder::new(&info_entry)
                         .build_passive(&fabric)
@@ -273,12 +271,9 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     match err {
                         Ok(ep) => ep,
                         Err(error) => match error.kind {
-                            ErrorKind::ErrorInQueue(q_error) => match q_error {
-                                libfabric::error::QueueError::Event(event_error) => {
-                                    panic!("{:?}", event_error.get_error())
-                                }
-                                libfabric::error::QueueError::Completion(_) => todo!(),
-                            },
+                            ErrorKind::ErrorInEventQueue(q_error) => {
+                                panic!("{:?}", q_error.get_error())
+                            }
                             _ => panic!("Other error"),
                         },
                     }
@@ -2076,28 +2071,28 @@ macro_rules! gen_info {
         Ofi::new(
             {
                 let info = Info::new(&libfabric::info::libfabric_version())
-                .enter_hints()
-                .enter_ep_attr()
-                .type_($ep_type)
-                .leave_ep_attr()
-                .enter_domain_attr()
-                .threading(libfabric::enums::Threading::Safe)
-                .mr_mode(
-                    libfabric::enums::MrMode::new()
-                        .prov_key()
-                        .allocated()
-                        .virt_addr()
-                        .local()
-                        .endpoint()
-                        .raw(),
-                )
-                .leave_domain_attr()
-                .enter_tx_attr()
-                .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-                .leave_tx_attr()
-                .addr_format(libfabric::enums::AddressFormat::Unspec)
-                .caps($caps)
-                .leave_hints();
+                    .enter_hints()
+                    .enter_ep_attr()
+                    .type_($ep_type)
+                    .leave_ep_attr()
+                    .enter_domain_attr()
+                    .threading(libfabric::enums::Threading::Safe)
+                    .mr_mode(
+                        libfabric::enums::MrMode::new()
+                            .prov_key()
+                            .allocated()
+                            .virt_addr()
+                            .local()
+                            .endpoint()
+                            .raw(),
+                    )
+                    .leave_domain_attr()
+                    .enter_tx_attr()
+                    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+                    .leave_tx_attr()
+                    .addr_format(libfabric::enums::AddressFormat::Unspec)
+                    .caps($caps)
+                    .leave_hints();
                 if $server {
                     info.source(libfabric::info::ServiceAddress::Service("9222".to_owned()))
                         .get()

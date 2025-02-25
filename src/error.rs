@@ -9,11 +9,10 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if matches!(self.kind, ErrorKind::CapabilitiesNotMet) {
             write!(f, "Capabilities requested not met")
-        } else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
-            match t {
-                QueueError::Completion(_) => write!(f, "Error found in CompletionQueue"),
-                QueueError::Event(_) => write!(f, "Error found in EventQueue"),
-            }
+        } else if let ErrorKind::ErrorInCompletionQueue(_) = self.kind {
+            write!(f, "Error found in CompletionQueue")
+        } else if let ErrorKind::ErrorInEventQueue(_) = self.kind {
+            write!(f, "Error found in EventQueue")
         } else {
             write!(
                 f,
@@ -28,11 +27,10 @@ impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if matches!(self.kind, ErrorKind::CapabilitiesNotMet) {
             write!(f, "Capabilities requested not met")
-        } else if let ErrorKind::ErrorInQueue(ref t) = self.kind {
-            match t {
-                QueueError::Completion(_) => write!(f, "Error found in CompletionQueue"),
-                QueueError::Event(_) => write!(f, "Error found in EventQueue"),
-            }
+        } else if let ErrorKind::ErrorInCompletionQueue(_) = self.kind {
+            write!(f, "Error found in CompletionQueue")
+        } else if let ErrorKind::ErrorInEventQueue(_) = self.kind {
+            write!(f, "Error found in EventQueue")
         } else {
             write!(
                 f,
@@ -49,10 +47,17 @@ pub enum QueueError {
 }
 
 impl Error {
-    pub(crate) fn from_queue_err(queue_error: QueueError) -> Self {
+    pub(crate) fn from_completion_queue_err(queue_error: CompletionError) -> Self {
         Self {
             c_err: libfabric_sys::FI_EAVAIL,
-            kind: ErrorKind::ErrorInQueue(queue_error),
+            kind: ErrorKind::ErrorInCompletionQueue(queue_error),
+        }
+    }
+
+    pub(crate) fn from_event_queue_err(queue_error: EventError) -> Self {
+        Self {
+            c_err: libfabric_sys::FI_EAVAIL,
+            kind: ErrorKind::ErrorInEventQueue(queue_error),
         }
     }
 
@@ -193,7 +198,8 @@ pub enum ErrorKind {
     ReceiverNotReady,
     MRLimitExceeded,
 
-    ErrorInQueue(QueueError),
+    ErrorInCompletionQueue(CompletionError),
+    ErrorInEventQueue(EventError),
     CapabilitiesNotMet,
     Other,
 }

@@ -1562,7 +1562,7 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::info::{Info};
+    use crate::info::Info;
 
     use super::AddressVectorBuilder;
 

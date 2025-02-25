@@ -25,7 +25,6 @@ pub type UnconnectedEndpoint<T> =
 
 impl<EP: AsTypedFid<EpRawFid>> UninitUnconnectedEndpointBase<EP> {
     pub fn enable(self) -> Result<UnconnectedEndpointBase<EP>, crate::error::Error> {
-        // TODO: Move this into an UninitEp struct
         let err =
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
@@ -90,7 +89,6 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
 
 impl<E> UnconnectedEndpoint<E> {
     pub fn connect_complete(self, event: ConnectedEvent) -> ConnectedEndpoint<E> {
-        // TODO: Create a type specifically for each event type
 
         assert_eq!(event.get_fid(), self.as_typed_fid_mut().as_raw_fid());
 
