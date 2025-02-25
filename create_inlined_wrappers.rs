@@ -1,4 +1,5 @@
 use std::io::BufRead;
+use regex::Regex;
 
 fn read_lines<P>(filename: P) -> std::io::Result<std::io::Lines<std::io::BufReader<std::fs::File>>> where P: AsRef<std::path::Path>, {
     let file = std::fs::File::open(filename)?;
@@ -52,8 +53,44 @@ pub fn read_file(filepath: &str) -> (Vec<String>, Vec<String>){
 }
 
 pub fn generate_wrapper_proto_and_body(func_proto: &str) -> (String, String){
+    let re = Regex::new(r"(?x)
+        ^\s*
+        (.*?)\s+\*?          # Return type
+        (\w+)\s*             # Function name
+        \(\s*(.*)\s*\)       # Arguments
+        \s*;\s*$             # Ending semicolon
+    ").unwrap();
+
+    println!("{func_proto}");
+    let caps = re.captures(func_proto).unwrap();
+    // let return_type = caps.get(1).map_or("", |m| m.as_str());
+    // let function_name = caps.get(2).map_or("", |m| m.as_str());
+    let args = caps.get(3).map_or("", |m| m.as_str());
+
+    // Split arguments while handling function pointers enclosed in parentheses
+    let argument_re = Regex::new(r"(\s*[^,()]+((\([^)]*\))\([^)]*\))?)").unwrap();
+    let args_list: Vec<String> = argument_re.captures_iter(args).map(|cap| {
+        // cap.iter().for_each(|m| println!("{}", m.map_or("",  |m| m.as_str())) );
+        if let Some(func_ptr) = cap.get(3) {
+            func_ptr.as_str().trim().replace("*", "").replace("(", "").replace(")", "")
+        }
+        else {
+            cap.get(0).unwrap().as_str().trim().to_string().replace("*", "").replace("void", "")
+        }
+    }
+    ).collect();
+
+
+    let call_args: Vec<String> = args_list.iter().map(|arg| {
+        if !arg.is_empty() {
+            arg.split_whitespace().last().unwrap().to_string()
+        }
+        else {
+            arg.to_string()
+        }
+    }).collect();
+
     let lpos = func_proto.find('(').unwrap() + 1;
-    let rpos = func_proto.find(')').unwrap();
     let mut wrapper_proto = func_proto[..func_proto.len()-1].trim().to_string();
     let mut wrapper_impl = String::new();
     if let Some(name_pos) =  wrapper_proto[0..lpos].rfind("fi_") {
@@ -63,8 +100,7 @@ pub fn generate_wrapper_proto_and_body(func_proto: &str) -> (String, String){
         wrapper_impl.push_str("\n{\n");
         wrapper_impl.push_str("\treturn ");
         wrapper_impl.push_str(&func_proto[name_pos..lpos-1].replace('*', ""));
-        let args = func_proto[lpos..rpos].split(',').map(|x| x.split(' ').last().unwrap().replace('*', "").replace("void", "")).collect::<Vec::<String>>().join(",");
-        wrapper_impl.push_str(&format!("({});", args));
+        wrapper_impl.push_str(&format!("({});", call_args.join(", ")));
         wrapper_impl.push_str("\n}\n");
     }
     
