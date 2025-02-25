@@ -21,7 +21,7 @@ use libfabric::{
     eq::{EventQueueBuilder, WaitEq},
     error::{Error, ErrorKind},
     fabric::FabricBuilder,
-    info::{Info, InfoEntry, Version},
+    info::{Info, InfoEntry},
     infocapsoptions::{
         AtomicDefaultCap, Caps, CollCap, InfoCaps, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
     },
@@ -104,14 +104,11 @@ impl<I> IsSyncSend for Ofi<I> {}
 impl<I> Drop for Ofi<I> {
     fn drop(&mut self) {
         match self.info_entry.ep_attr().type_() {
-            EndpointType::Msg | EndpointType::SockStream => match &self.ep {
+            EndpointType::Msg => match &self.ep {
                 MyEndpoint::Connected(ep) => ep.shutdown().unwrap(),
                 MyEndpoint::Connectionless(_) => todo!(),
             },
-            EndpointType::Unspec
-            | EndpointType::Dgram
-            | EndpointType::Rdm
-            | EndpointType::SockDgram => {}
+            EndpointType::Unspec | EndpointType::Dgram | EndpointType::Rdm => {}
         }
     }
 }
@@ -195,7 +192,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         let mut reg_mem = vec![0u8; 1024 * 1024];
 
         let (info_entry, ep, mapped_addr) = match ep_type {
-            EndpointType::Msg | EndpointType::SockStream => {
+            EndpointType::Msg => {
                 let eq = EventQueueBuilder::new(&fabric).build().unwrap();
 
                 let info_entry = if server {
@@ -1666,39 +1663,36 @@ macro_rules! gen_info {
     ($ep_type: ident, $caps: ident, $shared_cq: literal, $ip: expr, $server: ident, $name: ident) => {
         Ofi::new(
             {
-                let info = Info::new(&Version {
-                    major: 1,
-                    minor: 19,
-                })
-                .enter_hints()
-                .enter_ep_attr()
-                // .tx_ctx_cnt(0)
-                .type_($ep_type)
-                .leave_ep_attr()
-                .enter_domain_attr()
-                .threading(libfabric::enums::Threading::Domain)
-                .mr_mode(
-                    libfabric::enums::MrMode::new()
-                        .prov_key()
-                        .allocated()
-                        .virt_addr()
-                        .local()
-                        .endpoint()
-                        .raw(),
-                )
-                .leave_domain_attr()
-                .enter_tx_attr()
-                .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-                // .op_flags(libfabric::enums::TransferOptions::new().delivery_complete())
-                // .size(1024)
-                .leave_tx_attr()
-                .enter_rx_attr()
-                // .caps(RxCaps::new().recv().collective())
-                // .size(1024)
-                .leave_rx_attr()
-                .addr_format(libfabric::enums::AddressFormat::Unspec)
-                .caps($caps)
-                .leave_hints();
+                let info = Info::new(&libfabric::info::libfabric_version())
+                    .enter_hints()
+                    .enter_ep_attr()
+                    // .tx_ctx_cnt(0)
+                    .type_($ep_type)
+                    .leave_ep_attr()
+                    .enter_domain_attr()
+                    .threading(libfabric::enums::Threading::Domain)
+                    .mr_mode(
+                        libfabric::enums::MrMode::new()
+                            .prov_key()
+                            .allocated()
+                            .virt_addr()
+                            .local()
+                            .endpoint()
+                            .raw(),
+                    )
+                    .leave_domain_attr()
+                    .enter_tx_attr()
+                    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+                    // .op_flags(libfabric::enums::TransferOptions::new().delivery_complete())
+                    // .size(1024)
+                    .leave_tx_attr()
+                    .enter_rx_attr()
+                    // .caps(RxCaps::new().recv().collective())
+                    // .size(1024)
+                    .leave_rx_attr()
+                    .addr_format(libfabric::enums::AddressFormat::Unspec)
+                    .caps($caps)
+                    .leave_hints();
                 if $server {
                     info.source(libfabric::info::ServiceAddress::Service("9222".to_owned()))
                         .get()

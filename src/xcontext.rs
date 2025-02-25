@@ -1245,10 +1245,13 @@ impl RxCaps {
     }
 
     crate::enums::gen_set_get_flag!(message, is_message, libfabric_sys::FI_MSG as u64);
+
     crate::enums::gen_set_get_flag!(
+        #[deprecated]
         vabiable_message,
+        #[deprecated]
         is_vabiable_message,
-        libfabric_sys::FI_VARIABLE_MSG
+        libfabric_sys::FI_VARIABLE_MSG as u64
     );
     crate::enums::gen_set_get_flag!(rma, is_rma, libfabric_sys::FI_RMA as u64);
     crate::enums::gen_set_get_flag!(rma_event, is_rma_event, libfabric_sys::FI_RMA_EVENT);

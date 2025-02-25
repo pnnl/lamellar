@@ -221,16 +221,13 @@ impl<'a> AddressVectorBuilder<'a> {
 mod tests {
     use crate::async_::eq::EventQueueBuilder;
     use crate::domain::DomainBuilder;
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     use super::AddressVectorBuilder;
 
     #[test]
     fn av_open_close() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_ep_attr()
         .type_(crate::enums::EndpointType::Rdm)
@@ -261,10 +258,7 @@ mod tests {
 
     #[test]
     fn av_good_sync() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_ep_attr()
         .type_(crate::enums::EndpointType::Rdm)
@@ -295,17 +289,14 @@ mod libfabric_lifetime_tests {
     use crate::{
         async_::eq::EventQueueBuilder,
         domain::DomainBuilder,
-        info::{Info, Version},
+        info::Info,
     };
 
     use super::AddressVectorBuilder;
 
     #[test]
     fn av_drops_before_domain() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_ep_attr()
         .type_(crate::enums::EndpointType::Rdm)

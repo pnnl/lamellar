@@ -263,9 +263,7 @@ gen_enum!(
     (Unspec, libfabric_sys::fi_ep_type_FI_EP_UNSPEC),
     (Msg, libfabric_sys::fi_ep_type_FI_EP_MSG),
     (Dgram, libfabric_sys::fi_ep_type_FI_EP_DGRAM),
-    (Rdm, libfabric_sys::fi_ep_type_FI_EP_RDM),
-    (SockStream, libfabric_sys::fi_ep_type_FI_EP_SOCK_STREAM),
-    (SockDgram, libfabric_sys::fi_ep_type_FI_EP_SOCK_DGRAM)
+    (Rdm, libfabric_sys::fi_ep_type_FI_EP_RDM)
 );
 
 gen_enum!(
@@ -367,14 +365,18 @@ impl Mode {
     gen_set_get_flag!(rx_cq_data, is_rx_cq_data, libfabric_sys::FI_RX_CQ_DATA);
     gen_set_get_flag!(local_mr, is_local_mr, libfabric_sys::FI_LOCAL_MR);
     gen_set_get_flag!(
+        #[deprecated]
         notify_flags_only,
+        #[deprecated]
         is_notify_flags_only,
-        libfabric_sys::FI_NOTIFY_FLAGS_ONLY
+        libfabric_sys::FI_NOTIFY_FLAGS_ONLY as u64
     );
     gen_set_get_flag!(
+        #[deprecated]
         restricted_comp,
+        #[deprecated]
         is_restricted_comp,
-        libfabric_sys::FI_RESTRICTED_COMP
+        libfabric_sys::FI_RESTRICTED_COMP as u64
     );
     gen_set_get_flag!(context2, is_context2, libfabric_sys::FI_CONTEXT2);
     gen_set_get_flag!(
@@ -522,6 +524,7 @@ impl Default for MrAccess {
         Self::new()
     }
 }
+gen_enum!(UserId, u64, (AuthKey, libfabric_sys::FI_AUTH_KEY));
 
 gen_enum!(
     Progress,
@@ -553,7 +556,8 @@ gen_enum!(
 gen_enum!(
     CounterEvents,
     libfabric_sys::fi_cntr_events,
-    (Comp, libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP)
+    (Comp, libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP),
+    (Bytes, libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_BYTES)
 );
 
 gen_enum!(
@@ -818,6 +822,11 @@ impl<const MSG: bool> TferOptions<false, MSG, false, false, false, false> {
         is_multi_recv,
         libfabric_sys::FI_MULTI_RECV as u64
     );
+    gen_set_get_flag!(
+        auth_key,
+        is_auth_key,
+        libfabric_sys::FI_AUTH_KEY
+    );
 }
 
 impl TferOptions<false, true, false, false, true, false> {
@@ -952,6 +961,7 @@ gen_enum!(
     (RxmTcp, libfabric_sys::FI_PROTO_RXM_TCP),
     (Opx, libfabric_sys::FI_PROTO_OPX),
     (Cxi, libfabric_sys::FI_PROTO_CXI),
+    (CxiRnNR, libfabric_sys::FI_PROTO_CXI_RNR),
     (Xnet, libfabric_sys::FI_PROTO_XNET),
     (Coll, libfabric_sys::FI_PROTO_COLL),
     (Ucx, libfabric_sys::FI_PROTO_UCX),
@@ -991,11 +1001,7 @@ impl DomainCaps {
         self.c_flags
     }
 
-    gen_set_get_flag!(
-        directed_recv,
-        is_directed_recv,
-        libfabric_sys::FI_DIRECTED_RECV
-    );
+    gen_set_get_flag!(directed_recv, is_directed_recv, libfabric_sys::FI_DIRECTED_RECV);
     gen_set_get_flag!(av_user_id, is_av_user_id, libfabric_sys::FI_AV_USER_ID);
     gen_set_get_flag!(local_comm, is_local_comm, libfabric_sys::FI_LOCAL_COMM);
     gen_set_get_flag!(remote_comm, is_remote_comm, libfabric_sys::FI_REMOTE_COMM);

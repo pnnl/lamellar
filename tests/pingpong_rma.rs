@@ -1,6 +1,6 @@
 pub mod common; // Public to supress lint warnings (unused function)
 
-use libfabric::info::{Info, Version};
+use libfabric::info::Info;
 use prefix::{call, define_test, HintsCaps};
 
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
@@ -12,10 +12,7 @@ use async_ as prefix;
 define_test!(pp_server_rma, async_pp_server_rma, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .mode(libfabric::enums::Mode::new().context())
     .enter_ep_attr()
@@ -157,10 +154,7 @@ define_test!(pp_client_rma, async_pp_client_rma, {
     let ip = "172.17.110.".to_string() + &hostname;
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .mode(libfabric::enums::Mode::new().context())
     .enter_ep_attr()

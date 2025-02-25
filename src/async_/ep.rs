@@ -474,14 +474,12 @@ impl<'a, E> EndpointBuilder<'a, E> {
     ) -> Result<Endpoint<E>, crate::error::Error> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
-            EndpointType::Msg | EndpointType::SockStream => Ok(Endpoint::ConnectionOriented(
+            EndpointType::Msg => Ok(Endpoint::ConnectionOriented(
                 UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
             )),
-            EndpointType::Dgram | EndpointType::Rdm | EndpointType::SockDgram => {
-                Ok(Endpoint::Connectionless(UninitConnectionlessEndpoint::new(
-                    domain, self.info, self.flags, self.ctx,
-                )?))
-            }
+            EndpointType::Dgram | EndpointType::Rdm => Ok(Endpoint::Connectionless(
+                UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?,
+            )),
         }
     }
 

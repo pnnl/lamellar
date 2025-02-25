@@ -1,4 +1,5 @@
 use crate::domain::DomainImplBase;
+use crate::UnspecMappedAddress;
 use crate::{
     domain::{DomainBase, DomainImplT},
     fid::AsTypedFid,
@@ -86,7 +87,7 @@ pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD:
 /// This type wraps an instance of a `fid_cq`, monitoring its lifetime and closing it when it goes out of scope.
 /// To be able to check its configuration at compile this object is extended with a `T:`[`CqConfig`] (e.g. [Options]) that provides this information.
 ///
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_cq.3.html).
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_cq.3.html).
 ///
 /// Note that other objects that rely on a CompletQueue (e.g., an [crate::ep::Endpoint] bound to it) will extend its lifetime until they
 /// are also dropped.
@@ -1223,6 +1224,7 @@ impl CompletionError {
                 err: 0,
                 prov_errno: 0,
                 err_data: std::ptr::null_mut(),
+                src_addr: 0,
                 err_data_size: 0,
             },
         }
@@ -1287,6 +1289,15 @@ impl CompletionError {
         self.c_err.olen
     }
 
+    /// Returns the source address of the completion error entry.
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::src_addr` field.
+    pub fn src_addr(&self) -> MappedAddress {
+        MappedAddress::Unspec(UnspecMappedAddress {
+            raw_mapped_addr: self.c_err.src_addr,
+        })
+    }
+
     /// Returns the generic error related to this CompletionError
     ///
     /// Corresponds to accessing the `fi_cq_err_entry::err` field.
@@ -1323,15 +1334,12 @@ mod tests {
     use crate::{
         cq::*,
         domain::DomainBuilder,
-        info::{Info, Version},
+        info::Info,
     };
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
 
@@ -1351,10 +1359,7 @@ mod tests {
 
     #[test]
     fn cq_signal() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();
@@ -1380,10 +1385,7 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();
@@ -1406,15 +1408,12 @@ mod libfabric_lifetime_tests {
     use crate::{
         cq::*,
         domain::DomainBuilder,
-        info::{Info, Version},
+        info::Info,
     };
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();

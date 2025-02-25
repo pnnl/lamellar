@@ -2,6 +2,7 @@ use std::ffi::CString;
 
 use crate::fid::MutBorrowedTypedFid;
 use crate::fid::{AsTypedFid, BorrowedTypedFid};
+use crate::utils::check_error;
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
 use crate::{
@@ -27,6 +28,19 @@ impl<EQ: ?Sized + SyncSend> AddressVectorImplT for AddressVectorImplBase<EQ> {
 }
 
 impl<EQ: ?Sized + SyncSend> SyncSend for AddressVectorImplBase<EQ> {}
+
+#[repr(C)]
+pub struct AuthKey {
+    pub(crate) auth_key: Vec<u8>,
+}
+
+impl AuthKey {
+    pub(crate) fn from_bytes(raw_auth_key: &[u8]) -> Self {
+        Self {
+            auth_key: raw_auth_key.to_vec(),
+        }
+    }
+}
 
 pub(crate) struct AddressVectorImplBase<EQ>
 where
@@ -356,6 +370,76 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
             .into_string()
             .unwrap()
     }
+
+    pub(crate) fn insert_auth_key(&self, auth_key: &AuthKey) -> Result<(), crate::error::Error> {
+        let mut fi_addr = 0u64;
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_av_insert_auth_key(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                auth_key.auth_key.as_ptr().cast(),
+                std::mem::size_of_val(auth_key),
+                &mut fi_addr,
+                0,
+            )
+        };
+
+        check_error(err as isize)
+    }
+
+    pub(crate) fn lookup_auth_key(
+        &self,
+        mapped_addr: &MappedAddress,
+    ) -> Result<AuthKey, crate::error::Error> {
+        let mut key_bytes: Vec<u8> = Vec::new();
+        let mut key_len = key_bytes.len();
+
+        unsafe {
+            libfabric_sys::inlined_fi_av_lookup_auth_key(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                mapped_addr.raw_addr(),
+                key_bytes.as_mut_ptr().cast(),
+                &mut key_len,
+            )
+        };
+
+        key_bytes.resize(key_len, 0);
+        key_len = key_bytes.len();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_av_lookup_auth_key(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                mapped_addr.raw_addr(),
+                key_bytes.as_mut_ptr().cast(),
+                &mut key_len,
+            )
+        };
+
+        if err < 0 {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            Ok(AuthKey::from_bytes(&key_bytes))
+        }
+    }
+
+    pub(crate) fn set_user_id(
+        &self,
+        mapped_addr: &MappedAddress,
+        user_id: &MappedAddress,
+        flags: crate::enums::UserId,
+    ) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_av_set_user_id(
+                self.as_typed_fid_mut().as_raw_typed_fid(),
+                mapped_addr.raw_addr(),
+                user_id.raw_addr(),
+                flags.as_raw(),
+            )
+        };
+        check_error(err as isize)
+    }
 }
 
 pub enum AvInAddress<'a> {
@@ -392,7 +476,7 @@ impl<'a> From<(&'a str, usize, &'a str, usize)> for AvInAddress<'a> {
 /// Owned wrapper around a libfabric `fid_av`.
 ///
 /// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av.3.html).
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_av.3.html).
 ///
 /// Note that other objects that rely on an AddressVector (e.g., [MappedAddress]) will extend its lifetime until they
 /// are also dropped.
@@ -578,6 +662,26 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<EQ> {
     /// Directly corresponds to `fi_av_straddr`
     pub fn straddr(&self, addr: &Address) -> String {
         self.inner.straddr(addr)
+    }
+
+    pub fn insert_auth_key(&self, auth_key: &AuthKey) -> Result<(), crate::error::Error> {
+        self.inner.insert_auth_key(auth_key)
+    }
+
+    pub fn lookup_auth_key(
+        &self,
+        mapped_addr: &crate::MappedAddress,
+    ) -> Result<AuthKey, crate::error::Error> {
+        self.inner.lookup_auth_key(mapped_addr)
+    }
+
+    pub fn set_user_id(
+        &self,
+        mapped_addr: &MappedAddress,
+        user_id: &MappedAddress,
+        flags: crate::enums::UserId,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.set_user_id(mapped_addr, user_id, flags)
     }
 }
 
@@ -920,7 +1024,7 @@ impl AddressVectorSetImpl {
 /// Owned wrapper around a libfabric `fid_av_set`.
 ///
 /// This type wraps an instance of a `fid_av_set`, monitoring its lifetime and closing it when it goes out of scope.
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_av_set.3.html).
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_av_set.3.html).
 ///
 /// Note that other objects that rely on an AddressVectorSet (e.g., [crate::comm::collective::MulticastGroupCollective]) will extend its lifetime until they
 /// are also dropped.
@@ -1391,16 +1495,13 @@ impl<EQ: ?Sized + ReadEq> AsTypedFid<AvRawFid> for AddressVectorImplBase<EQ> {
 
 #[cfg(test)]
 mod tests {
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     use super::AddressVectorBuilder;
 
     #[test]
     fn av_open_close() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_ep_attr()
         .type_(crate::enums::EndpointType::Rdm)
@@ -1432,10 +1533,7 @@ mod tests {
 
     #[test]
     fn av_good_sync() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_ep_attr()
         .type_(crate::enums::EndpointType::Rdm)
@@ -1464,16 +1562,13 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::info::{Info, Version};
+    use crate::info::{Info};
 
     use super::AddressVectorBuilder;
 
     #[test]
     fn av_drops_before_domain() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_ep_attr()
         .type_(crate::enums::EndpointType::Rdm)

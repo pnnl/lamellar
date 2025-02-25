@@ -117,6 +117,7 @@ impl Error {
             libfabric_sys::FI_ENOAV => ErrorKind::NoAddressVector,
             libfabric_sys::FI_EOVERRUN => ErrorKind::QueueOverrun,
             libfabric_sys::FI_ENORX => ErrorKind::ReceiverNotReady,
+            libfabric_sys::FI_ENOMR => ErrorKind::MRLimitExceeded,
             _ => ErrorKind::Other,
         };
 
@@ -190,6 +191,7 @@ pub enum ErrorKind {
     NoAddressVector,
     QueueOverrun,
     ReceiverNotReady,
+    MRLimitExceeded,
 
     ErrorInQueue(QueueError),
     CapabilitiesNotMet,

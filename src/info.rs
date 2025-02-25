@@ -69,9 +69,10 @@ impl InfoCapsImpl {
             bitfield: self.bitfield | libfabric_sys::FI_DIRECTED_RECV,
         }
     }
+    #[deprecated]
     pub fn variable_msg(self) -> Self {
         Self {
-            bitfield: self.bitfield | libfabric_sys::FI_VARIABLE_MSG,
+            bitfield: self.bitfield | libfabric_sys::FI_VARIABLE_MSG as u64,
         }
     }
     pub fn hmem(self) -> Self {
@@ -148,10 +149,11 @@ impl InfoCapsImpl {
             },
         }
     }
+    #[deprecated]
     pub fn variable_msg_if(self, cond: bool) -> Self {
         Self {
             bitfield: if cond {
-                self.bitfield | libfabric_sys::FI_VARIABLE_MSG
+                self.bitfield | libfabric_sys::FI_VARIABLE_MSG as u64
             } else {
                 self.bitfield
             },
@@ -312,8 +314,9 @@ impl InfoCapsImpl {
     pub fn is_directed_recv(self) -> bool {
         self.bitfield & libfabric_sys::FI_DIRECTED_RECV == libfabric_sys::FI_DIRECTED_RECV
     }
+    #[deprecated]
     pub fn is_variable_msg(self) -> bool {
-        self.bitfield & libfabric_sys::FI_VARIABLE_MSG == libfabric_sys::FI_VARIABLE_MSG
+        self.bitfield & libfabric_sys::FI_VARIABLE_MSG as u64 == libfabric_sys::FI_VARIABLE_MSG as u64
     }
     pub fn is_hmem(self) -> bool {
         self.bitfield & libfabric_sys::FI_HMEM == libfabric_sys::FI_HMEM
@@ -759,6 +762,10 @@ impl<T: Caps> Caps for InfoEntry<T> {
 
     fn is_xpu() -> bool {
         T::is_xpu()
+    }
+
+    fn is_av_user_id() -> bool {
+        T::is_av_user_id()
     }
 }
 
@@ -1454,6 +1461,10 @@ impl<T: Caps> Caps for InfoHints<T> {
     fn is_xpu() -> bool {
         T::is_xpu()
     }
+
+    fn is_av_user_id() -> bool {
+        T::is_av_user_id()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1463,6 +1474,13 @@ pub struct Version {
 }
 
 impl Version {
+    pub fn new(major: u32, minor: u32) -> Self {
+        Self {
+            major,
+            minor
+        }
+    }
+
     pub(crate) fn as_raw(&self) -> u32 {
         self.major << 16 | self.minor
     }
@@ -1473,4 +1491,8 @@ impl Version {
             minor: raw_version & 0xffff,
         }
     }
+}
+
+pub fn libfabric_version() -> Version {
+    Version::new(1, 22)
 }

@@ -1,3 +1,5 @@
+use std::ptr::null;
+
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
 use crate::{
@@ -11,9 +13,12 @@ use crate::{
     Context, MyOnceCell, MyRc, SyncSend,
 };
 use crate::{
-    ep::ActiveEndpoint,
-    fid::{AsTypedFid, BorrowedTypedFid},
+    ep::ActiveEndpoint, fid::{AsTypedFid, BorrowedTypedFid}
 };
+
+pub struct DmaBuf {
+    c_dmabuf: libfabric_sys::fi_mr_dmabuf,
+}
 
 /// Represents a key needed to access a remote [MemoryRegion].
 ///
@@ -189,7 +194,7 @@ pub(crate) struct MemoryRegionImpl {
 /// Owned wrapper around a libfabric `fid_mr`.
 ///
 /// This type wraps an instance of a `fid_mr`, monitoring its lifetime and closing it when it goes out of scope.
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_mr.3.html).
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_mr.3.html).
 ///
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
 /// are also dropped.
@@ -686,13 +691,16 @@ impl AsTypedFid<MrRawFid> for MemoryRegionImpl {
 
 pub struct MemoryRegionAttr {
     pub(crate) c_attr: libfabric_sys::fi_mr_attr,
+    // phantom: PhantomData<&'a ()>,
 }
 
 impl MemoryRegionAttr {
     pub fn new() -> Self {
         Self {
             c_attr: libfabric_sys::fi_mr_attr {
-                mr_iov: std::ptr::null(),
+                __bindgen_anon_1: libfabric_sys::fi_mr_attr__bindgen_ty_1 {
+                    dmabuf: null()
+                },
                 iov_count: 0,
                 access: 0,
                 offset: 0,
@@ -701,15 +709,22 @@ impl MemoryRegionAttr {
                 auth_key_size: 0,
                 auth_key: std::ptr::null_mut(),
                 iface: libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM,
-                device: libfabric_sys::fi_mr_attr__bindgen_ty_1 { reserved: 0 },
+                device: libfabric_sys::fi_mr_attr__bindgen_ty_2 { reserved: 0 },
                 hmem_data: std::ptr::null_mut(),
+                page_size: 0,
             },
         }
     }
 
     pub fn iov(&mut self, iov: &[crate::iovec::IoVec]) -> &mut Self {
-        self.c_attr.mr_iov = iov.as_ptr().cast();
+        self.c_attr.__bindgen_anon_1.mr_iov = iov.as_ptr().cast();
         self.c_attr.iov_count = iov.len();
+
+        self
+    }
+
+    pub fn dmabuf(&mut self, dmabuf: &DmaBuf) -> &mut Self {
+        self.c_attr.__bindgen_anon_1.dmabuf = &dmabuf.c_dmabuf;
 
         self
     }
@@ -780,22 +795,22 @@ impl MemoryRegionAttr {
         self.c_attr.device = match iface {
             crate::enums::HmemIface::Ze(drv_idx, dev_idx) => {
                 let ze_id = unsafe { libfabric_sys::inlined_fi_hmem_ze_device(drv_idx, dev_idx) };
-                libfabric_sys::fi_mr_attr__bindgen_ty_1 { ze: ze_id }
+                libfabric_sys::fi_mr_attr__bindgen_ty_2 { ze: ze_id }
             }
             crate::enums::HmemIface::System => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_1 { reserved: 0 }
+                libfabric_sys::fi_mr_attr__bindgen_ty_2 { reserved: 0 }
             }
             crate::enums::HmemIface::Cuda(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_1 { cuda: id }
+                libfabric_sys::fi_mr_attr__bindgen_ty_2 { cuda: id }
             }
             crate::enums::HmemIface::Rocr(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_1 { cuda: id }
+                libfabric_sys::fi_mr_attr__bindgen_ty_2 { cuda: id }
             }
             crate::enums::HmemIface::Neuron(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_1 { neuron: id }
+                libfabric_sys::fi_mr_attr__bindgen_ty_2 { neuron: id }
             }
             crate::enums::HmemIface::SynapseAi(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_1 { synapseai: id }
+                libfabric_sys::fi_mr_attr__bindgen_ty_2 { synapseai: id }
             }
         };
         self
@@ -861,6 +876,11 @@ pub enum MaybeDisabledMemoryRegion {
     Disabled(DisabledMemoryRegion),
 }
 
+pub(crate) enum MRBackingBuf<'a> {
+    IoVs(Vec<IoVec<'a>>),
+    DmaBuf(&'a DmaBuf),
+}
+
 /// Builder for the [MemoryRegion] type.
 ///
 /// `MemoryRegionBuilder` is used to configure and build a new [MemoryRegion].
@@ -868,7 +888,7 @@ pub enum MaybeDisabledMemoryRegion {
 /// followed by a call to `fi_mr_regattr.  
 pub struct MemoryRegionBuilder<'a> {
     pub(crate) mr_attr: MemoryRegionAttr,
-    pub(crate) iovs: Vec<IoVec<'a>>,
+    pub(crate) backing_buf: MRBackingBuf<'a>,
     pub(crate) flags: MrRegOpt,
 }
 
@@ -882,23 +902,34 @@ impl<'a> MemoryRegionBuilder<'a> {
         Self {
             mr_attr,
             flags: MrRegOpt::new(),
-            iovs: vec![IoVec::from_slice(buff)],
+            backing_buf: MRBackingBuf::IoVs(vec![IoVec::from_slice(buff)]),
+        }
+    }
+    
+    /// Initiates the creation of new [MemoryRegion] on `domain`, with backing memory `buff`.
+    ///
+    /// The initial configuration is only setting the fields `fi_mr_attr::mr_iov`, `fi_mr_attr::iface`.
+    pub fn new_from_dma_buf<T>(dmabuff: &'a DmaBuf, iface: crate::enums::HmemIface) -> Self {
+        let mut mr_attr = MemoryRegionAttr::new();
+        mr_attr.iface(iface);
+        Self {
+            mr_attr,
+            flags: MrRegOpt::new(),
+            backing_buf: MRBackingBuf::DmaBuf(dmabuff),
         }
     }
 
     /// Add another backing buffer to the memory region
     ///
-    /// Corresponds to 'pusing' another value to the `fi_mr_attr::mr_iov` field.
+    /// Corresponds to 'pushing' another value to the `fi_mr_attr::mr_iov` field.
     pub fn add_buffer<T>(mut self, buff: &'a [T]) -> Self {
-        self.iovs.push(IoVec::from_slice(buff));
+        match &mut self.backing_buf {
+            MRBackingBuf::IoVs(vec) => vec.push(IoVec::from_slice(buff)),
+            MRBackingBuf::DmaBuf(_) => panic!("FI_MR_DMABUF is in use"),
+        }
 
         self
     }
-
-    // fn iovs(mut self, iov: &[crate::iovec::IoVec<T>] ) -> Self {
-    //     self.mr_attr.iov(iov);
-    //     self
-    // }
 
     /// Indicates that the MR may be used for collective operations.
     ///
@@ -1029,7 +1060,11 @@ impl<'a> MemoryRegionBuilder<'a> {
                 panic!("Manual async memory registration is not supported. Use the ::async_::mr::MemoryRegionBuilder for that.")
             }
         }
-        self.mr_attr.iov(&self.iovs);
+        match &mut self.backing_buf {
+            MRBackingBuf::IoVs(vec) => self.mr_attr.iov(vec),
+            MRBackingBuf::DmaBuf(dmabuf) => self.mr_attr.dmabuf(dmabuf),
+        };
+
         let mr = MemoryRegion::from_attr(domain, self.mr_attr, self.flags)?;
 
         if domain.get_mr_mode().is_endpoint() {
@@ -1059,7 +1094,7 @@ impl<'a> MemoryRegionBuilder<'a> {
 mod tests {
     use crate::{
         enums::MrAccess,
-        info::{Info, Version},
+        info::Info,
     };
 
     use super::MemoryRegionBuilder;
@@ -1122,10 +1157,7 @@ mod tests {
         //     .ep_attr(ep_attr)
         //     .domain_attr(dom_attr);
 
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
         .enter_domain_attr()
@@ -1246,7 +1278,7 @@ mod tests {
 mod libfabric_lifetime_tests {
     use crate::{
         enums::MrAccess,
-        info::{Info, Version},
+        info::Info,
     };
 
     use super::MemoryRegionBuilder;
@@ -1263,10 +1295,7 @@ mod libfabric_lifetime_tests {
         //     .ep_attr(ep_attr)
         //     .domain_attr(dom_attr);
 
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
         .enter_domain_attr()

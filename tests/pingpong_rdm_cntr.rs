@@ -6,7 +6,7 @@ pub mod common; // Public to supress lint warnings (unused function)
 
 // Public to supress lint warnings (unused function)
 
-use libfabric::info::{Info, Version};
+use libfabric::info::Info;
 use prefix::{define_test, ft_finalize, HintsCaps};
 
 use sync_ as prefix;
@@ -25,10 +25,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
     // todo!();
     // gl_ctx.comp_method = CompMeth::Sread;
 
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .enter_ep_attr()
     .type_(libfabric::enums::EndpointType::Rdm)
@@ -139,10 +136,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
     // todo!();
     // gl_ctx.comp_method = CompMeth::Sread;
 
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .enter_ep_attr()
     .type_(libfabric::enums::EndpointType::Rdm)

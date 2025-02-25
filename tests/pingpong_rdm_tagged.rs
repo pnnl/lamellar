@@ -4,7 +4,7 @@ pub mod common;
 pub mod sync_; // Public to supress lint warnings (unused function) // Public to supress lint warnings (unused function)
 
 use async_ as prefix;
-use libfabric::info::{Info, Version};
+use libfabric::info::Info;
 use prefix::{call, define_test, HintsCaps};
 
 // To run the following tests do:
@@ -18,10 +18,7 @@ use prefix::{call, define_test, HintsCaps};
 define_test!(pp_server_rdm_tagged, asyn_pp_server_rdm_tagged, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .enter_ep_attr()
     .type_(libfabric::enums::EndpointType::Rdm)
@@ -133,10 +130,7 @@ define_test!(pp_client_rdm_tagged, async_pp_client_rdm_tagged, {
     let ip = "172.17.110.".to_string() + &hostname;
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .enter_ep_attr()
     .type_(libfabric::enums::EndpointType::Rdm)

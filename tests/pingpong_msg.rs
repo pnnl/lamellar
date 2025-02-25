@@ -5,7 +5,7 @@ pub mod async_; // Public to supress lint warnings (unused function)
 pub mod common; // Public to supress lint warnings (unused function)
 
 use async_ as prefix;
-use libfabric::info::{Info, Version};
+use libfabric::info::Info;
 use prefix::{call, define_test, EndpointCaps, HintsCaps};
 
 // To run the following tests do:
@@ -23,10 +23,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
         .stdout;
     let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
     let ip = "172.17.110.".to_string() + &hostname;
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .enter_ep_attr()
     .type_(libfabric::enums::EndpointType::Msg)
@@ -162,10 +159,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
     let ip = "172.17.110.".to_string() + &hostname;
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let info = Info::new(&Version {
-        major: 1,
-        minor: 19,
-    })
+    let info = Info::new(&libfabric::info::libfabric_version())
     .enter_hints()
     .enter_ep_attr()
     .type_(libfabric::enums::EndpointType::Msg)

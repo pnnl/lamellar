@@ -270,7 +270,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
 /// Owned wrapper around a libfabric `fid_domain`.
 ///
 /// This type wraps an instance of a `fid_domain`, monitoring its lifetime and closing it when it goes out of scope.
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_domain.3.html).
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_domain.3.html).
 ///
 /// Note that other objects that rely on a Domain (e.g., [`Endpoint`](crate::ep::Endpoint)) will extend its lifetime until they
 /// are also dropped.
@@ -483,6 +483,7 @@ pub struct DomainAttr {
     max_err_data: usize,
     mr_cnt: usize,
     traffic_class: crate::enums::TrafficClass,
+    max_ep_auth_key: usize,
 }
 
 impl DomainAttr {
@@ -530,6 +531,7 @@ impl DomainAttr {
             max_err_data: unsafe { *value }.max_err_data,
             mr_cnt: unsafe { *value }.mr_cnt,
             traffic_class: crate::enums::TrafficClass::from_raw(unsafe { *value }.tclass),
+            max_ep_auth_key: unsafe { *value }.max_ep_auth_key,
         }
     }
 
@@ -561,6 +563,7 @@ impl DomainAttr {
             caps: self.caps.as_raw(),
             mode: self.mode.as_raw(),
             tclass: self.traffic_class.as_raw(),
+            max_ep_auth_key: self.max_ep_auth_key,
             auth_key: if let Some(auth_key) = &self.auth_key {
                 std::mem::transmute::<*const u8, *mut u8>(auth_key.as_ptr())
             } else {
@@ -810,14 +813,11 @@ impl PeerDomainCtx {
 
 #[cfg(test)]
 mod tests {
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     #[test]
     fn domain_test() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();
@@ -835,15 +835,12 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     #[test]
 
     fn domain_drops_before_fabric() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();

@@ -269,7 +269,10 @@ impl<'a> MemoryRegionBuilder<'a> {
         ctx: &mut Context,
     ) -> Result<(Event, MemoryRegion), crate::error::Error> {
         panic!("Async memory registration is currently not supported due to a potential bug in libfabric");
-        self.mr_attr.iov(&self.iovs);
+        match &self.backing_buf {
+            crate::mr::MRBackingBuf::IoVs(vec) => self.mr_attr.iov(vec),
+            crate::mr::MRBackingBuf::DmaBuf(dmabuf) => self.mr_attr.dmabuf(dmabuf),
+        };
         MemoryRegion::from_attr_async(domain, self.mr_attr, self.flags, ctx).await
     }
 }

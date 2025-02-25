@@ -19,7 +19,7 @@ pub(crate) struct FabricImpl {
 /// Owned wrapper around a libfabric `fid_fabric`.
 ///
 /// This type wraps an instance of a `fid_fabric`, monitoring its lifetime and closing it when it goes out of scope.
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_fabric.3.html).
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_fabric.3.html).
 ///
 /// Note that other objects that rely on a `Fabric` (e.g., [`PassiveEndpoint`](crate::ep::PassiveEndpoint)) will extend its lifetime until they
 /// are also dropped.

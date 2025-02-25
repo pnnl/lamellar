@@ -963,16 +963,13 @@ impl<'a> CompletionQueueBuilder<'a> {
 mod tests {
 
     use crate::domain::DomainBuilder;
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     use super::CompletionQueueBuilder;
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();
@@ -988,10 +985,7 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();
@@ -1012,14 +1006,11 @@ mod tests {
 mod libfabric_lifetime_tests {
     use crate::async_::cq::CompletionQueueBuilder;
     use crate::domain::DomainBuilder;
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();

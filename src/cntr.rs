@@ -19,7 +19,7 @@ use crate::{
 /// This type wraps an instance of a `fi_cntr`, monitoring its lifetime and closing it when it goes out of scope.
 /// To be able to check its configuration at compile this object is extended with a `T:`[`CntrConfig`] (e.g. [Options]) that provides this information.
 ///
-/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.19.0/man/fi_cntr.3.html).
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_cntr.3.html).
 ///
 /// Note that other objects that rely on a Counter (e.g., an [crate::ep::Endpoint] bound to it) will extend its lifetime until they
 /// are also dropped.
@@ -499,16 +499,13 @@ impl Default for CounterAttr {
 
 #[cfg(test)]
 mod tests {
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     use super::{CounterBuilder, ReadCntr};
 
     #[test]
     fn cntr_loop() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 18,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_domain_attr()
         .mode(crate::enums::Mode::all())
@@ -559,17 +556,14 @@ mod libfabric_lifetime_tests {
 
     use crate::{
         cntr::ReadCntr,
-        info::{Info, Version},
+        info::Info,
     };
 
     use super::CounterBuilder;
 
     #[test]
     fn cntr_drops_before_domain() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 18,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .enter_hints()
         .enter_domain_attr()
         .mode(crate::enums::Mode::all())

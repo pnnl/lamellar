@@ -1114,7 +1114,7 @@ impl<'a, const WRITE: bool> EventQueueBuilder<'a, WRITE> {
 #[cfg(test)]
 mod tests {
 
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     use super::EventQueueBuilder;
 
@@ -1290,10 +1290,7 @@ mod tests {
 
     #[test]
     fn eq_open_close_sizes() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();
@@ -1309,16 +1306,13 @@ mod tests {
 #[cfg(test)]
 mod libfabric_lifetime_tests {
 
-    use crate::info::{Info, Version};
+    use crate::info::Info;
 
     use super::EventQueueBuilder;
 
     #[test]
     fn eq_drops_before_fabric() {
-        let info = Info::new(&Version {
-            major: 1,
-            minor: 19,
-        })
+        let info = Info::new(&crate::info::libfabric_version())
         .get()
         .unwrap();
         let entry = info.into_iter().next().unwrap();

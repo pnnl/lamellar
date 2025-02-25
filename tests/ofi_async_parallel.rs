@@ -36,7 +36,6 @@ use libfabric::domain::DomainBase;
 use libfabric::domain::NoEventQueue;
 use libfabric::ep::BaseEndpoint;
 use libfabric::info::Info;
-use libfabric::info::Version;
 use libfabric::infocapsoptions::InfoCaps;
 use libfabric::iovec::Ioc;
 use libfabric::iovec::IocMut;
@@ -147,14 +146,13 @@ impl<I> IsSyncSend for Ofi<I> {}
 impl<I> Drop for Ofi<I> {
     fn drop(&mut self) {
         match self.info_entry.ep_attr().type_() {
-            EndpointType::Msg | EndpointType::SockStream => match self.ep.as_ref() {
+            EndpointType::Msg => match self.ep.as_ref() {
                 MyEndpoint::Connected(ep) => ep.shutdown().unwrap(),
                 MyEndpoint::Connectionless(_) => todo!(),
             },
             EndpointType::Unspec
             | EndpointType::Dgram
-            | EndpointType::Rdm
-            | EndpointType::SockDgram => {}
+            | EndpointType::Rdm  => {}
         }
     }
 }
@@ -224,7 +222,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         let eq = EventQueueBuilder::new(&fabric).build().unwrap();
 
         let (info_entry, ep, mapped_addr) = match ep_type {
-            EndpointType::Msg | EndpointType::SockStream => {
+            EndpointType::Msg  => {
                 let info_entry = if server {
                     let pep = EndpointBuilder::new(&info_entry)
                         .build_passive(&fabric)
@@ -2077,10 +2075,7 @@ macro_rules! gen_info {
     ($ep_type: ident, $caps: ident, $shared_cq: literal, $ip: expr, $server: ident, $name: ident) => {
         Ofi::new(
             {
-                let info = Info::new(&Version {
-                    major: 1,
-                    minor: 19,
-                })
+                let info = Info::new(&libfabric::info::libfabric_version())
                 .enter_hints()
                 .enter_ep_attr()
                 .type_($ep_type)

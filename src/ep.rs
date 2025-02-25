@@ -286,6 +286,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         Ok(permitted == 1)
     }
 
+
     fn xpu_trigger(&self, iface: &HmemIface) -> Result<TriggerXpu, crate::error::Error> {
         let (dev_type, device) = match iface {
             HmemIface::Cuda(dev_id) => (
@@ -1407,6 +1408,7 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
         check_error(err)
     }
 
+    #[deprecated]
     fn rx_size_left(&self) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_rx_size_left(self.as_typed_fid_mut().as_raw_typed_fid())
@@ -1420,7 +1422,8 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
             Ok(ret as usize)
         }
     }
-
+    
+    #[deprecated]
     fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_tx_size_left(self.as_typed_fid_mut().as_raw_typed_fid())
@@ -1594,6 +1597,142 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_fid(),
                 libfabric_sys::FI_OPT_ENDPOINT as i32,
                 libfabric_sys::FI_OPT_CUDA_API_PERMITTED as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_shared_memory_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_SHARED_MEMORY_PERMITTED as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_max_msg_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_MAX_MSG_SIZE as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_max_tagged_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_MAX_TAGGED_SIZE as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_max_rma_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_MAX_RMA_SIZE as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_max_atomic_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_MAX_ATOMIC_SIZE as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_inject_tagged_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_INJECT_TAGGED_SIZE as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_inject_rma_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_INJECT_RMA_SIZE as i32,
+                (&mut val as *mut u32).cast(),
+                len,
+            )
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
+    fn set_inject_atomic_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
+        let mut val = if permitted { 1_u32 } else { 0_u32 };
+        let len = std::mem::size_of::<u32>();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_setopt(
+                self.as_typed_fid_mut().as_raw_fid(),
+                libfabric_sys::FI_OPT_ENDPOINT as i32,
+                libfabric_sys::FI_OPT_INJECT_ATOMIC_SIZE as i32,
                 (&mut val as *mut u32).cast(),
                 len,
             )
@@ -1831,10 +1970,10 @@ impl<'a, E> EndpointBuilder<'a, E> {
     ) -> Result<Endpoint<E>, crate::error::Error> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
-            EndpointType::Msg | EndpointType::SockStream => Ok(Endpoint::ConnectionOriented(
+            EndpointType::Msg => Ok(Endpoint::ConnectionOriented(
                 UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
             )),
-            EndpointType::Dgram | EndpointType::Rdm | EndpointType::SockDgram => {
+            EndpointType::Dgram | EndpointType::Rdm => {
                 Ok(Endpoint::Connectionless(UninitConnectionlessEndpoint::new(
                     domain, self.info, self.flags, self.ctx,
                 )?))
