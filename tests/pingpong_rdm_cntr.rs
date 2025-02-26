@@ -53,7 +53,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
     };
 
-    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) =
+    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) =
         prefix::ft_init_fabric(
             hintscaps,
             &mut gl_ctx,
@@ -74,7 +74,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -89,7 +89,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc,
+                &mr,
             );
         }
         prefix::InfoWithCaps::Tagged(entry) => {
@@ -103,7 +103,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -118,7 +118,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc,
+                &mr,
             );
         }
     }
@@ -164,7 +164,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
     };
 
-    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, _mr, _av, mut mr_desc) =
+    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) =
         prefix::ft_init_fabric(
             hintscaps,
             &mut gl_ctx,
@@ -185,7 +185,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -200,7 +200,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc,
+                &mr,
             );
         }
         prefix::InfoWithCaps::Tagged(entry) => {
@@ -214,7 +214,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -229,7 +229,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc,
+                &mr,
             );
         }
     }

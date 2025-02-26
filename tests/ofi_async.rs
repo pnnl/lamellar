@@ -25,6 +25,7 @@ use libfabric::iovec::Ioc;
 use libfabric::iovec::IocMut;
 use libfabric::iovec::RmaIoVec;
 use libfabric::iovec::RmaIoc;
+use libfabric::mr::BorrowedMemoryRegionDesc;
 use libfabric::mr::DisabledMemoryRegion;
 use libfabric::{
     async_::{
@@ -49,7 +50,7 @@ use libfabric::{
     },
     iovec::{IoVec, IoVecMut},
     mr::{
-        default_desc, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc,
+        MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder,
         MemoryRegionKey,
     },
     msg::{
@@ -131,9 +132,7 @@ impl<I> Drop for Ofi<I> {
                 MyEndpoint::Connected(ep) => ep.shutdown().unwrap(),
                 MyEndpoint::Connectionless(_) => todo!(),
             },
-            EndpointType::Unspec
-            | EndpointType::Dgram
-            | EndpointType::Rdm => {}
+            EndpointType::Unspec | EndpointType::Dgram | EndpointType::Rdm => {}
         }
     }
 }
@@ -332,7 +331,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     let mut ctx = info_entry.allocate_context();
                     async_std::task::block_on(ep.send_to_async(
                         &reg_mem[..addrlen],
-                        &mut default_desc(),
+                        None,
                         &mapped_address,
                         &mut ctx,
                     ))
@@ -340,7 +339,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
                     async_std::task::block_on(ep.recv_from_any_async(
                         std::slice::from_mut(&mut reg_mem[0]),
-                        &mut default_desc(),
+                        None,
                         &mut ctx,
                     ))
                     .unwrap();
@@ -350,16 +349,16 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     let epname = ep.getname().unwrap();
                     let addrlen = epname.as_bytes().len();
 
-                    let mut mr_desc = if let Some(ref mr) = mr {
-                        mr.descriptor()
+                    let mr_desc = if let Some(ref mr) = mr {
+                        Some(mr.descriptor())
                     } else {
-                        default_desc()
+                        None
                     };
                     let mut ctx = info_entry.allocate_context();
 
                     async_std::task::block_on(ep.recv_from_any_async(
                         &mut reg_mem[..addrlen],
-                        &mut mr_desc,
+                        mr_desc.as_ref(),
                         &mut ctx,
                     ))
                     .unwrap();
@@ -377,7 +376,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
                     async_std::task::block_on(ep.send_to_async(
                         &std::slice::from_ref(&reg_mem[0]),
-                        &mut mr_desc,
+                        mr_desc.as_ref(),
                         &mapped_address,
                         &mut ctx,
                     ))
@@ -419,7 +418,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn tsend<T>(
         &self,
         buf: &[T],
-        desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
         tag: u64,
         data: Option<u64>,
         ctx: &mut Context,
@@ -489,7 +488,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn tsendv(
         &mut self,
         iov: &[IoVec],
-        desc: &mut [MemoryRegionDesc],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
         tag: u64,
         ctx: &mut Context,
     ) {
@@ -508,7 +507,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn trecvv(
         &mut self,
         iov: &[IoVecMut],
-        desc: &mut [MemoryRegionDesc],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
         tag: u64,
         ctx: &mut Context,
     ) {
@@ -534,7 +533,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn trecv<T>(
         &mut self,
         buf: &mut [T],
-        desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
         tag: u64,
         ctx: &mut Context,
     ) {
@@ -600,7 +599,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn send<T>(
         &self,
         buf: &[T],
-        desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
         data: Option<u64>,
         ctx: &mut Context,
     ) {
@@ -657,7 +656,12 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         .unwrap()
     }
 
-    pub fn sendv(&mut self, iov: &[IoVec], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
+    pub fn sendv(
+        &mut self,
+        iov: &[IoVec],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        ctx: &mut Context,
+    ) {
         async_std::task::block_on(async {
             match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -670,7 +674,12 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         .unwrap();
     }
 
-    pub fn recvv(&mut self, iov: &[IoVecMut], desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
+    pub fn recvv(
+        &mut self,
+        iov: &[IoVecMut],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        ctx: &mut Context,
+    ) {
         async_std::task::block_on(async {
             match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -683,7 +692,12 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         .unwrap();
     }
 
-    pub fn recv<T>(&mut self, buf: &mut [T], desc: &mut MemoryRegionDesc, ctx: &mut Context) {
+    pub fn recv<T>(
+        &mut self,
+        buf: &mut [T],
+        desc: Option<&BorrowedMemoryRegionDesc>,
+        ctx: &mut Context,
+    ) {
         async_std::task::block_on(async {
             match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -773,17 +787,17 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         };
         let mut ctx = self.info_entry.allocate_context();
 
-        let mut desc = mr.descriptor();
+        let desc = Some(mr.descriptor());
         self.send(
             &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
-            &mut desc,
+            desc.as_ref(),
             None,
             &mut ctx,
         );
         self.recv(
             &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
                 ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
-            &mut desc,
+            desc.as_ref(),
             &mut ctx,
         );
 
@@ -822,7 +836,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         buf: &[T],
         dest_addr: u64,
-        desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
         data: Option<u64>,
         ctx: &mut Context,
     ) {
@@ -942,7 +956,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         buf: &mut [T],
         dest_addr: u64,
-        desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -983,7 +997,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         iov: &[IoVec],
         dest_addr: u64,
-        desc: &mut [MemoryRegionDesc],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1023,7 +1037,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         iov: &[IoVecMut],
         dest_addr: u64,
-        desc: &mut [MemoryRegionDesc],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1115,7 +1129,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         buf: &[T],
         dest_addr: u64,
-        desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
         op: AtomicOp,
         ctx: &mut Context,
     ) {
@@ -1185,7 +1199,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         ioc: &[libfabric::iovec::Ioc<T>],
         dest_addr: u64,
-        desc: &mut [MemoryRegionDesc],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
         op: AtomicOp,
         ctx: &mut Context,
     ) {
@@ -1245,8 +1259,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         buf: &[T],
         res: &mut [T],
         dest_addr: u64,
-        desc: &mut MemoryRegionDesc,
-        res_desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
+        res_desc: Option<&BorrowedMemoryRegionDesc>,
         op: FetchAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1290,8 +1304,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         dest_addr: u64,
-        desc: &mut [MemoryRegionDesc],
-        res_desc: &mut [MemoryRegionDesc],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
         op: FetchAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1334,7 +1348,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         msg: &mut Either<MsgFetchAtomic<T>, MsgFetchAtomicConnected<T>>,
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        res_desc: &mut [MemoryRegionDesc],
+        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
     ) {
         let opts = AtomicMsgOptions::new();
         async_std::task::block_on(async {
@@ -1363,9 +1377,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp: &[T],
         res: &mut [T],
         dest_addr: u64,
-        desc: &mut MemoryRegionDesc,
-        comp_desc: &mut MemoryRegionDesc,
-        res_desc: &mut MemoryRegionDesc,
+        desc: Option<&BorrowedMemoryRegionDesc>,
+        comp_desc: Option<&BorrowedMemoryRegionDesc>,
+        res_desc: Option<&BorrowedMemoryRegionDesc>,
         op: CompareAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1414,9 +1428,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp_ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         dest_addr: u64,
-        desc: &mut [MemoryRegionDesc],
-        comp_desc: &mut [MemoryRegionDesc],
-        res_desc: &mut [MemoryRegionDesc],
+        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        comp_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
         op: CompareAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1464,8 +1478,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         msg: &mut Either<MsgCompareAtomic<T>, MsgCompareAtomicConnected<T>>,
         comp_ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        comp_desc: &mut [MemoryRegionDesc],
-        res_desc: &mut [MemoryRegionDesc],
+        comp_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
     ) {
         let opts = AtomicMsgOptions::new();
         async_std::task::block_on(async {
@@ -1501,28 +1515,28 @@ macro_rules! gen_info {
         Ofi::new(
             {
                 let info = Info::new(&libfabric::info::libfabric_version())
-                .enter_hints()
-                .enter_ep_attr()
-                .type_($ep_type)
-                .leave_ep_attr()
-                .enter_domain_attr()
-                .threading(libfabric::enums::Threading::Domain)
-                .mr_mode(
-                    libfabric::enums::MrMode::new()
-                        .prov_key()
-                        .allocated()
-                        .virt_addr()
-                        .local()
-                        .endpoint()
-                        .raw(),
-                )
-                .leave_domain_attr()
-                .enter_tx_attr()
-                .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-                .leave_tx_attr()
-                .addr_format(libfabric::enums::AddressFormat::Unspec)
-                .caps($caps)
-                .leave_hints();
+                    .enter_hints()
+                    .enter_ep_attr()
+                    .type_($ep_type)
+                    .leave_ep_attr()
+                    .enter_domain_attr()
+                    .threading(libfabric::enums::Threading::Domain)
+                    .mr_mode(
+                        libfabric::enums::MrMode::new()
+                            .prov_key()
+                            .allocated()
+                            .virt_addr()
+                            .local()
+                            .endpoint()
+                            .raw(),
+                    )
+                    .leave_domain_attr()
+                    .enter_tx_attr()
+                    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+                    .leave_tx_attr()
+                    .addr_format(libfabric::enums::AddressFormat::Unspec)
+                    .caps($caps)
+                    .leave_hints();
                 if $server {
                     info.source(libfabric::info::ServiceAddress::Service("9222".to_owned()))
                         .get()
@@ -1649,28 +1663,29 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = [mr.descriptor(), mr.descriptor()];
+    let desc = [mr.descriptor(), mr.descriptor()];
+    let desc0 = Some(mr.descriptor());
     let mut ctx = ofi.info_entry.allocate_context();
 
     if server {
         // Send a single buffer
-        ofi.send(&reg_mem[..512], &mut desc[0], None, &mut ctx);
+        ofi.send(&reg_mem[..512], desc0.as_ref(), None, &mut ctx);
         assert!(std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size());
 
         // Inject a buffer
-        ofi.send(&reg_mem[..128], &mut desc[0], None, &mut ctx);
+        ofi.send(&reg_mem[..128], desc0.as_ref(), None, &mut ctx);
         // No cq.sread since inject does not generate completions
 
         // // Send single Iov
         let iov = [IoVec::from_slice(&reg_mem[..512])];
-        ofi.sendv(&iov, &mut desc[..1], &mut ctx);
+        ofi.sendv(&iov, Some(&desc[..1]), &mut ctx);
 
         // Send multi Iov
         let iov = [
             IoVec::from_slice(&reg_mem[..512]),
             IoVec::from_slice(&reg_mem[512..1024]),
         ];
-        ofi.sendv(&iov, &mut desc, &mut ctx);
+        ofi.sendv(&iov, Some(&desc), &mut ctx);
     } else {
         let expected: Vec<_> = (0..1024 * 2)
             .into_iter()
@@ -1679,18 +1694,18 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         reg_mem.iter_mut().for_each(|v| *v = 0);
 
         // Receive a single buffer
-        ofi.recv(&mut reg_mem[..512], &mut desc[0], &mut ctx);
+        ofi.recv(&mut reg_mem[..512], desc0.as_ref(), &mut ctx);
         assert_eq!(reg_mem[..512], expected[..512]);
 
         // Receive inject
         reg_mem.iter_mut().for_each(|v| *v = 0);
-        ofi.recv(&mut reg_mem[..128], &mut desc[0], &mut ctx);
+        ofi.recv(&mut reg_mem[..128], desc0.as_ref(), &mut ctx);
         assert_eq!(reg_mem[..128], expected[..128]);
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
         // // Receive into a single Iov
         let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-        ofi.recvv(&mut iov, &mut desc[..1], &mut ctx);
+        ofi.recvv(&mut iov, Some(&desc[..1]), &mut ctx);
         assert_eq!(reg_mem[..512], expected[..512]);
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -1698,7 +1713,7 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         // // Receive into multiple Iovs
         let (mem0, mem1) = reg_mem[..1024].split_at_mut(512);
         let iov = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-        ofi.recvv(&iov, &mut desc, &mut ctx);
+        ofi.recvv(&iov, Some(&desc), &mut ctx);
 
         assert_eq!(mem0, &expected[..512]);
         assert_eq!(mem1, &expected[512..1024]);
@@ -1750,12 +1765,12 @@ fn sendrecvdata(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = [mr.descriptor(), mr.descriptor()];
+    let desc0 = Some(mr.descriptor());
     let data = Some(128u64);
     let mut ctx = ofi.info_entry.allocate_context();
     if server {
         // Send a single buffer
-        ofi.send(&reg_mem[..512], &mut desc[0], data, &mut ctx);
+        ofi.send(&reg_mem[..512], desc0.as_ref(), data, &mut ctx);
     } else {
         let expected: Vec<_> = (0..1024 * 2)
             .into_iter()
@@ -1764,7 +1779,7 @@ fn sendrecvdata(server: bool, name: &str, connected: bool) {
         reg_mem.iter_mut().for_each(|v| *v = 0);
 
         // Receive a single buffer
-        ofi.recv(&mut reg_mem[..512], &mut desc[0], &mut ctx);
+        ofi.recv(&mut reg_mem[..512], desc0.as_ref(), &mut ctx);
         assert_eq!(reg_mem[..512], expected[..512]);
     }
 }
@@ -1821,13 +1836,14 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = [mr.descriptor(), mr.descriptor()];
+    let desc = [mr.descriptor(), mr.descriptor()];
+    let desc0 = Some(mr.descriptor());
     let data = Some(128u64);
     let mut ctx = ofi.info_entry.allocate_context();
 
     if server {
         // Send a single buffer
-        ofi.tsend(&reg_mem[..512], &mut desc[0], 10, data, &mut ctx);
+        ofi.tsend(&reg_mem[..512], desc0.as_ref(), 10, data, &mut ctx);
         // match entry {
         //     Completion::Tagged(entry) => {assert_eq!(entry[0].data(), data.unwrap()); assert_eq!(entry[0].tag(), 10)},
         //     _ => panic!("Unexpected CQ entry format"),
@@ -1836,19 +1852,19 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         assert!(std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size());
 
         // Inject a buffer
-        ofi.tsend(&reg_mem[..128], &mut desc[0], 1, data, &mut ctx);
+        ofi.tsend(&reg_mem[..128], desc0.as_ref(), 1, data, &mut ctx);
         // No cq.sread since inject does not generate completions
 
         // // Send single Iov
         let iov = [IoVec::from_slice(&reg_mem[..512])];
-        ofi.tsendv(&iov, &mut desc[..1], 2, &mut ctx);
+        ofi.tsendv(&iov, Some(&desc[..1]), 2, &mut ctx);
 
         // Send multi Iov
         let iov = [
             IoVec::from_slice(&reg_mem[..512]),
             IoVec::from_slice(&reg_mem[512..1024]),
         ];
-        ofi.tsendv(&iov, &mut desc, 3, &mut ctx);
+        ofi.tsendv(&iov, Some(&desc), 3, &mut ctx);
     } else {
         let expected: Vec<_> = (0..1024 * 2)
             .into_iter()
@@ -1857,19 +1873,19 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         reg_mem.iter_mut().for_each(|v| *v = 0);
 
         // Receive a single buffer
-        ofi.trecv(&mut reg_mem[..512], &mut desc[0], 10, &mut ctx);
+        ofi.trecv(&mut reg_mem[..512], desc0.as_ref(), 10, &mut ctx);
 
         assert_eq!(reg_mem[..512], expected[..512]);
 
         // Receive inject
         reg_mem.iter_mut().for_each(|v| *v = 0);
-        ofi.trecv(&mut reg_mem[..128], &mut desc[0], 1, &mut ctx);
+        ofi.trecv(&mut reg_mem[..128], desc0.as_ref(), 1, &mut ctx);
         assert_eq!(reg_mem[..128], expected[..128]);
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
         // // Receive into a single Iov
         let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-        ofi.trecvv(&mut iov, &mut desc[..1], 2, &mut ctx);
+        ofi.trecvv(&mut iov, Some(&desc[..1]), 2, &mut ctx);
         assert_eq!(reg_mem[..512], expected[..512]);
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -1877,7 +1893,7 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         // // Receive into multiple Iovs
         let (mem0, mem1) = reg_mem[..1024].split_at_mut(512);
         let iov = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-        ofi.trecvv(&iov, &mut desc, 3, &mut ctx);
+        ofi.trecvv(&iov, Some(&desc), 3, &mut ctx);
 
         assert_eq!(mem0, &expected[..512]);
         assert_eq!(mem1, &expected[512..1024]);
@@ -1929,8 +1945,8 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let desc = mr.descriptor();
-    let mut descs = [desc.clone(), desc];
+    let desc = Some(mr.descriptor());
+    let descs = [mr.descriptor(), mr.descriptor()];
     let mapped_addr = ofi.mapped_addr.clone();
     let mut ctx = ofi.info_entry.allocate_context();
 
@@ -1941,11 +1957,11 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let iov1 = IoVec::from_slice(mem1);
         let data = Some(128);
         let mut msg = if connected {
-            Either::Right(MsgConnected::from_iov(&iov0, &mut descs[0], data, &mut ctx))
+            Either::Right(MsgConnected::from_iov(&iov0, desc.as_ref(), data, &mut ctx))
         } else {
             Either::Left(Msg::from_iov(
                 &iov0,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 data,
                 &mut ctx,
@@ -1963,12 +1979,15 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let iovs = [iov0, iov1];
         let mut msg = if connected {
             Either::Right(MsgConnected::from_iov_slice(
-                &iovs, &mut descs, data, &mut ctx,
+                &iovs,
+                Some(&descs),
+                data,
+                &mut ctx,
             ))
         } else {
             Either::Left(Msg::from_iov_slice(
                 &iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 data,
                 &mut ctx,
@@ -1981,14 +2000,14 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgConnected::from_iov(
                 &iovs[0],
-                &mut descs[0],
+                desc.as_ref(),
                 None,
                 &mut ctx,
             ))
         } else {
             Either::Left(Msg::from_iov(
                 &iovs[0],
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 &mut ctx,
@@ -1999,12 +2018,15 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
 
         let mut msg = if connected {
             Either::Right(MsgConnected::from_iov_slice(
-                &iovs, &mut descs, None, &mut ctx,
+                &iovs,
+                Some(&descs),
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(Msg::from_iov_slice(
                 &iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 &mut ctx,
@@ -2021,14 +2043,14 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgConnectedMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 None,
                 &mut ctx,
             ))
         } else {
             Either::Left(MsgMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 &mut ctx,
@@ -2045,14 +2067,14 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgConnectedMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 None,
                 &mut ctx,
             ))
         } else {
             Either::Left(MsgMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 &mut ctx,
@@ -2070,12 +2092,15 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
             Either::Right(MsgConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgMut::from_iov_slice(
                 &mut iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 &mut ctx,
@@ -2094,12 +2119,15 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
             Either::Right(MsgConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgMut::from_iov_slice(
                 &mut iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 &mut ctx,
@@ -2156,8 +2184,8 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let desc = mr.descriptor();
-    let mut descs = [desc.clone(), desc];
+    let desc = Some(mr.descriptor());
+    let descs = [mr.descriptor(), mr.descriptor()];
     let mapped_addr = ofi.mapped_addr.clone();
     let mut ctx = ofi.info_entry.allocate_context();
     let data = Some(128);
@@ -2169,7 +2197,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgTaggedConnected::from_iov(
                 &iov0,
-                &mut descs[0],
+                desc.as_ref(),
                 data,
                 0,
                 None,
@@ -2178,7 +2206,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgTagged::from_iov(
                 &iov0,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 data,
                 0,
@@ -2192,12 +2220,17 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let iovs = [iov0, iov1];
         let mut msg = if connected {
             Either::Right(MsgTaggedConnected::from_iov_slice(
-                &iovs, &mut descs, None, 1, None, &mut ctx,
+                &iovs,
+                Some(&descs),
+                None,
+                1,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgTagged::from_iov_slice(
                 &iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 1,
@@ -2212,7 +2245,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgTaggedConnected::from_iov(
                 &iovs[0],
-                &mut descs[0],
+                desc.as_ref(),
                 None,
                 2,
                 None,
@@ -2221,7 +2254,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgTagged::from_iov(
                 &iovs[0],
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 Some(0),
                 2,
@@ -2234,12 +2267,17 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
 
         let mut msg = if connected {
             Either::Right(MsgTaggedConnected::from_iov_slice(
-                &iovs, &mut descs, None, 3, None, &mut ctx,
+                &iovs,
+                Some(&descs),
+                None,
+                3,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgTagged::from_iov_slice(
                 &iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 3,
@@ -2258,7 +2296,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 None,
                 0,
                 None,
@@ -2267,7 +2305,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgTaggedMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 0,
@@ -2285,7 +2323,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 None,
                 1,
                 None,
@@ -2294,7 +2332,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgTaggedMut::from_iov(
                 &mut iov,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 1,
@@ -2314,12 +2352,17 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, None, 2, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                2,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov_slice(
                 &mut iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 2,
@@ -2340,12 +2383,17 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let mut iovs = [iov, iov1];
         let mut msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, None, 3, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                3,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov_slice(
                 &mut iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 None,
                 3,
@@ -2412,8 +2460,8 @@ fn writeread(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let desc = mr.descriptor();
-    let mut descs = [desc.clone(), desc];
+    let desc = Some(mr.descriptor());
+    let descs = [mr.descriptor(), mr.descriptor()];
     // let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
@@ -2422,58 +2470,58 @@ fn writeread(server: bool, name: &str, connected: bool) {
 
     if server {
         // Write inject a single buffer
-        ofi.write(&reg_mem[..128], 0, &mut descs[0], None, &mut ctx);
+        ofi.write(&reg_mem[..128], 0, desc.as_ref(), None, &mut ctx);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         // Write a single buffer
-        ofi.write(&reg_mem[..512], 0, &mut descs[0], None, &mut ctx);
+        ofi.write(&reg_mem[..512], 0, desc.as_ref(), None, &mut ctx);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         // Write vector of buffers
         let iovs = [
             IoVec::from_slice(&reg_mem[..512]),
             IoVec::from_slice(&reg_mem[512..1024]),
         ];
-        ofi.writev(&iovs, 0, &mut descs, &mut ctx);
+        ofi.writev(&iovs, 0, Some(&descs), &mut ctx);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
     } else {
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[..128], &expected[..128]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[..512], &expected[..512]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[1024..1536], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[1024..1536], desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[..1024], &expected[..1024]);
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
 
         // Read buffer from remote memory
-        ofi.read(&mut reg_mem[1024..1536], 0, &mut descs[0], &mut ctx);
+        ofi.read(&mut reg_mem[1024..1536], 0, desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[1024..1536], &expected[512..1024]);
 
         // Read vector of buffers from remote memory
         let (mem0, mem1) = reg_mem[1536..].split_at_mut(256);
         let iovs = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-        ofi.readv(&iovs, 0, &mut descs, &mut ctx);
+        ofi.readv(&iovs, 0, Some(&descs), &mut ctx);
 
         assert_eq!(mem0, &expected[..256]);
         assert_eq!(mem1, &expected[..256]);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
     }
 }
 
@@ -2529,8 +2577,8 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let desc = mr.descriptor();
-    let mut descs = [desc.clone(), desc];
+    let desc = Some(mr.descriptor());
+    let descs = [mr.descriptor(), mr.descriptor()];
     let mapped_addr = ofi.mapped_addr.clone();
 
     let key = mr.key().unwrap();
@@ -2549,7 +2597,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgRmaConnected::from_iov(
                 &iov,
-                &mut descs[0],
+                desc.as_ref(),
                 &rma_iov,
                 None,
                 &mut ctx,
@@ -2557,7 +2605,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgRma::from_iov(
                 &iov,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 &rma_iov,
                 None,
@@ -2569,7 +2617,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         ofi.writemsg(&mut msg);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         let iov = IoVec::from_slice(&reg_mem[..512]);
         let rma_iov = RmaIoVec::new()
@@ -2580,7 +2628,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgRmaConnected::from_iov(
                 &iov,
-                &mut descs[0],
+                desc.as_ref(),
                 &rma_iov,
                 Some(128),
                 &mut ctx,
@@ -2588,7 +2636,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgRma::from_iov(
                 &iov,
-                &mut descs[0],
+                desc.as_ref(),
                 mapped_addr.as_ref().unwrap(),
                 &rma_iov,
                 Some(128),
@@ -2600,7 +2648,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         ofi.writemsg(&mut msg);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         let iov0 = IoVec::from_slice(&reg_mem[..512]);
         let iov1 = IoVec::from_slice(&reg_mem[512..1024]);
@@ -2618,12 +2666,16 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let mut msg = if connected {
             Either::Right(MsgRmaConnected::from_iov_slice(
-                &iovs, &mut descs, &rma_iovs, None, &mut ctx,
+                &iovs,
+                Some(&descs),
+                &rma_iovs,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgRma::from_iov_slice(
                 &iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 &rma_iovs,
                 None,
@@ -2634,21 +2686,21 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         ofi.writemsg(&mut msg);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
     } else {
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[..128], &expected[..128]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[..512], &expected[..512]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[1024..1536], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[1024..1536], desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[..1024], &expected[..1024]);
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2663,7 +2715,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
             let mut msg = if connected {
                 Either::Right(MsgRmaConnectedMut::from_iov(
                     &mut iov,
-                    &mut descs[0],
+                    desc.as_ref(),
                     &rma_iov,
                     None,
                     &mut ctx,
@@ -2671,7 +2723,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
             } else {
                 Either::Left(MsgRmaMut::from_iov(
                     &mut iov,
-                    &mut descs[0],
+                    desc.as_ref(),
                     mapped_addr.as_ref().unwrap(),
                     &rma_iov,
                     None,
@@ -2697,12 +2749,16 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let mut msg = if connected {
             Either::Right(MsgRmaConnectedMut::from_iov_slice(
-                &mut iovs, &mut descs, &rma_iovs, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                &rma_iovs,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgRmaMut::from_iov_slice(
                 &mut iovs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 &rma_iovs,
                 None,
@@ -2715,7 +2771,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected[..256]);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
     }
 }
 
@@ -2768,60 +2824,60 @@ fn atomic(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let desc = mr.descriptor();
-    let mut descs = [desc.clone(), desc];
+    let desc = Some(mr.descriptor());
+    let descs = [mr.descriptor(), mr.descriptor()];
     // let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
     let mut ctx = ofi.info_entry.allocate_context();
 
     if server {
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Min, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Min, &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Max, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Max, &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Sum, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Sum, &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Prod, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Prod, &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Bor, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Bor, &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Band, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Band, &mut ctx);
 
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
-
-        // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
-
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Lor, &mut ctx);
-
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Bxor, &mut ctx);
-
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Land, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Lor, &mut ctx);
 
-        ofi.atomic(&reg_mem[..512], 0, &mut descs[0], AtomicOp::Lxor, &mut ctx);
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Bxor, &mut ctx);
+
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+
+        // Recv a completion ack
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Land, &mut ctx);
+
+        ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Lxor, &mut ctx);
 
         ofi.atomic(
             &reg_mem[..512],
             0,
-            &mut descs[0],
+            desc.as_ref(),
             AtomicOp::AtomicWrite,
             &mut ctx,
         );
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         let iocs = [
             Ioc::from_slice(&reg_mem[..256]),
             Ioc::from_slice(&reg_mem[256..512]),
         ];
 
-        ofi.atomicv(&iocs, 0, &mut descs, AtomicOp::Prod, &mut ctx);
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.atomicv(&iocs, 0, Some(&descs), AtomicOp::Prod, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
         // match err {
         //     Err(e) => {
         //         if matches!(e.kind, libfabric::error::ErrorKind::ErrorAvailable) {
@@ -2833,36 +2889,36 @@ fn atomic(server: bool, name: &str, connected: bool) {
         // }
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
     } else {
         let mut expected = vec![2u8; 1024 * 2];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..512], &expected[..512]);
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         expected = vec![3; 1024 * 2];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..512], &expected[..512]);
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         // expected = vec![2;1024*2];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
         // assert_eq!(&reg_mem[..512], &expected[..512]);
 
         expected = vec![4; 1024 * 2];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
         assert_eq!(&reg_mem[..512], &expected[..512]);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
     }
 }
 
@@ -2917,8 +2973,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc0 = mr.descriptor();
-    let mut desc1 = mr.descriptor();
+    let desc0 = Some(mr.descriptor());
+    let desc1 = Some(mr.descriptor());
     // let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
@@ -2931,8 +2987,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Min,
             &mut ctx,
         );
@@ -2944,8 +3000,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Max,
             &mut ctx,
         );
@@ -2957,8 +3013,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Sum,
             &mut ctx,
         );
@@ -2970,8 +3026,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Prod,
             &mut ctx,
         );
@@ -2983,8 +3039,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Bor,
             &mut ctx,
         );
@@ -2996,8 +3052,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Band,
             &mut ctx,
         );
@@ -3005,19 +3061,19 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut desc0, None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
 
         // Send a done ack
 
-        ofi.recv(&mut ack_mem[..512], &mut desc0, &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
 
         expected = vec![2; 256];
         ofi.fetch_atomic(
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Lor,
             &mut ctx,
         );
@@ -3029,8 +3085,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Bxor,
             &mut ctx,
         );
@@ -3038,19 +3094,19 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut desc0, None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
 
         // Send a done ack
 
-        ofi.recv(&mut ack_mem[..512], &mut desc0, &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
 
         expected = vec![3; 256];
         ofi.fetch_atomic(
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Land,
             &mut ctx,
         );
@@ -3062,8 +3118,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::Lxor,
             &mut ctx,
         );
@@ -3075,8 +3131,8 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::AtomicWrite,
             &mut ctx,
         );
@@ -3084,17 +3140,17 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut desc0, None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
 
-        ofi.recv(&mut ack_mem[..512], &mut desc0, &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
 
         expected = vec![2; 256];
         ofi.fetch_atomic(
             &mem0,
             mem1,
             0,
-            &mut desc0,
-            &mut desc1,
+            desc0.as_ref(),
+            desc1.as_ref(),
             FetchAtomicOp::AtomicRead,
             &mut ctx,
         );
@@ -3113,18 +3169,15 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             IocMut::from_slice(write_mems.1),
         ];
 
-        let desc0 = mr.descriptor();
-        let desc1 = mr.descriptor();
-        let desc2 = mr.descriptor();
-        let desc3 = mr.descriptor();
-        let mut descs = [desc0, desc1];
-        let mut res_descs = [desc2, desc3];
+        let desc0 = Some(mr.descriptor());
+        let descs = [mr.descriptor(), mr.descriptor()];
+        let res_descs = [mr.descriptor(), mr.descriptor()];
         ofi.fetch_atomicv(
             &iocs,
             &mut res_iocs,
             0,
-            &mut descs,
-            &mut res_descs,
+            Some(&descs),
+            Some(&res_descs),
             FetchAtomicOp::Prod,
             &mut ctx,
         );
@@ -3132,41 +3185,41 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(write_mem, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut descs[0], None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], &mut descs[0], &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
     } else {
         let mut expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc0, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut desc0, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
 
         expected = vec![3; 256];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc0, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], &mut desc0, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
 
         expected = vec![2; 256];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc0, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], &mut desc0, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
 
         expected = vec![4; 256];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc0, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], &mut desc0, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
     }
 }
 
@@ -3220,9 +3273,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let mut desc = mr.descriptor();
-    let mut comp_desc = mr.descriptor();
-    let mut res_desc = mr.descriptor();
+    let desc = Some(mr.descriptor());
+    let comp_desc = Some(mr.descriptor());
+    let res_desc = Some(mr.descriptor());
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
     let mut ctx = ofi.info_entry.allocate_context();
@@ -3239,9 +3292,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             comp,
             res,
             0,
-            &mut desc,
-            &mut comp_desc,
-            &mut res_desc,
+            desc.as_ref(),
+            comp_desc.as_ref(),
+            res_desc.as_ref(),
             CompareAtomicOp::Cswap,
             &mut ctx,
         );
@@ -3254,9 +3307,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             comp,
             res,
             0,
-            &mut desc,
-            &mut comp_desc,
-            &mut res_desc,
+            desc.as_ref(),
+            comp_desc.as_ref(),
+            res_desc.as_ref(),
             CompareAtomicOp::CswapNe,
             &mut ctx,
         );
@@ -3270,9 +3323,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             comp,
             res,
             0,
-            &mut desc,
-            &mut comp_desc,
-            &mut res_desc,
+            desc.as_ref(),
+            comp_desc.as_ref(),
+            res_desc.as_ref(),
             CompareAtomicOp::CswapLe,
             &mut ctx,
         );
@@ -3286,9 +3339,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             comp,
             res,
             0,
-            &mut desc,
-            &mut comp_desc,
-            &mut res_desc,
+            desc.as_ref(),
+            comp_desc.as_ref(),
+            res_desc.as_ref(),
             CompareAtomicOp::CswapLt,
             &mut ctx,
         );
@@ -3302,9 +3355,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             comp,
             res,
             0,
-            &mut desc,
-            &mut comp_desc,
-            &mut res_desc,
+            desc.as_ref(),
+            comp_desc.as_ref(),
+            res_desc.as_ref(),
             CompareAtomicOp::CswapGe,
             &mut ctx,
         );
@@ -3317,9 +3370,9 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
             comp,
             res,
             0,
-            &mut desc,
-            &mut comp_desc,
-            &mut res_desc,
+            desc.as_ref(),
+            comp_desc.as_ref(),
+            res_desc.as_ref(),
             CompareAtomicOp::CswapGt,
             &mut ctx,
         );
@@ -3327,11 +3380,11 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(res, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut desc, None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc.as_ref(), None, &mut ctx);
 
         // Send a done ack
 
-        ofi.recv(&mut ack_mem[..512], &mut desc, &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc.as_ref(), &mut ctx);
 
         // expected = vec![2; 256];
         let (buf0, buf1) = buf.split_at_mut(128);
@@ -3341,18 +3394,18 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         let buf_iocs = [Ioc::from_slice(&buf0), Ioc::from_slice(&buf1)];
         let comp_iocs = [Ioc::from_slice(&comp0), Ioc::from_slice(&comp1)];
         let mut res_iocs = [IocMut::from_slice(res0), IocMut::from_slice(res1)];
-        let mut buf_descs = [mr.descriptor(), mr.descriptor()];
-        let mut comp_descs = [mr.descriptor(), mr.descriptor()];
-        let mut res_descs = [mr.descriptor(), mr.descriptor()];
+        let buf_descs = [mr.descriptor(), mr.descriptor()];
+        let comp_descs = [mr.descriptor(), mr.descriptor()];
+        let res_descs = [mr.descriptor(), mr.descriptor()];
 
         ofi.compare_atomicv(
             &buf_iocs,
             &comp_iocs,
             &mut res_iocs,
             0,
-            &mut buf_descs,
-            &mut comp_descs,
-            &mut res_descs,
+            Some(&buf_descs),
+            Some(&comp_descs),
+            Some(&res_descs),
             CompareAtomicOp::CswapLe,
             &mut ctx,
         );
@@ -3360,27 +3413,27 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(res, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut desc, None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], &mut desc, &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc.as_ref(), &mut ctx);
     } else {
         let mut expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut desc, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         expected = vec![3; 256];
         // // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], &mut desc, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
     }
 }
 
@@ -3434,8 +3487,8 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
             mr.enable().unwrap()
         }
     };
-    let desc = mr.descriptor();
-    let mut descs = [desc.clone(), desc];
+    let desc = Some(mr.descriptor());
+    let descs = [mr.descriptor(), mr.descriptor()];
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
@@ -3455,7 +3508,7 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgAtomicConnected::from_ioc_slice(
                 &iocs,
-                &mut descs,
+                Some(&descs),
                 &rma_iocs,
                 AtomicOp::Bor,
                 Some(128),
@@ -3464,7 +3517,7 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgAtomic::from_ioc_slice(
                 &iocs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 &rma_iocs,
                 AtomicOp::Bor,
@@ -3475,19 +3528,19 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
 
         ofi.atomicmsg(&mut msg);
 
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
     } else {
         let expected = vec![3u8; 1024 * 2];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut descs[0], &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..512], &expected[..512]);
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut descs[0], None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
     }
 }
 
@@ -3561,12 +3614,9 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
             IocMut::from_slice(write_mems.1),
         ];
 
-        let desc0 = mr.descriptor();
-        let desc1 = mr.descriptor();
-        let desc2 = mr.descriptor();
-        let desc3 = mr.descriptor();
-        let mut descs = [desc0, desc1];
-        let mut res_descs = [desc2, desc3];
+        let desc0 = Some(mr.descriptor());
+        let descs = [mr.descriptor(), mr.descriptor()];
+        let res_descs = [mr.descriptor(), mr.descriptor()];
         let rma_ioc0 = RmaIoc::new(start, 128, ofi.remote_key.as_ref().unwrap());
         let rma_ioc1 = RmaIoc::new(start + 128, 128, ofi.remote_key.as_ref().unwrap());
         let rma_iocs = [rma_ioc0, rma_ioc1];
@@ -3574,7 +3624,7 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgFetchAtomicConnected::from_ioc_slice(
                 &iocs,
-                &mut descs,
+                Some(&descs),
                 &rma_iocs,
                 FetchAtomicOp::Prod,
                 None,
@@ -3583,7 +3633,7 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgFetchAtomic::from_ioc_slice(
                 &iocs,
-                &mut descs,
+                Some(&descs),
                 mapped_addr.as_ref().unwrap(),
                 &rma_iocs,
                 FetchAtomicOp::Prod,
@@ -3592,26 +3642,26 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.fetch_atomicmsg(&mut msg, &mut res_iocs, &mut res_descs);
+        ofi.fetch_atomicmsg(&mut msg, &mut res_iocs, Some(&res_descs));
 
         assert_eq!(write_mem, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut descs[0], None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], &mut descs[0], &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
     } else {
-        let mut desc0 = mr.descriptor();
+        let desc0 = Some(mr.descriptor());
         let expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc0, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut desc0, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
     }
 }
 
@@ -3666,7 +3716,7 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         }
     };
 
-    let mut desc = mr.descriptor();
+    let desc = Some(mr.descriptor());
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
@@ -3688,9 +3738,9 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         let buf_iocs = [Ioc::from_slice(&buf0), Ioc::from_slice(&buf1)];
         let comp_iocs = [Ioc::from_slice(&comp0), Ioc::from_slice(&comp1)];
         let mut res_iocs = [IocMut::from_slice(res0), IocMut::from_slice(res1)];
-        let mut buf_descs = [mr.descriptor(), mr.descriptor()];
-        let mut comp_descs = [mr.descriptor(), mr.descriptor()];
-        let mut res_descs = [mr.descriptor(), mr.descriptor()];
+        let buf_descs = [mr.descriptor(), mr.descriptor()];
+        let comp_descs = [mr.descriptor(), mr.descriptor()];
+        let res_descs = [mr.descriptor(), mr.descriptor()];
         let rma_ioc0 = RmaIoc::new(start, 128, ofi.remote_key.as_ref().unwrap());
         let rma_ioc1 = RmaIoc::new(start + 128, 128, ofi.remote_key.as_ref().unwrap());
         let rma_iocs = [rma_ioc0, rma_ioc1];
@@ -3698,7 +3748,7 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         let mut msg = if connected {
             Either::Right(MsgCompareAtomicConnected::from_ioc_slice(
                 &buf_iocs,
-                &mut buf_descs,
+                Some(&buf_descs),
                 &rma_iocs,
                 CompareAtomicOp::CswapGe,
                 None,
@@ -3707,7 +3757,7 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         } else {
             Either::Left(MsgCompareAtomic::from_ioc_slice(
                 &buf_iocs,
-                &mut buf_descs,
+                Some(&buf_descs),
                 mapped_addr.as_ref().unwrap(),
                 &rma_iocs,
                 CompareAtomicOp::CswapGe,
@@ -3720,27 +3770,27 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
             &mut msg,
             &comp_iocs,
             &mut res_iocs,
-            &mut comp_descs,
-            &mut res_descs,
+            Some(&comp_descs),
+            Some(&res_descs),
         );
 
         assert_eq!(res, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], &mut desc, None, &mut ctx);
+        ofi.send(&ack_mem[..512], desc.as_ref(), None, &mut ctx);
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], &mut desc, &mut ctx);
+        ofi.recv(&mut ack_mem[..512], desc.as_ref(), &mut ctx);
     } else {
         let expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], &mut desc, &mut ctx);
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
 
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], &mut desc, None, &mut ctx);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
     }
 }
 

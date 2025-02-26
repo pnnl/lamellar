@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     enums::{AtomicOp, AtomicOperation, CompareAtomicOp, FetchAtomicOp},
     iovec,
-    mr::DataDescriptor,
+    mr::{BorrowedMemoryRegionDesc, DataDescriptor},
     AsFiType, Context, MappedAddress, FI_ADDR_UNSPEC,
 };
 
@@ -16,18 +16,19 @@ pub struct Msg<'a> {
 impl<'a> Msg<'a> {
     fn new(
         iovs: &'a [iovec::IoVec],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        assert_eq!(iovs.len(), descs.len());
-
         Self {
             c_msg: libfabric_sys::fi_msg {
                 msg_iov: iovs.as_ptr().cast(),
-                desc: descs.as_mut_ptr().cast(),
-                iov_count: descs.len(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
+                iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
                 data: data.unwrap_or(0),
@@ -39,7 +40,7 @@ impl<'a> Msg<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
@@ -49,14 +50,14 @@ impl<'a> Msg<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
         Msg::new(
             std::slice::from_ref(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             data,
             context,
@@ -92,14 +93,14 @@ pub struct MsgConnected<'a> {
 impl<'a> MsgConnected<'a> {
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
         Self {
             msg: Msg::new(
                 std::slice::from_ref(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 data,
                 context,
@@ -109,7 +110,7 @@ impl<'a> MsgConnected<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -145,18 +146,19 @@ pub struct MsgMut<'a> {
 impl<'a> MsgMut<'a> {
     fn new(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        assert_eq!(iovs.len(), descs.len());
-
         Self {
             c_msg: libfabric_sys::fi_msg {
                 msg_iov: iovs.as_ptr().cast(),
-                desc: descs.as_mut_ptr().cast(),
-                iov_count: descs.len(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
+                iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
                 data: data.unwrap_or(0),
@@ -168,14 +170,14 @@ impl<'a> MsgMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
         MsgMut::new(
             std::slice::from_mut(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             data,
             context,
@@ -184,7 +186,7 @@ impl<'a> MsgMut<'a> {
 
     pub fn from_iov_slice(
         iov: &'a mut [iovec::IoVecMut],
-        desc: &'a mut [impl DataDescriptor],
+        desc: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
@@ -221,14 +223,14 @@ pub struct MsgConnectedMut<'a> {
 impl<'a> MsgConnectedMut<'a> {
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
         Self {
             msg: MsgMut::new(
                 std::slice::from_mut(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 data,
                 context,
@@ -238,7 +240,7 @@ impl<'a> MsgConnectedMut<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -274,19 +276,20 @@ pub struct MsgTagged<'a> {
 impl<'a> MsgTagged<'a> {
     fn new(
         iovs: &'a [iovec::IoVec],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        assert_eq!(iovs.len(), descs.len());
-
         Self {
             c_msg_tagged: libfabric_sys::fi_msg_tagged {
                 msg_iov: iovs.as_ptr().cast(),
-                desc: descs.as_mut_ptr().cast(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
                 iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
@@ -301,7 +304,7 @@ impl<'a> MsgTagged<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -313,7 +316,7 @@ impl<'a> MsgTagged<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -322,7 +325,7 @@ impl<'a> MsgTagged<'a> {
     ) -> Self {
         MsgTagged::new(
             std::slice::from_ref(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             data,
             tag,
@@ -359,7 +362,7 @@ pub struct MsgTaggedConnected<'a> {
 impl<'a> MsgTaggedConnected<'a> {
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -372,7 +375,7 @@ impl<'a> MsgTaggedConnected<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -381,7 +384,7 @@ impl<'a> MsgTaggedConnected<'a> {
         Self {
             msg: MsgTagged::new(
                 std::slice::from_ref(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 data,
                 tag,
@@ -418,19 +421,20 @@ pub struct MsgTaggedMut<'a> {
 impl<'a> MsgTaggedMut<'a> {
     fn new(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        assert_eq!(iovs.len(), descs.len());
-
         Self {
             c_msg_tagged: libfabric_sys::fi_msg_tagged {
                 msg_iov: iovs.as_ptr().cast(),
-                desc: descs.as_mut_ptr().cast(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
                 iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
@@ -445,7 +449,7 @@ impl<'a> MsgTaggedMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -454,7 +458,7 @@ impl<'a> MsgTaggedMut<'a> {
     ) -> Self {
         MsgTaggedMut::new(
             std::slice::from_mut(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             data,
             tag,
@@ -465,7 +469,7 @@ impl<'a> MsgTaggedMut<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -504,7 +508,7 @@ pub struct MsgTaggedConnectedMut<'a> {
 impl<'a> MsgTaggedConnectedMut<'a> {
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -517,7 +521,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -526,7 +530,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
         Self {
             msg: MsgTaggedMut::new(
                 std::slice::from_mut(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 data,
                 tag,
@@ -567,25 +571,27 @@ pub struct MsgAtomicBase<'a, T: AsFiType, OP: AtomicOperation> {
 
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
     fn new(
-        iov: &'a [iovec::Ioc<T>],
-        desc: &'a mut [impl DataDescriptor],
+        iovs: &'a [iovec::Ioc<T>],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
-        rma_iov: &'a [iovec::RmaIoc],
+        rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        assert_eq!(iov.len(), desc.len());
-        assert_eq!(rma_iov.len(), desc.len());
         Self {
             c_msg_atomic: libfabric_sys::fi_msg_atomic {
-                msg_iov: iov.as_ptr().cast(),
-                desc: desc.as_mut_ptr().cast(),
-                iov_count: iov.len(),
+                msg_iov: iovs.as_ptr().cast(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    assert_eq!(rma_iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
+                iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
-                rma_iov: rma_iov.as_ptr().cast(),
-                rma_iov_count: rma_iov.len(),
+                rma_iov: rma_iovs.as_ptr().cast(),
+                rma_iov_count: rma_iovs.len(),
                 datatype: T::as_fi_datatype(),
                 op: op.as_raw(),
                 data: data.unwrap_or(0),
@@ -598,7 +604,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
 
     pub fn from_ioc_slice(
         iovs: &'a [iovec::Ioc<T>],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
@@ -610,7 +616,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
 
     pub fn from_ioc(
         iov: &'a iovec::Ioc<T>,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_ioc: &'a iovec::RmaIoc,
         op: OP,
@@ -619,7 +625,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
     ) -> Self {
         MsgAtomicBase::new(
             std::slice::from_ref(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             std::slice::from_ref(rma_ioc),
             op,
@@ -653,7 +659,7 @@ pub struct MsgAtomicConnectedBase<'a, T: AsFiType, OP: AtomicOperation> {
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
     pub fn from_ioc_slice(
         iovs: &'a [iovec::Ioc<T>],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
         data: Option<u64>,
@@ -666,7 +672,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
 
     pub fn from_ioc(
         iov: &'a iovec::Ioc<T>,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
         rma_ioc: &'a iovec::RmaIoc,
         op: OP,
         data: Option<u64>,
@@ -675,7 +681,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
         Self {
             msg: MsgAtomicBase::new(
                 std::slice::from_ref(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 std::slice::from_ref(rma_ioc),
                 op,
@@ -713,7 +719,7 @@ pub struct MsgAtomicMutBase<'a, T: AsFiType, OP: AtomicOperation> {
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
     fn new(
         iovs: &'a [iovec::IocMut<T>],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
@@ -723,7 +729,11 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
         Self {
             c_msg_atomic: libfabric_sys::fi_msg_atomic {
                 msg_iov: iovs.as_ptr().cast(),
-                desc: descs.as_mut_ptr().cast(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    assert_eq!(rma_iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
                 iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
@@ -741,7 +751,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
 
     pub fn from_ioc_slice(
         iovs: &'a [iovec::IocMut<T>],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
@@ -753,7 +763,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
 
     pub fn from_ioc(
         iov: &'a mut iovec::IocMut<T>,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_ioc: &'a iovec::RmaIoc,
         op: OP,
@@ -762,7 +772,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
     ) -> Self {
         Self::new(
             std::slice::from_ref(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             std::slice::from_ref(rma_ioc),
             op,
@@ -805,7 +815,7 @@ pub struct MsgAtomicConnectedMutBase<'a, T: AsFiType, OP: AtomicOperation> {
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedMutBase<'a, T, OP> {
     pub fn from_ioc_slice(
         iovs: &'a [iovec::IocMut<T>],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         rma_iovs: &'a [iovec::RmaIoc],
         data: Option<u64>,
         op: OP,
@@ -818,7 +828,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedMutBase<'a, T, OP> 
 
     pub fn from_ioc(
         iov: &'a mut iovec::IocMut<T>,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
         rma_ioc: &'a iovec::RmaIoc,
         data: Option<u64>,
         op: OP,
@@ -827,7 +837,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedMutBase<'a, T, OP> 
         Self {
             msg: MsgAtomicMutBase::new(
                 std::slice::from_ref(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 std::slice::from_ref(rma_ioc),
                 op,
@@ -868,24 +878,26 @@ pub struct MsgRma<'a> {
 
 impl<'a> MsgRma<'a> {
     fn new(
-        iov: &'a [iovec::IoVec],
-        desc: &'a mut [impl DataDescriptor],
+        iovs: &'a [iovec::IoVec],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
-        rma_iov: &'a [iovec::RmaIoVec],
+        rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        assert_eq!(iov.len(), desc.len());
-        assert_eq!(iov.len(), rma_iov.len());
         Self {
             c_msg_rma: libfabric_sys::fi_msg_rma {
-                msg_iov: iov.as_ptr().cast(),
-                desc: desc.as_mut_ptr().cast(),
-                iov_count: iov.len(),
+                msg_iov: iovs.as_ptr().cast(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    assert_eq!(rma_iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
+                iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
-                rma_iov: rma_iov.as_ptr().cast(),
-                rma_iov_count: rma_iov.len(),
+                rma_iov: rma_iovs.as_ptr().cast(),
+                rma_iov_count: rma_iovs.len(),
                 data: data.unwrap_or(0),
             },
             phantom: PhantomData,
@@ -895,7 +907,7 @@ impl<'a> MsgRma<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
@@ -906,7 +918,7 @@ impl<'a> MsgRma<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
@@ -914,7 +926,7 @@ impl<'a> MsgRma<'a> {
     ) -> Self {
         Self::new(
             std::slice::from_ref(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             std::slice::from_ref(rma_iov),
             data,
@@ -943,7 +955,7 @@ pub struct MsgRmaConnected<'a> {
 impl<'a> MsgRmaConnected<'a> {
     pub fn from_iov_slice(
         iov: &'a [iovec::IoVec],
-        desc: &'a mut [impl DataDescriptor],
+        desc: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         rma_iov: &'a [iovec::RmaIoVec],
         data: Option<u64>,
         context: &'a mut Context,
@@ -955,7 +967,7 @@ impl<'a> MsgRmaConnected<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
         context: &'a mut Context,
@@ -963,7 +975,7 @@ impl<'a> MsgRmaConnected<'a> {
         Self {
             msg: MsgRma::new(
                 std::slice::from_ref(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 std::slice::from_ref(rma_iov),
                 data,
@@ -994,24 +1006,26 @@ pub struct MsgRmaMut<'a> {
 
 impl<'a> MsgRmaMut<'a> {
     fn new(
-        iov: &'a mut [iovec::IoVecMut],
-        desc: &'a mut [impl DataDescriptor],
+        iovs: &'a mut [iovec::IoVecMut],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
-        rma_iov: &'a [iovec::RmaIoVec],
+        rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        assert_eq!(iov.len(), desc.len());
-        assert_eq!(iov.len(), rma_iov.len());
         Self {
             c_msg_rma: libfabric_sys::fi_msg_rma {
-                msg_iov: iov.as_ptr().cast(),
-                desc: desc.as_mut_ptr().cast(),
-                iov_count: iov.len(),
+                msg_iov: iovs.as_ptr().cast(),
+                desc: descs.map_or(std::ptr::null_mut(), |d| {
+                    assert_eq!(iovs.len(), d.len());
+                    assert_eq!(rma_iovs.len(), d.len());
+                    unsafe { std::mem::transmute(d.as_ptr()) }
+                }),
+                iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
-                rma_iov: rma_iov.as_ptr().cast(),
-                rma_iov_count: rma_iov.len(),
+                rma_iov: rma_iovs.as_ptr().cast(),
+                rma_iov_count: rma_iovs.len(),
                 data: data.unwrap_or(0),
             },
             phantom: PhantomData,
@@ -1021,7 +1035,7 @@ impl<'a> MsgRmaMut<'a> {
 
     pub fn from_iov_slice(
         iov: &'a mut [iovec::IoVecMut],
-        desc: &'a mut [impl DataDescriptor],
+        desc: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iov: &'a [iovec::RmaIoVec],
         data: Option<u64>,
@@ -1032,7 +1046,7 @@ impl<'a> MsgRmaMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
@@ -1040,7 +1054,7 @@ impl<'a> MsgRmaMut<'a> {
     ) -> Self {
         Self::new(
             std::slice::from_mut(iov),
-            std::slice::from_mut(desc),
+            desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
             std::slice::from_ref(rma_iov),
             data,
@@ -1077,7 +1091,7 @@ pub struct MsgRmaConnectedMut<'a> {
 impl<'a> MsgRmaConnectedMut<'a> {
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: &'a mut [impl DataDescriptor],
+        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
         rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
         context: &'a mut Context,
@@ -1089,7 +1103,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: &'a mut impl DataDescriptor,
+        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
         context: &'a mut Context,
@@ -1097,7 +1111,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
         Self {
             msg: MsgRmaMut::new(
                 std::slice::from_mut(iov),
-                std::slice::from_mut(desc),
+                desc.map(|d| std::slice::from_ref(d)),
                 None,
                 std::slice::from_ref(rma_iov),
                 data,

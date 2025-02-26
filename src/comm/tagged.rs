@@ -15,7 +15,7 @@ use crate::fid::EpRawFid;
 use crate::infocapsoptions::RecvMod;
 use crate::infocapsoptions::SendMod;
 use crate::infocapsoptions::TagCap;
-use crate::mr::DataDescriptor;
+use crate::mr::BorrowedMemoryRegionDesc;
 use crate::trigger::TriggeredContext;
 use crate::utils::check_error;
 use crate::utils::Either;
@@ -31,7 +31,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
     fn trecv_impl<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ignore: Option<u64>,
@@ -43,7 +43,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_mut_ptr() as *mut std::ffi::c_void,
                 std::mem::size_of_val(buf),
-                desc.desc(),
+                desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
                 raw_addr,
                 tag,
                 ignore.unwrap_or(0),
@@ -56,7 +56,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
     fn trecvv_impl(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ignore: Option<u64>,
@@ -67,7 +67,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
             libfabric_sys::inlined_fi_trecvv(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
-                desc.as_mut_ptr().cast(),
+                desc.map_or(std::ptr::null_mut(),|d| std::mem::transmute(d.as_ptr())),
                 iov.len(),
                 raw_addr,
                 tag,
@@ -103,7 +103,7 @@ pub trait TagRecvEp {
     fn trecv_from<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -111,7 +111,7 @@ pub trait TagRecvEp {
     fn trecv_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -120,7 +120,7 @@ pub trait TagRecvEp {
     fn trecv_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -129,7 +129,7 @@ pub trait TagRecvEp {
     fn trecvv_from(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -137,7 +137,7 @@ pub trait TagRecvEp {
     fn trecvv_from_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -146,7 +146,7 @@ pub trait TagRecvEp {
     fn trecvv_from_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -160,14 +160,14 @@ pub trait TagRecvEp {
     fn trecv_from_any<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecv_from_any_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -175,7 +175,7 @@ pub trait TagRecvEp {
     fn trecv_from_any_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -183,14 +183,14 @@ pub trait TagRecvEp {
     fn trecvv_from_any(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_from_any_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -198,7 +198,7 @@ pub trait TagRecvEp {
     fn trecvv_from_any_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -209,14 +209,14 @@ pub trait ConnectedTagRecvEp {
     fn trecv<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecv_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -224,7 +224,7 @@ pub trait ConnectedTagRecvEp {
     fn trecv_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -232,14 +232,14 @@ pub trait ConnectedTagRecvEp {
     fn trecvv(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecvv_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -247,7 +247,7 @@ pub trait ConnectedTagRecvEp {
     fn trecvv_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -264,7 +264,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -276,7 +276,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_any<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
@@ -287,7 +287,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -307,7 +307,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_any_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -319,7 +319,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -339,7 +339,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_any_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -351,7 +351,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecvv_from(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -363,7 +363,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecvv_from_any(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
@@ -374,7 +374,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecvv_from_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -394,7 +394,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecvv_from_any_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -406,7 +406,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecvv_from_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -426,7 +426,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecvv_from_any_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -449,7 +449,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecv<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
@@ -460,7 +460,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecv_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -472,7 +472,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecv_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -484,7 +484,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecvv(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
@@ -495,7 +495,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecvv_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -507,7 +507,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecvv_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -538,7 +538,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
     fn tsend_impl<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         context: Option<*mut std::ffi::c_void>,
@@ -549,7 +549,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
-                desc.desc(),
+                desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
                 raw_addr,
                 tag,
                 ctx,
@@ -561,7 +561,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
     fn tsendv_impl(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
         tag: u64,
         context: Option<*mut std::ffi::c_void>,
@@ -571,7 +571,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
             libfabric_sys::inlined_fi_tsendv(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
-                desc.as_mut_ptr().cast(),
+                desc.map_or(std::ptr::null_mut(),|d| std::mem::transmute(d.as_ptr())),
                 iov.len(),
                 raw_addr,
                 tag,
@@ -603,7 +603,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
     fn tsenddata_impl<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
@@ -615,7 +615,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr() as *const std::ffi::c_void,
                 std::mem::size_of_val(buf),
-                desc.desc(),
+                desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
                 data,
                 raw_addr,
                 tag,
@@ -678,14 +678,14 @@ pub trait TagSendEp {
     fn tsend_to<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsend_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut Context,
@@ -693,7 +693,7 @@ pub trait TagSendEp {
     fn tsend_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut TriggeredContext,
@@ -701,14 +701,14 @@ pub trait TagSendEp {
     fn tsendv_to(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsendv_to_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut Context,
@@ -716,7 +716,7 @@ pub trait TagSendEp {
     fn tsendv_to_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut TriggeredContext,
@@ -729,7 +729,7 @@ pub trait TagSendEp {
     fn tsenddata_to<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -737,7 +737,7 @@ pub trait TagSendEp {
     fn tsenddata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -746,7 +746,7 @@ pub trait TagSendEp {
     fn tsenddata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -771,40 +771,40 @@ pub trait ConnectedTagSendEp {
     fn tsend<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsend_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn tsend_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn tsendv(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsendv_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn tsendv_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -816,14 +816,14 @@ pub trait ConnectedTagSendEp {
     fn tsenddata<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsenddata_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut Context,
@@ -831,7 +831,7 @@ pub trait ConnectedTagSendEp {
     fn tsenddata_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut TriggeredContext,
@@ -845,7 +845,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsend_to<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
@@ -856,7 +856,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsend_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut Context,
@@ -868,7 +868,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsend_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut TriggeredContext,
@@ -880,7 +880,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsendv_to(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
@@ -891,7 +891,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsendv_to_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut Context,
@@ -909,7 +909,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsendv_to_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut TriggeredContext,
@@ -927,7 +927,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsenddata_to<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -939,7 +939,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsenddata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -959,7 +959,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsenddata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -1011,7 +1011,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsend<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
         self.tsend_impl(buf, desc, None, tag, None)
@@ -1021,7 +1021,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsend_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1032,7 +1032,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsend_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1043,7 +1043,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsendv(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
         self.tsendv_impl(iov, desc, None, tag, None)
@@ -1053,7 +1053,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsendv_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1064,7 +1064,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsendv_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1075,7 +1075,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsenddata<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
@@ -1086,7 +1086,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsenddata_with_context<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut Context,
@@ -1098,7 +1098,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsenddata_triggered<T>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut TriggeredContext,

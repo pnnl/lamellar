@@ -268,7 +268,7 @@ pub struct AsyncTransferCq<'a> {
 impl<'a> AsyncTransferCq<'a> {
     #[allow(dead_code)]
     pub(crate) fn new(cq: &'a AsyncCompletionQueueImpl, ctx: &'a mut Context) -> Self {
-        println!("Issued : {} {:x}", ctx.0.id(), ctx.inner() as usize);
+        // println!("Issued : {} {:x}", ctx.0.id(), ctx.inner() as usize);
         Self {
             fut: Box::pin(CqAsyncReadOwned::new(1, cq)),
             ctx,
@@ -288,28 +288,28 @@ impl<'a> Future for AsyncTransferCq<'a> {
         let mut_self = self.get_mut();
         if mut_self.last_poll.is_none() {
             mut_self.last_poll = Some(Instant::now());
-            println!(
-                "{} {:x} is being polled",
-                mut_self.ctx.0.id(),
-                mut_self.ctx.inner() as usize
-            );
+            // println!(
+            //     "{} {:x} is being polled",
+            //     mut_self.ctx.0.id(),
+            //     mut_self.ctx.inner() as usize
+            // );
         } else {
             if mut_self.last_poll.unwrap().elapsed().as_secs() > 5 {
-                println!(
-                    "{} {:x} is being polled",
-                    mut_self.ctx.0.id(),
-                    mut_self.ctx.inner() as usize
-                );
+                // println!(
+                //     "{} {:x} is being polled",
+                //     mut_self.ctx.0.id(),
+                //     mut_self.ctx.inner() as usize
+                // );
                 mut_self.last_poll = Some(Instant::now());
             }
         }
         loop {
             if mut_self.waiting && mut_self.ctx.ready() {
-                println!(
-                    "{} {:x} Completed YEAH",
-                    mut_self.ctx.0.id(),
-                    mut_self.ctx.inner() as usize
-                );
+                // println!(
+                //     "{} {:x} Completed YEAH",
+                //     mut_self.ctx.0.id(),
+                //     mut_self.ctx.inner() as usize
+                // );
                 let state = mut_self.ctx.state().take();
                 mut_self
                     .fut
@@ -341,26 +341,26 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 cx.waker().wake_by_ref();
                 return std::task::Poll::Pending;
             } else {
-                println!(
-                    "{} {:x} Might block",
-                    mut_self.ctx.0.id(),
-                    mut_self.ctx.inner() as usize
-                );
+                // println!(
+                //     "{} {:x} Might block",
+                //     mut_self.ctx.0.id(),
+                //     mut_self.ctx.inner() as usize
+                // );
                 #[allow(clippy::let_unit_value)]
                 match ready!(mut_self.fut.as_mut().poll(cx)) {
                     Ok(_) => {
-                        println!(
-                            "{} {:x} Didn't block",
-                            mut_self.ctx.0.id(),
-                            mut_self.ctx.inner() as usize
-                        );
+                        // println!(
+                        //     "{} {:x} Didn't block",
+                        //     mut_self.ctx.0.id(),
+                        //     mut_self.ctx.inner() as usize
+                        // );
                     }
                     Err(error) => {
-                        println!(
-                            "{} {:x} Didn't block",
-                            mut_self.ctx.0.id(),
-                            mut_self.ctx.inner() as usize
-                        );
+                        // println!(
+                        //     "{} {:x} Didn't block",
+                        //     mut_self.ctx.0.id(),
+                        //     mut_self.ctx.inner() as usize
+                        // );
                         if let ErrorKind::ErrorInCompletionQueue(ref q_error) = error.kind {
                             if q_error.c_err.op_context as usize == mut_self.ctx.inner() as usize {
                                 return std::task::Poll::Ready(Err(error));
@@ -600,19 +600,19 @@ impl<'a> Future for AsyncTransferCq<'a> {
             }
             match found {
                 Some(v) => {
-                    println!("{} {:x} Finished right away", mut_self.ctx.0.id(), ctx_addr);
+                    // println!("{} {:x} Finished right away", mut_self.ctx.0.id(), ctx_addr);
                     return std::task::Poll::Ready(Ok(v));
                 }
                 None => {
                     mut_self.waiting = true;
 
-                    println!(
-                        "{} {:x} != {} {:x}!!!!Not for me!!!!!!!",
-                        ctx_val,
-                        ctx_addr,
-                        mut_self.ctx.0.id(),
-                        mut_self.ctx.inner() as usize
-                    );
+                    // println!(
+                    //     "{} {:x} != {} {:x}!!!!Not for me!!!!!!!",
+                    //     ctx_val,
+                    //     ctx_addr,
+                    //     mut_self.ctx.0.id(),
+                    //     mut_self.ctx.inner() as usize
+                    // );
                     // mut_self.fut = Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
                 }
             }
@@ -809,23 +809,23 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                     // println!("Actually read something {}", len);
                     match &mut mut_self.buf {
                         Completion::Unspec(data) => unsafe {
-                            println!("Signaling {:?}", data[0].c_entry.op_context);
+                            // println!("Signaling {:?}", data[0].c_entry.op_context);
                             data.set_len(len)
                         },
                         Completion::Ctx(data) => unsafe {
-                            println!("Signaling {:?}", data[0].c_entry.op_context);
+                            // println!("Signaling {:?}", data[0].c_entry.op_context);
                             data.set_len(len)
                         },
                         Completion::Msg(data) => unsafe {
-                            println!("Signaling {:?}", data[0].c_entry.op_context);
+                            // println!("Signaling {:?}", data[0].c_entry.op_context);
                             data.set_len(len)
                         },
                         Completion::Data(data) => unsafe {
-                            println!("Signaling {:?}", data[0].c_entry.op_context);
+                            // println!("Signaling {:?}", data[0].c_entry.op_context);
                             data.set_len(len)
                         },
                         Completion::Tagged(data) => unsafe {
-                            println!("Signaling {:?}", data[0].c_entry.op_context);
+                            // println!("Signaling {:?}", data[0].c_entry.op_context);
                             data.set_len(len)
                         },
                     }

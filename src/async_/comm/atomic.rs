@@ -6,12 +6,13 @@ use crate::connless_ep::ConnlessEp;
 use crate::enums::{AtomicFetchMsgOptions, AtomicMsgOptions};
 use crate::ep::{Connected, Connectionless, EndpointBase, EndpointImplBase};
 use crate::infocapsoptions::{AtomicCap, ReadMod, WriteMod};
+use crate::mr::BorrowedMemoryRegionDesc;
 use crate::utils::Either;
 use crate::{
     async_::ep::AsyncTxEp,
     comm::atomic::AtomicWriteEpImpl,
     cq::SingleCompletion,
-    mr::{DataDescriptor, MappedMemoryRegionKey},
+    mr::MappedMemoryRegionKey,
     AsFiType, Context,
 };
 
@@ -22,7 +23,7 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     async fn atomic_async_impl<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -71,7 +72,7 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     async fn atomicv_async_impl<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<'_, T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -127,7 +128,7 @@ pub trait AsyncAtomicWriteEp {
     unsafe fn atomic_to_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -149,7 +150,7 @@ pub trait AsyncAtomicWriteEp {
     unsafe fn atomicv_to_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -168,7 +169,7 @@ pub trait ConnectedAsyncAtomicWriteEp {
     unsafe fn atomic_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -186,7 +187,7 @@ pub trait ConnectedAsyncAtomicWriteEp {
     unsafe fn atomicv_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -213,7 +214,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     unsafe fn atomic_to_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -253,7 +254,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     unsafe fn atomicv_to_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -287,7 +288,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     unsafe fn atomic_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -313,7 +314,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     unsafe fn atomicv_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -336,9 +337,9 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
     async fn fetch_atomic_async_impl<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: &mut impl DataDescriptor,
+        res_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -367,9 +368,9 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
     async fn fetch_atomicv_async_impl<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<'_, T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<'_, T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -401,7 +402,7 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
             &mut crate::msg::MsgFetchAtomicConnected<'_, T>,
         >,
         resultv: &mut [crate::iovec::IocMut<'_, T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicFetchMsgOptions,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match &msg {
@@ -429,9 +430,9 @@ pub trait AsyncAtomicFetchEp {
     unsafe fn fetch_atomic_from_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: &mut impl DataDescriptor,
+        res_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -443,9 +444,9 @@ pub trait AsyncAtomicFetchEp {
     unsafe fn fetch_atomicv_from_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -457,7 +458,7 @@ pub trait AsyncAtomicFetchEp {
         &self,
         msg: &mut crate::msg::MsgFetchAtomic<T>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicFetchMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
@@ -467,9 +468,9 @@ pub trait ConnectedAsyncAtomicFetchEp {
     unsafe fn fetch_atomic_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: &mut impl DataDescriptor,
+        res_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -480,9 +481,9 @@ pub trait ConnectedAsyncAtomicFetchEp {
     unsafe fn fetch_atomicv_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -493,7 +494,7 @@ pub trait ConnectedAsyncAtomicFetchEp {
         &self,
         msg: &mut crate::msg::MsgFetchAtomicConnected<T>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicFetchMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
@@ -511,9 +512,9 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
     unsafe fn fetch_atomic_from_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: &mut impl DataDescriptor,
+        res_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -536,9 +537,9 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
     unsafe fn fetch_atomicv_from_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -562,7 +563,7 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
         &self,
         msg: &mut crate::msg::MsgFetchAtomic<T>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicFetchMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.fetch_atomicmsg_async_impl(Either::Left(msg), resultv, res_desc, options)
@@ -574,9 +575,9 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
     unsafe fn fetch_atomic_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: &mut impl DataDescriptor,
+        res_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -591,9 +592,9 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
     unsafe fn fetch_atomicv_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -608,7 +609,7 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
         &self,
         msg: &mut crate::msg::MsgFetchAtomicConnected<T>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicFetchMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.fetch_atomicmsg_async_impl(Either::Right(msg), resultv, res_desc, options)
@@ -620,11 +621,11 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
     async unsafe fn compare_atomic_async_impl<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: &mut impl DataDescriptor,
+        compare_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: &mut impl DataDescriptor,
+        result_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -655,11 +656,11 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
     async unsafe fn compare_atomicv_async_impl<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<'_, T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         comparetv: &[crate::iovec::Ioc<'_, T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<'_, T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -694,9 +695,9 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
             &mut crate::msg::MsgCompareAtomicConnected<'_, T>,
         >,
         comparev: &[crate::iovec::Ioc<'_, T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<'_, T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicMsgOptions,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let imm_msg = match &msg {
@@ -723,11 +724,11 @@ pub trait AsyncAtomicCASEp {
     unsafe fn compare_atomic_to_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: &mut impl DataDescriptor,
+        compare_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: &mut impl DataDescriptor,
+        result_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -739,11 +740,11 @@ pub trait AsyncAtomicCASEp {
     unsafe fn compare_atomicv_to_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         comparetv: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -756,9 +757,9 @@ pub trait AsyncAtomicCASEp {
         &self,
         msg: &mut crate::msg::MsgCompareAtomic<T>,
         comparev: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
@@ -768,11 +769,11 @@ pub trait ConnectedAsyncAtomicCASEp {
     unsafe fn compare_atomic_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: &mut impl DataDescriptor,
+        compare_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: &mut impl DataDescriptor,
+        result_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -783,11 +784,11 @@ pub trait ConnectedAsyncAtomicCASEp {
     unsafe fn compare_atomicv_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         comparetv: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -799,9 +800,9 @@ pub trait ConnectedAsyncAtomicCASEp {
         &self,
         msg: &mut crate::msg::MsgCompareAtomicConnected<T>,
         comparev: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
@@ -820,11 +821,11 @@ impl<EP: AsyncAtomicCASImpl + ConnlessEp> AsyncAtomicCASEp for EP {
     unsafe fn compare_atomic_to_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: &mut impl DataDescriptor,
+        compare_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: &mut impl DataDescriptor,
+        result_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -851,11 +852,11 @@ impl<EP: AsyncAtomicCASImpl + ConnlessEp> AsyncAtomicCASEp for EP {
     unsafe fn compare_atomicv_to_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         comparetv: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -883,9 +884,9 @@ impl<EP: AsyncAtomicCASImpl + ConnlessEp> AsyncAtomicCASEp for EP {
         &self,
         msg: &mut crate::msg::MsgCompareAtomic<T>,
         comparev: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.compare_atomicmsg_async_impl(
@@ -905,11 +906,11 @@ impl<EP: AsyncAtomicCASImpl + ConnectedEp> ConnectedAsyncAtomicCASEp for EP {
     unsafe fn compare_atomic_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: &mut impl DataDescriptor,
+        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: &mut impl DataDescriptor,
+        compare_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: &mut impl DataDescriptor,
+        result_desc: Option<&BorrowedMemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -935,11 +936,11 @@ impl<EP: AsyncAtomicCASImpl + ConnectedEp> ConnectedAsyncAtomicCASEp for EP {
     unsafe fn compare_atomicv_async<T: AsFiType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
-        desc: &mut [impl DataDescriptor],
+        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         comparetv: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -966,9 +967,9 @@ impl<EP: AsyncAtomicCASImpl + ConnectedEp> ConnectedAsyncAtomicCASEp for EP {
         &self,
         msg: &mut crate::msg::MsgCompareAtomicConnected<T>,
         comparev: &[crate::iovec::Ioc<T>],
-        compare_desc: &mut [impl DataDescriptor],
+        compare_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
-        res_desc: &mut [impl DataDescriptor],
+        res_desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.compare_atomicmsg_async_impl(

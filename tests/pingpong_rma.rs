@@ -42,7 +42,7 @@ define_test!(pp_server_rma, async_pp_server_rma, {
         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma()))
     };
 
-    let (infocap, ep, domain, cq_type, tx_cntr, rx_cntr, mut mr, _av, mut mr_desc) = call!(
+    let (infocap, ep, domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
         prefix::ft_init_fabric,
         hintscaps,
         &mut gl_ctx,
@@ -57,13 +57,12 @@ define_test!(pp_server_rma, async_pp_server_rma, {
                 prefix::ft_exchange_keys,
                 &entry,
                 &mut gl_ctx,
-                mr.as_mut().unwrap(),
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
                 &domain,
                 &ep,
-                &mut mr_desc
+                &mr
             );
 
             let test_sizes = gl_ctx.test_sizes.clone();
@@ -76,7 +75,7 @@ define_test!(pp_server_rma, async_pp_server_rma, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     prefix::RmaOp::RMA_WRITE,
                     &remote,
                     100,
@@ -94,7 +93,7 @@ define_test!(pp_server_rma, async_pp_server_rma, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
         }
         prefix::InfoWithCaps::Tagged(entry) => {
@@ -102,13 +101,12 @@ define_test!(pp_server_rma, async_pp_server_rma, {
                 prefix::ft_exchange_keys,
                 &entry,
                 &mut gl_ctx,
-                mr.as_mut().unwrap(),
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
                 &domain,
                 &ep,
-                &mut mr_desc
+                &mr
             );
 
             let test_sizes = gl_ctx.test_sizes.clone();
@@ -121,7 +119,7 @@ define_test!(pp_server_rma, async_pp_server_rma, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     prefix::RmaOp::RMA_WRITE,
                     &remote,
                     100,
@@ -139,7 +137,7 @@ define_test!(pp_server_rma, async_pp_server_rma, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
         }
     }
@@ -184,7 +182,7 @@ define_test!(pp_client_rma, async_pp_client_rma, {
         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma()))
     };
 
-    let (infocap, ep, domain, cq_type, tx_cntr, rx_cntr, mut mr, _av, mut mr_desc) = call!(
+    let (infocap, ep, domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
         prefix::ft_init_fabric,
         hintscaps,
         &mut gl_ctx,
@@ -199,13 +197,12 @@ define_test!(pp_client_rma, async_pp_client_rma, {
                 prefix::ft_exchange_keys,
                 &entry,
                 &mut gl_ctx,
-                mr.as_mut().unwrap(),
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
                 &domain,
                 &ep,
-                &mut mr_desc
+                &mr
             );
 
             let test_sizes = gl_ctx.test_sizes.clone();
@@ -218,7 +215,7 @@ define_test!(pp_client_rma, async_pp_client_rma, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     prefix::RmaOp::RMA_WRITE,
                     &remote,
                     100,
@@ -236,7 +233,7 @@ define_test!(pp_client_rma, async_pp_client_rma, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
         }
         prefix::InfoWithCaps::Tagged(entry) => {
@@ -244,13 +241,12 @@ define_test!(pp_client_rma, async_pp_client_rma, {
                 prefix::ft_exchange_keys,
                 &entry,
                 &mut gl_ctx,
-                mr.as_mut().unwrap(),
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
                 &domain,
                 &ep,
-                &mut mr_desc
+                &mr
             );
             let test_sizes = gl_ctx.test_sizes.clone();
             for msg_size in test_sizes {
@@ -262,7 +258,7 @@ define_test!(pp_client_rma, async_pp_client_rma, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     prefix::RmaOp::RMA_WRITE,
                     &remote,
                     100,
@@ -280,7 +276,7 @@ define_test!(pp_client_rma, async_pp_client_rma, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
             // drop(domain);
         }

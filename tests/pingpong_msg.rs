@@ -61,7 +61,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
 
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
-    let (cq_type, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) =
+    let (cq_type, tx_cntr, rx_cntr, ep, mr) =
         call!(prefix::ft_server_connect, &pep, &mut gl_ctx, &eq, &fab);
     match infocap {
         prefix::InfoWithCaps::Msg(entry) => {
@@ -76,7 +76,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -92,7 +92,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
 
             match ep {
@@ -117,7 +117,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -133,7 +133,7 @@ define_test!(pp_server_msg, async_pp_server_msg, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
 
             match ep {
@@ -190,7 +190,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
     // match hintscaps {
     // HintsCaps::Msg(hints) => {
 
-    let (infocap, cq_type, tx_cntr, rx_cntr, ep, _mr, mut mr_desc) = call!(
+    let (infocap, cq_type, tx_cntr, rx_cntr, ep, mr) = call!(
         prefix::ft_client_connect,
         hintscaps,
         &mut gl_ctx,
@@ -211,7 +211,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -227,7 +227,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
             match ep {
                 EndpointCaps::ConnectedMsg(ep) => {
@@ -251,7 +251,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
                     &tx_cntr,
                     &rx_cntr,
                     &ep,
-                    &mut mr_desc,
+                    &mr,
                     100,
                     10,
                     msg_size,
@@ -267,7 +267,7 @@ define_test!(pp_client_msg, async_pp_client_msg, {
                 &cq_type,
                 &tx_cntr,
                 &rx_cntr,
-                &mut mr_desc
+                &mr
             );
             match ep {
                 EndpointCaps::ConnectedMsg(ep) => {

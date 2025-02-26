@@ -1,4 +1,4 @@
-use std::ptr::null;
+use std::{marker::PhantomData, ptr::null};
 
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -13,7 +13,8 @@ use crate::{
     Context, MyOnceCell, MyRc, SyncSend,
 };
 use crate::{
-    ep::ActiveEndpoint, fid::{AsTypedFid, BorrowedTypedFid}
+    ep::ActiveEndpoint,
+    fid::{AsTypedFid, BorrowedTypedFid},
 };
 
 pub struct DmaBuf {
@@ -156,8 +157,7 @@ impl Drop for MappedMemoryRegionKey {
 }
 
 pub trait DataDescriptor {
-    fn desc(&mut self) -> *mut std::ffi::c_void;
-    fn desc_ptr(&mut self) -> *mut *mut std::ffi::c_void;
+    fn as_raw(&self) -> *mut std::ffi::c_void;
 }
 
 pub fn default_desc() -> MemoryRegionDesc {
@@ -186,6 +186,7 @@ pub fn default_desc() -> MemoryRegionDesc {
 
 pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: OwnedMrFid,
+    pub(crate) mr_desc: MemoryRegionDesc,
     pub(crate) _domain_rc: MyRc<dyn DomainImplT>,
     pub(crate) bound_cntr: MyOnceCell<MyRc<dyn ReadCntr>>,
     pub(crate) bound_ep: MyOnceCell<MyRc<dyn ActiveEndpoint>>,
@@ -232,6 +233,7 @@ impl MemoryRegionImpl {
                 (-err).try_into().unwrap(),
             ))
         } else {
+            let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
             Ok(Self {
                 #[cfg(not(feature = "threading-domain"))]
                 c_mr: OwnedMrFid::from(c_mr),
@@ -240,6 +242,7 @@ impl MemoryRegionImpl {
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
+                mr_desc: MemoryRegionDesc { c_desc },
             })
         }
     }
@@ -266,6 +269,8 @@ impl MemoryRegionImpl {
                 (-err).try_into().unwrap(),
             ))
         } else {
+            let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
+
             Ok(Self {
                 #[cfg(feature = "threading-domain")]
                 c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
@@ -274,6 +279,7 @@ impl MemoryRegionImpl {
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
+                mr_desc: MemoryRegionDesc { c_desc },
             })
         }
     }
@@ -308,6 +314,7 @@ impl MemoryRegionImpl {
                 (-err).try_into().unwrap(),
             ))
         } else {
+            let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
             Ok(Self {
                 #[cfg(feature = "threading-domain")]
                 c_mr: OwnedMrFid::from(c_mr, domain.c_domain.domain.clone()),
@@ -316,6 +323,7 @@ impl MemoryRegionImpl {
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
+                mr_desc: MemoryRegionDesc { c_desc },
             })
         }
     }
@@ -471,15 +479,11 @@ impl MemoryRegionImpl {
     //     }
     // }
 
-    pub(crate) fn descriptor(&self) -> MemoryRegionDesc {
-        let c_desc = unsafe {
-            libfabric_sys::inlined_fi_mr_desc(self.as_typed_fid_mut().as_raw_typed_fid())
-        };
-        // if c_desc.is_null() {
-        //     panic!("fi_mr_desc returned NULL");
-        // }
-
-        MemoryRegionDesc { c_desc }
+    pub(crate) fn descriptor<'a>(&'a self) -> BorrowedMemoryRegionDesc<'a> {
+        BorrowedMemoryRegionDesc {
+            c_desc: self.mr_desc.c_desc,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -598,7 +602,7 @@ impl MemoryRegion {
     /// Return a local descriptor associated with a registered memory region.
     ///
     /// Corresponds to `fi_mr_desc`
-    pub fn descriptor(&self) -> MemoryRegionDesc {
+    pub fn descriptor(&self) -> BorrowedMemoryRegionDesc<'_> {
         self.inner.descriptor()
     }
 }
@@ -606,9 +610,21 @@ impl MemoryRegion {
 /// An opaque wrapper for the descriptor of a [MemoryRegion] as obtained from
 /// `fi_mr_desc`.
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct MemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct BorrowedMemoryRegionDesc<'a> {
+    c_desc: *mut std::ffi::c_void,
+    phantom: PhantomData<&'a ()>,
+}
+
+impl BorrowedMemoryRegionDesc<'_> {
+    pub(crate) fn as_raw(&self) -> *mut std::ffi::c_void {
+        self.c_desc
+    }
 }
 
 unsafe impl Send for MemoryRegionDesc {}
@@ -617,13 +633,15 @@ unsafe impl Send for MemoryRegionDesc {}
 #[cfg(feature = "thread-safe")]
 unsafe impl Sync for MemoryRegionDesc {}
 
-impl DataDescriptor for MemoryRegionDesc {
-    fn desc(&mut self) -> *mut std::ffi::c_void {
-        self.c_desc
-    }
+unsafe impl Send for BorrowedMemoryRegionDesc<'_> {}
+// #[cfg(feature="threading-thread-safe")]
+// TODO
+#[cfg(feature = "thread-safe")]
+unsafe impl Sync for BorrowedMemoryRegionDesc<'_> {}
 
-    fn desc_ptr(&mut self) -> *mut *mut std::ffi::c_void {
-        &mut self.c_desc
+impl MemoryRegionDesc {
+    pub(crate) fn from_raw(c_desc: *mut std::ffi::c_void) -> Self {
+        Self { c_desc }
     }
 }
 
@@ -698,9 +716,7 @@ impl MemoryRegionAttr {
     pub fn new() -> Self {
         Self {
             c_attr: libfabric_sys::fi_mr_attr {
-                __bindgen_anon_1: libfabric_sys::fi_mr_attr__bindgen_ty_1 {
-                    dmabuf: null()
-                },
+                __bindgen_anon_1: libfabric_sys::fi_mr_attr__bindgen_ty_1 { dmabuf: null() },
                 iov_count: 0,
                 access: 0,
                 offset: 0,
@@ -905,7 +921,7 @@ impl<'a> MemoryRegionBuilder<'a> {
             backing_buf: MRBackingBuf::IoVs(vec![IoVec::from_slice(buff)]),
         }
     }
-    
+
     /// Initiates the creation of new [MemoryRegion] on `domain`, with backing memory `buff`.
     ///
     /// The initial configuration is only setting the fields `fi_mr_attr::mr_iov`, `fi_mr_attr::iface`.
@@ -1092,12 +1108,9 @@ impl<'a> MemoryRegionBuilder<'a> {
 //================== Memory Region tests ==================//
 #[cfg(test)]
 mod tests {
-    use crate::{
-        enums::MrAccess,
-        info::Info,
-    };
+    use crate::{enums::MrAccess, info::Info};
 
-    use super::MemoryRegionBuilder;
+    use super::{MaybeDisabledMemoryRegion, MemoryRegionBuilder};
 
     pub fn ft_alloc_bit_combo(fixed: u64, opt: u64) -> Vec<u64> {
         let bits_set = |mut val: u64| -> u64 {
@@ -1158,21 +1171,21 @@ mod tests {
         //     .domain_attr(dom_attr);
 
         let info = Info::new(&crate::info::libfabric_version())
-        .enter_hints()
-        .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
-        .enter_domain_attr()
-        .mode(crate::enums::Mode::all())
-        .mr_mode(
-            crate::enums::MrMode::new()
-                .basic()
-                .scalable()
-                .local()
-                .inverse(),
-        )
-        .leave_domain_attr()
-        .leave_hints()
-        .get()
-        .unwrap();
+            .enter_hints()
+            .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
+            .enter_domain_attr()
+            .mode(crate::enums::Mode::all())
+            .mr_mode(
+                crate::enums::MrMode::new()
+                    .basic()
+                    .scalable()
+                    .local()
+                    .inverse(),
+            )
+            .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         let entry = info.into_iter().next();
 
@@ -1216,12 +1229,17 @@ mod tests {
                 let buff_size = test.0;
                 let buf = vec![0_u64; buff_size as usize];
                 for combo in &combos {
-                    let _mr = MemoryRegionBuilder::new(&buf, crate::enums::HmemIface::System)
+                    let mr = MemoryRegionBuilder::new(&buf, crate::enums::HmemIface::System)
                         // .iov(std::slice::from_mut(&mut IoVec::from_slice_mut(&mut buf)))
                         .access(&MrAccess::from_raw(*combo as u32))
                         .requested_key(0xC0DE)
                         .build(&domain)
                         .unwrap();
+                    let mr = match mr {
+                        MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                        MaybeDisabledMemoryRegion::Disabled(mr) => {mr.enable().unwrap()},
+                    };
+                    let desc = mr.descriptor();
                     // mr.close().unwrap();
                 }
             }
@@ -1276,10 +1294,7 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{
-        enums::MrAccess,
-        info::Info,
-    };
+    use crate::{enums::MrAccess, info::Info};
 
     use super::MemoryRegionBuilder;
 
@@ -1296,21 +1311,21 @@ mod libfabric_lifetime_tests {
         //     .domain_attr(dom_attr);
 
         let info = Info::new(&crate::info::libfabric_version())
-        .enter_hints()
-        .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
-        .enter_domain_attr()
-        .mode(crate::enums::Mode::all())
-        .mr_mode(
-            crate::enums::MrMode::new()
-                .basic()
-                .scalable()
-                .local()
-                .inverse(),
-        )
-        .leave_domain_attr()
-        .leave_hints()
-        .get()
-        .unwrap();
+            .enter_hints()
+            .caps(crate::infocapsoptions::InfoCaps::new().msg().rma())
+            .enter_domain_attr()
+            .mode(crate::enums::Mode::all())
+            .mr_mode(
+                crate::enums::MrMode::new()
+                    .basic()
+                    .scalable()
+                    .local()
+                    .inverse(),
+            )
+            .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         let entry = info.into_iter().next();
 

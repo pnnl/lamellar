@@ -2,7 +2,7 @@ use crate::domain::DomainBase;
 use crate::enums::{MrMode, MrRegOpt};
 use crate::eq::Event;
 use crate::fid::{AsRawTypedFid, AsTypedFid, Fid, OwnedMrFid};
-use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder};
+use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder, MemoryRegionDesc};
 use crate::{
     enums::MrAccess,
     mr::{MemoryRegion, MemoryRegionImpl},
@@ -47,6 +47,10 @@ impl MemoryRegionImpl {
                         .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
                         .await?;
 
+                    let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
+                    if c_desc.is_null() {
+                        panic!("Got nullptr for MemoryRegion descriptor");
+                    }
                     return Ok((
                         res,
                         Self {
@@ -57,6 +61,7 @@ impl MemoryRegionImpl {
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
+                            mr_desc: MemoryRegionDesc::from_raw(c_desc),
                         },
                     ));
                 }
@@ -102,6 +107,10 @@ impl MemoryRegionImpl {
                         .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
                         .await?;
 
+                    let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
+                    if c_desc.is_null() {
+                        panic!("Got nullptr for MemoryRegion descriptor");
+                    }
                     return Ok((
                         res,
                         Self {
@@ -112,6 +121,7 @@ impl MemoryRegionImpl {
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
+                            mr_desc: MemoryRegionDesc::from_raw(c_desc),
                         },
                     ));
                 }
@@ -161,6 +171,11 @@ impl MemoryRegionImpl {
                         .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
                         .await?;
 
+                    let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
+                    if c_desc.is_null() {
+                        panic!("Got nullptr for MemoryRegion descriptor");
+                    }
+
                     return Ok((
                         res,
                         Self {
@@ -171,6 +186,7 @@ impl MemoryRegionImpl {
                             _domain_rc: domain.clone(),
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
+                            mr_desc: MemoryRegionDesc::from_raw(c_desc),
                         },
                     ));
                 }
