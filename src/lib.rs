@@ -129,7 +129,7 @@ pub(crate) enum AddressSource {
 ///
 /// Note that other objects that it will extend the respective [`crate::av::AddressVector`]'s (if any) lifetime until they
 /// it is dropped.
-#[derive(Clone)]
+// #[derive(Clone)]
 pub enum MappedAddress {
     Unspec(UnspecMappedAddress),
     Map(MapMappedAddress),

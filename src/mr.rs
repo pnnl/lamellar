@@ -13,8 +13,7 @@ use crate::{
     Context, MyOnceCell, MyRc, SyncSend,
 };
 use crate::{
-    ep::ActiveEndpoint,
-    fid::{AsTypedFid, BorrowedTypedFid},
+    ep::ActiveEndpoint, error::Error, fid::{AsTypedFid, BorrowedTypedFid}
 };
 
 pub struct DmaBuf {
@@ -25,35 +24,46 @@ pub struct DmaBuf {
 ///
 /// This enum encapsulates either a  'regular' key obtained from `fi_mr_key` or a 'raw' key obtained from `fir_mr_raw_attr`,
 /// depending on the requirements of the provider.
-pub enum MemoryRegionKey {
+pub(crate) enum OwnedMemoryRegionKey {
     Key(u64),
     RawKey((Vec<u8>, u64)),
 }
 
-impl MemoryRegionKey {
+pub struct MemoryRegionKey<'a> {
+    pub(crate) key: &'a OwnedMemoryRegionKey,
+}
+
+impl<'a> MemoryRegionKey<'a> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.key.to_bytes()
+    }
+}
+
+
+impl OwnedMemoryRegionKey {
     // pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
     //     let mut raw_key = vec![0u8; len];
     //     raw_key.copy_from_slice(std::slice::from_raw_parts(raw, len));
     //     Self::RawKey(raw_key)
     // }
 
-    /// Construct a new [MemoryRegionKey] from a slice of bytes, usually received
+    /// Construct a new [OwnedMemoryRegionKey] from a slice of bytes, usually received
     /// from remote node using raw keys.
     ///
     /// # Safety
     /// This function is unsafe since there is not guarantee that the bytes read indeed represent
     /// a key
     ///
-    pub unsafe fn from_bytes<EQ: ?Sized + SyncSend>(
+    unsafe fn from_bytes<EQ: ?Sized + SyncSend>(
         raw: &[u8],
         domain: &crate::domain::DomainBase<EQ>,
     ) -> Self {
-        MemoryRegionKey::from_bytes_impl(raw, &*domain.inner)
+        OwnedMemoryRegionKey::from_bytes_impl(raw, &*domain.inner)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            MemoryRegionKey::Key(key) => {
+            OwnedMemoryRegionKey::Key(key) => {
                 let mut bytes = vec![0; std::mem::size_of::<u64>()];
                 unsafe {
                     bytes.copy_from_slice(std::slice::from_raw_parts(
@@ -63,7 +73,7 @@ impl MemoryRegionKey {
                 };
                 bytes
             }
-            MemoryRegionKey::RawKey(key) => [&key.0[..], unsafe {
+            OwnedMemoryRegionKey::RawKey(key) => [&key.0[..], unsafe {
                 std::slice::from_raw_parts(
                     &key.1 as *const u64 as *const u8,
                     std::mem::size_of::<u64>(),
@@ -75,7 +85,7 @@ impl MemoryRegionKey {
 
     unsafe fn from_bytes_impl(raw: &[u8], domain: &(impl DomainImplT + ?Sized)) -> Self {
         if domain.mr_mode().is_raw() {
-            assert!(raw.len() == domain.mr_key_size());
+            assert!(raw.len() == domain.mr_key_size() + std::mem::size_of::<u64>());
             let base_addr = *(raw[raw.len() - std::mem::size_of::<u64>()..].as_ptr() as *const u64);
             Self::RawKey((
                 raw[0..raw.len() - std::mem::size_of::<u64>()].to_vec(),
@@ -91,38 +101,31 @@ impl MemoryRegionKey {
         }
     }
 
-    /// Construct a new [MemoryRegionKey] from a u64 value as received from the a remote node.
-    ///
-    /// # Safety
-    /// This function is unsafe since there is not guarantee that the u64 value read represents
-    /// a valid key.
-    ///
-    pub unsafe fn from_u64(key: u64) -> Self {
-        MemoryRegionKey::Key(key)
+    fn as_borrowed(&self) -> MemoryRegionKey {
+        MemoryRegionKey { key: self }
     }
 
-    pub fn into_mapped<EQ: ?Sized + 'static + SyncSend>(
+    fn into_mapped<EQ: ?Sized + 'static + SyncSend>(
         mut self,
         domain: &crate::domain::DomainBase<EQ>,
     ) -> Result<MappedMemoryRegionKey, crate::error::Error> {
         match self {
-            MemoryRegionKey::Key(mapped_key) => Ok(MappedMemoryRegionKey {
-                inner: MappedMemoryRegionKeyImpl::Key(mapped_key),
+            OwnedMemoryRegionKey::Key(mapped_key) => Ok(MappedMemoryRegionKey {
+                inner: MyRc::new(MappedMemoryRegionKeyImpl::Key(mapped_key)),
             }),
-            MemoryRegionKey::RawKey(_) => {
+            OwnedMemoryRegionKey::RawKey(_) => {
                 let mapped_key = domain.map_raw(&mut self, 0)?;
                 Ok(MappedMemoryRegionKey {
-                    inner: MappedMemoryRegionKeyImpl::MappedRawKey((
+                    inner: MyRc::new(MappedMemoryRegionKeyImpl::MappedRawKey((
                         mapped_key,
                         domain.inner.clone(),
-                    )),
+                    ))),
                 })
             }
         }
     }
 }
 
-#[derive(Clone)]
 enum MappedMemoryRegionKeyImpl {
     Key(u64),
     MappedRawKey((u64, MyRc<dyn DomainImplT>)),
@@ -133,24 +136,31 @@ enum MappedMemoryRegionKeyImpl {
 /// if needed when it is dropped.
 #[derive(Clone)]
 pub struct MappedMemoryRegionKey {
-    inner: MappedMemoryRegionKeyImpl,
+    inner: MyRc<MappedMemoryRegionKeyImpl>,
 }
 
 impl MappedMemoryRegionKey {
+
+    pub unsafe fn from_raw<EQ: ?Sized + SyncSend + 'static>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Result<Self, Error> {
+        OwnedMemoryRegionKey::from_bytes(raw, domain)
+            .into_mapped(domain)
+            .map_err(|err| crate::error::Error::from_err_code(err.c_err))
+    }
+
     pub(crate) fn key(&self) -> u64 {
-        match self.inner {
+        match *self.inner {
             MappedMemoryRegionKeyImpl::Key(key)
             | MappedMemoryRegionKeyImpl::MappedRawKey((key, _)) => key,
         }
     }
 }
 
-impl Drop for MappedMemoryRegionKey {
+impl Drop for MappedMemoryRegionKeyImpl {
     fn drop(&mut self) {
-        match self.inner {
+        match self {
             MappedMemoryRegionKeyImpl::Key(_) => {}
             MappedMemoryRegionKeyImpl::MappedRawKey((key, ref domain_impl)) => {
-                domain_impl.unmap_key(key).unwrap();
+                domain_impl.unmap_key(*key).unwrap();
             }
         }
     }
@@ -160,6 +170,7 @@ impl Drop for MappedMemoryRegionKey {
 
 pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: OwnedMrFid,
+    pub(crate) key: Result<OwnedMemoryRegionKey, crate::error::Error>,
     pub(crate) mr_desc: OwnedMemoryRegionDesc,
     pub(crate) _domain_rc: MyRc<dyn DomainImplT>,
     pub(crate) bound_cntr: MyOnceCell<MyRc<dyn ReadCntr>>,
@@ -175,6 +186,49 @@ pub(crate) struct MemoryRegionImpl {
 /// are also dropped.
 pub struct MemoryRegion {
     pub(crate) inner: MyRc<MemoryRegionImpl>,
+}
+
+
+pub(crate) fn mr_key(c_mr: *mut libfabric_sys::fid_mr, domain: &impl DomainImplT) -> Result<OwnedMemoryRegionKey, crate::error::Error> {
+    if domain.mr_mode().is_raw() {
+        raw_key(c_mr, 0, domain)
+    } else {
+        let ret = unsafe {
+            libfabric_sys::inlined_fi_mr_key(c_mr)
+        };
+        if ret == crate::FI_KEY_NOTAVAIL {
+            Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
+        } else {
+            Ok(OwnedMemoryRegionKey::Key(ret))
+        }
+    }
+}
+
+fn raw_key(c_mr: *mut libfabric_sys::fid_mr, flags: u64, domain: & impl DomainImplT) -> Result<OwnedMemoryRegionKey, crate::error::Error> {
+    let mut base_addr = 0u64;
+    let mut key_size = domain.mr_key_size();
+    let mut raw_key = vec![0u8; key_size + std::mem::size_of::<u64>()];
+    let err = unsafe {
+        libfabric_sys::inlined_fi_mr_raw_attr(
+            c_mr,
+            &mut base_addr,
+            raw_key.as_mut_ptr().cast(),
+            &mut key_size,
+            flags,
+        )
+    };
+
+    if err != 0 {
+        Err(crate::error::Error::from_err_code(
+            (-err).try_into().unwrap(),
+        ))
+    } else {
+        let raw_key_len = raw_key.len();
+        raw_key[raw_key_len - std::mem::size_of::<u64>()..].copy_from_slice(
+            unsafe { std::slice::from_raw_parts(&base_addr as *const u64 as *const u8, 8) },
+        );
+        Ok(unsafe { OwnedMemoryRegionKey::from_bytes_impl(&raw_key, domain) })
+    }
 }
 
 impl MemoryRegionImpl {
@@ -217,6 +271,7 @@ impl MemoryRegionImpl {
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
                 mr_desc: OwnedMemoryRegionDesc { c_desc },
+                key : mr_key(c_mr, domain.as_ref()),
             })
         }
     }
@@ -254,6 +309,7 @@ impl MemoryRegionImpl {
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
                 mr_desc: OwnedMemoryRegionDesc { c_desc },
+                key : mr_key(c_mr, domain.as_ref()),
             })
         }
     }
@@ -298,45 +354,16 @@ impl MemoryRegionImpl {
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
                 mr_desc: OwnedMemoryRegionDesc { c_desc },
+                key : mr_key(c_mr, domain.as_ref()),
             })
         }
     }
 
     pub(crate) fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
-        if self._domain_rc.mr_mode().is_raw() {
-            self.raw_key(0)
-        } else {
-            let ret = unsafe {
-                libfabric_sys::inlined_fi_mr_key(self.as_typed_fid_mut().as_raw_typed_fid())
-            };
-            if ret == crate::FI_KEY_NOTAVAIL {
-                Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
-            } else {
-                Ok(MemoryRegionKey::Key(ret))
-            }
-        }
-    }
-
-    fn raw_key(&self, flags: u64) -> Result<MemoryRegionKey, crate::error::Error> {
-        let mut base_addr = 0u64;
-        let mut key_size = self._domain_rc.mr_key_size();
-        let mut raw_key = vec![0u8; key_size];
-        let err = unsafe {
-            libfabric_sys::inlined_fi_mr_raw_attr(
-                self.as_typed_fid_mut().as_raw_typed_fid(),
-                &mut base_addr,
-                raw_key.as_mut_ptr().cast(),
-                &mut key_size,
-                flags,
-            )
-        };
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code(
-                (-err).try_into().unwrap(),
-            ))
-        } else {
-            Ok(unsafe { MemoryRegionKey::from_bytes_impl(&raw_key, &*self._domain_rc) })
+        let key = self.key.as_ref();
+        match key {
+            Ok(key) => Ok(key.as_borrowed()),
+            Err(err) => Err(crate::error::Error::from_err_code(err.c_err)),
         }
     }
 
@@ -537,10 +564,6 @@ impl MemoryRegion {
     pub fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
         self.inner.key()
     }
-
-    // fn raw_key(&self, flags: u64) -> Result<MemoryRegionKey, crate::error::Error>  {
-    //     self.inner.raw_key(flags)
-    // }
 
     /// Associates the memory region with a counter
     ///

@@ -168,16 +168,16 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
 
     pub(crate) fn map_raw(
         &self,
-        mr_key: &mut crate::mr::MemoryRegionKey,
+        mr_key: &mut crate::mr::OwnedMemoryRegionKey,
         flags: u64,
     ) -> Result<u64, crate::error::Error> {
         let mut mapped_key = 0;
         let err = match mr_key {
-            crate::mr::MemoryRegionKey::Key(simple_key) => {
+            crate::mr::OwnedMemoryRegionKey::Key(simple_key) => {
                 return Ok(*simple_key);
                 // unsafe { libfabric_sys::inlined_fi_mr_map_raw(self.handle(), base_addr, simple_key as *mut u64 as *mut u8, std::mem::size_of::<u64>(), &mut mapped_key, flags) }
             }
-            crate::mr::MemoryRegionKey::RawKey(raw_key) => unsafe {
+            crate::mr::OwnedMemoryRegionKey::RawKey(raw_key) => unsafe {
                 libfabric_sys::inlined_fi_mr_map_raw(
                     self.as_typed_fid_mut().as_raw_typed_fid(),
                     raw_key.1,
@@ -359,7 +359,7 @@ impl<EQ: ?Sized> DomainBase<EQ> {
 
     pub(crate) fn map_raw(
         &self,
-        mr_key: &mut crate::mr::MemoryRegionKey,
+        mr_key: &mut crate::mr::OwnedMemoryRegionKey,
         flags: u64,
     ) -> Result<u64, crate::error::Error> {
         self.inner.map_raw(mr_key, flags)

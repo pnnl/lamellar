@@ -1,4 +1,5 @@
 use core::panic;
+use std::collections::btree_map::Keys;
 use libfabric::connless_ep::ConnectionlessEndpoint;
 use libfabric::enums;
 use libfabric::mr::MemoryRegion;
@@ -18,7 +19,7 @@ use libfabric::{
     fabric,
     info::{Info, InfoCapsImpl, InfoEntry, InfoHints},
     infocapsoptions::{self, MsgDefaultCap, RmaCap, RmaDefaultCap, TagDefaultCap},
-    mr::{MappedMemoryRegionKey, MemoryRegionKey},
+    mr::MappedMemoryRegionKey,
     Context, MappedAddress,
 };
 use std::time::Instant;
@@ -2662,38 +2663,18 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
     }
 
     let key = mr.as_ref().unwrap().key().unwrap();
-    // if info.domain_attr().mr_mode.is_raw() {
-    //     // panic!("Not handled currently");
-    //     let mr_key = mr.raw_key(0).unwrap();
-    //     let raw_key_bytes = mr_key.as_bytes();
 
-    //     if std::mem::size_of_val(raw_key_bytes) > std::mem::size_of_val(&rma_iov.get_key()) {
-    //         panic!("Key size does not fit");
-    //     }
-    //     else {
-    //         let mut raw_key = 0u64;
-    //         unsafe {std::slice::from_raw_parts_mut(&mut raw_key as *mut u64 as * mut u8, 8).copy_from_slice(raw_key_bytes)};
-    //         rma_iov = rma_iov.key(raw_key);
-    //     }
-    // }
-    // else {
-    //     rma_iov = rma_iov.key(mr.key().unwrap());
-    // }
-    rma_iov = match key {
-        MemoryRegionKey::Key(simple_key) => rma_iov.key(simple_key),
-        MemoryRegionKey::RawKey(raw_key) => {
-            if raw_key.0.len() > std::mem::size_of::<u64>() {
-                todo!();
-            }
-
-            let mut key = 0u64;
-            unsafe {
-                std::slice::from_raw_parts_mut(&mut key as *mut u64 as *mut u8, 8)
-                    .copy_from_slice(&raw_key.0)
-            };
-            rma_iov.key(key).address(0)
-        }
+    let key_bytes = key.to_bytes();
+    let key_len = key_bytes.len();
+    if key_len > std::mem::size_of::<u64>() {
+        panic!("Key size does not fit");
+    }
+    let mut key = 0u64;
+    unsafe {
+        std::slice::from_raw_parts_mut(&mut key as *mut u64 as *mut u8, 8)
+            .copy_from_slice(&key_bytes)
     };
+    rma_iov = rma_iov.key(key);
 
     gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + len].copy_from_slice(unsafe {
         std::slice::from_raw_parts(
@@ -2721,25 +2702,15 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
     .copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + len]);
     let mapped_key = match domain {
         ConfDomain::Unbound(domain) => {
-            let mr_key = unsafe {
-                MemoryRegionKey::from_bytes(
-                    &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())
-                        ..gl_ctx.rx_buf_index + len],
-                    domain,
-                )
-            };
-            mr_key.into_mapped(domain).unwrap()
+            unsafe {MappedMemoryRegionKey::from_raw(
+                &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index + len], domain)}
+                .unwrap()
         }
 
         ConfDomain::Bound(domain) => {
-            let mr_key = unsafe {
-                MemoryRegionKey::from_bytes(
-                    &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())
-                        ..gl_ctx.rx_buf_index + len],
-                    domain,
-                )
-            };
-            mr_key.into_mapped(domain).unwrap()
+            unsafe {MappedMemoryRegionKey::from_raw(
+                &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index + len], domain)}
+                .unwrap()
         }
     };
 

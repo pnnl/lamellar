@@ -2,7 +2,7 @@ use crate::domain::DomainBase;
 use crate::enums::{MrMode, MrRegOpt};
 use crate::eq::Event;
 use crate::fid::{AsRawTypedFid, AsTypedFid, Fid, OwnedMrFid};
-use crate::mr::{MemoryRegionAttr, MemoryRegionBuilder, OwnedMemoryRegionDesc};
+use crate::mr::{mr_key, MemoryRegionAttr, MemoryRegionBuilder, OwnedMemoryRegionDesc};
 use crate::{
     enums::MrAccess,
     mr::{MemoryRegion, MemoryRegionImpl},
@@ -62,6 +62,7 @@ impl MemoryRegionImpl {
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
                             mr_desc: OwnedMemoryRegionDesc::from_raw(c_desc),
+                            key : mr_key(c_mr, domain.as_ref()),
                         },
                     ));
                 }
@@ -122,6 +123,7 @@ impl MemoryRegionImpl {
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
                             mr_desc: OwnedMemoryRegionDesc::from_raw(c_desc),
+                            key : mr_key(c_mr, domain.as_ref()),
                         },
                     ));
                 }
@@ -172,9 +174,6 @@ impl MemoryRegionImpl {
                         .await?;
 
                     let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
-                    if c_desc.is_null() {
-                        panic!("Got nullptr for MemoryRegion descriptor");
-                    }
 
                     return Ok((
                         res,
@@ -187,6 +186,7 @@ impl MemoryRegionImpl {
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
                             mr_desc: OwnedMemoryRegionDesc::from_raw(c_desc),
+                            key : mr_key(c_mr, domain.as_ref()),
                         },
                     ));
                 }

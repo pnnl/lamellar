@@ -25,8 +25,10 @@ use libfabric::iovec::Ioc;
 use libfabric::iovec::IocMut;
 use libfabric::iovec::RmaIoVec;
 use libfabric::iovec::RmaIoc;
+use libfabric::mr::MemoryRegionKey;
 use libfabric::mr::MemoryRegionDesc;
 use libfabric::mr::DisabledMemoryRegion;
+use libfabric::MyRc;
 use libfabric::{
     async_::{
         av::AddressVectorBuilder,
@@ -51,7 +53,6 @@ use libfabric::{
     iovec::{IoVec, IoVecMut},
     mr::{
         MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder,
-        MemoryRegionKey,
     },
     msg::{
         Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected,
@@ -105,13 +106,12 @@ pub enum MyEndpoint<I> {
 pub struct Ofi<I> {
     pub info_entry: InfoEntry<I>,
     pub mr: Option<MemoryRegion>,
-    pub key: Option<MemoryRegionKey>,
     pub remote_key: Option<MappedMemoryRegionKey>,
     pub remote_mem_addr: Option<(u64, u64)>,
     pub domain: DomainBase<NoEventQueue>,
     pub cq_type: CqType,
     pub ep: MyEndpoint<I>,
-    pub mapped_addr: Option<MappedAddress>,
+    pub mapped_addr: Option<MyRc<MappedAddress>>,
     pub reg_mem: Vec<u8>,
     // pub tx_pending_cnt: AtomicUsize,
     // pub tx_complete_cnt: AtomicUsize,
@@ -175,7 +175,6 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         let domain;
         let cq_type;
         let mr;
-        let key;
 
         // let mut tx_pending_cnt: usize = 0;
         // let mut tx_complete_cnt: usize = 0;
@@ -236,7 +235,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     async_std::task::block_on(async { ep.accept_async().await }).unwrap()
                 };
 
-                (mr, key) = if info_entry.domain_attr().mr_mode().is_local()
+                mr = if info_entry.domain_attr().mr_mode().is_local()
                     || info_entry.caps().is_rma()
                 {
                     let mr =
@@ -253,10 +252,9 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             mr.enable().unwrap()
                         }
                     };
-                    let key = mr.key().unwrap();
-                    (Some(mr), Some(key))
+                    Some(mr)
                 } else {
-                    (None, None)
+                    None
                 };
 
                 (info_entry, MyEndpoint::Connected(ep), None)
@@ -293,7 +291,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 ep.bind_av(&av).unwrap();
                 let ep = ep.enable().unwrap();
 
-                (mr, key) = if info_entry.domain_attr().mr_mode().is_local()
+                mr = if info_entry.domain_attr().mr_mode().is_local()
                     || info_entry.caps().is_rma()
                 {
                     let mr =
@@ -310,10 +308,9 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             mr.enable().unwrap()
                         }
                     };
-                    let key = mr.key().unwrap();
-                    (Some(mr), Some(key))
+                    Some(mr)
                 } else {
-                    (None, None)
+                    None
                 };
 
                 let mapped_address = if let Some(dest_addr) = info_entry.dest_addr() {
@@ -344,7 +341,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     ))
                     .unwrap();
 
-                    mapped_address
+                    MyRc::new(mapped_address)
                 } else {
                     let epname = ep.getname().unwrap();
                     let addrlen = epname.as_bytes().len();
@@ -382,7 +379,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     ))
                     .unwrap();
 
-                    mapped_address
+                    MyRc::new(mapped_address)
                 };
                 (
                     info_entry,
@@ -399,7 +396,6 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
             info_entry,
             mapped_addr,
             mr,
-            key,
             remote_key: None,
             remote_mem_addr: None,
             cq_type,
@@ -802,14 +798,14 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         );
 
         let remote_key = unsafe {
-            MemoryRegionKey::from_bytes(
+            MappedMemoryRegionKey::from_raw(
                 &reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
                     ..2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()],
                 &self.domain,
             )
         }
-        .into_mapped(&self.domain)
         .unwrap();
+
         let len = unsafe {
             std::slice::from_raw_parts(
                 reg_mem[2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()
