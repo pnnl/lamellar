@@ -156,37 +156,11 @@ impl Drop for MappedMemoryRegionKey {
     }
 }
 
-pub trait DataDescriptor {
-    fn as_raw(&self) -> *mut std::ffi::c_void;
-}
-
-pub fn default_desc() -> MemoryRegionDesc {
-    MemoryRegionDesc {
-        c_desc: std::ptr::null_mut(),
-    }
-}
-
-// impl DataDescriptor for DefaultMemDesc {
-//     fn get_desc(&mut self) -> *mut std::ffi::c_void {
-//         std::ptr::null_mut()
-//     }
-
-//     fn get_desc_ptr(&mut self) -> *mut *mut std::ffi::c_void {
-//         std::ptr::null_mut()
-//     }
-// }
-
-// impl Drop for MemoryRegion {
-//     fn drop(&mut self) {
-//        println!("Dropping MemoryRegion\n");
-//     }
-// }
-
 //================== Memory Region (fi_mr) ==================//
 
 pub(crate) struct MemoryRegionImpl {
     pub(crate) c_mr: OwnedMrFid,
-    pub(crate) mr_desc: MemoryRegionDesc,
+    pub(crate) mr_desc: OwnedMemoryRegionDesc,
     pub(crate) _domain_rc: MyRc<dyn DomainImplT>,
     pub(crate) bound_cntr: MyOnceCell<MyRc<dyn ReadCntr>>,
     pub(crate) bound_ep: MyOnceCell<MyRc<dyn ActiveEndpoint>>,
@@ -242,7 +216,7 @@ impl MemoryRegionImpl {
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
-                mr_desc: MemoryRegionDesc { c_desc },
+                mr_desc: OwnedMemoryRegionDesc { c_desc },
             })
         }
     }
@@ -279,7 +253,7 @@ impl MemoryRegionImpl {
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
-                mr_desc: MemoryRegionDesc { c_desc },
+                mr_desc: OwnedMemoryRegionDesc { c_desc },
             })
         }
     }
@@ -323,7 +297,7 @@ impl MemoryRegionImpl {
                 _domain_rc: domain.clone(),
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
-                mr_desc: MemoryRegionDesc { c_desc },
+                mr_desc: OwnedMemoryRegionDesc { c_desc },
             })
         }
     }
@@ -479,11 +453,8 @@ impl MemoryRegionImpl {
     //     }
     // }
 
-    pub(crate) fn descriptor<'a>(&'a self) -> BorrowedMemoryRegionDesc<'a> {
-        BorrowedMemoryRegionDesc {
-            c_desc: self.mr_desc.c_desc,
-            phantom: PhantomData,
-        }
+    pub(crate) fn descriptor(&self) -> MemoryRegionDesc {
+        self.mr_desc.as_borrowed()
     }
 }
 
@@ -602,7 +573,7 @@ impl MemoryRegion {
     /// Return a local descriptor associated with a registered memory region.
     ///
     /// Corresponds to `fi_mr_desc`
-    pub fn descriptor(&self) -> BorrowedMemoryRegionDesc<'_> {
+    pub fn descriptor(&self) -> MemoryRegionDesc<'_> {
         self.inner.descriptor()
     }
 }
@@ -611,35 +582,46 @@ impl MemoryRegion {
 /// `fi_mr_desc`.
 #[repr(C)]
 #[derive(Debug)]
-pub struct MemoryRegionDesc {
+pub(crate) struct OwnedMemoryRegionDesc {
     c_desc: *mut std::ffi::c_void,
 }
+
+impl OwnedMemoryRegionDesc {
+    fn as_borrowed<'a>(&'a self) -> MemoryRegionDesc<'a> {
+        MemoryRegionDesc {
+            c_desc: self.c_desc,
+            phantom: PhantomData,
+        }
+    }
+}
+
+
 #[repr(C)]
 #[derive(Debug)]
-pub struct BorrowedMemoryRegionDesc<'a> {
+pub struct MemoryRegionDesc<'a> {
     c_desc: *mut std::ffi::c_void,
     phantom: PhantomData<&'a ()>,
 }
 
-impl BorrowedMemoryRegionDesc<'_> {
+impl MemoryRegionDesc<'_> {
     pub(crate) fn as_raw(&self) -> *mut std::ffi::c_void {
         self.c_desc
     }
 }
 
-unsafe impl Send for MemoryRegionDesc {}
+unsafe impl Send for OwnedMemoryRegionDesc {}
 // #[cfg(feature="threading-thread-safe")]
 // TODO
 #[cfg(feature = "thread-safe")]
-unsafe impl Sync for MemoryRegionDesc {}
+unsafe impl Sync for OwnedMemoryRegionDesc {}
 
-unsafe impl Send for BorrowedMemoryRegionDesc<'_> {}
+unsafe impl Send for MemoryRegionDesc<'_> {}
 // #[cfg(feature="threading-thread-safe")]
 // TODO
 #[cfg(feature = "thread-safe")]
-unsafe impl Sync for BorrowedMemoryRegionDesc<'_> {}
+unsafe impl Sync for MemoryRegionDesc<'_> {}
 
-impl MemoryRegionDesc {
+impl OwnedMemoryRegionDesc {
     pub(crate) fn from_raw(c_desc: *mut std::ffi::c_void) -> Self {
         Self { c_desc }
     }

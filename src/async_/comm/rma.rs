@@ -4,7 +4,7 @@ use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::ep::{Connected, Connectionless, EndpointImplBase};
 use crate::infocapsoptions::RmaCap;
-use crate::mr::BorrowedMemoryRegionDesc;
+use crate::mr::MemoryRegionDesc;
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};
 use crate::utils::Either;
 use crate::Context;
@@ -24,7 +24,7 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
     async unsafe fn read_async_impl<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -48,7 +48,7 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
     async unsafe fn readv_async_impl<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -100,7 +100,7 @@ pub trait AsyncReadEp {
     unsafe fn read_from_async<T0>(
         &self,
         buf: &mut [T0],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -113,7 +113,7 @@ pub trait AsyncReadEp {
     unsafe fn readv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -134,7 +134,7 @@ pub trait ConnectedAsyncReadEp {
     unsafe fn read_async<T0>(
         &self,
         buf: &mut [T0],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -146,7 +146,7 @@ pub trait ConnectedAsyncReadEp {
     unsafe fn readv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -175,7 +175,7 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
     async unsafe fn read_from_async<T0>(
         &self,
         buf: &mut [T0],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -188,7 +188,7 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
     async unsafe fn readv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -211,7 +211,7 @@ impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
     async unsafe fn read_async<T0>(
         &self,
         buf: &mut [T0],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -223,7 +223,7 @@ impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
     async unsafe fn readv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -245,7 +245,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     async unsafe fn write_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -285,7 +285,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     async unsafe fn writev_async_impl<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -310,7 +310,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     async unsafe fn writedata_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
@@ -387,7 +387,7 @@ pub trait AsyncWriteEp: WriteEp {
     unsafe fn write_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -411,7 +411,7 @@ pub trait AsyncWriteEp: WriteEp {
     unsafe fn writev_to_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -433,7 +433,7 @@ pub trait AsyncWriteEp: WriteEp {
     unsafe fn writedata_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &MappedAddress,
         mem_addr: u64,
@@ -461,7 +461,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     unsafe fn write_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -483,7 +483,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     unsafe fn writev_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -504,7 +504,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     unsafe fn writedata_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -533,7 +533,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
     async unsafe fn write_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -559,7 +559,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
     async unsafe fn writev_async_impl<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -573,7 +573,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
     async unsafe fn writedata_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
@@ -611,7 +611,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
     async unsafe fn write_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -637,7 +637,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
     async unsafe fn writev_async_impl<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -651,7 +651,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
     async unsafe fn writedata_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
         mem_addr: u64,
@@ -690,7 +690,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
     async unsafe fn write_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -716,7 +716,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
     async unsafe fn writev_to_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -739,7 +739,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
     async unsafe fn writedata_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &MappedAddress,
         mem_addr: u64,
@@ -769,7 +769,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     async unsafe fn write_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -793,7 +793,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     async unsafe fn writev_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
@@ -815,7 +815,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     async unsafe fn writedata_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,

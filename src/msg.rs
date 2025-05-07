@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     enums::{AtomicOp, AtomicOperation, CompareAtomicOp, FetchAtomicOp},
     iovec,
-    mr::{BorrowedMemoryRegionDesc, DataDescriptor},
+    mr::MemoryRegionDesc,
     AsFiType, Context, MappedAddress, FI_ADDR_UNSPEC,
 };
 
@@ -16,7 +16,7 @@ pub struct Msg<'a> {
 impl<'a> Msg<'a> {
     fn new(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         context: &'a mut Context,
@@ -40,7 +40,7 @@ impl<'a> Msg<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
@@ -50,7 +50,7 @@ impl<'a> Msg<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
@@ -93,7 +93,7 @@ pub struct MsgConnected<'a> {
 impl<'a> MsgConnected<'a> {
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -110,7 +110,7 @@ impl<'a> MsgConnected<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -146,7 +146,7 @@ pub struct MsgMut<'a> {
 impl<'a> MsgMut<'a> {
     fn new(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         context: &'a mut Context,
@@ -170,7 +170,7 @@ impl<'a> MsgMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
@@ -186,7 +186,7 @@ impl<'a> MsgMut<'a> {
 
     pub fn from_iov_slice(
         iov: &'a mut [iovec::IoVecMut],
-        desc: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         context: &'a mut Context,
@@ -223,7 +223,7 @@ pub struct MsgConnectedMut<'a> {
 impl<'a> MsgConnectedMut<'a> {
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -240,7 +240,7 @@ impl<'a> MsgConnectedMut<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -276,7 +276,7 @@ pub struct MsgTagged<'a> {
 impl<'a> MsgTagged<'a> {
     fn new(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         tag: u64,
@@ -304,7 +304,7 @@ impl<'a> MsgTagged<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -316,7 +316,7 @@ impl<'a> MsgTagged<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -362,7 +362,7 @@ pub struct MsgTaggedConnected<'a> {
 impl<'a> MsgTaggedConnected<'a> {
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -375,7 +375,7 @@ impl<'a> MsgTaggedConnected<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -421,7 +421,7 @@ pub struct MsgTaggedMut<'a> {
 impl<'a> MsgTaggedMut<'a> {
     fn new(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         data: Option<u64>,
         tag: u64,
@@ -449,7 +449,7 @@ impl<'a> MsgTaggedMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -469,7 +469,7 @@ impl<'a> MsgTaggedMut<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         data: Option<u64>,
         tag: u64,
@@ -508,7 +508,7 @@ pub struct MsgTaggedConnectedMut<'a> {
 impl<'a> MsgTaggedConnectedMut<'a> {
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -521,7 +521,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         data: Option<u64>,
         tag: u64,
         ignore: Option<u64>,
@@ -572,7 +572,7 @@ pub struct MsgAtomicBase<'a, T: AsFiType, OP: AtomicOperation> {
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
     fn new(
         iovs: &'a [iovec::Ioc<T>],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
@@ -604,7 +604,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
 
     pub fn from_ioc_slice(
         iovs: &'a [iovec::Ioc<T>],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
@@ -616,7 +616,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
 
     pub fn from_ioc(
         iov: &'a iovec::Ioc<T>,
-        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a mut MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_ioc: &'a iovec::RmaIoc,
         op: OP,
@@ -659,7 +659,7 @@ pub struct MsgAtomicConnectedBase<'a, T: AsFiType, OP: AtomicOperation> {
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
     pub fn from_ioc_slice(
         iovs: &'a [iovec::Ioc<T>],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
         data: Option<u64>,
@@ -672,7 +672,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
 
     pub fn from_ioc(
         iov: &'a iovec::Ioc<T>,
-        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a mut MemoryRegionDesc<'_>>,
         rma_ioc: &'a iovec::RmaIoc,
         op: OP,
         data: Option<u64>,
@@ -719,7 +719,7 @@ pub struct MsgAtomicMutBase<'a, T: AsFiType, OP: AtomicOperation> {
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
     fn new(
         iovs: &'a [iovec::IocMut<T>],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
@@ -751,7 +751,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
 
     pub fn from_ioc_slice(
         iovs: &'a [iovec::IocMut<T>],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iovs: &'a [iovec::RmaIoc],
         op: OP,
@@ -763,7 +763,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
 
     pub fn from_ioc(
         iov: &'a mut iovec::IocMut<T>,
-        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a mut MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_ioc: &'a iovec::RmaIoc,
         op: OP,
@@ -815,7 +815,7 @@ pub struct MsgAtomicConnectedMutBase<'a, T: AsFiType, OP: AtomicOperation> {
 impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedMutBase<'a, T, OP> {
     pub fn from_ioc_slice(
         iovs: &'a [iovec::IocMut<T>],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         rma_iovs: &'a [iovec::RmaIoc],
         data: Option<u64>,
         op: OP,
@@ -828,7 +828,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedMutBase<'a, T, OP> 
 
     pub fn from_ioc(
         iov: &'a mut iovec::IocMut<T>,
-        desc: Option<&'a mut BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a mut MemoryRegionDesc<'_>>,
         rma_ioc: &'a iovec::RmaIoc,
         data: Option<u64>,
         op: OP,
@@ -879,7 +879,7 @@ pub struct MsgRma<'a> {
 impl<'a> MsgRma<'a> {
     fn new(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
@@ -907,7 +907,7 @@ impl<'a> MsgRma<'a> {
 
     pub fn from_iov_slice(
         iovs: &'a [iovec::IoVec],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
@@ -918,7 +918,7 @@ impl<'a> MsgRma<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
@@ -955,7 +955,7 @@ pub struct MsgRmaConnected<'a> {
 impl<'a> MsgRmaConnected<'a> {
     pub fn from_iov_slice(
         iov: &'a [iovec::IoVec],
-        desc: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&'a [MemoryRegionDesc<'_>]>,
         rma_iov: &'a [iovec::RmaIoVec],
         data: Option<u64>,
         context: &'a mut Context,
@@ -967,7 +967,7 @@ impl<'a> MsgRmaConnected<'a> {
 
     pub fn from_iov(
         iov: &'a iovec::IoVec,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
         context: &'a mut Context,
@@ -1007,7 +1007,7 @@ pub struct MsgRmaMut<'a> {
 impl<'a> MsgRmaMut<'a> {
     fn new(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
         rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
@@ -1035,7 +1035,7 @@ impl<'a> MsgRmaMut<'a> {
 
     pub fn from_iov_slice(
         iov: &'a mut [iovec::IoVecMut],
-        desc: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
         rma_iov: &'a [iovec::RmaIoVec],
         data: Option<u64>,
@@ -1046,7 +1046,7 @@ impl<'a> MsgRmaMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
@@ -1091,7 +1091,7 @@ pub struct MsgRmaConnectedMut<'a> {
 impl<'a> MsgRmaConnectedMut<'a> {
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
-        descs: Option<&'a [BorrowedMemoryRegionDesc<'_>]>,
+        descs: Option<&'a [MemoryRegionDesc<'_>]>,
         rma_iovs: &'a [iovec::RmaIoVec],
         data: Option<u64>,
         context: &'a mut Context,
@@ -1103,7 +1103,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
 
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
-        desc: Option<&'a BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&'a MemoryRegionDesc<'_>>,
         rma_iov: &'a iovec::RmaIoVec,
         data: Option<u64>,
         context: &'a mut Context,

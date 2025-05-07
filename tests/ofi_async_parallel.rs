@@ -1,11 +1,5 @@
 use std::sync::Arc;
 
-use libfabric::async_::comm::atomic::AsyncAtomicCASEp;
-use libfabric::async_::comm::atomic::AsyncAtomicFetchEp;
-use libfabric::async_::comm::atomic::AsyncAtomicWriteEp;
-use libfabric::async_::comm::atomic::ConnectedAsyncAtomicCASEp;
-use libfabric::async_::comm::atomic::ConnectedAsyncAtomicFetchEp;
-use libfabric::async_::comm::atomic::ConnectedAsyncAtomicWriteEp;
 use libfabric::async_::comm::message::AsyncRecvEp;
 use libfabric::async_::comm::message::AsyncSendEp;
 use libfabric::async_::comm::message::ConnectedAsyncRecvEp;
@@ -18,30 +12,12 @@ use libfabric::async_::comm::tagged::AsyncTagRecvEp;
 use libfabric::async_::comm::tagged::AsyncTagSendEp;
 use libfabric::async_::comm::tagged::ConnectedAsyncTagRecvEp;
 use libfabric::async_::comm::tagged::ConnectedAsyncTagSendEp;
-use libfabric::comm::atomic::AtomicCASEp;
-use libfabric::comm::atomic::AtomicFetchEp;
-use libfabric::comm::atomic::AtomicWriteEp;
-use libfabric::comm::atomic::ConnectedAtomicCASEp;
-use libfabric::comm::atomic::ConnectedAtomicFetchEp;
-use libfabric::comm::atomic::ConnectedAtomicWriteEp;
-use libfabric::comm::message::ConnectedSendEp;
-use libfabric::comm::message::SendEp;
-use libfabric::comm::rma::ConnectedWriteEp;
-use libfabric::comm::rma::WriteEp;
-use libfabric::comm::tagged::ConnectedTagSendEp;
-use libfabric::comm::tagged::TagSendEp;
-use libfabric::cq::Completion;
-use libfabric::cq::WaitCq;
 use libfabric::domain::DomainBase;
 use libfabric::domain::NoEventQueue;
 use libfabric::ep::BaseEndpoint;
 use libfabric::info::Info;
 use libfabric::infocapsoptions::InfoCaps;
-use libfabric::iovec::Ioc;
-use libfabric::iovec::IocMut;
-use libfabric::iovec::RmaIoVec;
-use libfabric::iovec::RmaIoc;
-use libfabric::mr::BorrowedMemoryRegionDesc;
+use libfabric::mr::MemoryRegionDesc;
 use libfabric::mr::DisabledMemoryRegion;
 use libfabric::{
     async_::{
@@ -49,37 +25,27 @@ use libfabric::{
         conn_ep::ConnectedEndpoint,
         connless_ep::ConnectionlessEndpoint,
         cq::{CompletionQueue, CompletionQueueBuilder},
-        domain::Domain,
         ep::{Endpoint, EndpointBuilder},
         eq::EventQueueBuilder,
     },
-    cq::ReadCq,
     domain::DomainBuilder,
     enums::{
-        AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType,
-        FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions,
+        AVOptions, CqFormat, EndpointType
     },
     ep::Address,
     error::{Error, ErrorKind},
     fabric::FabricBuilder,
     info::InfoEntry,
     infocapsoptions::{
-        AtomicDefaultCap, Caps, CollCap, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
+        Caps, CollCap, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
     },
-    iovec::{IoVec, IoVecMut},
+    iovec::IoVec,
     mr::{
-        default_desc, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc,
+        MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder,
         MemoryRegionKey,
     },
-    msg::{
-        Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected,
-        MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma,
-        MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut, MsgTagged, MsgTaggedConnected,
-        MsgTaggedConnectedMut, MsgTaggedMut,
-    },
-    Context, CqCaps, EqCaps, MappedAddress,
+    Context, EqCaps, MappedAddress,
 };
-use parking_lot::lock_api::Mutex;
 
 pub type SpinCq = libfabric::async_cq_caps_type!(CqCaps::FD);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::FD);
@@ -585,7 +551,7 @@ impl<I: TagDefaultCap + 'static> Ofi<I> {
     pub fn tsendv(
         &mut self,
         iov: &[IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         tag: u64,
         ctx: &mut Context,
     ) {

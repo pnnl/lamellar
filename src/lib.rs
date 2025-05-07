@@ -424,6 +424,7 @@ impl ContextType {
         }
     }
 
+    #[allow(dead_code)]
     fn id(&self) -> usize {
         match self {
             ContextType::Context1(ctx) => ctx.id,

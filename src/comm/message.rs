@@ -7,7 +7,7 @@ use crate::{
     eq::ReadEq,
     fid::{AsRawTypedFid, AsTypedFid, EpRawFid},
     infocapsoptions::{MsgCap, RecvMod, SendMod},
-    mr::BorrowedMemoryRegionDesc,
+    mr::MemoryRegionDesc,
     trigger::TriggeredContext,
     utils::{check_error, Either},
     xcontext::{RxContextBase, RxContextImplBase, TxContextBase, TxContextImplBase},
@@ -45,7 +45,7 @@ pub(crate) trait RecvEpImpl: AsTypedFid<EpRawFid> {
     fn recv_impl<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: Option<&crate::MappedAddress>,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -66,7 +66,7 @@ pub(crate) trait RecvEpImpl: AsTypedFid<EpRawFid> {
     fn recvv_impl(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&crate::MappedAddress>,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -109,35 +109,35 @@ pub trait ConnectedRecvEp {
     fn recv<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
     ) -> Result<(), crate::error::Error>;
     fn recv_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn recv_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn recvv(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
     ) -> Result<(), crate::error::Error>;
     fn recvv_with_context<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn recvv_triggered<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn recvmsg(
@@ -152,7 +152,7 @@ impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     fn recv<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
     ) -> Result<(), crate::error::Error> {
         self.recv_impl::<T>(buf, desc, None, None)
     }
@@ -160,7 +160,7 @@ impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     fn recv_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.recv_impl(buf, desc, None, Some(context.inner_mut()))
@@ -169,7 +169,7 @@ impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     fn recv_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.recv_impl(buf, desc, None, Some(context.inner_mut()))
@@ -178,7 +178,7 @@ impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     fn recvv(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
     ) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, None, None)
     }
@@ -186,7 +186,7 @@ impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     fn recvv_with_context<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, None, Some(context.inner_mut()))
@@ -195,7 +195,7 @@ impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     fn recvv_triggered<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, None, Some(context.inner_mut()))
@@ -214,75 +214,75 @@ pub trait RecvEp {
     fn recv_from<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error>;
     fn recv_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn recv_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn recvv_from(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error>;
     fn recvv_from_with_context<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn recvv_from_triggered<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn recv_from_any<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
     ) -> Result<(), crate::error::Error>;
     fn recv_from_any_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn recvv_from_any(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
     ) -> Result<(), crate::error::Error>;
     fn recvv_from_any_with_context<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn recv_from_any_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn recvv_from_any_triggered<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn recvmsg_from(
@@ -297,7 +297,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recv_from_any<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
     ) -> Result<(), crate::error::Error> {
         self.recv_impl::<T>(buf, desc, None, None)
     }
@@ -306,7 +306,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recv_from_any_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.recv_impl(buf, desc, None, Some(context.inner_mut()))
@@ -316,7 +316,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recv_from<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         self.recv_impl::<T>(buf, desc, Some(mapped_addr), None)
@@ -326,7 +326,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recv_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -337,7 +337,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recv_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -348,7 +348,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recvv_from(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, Some(mapped_addr), None)
@@ -358,7 +358,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recvv_from_with_context<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -369,7 +369,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recvv_from_triggered<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -380,7 +380,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recv_from_any_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.recv_impl(buf, desc, None, Some(context.inner_mut()))
@@ -390,7 +390,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recvv_from_any(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
     ) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, None, None)
     }
@@ -399,7 +399,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recvv_from_any_with_context<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, None, Some(context.inner_mut()))
@@ -409,7 +409,7 @@ impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     fn recvv_from_any_triggered<T0>(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.recvv_impl(iov, desc, None, Some(context.inner_mut()))
@@ -438,7 +438,7 @@ pub(crate) trait SendEpImpl: AsTypedFid<EpRawFid> {
     fn sendv_impl(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&crate::MappedAddress>,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -459,7 +459,7 @@ pub(crate) trait SendEpImpl: AsTypedFid<EpRawFid> {
     fn send_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: Option<&crate::MappedAddress>,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -500,7 +500,7 @@ pub(crate) trait SendEpImpl: AsTypedFid<EpRawFid> {
     fn senddata_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: Option<&crate::MappedAddress>,
         context: Option<*mut std::ffi::c_void>,
@@ -569,40 +569,40 @@ pub trait SendEp {
     fn sendv_to(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error>;
     fn sendv_to_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn sendv_to_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn send_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error>;
     fn send_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn send_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -614,14 +614,14 @@ pub trait SendEp {
     fn senddata_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error>;
     fn senddata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
@@ -629,7 +629,7 @@ pub trait SendEp {
     fn senddata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
@@ -651,35 +651,35 @@ pub trait ConnectedSendEp {
     fn sendv(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
     ) -> Result<(), crate::error::Error>;
     fn sendv_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn sendv_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn send<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
     ) -> Result<(), crate::error::Error>;
     fn send_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn send_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
     fn sendmsg(
@@ -690,20 +690,20 @@ pub trait ConnectedSendEp {
     fn senddata<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
     ) -> Result<(), crate::error::Error>;
     fn senddata_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn senddata_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -716,7 +716,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn sendv_to(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         self.sendv_impl(iov, desc, Some(mapped_addr), None)
@@ -726,7 +726,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn sendv_to_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -737,7 +737,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn sendv_to_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -748,7 +748,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn send_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
         self.send_impl::<T>(buf, desc, Some(mapped_addr), None)
@@ -758,7 +758,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn send_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -769,7 +769,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn send_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -789,7 +789,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn senddata_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &crate::MappedAddress,
     ) -> Result<(), crate::error::Error> {
@@ -800,7 +800,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn senddata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &crate::MappedAddress,
         context: &mut Context,
@@ -818,7 +818,7 @@ impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     fn senddata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &crate::MappedAddress,
         context: &mut TriggeredContext,
@@ -857,7 +857,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn sendv(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
     ) -> Result<(), crate::error::Error> {
         self.sendv_impl(iov, desc, None, None)
     }
@@ -866,7 +866,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn sendv_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.sendv_impl(iov, desc, None, Some(context.inner_mut()))
@@ -876,7 +876,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn sendv_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.sendv_impl(iov, desc, None, Some(context.inner_mut()))
@@ -886,7 +886,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn send<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
     ) -> Result<(), crate::error::Error> {
         self.send_impl::<T>(buf, desc, None, None)
     }
@@ -895,7 +895,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn send_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.send_impl(buf, desc, None, Some(context.inner_mut()))
@@ -905,7 +905,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn send_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.send_impl(buf, desc, None, Some(context.inner_mut()))
@@ -924,7 +924,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn senddata<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
     ) -> Result<(), crate::error::Error> {
         self.senddata_impl::<T>(buf, desc, data, None, None)
@@ -934,7 +934,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn senddata_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -945,7 +945,7 @@ impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     fn senddata_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {

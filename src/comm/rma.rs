@@ -14,7 +14,7 @@ use crate::fid::EpRawFid;
 use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::RmaCap;
 use crate::infocapsoptions::WriteMod;
-use crate::mr::BorrowedMemoryRegionDesc;
+use crate::mr::MemoryRegionDesc;
 use crate::mr::MappedMemoryRegionKey;
 use crate::trigger::TriggeredContext;
 use crate::utils::check_error;
@@ -32,7 +32,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
     unsafe fn read_impl<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -57,7 +57,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
     unsafe fn readv_impl(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -113,7 +113,7 @@ pub trait ReadEp {
     unsafe fn read_from<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -131,7 +131,7 @@ pub trait ReadEp {
     unsafe fn read_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -140,7 +140,7 @@ pub trait ReadEp {
     unsafe fn read_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -158,7 +158,7 @@ pub trait ReadEp {
     unsafe fn readv_from(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -176,7 +176,7 @@ pub trait ReadEp {
     unsafe fn readv_from_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -185,7 +185,7 @@ pub trait ReadEp {
     unsafe fn readv_from_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -211,7 +211,7 @@ pub trait ConnectedReadEp {
     unsafe fn read<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
@@ -228,7 +228,7 @@ pub trait ConnectedReadEp {
     unsafe fn read_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -236,7 +236,7 @@ pub trait ConnectedReadEp {
     unsafe fn read_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -254,7 +254,7 @@ pub trait ConnectedReadEp {
     unsafe fn readv(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
@@ -271,7 +271,7 @@ pub trait ConnectedReadEp {
     unsafe fn readv_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -279,7 +279,7 @@ pub trait ConnectedReadEp {
     unsafe fn readv_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -305,7 +305,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn read_from<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -315,7 +315,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn read_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -333,7 +333,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn read_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -351,7 +351,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn readv_from(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -361,7 +361,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn readv_from_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -379,7 +379,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn readv_from_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -406,7 +406,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn read<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
@@ -416,7 +416,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn read_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -434,7 +434,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn read_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -452,7 +452,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn readv(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
@@ -462,7 +462,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn readv_with_context(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -480,7 +480,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn readv_triggered(
         &self,
         iov: &[crate::iovec::IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -515,7 +515,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
     unsafe fn write_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -566,7 +566,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
     unsafe fn writev_impl(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -592,7 +592,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
     unsafe fn writedata_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: u64,
@@ -676,7 +676,7 @@ pub trait WriteEp {
     unsafe fn write_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -694,7 +694,7 @@ pub trait WriteEp {
     unsafe fn write_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -713,7 +713,7 @@ pub trait WriteEp {
     unsafe fn write_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -759,7 +759,7 @@ pub trait WriteEp {
     unsafe fn writev_to(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -777,7 +777,7 @@ pub trait WriteEp {
     unsafe fn writev_to_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -796,7 +796,7 @@ pub trait WriteEp {
     unsafe fn writev_to_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -811,7 +811,7 @@ pub trait WriteEp {
     unsafe fn writedata_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
@@ -827,7 +827,7 @@ pub trait WriteEp {
     unsafe fn writedata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
@@ -844,7 +844,7 @@ pub trait WriteEp {
     unsafe fn writedata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
@@ -872,7 +872,7 @@ pub trait ConnectedWriteEp {
     unsafe fn write<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
@@ -889,7 +889,7 @@ pub trait ConnectedWriteEp {
     unsafe fn write_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -907,7 +907,7 @@ pub trait ConnectedWriteEp {
     unsafe fn write_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -950,7 +950,7 @@ pub trait ConnectedWriteEp {
     unsafe fn writev(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
@@ -967,7 +967,7 @@ pub trait ConnectedWriteEp {
     unsafe fn writev_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -985,7 +985,7 @@ pub trait ConnectedWriteEp {
     unsafe fn writev_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -999,7 +999,7 @@ pub trait ConnectedWriteEp {
     unsafe fn writedata<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1013,7 +1013,7 @@ pub trait ConnectedWriteEp {
     unsafe fn writedata_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1028,7 +1028,7 @@ pub trait ConnectedWriteEp {
     unsafe fn writedata_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1056,7 +1056,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn write_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1067,7 +1067,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn write_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1086,7 +1086,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn write_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1117,7 +1117,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn writev_to(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1128,7 +1128,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn writev_to_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1147,7 +1147,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn writev_to_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1167,7 +1167,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn writedata_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
@@ -1180,7 +1180,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn writedata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
@@ -1202,7 +1202,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     unsafe fn writedata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
         mem_addr: u64,
@@ -1247,7 +1247,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn write<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
@@ -1258,7 +1258,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn write_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -1277,7 +1277,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn write_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -1306,7 +1306,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn writev(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
@@ -1317,7 +1317,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn writev_with_context(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
@@ -1336,7 +1336,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn writev_triggered(
         &self,
         iov: &[crate::iovec::IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
@@ -1355,7 +1355,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn writedata<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1367,7 +1367,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn writedata_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
@@ -1388,7 +1388,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn writedata_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,

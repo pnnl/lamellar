@@ -25,7 +25,7 @@ use libfabric::iovec::Ioc;
 use libfabric::iovec::IocMut;
 use libfabric::iovec::RmaIoVec;
 use libfabric::iovec::RmaIoc;
-use libfabric::mr::BorrowedMemoryRegionDesc;
+use libfabric::mr::MemoryRegionDesc;
 use libfabric::mr::DisabledMemoryRegion;
 use libfabric::{
     async_::{
@@ -418,7 +418,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn tsend<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         tag: u64,
         data: Option<u64>,
         ctx: &mut Context,
@@ -488,7 +488,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn tsendv(
         &mut self,
         iov: &[IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         tag: u64,
         ctx: &mut Context,
     ) {
@@ -507,7 +507,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn trecvv(
         &mut self,
         iov: &[IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         tag: u64,
         ctx: &mut Context,
     ) {
@@ -533,7 +533,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn trecv<T>(
         &mut self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         tag: u64,
         ctx: &mut Context,
     ) {
@@ -599,7 +599,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn send<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         data: Option<u64>,
         ctx: &mut Context,
     ) {
@@ -659,7 +659,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn sendv(
         &mut self,
         iov: &[IoVec],
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         ctx: &mut Context,
     ) {
         async_std::task::block_on(async {
@@ -677,7 +677,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn recvv(
         &mut self,
         iov: &[IoVecMut],
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         ctx: &mut Context,
     ) {
         async_std::task::block_on(async {
@@ -695,7 +695,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn recv<T>(
         &mut self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         ctx: &mut Context,
     ) {
         async_std::task::block_on(async {
@@ -836,7 +836,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         buf: &[T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         data: Option<u64>,
         ctx: &mut Context,
     ) {
@@ -956,7 +956,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         buf: &mut [T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -997,7 +997,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         iov: &[IoVec],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1037,7 +1037,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         iov: &[IoVecMut],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         ctx: &mut Context,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1129,7 +1129,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         buf: &[T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         op: AtomicOp,
         ctx: &mut Context,
     ) {
@@ -1199,7 +1199,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         ioc: &[libfabric::iovec::Ioc<T>],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         op: AtomicOp,
         ctx: &mut Context,
     ) {
@@ -1259,8 +1259,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         buf: &[T],
         res: &mut [T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
-        res_desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
+        res_desc: Option<&MemoryRegionDesc>,
         op: FetchAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1304,8 +1304,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
         op: FetchAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1348,7 +1348,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         msg: &mut Either<MsgFetchAtomic<T>, MsgFetchAtomicConnected<T>>,
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
     ) {
         let opts = AtomicMsgOptions::new();
         async_std::task::block_on(async {
@@ -1377,9 +1377,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp: &[T],
         res: &mut [T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
-        comp_desc: Option<&BorrowedMemoryRegionDesc>,
-        res_desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
+        comp_desc: Option<&MemoryRegionDesc>,
+        res_desc: Option<&MemoryRegionDesc>,
         op: CompareAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1428,9 +1428,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp_ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
-        comp_desc: Option<&[BorrowedMemoryRegionDesc]>,
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
+        comp_desc: Option<&[MemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
         op: CompareAtomicOp,
         ctx: &mut Context,
     ) {
@@ -1478,8 +1478,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         msg: &mut Either<MsgCompareAtomic<T>, MsgCompareAtomicConnected<T>>,
         comp_ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        comp_desc: Option<&[BorrowedMemoryRegionDesc]>,
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        comp_desc: Option<&[MemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
     ) {
         let opts = AtomicMsgOptions::new();
         async_std::task::block_on(async {

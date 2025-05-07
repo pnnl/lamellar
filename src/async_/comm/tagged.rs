@@ -7,7 +7,7 @@ use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::ep::{Connected, Connectionless, EndpointImplBase};
 use crate::infocapsoptions::{RecvMod, SendMod, TagCap};
-use crate::mr::BorrowedMemoryRegionDesc;
+use crate::mr::MemoryRegionDesc;
 use crate::msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut};
 use crate::utils::Either;
 use crate::Context;
@@ -25,7 +25,7 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
     async fn trecv_async_impl<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ignore: Option<u64>,
@@ -42,7 +42,7 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
     async fn trecvv_async_impl<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ignore: Option<u64>,
@@ -95,7 +95,7 @@ pub trait AsyncTagRecvEp {
     fn trecv_from_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -105,7 +105,7 @@ pub trait AsyncTagRecvEp {
     fn trecvv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -123,7 +123,7 @@ pub trait ConnectedAsyncTagRecvEp {
     fn trecv_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         ctx: &mut Context,
@@ -132,7 +132,7 @@ pub trait ConnectedAsyncTagRecvEp {
     fn trecvv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         ctx: &mut Context,
@@ -160,7 +160,7 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
     async fn trecv_from_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -174,7 +174,7 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
     async fn trecvv_from_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         src_mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -199,7 +199,7 @@ impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
     async fn trecv_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         ctx: &mut Context,
@@ -212,7 +212,7 @@ impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
     async fn trecvv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         tag: u64,
         ignore: Option<u64>,
         ctx: &mut Context,
@@ -235,7 +235,7 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     async fn tsend_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ctx: &mut Context,
@@ -261,7 +261,7 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     async fn tsendv_async_impl<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ctx: &mut Context,
@@ -301,7 +301,7 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     async fn tsenddata_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
@@ -334,7 +334,7 @@ pub trait AsyncTagSendEp: TagSendEp {
     fn tsend_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ctx: &mut Context,
@@ -350,7 +350,7 @@ pub trait AsyncTagSendEp: TagSendEp {
     fn tsendv_to_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
         ctx: &mut Context,
@@ -365,7 +365,7 @@ pub trait AsyncTagSendEp: TagSendEp {
     fn tsenddata_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -385,7 +385,7 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
     fn tsend_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         tag: u64,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -399,7 +399,7 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
     fn tsendv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         tag: u64,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -412,7 +412,7 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
     fn tsenddata_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         ctx: &mut Context,
@@ -439,7 +439,7 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
     async fn tsend_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ctx: &mut Context,
@@ -462,7 +462,7 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
     async fn tsendv_to_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: &MappedAddress,
         tag: u64,
         ctx: &mut Context,
@@ -484,7 +484,7 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
     async fn tsenddata_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -512,7 +512,7 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     async fn tsend_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -528,7 +528,7 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     async fn tsendv_async<'a>(
         &self,
         iov: &[crate::iovec::IoVec<'a>],
-        desc: Option<&[BorrowedMemoryRegionDesc<'_>]>,
+        desc: Option<&[MemoryRegionDesc<'_>]>,
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -548,7 +548,7 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     async fn tsenddata_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         ctx: &mut Context,

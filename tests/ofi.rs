@@ -27,7 +27,7 @@ use libfabric::{
     },
     iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoVec, RmaIoc},
     mr::{
-        BorrowedMemoryRegionDesc, DisabledMemoryRegion, MappedMemoryRegionKey,
+        MemoryRegionDesc, DisabledMemoryRegion, MappedMemoryRegionKey,
         MemoryRegion, MemoryRegionBuilder, MemoryRegionKey,
     },
     msg::{
@@ -447,7 +447,7 @@ impl<I: TagDefaultCap> Ofi<I> {
     pub fn tsend<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         tag: u64,
         data: Option<u64>,
     ) {
@@ -509,7 +509,7 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn tsendv(&mut self, iov: &[IoVec], desc: Option<&[BorrowedMemoryRegionDesc]>, tag: u64) {
+    pub fn tsendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, tag: u64) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -531,7 +531,7 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn trecvv(&mut self, iov: &[IoVecMut], desc: Option<&[BorrowedMemoryRegionDesc]>, tag: u64) {
+    pub fn trecvv(&mut self, iov: &[IoVecMut], desc: Option<&[MemoryRegionDesc]>, tag: u64) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -553,7 +553,7 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn trecv<T>(&mut self, buf: &mut [T], desc: Option<&BorrowedMemoryRegionDesc>, tag: u64) {
+    pub fn trecv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>, tag: u64) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -634,7 +634,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn send<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: Option<u64>,
     ) {
         loop {
@@ -692,7 +692,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn send_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&BorrowedMemoryRegionDesc<'_>>,
+        desc: Option<&MemoryRegionDesc<'_>>,
         data: Option<u64>,
         context: &mut Context,
     ) {
@@ -754,7 +754,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         }
     }
 
-    pub fn sendv(&mut self, iov: &[IoVec], desc: Option<&[BorrowedMemoryRegionDesc]>) {
+    pub fn sendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -776,7 +776,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         }
     }
 
-    pub fn recvv(&mut self, iov: &[IoVecMut], desc: Option<&[BorrowedMemoryRegionDesc]>) {
+    pub fn recvv(&mut self, iov: &[IoVecMut], desc: Option<&[MemoryRegionDesc]>) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -798,7 +798,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         }
     }
 
-    pub fn recv<T>(&mut self, buf: &mut [T], desc: Option<&BorrowedMemoryRegionDesc>) {
+    pub fn recv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>) {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -960,7 +960,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         &mut self,
         buf: &[T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         data: Option<u64>,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1071,7 +1071,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn read<T>(&mut self, buf: &mut [T], dest_addr: u64, desc: Option<&BorrowedMemoryRegionDesc>) {
+    pub fn read<T>(&mut self, buf: &mut [T], dest_addr: u64, desc: Option<&MemoryRegionDesc>) {
         let (start, _end) = self.remote_mem_addr.unwrap();
 
         loop {
@@ -1108,7 +1108,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn writev(&mut self, iov: &[IoVec], dest_addr: u64, desc: Option<&[BorrowedMemoryRegionDesc]>) {
+    pub fn writev(&mut self, iov: &[IoVec], dest_addr: u64, desc: Option<&[MemoryRegionDesc]>) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
             let err = match &self.ep {
@@ -1144,7 +1144,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn readv(&mut self, iov: &[IoVecMut], dest_addr: u64, desc: Option<&[BorrowedMemoryRegionDesc]>) {
+    pub fn readv(&mut self, iov: &[IoVecMut], dest_addr: u64, desc: Option<&[MemoryRegionDesc]>) {
         let (start, _end) = self.remote_mem_addr.unwrap();
         loop {
             let err = match &self.ep {
@@ -1240,7 +1240,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         buf: &[T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
         op: AtomicOp,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1311,7 +1311,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         ioc: &[libfabric::iovec::Ioc<T>],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
         op: AtomicOp,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1386,8 +1386,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         buf: &[T],
         res: &mut [T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
-        res_desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
+        res_desc: Option<&MemoryRegionDesc>,
         op: FetchAtomicOp,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1436,8 +1436,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
         op: FetchAtomicOp,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1485,7 +1485,7 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &mut self,
         msg: &Either<MsgFetchAtomic<T>, MsgFetchAtomicConnected<T>>,
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
     ) {
         let opts = AtomicMsgOptions::new();
         loop {
@@ -1523,9 +1523,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp: &[T],
         res: &mut [T],
         dest_addr: u64,
-        desc: Option<&BorrowedMemoryRegionDesc>,
-        comp_desc: Option<&BorrowedMemoryRegionDesc>,
-        res_desc: Option<&BorrowedMemoryRegionDesc>,
+        desc: Option<&MemoryRegionDesc>,
+        comp_desc: Option<&MemoryRegionDesc>,
+        res_desc: Option<&MemoryRegionDesc>,
         op: CompareAtomicOp,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1579,9 +1579,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         comp_ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
         dest_addr: u64,
-        desc: Option<&[BorrowedMemoryRegionDesc]>,
-        comp_desc: Option<&[BorrowedMemoryRegionDesc]>,
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        desc: Option<&[MemoryRegionDesc]>,
+        comp_desc: Option<&[MemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
         op: CompareAtomicOp,
     ) {
         let (start, _end) = self.remote_mem_addr.unwrap();
@@ -1634,8 +1634,8 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         msg: &Either<MsgCompareAtomic<T>, MsgCompareAtomicConnected<T>>,
         comp_ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        comp_desc: Option<&[BorrowedMemoryRegionDesc]>,
-        res_desc: Option<&[BorrowedMemoryRegionDesc]>,
+        comp_desc: Option<&[MemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
     ) {
         let opts = AtomicMsgOptions::new();
         loop {

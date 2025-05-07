@@ -327,15 +327,16 @@ impl<'a> Future for AsyncTransferCq<'a> {
                     }
                 }
             } else if mut_self.waiting {
-                let ret = mut_self.fut.cq.read(0);
-                match ret {
-                    Err(error) => {
-                        if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                            panic!("Other error");
-                        }
-                    }
-                    Ok(_) => {}
-                }
+                // TODO: Reconsider if we should poll the cq here
+                // let ret = mut_self.fut.cq.read(0);
+                // match ret {
+                //     Err(error) => {
+                //         if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+                //             panic!("Other error");
+                //         }
+                //     }
+                //     Ok(_) => {}
+                // }
 
                 // async_std::task::yield_now();
                 cx.waker().wake_by_ref();
@@ -399,14 +400,14 @@ impl<'a> Future for AsyncTransferCq<'a> {
 
             // println!("Can read");
             let mut found = None;
-            let mut ctx_val = 0;
-            let mut ctx_addr = 0usize;
+            // let mut ctx_val = 0;
+            // let mut ctx_addr = 0usize;
             match &mut_self.fut.buf {
                 Completion::Unspec(entries) => {
                     for e in entries {
                         if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            ctx_val = mut_self.ctx.0.id();
-                            ctx_addr = mut_self.ctx.inner() as usize;
+                            // ctx_val = mut_self.ctx.0.id();
+                            // ctx_addr = mut_self.ctx.inner() as usize;
                             found = Some(SingleCompletion::Unspec(e.clone()));
                         } else {
                             mut_self
@@ -422,8 +423,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Unspec(e.clone())))
                                 }
                                 ContextType::Context2(_) => {
@@ -433,8 +434,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Unspec(e.clone())))
                                 }
                             }
@@ -444,8 +445,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Ctx(entries) => {
                     for e in entries {
                         if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            ctx_val = mut_self.ctx.0.id();
-                            ctx_addr = e.c_entry.op_context as usize;
+                            // ctx_val = mut_self.ctx.0.id();
+                            // ctx_addr = e.c_entry.op_context as usize;
                             found = Some(SingleCompletion::Ctx(e.clone()));
                         } else {
                             mut_self
@@ -461,8 +462,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Ctx(e.clone())))
                                 }
                                 ContextType::Context2(_) => {
@@ -472,8 +473,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Ctx(e.clone())))
                                 }
                             }
@@ -483,8 +484,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Msg(entries) => {
                     for e in entries {
                         if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            ctx_val = mut_self.ctx.0.id();
-                            ctx_addr = e.c_entry.op_context as usize;
+                            // ctx_val = mut_self.ctx.0.id();
+                            // ctx_addr = e.c_entry.op_context as usize;
                             found = Some(SingleCompletion::Msg(e.clone()));
                         } else {
                             mut_self
@@ -500,8 +501,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Msg(e.clone())))
                                 }
                                 ContextType::Context2(_) => {
@@ -511,8 +512,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Msg(e.clone())))
                                 }
                             }
@@ -522,8 +523,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Data(entries) => {
                     for e in entries {
                         if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            ctx_val = mut_self.ctx.0.id();
-                            ctx_addr = e.c_entry.op_context as usize;
+                            // ctx_val = mut_self.ctx.0.id();
+                            // ctx_addr = e.c_entry.op_context as usize;
                             found = Some(SingleCompletion::Data(e.clone()));
                         } else {
                             mut_self
@@ -539,8 +540,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Data(e.clone())))
                                 }
                                 ContextType::Context2(_) => {
@@ -550,8 +551,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Data(e.clone())))
                                 }
                             }
@@ -561,8 +562,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                 Completion::Tagged(entries) => {
                     for e in entries {
                         if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            ctx_val = mut_self.ctx.0.id();
-                            ctx_addr = e.c_entry.op_context as usize;
+                            // ctx_val = mut_self.ctx.0.id();
+                            // ctx_addr = e.c_entry.op_context as usize;
                             found = Some(SingleCompletion::Tagged(e.clone()));
                         } else {
                             mut_self
@@ -578,8 +579,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Tagged(e.clone())))
                                 }
                                 ContextType::Context2(_) => {
@@ -589,8 +590,8 @@ impl<'a> Future for AsyncTransferCq<'a> {
                                             .as_mut()
                                             .unwrap()
                                     };
-                                    ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    ctx_val = ctx.id;
+                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
+                                    // ctx_val = ctx.id;
                                     ctx.set_completion_done(Ok(SingleCompletion::Tagged(e.clone())))
                                 }
                             }
@@ -755,25 +756,42 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
         let mut_self = self.get_mut();
         // let mut first = true;
         loop {
-            let mut cannot_block = false;
+            // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
+            // let mut blocked = mut_self.cq.base.get_ref().block.write();
+            // if *blocked != 0 {
+            //     println!("BLOCKED {}", *blocked);
+            //     assert!(*blocked == 0);
+            // }
             // println!("About to block in CQ");
-            let (err, _guard) = if mut_self.cq.trywait().is_err() {
+
+            // TODO: Reenable blocking on the file descriptor becoming readable
+            // Note that we probably need to make sure no one polls the cq before we
+            // actually create the future
+            let can_wait = mut_self.cq.trywait();
+            let (err, _guard) = if true || can_wait.is_err() {
                 // println!("Cannot block");
-                cannot_block = true;
-                (
+                let to_ret = (
                     mut_self.cq.read_in(mut_self.num_entries, &mut mut_self.buf),
                     None,
-                )
+                );
+                to_ret
             } else {
+                // TODO: Do we need to skip calling readable if we were awaken?
+                // Does being awaken means that readable has returned true?
                 if mut_self.fut.is_none() {
+                    // println!("Can wait in CQ {}", can_wait.is_ok());
+                    // mut_self.cq.trywait().unwrap();
                     mut_self.fut = Some(Box::pin(mut_self.cq.base.readable()))
                 }
                 #[allow(clippy::let_unit_value)]
+                // drop(blocked);
                 let _guard = ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
 
                 #[allow(clippy::let_underscore_future)]
                 let _ = mut_self.fut.take().unwrap();
                 // println!("Did not block");
+                // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
+
                 (mut_self.cq.read_in(1, &mut mut_self.buf), Some(_guard))
             };
             match err {
@@ -797,12 +815,8 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                                 guard.clear_ready()
                             }
                         }
-                        if cannot_block {
-                            cx.waker().wake_by_ref();
-                            return std::task::Poll::Pending;
-                        } else {
-                            continue;
-                        }
+                        cx.waker().wake_by_ref();
+                        return std::task::Poll::Pending;
                     }
                 }
                 Ok(len) => {
