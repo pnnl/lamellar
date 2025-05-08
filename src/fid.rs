@@ -812,3 +812,22 @@ impl AsRawFid for PollRawFid {
 pub(crate) type OwnedPollFid = OwnedTypedFid<PollRawFid>;
 #[cfg(feature = "threading-domain")]
 pub(crate) type OwnedPollFid = DomainOwnedTypedFid<PollRawFid>;
+
+
+pub(crate) type ProfileRawFid = *mut libfabric_sys::fid_profile;
+impl AsRawTypedFid for ProfileRawFid {
+    type Output = ProfileRawFid;
+
+    #[inline]
+    fn as_raw_typed_fid(&self) -> Self::Output {
+        *self
+    }
+}
+impl AsRawFid for ProfileRawFid {
+    #[inline]
+    fn as_raw_fid(&self) -> RawFid {
+        unsafe { &mut (**self).fid }
+    }
+}
+
+pub(crate) type OwnedProfileFid = OwnedTypedFid<ProfileRawFid>;

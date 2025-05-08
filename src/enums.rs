@@ -1,6 +1,6 @@
 use std::os::fd::BorrowedFd;
 
-use libfabric_sys::{FI_RECV, FI_TRANSMIT};
+use libfabric_sys::{fi_profile_type, FI_RECV, FI_TRANSMIT};
 
 macro_rules! gen_enum {
     ($name: ident, $type_: ty, $(($var: ident, $val: path)),*) => {
@@ -90,6 +90,8 @@ gen_enum!(
     (Noop, libfabric_sys::fi_op_FI_NOOP)
 );
 
+
+
 pub trait AtomicOperation {
     fn as_raw(&self) -> u32;
 }
@@ -143,6 +145,72 @@ gen_enum!(
     (Data, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_DATA),
     (Tagged, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_TAGGED)
 );
+
+gen_enum!(
+    DataType,
+    libfabric_sys::fi_datatype,
+    (Int8, libfabric_sys::fi_datatype_FI_INT8),
+    (Uint8, libfabric_sys::fi_datatype_FI_UINT8),
+    (Int16, libfabric_sys::fi_datatype_FI_INT16),
+    (Uint16, libfabric_sys::fi_datatype_FI_UINT16),
+    (Int32, libfabric_sys::fi_datatype_FI_INT32),
+    (Uint32, libfabric_sys::fi_datatype_FI_UINT32),
+    (Int64, libfabric_sys::fi_datatype_FI_INT64),
+    (Uint64, libfabric_sys::fi_datatype_FI_UINT64),
+    (Float, libfabric_sys::fi_datatype_FI_FLOAT),
+    (Double, libfabric_sys::fi_datatype_FI_DOUBLE),
+    (FloatComplex, libfabric_sys::fi_datatype_FI_FLOAT_COMPLEX),
+    (DoubleComplex, libfabric_sys::fi_datatype_FI_DOUBLE_COMPLEX),
+    (LongDouble, libfabric_sys::fi_datatype_FI_LONG_DOUBLE),
+    (LongDoubleComplex, libfabric_sys::fi_datatype_FI_LONG_DOUBLE_COMPLEX),
+    (DatatypeLast, libfabric_sys::fi_datatype_FI_DATATYPE_LAST),
+    (Int128, libfabric_sys::fi_datatype_FI_INT128),
+    (Uint28, libfabric_sys::fi_datatype_FI_UINT128),
+    (Void, libfabric_sys::fi_datatype_FI_VOID)
+);
+gen_enum!(
+    Type,
+    libfabric_sys::fi_type,
+    (Info, libfabric_sys::fi_type_FI_TYPE_INFO),
+    (EpType, libfabric_sys::fi_type_FI_TYPE_EP_TYPE),
+    (Caps, libfabric_sys::fi_type_FI_TYPE_CAPS),
+    (OpFlags, libfabric_sys::fi_type_FI_TYPE_OP_FLAGS),
+    (AddrFormat, libfabric_sys::fi_type_FI_TYPE_ADDR_FORMAT),
+    (TxAttr, libfabric_sys::fi_type_FI_TYPE_TX_ATTR),
+    (RxAttr, libfabric_sys::fi_type_FI_TYPE_RX_ATTR),
+    (EpAttr, libfabric_sys::fi_type_FI_TYPE_EP_ATTR),
+    (DomainAttr, libfabric_sys::fi_type_FI_TYPE_DOMAIN_ATTR),
+    (FabricAttr, libfabric_sys::fi_type_FI_TYPE_FABRIC_ATTR),
+    (Threading, libfabric_sys::fi_type_FI_TYPE_THREADING),
+    (Progress, libfabric_sys::fi_type_FI_TYPE_PROGRESS),
+    (Protocol, libfabric_sys::fi_type_FI_TYPE_PROTOCOL),
+    (MsgOrder, libfabric_sys::fi_type_FI_TYPE_MSG_ORDER),
+    (Mode, libfabric_sys::fi_type_FI_TYPE_MODE),
+    (AvType, libfabric_sys::fi_type_FI_TYPE_AV_TYPE),
+    (AtomicType, libfabric_sys::fi_type_FI_TYPE_ATOMIC_TYPE),
+    (AtomicOp, libfabric_sys::fi_type_FI_TYPE_ATOMIC_OP),
+    (Version, libfabric_sys::fi_type_FI_TYPE_VERSION),
+    (EqEvent, libfabric_sys::fi_type_FI_TYPE_EQ_EVENT),
+    (CqEventFlags, libfabric_sys::fi_type_FI_TYPE_CQ_EVENT_FLAGS),
+    (MrMode, libfabric_sys::fi_type_FI_TYPE_MR_MODE),
+    (OpType, libfabric_sys::fi_type_FI_TYPE_OP_TYPE),
+    (Fid, libfabric_sys::fi_type_FI_TYPE_FID),
+    (CollectiveOp, libfabric_sys::fi_type_FI_TYPE_COLLECTIVE_OP),
+    (HmemIface, libfabric_sys::fi_type_FI_TYPE_HMEM_IFACE),
+    (CqFormat, libfabric_sys::fi_type_FI_TYPE_CQ_FORMAT),
+    (LogLevel, libfabric_sys::fi_type_FI_TYPE_LOG_LEVEL),
+    (LogSubsys, libfabric_sys::fi_type_FI_TYPE_LOG_SUBSYS),
+    (AvAttr, libfabric_sys::fi_type_FI_TYPE_AV_ATTR),
+    (CqAttr, libfabric_sys::fi_type_FI_TYPE_CQ_ATTR),
+    (MrAttr, libfabric_sys::fi_type_FI_TYPE_MR_ATTR),
+    (CntrAttr, libfabric_sys::fi_type_FI_TYPE_CNTR_ATTR),
+    (CqErrEntry, libfabric_sys::fi_type_FI_TYPE_CQ_ERR_ENTRY)
+);
+
+pub enum ProfileDataType {
+    Primitive(DataType),
+    Defined(Type),
+}
 
 #[derive(Copy, Clone)]
 pub enum WaitObj<'a> {

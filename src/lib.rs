@@ -64,6 +64,7 @@ pub mod sync;
 pub mod trigger;
 mod utils;
 pub mod xcontext;
+pub mod profile;
 
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
