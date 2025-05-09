@@ -1782,7 +1782,6 @@ fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
         name
     );
 
-    println!("IS LOCAL = {}", info.info_entry.domain_attr().mr_mode().is_local());
     info
 }
 

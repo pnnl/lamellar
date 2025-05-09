@@ -4,10 +4,12 @@ use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::TaggedRecvMsgOptions;
 use crate::enums::TaggedSendMsgOptions;
+use crate::ep::ActiveEndpoint;
 use crate::ep::Connected;
 use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
+use crate::ep::EpState;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::fid::AsTypedFid;
@@ -1133,7 +1135,7 @@ impl<EP: TagCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagSendEpIm
 impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E, Connected> {}
 impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextImplBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> TagRecvEpImpl for RxContextBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> TagRecvEpImpl for RxContextImplBase<CQ> {}
+impl<EP: ActiveEndpoint + TagSendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + TagSendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextImplBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + TagRecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagRecvEpImpl for RxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + TagRecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagRecvEpImpl for RxContextImplBase<EP, STATE, CQ> {}

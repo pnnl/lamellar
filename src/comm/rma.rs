@@ -3,10 +3,12 @@ use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::ReadMsgOptions;
 use crate::enums::WriteMsgOptions;
+use crate::ep::ActiveEndpoint;
 use crate::ep::Connected;
 use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
+use crate::ep::EpState;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::fid::AsTypedFid;
@@ -1433,10 +1435,10 @@ impl<EP: RmaCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> WriteEpImp
 impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<CQ: ?Sized + ReadCq> WriteEpImpl for TxContextBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> WriteEpImpl for TxContextImplBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> ReadEpImpl for RxContextBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> ReadEpImpl for RxContextImplBase<CQ> {}
+impl<EP: ActiveEndpoint + WriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> WriteEpImpl for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + WriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> WriteEpImpl for TxContextImplBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + ReadEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> ReadEpImpl for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + ReadEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> ReadEpImpl for TxContextImplBase<EP, STATE, CQ> {}
 
 pub trait ReadWriteEp: ReadEp + WriteEp {}
 impl<EP: ReadEp + WriteEp> ReadWriteEp for EP {}

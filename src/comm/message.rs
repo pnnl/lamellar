@@ -3,7 +3,7 @@ use crate::{
     connless_ep::ConnlessEp,
     cq::ReadCq,
     enums::{RecvMsgOptions, SendMsgOptions},
-    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase},
+    ep::{ActiveEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
     eq::ReadEq,
     fid::{AsRawTypedFid, AsTypedFid, EpRawFid},
     infocapsoptions::{MsgCap, RecvMod, SendMod},
@@ -971,7 +971,9 @@ impl<EP: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SendEpImpl
 impl<E: SendEpImpl> SendEpImpl for EndpointBase<E, Connected> {}
 impl<E: SendEpImpl> SendEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<CQ: ?Sized + ReadCq> SendEpImpl for TxContextBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> SendEpImpl for TxContextImplBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> RecvEpImpl for RxContextBase<CQ> {}
-impl<CQ: ?Sized + ReadCq> RecvEpImpl for RxContextImplBase<CQ> {}
+
+
+impl<EP: ActiveEndpoint + SendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> SendEpImpl for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + SendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> SendEpImpl for TxContextImplBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + RecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> RecvEpImpl for RxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + RecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> RecvEpImpl for RxContextImplBase<EP, STATE, CQ> {}

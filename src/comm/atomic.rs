@@ -4,10 +4,12 @@ use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
 use crate::enums::AtomicFetchMsgOptions;
 use crate::enums::AtomicMsgOptions;
+use crate::ep::ActiveEndpoint;
 use crate::ep::Connected;
 use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
+use crate::ep::EpState;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::fid::AsTypedFid;
@@ -1944,14 +1946,20 @@ impl<EP: AtomicCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicValidEp
 {
 }
 
-impl<CQ: ReadCq> AtomicWriteEpImpl for TxContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicWriteEpImpl for TxContextImplBase<CQ> {}
-impl<CQ: ReadCq> AtomicFetchEpImpl for RxContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicFetchEpImpl for RxContextImplBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for TxContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for TxContextImplBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for RxContextBase<CQ> {}
-impl<CQ: ReadCq> AtomicValidEp for RxContextImplBase<CQ> {}
+
+
+impl<EP: ActiveEndpoint + AtomicWriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicWriteEpImpl for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicWriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicWriteEpImpl for TxContextImplBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicFetchEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicFetchEpImpl for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicFetchEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicFetchEpImpl for TxContextImplBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicCASImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicCASImpl for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicCASImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicCASImpl for TxContextImplBase<EP, STATE, CQ> {}
+
+impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for TxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for TxContextImplBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for RxContextBase<EP, STATE, CQ> {}
+impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for RxContextImplBase<EP, STATE, CQ> {}
+
 
 pub struct AtomicAttr {
     pub(crate) c_attr: libfabric_sys::fi_atomic_attr,

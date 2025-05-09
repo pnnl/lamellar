@@ -1,15 +1,14 @@
 use crate::async_::ep::{AsyncRxEp, AsyncTxEp};
-use crate::async_::xcontext::{
-    ReceiveContext, ReceiveContextImpl, TransmitContext, TransmitContextImpl,
-};
+use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 use crate::comm::tagged::{ConnectedTagSendEp, TagRecvEpImpl, TagSendEp, TagSendEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{Connected, Connectionless, EndpointImplBase};
+use crate::ep::{ActiveEndpoint, Connected, Connectionless, EndpointImplBase, EpState};
 use crate::infocapsoptions::{RecvMod, SendMod, TagCap};
 use crate::mr::MemoryRegionDesc;
 use crate::msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut};
 use crate::utils::Either;
+use crate::xcontext::{TxContextBase, TxContextImplBase};
 use crate::Context;
 use crate::{
     async_::{cq::AsyncReadCq, eq::AsyncReadEq},
@@ -194,7 +193,7 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
     }
 }
 
-impl<EP: AsyncTagRecvEpImpl> ConnectedAsyncTagRecvEp for EP {
+impl<EP: AsyncTagRecvEpImpl + ConnectedEp> ConnectedAsyncTagRecvEp for EP {
     #[inline]
     async fn trecv_async<T>(
         &self,
@@ -568,7 +567,7 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     }
 }
 
-impl AsyncTagSendEpImpl for TransmitContext {}
-impl AsyncTagSendEpImpl for TransmitContextImpl {}
-impl AsyncTagRecvEpImpl for ReceiveContext {}
-impl AsyncTagRecvEpImpl for ReceiveContextImpl {}
+impl<EP: ActiveEndpoint + AsyncTagSendEpImpl, STATE: EpState> AsyncTagSendEpImpl for TxContext<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncTagSendEpImpl, STATE: EpState> AsyncTagSendEpImpl for TxContextImpl<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncTagRecvEpImpl, STATE: EpState> AsyncTagRecvEpImpl for RxContext<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncTagRecvEpImpl, STATE: EpState> AsyncTagRecvEpImpl for RxContextImpl<EP, STATE> {}

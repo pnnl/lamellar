@@ -1,8 +1,9 @@
 use crate::async_::ep::AsyncTxEp;
+use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 use crate::comm::rma::{ConnectedWriteEp, ReadEpImpl, WriteEp, WriteEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{Connected, Connectionless, EndpointImplBase};
+use crate::ep::{ActiveEndpoint, Connected, Connectionless, EndpointImplBase, EpState};
 use crate::infocapsoptions::RmaCap;
 use crate::mr::MemoryRegionDesc;
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};
@@ -841,7 +842,8 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
 pub trait AsyncReadWriteEp: AsyncReadEp + AsyncWriteEp {}
 impl<EP: AsyncReadEp + AsyncWriteEp> AsyncReadWriteEp for EP {}
 
-// impl AsyncWriteEpImpl for TransmitContext {}
-// impl AsyncWriteEpImpl for TransmitContextImpl {}
-// impl AsyncReadEpImpl for ReceiveContext {}
-// impl AsyncReadEpImpl for ReceiveContextImpl {}
+
+impl<EP: ActiveEndpoint + AsyncWriteEpImpl, STATE: EpState> AsyncWriteEpImpl for TxContext<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncWriteEpImpl, STATE: EpState> AsyncWriteEpImpl for TxContextImpl<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncReadEpImpl, STATE: EpState> AsyncReadEpImpl for TxContext<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncReadEpImpl, STATE: EpState> AsyncReadEpImpl for TxContextImpl<EP, STATE> {}

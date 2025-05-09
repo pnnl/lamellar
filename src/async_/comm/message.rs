@@ -1,13 +1,11 @@
 use crate::async_::ep::{AsyncRxEp, AsyncTxEp};
-use crate::async_::xcontext::{
-    ReceiveContext, ReceiveContextImpl, TransmitContext, TransmitContextImpl,
-};
+use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 use crate::comm::message::{
     ConnectedRecvEp, ConnectedSendEp, RecvEp, RecvEpImpl, SendEp, SendEpImpl,
 };
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{Connected, Connectionless, EndpointImplBase};
+use crate::ep::{ActiveEndpoint, Connected, Connectionless, EndpointImplBase, EpState};
 use crate::infocapsoptions::{MsgCap, RecvMod, SendMod};
 use crate::mr::MemoryRegionDesc;
 use crate::utils::Either;
@@ -497,7 +495,7 @@ impl<EP: MsgCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connectionless> {}
 
-impl AsyncSendEpImpl for TransmitContext {}
-impl AsyncSendEpImpl for TransmitContextImpl {}
-impl AsyncRecvEpImpl for ReceiveContext {}
-impl AsyncRecvEpImpl for ReceiveContextImpl {}
+impl<EP: ActiveEndpoint + AsyncSendEpImpl, STATE: EpState> AsyncSendEpImpl for TxContext<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncSendEpImpl, STATE: EpState> AsyncSendEpImpl for TxContextImpl<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncRecvEpImpl, STATE: EpState> AsyncRecvEpImpl for RxContext<EP, STATE> {}
+impl<EP: ActiveEndpoint + AsyncRecvEpImpl, STATE: EpState> AsyncRecvEpImpl for RxContextImpl<EP, STATE> {}

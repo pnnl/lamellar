@@ -4,22 +4,23 @@ use super::{
 };
 use crate::{
     cntr::{Counter, ReadCntr},
-    ep::EpState,
+    ep::{ActiveEndpoint, EpState},
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid},
     xcontext::{
-        Receive, ReceiveContextBuilder, Transmit, TxContextBuilder, XContextBase, XContextBaseImpl,
+        Receive, RxContextBase, RxContextBuilder, Transmit, TxContextBase, TxContextBuilder, XContextBase, XContextBaseImpl
     },
     MyRc,
 };
+pub type TxContext<EP, STATE> = TxContextBase<EP, STATE, dyn AsyncReadCq>;
 
-pub type TransmitContext = XContextBase<Transmit, dyn AsyncReadCq>;
-pub(crate) type TransmitContextImpl = XContextBaseImpl<Transmit, dyn AsyncReadCq>;
-impl TransmitContextImpl {
-    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq {
+pub(crate) type TxContextImpl<EP, STATE> = XContextBaseImpl<Transmit, EP, STATE, dyn AsyncReadCq>;
+
+impl<EP: ActiveEndpoint, STATE: EpState> TxContextImpl<EP, STATE> {
+    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq<EP, STATE> {
         TxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr {
+    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr<EP, STATE> {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -42,41 +43,41 @@ impl TransmitContextImpl {
             ))
         } else {
             if self.cq.set(res.clone()).is_err() {
-                panic!("TransmitContext already bound to a CompletionQueueu");
+                panic!("TxContext already bound to a CompletionQueueu");
             }
             Ok(())
         }
     }
 }
 
-impl AsyncTxEp for TransmitContext {
+impl<EP: ActiveEndpoint, STATE: EpState> AsyncTxEp for TxContext<EP, STATE> {
     fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
-        self.inner.retrieve_tx_cq()
+        self.inner.inner.retrieve_tx_cq()
     }
 }
 
-impl AsyncTxEp for TransmitContextImpl {
+impl<EP: ActiveEndpoint, STATE: EpState> AsyncTxEp for TxContextImpl<EP, STATE> {
     fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
         self.cq.get().unwrap()
     }
 }
 
-impl TransmitContext {
-    pub fn bind_cq(&self) -> TxIncompleteBindCq {
-        self.inner.bind_cq()
+impl<EP: ActiveEndpoint, STATE: EpState> TxContext<EP, STATE> {
+    pub fn bind_cq(&self) -> TxIncompleteBindCq<EP, STATE> {
+        self.inner.inner.bind_cq()
     }
 
-    pub fn bind_cntr(&self) -> TxIncompleteBindCntr {
-        self.inner.bind_cntr()
+    pub fn bind_cntr(&self) -> TxIncompleteBindCntr<EP, STATE> {
+        self.inner.inner.bind_cntr()
     }
 }
 
-pub struct TxIncompleteBindCq<'a> {
-    pub(crate) ep: &'a TransmitContextImpl,
+pub struct TxIncompleteBindCq<'a, EP: ActiveEndpoint, STATE: EpState> {
+    pub(crate) ep: &'a TxContextImpl<EP, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> TxIncompleteBindCq<'a> {
+impl<'a, EP: ActiveEndpoint, STATE: EpState> TxIncompleteBindCq<'a, EP, STATE> {
     pub fn transmit(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |=
@@ -98,12 +99,12 @@ impl<'a> TxIncompleteBindCq<'a> {
     }
 }
 
-pub struct TxIncompleteBindCntr<'a> {
-    pub(crate) ep: &'a TransmitContextImpl,
+pub struct TxIncompleteBindCntr<'a, EP: ActiveEndpoint, STATE: EpState> {
+    pub(crate) ep: &'a TxContextImpl<EP, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> TxIncompleteBindCntr<'a> {
+impl<'a, EP: ActiveEndpoint, STATE: EpState> TxIncompleteBindCntr<'a, EP, STATE> {
     pub fn remote_write(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_REMOTE_WRITE as u64;
 
@@ -130,15 +131,15 @@ impl<'a> TxIncompleteBindCntr<'a> {
     }
 }
 
-pub type ReceiveContext = XContextBase<Receive, dyn AsyncReadCq>;
-pub(crate) type ReceiveContextImpl = XContextBaseImpl<Receive, dyn AsyncReadCq>;
+pub type RxContext<EP, STATE> = RxContextBase<EP, STATE, dyn AsyncReadCq>;
+pub(crate) type RxContextImpl<EP, STATE> = XContextBaseImpl<Receive, EP, STATE, dyn AsyncReadCq>;
 
-impl ReceiveContextImpl {
-    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq {
+impl<EP: ActiveEndpoint, STATE: EpState> RxContextImpl<EP, STATE> {
+    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq<EP, STATE> {
         RxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr {
+    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr<EP, STATE> {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -161,55 +162,55 @@ impl ReceiveContextImpl {
             ))
         } else {
             if self.cq.set(res.clone()).is_err() {
-                panic!("TransmitContext already bound to a CompletionQueueu");
+                panic!("TxContext already bound to a CompletionQueueu");
             }
             Ok(())
         }
     }
 }
 
-impl ReceiveContext {
-    pub fn bind_cq(&self) -> RxIncompleteBindCq {
-        self.inner.bind_cq()
+impl<EP: ActiveEndpoint, STATE: EpState> RxContext<EP, STATE> {
+    pub fn bind_cq(&self) -> RxIncompleteBindCq<EP, STATE> {
+        self.inner.inner.bind_cq()
     }
 
-    pub fn bind_cntr(&self) -> RxIncompleteBindCntr {
-        self.inner.bind_cntr()
+    pub fn bind_cntr(&self) -> RxIncompleteBindCntr<EP, STATE> {
+        self.inner.inner.bind_cntr()
     }
 }
 
-impl AsyncRxEp for ReceiveContext {
+impl<EP: ActiveEndpoint, STATE: EpState> AsyncRxEp for RxContext<EP, STATE> {
     fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
-        self.inner.retrieve_rx_cq()
+        self.inner.inner.retrieve_rx_cq()
     }
 }
 
-impl AsyncRxEp for ReceiveContextImpl {
+impl<EP: ActiveEndpoint, STATE: EpState> AsyncRxEp for RxContextImpl<EP, STATE> {
     fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
         self.cq.get().unwrap()
     }
 }
 
-impl<'a, E: 'static, STATE: EpState> ReceiveContextBuilder<'a, E, STATE> {
-    pub fn build_async(self) -> Result<ReceiveContext, crate::error::Error> {
-        ReceiveContext::new(self.ep.inner.clone(), self.index, self.rx_attr, self.ctx)
+impl<'a, EP: ActiveEndpoint + AsyncRxEp, STATE: EpState> RxContextBuilder<'a, EP, STATE> {
+    pub fn build_async(self) -> Result<RxContext<EP, STATE>, crate::error::Error> {
+        RxContext::new(self.ep.inner.clone(), self.index, self.rx_attr, self.ctx)
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
-    TxContextBuilder<'a, E, STATE>
+impl<'a, EP: ActiveEndpoint + AsyncTxEp, STATE: EpState>
+    TxContextBuilder<'a, EP, STATE>
 {
-    pub fn build_async(self) -> Result<TransmitContext, crate::error::Error> {
-        TransmitContext::new(self.ep.inner.clone(), self.index, self.tx_attr, self.ctx)
+    pub fn build_async(self) -> Result<TxContext<EP, STATE>, crate::error::Error> {
+        TxContext::new(self.ep.inner.clone(), self.index, self.tx_attr, self.ctx)
     }
 }
 
-pub struct RxIncompleteBindCq<'a> {
-    pub(crate) ep: &'a ReceiveContextImpl,
+pub struct RxIncompleteBindCq<'a, EP: ActiveEndpoint, STATE: EpState> {
+    pub(crate) ep: &'a RxContextImpl<EP, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> RxIncompleteBindCq<'a> {
+impl<'a, EP: ActiveEndpoint, STATE: EpState> RxIncompleteBindCq<'a, EP, STATE> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV as u64;
@@ -230,12 +231,12 @@ impl<'a> RxIncompleteBindCq<'a> {
     }
 }
 
-pub struct RxIncompleteBindCntr<'a> {
-    pub(crate) ep: &'a ReceiveContextImpl,
+pub struct RxIncompleteBindCntr<'a, EP: ActiveEndpoint, STATE: EpState> {
+    pub(crate) ep: &'a RxContextImpl<EP, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> RxIncompleteBindCntr<'a> {
+impl<'a, EP: ActiveEndpoint, STATE: EpState> RxIncompleteBindCntr<'a, EP, STATE> {
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
 
