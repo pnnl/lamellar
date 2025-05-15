@@ -1,6 +1,7 @@
 use crate::async_::cq::AsyncReadCq;
 use crate::async_::eq::AsyncReadEq;
 use crate::async_::xcontext::{TxContext, TxContextImpl};
+// use crate::async_::xcontext::{TxContext, TxContextImpl};
 use crate::comm::atomic::{AtomicCASImpl, AtomicFetchEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
@@ -205,13 +206,22 @@ pub trait ConnectedAsyncAtomicWriteEp {
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<EP: ActiveEndpoint + AsyncAtomicWriteEpImpl, STATE: EpState> AsyncAtomicWriteEpImpl for TxContext<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncAtomicWriteEpImpl, STATE: EpState> AsyncAtomicWriteEpImpl for TxContextImpl<EP, STATE> {}
 
 impl<EP: AtomicCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
     AsyncAtomicWriteEpImpl for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl
+    for TxContextImpl<I, STATE>
+{
+}
+
+impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl
+    for TxContext<I, STATE>
+{
+}
+
 
 impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     #[inline]
@@ -506,11 +516,19 @@ pub trait ConnectedAsyncAtomicFetchEp {
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<EP: ActiveEndpoint + AsyncAtomicFetchEpImpl, STATE: EpState> AsyncAtomicFetchEpImpl for TxContext<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncAtomicFetchEpImpl, STATE: EpState> AsyncAtomicFetchEpImpl for TxContextImpl<EP, STATE> {}
 
 impl<EP: AtomicCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
     AsyncAtomicFetchEpImpl for EndpointImplBase<EP, EQ, CQ>
+{
+}
+
+impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl
+    for TxContextImpl<I, STATE>
+{
+}
+
+impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl
+    for TxContext<I, STATE>
 {
 }
 
@@ -816,11 +834,19 @@ pub trait ConnectedAsyncAtomicCASEp {
 
 impl<E: AsyncAtomicCASImpl> AsyncAtomicCASImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicCASImpl> AsyncAtomicCASImpl for EndpointBase<E, Connectionless> {}
-impl<EP: ActiveEndpoint + AsyncAtomicCASImpl, STATE: EpState> AsyncAtomicCASImpl for TxContext<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncAtomicCASImpl, STATE: EpState> AsyncAtomicCASImpl for TxContextImpl<EP, STATE> {}
 
 impl<EP: AtomicCap + WriteMod + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
     AsyncAtomicCASImpl for EndpointImplBase<EP, EQ, CQ>
+{
+}
+
+impl<I: AtomicCap + WriteMod + ReadMod, STATE: EpState> AsyncAtomicCASImpl
+    for TxContextImpl<I, STATE>
+{
+}
+
+impl<I: AtomicCap + WriteMod + ReadMod, STATE: EpState> AsyncAtomicCASImpl
+    for TxContext<I, STATE>
 {
 }
 

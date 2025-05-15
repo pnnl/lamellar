@@ -1,5 +1,6 @@
 use crate::async_::ep::{AsyncRxEp, AsyncTxEp};
 use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
+// use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 use crate::comm::message::{
     ConnectedRecvEp, ConnectedSendEp, RecvEp, RecvEpImpl, SendEp, SendEpImpl,
 };
@@ -132,6 +133,17 @@ impl<EP: MsgCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: MsgCap + RecvMod, STATE: EpState> AsyncRecvEpImpl
+    for RxContextImpl<I, STATE>
+{
+}
+
+impl<I: MsgCap + RecvMod, STATE: EpState> AsyncRecvEpImpl
+    for RxContext<I, STATE>
+{
+}
+
 
 impl<EP: AsyncRecvEpImpl + ConnlessEp> AsyncRecvEp for EP {
     fn recv_from_async<T>(
@@ -492,10 +504,16 @@ impl<EP: MsgCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: MsgCap + SendMod, STATE: EpState> AsyncSendEpImpl
+    for TxContextImpl<I, STATE>
+{
+}
+
+impl<I: MsgCap + SendMod, STATE: EpState> AsyncSendEpImpl
+    for TxContext<I, STATE>
+{
+}
+
 impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connectionless> {}
-
-impl<EP: ActiveEndpoint + AsyncSendEpImpl, STATE: EpState> AsyncSendEpImpl for TxContext<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncSendEpImpl, STATE: EpState> AsyncSendEpImpl for TxContextImpl<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncRecvEpImpl, STATE: EpState> AsyncRecvEpImpl for RxContext<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncRecvEpImpl, STATE: EpState> AsyncRecvEpImpl for RxContextImpl<EP, STATE> {}

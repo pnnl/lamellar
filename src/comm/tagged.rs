@@ -533,6 +533,16 @@ impl<EP: TagCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagRecvEpIm
 {
 }
 
+impl<I: TagCap + RecvMod, STATE: EpState, CQ: ?Sized + ReadCq> TagRecvEpImpl
+    for RxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: TagCap + RecvMod, STATE: EpState, CQ: ?Sized + ReadCq> TagRecvEpImpl
+    for RxContextBase<I, STATE, CQ>
+{
+}
+
 impl<E: TagRecvEpImpl> TagRecvEpImpl for EndpointBase<E, Connected> {}
 impl<E: TagRecvEpImpl> TagRecvEpImpl for EndpointBase<E, Connectionless> {}
 
@@ -1132,10 +1142,16 @@ impl<EP: TagCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> TagSendEpIm
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: TagCap + SendMod, STATE: EpState, CQ: ?Sized + ReadCq> TagSendEpImpl
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: TagCap + SendMod, STATE: EpState, CQ: ?Sized + ReadCq> TagSendEpImpl
+    for TxContextBase<I, STATE, CQ>
+{
+}
+
 impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E, Connected> {}
 impl<E: TagSendEpImpl> TagSendEpImpl for EndpointBase<E, Connectionless> {}
-
-impl<EP: ActiveEndpoint + TagSendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + TagSendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagSendEpImpl for TxContextImplBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + TagRecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagRecvEpImpl for RxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + TagRecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> TagRecvEpImpl for RxContextImplBase<EP, STATE, CQ> {}

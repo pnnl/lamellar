@@ -562,6 +562,17 @@ impl<EP: AtomicCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicW
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: AtomicCap + WriteMod, STATE: EpState, CQ: ?Sized + ReadCq> AtomicWriteEpImpl
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: AtomicCap + WriteMod, STATE: EpState, CQ: ?Sized + ReadCq> AtomicWriteEpImpl
+    for TxContextBase<I, STATE, CQ>
+{
+}
+
 impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
@@ -1131,6 +1142,18 @@ impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicFe
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+
+impl<I: AtomicCap + ReadMod, STATE: EpState, CQ: ?Sized + ReadCq> AtomicFetchEpImpl
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: AtomicCap + ReadMod, STATE: EpState, CQ: ?Sized + ReadCq> AtomicFetchEpImpl
+    for TxContextBase<I, STATE, CQ>
+{
+}
+
 impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E, Connected> {}
 impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E, Connectionless> {}
 
@@ -1864,6 +1887,16 @@ impl<EP: AtomicCap + ReadMod + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadC
 {
 }
 
+impl<I: AtomicCap + ReadMod + WriteMod, STATE: EpState, CQ: ?Sized + ReadCq> AtomicCASImpl
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: AtomicCap + ReadMod + WriteMod, STATE: EpState, CQ: ?Sized + ReadCq> AtomicCASImpl
+    for TxContextBase<I, STATE, CQ>
+{
+}
+
 impl<E: AtomicCASImpl> AtomicCASImpl for EndpointBase<E, Connected> {}
 impl<E: AtomicCASImpl> AtomicCASImpl for EndpointBase<E, Connectionless> {}
 
@@ -1946,19 +1979,25 @@ impl<EP: AtomicCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicValidEp
 {
 }
 
+impl<I: AtomicCap, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
 
+impl<I: AtomicCap, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp
+    for TxContextBase<I, STATE, CQ>
+{
+}
 
-impl<EP: ActiveEndpoint + AtomicWriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicWriteEpImpl for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicWriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicWriteEpImpl for TxContextImplBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicFetchEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicFetchEpImpl for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicFetchEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicFetchEpImpl for TxContextImplBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicCASImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicCASImpl for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicCASImpl, STATE: EpState, CQ: ?Sized + ReadCq> AtomicCASImpl for TxContextImplBase<EP, STATE, CQ> {}
+impl<I: AtomicCap, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp
+    for RxContextImplBase<I, STATE, CQ>
+{
+}
 
-impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for TxContextImplBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for RxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + AtomicValidEp, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp for RxContextImplBase<EP, STATE, CQ> {}
+impl<I: AtomicCap, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp
+    for RxContextBase<I, STATE, CQ>
+{
+}
 
 
 pub struct AtomicAttr {

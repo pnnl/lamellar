@@ -434,6 +434,10 @@ impl<EP: MsgCap + RecvMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> RecvEpImpl
 impl<E: RecvEpImpl> RecvEpImpl for EndpointBase<E, Connected> {}
 impl<E: RecvEpImpl> RecvEpImpl for EndpointBase<E, Connectionless> {}
 
+
+impl<EP: MsgCap + RecvMod, STATE: EpState, CQ: ?Sized + ReadCq> RecvEpImpl for RxContextBase<EP, STATE, CQ> {}
+impl<EP: MsgCap + RecvMod, STATE: EpState, CQ: ?Sized + ReadCq> RecvEpImpl for RxContextImplBase<EP, STATE, CQ> {}
+
 pub(crate) trait SendEpImpl: AsTypedFid<EpRawFid> {
     fn sendv_impl(
         &self,
@@ -968,12 +972,17 @@ impl<EP: MsgCap + SendMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> SendEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: MsgCap + SendMod, STATE: EpState, CQ: ?Sized + ReadCq> SendEpImpl
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: MsgCap + SendMod, STATE: EpState, CQ: ?Sized + ReadCq> SendEpImpl
+    for TxContextBase<I, STATE, CQ>
+{
+}
+
 impl<E: SendEpImpl> SendEpImpl for EndpointBase<E, Connected> {}
 impl<E: SendEpImpl> SendEpImpl for EndpointBase<E, Connectionless> {}
 
-
-
-impl<EP: ActiveEndpoint + SendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> SendEpImpl for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + SendEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> SendEpImpl for TxContextImplBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + RecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> RecvEpImpl for RxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + RecvEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> RecvEpImpl for RxContextImplBase<EP, STATE, CQ> {}

@@ -1,5 +1,6 @@
 use crate::async_::ep::AsyncTxEp;
-use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
+use crate::async_::xcontext::{TxContext, TxContextImpl};
+// use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 use crate::comm::rma::{ConnectedWriteEp, ReadEpImpl, WriteEp, WriteEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
@@ -166,6 +167,16 @@ pub trait ConnectedAsyncReadEp {
 // impl<E: ReadMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E> {
 impl<EP: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncReadEpImpl
     for EndpointImplBase<EP, EQ, CQ>
+{
+}
+
+impl<I: RmaCap + ReadMod, STATE: EpState> AsyncReadEpImpl
+    for TxContextImpl<I, STATE>
+{
+}
+
+impl<I: RmaCap + ReadMod, STATE: EpState> AsyncReadEpImpl
+    for TxContext<I, STATE>
 {
 }
 
@@ -530,6 +541,16 @@ impl<EP: RmaCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> 
 {
 }
 
+impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl
+    for TxContextImpl<I, STATE>
+{
+}
+
+impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl
+    for TxContext<I, STATE>
+{
+}
+
 impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
     async unsafe fn write_async_impl<T>(
         &self,
@@ -841,9 +862,3 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
 
 pub trait AsyncReadWriteEp: AsyncReadEp + AsyncWriteEp {}
 impl<EP: AsyncReadEp + AsyncWriteEp> AsyncReadWriteEp for EP {}
-
-
-impl<EP: ActiveEndpoint + AsyncWriteEpImpl, STATE: EpState> AsyncWriteEpImpl for TxContext<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncWriteEpImpl, STATE: EpState> AsyncWriteEpImpl for TxContextImpl<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncReadEpImpl, STATE: EpState> AsyncReadEpImpl for TxContext<EP, STATE> {}
-impl<EP: ActiveEndpoint + AsyncReadEpImpl, STATE: EpState> AsyncReadEpImpl for TxContextImpl<EP, STATE> {}

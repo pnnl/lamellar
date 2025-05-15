@@ -1,13 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    cntr::{Counter, ReadCntr},
-    cq::ReadCq,
-    enums::{Mode, TrafficClass, TransferOptions},
-    ep::{ActiveEndpoint, BaseEndpoint, EndpointBase, EndpointImplBase, EpState},
-    eq::ReadEq,
-    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid},
-    Context, MyOnceCell, MyRc, SyncSend,
+    cntr::{Counter, ReadCntr}, conn_ep::ConnectedEp, connless_ep::ConnlessEp, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, eq::ReadEq, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid}, infocapsoptions::{RecvMod, SendMod}, Context, MyOnceCell, MyRc, SyncSend
 };
 
 #[cfg(feature = "threading-endpoint")]
@@ -19,30 +13,32 @@ use crate::fid::EpCompletionOwnedTypedFid;
 pub struct Receive;
 pub struct Transmit;
 //================== XContext Template ==================//
-pub(crate) struct XContextBaseImpl<T, CQ: ?Sized> {
+pub(crate) struct XContextBaseImpl<T,  I, STATE: EpState, CQ: ?Sized> {
     #[cfg(not(any(feature = "threading-endpoint", feature = "threading-completion")))]
     pub(crate) c_ep: OwnedEpFid,
     #[cfg(feature = "threading-endpoint")]
     pub(crate) c_ep: XContextOwnedTypedFid<EpRawFid>,
     #[cfg(feature = "threading-completion")]
     pub(crate) c_ep: EpCompletionOwnedTypedFid<EpRawFid>,
-    phantom: PhantomData<fn() -> T>,
     pub(crate) cq: MyOnceCell<MyRc<CQ>>,
     pub(crate) cntr: MyOnceCell<MyRc<dyn ReadCntr>>,
+    pub(crate) phantom: PhantomData<STATE>,
     pub(crate) _parent_ep: MyRc<dyn ActiveEndpoint>,
+    pub(crate) xphantom: PhantomData<fn() -> T>,
+    pub(crate) iphantom: PhantomData<fn() -> I>,
 }
 
-pub struct XContextBase<T, CQ: ?Sized> {
-    pub(crate) inner: MyRc<XContextBaseImpl<T, CQ>>,
+pub struct XContextBase<T, I, STATE: EpState, CQ: ?Sized> {
+    pub(crate) inner: MyRc<XContextBaseImpl<T, I, STATE, CQ>>,
 }
 
 //================== XContext Trait Implementations ==================//
-impl<T: ActiveEndpoint, CQ: ReadCq> ActiveEndpoint for XContextBase<T, CQ> {
+impl<T, I, STATE: EpState, CQ: ReadCq> ActiveEndpoint for XContextBase<T, I, STATE, CQ> {
     fn fid(&self) -> &OwnedEpFid {
         self.inner.fid()
     }
 }
-impl<T, CQ: ReadCq> ActiveEndpoint for XContextBaseImpl<T, CQ> {
+impl<T, I, STATE: EpState, CQ: ReadCq> ActiveEndpoint for XContextBaseImpl<T, I, STATE, CQ> {
     fn fid(&self) -> &OwnedEpFid {
         #[cfg(any(feature = "threading-endpoint", feature = "threading-completion"))]
         return &self.c_ep.typed_fid;
@@ -50,35 +46,11 @@ impl<T, CQ: ReadCq> ActiveEndpoint for XContextBaseImpl<T, CQ> {
         return &self.c_ep;
     }
 }
-impl<T, CQ: ReadCq> SyncSend for XContextBaseImpl<T, CQ> {}
-impl<T, CQ: ReadCq> SyncSend for XContextBase<T, CQ> {}
-impl<T, CQ: ReadCq> BaseEndpoint<EpRawFid> for XContextBaseImpl<T, CQ> {}
+impl<T, I, STATE: EpState, CQ: ReadCq> SyncSend for XContextBaseImpl<T, I, STATE, CQ> {}
+impl<T, I, STATE: EpState, CQ: ReadCq> SyncSend for XContextBase<T, I, STATE, CQ> {}
+impl<T, I, STATE: EpState, CQ: ReadCq> BaseEndpoint<EpRawFid> for XContextBaseImpl<T, I, STATE, CQ> {}
 
-// impl<T, CQ> AsFid for XContextBase<T, CQ> {
-//     fn as_fid(&self) -> fid::BorrowedFid {
-//         self.inner.as_fid()
-//     }
-// }
-
-// impl<T, CQ> AsFid for XContextBaseImpl<T, CQ> {
-//     fn as_fid(&self) -> fid::BorrowedFid {
-//         self.c_ep.as_fid()
-//     }
-// }
-
-// impl<T, CQ> AsRawFid for XContextBase<T, CQ> {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.inner.as_raw_fid()
-//     }
-// }
-
-// impl<T, CQ> AsRawFid for XContextBaseImpl<T, CQ> {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.c_ep.as_raw_fid()
-//     }
-// }
-
-impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBase<T, CQ> {
+impl<I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for TxContextBase<I, STATE, CQ> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.inner.as_typed_fid()
     }
@@ -88,7 +60,28 @@ impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBase<T, CQ> {
     }
 }
 
-impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBaseImpl<T, CQ> {
+impl<I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for RxContextBase<I, STATE, CQ> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+        self.inner.as_typed_fid()
+    }
+
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
+}
+
+
+impl<T, I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBase<T, I, STATE, CQ> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+        self.inner.as_typed_fid()
+    }
+
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
+}
+
+impl<T, I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBaseImpl<T, I, STATE, CQ> {
     fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
         self.c_ep.as_typed_fid()
     }
@@ -97,35 +90,29 @@ impl<T, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBaseImpl<T, CQ> {
     }
 }
 
-// impl<T, CQ: ?Sized> AsRawTypedFid for XContextBase<T, CQ> {
-//     type Output = EpRawFid;
-
-//     fn as_raw_typed_fid(&self) -> Self::Output {
-//         self.inner.as_raw_typed_fid()
-//     }
-// }
-
-// impl<T, CQ: ?Sized> AsRawTypedFid for XContextBaseImpl<T, CQ> {
-//     type Output = EpRawFid;
-
-//     fn as_raw_typed_fid(&self) -> Self::Output {
-//         self.c_ep.as_raw_typed_fid()
-//     }
-// }
-
 //================== TxContext ==================//
-pub type TxContextBase<CQ> = XContextBase<Transmit, CQ>;
-pub type TxContext = XContextBase<Transmit, dyn ReadCq>;
-pub(crate) type TxContextImplBase<CQ> = XContextBaseImpl<Transmit, CQ>;
-pub(crate) type TxContextImpl = XContextBaseImpl<Transmit, dyn ReadCq>;
+pub struct TxContextBase<I, STATE: EpState, CQ: ?Sized> {
+    pub(crate) inner: XContextBase<Transmit, I, STATE, CQ>,
+}
 
-impl<CQ: ?Sized> TxContextImplBase<CQ> {
+
+pub type TxContext<EP, STATE> = TxContextBase<EP, STATE, dyn ReadCq>;
+pub type ConnectedTxContext<EP> = TxContext<EP, Connected>;
+pub type ConnlessTxContext<EP> = TxContext<EP, Connectionless>;
+
+impl<I, CQ: ?Sized> ConnectedEp for TxContextBase<I, Connected, CQ> {}
+impl<I, CQ: ?Sized> ConnlessEp for TxContextBase<I, Connectionless, CQ> {}
+
+pub(crate) type TxContextImplBase<I, STATE, CQ> = XContextBaseImpl<Transmit, I, STATE, CQ>;
+pub(crate) type TxContextImpl<I, STATE> = XContextBaseImpl<Transmit, I, STATE, dyn ReadCq>;
+
+impl<I: 'static, STATE: EpState> TxContextImpl<I, STATE> {
     pub(crate) fn new(
-        parent_ep: MyRc<impl ActiveEndpoint + 'static>,
+        parent_ep: &MyRc<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>>,
         index: i32,
         attr: TxAttr,
         context: *mut std::ffi::c_void,
-    ) -> Result<TxContextImplBase<CQ>, crate::error::Error> {
+    ) -> Result<TxContextImplBase<I, STATE, dyn ReadCq>, crate::error::Error> {
         let mut c_ep: *mut libfabric_sys::fid_ep = std::ptr::null_mut();
         let err = unsafe {
             libfabric_sys::inlined_fi_tx_context(
@@ -142,7 +129,7 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
                 (-err).try_into().unwrap(),
             ))
         } else {
-            Ok(Self {
+            Ok(TxContextImpl::<I, STATE> {
                 #[cfg(not(any(
                     feature = "threading-domain",
                     feature = "threading-completion",
@@ -158,10 +145,15 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
                 phantom: PhantomData,
                 cq: MyOnceCell::new(),
                 cntr: MyOnceCell::new(),
-                _parent_ep: parent_ep,
+                _parent_ep: parent_ep.clone(),
+                xphantom: PhantomData,
+                iphantom: PhantomData,
             })
         }
     }
+}
+
+impl<I: 'static, STATE: EpState, CQ: ?Sized> TxContextImplBase<I, STATE, CQ> {
 
     pub(crate) fn bind_cntr_<T: ReadCntr + AsRawFid + 'static>(
         &self,
@@ -191,12 +183,12 @@ impl<CQ: ?Sized> TxContextImplBase<CQ> {
     }
 }
 
-impl TxContextImpl {
-    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq {
+impl<EP, STATE: EpState> TxContextImpl<EP, STATE> {
+    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq<EP, STATE> {
         TxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr {
+    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr<EP, STATE> {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -226,48 +218,50 @@ impl TxContextImpl {
     }
 }
 
-impl<CQ: ?Sized> TxContextBase<CQ> {
+impl<I: 'static, STATE: EpState> TxContext<I, STATE> {
     pub(crate) fn new(
-        ep: MyRc<impl ActiveEndpoint + 'static>,
+        ep: &EndpointBase<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>, STATE>,
         index: i32,
         attr: TxAttr,
         context: Option<&mut Context>,
-    ) -> Result<TxContextBase<CQ>, crate::error::Error> {
+    ) -> Result<TxContext<I, STATE>, crate::error::Error> {
         let c_void = match context {
             Some(ctx) => ctx.inner_mut(),
             None => std::ptr::null_mut(),
         };
 
         Ok(Self {
-            inner: MyRc::new(TxContextImplBase::<CQ>::new(ep, index, attr, c_void)?),
+            inner: XContextBase {
+                inner: MyRc::new(TxContextImpl::new(&ep.inner, index, attr, c_void)?),
+            }
         })
     }
 }
 
-impl TxContext {
-    pub fn bind_cq(&self) -> TxIncompleteBindCq {
-        self.inner.bind_cq()
+impl<I, STATE: EpState> TxContext<I, STATE> {
+    pub fn bind_cq(&self) -> TxIncompleteBindCq<I, STATE> {
+        self.inner.inner.bind_cq()
     }
 
-    pub fn bind_cntr(&self) -> TxIncompleteBindCntr {
-        self.inner.bind_cntr()
+    pub fn bind_cntr(&self) -> TxIncompleteBindCntr<I, STATE> {
+        self.inner.inner.bind_cntr()
     }
 }
 
 //================== TxContext Builder ==================//
-pub struct TxContextBuilder<'a, E, STATE: EpState> {
+pub struct TxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>, STATE>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
 impl<'a, STATE: EpState> TxContextBuilder<'a, (), STATE> {
-    pub fn new<E>(
-        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
+    pub fn new<I>(
+        ep: &'a EndpointBase<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>, STATE>,
         index: i32,
-    ) -> TxContextBuilder<'a, E, STATE> {
-        TxContextBuilder::<E, STATE> {
+    ) -> TxContextBuilder<'a, I, STATE> {
+        TxContextBuilder::<I, STATE> {
             tx_attr: TxAttr::new(),
             index,
             ep,
@@ -276,8 +270,8 @@ impl<'a, STATE: EpState> TxContextBuilder<'a, (), STATE> {
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
-    TxContextBuilder<'a, E, STATE>
+impl<'a, I: 'static, STATE: EpState>
+    TxContextBuilder<'a, I, STATE>
 {
     // pub fn caps(mut self, caps: TxCaps) -> Self {
     //     self.tx_attr.caps(caps);
@@ -330,7 +324,7 @@ impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
         self
     }
 
-    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, E, STATE> {
+    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, I, STATE> {
         TxContextBuilder {
             tx_attr: self.tx_attr,
             index: self.index,
@@ -339,8 +333,8 @@ impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
         }
     }
 
-    pub fn build(self) -> Result<TxContextBase<dyn ReadCq>, crate::error::Error> {
-        TxContextBase::new(self.ep.inner.clone(), self.index, self.tx_attr, self.ctx)
+    pub fn build(self) -> Result<TxContext<I, STATE>, crate::error::Error> {
+        TxContext::new(self.ep, self.index, self.tx_attr, self.ctx)
     }
 }
 
@@ -506,14 +500,23 @@ impl TxAttr {
 // }
 
 //================== RxContext ==================//
-pub type RxContext = XContextBase<Receive, dyn ReadCq>;
-pub type RxContextBase<CQ> = XContextBase<Receive, CQ>;
-pub(crate) type RxContextImpl = XContextBaseImpl<Receive, dyn ReadCq>;
-pub(crate) type RxContextImplBase<CQ> = XContextBaseImpl<Receive, CQ>;
+pub struct RxContextBase<I, STATE: EpState, CQ: ?Sized> {
+    pub(crate) inner: XContextBase<Receive, I, STATE, CQ>,
+}
 
-impl<CQ: ?Sized> RxContextImplBase<CQ> {
+
+pub type RxContext<I, STATE> = RxContextBase<I, STATE, dyn ReadCq>;
+pub type ConnectedRxContext<I> = RxContext<I, Connected>;
+pub type ConnlessRxContext<I> = RxContext<I, Connectionless>;
+pub(crate) type RxContextImpl<I, STATE> = XContextBaseImpl<Receive, I, STATE, dyn ReadCq>;
+pub(crate) type RxContextImplBase<I, STATE, CQ> = XContextBaseImpl<Receive, I, STATE, CQ>;
+
+impl<I, CQ: ?Sized> ConnectedEp for RxContextBase<I, Connected, CQ> {}
+impl<I, CQ: ?Sized> ConnlessEp for RxContextBase<I, Connectionless, CQ> {}
+
+impl<I: 'static, STATE:EpState> RxContextImpl<I, STATE> {
     pub(crate) fn new(
-        parent_ep: MyRc<impl ActiveEndpoint + 'static>,
+        parent_ep: &MyRc<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>>,
         index: i32,
         attr: RxAttr,
         context: *mut std::ffi::c_void,
@@ -548,13 +551,18 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
                 #[cfg(feature = "threading-endpoint")]
                 c_ep: XContextOwnedTypedFid::from(c_ep, parent_ep.fid().typed_fid.clone()),
                 phantom: PhantomData,
+                xphantom: PhantomData,
+                iphantom: PhantomData,
                 cq: MyOnceCell::new(),
                 cntr: MyOnceCell::new(),
-                _parent_ep: parent_ep,
+                _parent_ep: parent_ep.clone(),
             })
         }
     }
+}
 
+impl<I: 'static, STATE:EpState, CQ: ?Sized> RxContextImplBase<I, STATE, CQ> {
+    
     pub(crate) fn bind_cntr_<T: ReadCntr + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
@@ -581,12 +589,12 @@ impl<CQ: ?Sized> RxContextImplBase<CQ> {
     }
 }
 
-impl RxContextImplBase<dyn ReadCq> {
-    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq {
+impl<I, STATE: EpState> RxContextImpl<I, STATE> {
+    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq<I, STATE> {
         RxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr {
+    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr<I, STATE> {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -623,9 +631,9 @@ impl RxContextImplBase<dyn ReadCq> {
     }
 }
 
-impl<CQ: ?Sized> RxContextBase<CQ> {
+impl<I: 'static, STATE: EpState> RxContext<I, STATE> {
     pub(crate) fn new(
-        ep: MyRc<impl ActiveEndpoint + 'static>,
+        ep: &EndpointBase<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>, STATE>,
         index: i32,
         attr: RxAttr,
         context: Option<&mut Context>,
@@ -636,35 +644,37 @@ impl<CQ: ?Sized> RxContextBase<CQ> {
         };
 
         Ok(Self {
-            inner: MyRc::new(RxContextImplBase::new(ep, index, attr, c_void)?),
+            inner: XContextBase {
+                inner: MyRc::new(RxContextImpl::new(&ep.inner, index, attr, c_void)?),
+            },
         })
     }
 }
 
-impl RxContextBase<dyn ReadCq> {
-    pub fn bind_cq(&self) -> RxIncompleteBindCq {
-        self.inner.bind_cq()
+impl<I, STATE: EpState> RxContextBase<I, STATE, dyn ReadCq> {
+    pub fn bind_cq(&self) -> RxIncompleteBindCq<I, STATE> {
+        self.inner.inner.bind_cq()
     }
 
-    pub fn bind_cntr(&self) -> RxIncompleteBindCntr {
-        self.inner.bind_cntr()
+    pub fn bind_cntr(&self) -> RxIncompleteBindCntr<I, STATE> {
+        self.inner.inner.bind_cntr()
     }
 }
 
 //================== RxContext Builder ==================//
-pub struct ReceiveContextBuilder<'a, E, STATE: EpState> {
+pub struct RxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) rx_attr: RxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>, STATE>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
-impl<'a, STATE: EpState> ReceiveContextBuilder<'a, (), STATE> {
-    pub fn new<E>(
-        ep: &'a EndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>, STATE>,
+impl<'a, STATE: EpState> RxContextBuilder<'a, (), STATE> {
+    pub fn new<I>(
+        ep: &'a EndpointBase<EndpointImplBase<I, dyn ReadEq, dyn ReadCq>, STATE>,
         index: i32,
-    ) -> ReceiveContextBuilder<'a, E, STATE> {
-        ReceiveContextBuilder::<E, STATE> {
+    ) -> RxContextBuilder<'a, I, STATE> {
+        RxContextBuilder::<I, STATE> {
             rx_attr: RxAttr::new(),
             index,
             ep,
@@ -673,8 +683,8 @@ impl<'a, STATE: EpState> ReceiveContextBuilder<'a, (), STATE> {
     }
 }
 
-impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
-    ReceiveContextBuilder<'a, E, STATE>
+impl<'a, I: 'static , STATE: EpState>
+    RxContextBuilder<'a, I, STATE>
 {
     // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
     //     self.rx_attr.caps(caps);
@@ -717,8 +727,8 @@ impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
         self
     }
 
-    pub fn context(self, ctx: &'a mut Context) -> ReceiveContextBuilder<'a, E, STATE> {
-        ReceiveContextBuilder {
+    pub fn context(self, ctx: &'a mut Context) -> RxContextBuilder<'a, I, STATE> {
+        RxContextBuilder {
             rx_attr: self.rx_attr,
             index: self.index,
             ep: self.ep,
@@ -726,8 +736,8 @@ impl<'a, E: AsRawTypedFid<Output = EpRawFid> + 'static, STATE: EpState>
         }
     }
 
-    pub fn build(self) -> Result<RxContext, crate::error::Error> {
-        RxContext::new(self.ep.inner.clone(), self.index, self.rx_attr, self.ctx)
+    pub fn build(self) -> Result<RxContext<I, STATE>, crate::error::Error> {
+        RxContext::new(self.ep, self.index, self.rx_attr, self.ctx)
     }
 }
 
@@ -974,12 +984,12 @@ impl Default for RxAttr {
     }
 }
 
-pub struct TxIncompleteBindCq<'a> {
-    pub(crate) ep: &'a TxContextImplBase<dyn ReadCq>,
+pub struct TxIncompleteBindCq<'a, I, STATE: EpState> {
+    pub(crate) ep: &'a TxContextImpl<I, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> TxIncompleteBindCq<'a> {
+impl<'a, I, STATE: EpState> TxIncompleteBindCq<'a, I, STATE> {
     pub fn transmit(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |=
@@ -1001,12 +1011,12 @@ impl<'a> TxIncompleteBindCq<'a> {
     }
 }
 
-pub struct TxIncompleteBindCntr<'a> {
-    pub(crate) ep: &'a TxContextImplBase<dyn ReadCq>,
+pub struct TxIncompleteBindCntr<'a, I, STATE: EpState> {
+    pub(crate) ep: &'a TxContextImpl<I, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> TxIncompleteBindCntr<'a> {
+impl<'a, I: 'static, STATE: EpState> TxIncompleteBindCntr<'a, I, STATE> {
     pub fn remote_write(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_REMOTE_WRITE as u64;
 
@@ -1168,12 +1178,12 @@ impl Default for TxCompOrder {
     }
 }
 
-pub struct RxIncompleteBindCq<'a> {
-    pub(crate) ep: &'a RxContextImpl,
+pub struct RxIncompleteBindCq<'a, I, STATE: EpState> {
+    pub(crate) ep: &'a RxContextImpl<I, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> RxIncompleteBindCq<'a> {
+impl<'a, I, STATE: EpState> RxIncompleteBindCq<'a, I, STATE> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV as u64;
@@ -1194,12 +1204,12 @@ impl<'a> RxIncompleteBindCq<'a> {
     }
 }
 
-pub struct RxIncompleteBindCntr<'a> {
-    pub(crate) ep: &'a RxContextImpl,
+pub struct RxIncompleteBindCntr<'a, I, STATE: EpState> {
+    pub(crate) ep: &'a RxContextImpl<I, STATE>,
     pub(crate) flags: u64,
 }
 
-impl<'a> RxIncompleteBindCntr<'a> {
+impl<'a, I: 'static , STATE: EpState> RxIncompleteBindCntr<'a, I, STATE> {
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
 

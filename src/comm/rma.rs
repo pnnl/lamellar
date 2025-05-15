@@ -510,6 +510,17 @@ impl<EP: RmaCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ReadEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: RmaCap + ReadMod, STATE: EpState, CQ: ?Sized + ReadCq> ReadEpImpl
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: RmaCap + ReadMod, STATE: EpState, CQ: ?Sized + ReadCq> ReadEpImpl
+    for TxContextBase<I, STATE, CQ>
+{
+}
+
 impl<E: ReadEpImpl> ReadEpImpl for EndpointBase<E, Connected> {}
 impl<E: ReadEpImpl> ReadEpImpl for EndpointBase<E, Connectionless> {}
 
@@ -1432,13 +1443,21 @@ impl<EP: RmaCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> WriteEpImp
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
+
+impl<I: RmaCap + WriteMod, STATE: EpState, CQ: ?Sized + ReadCq> WriteEpImpl
+    for TxContextImplBase<I, STATE, CQ>
+{
+}
+
+impl<I: RmaCap + WriteMod, STATE: EpState, CQ: ?Sized + ReadCq> WriteEpImpl
+    for TxContextBase<I, STATE, CQ>
+{
+}
+
+
 impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<EP: ActiveEndpoint + WriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> WriteEpImpl for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + WriteEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> WriteEpImpl for TxContextImplBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + ReadEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> ReadEpImpl for TxContextBase<EP, STATE, CQ> {}
-impl<EP: ActiveEndpoint + ReadEpImpl, STATE: EpState, CQ: ?Sized + ReadCq> ReadEpImpl for TxContextImplBase<EP, STATE, CQ> {}
 
 pub trait ReadWriteEp: ReadEp + WriteEp {}
 impl<EP: ReadEp + WriteEp> ReadWriteEp for EP {}

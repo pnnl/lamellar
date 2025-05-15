@@ -1,6 +1,5 @@
 use libfabric::{
-    av::AddressVectorBuilder,
-    comm::{
+    av::AddressVectorBuilder, comm::{
         atomic::{
             AtomicCASEp, AtomicFetchEp, AtomicWriteEp, ConnectedAtomicCASEp,
             ConnectedAtomicFetchEp, ConnectedAtomicWriteEp,
@@ -8,34 +7,18 @@ use libfabric::{
         message::{ConnectedRecvEp, ConnectedSendEp, RecvEp, SendEp},
         rma::{ConnectedReadEp, ConnectedWriteEp, ReadEp, WriteEp},
         tagged::{ConnectedTagRecvEp, ConnectedTagSendEp, TagRecvEp, TagSendEp},
-    },
-    conn_ep::ConnectedEndpoint,
-    connless_ep::ConnectionlessEndpoint,
-    cq::{Completion, CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq},
-    domain::{Domain, DomainBuilder},
-    enums::{
-        AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType,
-        FetchAtomicOp, ReadMsgOptions, TferOptions, WriteMsgOptions,
-    },
-    ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder},
-    eq::{EventQueueBuilder, WaitEq},
-    error::{Error, ErrorKind},
-    fabric::FabricBuilder,
-    info::{Info, InfoEntry},
-    infocapsoptions::{
+    }, conn_ep::ConnectedEndpoint, connless_ep::ConnectionlessEndpoint, cq::{Completion, CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq}, domain::{Domain, DomainBuilder}, enums::{
+        AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType, FetchAtomicOp, ReadMsgOptions, RecvMsgOptions, SendMsgOptions, TaggedRecvMsgOptions, TaggedSendMsgOptions, TferOptions, WriteMsgOptions
+    }, ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder}, eq::{EventQueueBuilder, WaitEq}, error::{Error, ErrorKind}, fabric::FabricBuilder, info::{Info, InfoEntry}, infocapsoptions::{
         AtomicDefaultCap, Caps, CollCap, InfoCaps, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
-    },
-    iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoVec, RmaIoc},
-    mr::{
+    }, iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoVec, RmaIoc}, mr::{
         DisabledMemoryRegion, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc, MemoryRegionKey
-    },
-    msg::{
+    }, msg::{
         Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected,
         MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma,
         MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut, MsgTagged, MsgTaggedConnected,
         MsgTaggedConnectedMut, MsgTaggedMut,
-    },
-    Context, CqCaps, EqCaps, MappedAddress, MyRc,
+    }, xcontext::{ConnectedRxContext, ConnectedTxContext, ConnlessRxContext, ConnlessTxContext, RxContextBuilder, TxContextBuilder}, Context, CqCaps, EqCaps, MappedAddress, MyRc
 };
 pub type SpinCq = libfabric::cq_caps_type!(CqCaps::WAIT);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::WAIT);
@@ -77,6 +60,16 @@ pub enum MyEndpoint<I> {
     Connectionless(ConnectionlessEndpoint<I>),
 }
 
+pub enum MyTxContext<I> {
+    Connected(Result<ConnectedTxContext<I>, libfabric::error::Error>),
+    Connectionless(Result<ConnlessTxContext<I>, libfabric::error::Error>),
+}
+
+pub enum MyRxContext<I> {
+    Connected(Result<ConnectedRxContext<I>, libfabric::error::Error>),
+    Connectionless(Result<ConnlessRxContext<I>, libfabric::error::Error>),
+}
+
 pub struct Ofi<I> {
     pub info_entry: InfoEntry<I>,
     pub mr: Option<MemoryRegion>,
@@ -85,6 +78,8 @@ pub struct Ofi<I> {
     pub domain: Domain,
     pub cq_type: CqType,
     pub ep: MyEndpoint<I>,
+    pub tx_context: MyTxContext<I>,
+    pub rx_context: MyRxContext<I>,
     pub mapped_addr: Option<MyRc<MappedAddress>>,
     pub reg_mem: Vec<u8>,
     // pub tx_pending_cnt: AtomicUsize,
@@ -188,7 +183,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         // let mut rx_complete_cnt: usize = 0;
         let mut reg_mem = vec![0u8; 1024 * 1024];
 
-        let (info_entry, ep, mapped_addr) = match ep_type {
+        let (info_entry, ep, tx_context, rx_context, mapped_addr) = match ep_type {
             EndpointType::Msg => {
                 let eq = EventQueueBuilder::new(&fabric).build().unwrap();
 
@@ -251,6 +246,11 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         }
                     }
                 };
+                let tx_context = TxContextBuilder::new(&ep, 0)
+                    .build();
+                
+                let rx_context = RxContextBuilder::new(&ep, 0)
+                    .build();
 
                 mr = if info_entry.domain_attr().mr_mode().is_local()
                     || info_entry.caps().is_rma()
@@ -274,7 +274,13 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     None
                 };
 
-                (info_entry, MyEndpoint::Connected(ep), None)
+                (
+                    info_entry, 
+                    MyEndpoint::Connected(ep), 
+                    MyTxContext::Connected(tx_context),
+                    MyRxContext::Connected(rx_context),
+                    None
+                )
             }
             _ => {
                 domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
@@ -307,7 +313,12 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 .unwrap();
                 ep.bind_av(&av).unwrap();
                 let ep = ep.enable().unwrap();
-
+                let tx_context = TxContextBuilder::new(&ep, 0)
+                    .build();
+                
+                let rx_context = RxContextBuilder::new(&ep, 0)
+                    .build();
+                
                 mr = if info_entry.domain_attr().mr_mode().is_local()
                     || info_entry.caps().is_rma()
                 {
@@ -411,6 +422,8 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 (
                     info_entry,
                     MyEndpoint::Connectionless(ep),
+                    MyTxContext::Connectionless(tx_context),
+                    MyRxContext::Connectionless(rx_context),
                     Some(mapped_address),
                 )
             }
@@ -428,12 +441,320 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
             cq_type,
             domain,
             ep,
+            tx_context,
+            rx_context,
             reg_mem,
             // tx_pending_cnt,
             // tx_complete_cnt,
             // rx_pending_cnt,
             // rx_complete_cnt,
         })
+    }
+}
+
+
+fn conn_send<T>(
+        sender: &impl ConnectedSendEp,         
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc>,
+        data: Option<u64>,
+        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
+    
+    if buf.len() <= max_inject_size {
+        if data.is_some() {
+            sender.injectdata(buf, data.unwrap())
+        }
+        else {
+            sender.inject(buf)
+        }
+    }
+    else {
+        if data.is_some() {
+            sender.senddata(buf, desc, data.unwrap())
+        }
+        else {
+            sender.send(buf, desc)
+        }
+    }
+
+}
+
+fn connless_send<T>(sender: &impl SendEp,         
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc>,
+        data: Option<u64>,
+        addr: &MyRc<MappedAddress>,
+        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
+    
+    if buf.len() <= max_inject_size {
+        if data.is_some() {
+            sender.injectdata_to(buf, data.unwrap(), addr.as_ref())
+        }
+        else {
+            sender.inject_to(buf, addr.as_ref())
+        }
+    }
+    else {
+        if data.is_some() {
+            sender.senddata_to(buf, desc, data.unwrap(), addr.as_ref())
+        }
+        else {
+            sender.send_to(buf, desc, addr.as_ref())
+        }
+    }
+}
+
+
+fn conn_sendv(
+    sender: &impl ConnectedSendEp,
+    iov: &[IoVec], 
+    desc: Option<&[MemoryRegionDesc]>, 
+) 
+-> Result<(), libfabric::error::Error> {
+    sender.sendv(iov, desc)
+}
+
+fn connless_sendv(
+    sender: &impl SendEp,
+    iov: &[IoVec], 
+    desc: Option<&[MemoryRegionDesc]>, 
+    mapped_addr: &MyRc<MappedAddress>,
+) 
+-> Result<(), libfabric::error::Error> {
+    sender.sendv_to(iov, desc, &mapped_addr)
+}
+
+fn connless_recv<T>(
+    sender: &impl RecvEp, 
+    buf: &mut [T], 
+    desc: Option<&MemoryRegionDesc>, 
+    mapped_addr: &MyRc<MappedAddress>,
+)
+-> Result<(), libfabric::error::Error> {
+    sender.recv_from(buf, desc, mapped_addr)
+}
+
+fn conn_recv<T>(
+    sender: &impl ConnectedRecvEp, 
+    buf: &mut [T], 
+    desc: Option<&MemoryRegionDesc>, 
+)
+-> Result<(), libfabric::error::Error> {
+    sender.recv(buf, desc)
+}
+
+
+fn conn_sendmsg(
+    sender: &impl ConnectedSendEp,
+    msg: &MsgConnected,
+    options: SendMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    sender.sendmsg(msg, options)
+}
+
+fn connless_sendmsg(
+    sender: &impl SendEp,
+    msg: &Msg,
+    options: SendMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    sender.sendmsg_to(msg, options)
+}
+
+fn connless_recvmsg(
+    recver: &impl RecvEp,
+    msg: &MsgMut,
+    options: RecvMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    recver.recvmsg_from(msg, options)
+}
+
+fn conn_recvmsg(
+    recver: &impl ConnectedRecvEp,
+    msg: &MsgConnectedMut,
+    options: RecvMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    recver.recvmsg(msg, options)
+}
+
+fn conn_tsend<T>(
+        sender: &impl ConnectedTagSendEp,         
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc>,
+        tag: u64,
+        data: Option<u64>,
+        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
+    
+    if buf.len() <= max_inject_size {
+        if data.is_some() {
+            sender.tinjectdata(buf, data.unwrap(), tag)
+        }
+        else {
+            sender.tinject(buf, tag)
+        }
+    }
+    else {
+        if data.is_some() {
+            sender.tsenddata(buf, desc, data.unwrap(), tag)
+        }
+        else {
+            sender.tsend(buf, desc, tag)
+        }
+    }
+
+}
+
+fn connless_tsend<T>(sender: &impl TagSendEp,         
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc>,
+        tag: u64,
+        data: Option<u64>,
+        addr: &MyRc<MappedAddress>,
+        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
+    
+    if buf.len() <= max_inject_size {
+        if data.is_some() {
+            sender.tinjectdata_to(buf, data.unwrap(), addr.as_ref(), tag)
+        }
+        else {
+            sender.tinject_to(buf, addr.as_ref(), tag)
+        }
+    }
+    else {
+        if data.is_some() {
+            sender.tsenddata_to(buf, desc, data.unwrap(), addr.as_ref(), tag)
+        }
+        else {
+            sender.tsend_to(buf, desc, addr.as_ref(), tag)
+        }
+    }
+}
+
+fn conn_tsendv(
+    sender: &impl ConnectedTagSendEp,
+    iov: &[IoVec], 
+    desc: Option<&[MemoryRegionDesc]>, 
+    tag: u64
+) 
+-> Result<(), libfabric::error::Error> {
+    sender.tsendv(iov, desc, tag)
+}
+
+fn connless_tsendv(
+    sender: &impl TagSendEp,
+    iov: &[IoVec], 
+    desc: Option<&[MemoryRegionDesc]>, 
+    mapped_addr: &MyRc<MappedAddress>,
+    tag: u64
+) 
+-> Result<(), libfabric::error::Error> {
+    sender.tsendv_to(iov, desc, &mapped_addr, tag)
+}
+
+fn connless_trecv<T>(
+    sender: &impl TagRecvEp, 
+    buf: &mut [T], 
+    desc: Option<&MemoryRegionDesc>, 
+    mapped_addr: &MyRc<MappedAddress>,
+    tag: u64,
+    ignore: Option<u64>, 
+)
+-> Result<(), libfabric::error::Error> {
+    sender.trecv_from(buf, desc, mapped_addr, tag, ignore)
+}
+
+fn conn_trecv<T>(
+    sender: &impl ConnectedTagRecvEp, 
+    buf: &mut [T], 
+    desc: Option<&MemoryRegionDesc>, 
+    tag: u64,
+    ignore: Option<u64>, 
+)
+-> Result<(), libfabric::error::Error> {
+    sender.trecv(buf, desc, tag, ignore)
+}
+
+fn connless_trecvv(
+    recver: &impl TagRecvEp,
+    iov: &[IoVecMut], 
+    desc: Option<&[MemoryRegionDesc]>, 
+    mapped_addr: &MyRc<MappedAddress>,
+    tag: u64,
+    ignore: Option<u64>
+)
+-> Result<(), libfabric::error::Error> {
+    recver.trecvv_from(iov, desc, &mapped_addr, tag, ignore)
+}
+
+fn conn_trecvv(
+    recver: &impl ConnectedTagRecvEp,
+    iov: &[IoVecMut], 
+    desc: Option<&[MemoryRegionDesc]>, 
+    tag: u64,
+    ignore: Option<u64>
+)
+-> Result<(), libfabric::error::Error> {
+    recver.trecvv(iov, desc, tag, ignore)
+}
+
+fn conn_tsendmsg(
+    sender: &impl ConnectedTagSendEp,
+    msg: &MsgTaggedConnected,
+    options: TaggedSendMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    sender.tsendmsg(msg, options)
+}
+
+fn connless_tsendmsg(
+    sender: &impl TagSendEp,
+    msg: &MsgTagged,
+    options: TaggedSendMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    sender.tsendmsg_to(msg, options)
+}
+
+fn connless_trecvmsg(
+    recver: &impl TagRecvEp,
+    msg: &MsgTaggedMut,
+    options: TaggedRecvMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    recver.trecvmsg_from(msg, options)
+}
+
+fn conn_trecvmsg(
+    recver: &impl ConnectedTagRecvEp,
+    msg: &MsgTaggedConnectedMut,
+    options: TaggedRecvMsgOptions,
+)
+-> Result<(), libfabric::error::Error> {
+    recver.trecvmsg(msg, options)
+}
+
+impl<I> Ofi<I> {
+    fn check_and_progress(&self, err: Result<(), libfabric::error::Error>) -> bool {
+        let res = match err {
+            Ok(_) => true,
+            Err(err) => {
+                if !matches!(err.kind, ErrorKind::TryAgain) {
+                    panic!("{:?}", err);
+                }
+                else {
+                    false
+                }
+            }
+        };
+        if ! res {
+            ft_progress(self.cq_type.tx_cq());
+            ft_progress(self.cq_type.rx_cq());
+        }
+
+        res
     }
 }
 
@@ -444,182 +765,194 @@ impl<I: TagDefaultCap> Ofi<I> {
         desc: Option<&MemoryRegionDesc>,
         tag: u64,
         data: Option<u64>,
+        use_context: bool,
     ) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            ep.tinjectdata_to(
-                                &buf,
-                                data.unwrap(),
-                                self.mapped_addr.as_ref().unwrap(),
-                                tag,
-                            )
-                        } else {
-                            ep.tinject_to(&buf, self.mapped_addr.as_ref().unwrap(), tag)
+            let err = 
+            
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => {
+                            connless_tsend(ep, &buf, desc, tag, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
                         }
-                    } else {
-                        if data.is_some() {
-                            ep.tsenddata_to(
-                                &buf,
-                                desc,
-                                data.unwrap(),
-                                self.mapped_addr.as_ref().unwrap(),
-                                tag,
-                            )
-                        } else {
-                            ep.tsend_to(&buf, desc, self.mapped_addr.as_ref().unwrap(), tag)
+                        MyEndpoint::Connected(ep) => {
+                            conn_tsend(ep, &buf, desc, tag, data, self.info_entry.tx_attr().inject_size())
                         }
                     }
                 }
-                MyEndpoint::Connected(ep) => {
-                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            ep.tinjectdata(&buf, data.unwrap(), tag)
-                        } else {
-                            ep.tinject(&buf, tag)
+                else {
+                    match &self.tx_context {
+                        MyTxContext::Connectionless(tx_context) => {
+                            connless_tsend(tx_context.as_ref().unwrap(), &buf, desc, tag, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
                         }
-                    } else {
-                        if data.is_some() {
-                            ep.tsenddata(&buf, desc, data.unwrap(), tag)
-                        } else {
-                            ep.tsend(&buf, desc, tag)
+                        MyTxContext::Connected(tx_context) => {
+                            conn_tsend(tx_context.as_ref().unwrap(), &buf, desc, tag, data, self.info_entry.tx_attr().inject_size())
                         }
                     }
-                }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+                };
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
-    pub fn tsendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, tag: u64) {
+    pub fn tsendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, tag: u64, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    ep.tsendv_to(iov, desc, self.mapped_addr.as_ref().unwrap(), tag)
-                }
-                MyEndpoint::Connected(ep) => ep.tsendv(iov, desc, tag),
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
+            let err = 
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => {
+                            connless_tsendv(ep, iov, desc, self.mapped_addr.as_ref().unwrap(), tag)
+                        }
+                        MyEndpoint::Connected(ep) => {
+                            conn_tsendv(ep, iov, desc, tag)
+                        },
                     }
                 }
-            }
+                else {
+                    match &self.tx_context {
+                        MyTxContext::Connected(tx_context) => conn_tsendv(tx_context.as_ref().unwrap(), iov, desc, tag),
+                        MyTxContext::Connectionless(tx_context) => connless_tsendv(tx_context.as_ref().unwrap(), iov, desc, self.mapped_addr.as_ref().unwrap(), tag),
+                    }
+                };
 
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
+            if self.check_and_progress(err) {
+                break
+            }
         }
     }
 
-    pub fn trecvv(&mut self, iov: &[IoVecMut], desc: Option<&[MemoryRegionDesc]>, tag: u64) {
+
+
+    pub fn trecvv(&mut self, iov: &[IoVecMut], desc: Option<&[MemoryRegionDesc]>, tag: u64, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    ep.trecvv_from(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
-                }
-                MyEndpoint::Connected(ep) => ep.trecvv(iov, desc, tag, None),
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
+            let err = 
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => {
+                            connless_trecvv(ep, iov, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
+                        }
+                        MyEndpoint::Connected(ep) => {
+                            conn_trecvv(ep, iov, desc, tag, None)
+                        },
                     }
                 }
+                else {
+                    match &self.rx_context {
+                        MyRxContext::Connectionless(rx_context) => {
+                            connless_trecvv(rx_context.as_ref().unwrap(), iov, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
+                        }
+                        MyRxContext::Connected(rx_context) => {
+                            conn_trecvv(rx_context.as_ref().unwrap(), iov, desc, tag, None)
+                        },
+                    }
+                };
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
-    pub fn trecv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>, tag: u64) {
+
+    pub fn trecv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>, tag: u64, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    ep.trecv_from(buf, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
-                }
-                MyEndpoint::Connected(ep) => ep.trecv(buf, desc, tag, None),
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
+            let err = 
+            if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => {
+                            connless_trecv(ep, buf, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
+                        }
+                        MyEndpoint::Connected(ep) => {
+                            conn_trecv(ep, buf, desc, tag, None)
+                        },
                 }
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
+            else {
+                match &self.rx_context {
+                    MyRxContext::Connectionless(rx_context) => {
+                        connless_trecv(rx_context.as_ref().unwrap(), buf, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
+                    }
+                    MyRxContext::Connected(rx_context) => {
+                        conn_trecv(rx_context.as_ref().unwrap(), buf, desc, tag, None)
+                    },
+                }
+            };
+            
+            if self.check_and_progress(err) {
+                break
+            }
         }
     }
 
-    pub fn tsendmsg(&mut self, msg: &Either<MsgTagged, MsgTaggedConnected>) {
+    pub fn tsendmsg(&mut self, msg: &Either<MsgTagged, MsgTaggedConnected>, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => ep.tsendmsg_to(msg, TferOptions::new().remote_cq_data()),
-                    Either::Right(_) => panic!("Wrong message type used"),
-                },
-                MyEndpoint::Connected(ep) => match msg {
-                    Either::Left(_) => panic!("Wrong message type used"),
-                    Either::Right(msg) => ep.tsendmsg(msg, TferOptions::new().remote_cq_data()),
-                },
-            };
+            let err = 
+                if !use_context {
 
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => match msg {
+                            Either::Left(msg) => connless_tsendmsg(ep, msg, TferOptions::new().remote_cq_data()),
+                            Either::Right(_) => panic!("Wrong message type used"),
+                        },
+                        MyEndpoint::Connected(ep) => match msg {
+                            Either::Left(_) => panic!("Wrong message type used"),
+                            Either::Right(msg) => conn_tsendmsg(ep, msg, TferOptions::new().remote_cq_data()),
+                        },
                     }
                 }
-            }
+                else {
 
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
+                    match &self.tx_context {
+                        MyTxContext::Connectionless(tx_context) => match msg {
+                            Either::Left(msg) => connless_tsendmsg(tx_context.as_ref().unwrap(), msg, TferOptions::new().remote_cq_data()),
+                            Either::Right(_) => panic!("Wrong message type used"),
+                        },
+                        MyTxContext::Connected(tx_context) => match msg {
+                            Either::Left(_) => panic!("Wrong message type used"),
+                            Either::Right(msg) => conn_tsendmsg(tx_context.as_ref().unwrap(), msg, TferOptions::new().remote_cq_data()),
+                        },
+                    }
+                };
+
+            if self.check_and_progress(err) {
+                break
+            }
         }
     }
 
-    pub fn trecvmsg(&mut self, msg: &Either<MsgTaggedMut, MsgTaggedConnectedMut>) {
+    pub fn trecvmsg(&mut self, msg: &Either<MsgTaggedMut, MsgTaggedConnectedMut>, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => ep.trecvmsg_from(msg, TferOptions::new()),
-                    Either::Right(_) => panic!("Wrong message type"),
-                },
-                MyEndpoint::Connected(ep) => match msg {
-                    Either::Left(_) => panic!("Wrong message type"),
-                    Either::Right(msg) => ep.trecvmsg(msg, TferOptions::new()),
-                },
-            };
-
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
+            let err = 
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => match msg {
+                            Either::Left(msg) => connless_trecvmsg(ep, msg, TferOptions::new()),
+                            Either::Right(_) => panic!("Wrong message type"),
+                        },
+                        MyEndpoint::Connected(ep) => match msg {
+                            Either::Left(_) => panic!("Wrong message type"),
+                            Either::Right(msg) => conn_trecvmsg(ep, msg, TferOptions::new()),
+                        },
                     }
                 }
-            }
+                else {
+                    match &self.rx_context {
+                        MyRxContext::Connectionless(rx_context) => match msg {
+                            Either::Left(msg) => connless_trecvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
+                            Either::Right(_) => panic!("Wrong message type"),
+                        },
+                        MyRxContext::Connected(rx_context) => match msg {
+                            Either::Left(_) => panic!("Wrong message type"),
+                            Either::Right(msg) => conn_trecvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
+                        },
+                    }
+                };
 
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
+            if self.check_and_progress(err) {
+                break
+            }
         }
     }
 }
@@ -630,56 +963,35 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: Option<u64>,
+        use_context: bool,
     ) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            ep.injectdata_to(buf, data.unwrap(), self.mapped_addr.as_ref().unwrap())
-                        } else {
-                            ep.inject_to(&buf, self.mapped_addr.as_ref().unwrap())
+            let err = 
+            
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => {
+                            connless_send(ep, buf, desc, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
                         }
-                    } else {
-                        if data.is_some() {
-                            ep.senddata_to(
-                                &buf,
-                                desc,
-                                data.unwrap(),
-                                self.mapped_addr.as_ref().unwrap(),
-                            )
-                        } else {
-                            ep.send_to(&buf, desc, self.mapped_addr.as_ref().unwrap())
+                        MyEndpoint::Connected(ep) => {
+                            conn_send(ep, buf, desc, data, self.info_entry.tx_attr().inject_size())
                         }
                     }
                 }
-                MyEndpoint::Connected(ep) => {
-                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            ep.injectdata(&buf, data.unwrap())
-                        } else {
-                            ep.inject(&buf)
+                else {
+                    match &self.tx_context {
+                        MyTxContext::Connectionless(tx_context) => {
+                            connless_send(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
                         }
-                    } else {
-                        if data.is_some() {
-                            ep.senddata(&buf, desc, data.unwrap())
-                        } else {
-                            ep.send(&buf, desc)
+                        MyTxContext::Connected(tx_context) => {
+                            conn_send(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc, data, self.info_entry.tx_attr().inject_size())
                         }
                     }
-                }
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+                };
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -734,39 +1046,37 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                     }
                 }
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
-    pub fn sendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>) {
+    pub fn sendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    ep.sendv_to(iov, desc, self.mapped_addr.as_ref().unwrap())
-                }
-                MyEndpoint::Connected(ep) => ep.sendv(iov, desc),
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
+            let err = 
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => {
+                            connless_sendv(ep, iov, desc, self.mapped_addr.as_ref().unwrap())
+                        }
+                        MyEndpoint::Connected(ep) => conn_sendv(ep, iov, desc),
                     }
                 }
-            }
+                else {
+                    match &self.tx_context {
+                        MyTxContext::Connectionless(tx_context) => {
+                            connless_sendv(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), iov, desc, self.mapped_addr.as_ref().unwrap())
+                        }
+                        MyTxContext::Connected(tx_context) => conn_sendv(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), iov, desc),
+                    }
+                };
 
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
+            
+            if self.check_and_progress(err) {
+                break
+            }
         }
     }
 
@@ -778,93 +1088,108 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 }
                 MyEndpoint::Connected(ep) => ep.recvv(iov, desc),
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
-    pub fn recv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>) {
+    pub fn recv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => {
-                    ep.recv_from(buf, desc, self.mapped_addr.as_ref().unwrap())
-                }
-                MyEndpoint::Connected(ep) => ep.recv(buf, desc),
-            };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
+            let err = 
+
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => {
+                            connless_recv(ep, buf, desc, self.mapped_addr.as_ref().unwrap())
+                        }
+                        MyEndpoint::Connected(ep) => conn_recv(ep, buf, desc),
                     }
                 }
+                else {
+                    match &self.rx_context {
+                        MyRxContext::Connectionless(rx_context) => {
+                            connless_recv(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc, self.mapped_addr.as_ref().unwrap())
+                        }
+                        MyRxContext::Connected(rx_context) => conn_recv(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc),
+                    }
+                };
+            
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
-    pub fn sendmsg(&mut self, msg: &Either<Msg, MsgConnected>) {
+    pub fn sendmsg(&mut self, msg: &Either<Msg, MsgConnected>,  use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => ep.sendmsg_to(msg, TferOptions::new().remote_cq_data()),
-                    Either::Right(_) => panic!("Wrong msg type"),
-                },
-                MyEndpoint::Connected(ep) => match msg {
-                    Either::Left(_) => panic!("Wrong msg type"),
-                    Either::Right(msg) => ep.sendmsg(msg, TferOptions::new().remote_cq_data()),
-                },
-            };
-
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
+            let err = 
+            if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => match msg {
+                        Either::Left(msg) => connless_sendmsg(ep, msg, TferOptions::new().remote_cq_data()),
+                        Either::Right(_) => panic!("Wrong msg type"),
+                    },
+                    MyEndpoint::Connected(ep) => match msg {
+                        Either::Left(_) => panic!("Wrong msg type"),
+                        Either::Right(msg) => conn_sendmsg(ep, msg, TferOptions::new().remote_cq_data()),
+                    },
                 }
             }
+            else {
+                match &self.tx_context {
+                    MyTxContext::Connectionless(tx_context) => match msg {
+                        Either::Left(msg) => connless_sendmsg(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new().remote_cq_data()),
+                        Either::Right(_) => panic!("Wrong msg type"),
+                    },
+                    MyTxContext::Connected(tx_context) => match msg {
+                        Either::Left(_) => panic!("Wrong msg type"),
+                        Either::Right(msg) => conn_sendmsg(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new().remote_cq_data()),
+                    },
+                }
+            };
 
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
+            
+            if self.check_and_progress(err) {
+                break
+            }
         }
     }
 
-    pub fn recvmsg(&mut self, msg: &Either<MsgMut, MsgConnectedMut>) {
+    pub fn recvmsg(&mut self, msg: &Either<MsgMut, MsgConnectedMut>, use_context: bool) {
         loop {
-            let err = match &self.ep {
-                MyEndpoint::Connectionless(ep) => match msg {
-                    Either::Left(msg) => ep.recvmsg_from(msg, TferOptions::new()),
-                    Either::Right(_) => panic!("Wrong message type"),
-                },
-                MyEndpoint::Connected(ep) => match msg {
-                    Either::Left(_) => panic!("Wrong message type"),
-                    Either::Right(msg) => ep.recvmsg(msg, TferOptions::new()),
-                },
-            };
-
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
+            let err = 
+                if !use_context {
+                    match &self.ep {
+                        MyEndpoint::Connectionless(ep) => match msg {
+                            Either::Left(msg) => connless_recvmsg(ep, msg, TferOptions::new()),
+                            Either::Right(_) => panic!("Wrong message type"),
+                        },
+                        MyEndpoint::Connected(ep) => match msg {
+                            Either::Left(_) => panic!("Wrong message type"),
+                            Either::Right(msg) => conn_recvmsg(ep, msg, TferOptions::new()),
+                        },
                     }
                 }
-            }
+                else {
+                    match &self.rx_context {
+                        MyRxContext::Connectionless(rx_context) => match msg {
+                            Either::Left(msg) => connless_recvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
+                            Either::Right(_) => panic!("Wrong message type"),
+                        },
+                        MyRxContext::Connected(rx_context) => match msg {
+                            Either::Left(_) => panic!("Wrong message type"),
+                            Either::Right(msg) => conn_recvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
+                        },
+                    }
+                };
 
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
+            
+            if self.check_and_progress(err) {
+                break
+            }
         }
     }
 
@@ -911,11 +1236,13 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
             desc.as_ref(),
             None,
+            false,
         );
         self.recv(
             &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
                 ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
             desc.as_ref(),
+            false
         );
 
         self.cq_type.rx_cq().sread(1, -1).unwrap();
@@ -1051,17 +1378,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     }
                 }
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1088,17 +1408,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1124,17 +1437,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1160,17 +1466,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1188,17 +1487,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     Either::Right(msg) => unsafe { ep.writemsg(msg, WriteMsgOptions::new()) },
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1214,17 +1506,10 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     Either::Right(msg) => unsafe { ep.readmsg(msg, ReadMsgOptions::new()) },
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 }
@@ -1287,17 +1572,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     }
                 }
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1331,17 +1609,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1361,17 +1632,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     Either::Right(msg) => unsafe { ep.atomicmsg(msg, opts) },
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1411,17 +1675,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1461,17 +1718,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1497,17 +1747,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     },
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1553,17 +1796,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1609,17 +1845,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 
@@ -1647,17 +1876,10 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     },
                 },
             };
-            match err {
-                Ok(_) => break,
-                Err(err) => {
-                    if !matches!(err.kind, ErrorKind::TryAgain) {
-                        panic!("{:?}", err);
-                    }
-                }
+            
+            if self.check_and_progress(err) {
+                break
             }
-
-            ft_progress(self.cq_type.tx_cq());
-            ft_progress(self.cq_type.rx_cq());
         }
     }
 }
@@ -1671,7 +1893,8 @@ macro_rules! gen_info {
                 let info = Info::new(&libfabric::info::libfabric_version())
                     .enter_hints()
                     .enter_ep_attr()
-                    // .tx_ctx_cnt(0)
+                        // .tx_ctx_cnt(1)
+                        // .rx_ctx_cnt(1)
                     .type_($ep_type)
                     .leave_ep_attr()
                     .enter_domain_attr()
@@ -1689,11 +1912,9 @@ macro_rules! gen_info {
                     .enter_tx_attr()
                     .traffic_class(libfabric::enums::TrafficClass::LowLatency)
                     // .op_flags(libfabric::enums::TransferOptions::new().delivery_complete())
-                    // .size(1024)
                     .leave_tx_attr()
                     .enter_rx_attr()
                     // .caps(RxCaps::new().recv().collective())
-                    // .size(1024)
                     .leave_rx_attr()
                     .addr_format(libfabric::enums::AddressFormat::Unspec)
                     .caps($caps)
@@ -1803,7 +2024,7 @@ fn handshake_connectionless1() {
     );
 }
 
-fn sendrecv(server: bool, name: &str, connected: bool) {
+fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
     let mut ofi = if connected {
         handshake(server, name, Some(InfoCaps::new().msg()))
     } else {
@@ -1847,12 +2068,12 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         assert!(std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size());
 
         // Inject a buffer
-        ofi.send(&reg_mem[..128], desc0.as_ref(), None);
+        ofi.send(&reg_mem[..128], desc0.as_ref(), None, use_context);
         // No cq.sread since inject does not generate completions
 
         // // Send single Iov
         let iov = [IoVec::from_slice(&reg_mem[..512])];
-        ofi.sendv(&iov, Some(&desc[..1]));
+        ofi.sendv(&iov, Some(&desc[..1]), use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Send multi Iov
@@ -1860,7 +2081,7 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
             IoVec::from_slice(&reg_mem[..512]),
             IoVec::from_slice(&reg_mem[512..1024]),
         ];
-        ofi.sendv(&iov, Some(&desc));
+        ofi.sendv(&iov, Some(&desc), use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         let expected: Vec<_> = (0..1024 * 2)
@@ -1870,13 +2091,13 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
         reg_mem.iter_mut().for_each(|v| *v = 0);
 
         // Receive a single buffer
-        ofi.recv(&mut reg_mem[..512], desc0.as_ref());
+        ofi.recv(&mut reg_mem[..512], desc0.as_ref(), use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(reg_mem[..512], expected[..512]);
 
         // Receive inject
         reg_mem.iter_mut().for_each(|v| *v = 0);
-        ofi.recv(&mut reg_mem[..128], desc0.as_ref());
+        ofi.recv(&mut reg_mem[..128], desc0.as_ref(), use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(reg_mem[..128], expected[..128]);
 
@@ -1902,25 +2123,45 @@ fn sendrecv(server: bool, name: &str, connected: bool) {
 
 #[test]
 fn sendrecv0() {
-    sendrecv(true, "sendrecv0", false);
+    sendrecv(true, "sendrecv0", false, false);
 }
 
 #[test]
 fn sendrecv1() {
-    sendrecv(false, "sendrecv0", false);
+    sendrecv(false, "sendrecv0", false, false);
 }
 
 #[test]
 fn conn_sendrecv0() {
-    sendrecv(true, "conn_sendrecv0", true);
+    sendrecv(true, "conn_sendrecv0", true, false);
 }
 
 #[test]
 fn conn_sendrecv1() {
-    sendrecv(false, "conn_sendrecv0", true);
+    sendrecv(false, "conn_sendrecv0", true, false);
 }
 
-fn sendrecvdata(server: bool, name: &str, connected: bool) {
+#[test]
+fn context_sendrecv0() {
+    sendrecv(true, "sendrecv0", false, true);
+}
+
+#[test]
+fn context_sendrecv1() {
+    sendrecv(false, "sendrecv0", false, true);
+}
+
+// #[test]
+// fn context_conn_sendrecv0() {
+//     sendrecv(true, "conn_sendrecv0", true, true);
+// }
+
+// #[test]
+// fn context_conn_sendrecv1() {
+//     sendrecv(false, "conn_sendrecv0", true, true);
+// }
+
+fn sendrecvdata(server: bool, name: &str, connected: bool, use_context: bool) {
     let mut ofi = if connected {
         handshake(server, name, Some(InfoCaps::new().msg()))
     } else {
@@ -1949,7 +2190,7 @@ fn sendrecvdata(server: bool, name: &str, connected: bool) {
     let data = Some(128u64);
     if server {
         // Send a single buffer
-        ofi.send(&reg_mem[..512], desc0.as_ref(), data);
+        ofi.send(&reg_mem[..512], desc0.as_ref(), data, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         let expected: Vec<_> = (0..1024 * 2)
@@ -1959,7 +2200,7 @@ fn sendrecvdata(server: bool, name: &str, connected: bool) {
         reg_mem.iter_mut().for_each(|v| *v = 0);
 
         // Receive a single buffer
-        ofi.recv(&mut reg_mem[..512], desc0.as_ref());
+        ofi.recv(&mut reg_mem[..512], desc0.as_ref(), use_context);
 
         let entry = ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         match entry {
@@ -1972,23 +2213,43 @@ fn sendrecvdata(server: bool, name: &str, connected: bool) {
 
 #[test]
 fn sendrecvdata0() {
-    sendrecvdata(true, "sendrecvdata0", false);
+    sendrecvdata(true, "sendrecvdata0", false, false);
 }
 
 #[test]
 fn sendrecvdata1() {
-    sendrecvdata(false, "sendrecvdata0", false);
+    sendrecvdata(false, "sendrecvdata0", false, false);
 }
 
 #[test]
 fn conn_sendrecvdata0() {
-    sendrecvdata(true, "conn_sendrecvdata0", true);
+    sendrecvdata(true, "conn_sendrecvdata0", true, false);
 }
 
 #[test]
 fn conn_sendrecvdata1() {
-    sendrecvdata(false, "conn_sendrecvdata0", true);
+    sendrecvdata(false, "conn_sendrecvdata0", true, false);
 }
+
+// #[test]
+// fn context_sendrecvdata0() {
+//     sendrecvdata(true, "sendrecvdata0", false, true);
+// }
+
+// #[test]
+// fn context_sendrecvdata1() {
+//     sendrecvdata(false, "sendrecvdata0", false, true);
+// }
+
+// #[test]
+// fn context_conn_sendrecvdata0() {
+//     sendrecvdata(true, "conn_sendrecvdata0", true, true);
+// }
+
+// #[test]
+// fn context_conn_sendrecvdata1() {
+//     sendrecvdata(false, "conn_sendrecvdata0", true, true);
+// }
 
 fn bind_mr<E: 'static>(ep: &MyEndpoint<E>, mr: &DisabledMemoryRegion) {
     match ep {
@@ -1997,7 +2258,7 @@ fn bind_mr<E: 'static>(ep: &MyEndpoint<E>, mr: &DisabledMemoryRegion) {
     }
 }
 
-fn tsendrecv(server: bool, name: &str, connected: bool) {
+fn tsendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
     let mut ofi = if connected {
         handshake(server, name, Some(InfoCaps::new().msg().tagged()))
     } else {
@@ -2028,7 +2289,7 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
     let data = Some(128u64);
     if server {
         // Send a single buffer
-        ofi.tsend(&reg_mem[..512], desc0.as_ref(), 10, data);
+        ofi.tsend(&reg_mem[..512], desc0.as_ref(), 10, data, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // match entry {
         //     Completion::Tagged(entry) => {assert_eq!(entry[0].data(), data.unwrap()); assert_eq!(entry[0].tag(), 10)},
@@ -2038,12 +2299,12 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         assert!(std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size());
 
         // Inject a buffer
-        ofi.tsend(&reg_mem[..128], desc0.as_ref(), 1, data);
+        ofi.tsend(&reg_mem[..128], desc0.as_ref(), 1, data, use_context);
         // No cq.sread since inject does not generate completions
 
         // // Send single Iov
         let iov = [IoVec::from_slice(&reg_mem[..512])];
-        ofi.tsendv(&iov, Some(&desc[..1]), 2);
+        ofi.tsendv(&iov, Some(&desc[..1]), 2, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Send multi Iov
@@ -2051,7 +2312,7 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
             IoVec::from_slice(&reg_mem[..512]),
             IoVec::from_slice(&reg_mem[512..1024]),
         ];
-        ofi.tsendv(&iov, Some(&desc), 3);
+        ofi.tsendv(&iov, Some(&desc), 3, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         let expected: Vec<_> = (0..1024 * 2)
@@ -2061,7 +2322,7 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         reg_mem.iter_mut().for_each(|v| *v = 0);
 
         // Receive a single buffer
-        ofi.trecv(&mut reg_mem[..512], desc0.as_ref(), 10);
+        ofi.trecv(&mut reg_mem[..512], desc0.as_ref(), 10, use_context);
         let entry = ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         match entry {
             Completion::Tagged(entry) => {
@@ -2074,14 +2335,14 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
 
         // Receive inject
         reg_mem.iter_mut().for_each(|v| *v = 0);
-        ofi.trecv(&mut reg_mem[..128], desc0.as_ref(), 1);
+        ofi.trecv(&mut reg_mem[..128], desc0.as_ref(), 1, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(reg_mem[..128], expected[..128]);
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
         // // Receive into a single Iov
         let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-        ofi.trecvv(&mut iov, Some(&desc[..1]), 2);
+        ofi.trecvv(&mut iov, Some(&desc[..1]), 2, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(reg_mem[..512], expected[..512]);
 
@@ -2090,7 +2351,7 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
         // // Receive into multiple Iovs
         let (mem0, mem1) = reg_mem[..1024].split_at_mut(512);
         let iov = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-        ofi.trecvv(&iov, Some(&desc), 3);
+        ofi.trecvv(&iov, Some(&desc), 3, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         assert_eq!(mem0, &expected[..512]);
@@ -2100,25 +2361,45 @@ fn tsendrecv(server: bool, name: &str, connected: bool) {
 
 #[test]
 fn tsendrecv0() {
-    tsendrecv(true, "tsendrecv0", false);
+    tsendrecv(true, "tsendrecv0", false, false);
 }
 
 #[test]
 fn tsendrecv1() {
-    tsendrecv(false, "tsendrecv0", false);
+    tsendrecv(false, "tsendrecv0", false, false);
 }
 
 #[test]
 fn conn_tsendrecv0() {
-    tsendrecv(true, "conn_tsendrecv0", true);
+    tsendrecv(true, "conn_tsendrecv0", true, false);
 }
 
 #[test]
 fn conn_tsendrecv1() {
-    tsendrecv(false, "conn_tsendrecv0", true);
+    tsendrecv(false, "conn_tsendrecv0", true, false);
 }
 
-fn sendrecvmsg(server: bool, name: &str, connected: bool) {
+// #[test]
+// fn context_tsendrecv0() {
+//     tsendrecv(true, "tsendrecv0", false, true);
+// }
+
+// #[test]
+// fn context_tsendrecv1() {
+//     tsendrecv(false, "tsendrecv0", false, true);
+// }
+
+// #[test]
+// fn context_conn_tsendrecv0() {
+//     tsendrecv(true, "conn_tsendrecv0", true, true);
+// }
+
+// #[test]
+// fn context_conn_tsendrecv1() {
+//     tsendrecv(false, "conn_tsendrecv0", true, true);
+// }
+
+fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
     let mut ofi = if connected {
         handshake(server, name, Some(InfoCaps::new().msg()))
     } else {
@@ -2165,7 +2446,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
                 &mut ctx,
             ))
         };
-        ofi.sendmsg(&msg);
+        ofi.sendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // let entry =
         // match entry {
@@ -2189,7 +2470,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.sendmsg(&msg);
+        ofi.sendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // let entry =
         // match entry {
@@ -2215,7 +2496,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.sendmsg(&msg);
+        ofi.sendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         let msg = if connected {
@@ -2231,7 +2512,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
                 &mut ctx,
             ))
         };
-        ofi.sendmsg(&msg);
+        ofi.sendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2257,7 +2538,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.recvmsg(&msg);
+        ofi.recvmsg(&msg, use_context);
         // ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         let entry = ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         match entry {
@@ -2286,7 +2567,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.recvmsg(&msg);
+        ofi.recvmsg(&msg, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         // let entry =
         // match entry {
@@ -2315,7 +2596,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.recvmsg(&msg);
+        ofi.recvmsg(&msg, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(mem0[..256], expected[..256]);
         assert_eq!(mem1[..256], expected[256..512]);
@@ -2340,7 +2621,7 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.recvmsg(&msg);
+        ofi.recvmsg(&msg, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(mem0[..512], expected[..512]);
         assert_eq!(mem1[..512], expected[512..1024]);
@@ -2349,25 +2630,45 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool) {
 
 #[test]
 fn sendrecvmsg0() {
-    sendrecvmsg(true, "sendrecvmsg0", false);
+    sendrecvmsg(true, "sendrecvmsg0", false, false);
 }
 
 #[test]
 fn sendrecvmsg1() {
-    sendrecvmsg(false, "sendrecvmsg0", false);
+    sendrecvmsg(false, "sendrecvmsg0", false, false);
 }
 
 #[test]
 fn conn_sendrecvmsg0() {
-    sendrecvmsg(true, "conn_sendrecvmsg0", true);
+    sendrecvmsg(true, "conn_sendrecvmsg0", true, false);
 }
 
 #[test]
 fn conn_sendrecvmsg1() {
-    sendrecvmsg(false, "conn_sendrecvmsg0", true);
+    sendrecvmsg(false, "conn_sendrecvmsg0", true, false);
 }
 
-fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
+// #[test]
+// fn context_sendrecvmsg0() {
+//     sendrecvmsg(true, "sendrecvmsg0", false, true);
+// }
+
+// #[test]
+// fn context_sendrecvmsg1() {
+//     sendrecvmsg(false, "sendrecvmsg0", false, true);
+// }
+
+// #[test]
+// fn context_conn_sendrecvmsg0() {
+//     sendrecvmsg(true, "conn_sendrecvmsg0", true, true);
+// }
+
+// #[test]
+// fn context_conn_sendrecvmsg1() {
+//     sendrecvmsg(false, "conn_sendrecvmsg0", true, true);
+// }
+
+fn tsendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
     let mut ofi = if connected {
         handshake(server, name, Some(InfoCaps::new().msg().tagged()))
     } else {
@@ -2421,7 +2722,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
                 &mut ctx,
             ))
         };
-        ofi.tsendmsg(&msg);
+        ofi.tsendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // let entry =
         // match entry {
@@ -2452,7 +2753,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.tsendmsg(&msg);
+        ofi.tsendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Single iov message
@@ -2477,7 +2778,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.tsendmsg(&msg);
+        ofi.tsendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         let msg = if connected {
@@ -2495,7 +2796,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
                 &mut ctx,
             ))
         };
-        ofi.tsendmsg(&msg);
+        ofi.tsendmsg(&msg, use_context);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2525,7 +2826,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.trecvmsg(&msg);
+        ofi.trecvmsg(&msg, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         // let entry =
         // match entry {
@@ -2558,7 +2859,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.trecvmsg(&msg);
+        ofi.trecvmsg(&msg, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1[..1024], expected);
 
@@ -2584,7 +2885,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.trecvmsg(&msg);
+        ofi.trecvmsg(&msg, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(mem0[..256], expected[..256]);
         assert_eq!(mem1[..256], expected[256..512]);
@@ -2611,7 +2912,7 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.trecvmsg(&msg);
+        ofi.trecvmsg(&msg, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(mem0[..512], expected[..512]);
         assert_eq!(mem1[..512], expected[512..1024]);
@@ -2620,23 +2921,43 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
 
 #[test]
 fn tsendrecvmsg0() {
-    tsendrecvmsg(true, "tsendrecvmsg0", false);
+    tsendrecvmsg(true, "tsendrecvmsg0", false, false);
 }
 
 #[test]
 fn tsendrecvmsg1() {
-    tsendrecvmsg(false, "tsendrecvmsg0", false);
+    tsendrecvmsg(false, "tsendrecvmsg0", false, false);
 }
 
-#[test]
-fn conn_tsendrecvmsg0() {
-    tsendrecvmsg(true, "conn_tsendrecvmsg0", true);
-}
+// #[test]
+// fn conn_tsendrecvmsg0() {
+//     tsendrecvmsg(true, "conn_tsendrecvmsg0", true, false);
+// }
 
-#[test]
-fn conn_tsendrecvmsg1() {
-    tsendrecvmsg(false, "conn_tsendrecvmsg0", true);
-}
+// #[test]
+// fn conn_tsendrecvmsg1() {
+//     tsendrecvmsg(false, "conn_tsendrecvmsg0", true, false);
+// }
+
+// #[test]
+// fn context_tsendrecvmsg0() {
+//     tsendrecvmsg(true, "tsendrecvmsg0", false, true);
+// }
+
+// #[test]
+// fn context_tsendrecvmsg1() {
+//     tsendrecvmsg(false, "tsendrecvmsg0", false, true);
+// }
+
+// #[test]
+// fn context_conn_tsendrecvmsg0() {
+//     tsendrecvmsg(true, "conn_tsendrecvmsg0", true, true);
+// }
+
+// #[test]
+// fn context_conn_tsendrecvmsg1() {
+//     tsendrecvmsg(false, "conn_tsendrecvmsg0", true, true);
+// }
 
 fn writeread(server: bool, name: &str, connected: bool) {
     let mut ofi = if connected {
@@ -2681,7 +3002,7 @@ fn writeread(server: bool, name: &str, connected: bool) {
         ofi.write(&reg_mem[..128], 0, desc0.as_ref(), None);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Write a single buffer
@@ -2689,7 +3010,7 @@ fn writeread(server: bool, name: &str, connected: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Write vector of buffers
@@ -2701,25 +3022,25 @@ fn writeread(server: bool, name: &str, connected: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..128], &expected[..128]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..512], &expected[..512]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[1024..1536], desc0.as_ref());
+        ofi.recv(&mut reg_mem[1024..1536], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..1024], &expected[..1024]);
 
@@ -2740,7 +3061,7 @@ fn writeread(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected[..256]);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
@@ -2838,7 +3159,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         let iov = IoVec::from_slice(&reg_mem[..512]);
@@ -2871,7 +3192,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         let iov0 = IoVec::from_slice(&reg_mem[..512]);
@@ -2907,25 +3228,25 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..128], &expected[..128]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..512], &expected[..512]);
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[1024..1536], desc0.as_ref());
+        ofi.recv(&mut reg_mem[1024..1536], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..1024], &expected[..1024]);
 
@@ -2995,7 +3316,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected[..256]);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
@@ -3072,11 +3393,11 @@ fn atomic(server: bool, name: &str, connected: bool) {
 
         ofi.atomic(&reg_mem[..512], 0, desc0.as_ref(), AtomicOp::Band);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         ofi.atomic(&reg_mem[..512], 0, desc0.as_ref(), AtomicOp::Lor);
@@ -3084,11 +3405,11 @@ fn atomic(server: bool, name: &str, connected: bool) {
 
         ofi.atomic(&reg_mem[..512], 0, desc0.as_ref(), AtomicOp::Bxor);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         ofi.atomic(&reg_mem[..512], 0, desc0.as_ref(), AtomicOp::Land);
@@ -3099,7 +3420,7 @@ fn atomic(server: bool, name: &str, connected: bool) {
 
         ofi.atomic(&reg_mem[..512], 0, desc0.as_ref(), AtomicOp::AtomicWrite);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         let iocs = [
@@ -3109,7 +3430,7 @@ fn atomic(server: bool, name: &str, connected: bool) {
 
         ofi.atomicv(&iocs, 0, Some(&descs), AtomicOp::Prod);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         let err = ofi.cq_type.tx_cq().sread(1, -1);
         match err {
             Err(e) => {
@@ -3122,41 +3443,41 @@ fn atomic(server: bool, name: &str, connected: bool) {
         }
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         let mut expected = vec![2u8; 1024 * 2];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..512], &expected[..512]);
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         expected = vec![3; 1024 * 2];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..512], &expected[..512]);
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // expected = vec![2;1024*2];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         // assert_eq!(&reg_mem[..512], &expected[..512]);
 
         expected = vec![4; 1024 * 2];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..512], &expected[..512]);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
@@ -3251,11 +3572,11 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc0.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // Send a done ack
 
-        ofi.recv(&mut ack_mem[..512], desc0.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         expected = vec![2; 256];
@@ -3269,11 +3590,11 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc0.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // Send a done ack
 
-        ofi.recv(&mut ack_mem[..512], desc0.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         expected = vec![3; 256];
@@ -3299,11 +3620,11 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(mem1, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc0.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // Send a done ack
 
-        ofi.recv(&mut ack_mem[..512], desc0.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         expected = vec![2; 256];
@@ -3345,46 +3666,46 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(write_mem, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc0.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], desc0.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         let mut expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         expected = vec![3; 256];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         expected = vec![2; 256];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         expected = vec![4; 256];
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
@@ -3538,11 +3859,11 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(res, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         // Send a done ack
 
-        ofi.recv(&mut ack_mem[..512], desc.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         // expected = vec![2; 256];
@@ -3571,30 +3892,30 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         assert_eq!(res, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], desc.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         let mut expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         expected = vec![3; 256];
         // // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
-        ofi.send(&reg_mem[512..1024], desc.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
@@ -3689,21 +4010,21 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
         ofi.atomicmsg(&msg);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
-        ofi.send(&reg_mem[512..1024], desc.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         let expected = vec![3u8; 1024 * 2];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..512], &expected[..512]);
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
@@ -3810,23 +4131,23 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         assert_eq!(write_mem, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc0.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], desc0.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         let desc0 = Some(mr.descriptor());
         let expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
@@ -3936,22 +4257,22 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         assert_eq!(res, &expected);
 
         // Send a done ack
-        ofi.send(&ack_mem[..512], desc.as_ref(), None);
+        ofi.send(&ack_mem[..512], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         // Recv a completion ack
-        ofi.recv(&mut ack_mem[..512], desc.as_ref());
+        ofi.recv(&mut ack_mem[..512], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
         let expected = vec![2u8; 256];
 
         // Recv a completion ack
-        ofi.recv(&mut reg_mem[512..1024], desc.as_ref());
+        ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..256], &expected);
 
         // Send completion ack
-        ofi.send(&reg_mem[512..1024], desc.as_ref(), None);
+        ofi.send(&reg_mem[512..1024], desc.as_ref(), None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     }
 }
