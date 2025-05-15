@@ -4,7 +4,7 @@ use crate::async_::xcontext::{TxContext, TxContextImpl};
 use crate::comm::rma::{ConnectedWriteEp, ReadEpImpl, WriteEp, WriteEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{ActiveEndpoint, Connected, Connectionless, EndpointImplBase, EpState};
+use crate::ep::{Connected, Connectionless, EndpointImplBase, EpState};
 use crate::infocapsoptions::RmaCap;
 use crate::mr::MemoryRegionDesc;
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};

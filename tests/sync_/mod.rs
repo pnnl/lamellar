@@ -1,5 +1,4 @@
 use core::panic;
-use std::collections::btree_map::Keys;
 use libfabric::connless_ep::ConnectionlessEndpoint;
 use libfabric::enums;
 use libfabric::mr::MemoryRegion;

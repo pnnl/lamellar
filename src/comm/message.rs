@@ -3,7 +3,7 @@ use crate::{
     connless_ep::ConnlessEp,
     cq::ReadCq,
     enums::{RecvMsgOptions, SendMsgOptions},
-    ep::{ActiveEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
+    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
     eq::ReadEq,
     fid::{AsRawTypedFid, AsTypedFid, EpRawFid},
     infocapsoptions::{MsgCap, RecvMod, SendMod},

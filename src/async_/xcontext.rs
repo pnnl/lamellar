@@ -5,8 +5,8 @@ use super::{
     ep::{AsyncRxEp, AsyncTxEp}, eq::AsyncReadEq,
 };
 use crate::{
-    cntr::{Counter, ReadCntr}, ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, OwnedEpFid}, xcontext::{
-        Receive, RxAttr, RxContextBase, Transmit, TxAttr, TxContextBase, XContextBase, XContextBaseImpl
+    cntr::{Counter, ReadCntr}, enums::TransferOptions, ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, OwnedEpFid}, xcontext::{
+        MsgOrder, Receive, RxAttr, RxCompOrder, RxContextBase, Transmit, TxAttr, TxCompOrder, TxContextBase, XContextBase, XContextBaseImpl
     }, Context, MyOnceCell, MyRc
 };
 
@@ -336,7 +336,74 @@ pub struct RxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
-impl<'a, I: 'static, STATE: EpState> RxContextBuilder<'a, I, STATE> {
+
+impl<'a, STATE: EpState> RxContextBuilder<'a, (), STATE> {
+    pub fn new<I>(
+        ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+        index: i32,
+    ) -> RxContextBuilder<'a, I, STATE> {
+        RxContextBuilder::<I, STATE> {
+            rx_attr: RxAttr::new(),
+            index,
+            ep,
+            ctx: None,
+        }
+    }
+}
+
+impl<'a, I: 'static , STATE: EpState>
+    RxContextBuilder<'a, I, STATE>
+{
+    // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
+    //     self.rx_attr.caps(caps);
+    //     self
+    // }
+
+    pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
+        self.rx_attr.set_mode(mode);
+        self
+    }
+
+    pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
+        self.rx_attr.set_msg_order(msg_order);
+        self
+    }
+
+    pub fn comp_order(mut self, comp_order: RxCompOrder) -> Self {
+        self.rx_attr.set_comp_order(comp_order);
+        self
+    }
+
+    pub fn total_buffered_recv(mut self, total_buffered_recv: usize) -> Self {
+        self.rx_attr.set_total_buffered_recv(total_buffered_recv);
+        self
+    }
+
+    pub fn size(mut self, size: usize) -> Self {
+        self.rx_attr.set_size(size);
+        self
+    }
+
+    pub fn iov_limit(mut self, iov_limit: usize) -> Self {
+        self.rx_attr.set_iov_limit(iov_limit);
+        self
+    }
+
+    pub fn set_receive_options(mut self, ops: TransferOptions) -> Self {
+        ops.recv();
+        self.rx_attr.set_op_flags(ops);
+        self
+    }
+
+    pub fn context(self, ctx: &'a mut Context) -> RxContextBuilder<'a, I, STATE> {
+        RxContextBuilder {
+            rx_attr: self.rx_attr,
+            index: self.index,
+            ep: self.ep,
+            ctx: Some(ctx),
+        }
+    }
+
     pub fn build(self) -> Result<RxContext<I, STATE>, crate::error::Error> {
         RxContext::new(self.ep, self.index, self.rx_attr, self.ctx)
     }
@@ -350,9 +417,79 @@ pub struct TxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
+impl<'a, STATE: EpState> TxContextBuilder<'a, (), STATE> {
+    pub fn new<I>(
+        ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+        index: i32,
+    ) -> TxContextBuilder<'a, I, STATE> {
+        TxContextBuilder::<I, STATE> {
+            tx_attr: TxAttr::new(),
+            index,
+            ep,
+            ctx: None,
+        }
+    }
+}
+
 impl<'a, I: 'static, STATE: EpState>
     TxContextBuilder<'a, I, STATE>
 {
+
+    pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
+        self.tx_attr.set_mode(mode);
+        self
+    }
+
+    pub fn set_transmit_options(mut self, ops: TransferOptions) -> Self {
+        ops.transmit();
+        self.tx_attr.set_op_flags(ops);
+        self
+    }
+
+    pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
+        self.tx_attr.set_msg_order(msg_order);
+        self
+    }
+
+    pub fn comp_order(mut self, comp_order: TxCompOrder) -> Self {
+        self.tx_attr.set_comp_order(comp_order);
+        self
+    }
+
+    pub fn inject_size(mut self, size: usize) -> Self {
+        self.tx_attr.set_inject_size(size);
+        self
+    }
+
+    pub fn size(mut self, size: usize) -> Self {
+        self.tx_attr.set_size(size);
+        self
+    }
+
+    pub fn iov_limit(mut self, iov_limit: usize) -> Self {
+        self.tx_attr.set_iov_limit(iov_limit);
+        self
+    }
+
+    pub fn rma_iov_limit(mut self, rma_iov_limit: usize) -> Self {
+        self.tx_attr.set_rma_iov_limit(rma_iov_limit);
+        self
+    }
+
+    pub fn tclass(mut self, class: crate::enums::TrafficClass) -> Self {
+        self.tx_attr.set_traffic_class(class);
+        self
+    }
+
+    pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, I, STATE> {
+        TxContextBuilder {
+            tx_attr: self.tx_attr,
+            index: self.index,
+            ep: self.ep,
+            ctx: Some(ctx),
+        }
+    }
+
     pub fn build(self) -> Result<TxContext<I, STATE>, crate::error::Error> {
         TxContext::new(self.ep, self.index, self.tx_attr, self.ctx)
     }

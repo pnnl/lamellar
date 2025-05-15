@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    cntr::{Counter, ReadCntr}, conn_ep::ConnectedEp, connless_ep::ConnlessEp, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, eq::ReadEq, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid}, infocapsoptions::{RecvMod, SendMod}, Context, MyOnceCell, MyRc, SyncSend
+    cntr::{Counter, ReadCntr}, conn_ep::ConnectedEp, connless_ep::ConnlessEp, cq::ReadCq, enums::{Mode, TrafficClass, TransferOptions}, ep::{ActiveEndpoint, BaseEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, eq::ReadEq, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid}, Context, MyOnceCell, MyRc, SyncSend
 };
 
 #[cfg(feature = "threading-endpoint")]

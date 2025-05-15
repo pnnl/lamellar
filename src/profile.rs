@@ -1,9 +1,9 @@
 //[TODO] All of the contents of this file need further testing 
 // and validation. The code is not guaranteed to be correct or complete.
 
-use std::{ffi::CStr, os::raw::c_void, process::Output};
+use std::{ffi::CStr, os::raw::c_void};
 
-use crate::{enums::{DataType, ProfileDataType, Type}, ep::Endpoint, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, DomainRawFid, EpRawFid, OwnedProfileFid, ProfileRawFid, RawFid}, utils::check_error, Context};
+use crate::{enums::{DataType, ProfileDataType, Type}, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, DomainRawFid, EpRawFid, OwnedProfileFid, ProfileRawFid, RawFid}, utils::check_error, Context};
 
 pub struct Profile {
     c_profile: OwnedProfileFid

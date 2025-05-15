@@ -6,7 +6,7 @@ use crate::comm::atomic::{AtomicCASImpl, AtomicFetchEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::enums::{AtomicFetchMsgOptions, AtomicMsgOptions};
-use crate::ep::{ActiveEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase, EpState};
+use crate::ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState};
 use crate::infocapsoptions::{AtomicCap, ReadMod, WriteMod};
 use crate::mr::MemoryRegionDesc;
 use crate::utils::Either;

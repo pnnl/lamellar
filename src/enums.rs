@@ -1,6 +1,6 @@
 use std::os::fd::BorrowedFd;
 
-use libfabric_sys::{fi_profile_type, FI_RECV, FI_TRANSMIT};
+use libfabric_sys::{FI_RECV, FI_TRANSMIT};
 
 macro_rules! gen_enum {
     ($name: ident, $type_: ty, $(($var: ident, $val: path)),*) => {

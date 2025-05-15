@@ -6,7 +6,7 @@ use crate::comm::message::{
 };
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
-use crate::ep::{ActiveEndpoint, Connected, Connectionless, EndpointImplBase, EpState};
+use crate::ep::{Connected, Connectionless, EndpointImplBase, EpState};
 use crate::infocapsoptions::{MsgCap, RecvMod, SendMod};
 use crate::mr::MemoryRegionDesc;
 use crate::utils::Either;

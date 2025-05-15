@@ -1,6 +1,5 @@
 use crate::cq::ReadCq;
 use crate::cq::WaitCq;
-use crate::cq::WaitObjectRetrieve;
 use crate::cq::{CompletionEntry, SingleCompletion};
 use crate::domain::{DomainBase, DomainImplBase};
 use crate::error::ErrorKind;
@@ -14,15 +13,12 @@ use crate::{
         Completion, CompletionError, CompletionQueueAttr, CompletionQueueBase, CompletionQueueImpl,
         CtxEntry, DataEntry, MsgEntry, TaggedEntry,
     },
-    enums::WaitObjType,
     error::Error,
-    fid::AsRawFid,
     MappedAddress,
 };
 use crate::{Context, MyRc};
 #[cfg(feature = "use-async-std")]
 use async_io::{Async, Readable};
-use std::os::fd::BorrowedFd;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -63,13 +59,13 @@ macro_rules! alloc_cq_entry {
 pub type CompletionQueue<T> = CompletionQueueBase<T>;
 
 pub trait AsyncReadCq: ReadCq {
-    fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a>;
+    // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a>;
     fn read_async(&self, count: usize) -> CqAsyncReadOwned;
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a>;
 }
 
 impl CompletionQueue<AsyncCompletionQueueImpl> {
-    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
+    pub(crate) fn new_spinning<EQ: ?Sized + 'static + SyncSend>(
         domain: &DomainBase<EQ>,
         attr: CompletionQueueAttr,
         context: Option<&mut Context>,
@@ -81,7 +77,30 @@ impl CompletionQueue<AsyncCompletionQueueImpl> {
         };
 
         Ok(Self {
-            inner: MyRc::new(AsyncCompletionQueueImpl::new(
+            inner: MyRc::new(AsyncCompletionQueueImpl::new_spinning(
+                &domain.inner,
+                attr,
+                c_void,
+                default_buff_size,
+            )?),
+        })
+    }
+}
+
+impl CompletionQueue<AsyncCompletionQueueImpl> {
+    pub(crate) fn new_blocking<EQ: ?Sized + 'static + SyncSend>(
+        domain: &DomainBase<EQ>,
+        attr: CompletionQueueAttr,
+        context: Option<&mut Context>,
+        default_buff_size: usize,
+    ) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+
+        Ok(Self {
+            inner: MyRc::new(AsyncCompletionQueueImpl::new_blocking(
                 &domain.inner,
                 attr,
                 c_void,
@@ -93,10 +112,28 @@ impl CompletionQueue<AsyncCompletionQueueImpl> {
 
 impl ReadCq for AsyncCompletionQueueImpl {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
-        #[cfg(feature = "thread-safe")]
-        let mut borrowed_entries = self.base.get_ref().entry_buff.write();
-        #[cfg(not(feature = "thread-safe"))]
-        let mut borrowed_entries = self.base.get_ref().entry_buff.borrow_mut();
+        let mut borrowed_entries = match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    async_cq.get_ref().entry_buff.borrow_mut()
+                }
+                #[cfg(feature = "thread-safe")]
+                {
+                    async_cq.get_ref().entry_buff.write()
+                }
+            },
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    cq.entry_buff.borrow_mut()
+                }
+                #[cfg(feature = "thread-safe")]
+                {
+                    cq.entry_buff.write()
+                }
+            },
+        };
         self.read_in(count, &mut borrowed_entries)?;
         Ok(borrowed_entries.clone())
     }
@@ -105,66 +142,106 @@ impl ReadCq for AsyncCompletionQueueImpl {
         &self,
         count: usize,
     ) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
-        #[cfg(feature = "thread-safe")]
-        let mut borrowed_entries = self.base.get_ref().entry_buff.write();
-        #[cfg(not(feature = "thread-safe"))]
-        let mut borrowed_entries = self.base.get_ref().entry_buff.borrow_mut();
+        let mut borrowed_entries = match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    async_cq.get_ref().entry_buff.borrow_mut()
+                }
+                #[cfg(feature = "thread-safe")]
+                {
+                    async_cq.get_ref().entry_buff.write()
+                }
+            },
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    cq.entry_buff.borrow_mut()
+                }
+                #[cfg(feature = "thread-safe")]
+                {
+                    cq.entry_buff.write()
+                }
+            },
+        };
         let address = self.readfrom_in(count, &mut borrowed_entries)?;
         Ok((borrowed_entries.clone(), address))
     }
 
     fn readerr(&self, flags: u64) -> Result<CompletionError, crate::error::Error> {
-        #[cfg(feature = "thread-safe")]
-        let mut entry = self.base.get_ref().error_buff.write();
-        #[cfg(not(feature = "thread-safe"))]
-        let mut entry = self.base.get_ref().error_buff.borrow_mut();
-        self.readerr_in(&mut entry, flags)?;
-        Ok(entry.clone())
+        let mut borrowed_entries = match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    async_cq.get_ref().error_buff.borrow_mut()
+                }
+                #[cfg(feature = "thread-safe")]
+                {
+                    async_cq.get_ref().error_buff.write()
+                }
+            },
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    cq.error_buff.borrow_mut()
+                }
+                #[cfg(feature = "thread-safe")]
+                {
+                    cq.error_buff.write()
+                }
+            },
+        };
+        self.readerr_in(&mut borrowed_entries, flags)?;
+        Ok(borrowed_entries.clone())
     }
 
     fn fid(&self) -> &crate::fid::OwnedCqFid {
-        &self.base.as_ref().c_cq
-    }
-}
-
-impl<'a> WaitObjectRetrieve<'a> for AsyncCompletionQueueImpl {
-    fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
-        if let Some(wait) = self.base.get_ref().wait_obj {
-            if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
-                let mut fd: i32 = 0;
-                let err = unsafe {
-                    libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid_mut().as_raw_fid(),
-                        libfabric_sys::FI_GETWAIT as i32,
-                        (&mut fd as *mut i32).cast(),
-                    )
-                };
-                if err < 0 {
-                    Err(crate::error::Error::from_err_code(
-                        (-err).try_into().unwrap(),
-                    ))
-                } else {
-                    Ok(WaitObjType::Fd(unsafe { BorrowedFd::borrow_raw(fd) }))
-                }
-            } else {
-                panic!("Unexpected value for wait object in AsyncCompletionQueue");
-            }
-        } else {
-            panic!("Unexpected value for wait object in AsyncCompletionQueue");
+        match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => &async_cq.get_ref().c_cq,
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => &cq.c_cq,
         }
     }
 }
 
-// impl AsRawTypedFid for AsyncCompletionQueueImpl {
-//     type Output = CqRawFid;
-
-//     fn as_raw_typed_fid(&self) -> Self::Output {
-//         self.base.get_ref().as_raw_typed_fid()
+// impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrieve<'a> for AsyncCompletionQueueImpl<WAIT, true, FD> {
+//     fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
+//         let wait_obj = match &self.base {
+//             AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref().wait_obj,
+//             AsyncCompletionQueueImplBase::SpinningCQ(cq) => cq.wait_obj,
+//         };
+//         if let Some(wait) = wait_obj {
+//             if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
+//                 let mut fd: i32 = 0;
+//                 let err = unsafe {
+//                     libfabric_sys::inlined_fi_control(
+//                         self.as_typed_fid_mut().as_raw_fid(),
+//                         libfabric_sys::FI_GETWAIT as i32,
+//                         (&mut fd as *mut i32).cast(),
+//                     )
+//                 };
+//                 if err < 0 {
+//                     Err(crate::error::Error::from_err_code(
+//                         (-err).try_into().unwrap(),
+//                     ))
+//                 } else {
+//                     Ok(WaitObjType::Fd(unsafe { BorrowedFd::borrow_raw(fd) }))
+//                 }
+//             } else {
+//                 panic!("Unexpected value for wait object in AsyncCompletionQueue");
+//             }
+//         } else {
+//             panic!("Unexpected value for wait object in AsyncCompletionQueue");
+//         }
 //     }
 // }
 
+enum AsyncCompletionQueueImplBase {
+    BlockingCq(Async<CompletionQueueImpl<true, true, true>>),
+    SpinningCQ(CompletionQueueImpl<true, false, false>)
+}
+
 pub struct AsyncCompletionQueueImpl {
-    pub(crate) base: Async<CompletionQueueImpl<true, true, true>>,
+    base: AsyncCompletionQueueImplBase,
     pub(crate) pending_entries: AtomicUsize,
 }
 impl SyncSend for AsyncCompletionQueueImpl {}
@@ -176,7 +253,14 @@ impl WaitCq for AsyncCompletionQueueImpl {
         cond: usize,
         timeout: i32,
     ) -> Result<Completion, crate::error::Error> {
-        self.base.get_ref().sread_with_cond(count, cond, timeout)
+        match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(asyn_cq) => {
+              asyn_cq.get_ref().sread_with_cond(count, cond, timeout)  
+            },
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                cq.sread_with_cond(count, cond, timeout)
+            }
+        }
     }
 
     fn sreadfrom_with_cond(
@@ -185,21 +269,26 @@ impl WaitCq for AsyncCompletionQueueImpl {
         cond: usize,
         timeout: i32,
     ) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
-        self.base
-            .get_ref()
-            .sreadfrom_with_cond(count, cond, timeout)
+        match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(asyn_cq) => {
+              asyn_cq.get_ref().sreadfrom_with_cond(count, cond, timeout)  
+            },
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                cq.sreadfrom_with_cond(count, cond, timeout)
+            }
+        }
     }
 }
 
 impl AsyncReadCq for AsyncCompletionQueueImpl {
-    fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
-        CqAsyncRead {
-            num_entries: count,
-            buf,
-            cq: self,
-            fut: None,
-        }
-    }
+    // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
+    //     CqAsyncRead {
+    //         num_entries: count,
+    //         buf,
+    //         cq: self,
+    //         fut: None,
+    //     }
+    // }
 
     fn read_async(&self, count: usize) -> CqAsyncReadOwned {
         CqAsyncReadOwned::new(count, self)
@@ -212,18 +301,17 @@ impl AsyncReadCq for AsyncCompletionQueueImpl {
 
 impl AsyncFid for AsyncCompletionQueueImpl {
     fn trywait(&self) -> Result<(), Error> {
-        self.base
-            .get_ref()
-            ._domain_rc
-            .fabric_impl()
-            .trywait(self.base.get_ref())
+        match &self.base {
+                AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref()._domain_rc.fabric_impl().trywait(async_cq.get_ref()),
+                AsyncCompletionQueueImplBase::SpinningCQ(ref cq) => cq._domain_rc.fabric_impl().trywait(cq),
+            }
     }
 }
 
-impl<T: AsyncReadCq> AsyncReadCq for CompletionQueue<T> {
-    fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
-        self.inner.read_in_async(buf, count)
-    }
+impl AsyncReadCq for CompletionQueue<AsyncCompletionQueueImpl> {
+    // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
+    //     self.inner.read_in_async(buf, count)
+    // }
 
     fn read_async(&self, count: usize) -> CqAsyncReadOwned {
         self.inner.read_async(count)
@@ -239,20 +327,40 @@ impl<T: AsyncReadCq> AsyncReadCq for CompletionQueue<T> {
 }
 
 impl AsyncCompletionQueueImpl {
-    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
+    pub(crate) fn new_blocking<EQ: ?Sized + 'static + SyncSend>(
         domain: &MyRc<DomainImplBase<EQ>>,
         attr: CompletionQueueAttr,
         context: *mut std::ffi::c_void,
         default_buff_size: usize,
     ) -> Result<Self, crate::error::Error> {
         Ok(Self {
-            base: Async::new(CompletionQueueImpl::new(
+            base: AsyncCompletionQueueImplBase::BlockingCq(Async::new(CompletionQueueImpl::new(
                 domain.clone(),
                 attr,
                 context,
                 default_buff_size,
             )?)
-            .unwrap(),
+            .unwrap()),
+            pending_entries: AtomicUsize::new(0),
+        })
+    }
+}
+
+impl AsyncCompletionQueueImpl {
+    pub(crate) fn new_spinning<EQ: ?Sized + 'static + SyncSend>(
+        domain: &MyRc<DomainImplBase<EQ>>,
+        attr: CompletionQueueAttr,
+        context: *mut std::ffi::c_void,
+        default_buff_size: usize,
+    ) -> Result<Self, crate::error::Error> {
+        Ok(Self {
+            base: AsyncCompletionQueueImplBase::SpinningCQ(CompletionQueueImpl::new(
+                domain.clone(),
+                attr,
+                context,
+                default_buff_size,
+            )?),
+
             pending_entries: AtomicUsize::new(0),
         })
     }
@@ -621,100 +729,119 @@ impl<'a> Future for AsyncTransferCq<'a> {
     }
 }
 
-pub struct CqAsyncRead<'a> {
-    num_entries: usize,
-    buf: &'a mut Completion,
-    cq: &'a AsyncCompletionQueueImpl,
-    #[cfg(feature = "use-async-std")]
-    fut: Option<Pin<Box<Readable<'a, CompletionQueueImpl<true, true, true>>>>>,
-    #[cfg(feature = "use-tokio")]
-    fut: Option<
-        Pin<
-            Box<
-                dyn Future<
-                        Output = Result<
-                            tokio::io::unix::AsyncFdReadyGuard<
-                                'a,
-                                CompletionQueueImpl<true, true, true>,
-                            >,
-                            std::io::Error,
-                        >,
-                    > + 'a,
-            >,
-        >,
-    >,
-}
+// pub struct CqAsyncRead<'a> {
+//     num_entries: usize,
+//     buf: &'a mut Completion,
+//     cq: &'a AsyncCompletionQueueImpl,
+//     #[cfg(feature = "use-async-std")]
+//     fut: Option<Pin<Box<Readable<'a, CompletionQueueImpl<true, true, true>>>>>,
+//     #[cfg(feature = "use-tokio")]
+//     fut: Option<
+//         Pin<
+//             Box<
+//                 dyn Future<
+//                         Output = Result<
+//                             tokio::io::unix::AsyncFdReadyGuard<
+//                                 'a,
+//                                 CompletionQueueImpl<true, true, true>,
+//                             >,
+//                             std::io::Error,
+//                         >,
+//                     > + 'a,
+//             >,
+//         >,
+//     >,
+// }
 
-impl<'a> Future for CqAsyncRead<'a> {
-    type Output = Result<(), Error>;
+// impl<'a> Future for CqAsyncRead<'a> {
+//     type Output = Result<(), Error>;
 
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let mut_self = self.get_mut();
-        loop {
-            let (err, _guard) = if mut_self.cq.trywait().is_err() {
-                (
-                    mut_self.cq.read_in(mut_self.num_entries, mut_self.buf),
-                    None,
-                )
-            } else {
-                if mut_self.fut.is_none() {
-                    mut_self.fut = Some(Box::pin(mut_self.cq.base.readable()))
-                }
-                // Tokio returns something we need, async_std returns ()
-                #[allow(clippy::let_unit_value)]
-                let _guard = ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
+//     fn poll(
+//         self: std::pin::Pin<&mut Self>,
+//         cx: &mut std::task::Context<'_>,
+//     ) -> std::task::Poll<Self::Output> {
+//         let mut_self = self.get_mut();
+//         loop {
+//             let (err, _guard) = if mut_self.cq.trywait().is_err() {
+//                 (
+//                     mut_self.cq.read_in(mut_self.num_entries, mut_self.buf),
+//                     None,
+//                 )
+//             } else {
+//                 if mut_self.fut.is_none() {
+//                     mut_self.fut = Some(Box::pin(mut_self.cq.base.readable()))
+//                 }
+//                 // Tokio returns something we need, async_std returns ()
+//                 #[allow(clippy::let_unit_value)]
+//                 let _guard = ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
 
-                // We only need to reset the option to none
-                #[allow(clippy::let_underscore_future)]
-                let _ = mut_self.fut.take().unwrap();
-                (mut_self.cq.read_in(1, mut_self.buf), Some(_guard))
-            };
+//                 // We only need to reset the option to none
+//                 #[allow(clippy::let_underscore_future)]
+//                 let _ = mut_self.fut.take().unwrap();
+//                 (mut_self.cq.read_in(1, mut_self.buf), Some(_guard))
+//             };
 
-            match err {
-                Err(error) => {
-                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                        if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
-                            let mut err = CompletionError::new();
-                            mut_self.cq.readerr_in(&mut err, 0)?;
-                            return std::task::Poll::Ready(Err(Error::from_completion_queue_err(
-                                err,
-                            )));
-                        }
-                    } else {
-                        #[cfg(feature = "use-tokio")]
-                        if let Some(mut guard) = _guard {
-                            if mut_self.cq.pending_entries.load(Ordering::SeqCst) == 0 {
-                                guard.clear_ready()
-                            }
-                        }
-                        continue;
-                    }
-                }
-                Ok(len) => {
-                    match &mut mut_self.buf {
-                        Completion::Unspec(data) => unsafe { data.set_len(len) },
-                        Completion::Ctx(data) => unsafe { data.set_len(len) },
-                        Completion::Msg(data) => unsafe { data.set_len(len) },
-                        Completion::Data(data) => unsafe { data.set_len(len) },
-                        Completion::Tagged(data) => unsafe { data.set_len(len) },
-                    }
-                    return std::task::Poll::Ready(Ok(()));
-                }
-            }
-        }
-    }
-}
+//             match err {
+//                 Err(error) => {
+//                     if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+//                         if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
+//                             let mut err = CompletionError::new();
+//                             mut_self.cq.readerr_in(&mut err, 0)?;
+//                             return std::task::Poll::Ready(Err(Error::from_completion_queue_err(
+//                                 err,
+//                             )));
+//                         }
+//                     } else {
+//                         #[cfg(feature = "use-tokio")]
+//                         if let Some(mut guard) = _guard {
+//                             if mut_self.cq.pending_entries.load(Ordering::SeqCst) == 0 {
+//                                 guard.clear_ready()
+//                             }
+//                         }
+//                         continue;
+//                     }
+//                 }
+//                 Ok(len) => {
+//                     match &mut mut_self.buf {
+//                         Completion::Unspec(data) => unsafe { data.set_len(len) },
+//                         Completion::Ctx(data) => unsafe { data.set_len(len) },
+//                         Completion::Msg(data) => unsafe { data.set_len(len) },
+//                         Completion::Data(data) => unsafe { data.set_len(len) },
+//                         Completion::Tagged(data) => unsafe { data.set_len(len) },
+//                     }
+//                     return std::task::Poll::Ready(Ok(()));
+//                 }
+//             }
+//         }
+//     }
+// }
 
 impl<'a> CqAsyncReadOwned<'a> {
     pub(crate) fn new(num_entries: usize, cq: &'a AsyncCompletionQueueImpl) -> Self {
+        let entry_buff = match &cq.base {
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
+                #[cfg(feature = "thread-safe")]
+                {
+                    async_cq.get_ref().entry_buff.read()
+                }
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    async_cq.get_ref().entry_buff.borrow()
+                }
+            },
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                #[cfg(feature = "thread-safe")]
+                {
+                    cq.entry_buff.read()
+                }
+                #[cfg(not(feature = "thread-safe"))]
+                {
+                    cq.entry_buff.borrow()
+                }
+            },
+        };
         Self {
-            #[cfg(feature = "thread-safe")]
-            buf: alloc_cq_entry!(*cq.base.get_ref().entry_buff.read(), num_entries),
-            #[cfg(not(feature = "thread-safe"))]
-            buf: alloc_cq_entry!(*cq.base.get_ref().entry_buff.borrow(), num_entries),
+            buf: alloc_cq_entry!(*entry_buff, num_entries),
             num_entries,
             cq,
             fut: None,
@@ -767,33 +894,45 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
             // TODO: Reenable blocking on the file descriptor becoming readable
             // Note that we probably need to make sure no one polls the cq before we
             // actually create the future
-            let can_wait = mut_self.cq.trywait();
-            let (err, _guard) = if true || can_wait.is_err() {
-                // println!("Cannot block");
-                let to_ret = (
-                    mut_self.cq.read_in(mut_self.num_entries, &mut mut_self.buf),
-                    None,
-                );
-                to_ret
-            } else {
-                // TODO: Do we need to skip calling readable if we were awaken?
-                // Does being awaken means that readable has returned true?
-                if mut_self.fut.is_none() {
-                    // println!("Can wait in CQ {}", can_wait.is_ok());
-                    // mut_self.cq.trywait().unwrap();
-                    mut_self.fut = Some(Box::pin(mut_self.cq.base.readable()))
+            let (err, _guard) = match &mut_self.cq.base {
+                AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
+                    let can_wait = mut_self.cq.trywait();
+                     if can_wait.is_err() {
+                            // println!("Cannot block");
+                        let to_ret = (
+                            async_cq.get_ref().read_in(mut_self.num_entries, &mut mut_self.buf),
+                            None,
+                        );
+                        to_ret
+                    } else {
+                        // TODO: Do we need to skip calling readable if we were awaken?
+                        // Does being awaken means that readable has returned true?
+                        if mut_self.fut.is_none() {
+                            // println!("Can wait in CQ {}", can_wait.is_ok());
+                            // mut_self.cq.trywait().unwrap();
+                            mut_self.fut = Some(Box::pin(async_cq.readable()))
+                        }
+                        #[allow(clippy::let_unit_value)]
+                        // drop(blocked);
+                        let _guard = ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
+
+                        #[allow(clippy::let_underscore_future)]
+                        let _ = mut_self.fut.take().unwrap();
+                        // println!("Did not block");
+                        // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
+
+                        (async_cq.get_ref().read_in(1, &mut mut_self.buf), Some(_guard))
+                    }
+                },
+                AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                    let to_ret = (
+                        cq.read_in(mut_self.num_entries, &mut mut_self.buf),
+                        None,
+                    );
+                    to_ret
                 }
-                #[allow(clippy::let_unit_value)]
-                // drop(blocked);
-                let _guard = ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
-
-                #[allow(clippy::let_underscore_future)]
-                let _ = mut_self.fut.take().unwrap();
-                // println!("Did not block");
-                // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
-
-                (mut_self.cq.read_in(1, &mut mut_self.buf), Some(_guard))
             };
+
             match err {
                 Err(error) => {
                     if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
@@ -850,34 +989,18 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
     }
 }
 
-// impl AsFid for AsyncCompletionQueueImpl {
-//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-//         self.base.get_ref().as_fid()
-//     }
-// }
-// impl AsFid for &AsyncCompletionQueueImpl {
-//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-//         self.base.get_ref().as_fid()
-//     }
-// }
-// impl AsFid for MyRc<AsyncCompletionQueueImpl> {
-//     fn as_fid(&self) -> crate::fid::BorrowedFid<'_> {
-//         self.base.get_ref().as_fid()
-//     }
-// }
-
-// impl AsRawFid for AsyncCompletionQueueImpl {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.base.get_ref().as_raw_fid()
-//     }
-// }
-
 impl AsTypedFid<CqRawFid> for AsyncCompletionQueueImpl {
     fn as_typed_fid(&self) -> BorrowedTypedFid<CqRawFid> {
-        self.base.get_ref().as_typed_fid()
+        match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref().as_typed_fid(),
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => cq.as_typed_fid(),
+        }
     }
     fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<CqRawFid> {
-        self.base.get_ref().as_typed_fid_mut()
+        match &self.base {
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref().as_typed_fid_mut(),
+            AsyncCompletionQueueImplBase::SpinningCQ(cq) => cq.as_typed_fid_mut(),
+        }
     }
 }
 
@@ -946,16 +1069,48 @@ impl<'a> CompletionQueueBuilder<'a> {
         }
     }
 
+    pub fn build<EQ: ?Sized + 'static + SyncSend>(
+        self,
+        domain: &'a DomainBase<EQ>,
+    ) -> Result<CompletionQueue<AsyncCompletionQueueImpl>, crate::error::Error> {
+        #[cfg(feature="async-cqs-spin")]
+        {
+            self.build_spinning_cq(domain)
+        }
+        #[cfg(not(feature="async-cqs-spin"))]
+        {
+            self.build_blocking_cq(domain)
+        }
+    }
+
+
     /// Constructs a new [CompletionQueue] with the configurations requested so far.
     ///
     /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
     /// and passing it to the `fi_cq_open` call with an optional `context`.
-    pub fn build<EQ: ?Sized + 'static + SyncSend>(
+    pub fn build_blocking_cq<EQ: ?Sized + 'static + SyncSend>(
         mut self,
         domain: &'a DomainBase<EQ>,
     ) -> Result<CompletionQueue<AsyncCompletionQueueImpl>, crate::error::Error> {
         self.cq_attr.wait_obj(crate::enums::WaitObj::Fd);
-        CompletionQueue::<AsyncCompletionQueueImpl>::new(
+        CompletionQueue::<AsyncCompletionQueueImpl>::new_blocking(
+            domain,
+            self.cq_attr,
+            self.ctx,
+            self.default_buff_size,
+        )
+    }
+
+
+    /// Constructs a new [CompletionQueue] with the configurations requested so far.
+    ///
+    /// Corresponds to creating a `fi_cq_attr`, setting its fields to the requested ones,
+    /// and passing it to the `fi_cq_open` call with an optional `context`.
+    pub fn build_spinning_cq<EQ: ?Sized + 'static + SyncSend>(
+        self,
+        domain: &'a DomainBase<EQ>,
+    ) -> Result<CompletionQueue<AsyncCompletionQueueImpl>, crate::error::Error> {
+        CompletionQueue::<AsyncCompletionQueueImpl>::new_spinning(
             domain,
             self.cq_attr,
             self.ctx,

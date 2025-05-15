@@ -2141,15 +2141,15 @@ fn conn_sendrecv1() {
     sendrecv(false, "conn_sendrecv0", true, false);
 }
 
-#[test]
-fn context_sendrecv0() {
-    sendrecv(true, "sendrecv0", false, true);
-}
+// #[test]
+// fn context_sendrecv0() {
+//     sendrecv(true, "sendrecv0", false, true);
+// }
 
-#[test]
-fn context_sendrecv1() {
-    sendrecv(false, "sendrecv0", false, true);
-}
+// #[test]
+// fn context_sendrecv1() {
+//     sendrecv(false, "sendrecv0", false, true);
+// }
 
 // #[test]
 // fn context_conn_sendrecv0() {

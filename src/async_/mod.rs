@@ -9,7 +9,7 @@ pub mod domain;
 pub mod ep;
 pub mod eq;
 pub mod mr;
-mod xcontext;
+pub mod xcontext;
 
 pub trait AsyncFid {
     fn trywait(&self) -> Result<(), Error>;
