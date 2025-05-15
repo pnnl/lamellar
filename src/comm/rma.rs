@@ -15,8 +15,8 @@ use crate::fid::EpRawFid;
 use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::RmaCap;
 use crate::infocapsoptions::WriteMod;
-use crate::mr::MemoryRegionDesc;
 use crate::mr::MappedMemoryRegionKey;
+use crate::mr::MemoryRegionDesc;
 use crate::trigger::TriggeredContext;
 use crate::utils::check_error;
 use crate::utils::Either;
@@ -1451,10 +1451,8 @@ impl<I: RmaCap + WriteMod, STATE: EpState, CQ: ?Sized + ReadCq> WriteEpImpl
 {
 }
 
-
 impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: WriteEpImpl> WriteEpImpl for EndpointBase<E, Connectionless> {}
-
 
 pub trait ReadWriteEp: ReadEp + WriteEp {}
 impl<EP: ReadEp + WriteEp> ReadWriteEp for EP {}

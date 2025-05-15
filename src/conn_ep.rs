@@ -89,7 +89,6 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
 
 impl<E> UnconnectedEndpoint<E> {
     pub fn connect_complete(self, event: ConnectedEvent) -> ConnectedEndpoint<E> {
-
         assert_eq!(event.fid(), self.as_typed_fid_mut().as_raw_fid());
 
         ConnectedEndpoint {

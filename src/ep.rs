@@ -286,7 +286,6 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         Ok(permitted == 1)
     }
 
-
     fn xpu_trigger(&self, iface: &HmemIface) -> Result<TriggerXpu, crate::error::Error> {
         let (dev_type, device) = match iface {
             HmemIface::Cuda(dev_id) => (
@@ -1422,7 +1421,7 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
             Ok(ret as usize)
         }
     }
-    
+
     #[deprecated]
     fn tx_size_left(&self) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
@@ -1973,11 +1972,9 @@ impl<'a, E> EndpointBuilder<'a, E> {
             EndpointType::Msg => Ok(Endpoint::ConnectionOriented(
                 UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
             )),
-            EndpointType::Dgram | EndpointType::Rdm => {
-                Ok(Endpoint::Connectionless(UninitConnectionlessEndpoint::new(
-                    domain, self.info, self.flags, self.ctx,
-                )?))
-            }
+            EndpointType::Dgram | EndpointType::Rdm => Ok(Endpoint::Connectionless(
+                UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?,
+            )),
         }
     }
 

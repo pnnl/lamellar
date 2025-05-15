@@ -316,7 +316,8 @@ impl InfoCapsImpl {
     }
     #[deprecated]
     pub fn is_variable_msg(self) -> bool {
-        self.bitfield & libfabric_sys::FI_VARIABLE_MSG as u64 == libfabric_sys::FI_VARIABLE_MSG as u64
+        self.bitfield & libfabric_sys::FI_VARIABLE_MSG as u64
+            == libfabric_sys::FI_VARIABLE_MSG as u64
     }
     pub fn is_hmem(self) -> bool {
         self.bitfield & libfabric_sys::FI_HMEM == libfabric_sys::FI_HMEM
@@ -1475,10 +1476,7 @@ pub struct Version {
 
 impl Version {
     pub fn new(major: u32, minor: u32) -> Self {
-        Self {
-            major,
-            minor
-        }
+        Self { major, minor }
     }
 
     pub(crate) fn as_raw(&self) -> u32 {

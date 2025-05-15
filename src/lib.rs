@@ -60,11 +60,11 @@ pub mod iovec;
 pub mod mr;
 pub mod msg;
 pub mod nic;
+pub mod profile;
 pub mod sync;
 pub mod trigger;
 mod utils;
 pub mod xcontext;
-pub mod profile;
 
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;

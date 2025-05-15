@@ -16,8 +16,8 @@ use crate::fid::EpRawFid;
 use crate::infocapsoptions::AtomicCap;
 use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::WriteMod;
-use crate::mr::MemoryRegionDesc;
 use crate::mr::MappedMemoryRegionKey;
+use crate::mr::MemoryRegionDesc;
 use crate::trigger::TriggeredContext;
 use crate::utils::check_error;
 use crate::utils::Either;
@@ -1142,7 +1142,6 @@ impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicFe
 {
 }
 
-
 impl<I: AtomicCap + ReadMod, STATE: EpState, CQ: ?Sized + ReadCq> AtomicFetchEpImpl
     for TxContextImplBase<I, STATE, CQ>
 {
@@ -1997,7 +1996,6 @@ impl<I: AtomicCap, STATE: EpState, CQ: ?Sized + ReadCq> AtomicValidEp
     for RxContextBase<I, STATE, CQ>
 {
 }
-
 
 pub struct AtomicAttr {
     pub(crate) c_attr: libfabric_sys::fi_atomic_attr,

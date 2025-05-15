@@ -170,15 +170,9 @@ impl<EP: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
-impl<I: RmaCap + ReadMod, STATE: EpState> AsyncReadEpImpl
-    for TxContextImpl<I, STATE>
-{
-}
+impl<I: RmaCap + ReadMod, STATE: EpState> AsyncReadEpImpl for TxContextImpl<I, STATE> {}
 
-impl<I: RmaCap + ReadMod, STATE: EpState> AsyncReadEpImpl
-    for TxContext<I, STATE>
-{
-}
+impl<I: RmaCap + ReadMod, STATE: EpState> AsyncReadEpImpl for TxContext<I, STATE> {}
 
 impl<E: AsyncReadEpImpl> AsyncReadEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncReadEpImpl> AsyncReadEpImpl for EndpointBase<E, Connectionless> {}
@@ -356,13 +350,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     ) -> Result<(), crate::error::Error> {
         let cq = self.retrieve_tx_cq();
         while_try_again(cq.as_ref(), || {
-            self.inject_writedata_impl(
-                buf,
-                data,
-                dest_mapped_addr,
-                mem_addr,
-                mapped_key,
-            )
+            self.inject_writedata_impl(buf, data, dest_mapped_addr, mem_addr, mapped_key)
         })
         .await
     }
@@ -541,15 +529,9 @@ impl<EP: RmaCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> 
 {
 }
 
-impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl
-    for TxContextImpl<I, STATE>
-{
-}
+impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl for TxContextImpl<I, STATE> {}
 
-impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl
-    for TxContext<I, STATE>
-{
-}
+impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl for TxContext<I, STATE> {}
 
 impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
     async unsafe fn write_async_impl<T>(

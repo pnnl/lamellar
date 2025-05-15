@@ -1312,9 +1312,7 @@ mod tests {
 
     #[test]
     fn eq_open_close_sizes() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1338,9 +1336,7 @@ mod libfabric_lifetime_tests {
 
     #[test]
     fn eq_drops_before_fabric() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

@@ -1325,29 +1325,6 @@ impl<EP: CollCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> CollectiveEpImpl
 impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E, Connected> {}
 impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E, Connectionless> {}
 
-// impl AsFid for MulticastGroupCollective {
-//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-//         self.inner.as_fid()
-//     }
-// }
-
-// impl AsFid for MulticastGroupCollectiveImpl {
-//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-//         self.c_mc.get().unwrap().as_fid()
-//     }
-// }
-
-// impl AsRawFid for MulticastGroupCollective {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.inner.as_raw_fid()
-//     }
-// }
-
-// impl AsRawFid for MulticastGroupCollectiveImpl {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.c_mc.get().unwrap().as_raw_fid()
-//     }
-// }
 impl AsTypedFid<McRawFid> for MulticastGroupCollective {
     fn as_typed_fid(&self) -> BorrowedTypedFid<McRawFid> {
         self.inner.as_typed_fid()
@@ -1365,22 +1342,6 @@ impl AsTypedFid<McRawFid> for MulticastGroupCollectiveImpl {
         self.c_mc.get().unwrap().as_typed_fid_mut()
     }
 }
-
-// impl AsRawTypedFid for MulticastGroupCollective {
-//     type Output = McRawFid;
-
-//     fn as_raw_typed_fid(&self) -> Self::Output {
-//         self.inner.as_raw_typed_fid()
-//     }
-// }
-
-// impl AsRawTypedFid for MulticastGroupCollectiveImpl {
-//     type Output = McRawFid;
-
-//     fn as_raw_typed_fid(&self) -> Self::Output {
-//         self.c_mc.get().unwrap().as_raw_typed_fid()
-//     }
-// }
 
 pub struct CollectiveAttr<T> {
     pub(crate) c_attr: libfabric_sys::fi_collective_attr,

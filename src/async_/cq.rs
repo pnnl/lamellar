@@ -122,7 +122,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
                 {
                     async_cq.get_ref().entry_buff.write()
                 }
-            },
+            }
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
                 #[cfg(not(feature = "thread-safe"))]
                 {
@@ -132,7 +132,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
                 {
                     cq.entry_buff.write()
                 }
-            },
+            }
         };
         self.read_in(count, &mut borrowed_entries)?;
         Ok(borrowed_entries.clone())
@@ -152,7 +152,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
                 {
                     async_cq.get_ref().entry_buff.write()
                 }
-            },
+            }
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
                 #[cfg(not(feature = "thread-safe"))]
                 {
@@ -162,7 +162,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
                 {
                     cq.entry_buff.write()
                 }
-            },
+            }
         };
         let address = self.readfrom_in(count, &mut borrowed_entries)?;
         Ok((borrowed_entries.clone(), address))
@@ -179,7 +179,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
                 {
                     async_cq.get_ref().error_buff.write()
                 }
-            },
+            }
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
                 #[cfg(not(feature = "thread-safe"))]
                 {
@@ -189,7 +189,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
                 {
                     cq.error_buff.write()
                 }
-            },
+            }
         };
         self.readerr_in(&mut borrowed_entries, flags)?;
         Ok(borrowed_entries.clone())
@@ -237,7 +237,7 @@ impl ReadCq for AsyncCompletionQueueImpl {
 
 enum AsyncCompletionQueueImplBase {
     BlockingCq(Async<CompletionQueueImpl<true, true, true>>),
-    SpinningCQ(CompletionQueueImpl<true, false, false>)
+    SpinningCQ(CompletionQueueImpl<true, false, false>),
 }
 
 pub struct AsyncCompletionQueueImpl {
@@ -255,8 +255,8 @@ impl WaitCq for AsyncCompletionQueueImpl {
     ) -> Result<Completion, crate::error::Error> {
         match &self.base {
             AsyncCompletionQueueImplBase::BlockingCq(asyn_cq) => {
-              asyn_cq.get_ref().sread_with_cond(count, cond, timeout)  
-            },
+                asyn_cq.get_ref().sread_with_cond(count, cond, timeout)
+            }
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
                 cq.sread_with_cond(count, cond, timeout)
             }
@@ -271,8 +271,8 @@ impl WaitCq for AsyncCompletionQueueImpl {
     ) -> Result<(Completion, Option<MappedAddress>), crate::error::Error> {
         match &self.base {
             AsyncCompletionQueueImplBase::BlockingCq(asyn_cq) => {
-              asyn_cq.get_ref().sreadfrom_with_cond(count, cond, timeout)  
-            },
+                asyn_cq.get_ref().sreadfrom_with_cond(count, cond, timeout)
+            }
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
                 cq.sreadfrom_with_cond(count, cond, timeout)
             }
@@ -302,9 +302,15 @@ impl AsyncReadCq for AsyncCompletionQueueImpl {
 impl AsyncFid for AsyncCompletionQueueImpl {
     fn trywait(&self) -> Result<(), Error> {
         match &self.base {
-                AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref()._domain_rc.fabric_impl().trywait(async_cq.get_ref()),
-                AsyncCompletionQueueImplBase::SpinningCQ(ref cq) => cq._domain_rc.fabric_impl().trywait(cq),
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq
+                .get_ref()
+                ._domain_rc
+                .fabric_impl()
+                .trywait(async_cq.get_ref()),
+            AsyncCompletionQueueImplBase::SpinningCQ(ref cq) => {
+                cq._domain_rc.fabric_impl().trywait(cq)
             }
+        }
     }
 }
 
@@ -334,13 +340,15 @@ impl AsyncCompletionQueueImpl {
         default_buff_size: usize,
     ) -> Result<Self, crate::error::Error> {
         Ok(Self {
-            base: AsyncCompletionQueueImplBase::BlockingCq(Async::new(CompletionQueueImpl::new(
-                domain.clone(),
-                attr,
-                context,
-                default_buff_size,
-            )?)
-            .unwrap()),
+            base: AsyncCompletionQueueImplBase::BlockingCq(
+                Async::new(CompletionQueueImpl::new(
+                    domain.clone(),
+                    attr,
+                    context,
+                    default_buff_size,
+                )?)
+                .unwrap(),
+            ),
             pending_entries: AtomicUsize::new(0),
         })
     }
@@ -828,7 +836,7 @@ impl<'a> CqAsyncReadOwned<'a> {
                 {
                     async_cq.get_ref().entry_buff.borrow()
                 }
-            },
+            }
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
                 #[cfg(feature = "thread-safe")]
                 {
@@ -838,7 +846,7 @@ impl<'a> CqAsyncReadOwned<'a> {
                 {
                     cq.entry_buff.borrow()
                 }
-            },
+            }
         };
         Self {
             buf: alloc_cq_entry!(*entry_buff, num_entries),
@@ -897,10 +905,12 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
             let (err, _guard) = match &mut_self.cq.base {
                 AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
                     let can_wait = mut_self.cq.trywait();
-                     if can_wait.is_err() {
-                            // println!("Cannot block");
+                    if can_wait.is_err() {
+                        // println!("Cannot block");
                         let to_ret = (
-                            async_cq.get_ref().read_in(mut_self.num_entries, &mut mut_self.buf),
+                            async_cq
+                                .get_ref()
+                                .read_in(mut_self.num_entries, &mut mut_self.buf),
                             None,
                         );
                         to_ret
@@ -914,21 +924,22 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                         }
                         #[allow(clippy::let_unit_value)]
                         // drop(blocked);
-                        let _guard = ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
+                        let _guard =
+                            ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
 
                         #[allow(clippy::let_underscore_future)]
                         let _ = mut_self.fut.take().unwrap();
                         // println!("Did not block");
                         // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
 
-                        (async_cq.get_ref().read_in(1, &mut mut_self.buf), Some(_guard))
+                        (
+                            async_cq.get_ref().read_in(1, &mut mut_self.buf),
+                            Some(_guard),
+                        )
                     }
-                },
+                }
                 AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
-                    let to_ret = (
-                        cq.read_in(mut_self.num_entries, &mut mut_self.buf),
-                        None,
-                    );
+                    let to_ret = (cq.read_in(mut_self.num_entries, &mut mut_self.buf), None);
                     to_ret
                 }
             };
@@ -998,7 +1009,9 @@ impl AsTypedFid<CqRawFid> for AsyncCompletionQueueImpl {
     }
     fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<CqRawFid> {
         match &self.base {
-            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref().as_typed_fid_mut(),
+            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
+                async_cq.get_ref().as_typed_fid_mut()
+            }
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => cq.as_typed_fid_mut(),
         }
     }
@@ -1073,16 +1086,15 @@ impl<'a> CompletionQueueBuilder<'a> {
         self,
         domain: &'a DomainBase<EQ>,
     ) -> Result<CompletionQueue<AsyncCompletionQueueImpl>, crate::error::Error> {
-        #[cfg(feature="async-cqs-spin")]
+        #[cfg(feature = "async-cqs-spin")]
         {
             self.build_spinning_cq(domain)
         }
-        #[cfg(not(feature="async-cqs-spin"))]
+        #[cfg(not(feature = "async-cqs-spin"))]
         {
             self.build_blocking_cq(domain)
         }
     }
-
 
     /// Constructs a new [CompletionQueue] with the configurations requested so far.
     ///
@@ -1100,7 +1112,6 @@ impl<'a> CompletionQueueBuilder<'a> {
             self.default_buff_size,
         )
     }
-
 
     /// Constructs a new [CompletionQueue] with the configurations requested so far.
     ///

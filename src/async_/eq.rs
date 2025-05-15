@@ -802,7 +802,7 @@ impl<'a> Future for AsyncEventEq<'a> {
             let res = match ready!(ev.fut.as_mut().poll(cx)) {
                 // Ok(len) => len,
                 Err(error) => {
-                    if matches!(error.kind,ErrorKind::ErrorInEventQueue(_))  {
+                    if matches!(error.kind, ErrorKind::ErrorInEventQueue(_)) {
                         Err(error)
                     } else {
                         return std::task::Poll::Ready(Err(error));

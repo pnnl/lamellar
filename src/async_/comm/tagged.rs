@@ -151,15 +151,9 @@ impl<EP: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
-impl<I: TagCap + RecvMod, STATE: EpState> AsyncTagRecvEpImpl
-    for RxContextImpl<I, STATE>
-{
-}
+impl<I: TagCap + RecvMod, STATE: EpState> AsyncTagRecvEpImpl for RxContextImpl<I, STATE> {}
 
-impl<I: TagCap + RecvMod, STATE: EpState> AsyncTagRecvEpImpl
-    for RxContext<I, STATE>
-{
-}
+impl<I: TagCap + RecvMod, STATE: EpState> AsyncTagRecvEpImpl for RxContext<I, STATE> {}
 
 impl<E: AsyncTagRecvEpImpl> AsyncTagRecvEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncTagRecvEpImpl> AsyncTagRecvEpImpl for EndpointBase<E, Connectionless> {}
@@ -440,16 +434,9 @@ impl<EP: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
+impl<I: TagCap + SendMod, STATE: EpState> AsyncTagSendEpImpl for TxContextImpl<I, STATE> {}
 
-impl<I: TagCap + SendMod, STATE: EpState> AsyncTagSendEpImpl
-    for TxContextImpl<I, STATE>
-{
-}
-
-impl<I: TagCap + SendMod, STATE: EpState> AsyncTagSendEpImpl
-    for TxContext<I, STATE>
-{
-}
+impl<I: TagCap + SendMod, STATE: EpState> AsyncTagSendEpImpl for TxContext<I, STATE> {}
 
 impl<E: AsyncTagSendEpImpl> AsyncTagSendEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncTagSendEpImpl> AsyncTagSendEpImpl for EndpointBase<E, Connectionless> {}

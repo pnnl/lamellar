@@ -13,27 +13,28 @@ fn progress(cq: &(impl ReadCq + ?Sized)) -> Result<(), crate::error::Error> {
         Err(cq_error) => {
             if !matches!(cq_error.kind, ErrorKind::TryAgain) {
                 Err(cq_error)
-            }
-            else {
+            } else {
                 Ok(())
             }
         }
     }
 }
 
-async fn while_try_again(cq: &(impl ReadCq + ?Sized), mut foo: impl FnMut() -> Result<(), crate::error::Error>) -> Result<(), crate::error::Error>{
+async fn while_try_again(
+    cq: &(impl ReadCq + ?Sized),
+    mut foo: impl FnMut() -> Result<(), crate::error::Error>,
+) -> Result<(), crate::error::Error> {
     loop {
         match foo() {
             Ok(()) => break,
-            Err(error) =>  {
+            Err(error) => {
                 if matches!(error.kind, ErrorKind::TryAgain) {
                     progress(cq)?;
                     async_std::task::yield_now().await;
-                }
-                else {
+                } else {
                     return Err(error);
                 }
-            },
+            }
         }
     }
 

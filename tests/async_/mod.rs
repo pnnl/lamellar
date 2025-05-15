@@ -601,17 +601,8 @@ pub async fn ft_server_connect<
             let ep = ft_accept_connection(ep, eq).await;
             let mut ep = EndpointCaps::ConnectedMsg(ep);
             ft_ep_recv(
-                &new_info,
-                gl_ctx,
-                &mut ep,
-                &domain,
-                &cq_type,
-                eq,
-                &None,
-                &tx_cntr,
-                &rx_cntr,
-                &rma_cntr,
-                &mr,
+                &new_info, gl_ctx, &mut ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr,
+                &rma_cntr, &mr,
             );
             (cq_type, tx_cntr, rx_cntr, ep, mr)
         }
@@ -633,17 +624,8 @@ pub async fn ft_server_connect<
             let ep = ft_accept_connection(ep, eq).await;
             let mut ep = EndpointCaps::ConnectedTagged(ep);
             ft_ep_recv(
-                &new_info,
-                gl_ctx,
-                &mut ep,
-                &domain,
-                &cq_type,
-                eq,
-                &None,
-                &tx_cntr,
-                &rx_cntr,
-                &rma_cntr,
-                &mr,
+                &new_info, gl_ctx, &mut ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr,
+                &rma_cntr, &mr,
             );
             (cq_type, tx_cntr, rx_cntr, ep, mr)
         }
@@ -883,16 +865,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
-                &entry,
-                gl_ctx,
-                &mut ep,
-                &domain,
-                &cq_type,
-                &eq,
-                &av,
-                &tx_cntr,
-                &rx_cntr,
-                &rma_ctr,
+                &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
                 &mr,
             );
             let av = av.unwrap();
@@ -929,7 +902,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
             // let mut ep = EndpointCaps::Tagged(ep);
 
-            let mr =  ft_enable_ep_recv(
+            let mr = ft_enable_ep_recv(
                 &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
@@ -937,16 +910,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
-                &entry,
-                gl_ctx,
-                &mut ep,
-                &domain,
-                &cq_type,
-                &eq,
-                &av,
-                &tx_cntr,
-                &rx_cntr,
-                &rma_ctr,
+                &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
                 &mr,
             );
             let av = av.unwrap();
@@ -1295,7 +1259,16 @@ pub async fn connless_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
         SendOp::Send => {
             if let Some(fi_address) = remote_address {
                 if data != NO_CQ_DATA {
-                    ft_post_async!(senddata_to_async, "", ep, base, desc.as_ref(), data, fi_address, ctx)
+                    ft_post_async!(
+                        senddata_to_async,
+                        "",
+                        ep,
+                        base,
+                        desc.as_ref(),
+                        data,
+                        fi_address,
+                        ctx
+                    )
                 } else {
                     ft_post_async!(send_to_async, "", ep, base, desc.as_ref(), fi_address, ctx)
                 }
@@ -1515,7 +1488,13 @@ pub async fn connless_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
             let iov = libfabric::iovec::IoVec::from_slice(base);
             let fi_address = remote_address.as_ref().unwrap();
             let mut msg = libfabric::msg::MsgTagged::from_iov(
-                &iov, mr_desc.as_ref(), fi_address, None, op_tag, None, ctx,
+                &iov,
+                mr_desc.as_ref(),
+                fi_address,
+                None,
+                op_tag,
+                None,
+                ctx,
             );
             let msg_ref = &mut msg;
             ep.tsendmsg_to_async(msg_ref, flag).await.unwrap();
@@ -1568,7 +1547,12 @@ pub async fn connected_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
             let mut msg = libfabric::msg::MsgTaggedConnected::from_iov(
-                &iov, mr_desc.as_ref(), None, op_tag, None, ctx,
+                &iov,
+                mr_desc.as_ref(),
+                None,
+                op_tag,
+                None,
+                ctx,
             );
             let msg_ref = &mut msg;
             ep.tsendmsg_async(msg_ref, flag).await.unwrap();
@@ -1863,15 +1847,9 @@ pub fn ft_rx<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(
         // CqType::Spin(cq_type) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, cq_type.rx_cq()),
         // CqType::Sread(cq_type) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, cq_type.rx_cq()),
         // CqType::WaitSet(cq_type) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, cq_type.rx_cq()),
-        CqType::WaitFd(cq_type) => ft_post_rx(
-            gl_ctx,
-            ep,
-            gl_ctx.rx_size,
-            NO_CQ_DATA,
-            mr,
-            cq_type.rx_cq(),
-        ),
-        // CqType::WaitYield(cq_type) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, cq_type.rx_cq()),
+        CqType::WaitFd(cq_type) => {
+            ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, cq_type.rx_cq())
+        } // CqType::WaitYield(cq_type) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, data_desc, cq_type.rx_cq()),
     }
 }
 
@@ -2020,9 +1998,7 @@ pub async fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefa
             // CqType::Spin(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
             // CqType::Sread(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
             // CqType::WaitSet(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
-            CqType::WaitFd(cq_type) => {
-                ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA, mr, cq_type.rx_cq())
-            } // CqType::WaitYield(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
+            CqType::WaitFd(cq_type) => ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA, mr, cq_type.rx_cq()), // CqType::WaitYield(rx_cq) => {ft_post_rx(gl_ctx, ep, 1, NO_CQ_DATA,  data_desc, rx_cq)},
         }
 
         // if matches!(info.domain_attr().get_av_type()(), libfabric::enums::AddressVectorType::Table) {
@@ -2045,10 +2021,7 @@ pub async fn ft_init_av<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
     mr: &Option<libfabric::mr::MemoryRegion>,
     server: bool,
 ) {
-    ft_init_av_dst_addr(
-        info, gl_ctx, av, ep, cq_type, tx_cntr, rx_cntr, mr, server,
-    )
-    .await;
+    ft_init_av_dst_addr(info, gl_ctx, av, ep, cq_type, tx_cntr, rx_cntr, mr, server).await;
 }
 
 pub fn ft_spin_for_comp<CQ: ReadCq>(
@@ -2341,7 +2314,7 @@ pub async fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefault
         std::slice::from_raw_parts_mut(&mut key as *mut u64 as *mut u8, 8)
             .copy_from_slice(&key_bytes)
     };
-    
+
     rma_iov = rma_iov.key(key);
     let mut key = 0u64;
     unsafe {
@@ -2375,24 +2348,23 @@ pub async fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefault
     }
     .copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + len]);
 
-    let mapped_key = unsafe {MappedMemoryRegionKey::from_raw(
-        &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index + len], domain)}
-        .unwrap();
+    let mapped_key = unsafe {
+        MappedMemoryRegionKey::from_raw(
+            &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())
+                ..gl_ctx.rx_buf_index + len],
+            domain,
+        )
+    }
+    .unwrap();
     let peer_info = RmaInfo::new(rma_iov.get_address(), rma_iov.get_len(), mapped_key);
 
     match cq_type {
         // CqType::Spin(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
         // CqType::Sread(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
         // CqType::WaitSet(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
-        CqType::WaitFd(cq_type) => ft_post_rx(
-            gl_ctx,
-            ep,
-            gl_ctx.rx_size,
-            NO_CQ_DATA,
-            mr,
-            cq_type.rx_cq(),
-        ),
-        // CqType::WaitYield(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
+        CqType::WaitFd(cq_type) => {
+            ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, cq_type.rx_cq())
+        } // CqType::WaitYield(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
     }
 
     ft_sync(ep, gl_ctx, cq_type, tx_cntr, rx_cntr, mr).await;
@@ -2496,26 +2468,10 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
 
             let mut ep = EndpointCaps::ConnectedMsg(ep);
             ft_ep_recv(
-                &entry,
-                gl_ctx,
-                &mut ep,
-                &domain,
-                &cq_type,
-                &eq,
-                &None,
-                &tx_cntr,
-                &rx_cntr,
-                &rma_cntr,
-                &mr,
+                &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr,
+                &rma_cntr, &mr,
             );
-            (
-                InfoWithCaps::Msg(entry),
-                cq_type,
-                tx_cntr,
-                rx_cntr,
-                ep,
-                mr,
-            )
+            (InfoWithCaps::Msg(entry), cq_type, tx_cntr, rx_cntr, ep, mr)
         }
         HintsCaps::Tagged(hints) => {
             let info = ft_getinfo(hints, node, service, true, false);
@@ -2538,17 +2494,8 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
             let ep = ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await;
             let mut ep = EndpointCaps::ConnectedTagged(ep);
             ft_ep_recv(
-                &entry,
-                gl_ctx,
-                &mut ep,
-                &domain,
-                &cq_type,
-                &eq,
-                &None,
-                &tx_cntr,
-                &rx_cntr,
-                &rma_cntr,
-                &mr,
+                &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr,
+                &rma_cntr, &mr,
             );
             (
                 InfoWithCaps::Tagged(entry),
@@ -2762,7 +2709,7 @@ pub fn bw_tx_comp<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(
     cq_type: &CqType,
     tx_cntr: &Option<Counter<CNTR>>,
     rx_cntr: &Option<Counter<CNTR>>,
-    mr: & Option<libfabric::mr::MemoryRegion>,
+    mr: &Option<libfabric::mr::MemoryRegion>,
 ) {
     ft_get_tx_comp(gl_ctx, tx_cntr, cq_type, gl_ctx.tx_seq);
     ft_rx(gl_ctx, ep, FT_RMA_SYNC_MSG_BYTES, mr, cq_type, rx_cntr);

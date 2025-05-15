@@ -813,7 +813,6 @@ pub(crate) type OwnedPollFid = OwnedTypedFid<PollRawFid>;
 #[cfg(feature = "threading-domain")]
 pub(crate) type OwnedPollFid = DomainOwnedTypedFid<PollRawFid>;
 
-
 pub(crate) type ProfileRawFid = *mut libfabric_sys::fid_profile;
 impl AsRawTypedFid for ProfileRawFid {
     type Output = ProfileRawFid;

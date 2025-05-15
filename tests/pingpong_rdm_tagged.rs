@@ -5,10 +5,10 @@ pub mod sync_; // Public to supress lint warnings (unused function) // Public to
 
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 use async_ as prefix;
-#[cfg(not(any(feature = "use-async-std", feature = "use-tokio")))]
-use sync_ as prefix;
 use libfabric::info::Info;
 use prefix::{call, define_test, HintsCaps};
+#[cfg(not(any(feature = "use-async-std", feature = "use-tokio")))]
+use sync_ as prefix;
 
 // To run the following tests do:
 // 1. export FI_LOG_LEVEL="info" .
@@ -22,26 +22,26 @@ define_test!(pp_server_rdm_tagged, asyn_pp_server_rdm_tagged, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
     let info = Info::new(&libfabric::info::libfabric_version())
-    .enter_hints()
-    .enter_ep_attr()
-    .type_(libfabric::enums::EndpointType::Rdm)
-    .leave_ep_attr()
-    .enter_domain_attr()
-    .threading(libfabric::enums::Threading::Domain)
-    .mr_mode(
-        libfabric::enums::MrMode::new()
-            .prov_key()
-            .allocated()
-            .virt_addr()
-            .local()
-            .endpoint()
-            .raw(),
-    )
-    .leave_domain_attr()
-    .enter_tx_attr()
-    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-    .leave_tx_attr()
-    .addr_format(libfabric::enums::AddressFormat::Unspec);
+        .enter_hints()
+        .enter_ep_attr()
+        .type_(libfabric::enums::EndpointType::Rdm)
+        .leave_ep_attr()
+        .enter_domain_attr()
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(
+            libfabric::enums::MrMode::new()
+                .prov_key()
+                .allocated()
+                .virt_addr()
+                .local()
+                .endpoint()
+                .raw(),
+        )
+        .leave_domain_attr()
+        .enter_tx_attr()
+        .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+        .leave_tx_attr()
+        .addr_format(libfabric::enums::AddressFormat::Unspec);
 
     let hintscaps = if true {
         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))
@@ -134,26 +134,26 @@ define_test!(pp_client_rdm_tagged, async_pp_client_rdm_tagged, {
     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
     let info = Info::new(&libfabric::info::libfabric_version())
-    .enter_hints()
-    .enter_ep_attr()
-    .type_(libfabric::enums::EndpointType::Rdm)
-    .leave_ep_attr()
-    .enter_domain_attr()
-    .threading(libfabric::enums::Threading::Domain)
-    .mr_mode(
-        libfabric::enums::MrMode::new()
-            .prov_key()
-            .allocated()
-            .virt_addr()
-            .local()
-            .endpoint()
-            .raw(),
-    )
-    .leave_domain_attr()
-    .enter_tx_attr()
-    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-    .leave_tx_attr()
-    .addr_format(libfabric::enums::AddressFormat::Unspec);
+        .enter_hints()
+        .enter_ep_attr()
+        .type_(libfabric::enums::EndpointType::Rdm)
+        .leave_ep_attr()
+        .enter_domain_attr()
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(
+            libfabric::enums::MrMode::new()
+                .prov_key()
+                .allocated()
+                .virt_addr()
+                .local()
+                .endpoint()
+                .raw(),
+        )
+        .leave_domain_attr()
+        .enter_tx_attr()
+        .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+        .leave_tx_attr()
+        .addr_format(libfabric::enums::AddressFormat::Unspec);
 
     let hintscaps = if true {
         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))

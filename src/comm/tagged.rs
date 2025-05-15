@@ -68,7 +68,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
             libfabric_sys::inlined_fi_trecvv(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
-                desc.map_or(std::ptr::null_mut(),|d| std::mem::transmute(d.as_ptr())),
+                desc.map_or(std::ptr::null_mut(), |d| std::mem::transmute(d.as_ptr())),
                 iov.len(),
                 raw_addr,
                 tag,
@@ -582,7 +582,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
             libfabric_sys::inlined_fi_tsendv(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 iov.as_ptr().cast(),
-                desc.map_or(std::ptr::null_mut(),|d| std::mem::transmute(d.as_ptr())),
+                desc.map_or(std::ptr::null_mut(), |d| std::mem::transmute(d.as_ptr())),
                 iov.len(),
                 raw_addr,
                 tag,

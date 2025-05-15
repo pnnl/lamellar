@@ -1290,7 +1290,7 @@ impl CompletionError {
     }
 
     /// Returns the source address of the completion error entry.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_cq_err_entry::src_addr` field.
     pub fn src_addr(&self) -> MappedAddress {
         MappedAddress::Unspec(UnspecMappedAddress {
@@ -1331,17 +1331,11 @@ impl Default for CompletionError {
 #[cfg(test)]
 mod tests {
 
-    use crate::{
-        cq::*,
-        domain::DomainBuilder,
-        info::Info,
-    };
+    use crate::{cq::*, domain::DomainBuilder, info::Info};
 
     #[test]
     fn cq_open_close_simultaneous() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
 
         let entry = info.into_iter().next().unwrap();
 
@@ -1359,9 +1353,7 @@ mod tests {
 
     #[test]
     fn cq_signal() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1385,9 +1377,7 @@ mod tests {
 
     #[test]
     fn cq_open_close_sizes() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
@@ -1405,17 +1395,11 @@ mod tests {
 
 #[cfg(test)]
 mod libfabric_lifetime_tests {
-    use crate::{
-        cq::*,
-        domain::DomainBuilder,
-        info::Info,
-    };
+    use crate::{cq::*, domain::DomainBuilder, info::Info};
 
     #[test]
     fn cq_drops_before_domain() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

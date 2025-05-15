@@ -1504,15 +1504,47 @@ pub fn msg_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
     };
 
     match ep {
-        EndpointCaps::ConnectedMsg(ep) => {
-            match op {
-                RecvOp::MsgRecv => {
-                    todo!()
-                }
-                RecvOp::Recv => {
-
+        EndpointCaps::ConnectedMsg(ep) => match op {
+            RecvOp::MsgRecv => {
+                todo!()
+            }
+            RecvOp::Recv => {
+                ft_post!(
+                    recv_with_context,
+                    ft_progress,
+                    rx_cq,
+                    *rx_seq,
+                    rx_cq_cntr,
+                    "receive",
+                    ep,
+                    base,
+                    mr_desc.as_ref(),
+                    ctx
+                );
+            }
+        },
+        EndpointCaps::ConnlessMsg(ep) => match op {
+            RecvOp::MsgRecv => {
+                todo!()
+            }
+            RecvOp::Recv => {
+                if let Some(fi_address) = remote_address.as_ref() {
                     ft_post!(
-                        recv_with_context,
+                        recv_from_with_context,
+                        ft_progress,
+                        rx_cq,
+                        *rx_seq,
+                        rx_cq_cntr,
+                        "receive",
+                        ep,
+                        base,
+                        mr_desc.as_ref(),
+                        fi_address,
+                        ctx
+                    );
+                } else {
+                    ft_post!(
+                        recv_from_any_with_context,
                         ft_progress,
                         rx_cq,
                         *rx_seq,
@@ -1525,45 +1557,7 @@ pub fn msg_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
                     );
                 }
             }
-        }
-        EndpointCaps::ConnlessMsg(ep) => {
-            match op {
-                RecvOp::MsgRecv => {
-                    todo!()
-                }
-                RecvOp::Recv => {
-
-                    if let Some(fi_address) = remote_address.as_ref() {
-                        ft_post!(
-                            recv_from_with_context,
-                            ft_progress,
-                            rx_cq,
-                            *rx_seq,
-                            rx_cq_cntr,
-                            "receive",
-                            ep,
-                            base,
-                            mr_desc.as_ref(),
-                            fi_address,
-                            ctx
-                        );
-                    } else {
-                        ft_post!(
-                            recv_from_any_with_context,
-                            ft_progress,
-                            rx_cq,
-                            *rx_seq,
-                            rx_cq_cntr,
-                            "receive",
-                            ep,
-                            base,
-                            mr_desc.as_ref(),
-                            ctx
-                        );
-                    }
-                }
-            }
-        }
+        },
         _ => {
             panic!("Tagged not supported here");
         }
@@ -1629,8 +1623,14 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
         TagSendOp::TagMsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
             // let mut mem_descs = vec![default_desc()];
-            let msg =
-                libfabric::msg::MsgTaggedConnected::from_iov(&iov, desc.as_ref(), None, *tx_seq, None, ctx);
+            let msg = libfabric::msg::MsgTaggedConnected::from_iov(
+                &iov,
+                desc.as_ref(),
+                None,
+                *tx_seq,
+                None,
+                ctx,
+            );
             let msg_ref = &msg;
             ft_post!(
                 tsendmsg,
@@ -2700,17 +2700,23 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
     }
     .copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + len]);
     let mapped_key = match domain {
-        ConfDomain::Unbound(domain) => {
-            unsafe {MappedMemoryRegionKey::from_raw(
-                &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index + len], domain)}
-                .unwrap()
+        ConfDomain::Unbound(domain) => unsafe {
+            MappedMemoryRegionKey::from_raw(
+                &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())
+                    ..gl_ctx.rx_buf_index + len],
+                domain,
+            )
         }
+        .unwrap(),
 
-        ConfDomain::Bound(domain) => {
-            unsafe {MappedMemoryRegionKey::from_raw(
-                &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())..gl_ctx.rx_buf_index + len], domain)}
-                .unwrap()
+        ConfDomain::Bound(domain) => unsafe {
+            MappedMemoryRegionKey::from_raw(
+                &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())
+                    ..gl_ctx.rx_buf_index + len],
+                domain,
+            )
         }
+        .unwrap(),
     };
 
     let peer_info = RmaInfo::new(rma_iov.get_address(), rma_iov.get_len(), mapped_key);

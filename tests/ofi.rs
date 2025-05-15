@@ -1,5 +1,6 @@
 use libfabric::{
-    av::AddressVectorBuilder, comm::{
+    av::AddressVectorBuilder,
+    comm::{
         atomic::{
             AtomicCASEp, AtomicFetchEp, AtomicWriteEp, ConnectedAtomicCASEp,
             ConnectedAtomicFetchEp, ConnectedAtomicWriteEp,
@@ -7,18 +8,40 @@ use libfabric::{
         message::{ConnectedRecvEp, ConnectedSendEp, RecvEp, SendEp},
         rma::{ConnectedReadEp, ConnectedWriteEp, ReadEp, WriteEp},
         tagged::{ConnectedTagRecvEp, ConnectedTagSendEp, TagRecvEp, TagSendEp},
-    }, conn_ep::ConnectedEndpoint, connless_ep::ConnectionlessEndpoint, cq::{Completion, CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq}, domain::{Domain, DomainBuilder}, enums::{
-        AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType, FetchAtomicOp, ReadMsgOptions, RecvMsgOptions, SendMsgOptions, TaggedRecvMsgOptions, TaggedSendMsgOptions, TferOptions, WriteMsgOptions
-    }, ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder}, eq::{EventQueueBuilder, WaitEq}, error::{Error, ErrorKind}, fabric::FabricBuilder, info::{Info, InfoEntry}, infocapsoptions::{
+    },
+    conn_ep::ConnectedEndpoint,
+    connless_ep::ConnectionlessEndpoint,
+    cq::{Completion, CompletionQueue, CompletionQueueBuilder, ReadCq, WaitCq},
+    domain::{Domain, DomainBuilder},
+    enums::{
+        AVOptions, AtomicMsgOptions, AtomicOp, CompareAtomicOp, CqFormat, EndpointType,
+        FetchAtomicOp, ReadMsgOptions, RecvMsgOptions, SendMsgOptions, TaggedRecvMsgOptions,
+        TaggedSendMsgOptions, TferOptions, WriteMsgOptions,
+    },
+    ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder},
+    eq::{EventQueueBuilder, WaitEq},
+    error::{Error, ErrorKind},
+    fabric::FabricBuilder,
+    info::{Info, InfoEntry},
+    infocapsoptions::{
         AtomicDefaultCap, Caps, CollCap, InfoCaps, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
-    }, iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoVec, RmaIoc}, mr::{
-        DisabledMemoryRegion, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder, MemoryRegionDesc, MemoryRegionKey
-    }, msg::{
+    },
+    iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoVec, RmaIoc},
+    mr::{
+        DisabledMemoryRegion, MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder,
+        MemoryRegionDesc, MemoryRegionKey,
+    },
+    msg::{
         Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected,
         MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma,
         MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut, MsgTagged, MsgTaggedConnected,
         MsgTaggedConnectedMut, MsgTaggedMut,
-    }, xcontext::{ConnectedRxContext, ConnectedTxContext, ConnlessRxContext, ConnlessTxContext, RxContextBuilder, TxContextBuilder}, Context, CqCaps, EqCaps, MappedAddress, MyRc
+    },
+    xcontext::{
+        ConnectedRxContext, ConnectedTxContext, ConnlessRxContext, ConnlessTxContext,
+        RxContextBuilder, TxContextBuilder,
+    },
+    Context, CqCaps, EqCaps, MappedAddress, MyRc,
 };
 pub type SpinCq = libfabric::cq_caps_type!(CqCaps::WAIT);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::WAIT);
@@ -246,14 +269,11 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         }
                     }
                 };
-                let tx_context = TxContextBuilder::new(&ep, 0)
-                    .build();
-                
-                let rx_context = RxContextBuilder::new(&ep, 0)
-                    .build();
+                let tx_context = TxContextBuilder::new(&ep, 0).build();
 
-                mr = if info_entry.domain_attr().mr_mode().is_local()
-                    || info_entry.caps().is_rma()
+                let rx_context = RxContextBuilder::new(&ep, 0).build();
+
+                mr = if info_entry.domain_attr().mr_mode().is_local() || info_entry.caps().is_rma()
                 {
                     let mr =
                         MemoryRegionBuilder::new(&mut reg_mem, libfabric::enums::HmemIface::System)
@@ -275,11 +295,11 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 };
 
                 (
-                    info_entry, 
-                    MyEndpoint::Connected(ep), 
+                    info_entry,
+                    MyEndpoint::Connected(ep),
                     MyTxContext::Connected(tx_context),
                     MyRxContext::Connected(rx_context),
-                    None
+                    None,
                 )
             }
             _ => {
@@ -313,14 +333,11 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                 .unwrap();
                 ep.bind_av(&av).unwrap();
                 let ep = ep.enable().unwrap();
-                let tx_context = TxContextBuilder::new(&ep, 0)
-                    .build();
-                
-                let rx_context = RxContextBuilder::new(&ep, 0)
-                    .build();
-                
-                mr = if info_entry.domain_attr().mr_mode().is_local()
-                    || info_entry.caps().is_rma()
+                let tx_context = TxContextBuilder::new(&ep, 0).build();
+
+                let rx_context = RxContextBuilder::new(&ep, 0).build();
+
+                mr = if info_entry.domain_attr().mr_mode().is_local() || info_entry.caps().is_rma()
                 {
                     let mr =
                         MemoryRegionBuilder::new(&mut reg_mem, libfabric::enums::HmemIface::System)
@@ -452,104 +469,90 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
     }
 }
 
-
 fn conn_send<T>(
-        sender: &impl ConnectedSendEp,         
-        buf: &[T],
-        desc: Option<&MemoryRegionDesc>,
-        data: Option<u64>,
-        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
-    
+    sender: &impl ConnectedSendEp,
+    buf: &[T],
+    desc: Option<&MemoryRegionDesc>,
+    data: Option<u64>,
+    max_inject_size: usize,
+) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
         if data.is_some() {
             sender.injectdata(buf, data.unwrap())
-        }
-        else {
+        } else {
             sender.inject(buf)
         }
-    }
-    else {
+    } else {
         if data.is_some() {
             sender.senddata(buf, desc, data.unwrap())
-        }
-        else {
+        } else {
             sender.send(buf, desc)
         }
     }
-
 }
 
-fn connless_send<T>(sender: &impl SendEp,         
-        buf: &[T],
-        desc: Option<&MemoryRegionDesc>,
-        data: Option<u64>,
-        addr: &MyRc<MappedAddress>,
-        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
-    
+fn connless_send<T>(
+    sender: &impl SendEp,
+    buf: &[T],
+    desc: Option<&MemoryRegionDesc>,
+    data: Option<u64>,
+    addr: &MyRc<MappedAddress>,
+    max_inject_size: usize,
+) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
         if data.is_some() {
             sender.injectdata_to(buf, data.unwrap(), addr.as_ref())
-        }
-        else {
+        } else {
             sender.inject_to(buf, addr.as_ref())
         }
-    }
-    else {
+    } else {
         if data.is_some() {
             sender.senddata_to(buf, desc, data.unwrap(), addr.as_ref())
-        }
-        else {
+        } else {
             sender.send_to(buf, desc, addr.as_ref())
         }
     }
 }
 
-
 fn conn_sendv(
     sender: &impl ConnectedSendEp,
-    iov: &[IoVec], 
-    desc: Option<&[MemoryRegionDesc]>, 
-) 
--> Result<(), libfabric::error::Error> {
+    iov: &[IoVec],
+    desc: Option<&[MemoryRegionDesc]>,
+) -> Result<(), libfabric::error::Error> {
     sender.sendv(iov, desc)
 }
 
 fn connless_sendv(
     sender: &impl SendEp,
-    iov: &[IoVec], 
-    desc: Option<&[MemoryRegionDesc]>, 
+    iov: &[IoVec],
+    desc: Option<&[MemoryRegionDesc]>,
     mapped_addr: &MyRc<MappedAddress>,
-) 
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     sender.sendv_to(iov, desc, &mapped_addr)
 }
 
 fn connless_recv<T>(
-    sender: &impl RecvEp, 
-    buf: &mut [T], 
-    desc: Option<&MemoryRegionDesc>, 
+    sender: &impl RecvEp,
+    buf: &mut [T],
+    desc: Option<&MemoryRegionDesc>,
     mapped_addr: &MyRc<MappedAddress>,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     sender.recv_from(buf, desc, mapped_addr)
 }
 
 fn conn_recv<T>(
-    sender: &impl ConnectedRecvEp, 
-    buf: &mut [T], 
-    desc: Option<&MemoryRegionDesc>, 
-)
--> Result<(), libfabric::error::Error> {
+    sender: &impl ConnectedRecvEp,
+    buf: &mut [T],
+    desc: Option<&MemoryRegionDesc>,
+) -> Result<(), libfabric::error::Error> {
     sender.recv(buf, desc)
 }
-
 
 fn conn_sendmsg(
     sender: &impl ConnectedSendEp,
     msg: &MsgConnected,
     options: SendMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     sender.sendmsg(msg, options)
 }
 
@@ -557,8 +560,7 @@ fn connless_sendmsg(
     sender: &impl SendEp,
     msg: &Msg,
     options: SendMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     sender.sendmsg_to(msg, options)
 }
 
@@ -566,8 +568,7 @@ fn connless_recvmsg(
     recver: &impl RecvEp,
     msg: &MsgMut,
     options: RecvMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     recver.recvmsg_from(msg, options)
 }
 
@@ -575,59 +576,52 @@ fn conn_recvmsg(
     recver: &impl ConnectedRecvEp,
     msg: &MsgConnectedMut,
     options: RecvMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     recver.recvmsg(msg, options)
 }
 
 fn conn_tsend<T>(
-        sender: &impl ConnectedTagSendEp,         
-        buf: &[T],
-        desc: Option<&MemoryRegionDesc>,
-        tag: u64,
-        data: Option<u64>,
-        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
-    
+    sender: &impl ConnectedTagSendEp,
+    buf: &[T],
+    desc: Option<&MemoryRegionDesc>,
+    tag: u64,
+    data: Option<u64>,
+    max_inject_size: usize,
+) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
         if data.is_some() {
             sender.tinjectdata(buf, data.unwrap(), tag)
-        }
-        else {
+        } else {
             sender.tinject(buf, tag)
         }
-    }
-    else {
+    } else {
         if data.is_some() {
             sender.tsenddata(buf, desc, data.unwrap(), tag)
-        }
-        else {
+        } else {
             sender.tsend(buf, desc, tag)
         }
     }
-
 }
 
-fn connless_tsend<T>(sender: &impl TagSendEp,         
-        buf: &[T],
-        desc: Option<&MemoryRegionDesc>,
-        tag: u64,
-        data: Option<u64>,
-        addr: &MyRc<MappedAddress>,
-        max_inject_size: usize) -> Result<(), libfabric::error::Error> {
-    
+fn connless_tsend<T>(
+    sender: &impl TagSendEp,
+    buf: &[T],
+    desc: Option<&MemoryRegionDesc>,
+    tag: u64,
+    data: Option<u64>,
+    addr: &MyRc<MappedAddress>,
+    max_inject_size: usize,
+) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
         if data.is_some() {
             sender.tinjectdata_to(buf, data.unwrap(), addr.as_ref(), tag)
-        }
-        else {
+        } else {
             sender.tinject_to(buf, addr.as_ref(), tag)
         }
-    }
-    else {
+    } else {
         if data.is_some() {
             sender.tsenddata_to(buf, desc, data.unwrap(), addr.as_ref(), tag)
-        }
-        else {
+        } else {
             sender.tsend_to(buf, desc, addr.as_ref(), tag)
         }
     }
@@ -635,68 +629,62 @@ fn connless_tsend<T>(sender: &impl TagSendEp,
 
 fn conn_tsendv(
     sender: &impl ConnectedTagSendEp,
-    iov: &[IoVec], 
-    desc: Option<&[MemoryRegionDesc]>, 
-    tag: u64
-) 
--> Result<(), libfabric::error::Error> {
+    iov: &[IoVec],
+    desc: Option<&[MemoryRegionDesc]>,
+    tag: u64,
+) -> Result<(), libfabric::error::Error> {
     sender.tsendv(iov, desc, tag)
 }
 
 fn connless_tsendv(
     sender: &impl TagSendEp,
-    iov: &[IoVec], 
-    desc: Option<&[MemoryRegionDesc]>, 
+    iov: &[IoVec],
+    desc: Option<&[MemoryRegionDesc]>,
     mapped_addr: &MyRc<MappedAddress>,
-    tag: u64
-) 
--> Result<(), libfabric::error::Error> {
+    tag: u64,
+) -> Result<(), libfabric::error::Error> {
     sender.tsendv_to(iov, desc, &mapped_addr, tag)
 }
 
 fn connless_trecv<T>(
-    sender: &impl TagRecvEp, 
-    buf: &mut [T], 
-    desc: Option<&MemoryRegionDesc>, 
+    sender: &impl TagRecvEp,
+    buf: &mut [T],
+    desc: Option<&MemoryRegionDesc>,
     mapped_addr: &MyRc<MappedAddress>,
     tag: u64,
-    ignore: Option<u64>, 
-)
--> Result<(), libfabric::error::Error> {
+    ignore: Option<u64>,
+) -> Result<(), libfabric::error::Error> {
     sender.trecv_from(buf, desc, mapped_addr, tag, ignore)
 }
 
 fn conn_trecv<T>(
-    sender: &impl ConnectedTagRecvEp, 
-    buf: &mut [T], 
-    desc: Option<&MemoryRegionDesc>, 
+    sender: &impl ConnectedTagRecvEp,
+    buf: &mut [T],
+    desc: Option<&MemoryRegionDesc>,
     tag: u64,
-    ignore: Option<u64>, 
-)
--> Result<(), libfabric::error::Error> {
+    ignore: Option<u64>,
+) -> Result<(), libfabric::error::Error> {
     sender.trecv(buf, desc, tag, ignore)
 }
 
 fn connless_trecvv(
     recver: &impl TagRecvEp,
-    iov: &[IoVecMut], 
-    desc: Option<&[MemoryRegionDesc]>, 
+    iov: &[IoVecMut],
+    desc: Option<&[MemoryRegionDesc]>,
     mapped_addr: &MyRc<MappedAddress>,
     tag: u64,
-    ignore: Option<u64>
-)
--> Result<(), libfabric::error::Error> {
+    ignore: Option<u64>,
+) -> Result<(), libfabric::error::Error> {
     recver.trecvv_from(iov, desc, &mapped_addr, tag, ignore)
 }
 
 fn conn_trecvv(
     recver: &impl ConnectedTagRecvEp,
-    iov: &[IoVecMut], 
-    desc: Option<&[MemoryRegionDesc]>, 
+    iov: &[IoVecMut],
+    desc: Option<&[MemoryRegionDesc]>,
     tag: u64,
-    ignore: Option<u64>
-)
--> Result<(), libfabric::error::Error> {
+    ignore: Option<u64>,
+) -> Result<(), libfabric::error::Error> {
     recver.trecvv(iov, desc, tag, ignore)
 }
 
@@ -704,8 +692,7 @@ fn conn_tsendmsg(
     sender: &impl ConnectedTagSendEp,
     msg: &MsgTaggedConnected,
     options: TaggedSendMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     sender.tsendmsg(msg, options)
 }
 
@@ -713,8 +700,7 @@ fn connless_tsendmsg(
     sender: &impl TagSendEp,
     msg: &MsgTagged,
     options: TaggedSendMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     sender.tsendmsg_to(msg, options)
 }
 
@@ -722,8 +708,7 @@ fn connless_trecvmsg(
     recver: &impl TagRecvEp,
     msg: &MsgTaggedMut,
     options: TaggedRecvMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     recver.trecvmsg_from(msg, options)
 }
 
@@ -731,8 +716,7 @@ fn conn_trecvmsg(
     recver: &impl ConnectedTagRecvEp,
     msg: &MsgTaggedConnectedMut,
     options: TaggedRecvMsgOptions,
-)
--> Result<(), libfabric::error::Error> {
+) -> Result<(), libfabric::error::Error> {
     recver.trecvmsg(msg, options)
 }
 
@@ -743,13 +727,12 @@ impl<I> Ofi<I> {
             Err(err) => {
                 if !matches!(err.kind, ErrorKind::TryAgain) {
                     panic!("{:?}", err);
-                }
-                else {
+                } else {
                     false
                 }
             }
         };
-        if ! res {
+        if !res {
             ft_progress(self.cq_type.tx_cq());
             ft_progress(self.cq_type.rx_cq());
         }
@@ -768,190 +751,253 @@ impl<I: TagDefaultCap> Ofi<I> {
         use_context: bool,
     ) {
         loop {
-            let err = 
-            
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => {
-                            connless_tsend(ep, &buf, desc, tag, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
-                        }
-                        MyEndpoint::Connected(ep) => {
-                            conn_tsend(ep, &buf, desc, tag, data, self.info_entry.tx_attr().inject_size())
-                        }
-                    }
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => connless_tsend(
+                        ep,
+                        &buf,
+                        desc,
+                        tag,
+                        data,
+                        self.mapped_addr.as_ref().unwrap(),
+                        self.info_entry.tx_attr().inject_size(),
+                    ),
+                    MyEndpoint::Connected(ep) => conn_tsend(
+                        ep,
+                        &buf,
+                        desc,
+                        tag,
+                        data,
+                        self.info_entry.tx_attr().inject_size(),
+                    ),
                 }
-                else {
-                    match &self.tx_context {
-                        MyTxContext::Connectionless(tx_context) => {
-                            connless_tsend(tx_context.as_ref().unwrap(), &buf, desc, tag, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
-                        }
-                        MyTxContext::Connected(tx_context) => {
-                            conn_tsend(tx_context.as_ref().unwrap(), &buf, desc, tag, data, self.info_entry.tx_attr().inject_size())
-                        }
-                    }
-                };
-            
-            if self.check_and_progress(err) {
-                break
-            }
-        }
-    }
-
-    pub fn tsendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, tag: u64, use_context: bool) {
-        loop {
-            let err = 
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => {
-                            connless_tsendv(ep, iov, desc, self.mapped_addr.as_ref().unwrap(), tag)
-                        }
-                        MyEndpoint::Connected(ep) => {
-                            conn_tsendv(ep, iov, desc, tag)
-                        },
-                    }
-                }
-                else {
-                    match &self.tx_context {
-                        MyTxContext::Connected(tx_context) => conn_tsendv(tx_context.as_ref().unwrap(), iov, desc, tag),
-                        MyTxContext::Connectionless(tx_context) => connless_tsendv(tx_context.as_ref().unwrap(), iov, desc, self.mapped_addr.as_ref().unwrap(), tag),
-                    }
-                };
-
-            if self.check_and_progress(err) {
-                break
-            }
-        }
-    }
-
-
-
-    pub fn trecvv(&mut self, iov: &[IoVecMut], desc: Option<&[MemoryRegionDesc]>, tag: u64, use_context: bool) {
-        loop {
-            let err = 
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => {
-                            connless_trecvv(ep, iov, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
-                        }
-                        MyEndpoint::Connected(ep) => {
-                            conn_trecvv(ep, iov, desc, tag, None)
-                        },
-                    }
-                }
-                else {
-                    match &self.rx_context {
-                        MyRxContext::Connectionless(rx_context) => {
-                            connless_trecvv(rx_context.as_ref().unwrap(), iov, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
-                        }
-                        MyRxContext::Connected(rx_context) => {
-                            conn_trecvv(rx_context.as_ref().unwrap(), iov, desc, tag, None)
-                        },
-                    }
-                };
-            
-            if self.check_and_progress(err) {
-                break
-            }
-        }
-    }
-
-
-    pub fn trecv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>, tag: u64, use_context: bool) {
-        loop {
-            let err = 
-            if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => {
-                            connless_trecv(ep, buf, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
-                        }
-                        MyEndpoint::Connected(ep) => {
-                            conn_trecv(ep, buf, desc, tag, None)
-                        },
-                }
-            }
-            else {
-                match &self.rx_context {
-                    MyRxContext::Connectionless(rx_context) => {
-                        connless_trecv(rx_context.as_ref().unwrap(), buf, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
-                    }
-                    MyRxContext::Connected(rx_context) => {
-                        conn_trecv(rx_context.as_ref().unwrap(), buf, desc, tag, None)
-                    },
+            } else {
+                match &self.tx_context {
+                    MyTxContext::Connectionless(tx_context) => connless_tsend(
+                        tx_context.as_ref().unwrap(),
+                        &buf,
+                        desc,
+                        tag,
+                        data,
+                        self.mapped_addr.as_ref().unwrap(),
+                        self.info_entry.tx_attr().inject_size(),
+                    ),
+                    MyTxContext::Connected(tx_context) => conn_tsend(
+                        tx_context.as_ref().unwrap(),
+                        &buf,
+                        desc,
+                        tag,
+                        data,
+                        self.info_entry.tx_attr().inject_size(),
+                    ),
                 }
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
+            }
+        }
+    }
+
+    pub fn tsendv(
+        &mut self,
+        iov: &[IoVec],
+        desc: Option<&[MemoryRegionDesc]>,
+        tag: u64,
+        use_context: bool,
+    ) {
+        loop {
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => {
+                        connless_tsendv(ep, iov, desc, self.mapped_addr.as_ref().unwrap(), tag)
+                    }
+                    MyEndpoint::Connected(ep) => conn_tsendv(ep, iov, desc, tag),
+                }
+            } else {
+                match &self.tx_context {
+                    MyTxContext::Connected(tx_context) => {
+                        conn_tsendv(tx_context.as_ref().unwrap(), iov, desc, tag)
+                    }
+                    MyTxContext::Connectionless(tx_context) => connless_tsendv(
+                        tx_context.as_ref().unwrap(),
+                        iov,
+                        desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        tag,
+                    ),
+                }
+            };
+
+            if self.check_and_progress(err) {
+                break;
+            }
+        }
+    }
+
+    pub fn trecvv(
+        &mut self,
+        iov: &[IoVecMut],
+        desc: Option<&[MemoryRegionDesc]>,
+        tag: u64,
+        use_context: bool,
+    ) {
+        loop {
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => connless_trecvv(
+                        ep,
+                        iov,
+                        desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        tag,
+                        None,
+                    ),
+                    MyEndpoint::Connected(ep) => conn_trecvv(ep, iov, desc, tag, None),
+                }
+            } else {
+                match &self.rx_context {
+                    MyRxContext::Connectionless(rx_context) => connless_trecvv(
+                        rx_context.as_ref().unwrap(),
+                        iov,
+                        desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        tag,
+                        None,
+                    ),
+                    MyRxContext::Connected(rx_context) => {
+                        conn_trecvv(rx_context.as_ref().unwrap(), iov, desc, tag, None)
+                    }
+                }
+            };
+
+            if self.check_and_progress(err) {
+                break;
+            }
+        }
+    }
+
+    pub fn trecv<T>(
+        &mut self,
+        buf: &mut [T],
+        desc: Option<&MemoryRegionDesc>,
+        tag: u64,
+        use_context: bool,
+    ) {
+        loop {
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => {
+                        connless_trecv(ep, buf, desc, self.mapped_addr.as_ref().unwrap(), tag, None)
+                    }
+                    MyEndpoint::Connected(ep) => conn_trecv(ep, buf, desc, tag, None),
+                }
+            } else {
+                match &self.rx_context {
+                    MyRxContext::Connectionless(rx_context) => connless_trecv(
+                        rx_context.as_ref().unwrap(),
+                        buf,
+                        desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                        tag,
+                        None,
+                    ),
+                    MyRxContext::Connected(rx_context) => {
+                        conn_trecv(rx_context.as_ref().unwrap(), buf, desc, tag, None)
+                    }
+                }
+            };
+
+            if self.check_and_progress(err) {
+                break;
             }
         }
     }
 
     pub fn tsendmsg(&mut self, msg: &Either<MsgTagged, MsgTaggedConnected>, use_context: bool) {
         loop {
-            let err = 
-                if !use_context {
-
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => match msg {
-                            Either::Left(msg) => connless_tsendmsg(ep, msg, TferOptions::new().remote_cq_data()),
-                            Either::Right(_) => panic!("Wrong message type used"),
-                        },
-                        MyEndpoint::Connected(ep) => match msg {
-                            Either::Left(_) => panic!("Wrong message type used"),
-                            Either::Right(msg) => conn_tsendmsg(ep, msg, TferOptions::new().remote_cq_data()),
-                        },
-                    }
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => match msg {
+                        Either::Left(msg) => {
+                            connless_tsendmsg(ep, msg, TferOptions::new().remote_cq_data())
+                        }
+                        Either::Right(_) => panic!("Wrong message type used"),
+                    },
+                    MyEndpoint::Connected(ep) => match msg {
+                        Either::Left(_) => panic!("Wrong message type used"),
+                        Either::Right(msg) => {
+                            conn_tsendmsg(ep, msg, TferOptions::new().remote_cq_data())
+                        }
+                    },
                 }
-                else {
-
-                    match &self.tx_context {
-                        MyTxContext::Connectionless(tx_context) => match msg {
-                            Either::Left(msg) => connless_tsendmsg(tx_context.as_ref().unwrap(), msg, TferOptions::new().remote_cq_data()),
-                            Either::Right(_) => panic!("Wrong message type used"),
-                        },
-                        MyTxContext::Connected(tx_context) => match msg {
-                            Either::Left(_) => panic!("Wrong message type used"),
-                            Either::Right(msg) => conn_tsendmsg(tx_context.as_ref().unwrap(), msg, TferOptions::new().remote_cq_data()),
-                        },
-                    }
-                };
+            } else {
+                match &self.tx_context {
+                    MyTxContext::Connectionless(tx_context) => match msg {
+                        Either::Left(msg) => connless_tsendmsg(
+                            tx_context.as_ref().unwrap(),
+                            msg,
+                            TferOptions::new().remote_cq_data(),
+                        ),
+                        Either::Right(_) => panic!("Wrong message type used"),
+                    },
+                    MyTxContext::Connected(tx_context) => match msg {
+                        Either::Left(_) => panic!("Wrong message type used"),
+                        Either::Right(msg) => conn_tsendmsg(
+                            tx_context.as_ref().unwrap(),
+                            msg,
+                            TferOptions::new().remote_cq_data(),
+                        ),
+                    },
+                }
+            };
 
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
 
-    pub fn trecvmsg(&mut self, msg: &Either<MsgTaggedMut, MsgTaggedConnectedMut>, use_context: bool) {
+    pub fn trecvmsg(
+        &mut self,
+        msg: &Either<MsgTaggedMut, MsgTaggedConnectedMut>,
+        use_context: bool,
+    ) {
         loop {
-            let err = 
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => match msg {
-                            Either::Left(msg) => connless_trecvmsg(ep, msg, TferOptions::new()),
-                            Either::Right(_) => panic!("Wrong message type"),
-                        },
-                        MyEndpoint::Connected(ep) => match msg {
-                            Either::Left(_) => panic!("Wrong message type"),
-                            Either::Right(msg) => conn_trecvmsg(ep, msg, TferOptions::new()),
-                        },
-                    }
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => match msg {
+                        Either::Left(msg) => connless_trecvmsg(ep, msg, TferOptions::new()),
+                        Either::Right(_) => panic!("Wrong message type"),
+                    },
+                    MyEndpoint::Connected(ep) => match msg {
+                        Either::Left(_) => panic!("Wrong message type"),
+                        Either::Right(msg) => conn_trecvmsg(ep, msg, TferOptions::new()),
+                    },
                 }
-                else {
-                    match &self.rx_context {
-                        MyRxContext::Connectionless(rx_context) => match msg {
-                            Either::Left(msg) => connless_trecvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
-                            Either::Right(_) => panic!("Wrong message type"),
-                        },
-                        MyRxContext::Connected(rx_context) => match msg {
-                            Either::Left(_) => panic!("Wrong message type"),
-                            Either::Right(msg) => conn_trecvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
-                        },
-                    }
-                };
+            } else {
+                match &self.rx_context {
+                    MyRxContext::Connectionless(rx_context) => match msg {
+                        Either::Left(msg) => connless_trecvmsg(
+                            rx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                            msg,
+                            TferOptions::new(),
+                        ),
+                        Either::Right(_) => panic!("Wrong message type"),
+                    },
+                    MyRxContext::Connected(rx_context) => match msg {
+                        Either::Left(_) => panic!("Wrong message type"),
+                        Either::Right(msg) => conn_trecvmsg(
+                            rx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                            msg,
+                            TferOptions::new(),
+                        ),
+                    },
+                }
+            };
 
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -966,31 +1012,42 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         use_context: bool,
     ) {
         loop {
-            let err = 
-            
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => {
-                            connless_send(ep, buf, desc, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
-                        }
-                        MyEndpoint::Connected(ep) => {
-                            conn_send(ep, buf, desc, data, self.info_entry.tx_attr().inject_size())
-                        }
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => connless_send(
+                        ep,
+                        buf,
+                        desc,
+                        data,
+                        self.mapped_addr.as_ref().unwrap(),
+                        self.info_entry.tx_attr().inject_size(),
+                    ),
+                    MyEndpoint::Connected(ep) => {
+                        conn_send(ep, buf, desc, data, self.info_entry.tx_attr().inject_size())
                     }
                 }
-                else {
-                    match &self.tx_context {
-                        MyTxContext::Connectionless(tx_context) => {
-                            connless_send(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc, data, self.mapped_addr.as_ref().unwrap(), self.info_entry.tx_attr().inject_size())
-                        }
-                        MyTxContext::Connected(tx_context) => {
-                            conn_send(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc, data, self.info_entry.tx_attr().inject_size())
-                        }
-                    }
-                };
-            
+            } else {
+                match &self.tx_context {
+                    MyTxContext::Connectionless(tx_context) => connless_send(
+                        tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                        buf,
+                        desc,
+                        data,
+                        self.mapped_addr.as_ref().unwrap(),
+                        self.info_entry.tx_attr().inject_size(),
+                    ),
+                    MyTxContext::Connected(tx_context) => conn_send(
+                        tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                        buf,
+                        desc,
+                        data,
+                        self.info_entry.tx_attr().inject_size(),
+                    ),
+                }
+            };
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1046,36 +1103,40 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                     }
                 }
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
 
     pub fn sendv(&mut self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, use_context: bool) {
         loop {
-            let err = 
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => {
-                            connless_sendv(ep, iov, desc, self.mapped_addr.as_ref().unwrap())
-                        }
-                        MyEndpoint::Connected(ep) => conn_sendv(ep, iov, desc),
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => {
+                        connless_sendv(ep, iov, desc, self.mapped_addr.as_ref().unwrap())
                     }
+                    MyEndpoint::Connected(ep) => conn_sendv(ep, iov, desc),
                 }
-                else {
-                    match &self.tx_context {
-                        MyTxContext::Connectionless(tx_context) => {
-                            connless_sendv(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), iov, desc, self.mapped_addr.as_ref().unwrap())
-                        }
-                        MyTxContext::Connected(tx_context) => conn_sendv(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), iov, desc),
-                    }
-                };
+            } else {
+                match &self.tx_context {
+                    MyTxContext::Connectionless(tx_context) => connless_sendv(
+                        tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                        iov,
+                        desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                    ),
+                    MyTxContext::Connected(tx_context) => conn_sendv(
+                        tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                        iov,
+                        desc,
+                    ),
+                }
+            };
 
-            
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1088,107 +1149,124 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 }
                 MyEndpoint::Connected(ep) => ep.recvv(iov, desc),
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
 
     pub fn recv<T>(&mut self, buf: &mut [T], desc: Option<&MemoryRegionDesc>, use_context: bool) {
         loop {
-            let err = 
-
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => {
-                            connless_recv(ep, buf, desc, self.mapped_addr.as_ref().unwrap())
-                        }
-                        MyEndpoint::Connected(ep) => conn_recv(ep, buf, desc),
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => {
+                        connless_recv(ep, buf, desc, self.mapped_addr.as_ref().unwrap())
                     }
+                    MyEndpoint::Connected(ep) => conn_recv(ep, buf, desc),
                 }
-                else {
-                    match &self.rx_context {
-                        MyRxContext::Connectionless(rx_context) => {
-                            connless_recv(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc, self.mapped_addr.as_ref().unwrap())
-                        }
-                        MyRxContext::Connected(rx_context) => conn_recv(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), buf, desc),
-                    }
-                };
-            
-            
+            } else {
+                match &self.rx_context {
+                    MyRxContext::Connectionless(rx_context) => connless_recv(
+                        rx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                        buf,
+                        desc,
+                        self.mapped_addr.as_ref().unwrap(),
+                    ),
+                    MyRxContext::Connected(rx_context) => conn_recv(
+                        rx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                        buf,
+                        desc,
+                    ),
+                }
+            };
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
 
-    pub fn sendmsg(&mut self, msg: &Either<Msg, MsgConnected>,  use_context: bool) {
+    pub fn sendmsg(&mut self, msg: &Either<Msg, MsgConnected>, use_context: bool) {
         loop {
-            let err = 
-            if !use_context {
+            let err = if !use_context {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => match msg {
-                        Either::Left(msg) => connless_sendmsg(ep, msg, TferOptions::new().remote_cq_data()),
+                        Either::Left(msg) => {
+                            connless_sendmsg(ep, msg, TferOptions::new().remote_cq_data())
+                        }
                         Either::Right(_) => panic!("Wrong msg type"),
                     },
                     MyEndpoint::Connected(ep) => match msg {
                         Either::Left(_) => panic!("Wrong msg type"),
-                        Either::Right(msg) => conn_sendmsg(ep, msg, TferOptions::new().remote_cq_data()),
+                        Either::Right(msg) => {
+                            conn_sendmsg(ep, msg, TferOptions::new().remote_cq_data())
+                        }
                     },
                 }
-            }
-            else {
+            } else {
                 match &self.tx_context {
                     MyTxContext::Connectionless(tx_context) => match msg {
-                        Either::Left(msg) => connless_sendmsg(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new().remote_cq_data()),
+                        Either::Left(msg) => connless_sendmsg(
+                            tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                            msg,
+                            TferOptions::new().remote_cq_data(),
+                        ),
                         Either::Right(_) => panic!("Wrong msg type"),
                     },
                     MyTxContext::Connected(tx_context) => match msg {
                         Either::Left(_) => panic!("Wrong msg type"),
-                        Either::Right(msg) => conn_sendmsg(tx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new().remote_cq_data()),
+                        Either::Right(msg) => conn_sendmsg(
+                            tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                            msg,
+                            TferOptions::new().remote_cq_data(),
+                        ),
                     },
                 }
             };
 
-            
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
 
     pub fn recvmsg(&mut self, msg: &Either<MsgMut, MsgConnectedMut>, use_context: bool) {
         loop {
-            let err = 
-                if !use_context {
-                    match &self.ep {
-                        MyEndpoint::Connectionless(ep) => match msg {
-                            Either::Left(msg) => connless_recvmsg(ep, msg, TferOptions::new()),
-                            Either::Right(_) => panic!("Wrong message type"),
-                        },
-                        MyEndpoint::Connected(ep) => match msg {
-                            Either::Left(_) => panic!("Wrong message type"),
-                            Either::Right(msg) => conn_recvmsg(ep, msg, TferOptions::new()),
-                        },
-                    }
+            let err = if !use_context {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => match msg {
+                        Either::Left(msg) => connless_recvmsg(ep, msg, TferOptions::new()),
+                        Either::Right(_) => panic!("Wrong message type"),
+                    },
+                    MyEndpoint::Connected(ep) => match msg {
+                        Either::Left(_) => panic!("Wrong message type"),
+                        Either::Right(msg) => conn_recvmsg(ep, msg, TferOptions::new()),
+                    },
                 }
-                else {
-                    match &self.rx_context {
-                        MyRxContext::Connectionless(rx_context) => match msg {
-                            Either::Left(msg) => connless_recvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
-                            Either::Right(_) => panic!("Wrong message type"),
-                        },
-                        MyRxContext::Connected(rx_context) => match msg {
-                            Either::Left(_) => panic!("Wrong message type"),
-                            Either::Right(msg) => conn_recvmsg(rx_context.as_ref().expect("Tx/Rx Contexts not supported"), msg, TferOptions::new()),
-                        },
-                    }
-                };
+            } else {
+                match &self.rx_context {
+                    MyRxContext::Connectionless(rx_context) => match msg {
+                        Either::Left(msg) => connless_recvmsg(
+                            rx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                            msg,
+                            TferOptions::new(),
+                        ),
+                        Either::Right(_) => panic!("Wrong message type"),
+                    },
+                    MyRxContext::Connected(rx_context) => match msg {
+                        Either::Left(_) => panic!("Wrong message type"),
+                        Either::Right(msg) => conn_recvmsg(
+                            rx_context.as_ref().expect("Tx/Rx Contexts not supported"),
+                            msg,
+                            TferOptions::new(),
+                        ),
+                    },
+                }
+            };
 
-            
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1242,7 +1320,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
                 ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
             desc.as_ref(),
-            false
+            false,
         );
 
         self.cq_type.rx_cq().sread(1, -1).unwrap();
@@ -1378,9 +1456,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     }
                 }
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1408,9 +1486,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1437,9 +1515,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1466,9 +1544,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1487,9 +1565,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     Either::Right(msg) => unsafe { ep.writemsg(msg, WriteMsgOptions::new()) },
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1506,9 +1584,9 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                     Either::Right(msg) => unsafe { ep.readmsg(msg, ReadMsgOptions::new()) },
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1572,9 +1650,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     }
                 }
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1609,9 +1687,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1632,9 +1710,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     Either::Right(msg) => unsafe { ep.atomicmsg(msg, opts) },
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1675,9 +1753,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1718,9 +1796,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1747,9 +1825,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     },
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1796,9 +1874,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1845,9 +1923,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     )
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1876,9 +1954,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                     },
                 },
             };
-            
+
             if self.check_and_progress(err) {
-                break
+                break;
             }
         }
     }
@@ -1893,8 +1971,8 @@ macro_rules! gen_info {
                 let info = Info::new(&libfabric::info::libfabric_version())
                     .enter_hints()
                     .enter_ep_attr()
-                        // .tx_ctx_cnt(1)
-                        // .rx_ctx_cnt(1)
+                    // .tx_ctx_cnt(1)
+                    // .rx_ctx_cnt(1)
                     .type_($ep_type)
                     .leave_ep_attr()
                     .enter_domain_attr()
@@ -1967,7 +2045,6 @@ fn handshake<I: Caps + MsgDefaultCap + 'static>(
         name
     );
     info
-
 }
 
 #[test]
@@ -2264,7 +2341,6 @@ fn tsendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
     } else {
         handshake_connectionless(server, name, Some(InfoCaps::new().msg().tagged()))
     };
-    
 
     let mut reg_mem: Vec<_> = (0..1024 * 2)
         .into_iter()
@@ -2458,7 +2534,10 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let iovs = [iov0, iov1];
         let msg = if connected {
             Either::Right(MsgConnected::from_iov_slice(
-                &iovs, Some(&descs), data, &mut ctx,
+                &iovs,
+                Some(&descs),
+                data,
+                &mut ctx,
             ))
         } else {
             Either::Left(Msg::from_iov_slice(
@@ -2501,7 +2580,10 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
 
         let msg = if connected {
             Either::Right(MsgConnected::from_iov_slice(
-                &iovs, Some(&descs), None, &mut ctx,
+                &iovs,
+                Some(&descs),
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(Msg::from_iov_slice(
@@ -2584,7 +2666,10 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let mut iovs = [iov, iov1];
         let msg = if connected {
             Either::Right(MsgConnectedMut::from_iov_slice(
-                &mut iovs, Some(&descs), None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgMut::from_iov_slice(
@@ -2609,7 +2694,10 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let mut iovs = [iov, iov1];
         let msg = if connected {
             Either::Right(MsgConnectedMut::from_iov_slice(
-                &mut iovs, Some(&descs), None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgMut::from_iov_slice(
@@ -2783,7 +2871,12 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
 
         let msg = if connected {
             Either::Right(MsgTaggedConnected::from_iov_slice(
-                &iovs, Some(&descs), None, 3, None, &mut ctx,
+                &iovs,
+                Some(&descs),
+                None,
+                3,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgTagged::from_iov_slice(
@@ -2871,7 +2964,12 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let mut iovs = [iov, iov1];
         let msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov_slice(
-                &mut iovs, Some(&descs), None, 2, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                2,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov_slice(
@@ -2898,7 +2996,12 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let mut iovs = [iov, iov1];
         let msg = if connected {
             Either::Right(MsgTaggedConnectedMut::from_iov_slice(
-                &mut iovs, Some(&descs), None, 3, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                None,
+                3,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgTaggedMut::from_iov_slice(
@@ -3211,7 +3314,11 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let msg = if connected {
             Either::Right(MsgRmaConnected::from_iov_slice(
-                &iovs, Some(&descs), &rma_iovs, None, &mut ctx,
+                &iovs,
+                Some(&descs),
+                &rma_iovs,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgRma::from_iov_slice(
@@ -3297,7 +3404,11 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let msg = if connected {
             Either::Right(MsgRmaConnectedMut::from_iov_slice(
-                &mut iovs, Some(&descs), &rma_iovs, None, &mut ctx,
+                &mut iovs,
+                Some(&descs),
+                &rma_iovs,
+                None,
+                &mut ctx,
             ))
         } else {
             Either::Left(MsgRmaMut::from_iov_slice(
@@ -3542,32 +3653,74 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         let mut expected: Vec<_> = vec![1; 256];
         let (op_mem, ack_mem) = reg_mem.split_at_mut(512);
         let (mem0, mem1) = op_mem.split_at_mut(256);
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Min);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Min,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected[..256]);
 
         expected = vec![1; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Max);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Max,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
         expected = vec![2; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Sum);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Sum,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
         expected = vec![4; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Prod);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Prod,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
         expected = vec![8; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Bor);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Bor,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
         expected = vec![10; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Band);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Band,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
@@ -3580,12 +3733,26 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         expected = vec![2; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Lor);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Lor,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
         expected = vec![1; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Bxor);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Bxor,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
@@ -3598,12 +3765,26 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         expected = vec![3; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Land);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Land,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
         expected = vec![1; 256];
-        ofi.fetch_atomic(&mem0, mem1, 0, desc0.as_ref(), desc1.as_ref(), FetchAtomicOp::Lxor);
+        ofi.fetch_atomic(
+            &mem0,
+            mem1,
+            0,
+            desc0.as_ref(),
+            desc1.as_ref(),
+            FetchAtomicOp::Lxor,
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
@@ -4252,7 +4433,13 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
             ))
         };
 
-        ofi.compare_atomicmsg(&msg, &comp_iocs, &mut res_iocs, Some(&comp_descs), Some(&res_descs));
+        ofi.compare_atomicmsg(
+            &msg,
+            &comp_iocs,
+            &mut res_iocs,
+            Some(&comp_descs),
+            Some(&res_descs),
+        );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(res, &expected);
 

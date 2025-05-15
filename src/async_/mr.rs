@@ -62,7 +62,7 @@ impl MemoryRegionImpl {
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
                             mr_desc: OwnedMemoryRegionDesc::from_raw(c_desc),
-                            key : mr_key(c_mr, domain.as_ref()),
+                            key: mr_key(c_mr, domain.as_ref()),
                         },
                     ));
                 }
@@ -123,7 +123,7 @@ impl MemoryRegionImpl {
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
                             mr_desc: OwnedMemoryRegionDesc::from_raw(c_desc),
-                            key : mr_key(c_mr, domain.as_ref()),
+                            key: mr_key(c_mr, domain.as_ref()),
                         },
                     ));
                 }
@@ -186,7 +186,7 @@ impl MemoryRegionImpl {
                             bound_cntr: MyOnceCell::new(),
                             bound_ep: MyOnceCell::new(),
                             mr_desc: OwnedMemoryRegionDesc::from_raw(c_desc),
-                            key : mr_key(c_mr, domain.as_ref()),
+                            key: mr_key(c_mr, domain.as_ref()),
                         },
                     ));
                 }

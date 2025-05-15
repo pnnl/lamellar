@@ -2,12 +2,19 @@ use std::marker::PhantomData;
 
 use super::{
     cq::AsyncReadCq,
-    ep::{AsyncRxEp, AsyncTxEp}, eq::AsyncReadEq,
+    ep::{AsyncRxEp, AsyncTxEp},
+    eq::AsyncReadEq,
 };
 use crate::{
-    cntr::{Counter, ReadCntr}, enums::TransferOptions, ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState}, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, OwnedEpFid}, xcontext::{
-        MsgOrder, Receive, RxAttr, RxCompOrder, RxContextBase, Transmit, TxAttr, TxCompOrder, TxContextBase, XContextBase, XContextBaseImpl
-    }, Context, MyOnceCell, MyRc
+    cntr::{Counter, ReadCntr},
+    enums::TransferOptions,
+    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, OwnedEpFid},
+    xcontext::{
+        MsgOrder, Receive, RxAttr, RxCompOrder, RxContextBase, Transmit, TxAttr, TxCompOrder,
+        TxContextBase, XContextBase, XContextBaseImpl,
+    },
+    Context, MyOnceCell, MyRc,
 };
 
 pub(crate) type TxContextImplBase<I, STATE, CQ> = XContextBaseImpl<Transmit, I, STATE, CQ>;
@@ -79,7 +86,7 @@ impl<I: 'static, STATE: EpState> TxContext<I, STATE> {
         Ok(Self {
             inner: XContextBase {
                 inner: MyRc::new(TxContextImpl::new(&ep.inner, index, attr, c_void)?),
-            }
+            },
         })
     }
 }
@@ -100,7 +107,6 @@ pub struct TxIncompleteBindCq<'a, I, STATE: EpState> {
     pub(crate) ep: &'a TxContextImplBase<I, STATE, dyn AsyncReadCq>,
     pub(crate) flags: u64,
 }
-
 
 impl<EP, STATE: EpState> TxContextImpl<EP, STATE> {
     pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq<EP, STATE> {
@@ -210,8 +216,7 @@ impl<'a, I: 'static, STATE: EpState> TxIncompleteBindCntr<'a, I, STATE> {
 pub type RxContext<EP, STATE> = RxContextBase<EP, STATE, dyn AsyncReadCq>;
 pub(crate) type RxContextImpl<I, STATE> = XContextBaseImpl<Receive, I, STATE, dyn AsyncReadCq>;
 
-
-impl<I: 'static, STATE:EpState> RxContextImpl<I, STATE> {
+impl<I: 'static, STATE: EpState> RxContextImpl<I, STATE> {
     pub(crate) fn new(
         parent_ep: &MyRc<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>>,
         index: i32,
@@ -336,7 +341,6 @@ pub struct RxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
-
 impl<'a, STATE: EpState> RxContextBuilder<'a, (), STATE> {
     pub fn new<I>(
         ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
@@ -351,9 +355,7 @@ impl<'a, STATE: EpState> RxContextBuilder<'a, (), STATE> {
     }
 }
 
-impl<'a, I: 'static , STATE: EpState>
-    RxContextBuilder<'a, I, STATE>
-{
+impl<'a, I: 'static, STATE: EpState> RxContextBuilder<'a, I, STATE> {
     // pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
     //     self.rx_attr.caps(caps);
     //     self
@@ -409,7 +411,6 @@ impl<'a, I: 'static , STATE: EpState>
     }
 }
 
-
 pub struct TxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
@@ -431,10 +432,7 @@ impl<'a, STATE: EpState> TxContextBuilder<'a, (), STATE> {
     }
 }
 
-impl<'a, I: 'static, STATE: EpState>
-    TxContextBuilder<'a, I, STATE>
-{
-
+impl<'a, I: 'static, STATE: EpState> TxContextBuilder<'a, I, STATE> {
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
         self.tx_attr.set_mode(mode);
         self

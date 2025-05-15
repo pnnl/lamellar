@@ -11,11 +11,8 @@ use crate::infocapsoptions::{AtomicCap, ReadMod, WriteMod};
 use crate::mr::MemoryRegionDesc;
 use crate::utils::Either;
 use crate::{
-    async_::ep::AsyncTxEp,
-    comm::atomic::AtomicWriteEpImpl,
-    cq::SingleCompletion,
-    mr::MappedMemoryRegionKey,
-    AsFiType, Context,
+    async_::ep::AsyncTxEp, comm::atomic::AtomicWriteEpImpl, cq::SingleCompletion,
+    mr::MappedMemoryRegionKey, AsFiType, Context,
 };
 
 use super::while_try_again;
@@ -59,13 +56,7 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     ) -> Result<(), crate::error::Error> {
         let cq = self.retrieve_tx_cq();
         while_try_again(cq.as_ref(), || {
-            self.inject_atomic_impl(
-                buf,
-                dest_addr,
-                mem_addr,
-                mapped_key,
-                op,
-            )
+            self.inject_atomic_impl(buf, dest_addr, mem_addr, mapped_key, op)
         })
         .await
     }
@@ -206,22 +197,14 @@ pub trait ConnectedAsyncAtomicWriteEp {
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
-
 impl<EP: AtomicCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
     AsyncAtomicWriteEpImpl for EndpointImplBase<EP, EQ, CQ>
 {
 }
 
-impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl
-    for TxContextImpl<I, STATE>
-{
-}
+impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl for TxContextImpl<I, STATE> {}
 
-impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl
-    for TxContext<I, STATE>
-{
-}
-
+impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl for TxContext<I, STATE> {}
 
 impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     #[inline]
@@ -255,13 +238,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        self.inject_atomic_async_impl(
-            buf,
-            Some(dest_addr),
-            mem_addr,
-            mapped_key,
-            op,
-        )
+        self.inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key, op)
     }
 
     #[inline]
@@ -516,21 +493,14 @@ pub trait ConnectedAsyncAtomicFetchEp {
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connectionless> {}
 
-
 impl<EP: AtomicCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
     AsyncAtomicFetchEpImpl for EndpointImplBase<EP, EQ, CQ>
 {
 }
 
-impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl
-    for TxContextImpl<I, STATE>
-{
-}
+impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl for TxContextImpl<I, STATE> {}
 
-impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl
-    for TxContext<I, STATE>
-{
-}
+impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl for TxContext<I, STATE> {}
 
 impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
     #[allow(clippy::too_many_arguments)]
@@ -731,9 +701,17 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
         };
 
         let cq = self.retrieve_tx_cq();
-        while_try_again(cq.as_ref(),|| {
-            self.compare_atomicmsg_impl(imm_msg.to_owned(), comparev, compare_desc, resultv, res_desc, options)
-        }).await?;
+        while_try_again(cq.as_ref(), || {
+            self.compare_atomicmsg_impl(
+                imm_msg.to_owned(),
+                comparev,
+                compare_desc,
+                resultv,
+                res_desc,
+                options,
+            )
+        })
+        .await?;
 
         let ctx = match &mut msg {
             Either::Left(msg) => msg.context(),
@@ -845,10 +823,7 @@ impl<I: AtomicCap + WriteMod + ReadMod, STATE: EpState> AsyncAtomicCASImpl
 {
 }
 
-impl<I: AtomicCap + WriteMod + ReadMod, STATE: EpState> AsyncAtomicCASImpl
-    for TxContext<I, STATE>
-{
-}
+impl<I: AtomicCap + WriteMod + ReadMod, STATE: EpState> AsyncAtomicCASImpl for TxContext<I, STATE> {}
 
 impl<EP: AsyncAtomicCASImpl + ConnlessEp> AsyncAtomicCASEp for EP {
     #[inline]

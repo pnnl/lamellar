@@ -817,9 +817,7 @@ mod tests {
 
     #[test]
     fn domain_test() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();
         let count = 10;
@@ -840,9 +838,7 @@ mod libfabric_lifetime_tests {
     #[test]
 
     fn domain_drops_before_fabric() {
-        let info = Info::new(&crate::info::libfabric_version())
-        .get()
-        .unwrap();
+        let info = Info::new(&crate::info::libfabric_version()).get().unwrap();
         let entry = info.into_iter().next().unwrap();
 
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

@@ -134,16 +134,9 @@ impl<EP: MsgCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
-impl<I: MsgCap + RecvMod, STATE: EpState> AsyncRecvEpImpl
-    for RxContextImpl<I, STATE>
-{
-}
+impl<I: MsgCap + RecvMod, STATE: EpState> AsyncRecvEpImpl for RxContextImpl<I, STATE> {}
 
-impl<I: MsgCap + RecvMod, STATE: EpState> AsyncRecvEpImpl
-    for RxContext<I, STATE>
-{
-}
-
+impl<I: MsgCap + RecvMod, STATE: EpState> AsyncRecvEpImpl for RxContext<I, STATE> {}
 
 impl<EP: AsyncRecvEpImpl + ConnlessEp> AsyncRecvEp for EP {
     fn recv_from_async<T>(
@@ -505,15 +498,9 @@ impl<EP: MsgCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> A
 {
 }
 
-impl<I: MsgCap + SendMod, STATE: EpState> AsyncSendEpImpl
-    for TxContextImpl<I, STATE>
-{
-}
+impl<I: MsgCap + SendMod, STATE: EpState> AsyncSendEpImpl for TxContextImpl<I, STATE> {}
 
-impl<I: MsgCap + SendMod, STATE: EpState> AsyncSendEpImpl
-    for TxContext<I, STATE>
-{
-}
+impl<I: MsgCap + SendMod, STATE: EpState> AsyncSendEpImpl for TxContext<I, STATE> {}
 
 impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncSendEpImpl> AsyncSendEpImpl for EndpointBase<E, Connectionless> {}

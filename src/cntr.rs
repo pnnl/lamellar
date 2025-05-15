@@ -506,14 +506,14 @@ mod tests {
     #[test]
     fn cntr_loop() {
         let info = Info::new(&crate::info::libfabric_version())
-        .enter_hints()
-        .enter_domain_attr()
-        .mode(crate::enums::Mode::all())
-        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-        .leave_domain_attr()
-        .leave_hints()
-        .get()
-        .unwrap();
+            .enter_hints()
+            .enter_domain_attr()
+            .mode(crate::enums::Mode::all())
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+            .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         for e in info.iter() {
             if e.domain_attr().cntr_cnt() != 0 {
@@ -554,24 +554,21 @@ mod tests {
 #[cfg(test)]
 mod libfabric_lifetime_tests {
 
-    use crate::{
-        cntr::ReadCntr,
-        info::Info,
-    };
+    use crate::{cntr::ReadCntr, info::Info};
 
     use super::CounterBuilder;
 
     #[test]
     fn cntr_drops_before_domain() {
         let info = Info::new(&crate::info::libfabric_version())
-        .enter_hints()
-        .enter_domain_attr()
-        .mode(crate::enums::Mode::all())
-        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-        .leave_domain_attr()
-        .leave_hints()
-        .get()
-        .unwrap();
+            .enter_hints()
+            .enter_domain_attr()
+            .mode(crate::enums::Mode::all())
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+            .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         for e in info.iter() {
             if e.domain_attr().cntr_cnt() != 0 {

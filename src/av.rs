@@ -1502,17 +1502,17 @@ mod tests {
     #[test]
     fn av_open_close() {
         let info = Info::new(&crate::info::libfabric_version())
-        .enter_hints()
-        .enter_ep_attr()
-        .type_(crate::enums::EndpointType::Rdm)
-        .leave_ep_attr()
-        .enter_domain_attr()
-        .mode(crate::enums::Mode::all())
-        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-        .leave_domain_attr()
-        .leave_hints()
-        .get()
-        .unwrap();
+            .enter_hints()
+            .enter_ep_attr()
+            .type_(crate::enums::EndpointType::Rdm)
+            .leave_ep_attr()
+            .enter_domain_attr()
+            .mode(crate::enums::Mode::all())
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+            .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         let entry = info.into_iter().next().unwrap();
 
@@ -1534,17 +1534,17 @@ mod tests {
     #[test]
     fn av_good_sync() {
         let info = Info::new(&crate::info::libfabric_version())
-        .enter_hints()
-        .enter_ep_attr()
-        .type_(crate::enums::EndpointType::Rdm)
-        .leave_ep_attr()
-        .enter_domain_attr()
-        .mode(crate::enums::Mode::all())
-        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-        .leave_domain_attr()
-        .leave_hints()
-        .get()
-        .unwrap();
+            .enter_hints()
+            .enter_ep_attr()
+            .type_(crate::enums::EndpointType::Rdm)
+            .leave_ep_attr()
+            .enter_domain_attr()
+            .mode(crate::enums::Mode::all())
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+            .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         let entry = info.into_iter().next().unwrap();
 
@@ -1569,17 +1569,17 @@ mod libfabric_lifetime_tests {
     #[test]
     fn av_drops_before_domain() {
         let info = Info::new(&crate::info::libfabric_version())
-        .enter_hints()
-        .enter_ep_attr()
-        .type_(crate::enums::EndpointType::Rdm)
-        .leave_ep_attr()
-        .enter_domain_attr()
-        .mode(crate::enums::Mode::all())
-        .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
-        .leave_domain_attr()
-        .leave_hints()
-        .get()
-        .unwrap();
+            .enter_hints()
+            .enter_ep_attr()
+            .type_(crate::enums::EndpointType::Rdm)
+            .leave_ep_attr()
+            .enter_domain_attr()
+            .mode(crate::enums::Mode::all())
+            .mr_mode(crate::enums::MrMode::new().basic().scalable().inverse())
+            .leave_domain_attr()
+            .leave_hints()
+            .get()
+            .unwrap();
 
         let entry = info.into_iter().next().unwrap();
         let fab = crate::fabric::FabricBuilder::new().build(&entry).unwrap();

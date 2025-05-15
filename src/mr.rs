@@ -13,7 +13,9 @@ use crate::{
     Context, MyOnceCell, MyRc, SyncSend,
 };
 use crate::{
-    ep::ActiveEndpoint, error::Error, fid::{AsTypedFid, BorrowedTypedFid}
+    ep::ActiveEndpoint,
+    error::Error,
+    fid::{AsTypedFid, BorrowedTypedFid},
 };
 
 pub struct DmaBuf {
@@ -38,7 +40,6 @@ impl<'a> MemoryRegionKey<'a> {
         self.key.to_bytes()
     }
 }
-
 
 impl OwnedMemoryRegionKey {
     // pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
@@ -140,8 +141,10 @@ pub struct MappedMemoryRegionKey {
 }
 
 impl MappedMemoryRegionKey {
-
-    pub unsafe fn from_raw<EQ: ?Sized + SyncSend + 'static>(raw: &[u8], domain: &crate::domain::DomainBase<EQ>) -> Result<Self, Error> {
+    pub unsafe fn from_raw<EQ: ?Sized + SyncSend + 'static>(
+        raw: &[u8],
+        domain: &crate::domain::DomainBase<EQ>,
+    ) -> Result<Self, Error> {
         OwnedMemoryRegionKey::from_bytes(raw, domain)
             .into_mapped(domain)
             .map_err(|err| crate::error::Error::from_err_code(err.c_err))
@@ -188,14 +191,14 @@ pub struct MemoryRegion {
     pub(crate) inner: MyRc<MemoryRegionImpl>,
 }
 
-
-pub(crate) fn mr_key(c_mr: *mut libfabric_sys::fid_mr, domain: &impl DomainImplT) -> Result<OwnedMemoryRegionKey, crate::error::Error> {
+pub(crate) fn mr_key(
+    c_mr: *mut libfabric_sys::fid_mr,
+    domain: &impl DomainImplT,
+) -> Result<OwnedMemoryRegionKey, crate::error::Error> {
     if domain.mr_mode().is_raw() {
         raw_key(c_mr, 0, domain)
     } else {
-        let ret = unsafe {
-            libfabric_sys::inlined_fi_mr_key(c_mr)
-        };
+        let ret = unsafe { libfabric_sys::inlined_fi_mr_key(c_mr) };
         if ret == crate::FI_KEY_NOTAVAIL {
             Err(crate::error::Error::from_err_code(libfabric_sys::FI_ENOKEY))
         } else {
@@ -204,7 +207,11 @@ pub(crate) fn mr_key(c_mr: *mut libfabric_sys::fid_mr, domain: &impl DomainImplT
     }
 }
 
-fn raw_key(c_mr: *mut libfabric_sys::fid_mr, flags: u64, domain: & impl DomainImplT) -> Result<OwnedMemoryRegionKey, crate::error::Error> {
+fn raw_key(
+    c_mr: *mut libfabric_sys::fid_mr,
+    flags: u64,
+    domain: &impl DomainImplT,
+) -> Result<OwnedMemoryRegionKey, crate::error::Error> {
     let mut base_addr = 0u64;
     let mut key_size = domain.mr_key_size();
     let mut raw_key = vec![0u8; key_size + std::mem::size_of::<u64>()];
@@ -224,9 +231,9 @@ fn raw_key(c_mr: *mut libfabric_sys::fid_mr, flags: u64, domain: & impl DomainIm
         ))
     } else {
         let raw_key_len = raw_key.len();
-        raw_key[raw_key_len - std::mem::size_of::<u64>()..].copy_from_slice(
-            unsafe { std::slice::from_raw_parts(&base_addr as *const u64 as *const u8, 8) },
-        );
+        raw_key[raw_key_len - std::mem::size_of::<u64>()..].copy_from_slice(unsafe {
+            std::slice::from_raw_parts(&base_addr as *const u64 as *const u8, 8)
+        });
         Ok(unsafe { OwnedMemoryRegionKey::from_bytes_impl(&raw_key, domain) })
     }
 }
@@ -271,7 +278,7 @@ impl MemoryRegionImpl {
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
                 mr_desc: OwnedMemoryRegionDesc { c_desc },
-                key : mr_key(c_mr, domain.as_ref()),
+                key: mr_key(c_mr, domain.as_ref()),
             })
         }
     }
@@ -309,7 +316,7 @@ impl MemoryRegionImpl {
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
                 mr_desc: OwnedMemoryRegionDesc { c_desc },
-                key : mr_key(c_mr, domain.as_ref()),
+                key: mr_key(c_mr, domain.as_ref()),
             })
         }
     }
@@ -354,7 +361,7 @@ impl MemoryRegionImpl {
                 bound_cntr: MyOnceCell::new(),
                 bound_ep: MyOnceCell::new(),
                 mr_desc: OwnedMemoryRegionDesc { c_desc },
-                key : mr_key(c_mr, domain.as_ref()),
+                key: mr_key(c_mr, domain.as_ref()),
             })
         }
     }
@@ -617,7 +624,6 @@ impl OwnedMemoryRegionDesc {
         }
     }
 }
-
 
 #[repr(C)]
 #[derive(Debug)]
@@ -1242,7 +1248,7 @@ mod tests {
                         .unwrap();
                     let mr = match mr {
                         MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                        MaybeDisabledMemoryRegion::Disabled(mr) => {mr.enable().unwrap()},
+                        MaybeDisabledMemoryRegion::Disabled(mr) => mr.enable().unwrap(),
                     };
                     let desc = mr.descriptor();
                     // mr.close().unwrap();

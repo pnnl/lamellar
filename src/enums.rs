@@ -90,8 +90,6 @@ gen_enum!(
     (Noop, libfabric_sys::fi_op_FI_NOOP)
 );
 
-
-
 pub trait AtomicOperation {
     fn as_raw(&self) -> u32;
 }
@@ -162,7 +160,10 @@ gen_enum!(
     (FloatComplex, libfabric_sys::fi_datatype_FI_FLOAT_COMPLEX),
     (DoubleComplex, libfabric_sys::fi_datatype_FI_DOUBLE_COMPLEX),
     (LongDouble, libfabric_sys::fi_datatype_FI_LONG_DOUBLE),
-    (LongDoubleComplex, libfabric_sys::fi_datatype_FI_LONG_DOUBLE_COMPLEX),
+    (
+        LongDoubleComplex,
+        libfabric_sys::fi_datatype_FI_LONG_DOUBLE_COMPLEX
+    ),
     (DatatypeLast, libfabric_sys::fi_datatype_FI_DATATYPE_LAST),
     (Int128, libfabric_sys::fi_datatype_FI_INT128),
     (Uint28, libfabric_sys::fi_datatype_FI_UINT128),
@@ -890,11 +891,7 @@ impl<const MSG: bool> TferOptions<false, MSG, false, false, false, false> {
         is_multi_recv,
         libfabric_sys::FI_MULTI_RECV as u64
     );
-    gen_set_get_flag!(
-        auth_key,
-        is_auth_key,
-        libfabric_sys::FI_AUTH_KEY
-    );
+    gen_set_get_flag!(auth_key, is_auth_key, libfabric_sys::FI_AUTH_KEY);
 }
 
 impl TferOptions<false, true, false, false, true, false> {
@@ -1069,7 +1066,11 @@ impl DomainCaps {
         self.c_flags
     }
 
-    gen_set_get_flag!(directed_recv, is_directed_recv, libfabric_sys::FI_DIRECTED_RECV);
+    gen_set_get_flag!(
+        directed_recv,
+        is_directed_recv,
+        libfabric_sys::FI_DIRECTED_RECV
+    );
     gen_set_get_flag!(av_user_id, is_av_user_id, libfabric_sys::FI_AV_USER_ID);
     gen_set_get_flag!(local_comm, is_local_comm, libfabric_sys::FI_LOCAL_COMM);
     gen_set_get_flag!(remote_comm, is_remote_comm, libfabric_sys::FI_REMOTE_COMM);

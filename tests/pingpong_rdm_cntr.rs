@@ -26,26 +26,26 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
     // gl_ctx.comp_method = CompMeth::Sread;
 
     let info = Info::new(&libfabric::info::libfabric_version())
-    .enter_hints()
-    .enter_ep_attr()
-    .type_(libfabric::enums::EndpointType::Rdm)
-    .leave_ep_attr()
-    .enter_domain_attr()
-    .threading(libfabric::enums::Threading::Domain)
-    .mr_mode(
-        libfabric::enums::MrMode::new()
-            .prov_key()
-            .allocated()
-            .virt_addr()
-            .local()
-            .endpoint()
-            .raw(),
-    )
-    .leave_domain_attr()
-    .enter_tx_attr()
-    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-    .leave_tx_attr()
-    .addr_format(libfabric::enums::AddressFormat::Unspec);
+        .enter_hints()
+        .enter_ep_attr()
+        .type_(libfabric::enums::EndpointType::Rdm)
+        .leave_ep_attr()
+        .enter_domain_attr()
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(
+            libfabric::enums::MrMode::new()
+                .prov_key()
+                .allocated()
+                .virt_addr()
+                .local()
+                .endpoint()
+                .raw(),
+        )
+        .leave_domain_attr()
+        .enter_tx_attr()
+        .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+        .leave_tx_attr()
+        .addr_format(libfabric::enums::AddressFormat::Unspec);
 
     let hintscaps = if true {
         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))
@@ -53,14 +53,13 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
     };
 
-    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) =
-        prefix::ft_init_fabric(
-            hintscaps,
-            &mut gl_ctx,
-            "".to_owned(),
-            "9222".to_owned(),
-            true,
-        );
+    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) = prefix::ft_init_fabric(
+        hintscaps,
+        &mut gl_ctx,
+        "".to_owned(),
+        "9222".to_owned(),
+        true,
+    );
 
     match infocap {
         prefix::InfoWithCaps::Msg(entry) => {
@@ -82,15 +81,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                 );
             }
 
-            ft_finalize(
-                &entry,
-                &mut gl_ctx,
-                &ep,
-                &cq_type,
-                &tx_cntr,
-                &rx_cntr,
-                &mr,
-            );
+            ft_finalize(&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mr);
         }
         prefix::InfoWithCaps::Tagged(entry) => {
             let test_sizes = gl_ctx.test_sizes.clone();
@@ -111,15 +102,7 @@ define_test!(pp_server_rdm_cntr, async_pp_server_rdm_cntr, {
                 );
             }
 
-            ft_finalize(
-                &entry,
-                &mut gl_ctx,
-                &ep,
-                &cq_type,
-                &tx_cntr,
-                &rx_cntr,
-                &mr,
-            );
+            ft_finalize(&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mr);
         }
     }
 });
@@ -137,26 +120,26 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
     // gl_ctx.comp_method = CompMeth::Sread;
 
     let info = Info::new(&libfabric::info::libfabric_version())
-    .enter_hints()
-    .enter_ep_attr()
-    .type_(libfabric::enums::EndpointType::Rdm)
-    .leave_ep_attr()
-    .enter_domain_attr()
-    .threading(libfabric::enums::Threading::Domain)
-    .mr_mode(
-        libfabric::enums::MrMode::new()
-            .prov_key()
-            .allocated()
-            .virt_addr()
-            .local()
-            .endpoint()
-            .raw(),
-    )
-    .leave_domain_attr()
-    .enter_tx_attr()
-    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-    .leave_tx_attr()
-    .addr_format(libfabric::enums::AddressFormat::Unspec);
+        .enter_hints()
+        .enter_ep_attr()
+        .type_(libfabric::enums::EndpointType::Rdm)
+        .leave_ep_attr()
+        .enter_domain_attr()
+        .threading(libfabric::enums::Threading::Domain)
+        .mr_mode(
+            libfabric::enums::MrMode::new()
+                .prov_key()
+                .allocated()
+                .virt_addr()
+                .local()
+                .endpoint()
+                .raw(),
+        )
+        .leave_domain_attr()
+        .enter_tx_attr()
+        .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+        .leave_tx_attr()
+        .addr_format(libfabric::enums::AddressFormat::Unspec);
 
     let hintscaps = if true {
         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))
@@ -164,14 +147,13 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
     };
 
-    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) =
-        prefix::ft_init_fabric(
-            hintscaps,
-            &mut gl_ctx,
-            ip.strip_suffix("\n").unwrap_or(&ip).to_owned(),
-            "9222".to_owned(),
-            false,
-        );
+    let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) = prefix::ft_init_fabric(
+        hintscaps,
+        &mut gl_ctx,
+        ip.strip_suffix("\n").unwrap_or(&ip).to_owned(),
+        "9222".to_owned(),
+        false,
+    );
 
     match infocap {
         prefix::InfoWithCaps::Msg(entry) => {
@@ -193,15 +175,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                 );
             }
 
-            ft_finalize(
-                &entry,
-                &mut gl_ctx,
-                &ep,
-                &cq_type,
-                &tx_cntr,
-                &rx_cntr,
-                &mr,
-            );
+            ft_finalize(&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mr);
         }
         prefix::InfoWithCaps::Tagged(entry) => {
             let test_sizes = gl_ctx.test_sizes.clone();
@@ -222,15 +196,7 @@ define_test!(pp_client_rdm_cntr, async_pp_client_rdm_cntr, {
                 );
             }
 
-            ft_finalize(
-                &entry,
-                &mut gl_ctx,
-                &ep,
-                &cq_type,
-                &tx_cntr,
-                &rx_cntr,
-                &mr,
-            );
+            ft_finalize(&entry, &mut gl_ctx, &ep, &cq_type, &tx_cntr, &rx_cntr, &mr);
         }
     }
 });
