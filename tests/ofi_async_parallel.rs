@@ -1,3 +1,5 @@
+#[cfg(all(any(feature="use-async-std",feature="use-tokio"), any(feature="threading-completion",feature="threading-domain", feature="threading-endpoint", feature="threading-fid", feature="threading-thread-safe")))]
+pub mod parallel_async_ofi {
 use std::sync::Arc;
 
 use libfabric::async_::comm::message::AsyncRecvEp;
@@ -50,7 +52,6 @@ use libfabric::{
 
 pub type SpinCq = libfabric::async_cq_caps_type!(CqCaps::FD);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::FD);
-pub mod common;
 
 pub enum CqType {
     Separate((CompletionQueue<SpinCq>, CompletionQueue<SpinCq>)),
@@ -4094,3 +4095,4 @@ fn paralle_async_writeread1() {
 // fn async_conn_compare_atomic1() {
 //     compare_atomic(false, "conn_compare_atomic0", true);
 // }
+}

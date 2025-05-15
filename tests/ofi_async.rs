@@ -1,3 +1,6 @@
+#[cfg(any(feature="use-async-std",feature="use-tokio"))]
+pub mod async_ofi {
+
 use libfabric::async_::comm::atomic::AsyncAtomicCASEp;
 use libfabric::async_::comm::atomic::AsyncAtomicFetchEp;
 use libfabric::async_::comm::atomic::AsyncAtomicWriteEp;
@@ -65,7 +68,6 @@ use libfabric::{
 
 pub type SpinCq = libfabric::async_cq_caps_type!(CqCaps::FD);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::FD);
-pub mod common;
 
 pub enum CqType {
     Separate((CompletionQueue<SpinCq>, CompletionQueue<SpinCq>)),
@@ -3810,3 +3812,4 @@ fn async_compare_atomicmsg1() {
 // fn async_conn_compare_atomic1() {
 //     compare_atomic(false, "conn_compare_atomic0", true);
 // }
+}
