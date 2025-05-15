@@ -204,7 +204,7 @@ impl MemoryRegionImpl {
 impl MemoryRegion {
     #[allow(dead_code)]
     pub(crate) async fn from_buffer_async<T>(
-        domain: &crate::async_::domain::Domain,
+        domain: &crate::async_::domain::BoundDomain,
         buf: &[T],
         access: &MrAccess,
         requested_key: u64,
@@ -230,7 +230,7 @@ impl MemoryRegion {
 
     #[allow(dead_code)]
     pub(crate) async fn from_attr_async(
-        domain: &crate::async_::domain::Domain,
+        domain: &crate::async_::domain::BoundDomain,
         attr: MemoryRegionAttr,
         flags: MrRegOpt,
         ctx: &mut Context,
@@ -248,7 +248,7 @@ impl MemoryRegion {
 
     #[allow(dead_code)]
     async fn from_iovec_async<'a>(
-        domain: &'a crate::async_::domain::Domain,
+        domain: &'a crate::async_::domain::BoundDomain,
         iov: &[crate::iovec::IoVec<'a>],
         access: &MrAccess,
         requested_key: u64,

@@ -1,5 +1,5 @@
 use crate::{
-    domain::{DomainBase, DomainBuilder, DomainImplBase},
+    domain::{DomainBase, DomainBuilder, DomainImplBase, NoEventQueue},
     eq::EventQueueBase,
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid},
     MyRc,
@@ -8,7 +8,8 @@ use crate::{
 use super::eq::{AsyncReadEq, EventQueue};
 
 pub(crate) type AsyncDomainImpl = DomainImplBase<dyn AsyncReadEq>;
-pub type Domain = DomainBase<dyn AsyncReadEq>;
+pub type BoundDomain = DomainBase<dyn AsyncReadEq>;
+pub type Domain = DomainBase<NoEventQueue>;
 
 impl DomainImplBase<dyn AsyncReadEq> {
     pub(crate) fn bind(

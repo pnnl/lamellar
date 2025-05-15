@@ -19,8 +19,7 @@ pub mod async_ofi {
     use libfabric::async_::comm::tagged::AsyncTagSendEp;
     use libfabric::async_::comm::tagged::ConnectedAsyncTagRecvEp;
     use libfabric::async_::comm::tagged::ConnectedAsyncTagSendEp;
-    use libfabric::domain::DomainBase;
-    use libfabric::domain::NoEventQueue;
+    use libfabric::async_::domain::Domain;
     use libfabric::ep::BaseEndpoint;
     use libfabric::info::Info;
     use libfabric::infocapsoptions::InfoCaps;
@@ -108,7 +107,7 @@ pub mod async_ofi {
         pub mr: Option<MemoryRegion>,
         pub remote_key: Option<MappedMemoryRegionKey>,
         pub remote_mem_addr: Option<(u64, u64)>,
-        pub domain: DomainBase<NoEventQueue>,
+        pub domain: Domain,
         pub cq_type: CqType,
         pub ep: MyEndpoint<I>,
         pub mapped_addr: Option<MyRc<MappedAddress>>,
