@@ -1,4 +1,5 @@
 use core::panic;
+use std::ops::Deref;
 use libfabric::connless_ep::ConnectionlessEndpoint;
 use libfabric::enums;
 use libfabric::mr::MemoryRegion;
@@ -248,6 +249,7 @@ pub enum ConfDomain {
     Bound(BoundDomain),
 }
 
+
 pub fn ft_open_fabric_res<E>(
     info: &InfoEntry<E>,
 ) -> (
@@ -420,9 +422,54 @@ pub fn ft_alloc_active_res<E>(
     // let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain);
 
     let ep = match domain {
-        ConfDomain::Unbound(domain) => EndpointBuilder::new(info).build(domain).unwrap(),
-        ConfDomain::Bound(domain) => EndpointBuilder::new(info).build(domain).unwrap(),
-    };
+        ConfDomain::Unbound(domain) => 
+            match &cq_type {
+                CqType::Spin(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0),
+                },
+                CqType::Sread(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0),
+                },
+                CqType::WaitSet(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0),
+                },
+                CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
+                },
+                CqType::WaitYield(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
+                },
+            }
+        ConfDomain::Bound(domain) => 
+            match &cq_type {
+                CqType::Spin(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
+                },
+                CqType::Sread(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
+                },
+                CqType::WaitSet(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
+                },
+                CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
+                },
+                CqType::WaitYield(eq_cq_opt) => match eq_cq_opt {
+                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
+                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
+                },
+            }
+    }.unwrap();
+
     (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, av)
 }
 
@@ -438,12 +485,8 @@ pub fn ft_prepare_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
     rx_cntr: &Option<Counter<CNTR>>,
     rma_cntr: &Option<Counter<CNTR>>,
 ) {
-    bind_cq(cq_type, ep, gl_ctx);
     match ep {
         Endpoint::Connectionless(ep) => {
-            if let Some(av_val) = av {
-                ep.bind_av(av_val).unwrap()
-            }
 
             let mut bind_cntr = ep.bind_cntr();
 
@@ -483,11 +526,6 @@ pub fn ft_prepare_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
             }
         }
         Endpoint::ConnectionOriented(ep) => {
-            ep.bind_eq(eq).unwrap();
-            if let Some(av_val) = av {
-                ep.bind_av(av_val).unwrap()
-            }
-
             let mut bind_cntr = ep.bind_cntr();
 
             if gl_ctx.options & FT_OPT_TX_CNTR != 0 {
@@ -530,72 +568,7 @@ pub fn ft_prepare_ep<T: ReadEq + 'static, CNTR: ReadCntr + 'static, I, E>(
     }
 }
 
-fn bind_cq_<T: libfabric::cq::ReadCq + 'static, E>(
-    cq_type: &EqCqOpt<T>,
-    ep: &mut Endpoint<E>,
-    gl_ctx: &mut TestsGlobalCtx,
-) {
-    match ep {
-        Endpoint::Connectionless(ep) => match cq_type {
-            EqCqOpt::Shared(cq) => ep.bind_shared_cq(cq, false).unwrap(),
-            EqCqOpt::Separate(tx_cq, rx_cq) => ep
-                .bind_separate_cqs(
-                    tx_cq,
-                    gl_ctx.options & FT_OPT_TX_CQ == 0,
-                    rx_cq,
-                    gl_ctx.options & FT_OPT_RX_CQ == 0,
-                )
-                .unwrap(),
-        },
-        Endpoint::ConnectionOriented(ep) => match cq_type {
-            EqCqOpt::Shared(cq) => ep.bind_shared_cq(cq, false).unwrap(),
-            EqCqOpt::Separate(tx_cq, rx_cq) => ep
-                .bind_separate_cqs(
-                    tx_cq,
-                    gl_ctx.options & FT_OPT_TX_CQ == 0,
-                    rx_cq,
-                    gl_ctx.options & FT_OPT_RX_CQ == 0,
-                )
-                .unwrap(),
-        },
-    }
-}
 
-fn bind_cq<E>(cq_type: &CqType, ep: &mut Endpoint<E>, gl_ctx: &mut TestsGlobalCtx) {
-    match cq_type {
-        CqType::Spin(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
-        CqType::Sread(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
-        CqType::WaitSet(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
-        CqType::WaitFd(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
-        CqType::WaitYield(cq_type) => bind_cq_(&cq_type, ep, gl_ctx),
-    }
-    // match rx_cq {
-    //     CqType::Spin(rx_cq) => {
-    //         if let CqType::Spin(tx_cq) = tx_cq {
-    //             ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0 ).unwrap()
-    //         }
-    //         else {
-    //             panic!("Completion Queues of different types");
-    //         }
-    //     }
-    //     CqType::WaitYield(rx_cq)| CqType::WaitSet(rx_cq) |CqType::Sread(rx_cq) => {
-    //         if let CqType::WaitYield(tx_cq)| CqType::WaitSet(tx_cq) |CqType::Sread(tx_cq) = tx_cq {
-    //             ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0 ).unwrap()
-    //         }
-    //         else {
-    //             panic!("Completion Queues of different types");
-    //         }
-    //     }
-    //     CqType::WaitFd(rx_cq) => {
-    //         if let CqType::WaitFd(tx_cq) = tx_cq {
-    //             ep.bind_separate_cqs(tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0 ).unwrap()
-    //         }
-    //         else {
-    //             panic!("Completion Queues of different types");
-    //         }
-    //     }
-    // }
-}
 
 pub fn ft_complete_connect<E>(
     unconnected_ep: UnconnectedEndpoint<E>,
@@ -686,7 +659,7 @@ pub fn ft_server_connect<
                 &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -710,7 +683,7 @@ pub fn ft_server_connect<
                 &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -987,7 +960,7 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
                 &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessMsg(match ep {
-                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
+                Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -1030,7 +1003,7 @@ pub fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>(
                 &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
-                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
+                Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -2603,16 +2576,16 @@ pub fn ft_reg_mr<I, E: 'static>(
     let mr = match mr {
         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
 
-        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => match ep {
-            Endpoint::Connectionless(ep) => {
-                mr.bind_ep(ep).unwrap();
-                mr.enable().unwrap()
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => 
+            match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    match ep {
+                        Endpoint::Connectionless(ep) => ep_binding_memory_region.enable(ep),
+                        Endpoint::ConnectionOriented(ep) => ep_binding_memory_region.enable(ep),
+                    }.unwrap()
+                },
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
             }
-            Endpoint::ConnectionOriented(ep) => {
-                mr.bind_ep(ep).unwrap();
-                mr.enable().unwrap()
-            }
-        },
     };
 
     mr.into()
@@ -2843,7 +2816,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
                 &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -2872,7 +2845,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
             );
 
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 

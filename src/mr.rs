@@ -859,23 +859,51 @@ impl Default for MemoryRegionAttr {
     }
 }
 
-pub struct DisabledMemoryRegion {
+pub struct EpBindingMemoryRegion {
     mr: MemoryRegion,
 }
 
-impl DisabledMemoryRegion {
+pub struct RmaEventMemoryRegion {
+    mr: MemoryRegion,
+}
+
+impl EpBindingMemoryRegion {
     /// Associates the memory region with an endpoint
     ///
     /// Bind the memory region to `ep`.
     ///
     /// Corresponds to `fi_mr_bind` with a `fid_ep`
-    pub fn bind_ep<EP: ActiveEndpoint + 'static, STATE: EpState>(
+    pub(crate) fn bind_ep<EP: ActiveEndpoint + 'static, STATE: EpState>(
         &self,
         ep: &crate::ep::EndpointBase<EP, STATE>,
     ) -> Result<(), crate::error::Error> {
         self.mr.inner.bind_ep(&ep.inner)
     }
 
+    /// Associates the memory region with a counter
+    ///
+    /// Bind the memory region to `cntr` and request event generation for remote writes or atomics targeting this memory region.
+    ///
+    /// Corresponds to `fi_mr_bind` with a `fid_cntr`
+    pub fn bind_cntr(
+        &self,
+        cntr: &crate::cntr::Counter<impl ReadCntr + 'static>,
+        remote_write_event: bool,
+    ) -> Result<(), crate::error::Error> {
+        self.mr.inner.bind_cntr(&cntr.inner, remote_write_event)
+    }
+
+    /// Enables a memory region for use.
+    ///
+    /// Corresponds to `fi_mr_enable`
+    pub fn enable<EP: ActiveEndpoint + 'static, STATE: EpState>(self, ep: &crate::ep::EndpointBase<EP, STATE>) -> Result<MemoryRegion, crate::error::Error> {
+        self.bind_ep(ep)?;
+        self.mr.inner.enable()?;
+        Ok(self.mr)
+    }
+}
+
+impl RmaEventMemoryRegion {
     /// Associates the memory region with a counter
     ///
     /// Bind the memory region to `cntr` and request event generation for remote writes or atomics targeting this memory region.
@@ -901,6 +929,12 @@ impl DisabledMemoryRegion {
 pub enum MaybeDisabledMemoryRegion {
     Enabled(MemoryRegion),
     Disabled(DisabledMemoryRegion),
+}
+
+
+pub enum DisabledMemoryRegion {
+    EpBind(EpBindingMemoryRegion),
+    RmaEvent(RmaEventMemoryRegion)
 }
 
 pub(crate) enum MRBackingBuf<'a> {
@@ -1093,11 +1127,11 @@ impl<'a> MemoryRegionBuilder<'a> {
         };
 
         let mr = MemoryRegion::from_attr(domain, self.mr_attr, self.flags)?;
-
+        
         if domain.mr_mode().is_endpoint() {
-            Ok(MaybeDisabledMemoryRegion::Disabled(DisabledMemoryRegion {
+            Ok(MaybeDisabledMemoryRegion::Disabled(DisabledMemoryRegion::EpBind(EpBindingMemoryRegion {
                 mr,
-            }))
+            })))
         } else {
             Ok(MaybeDisabledMemoryRegion::Enabled(mr))
         }
@@ -1248,7 +1282,10 @@ mod tests {
                         .unwrap();
                     let mr = match mr {
                         MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                        MaybeDisabledMemoryRegion::Disabled(mr) => mr.enable().unwrap(),
+                        MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                            super::DisabledMemoryRegion::EpBind(_disabled_mr) => todo!(), //disabled_mr.enable(ep),
+                            super::DisabledMemoryRegion::RmaEvent(disabled_mr) => disabled_mr.enable().unwrap(),
+                        }
                     };
                     let desc = mr.descriptor();
                     // mr.close().unwrap();

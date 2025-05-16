@@ -284,7 +284,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, Un
         self.inner.bind_cntr()
     }
 
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+    pub(crate) fn bind_av<EQ: ?Sized + ReadEq + 'static>(
         &self,
         av: &AddressVectorBase<EQ>,
     ) -> Result<(), crate::error::Error> {
@@ -298,14 +298,14 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, Un
     //         }
     //     )
     // }
-    pub fn bind_shared_cq<T: AsyncReadCq + 'static>(
+    pub(crate) fn bind_shared_cq<T: AsyncReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_shared_cq(&cq.inner, false)
     }
 
-    pub fn bind_separate_cqs<T: AsyncReadCq + 'static>(
+    pub(crate) fn bind_separate_cqs<T: AsyncReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
         rx_cq: &CompletionQueue<T>,
@@ -314,7 +314,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, Un
             .bind_separate_cqs(&tx_cq.inner, false, &rx_cq.inner, false)
     }
 
-    pub fn bind_eq<T: AsyncReadEq + 'static>(
+    pub(crate) fn bind_eq<T: AsyncReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
     ) -> Result<(), crate::error::Error> {
@@ -329,7 +329,7 @@ impl<EP>
         self.inner.bind_cntr()
     }
 
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+    pub(crate) fn bind_av<EQ: ?Sized + ReadEq + 'static>(
         &self,
         av: &AddressVectorBase<EQ>,
     ) -> Result<(), crate::error::Error> {
@@ -343,14 +343,14 @@ impl<EP>
     //         }
     //     )
     // }
-    pub fn bind_shared_cq<T: AsyncReadCq + 'static>(
+    pub(crate) fn bind_shared_cq<T: AsyncReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_shared_cq(&cq.inner, false)
     }
 
-    pub fn bind_separate_cqs<T: AsyncReadCq + 'static>(
+    pub(crate) fn bind_separate_cqs<T: AsyncReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
         rx_cq: &CompletionQueue<T>,
@@ -359,7 +359,7 @@ impl<EP>
             .bind_separate_cqs(&tx_cq.inner, false, &rx_cq.inner, false)
     }
 
-    pub fn bind_eq<T: AsyncReadEq + 'static>(
+    pub(crate) fn bind_eq<T: AsyncReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
     ) -> Result<(), crate::error::Error> {
@@ -468,18 +468,45 @@ impl<'a> EndpointBuilder<'a, ()> {
 }
 
 impl<'a, E> EndpointBuilder<'a, E> {
-    pub fn build<DEQ: ?Sized + 'static + SyncSend>(
+
+        pub fn build_with_separate_cqs<EQ: ?Sized + 'static + SyncSend, CQ: AsyncReadCq + 'static>(
         self,
-        domain: &DomainBase<DEQ>,
+        domain: &crate::domain::DomainBase<EQ>,
+        tx_cq: &CompletionQueue<CQ>,
+        rx_cq: &CompletionQueue<CQ>,
     ) -> Result<Endpoint<E>, crate::error::Error> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
-            EndpointType::Msg => Ok(Endpoint::ConnectionOriented(
-                UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?,
-            )),
-            EndpointType::Dgram | EndpointType::Rdm => Ok(Endpoint::Connectionless(
-                UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?,
-            )),
+            EndpointType::Msg => {
+                let conn_ep =  UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                conn_ep.bind_separate_cqs(tx_cq, rx_cq)?;
+                Ok(Endpoint::ConnectionOriented(conn_ep))
+            }
+            EndpointType::Dgram | EndpointType::Rdm => {
+                let connless_ep =  UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                connless_ep.bind_separate_cqs(tx_cq, rx_cq)?;
+                Ok(Endpoint::Connectionless(connless_ep))
+            }
+        }
+    }
+
+    pub fn build_with_shared_cq<EQ: ?Sized + 'static + SyncSend, CQ: AsyncReadCq + 'static>(
+        self,
+        domain: &crate::domain::DomainBase<EQ>,
+        cq: &CompletionQueue<CQ>,
+    ) -> Result<Endpoint<E>, crate::error::Error> {
+        match self.info.ep_attr().type_() {
+            EndpointType::Unspec => panic!("Should not be reachable."),
+            EndpointType::Msg => {
+                let conn_ep =  UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                conn_ep.bind_shared_cq(cq)?;
+                Ok(Endpoint::ConnectionOriented(conn_ep))
+            }
+            EndpointType::Dgram | EndpointType::Rdm => {
+                let connless_ep = UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                connless_ep.bind_shared_cq(cq)?;
+                Ok(Endpoint::Connectionless(connless_ep))
+            }
         }
     }
 

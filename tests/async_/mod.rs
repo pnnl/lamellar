@@ -391,9 +391,13 @@ pub fn ft_alloc_active_res<E, EQ: AsyncReadEq + 'static>(
     Option<AddressVector>,
 ) {
     let (cq_type, tx_cntr, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain, eq);
-
-    let ep = EndpointBuilder::new(info).build(domain).unwrap();
-
+     let ep = 
+            match &cq_type {
+                CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
+                    EpCqType::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq),
+                    EpCqType::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, rx_cq),
+                },
+            }.unwrap();
     (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, av)
 }
 
@@ -409,14 +413,9 @@ pub fn ft_prepare_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
     rx_cntr: &Option<Counter<CNTR>>,
     rma_cntr: &Option<Counter<CNTR>>,
 ) {
-    bind_cq(cq_type, ep, gl_ctx);
 
     match ep {
         Endpoint::Connectionless(ep) => {
-            if let Some(av_val) = av {
-                ep.bind_av(av_val).unwrap()
-            }
-
             let mut bind_cntr = ep.bind_cntr();
 
             if gl_ctx.options & FT_OPT_TX_CNTR != 0 {
@@ -455,11 +454,6 @@ pub fn ft_prepare_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
             }
         }
         Endpoint::ConnectionOriented(ep) => {
-            ep.bind_eq(eq).unwrap();
-            if let Some(av_val) = av {
-                ep.bind_av(av_val).unwrap()
-            }
-
             let mut bind_cntr = ep.bind_cntr();
 
             if gl_ctx.options & FT_OPT_TX_CNTR != 0 {
@@ -497,23 +491,6 @@ pub fn ft_prepare_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
                 }
             }
         }
-    }
-}
-
-fn bind_cq<E>(cq_type: &CqType, ep: &Endpoint<E>, _gl_ctx: &mut TestsGlobalCtx) {
-    match ep {
-        Endpoint::Connectionless(ep) => match cq_type {
-            CqType::WaitFd(cq_type) => match cq_type {
-                EpCqType::Shared(shared_cq) => ep.bind_shared_cq(shared_cq).unwrap(),
-                EpCqType::Separate(tx_cq, rx_cq) => ep.bind_separate_cqs(tx_cq, rx_cq).unwrap(),
-            },
-        },
-        Endpoint::ConnectionOriented(ep) => match cq_type {
-            CqType::WaitFd(cq_type) => match cq_type {
-                EpCqType::Shared(shared_cq) => ep.bind_shared_cq(shared_cq).unwrap(),
-                EpCqType::Separate(tx_cq, rx_cq) => ep.bind_separate_cqs(tx_cq, rx_cq).unwrap(),
-            },
-        },
     }
 }
 
@@ -596,7 +573,7 @@ pub async fn ft_server_connect<
             );
             let ep = match ep {
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
             };
             let ep = ft_accept_connection(ep, eq).await;
             let mut ep = EndpointCaps::ConnectedMsg(ep);
@@ -619,7 +596,7 @@ pub async fn ft_server_connect<
             );
             let ep = match ep {
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
             };
             let ep = ft_accept_connection(ep, eq).await;
             let mut ep = EndpointCaps::ConnectedTagged(ep);
@@ -861,7 +838,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessMsg(match ep {
-                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
+                Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -906,7 +883,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
-                Endpoint::Connectionless(ep) => ep.enable().unwrap(),
+                Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
             });
             ft_ep_recv(
@@ -2236,16 +2213,14 @@ pub fn ft_reg_mr<I, E: 'static>(
 
     let mr = match mr {
         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => match ep {
-            Endpoint::Connectionless(ep) => {
-                mr.bind_ep(ep).unwrap();
-                mr.enable().unwrap()
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => 
+            match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => match ep {
+                        Endpoint::Connectionless(ep) => ep_binding_memory_region.enable(ep),
+                        Endpoint::ConnectionOriented(ep) => ep_binding_memory_region.enable(ep),
+                }.unwrap(),
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
             }
-            Endpoint::ConnectionOriented(ep) => {
-                mr.bind_ep(ep).unwrap();
-                mr.enable().unwrap()
-            }
-        },
     };
 
     if info.domain_attr().mr_mode().is_endpoint() {
@@ -2460,7 +2435,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
             );
 
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -2488,7 +2463,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
                 &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable().unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
             let ep = ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await;

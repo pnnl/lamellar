@@ -27,7 +27,7 @@ pub mod async_ofi {
     use libfabric::iovec::IocMut;
     use libfabric::iovec::RmaIoVec;
     use libfabric::iovec::RmaIoc;
-    use libfabric::mr::DisabledMemoryRegion;
+    use libfabric::mr::EpBindingMemoryRegion;
     use libfabric::mr::MemoryRegionDesc;
     use libfabric::mr::MemoryRegionKey;
     use libfabric::MyRc;
@@ -180,220 +180,209 @@ pub mod async_ofi {
             // let mut rx_pending_cnt: usize = 0;
             // let mut rx_complete_cnt: usize = 0;
             let mut reg_mem = vec![0u8; 1024 * 1024];
-            let eq = EventQueueBuilder::new(&fabric).build().unwrap();
-
-            let (info_entry, ep, mapped_addr) = match ep_type {
-                EndpointType::Msg => {
-                    let info_entry = if server {
-                        let pep = EndpointBuilder::new(&info_entry)
-                            .build_passive(&fabric)
+            
+            let (info_entry, ep, mapped_addr) = 
+            {
+                let eq = EventQueueBuilder::new(&fabric).build().unwrap();
+                let info_entry = 
+                    if matches!(ep_type, EndpointType::Msg) {
+                        if server {
+                            let pep = EndpointBuilder::new(&info_entry)
+                                .build_passive(&fabric)
+                                .unwrap();
+                            pep.bind(&eq, 0).unwrap();
+                            let event = async_std::task::block_on(async {
+                                pep.listen_async().unwrap().next().await
+                            })
                             .unwrap();
-                        pep.bind(&eq, 0).unwrap();
-                        let event = async_std::task::block_on(async {
-                            pep.listen_async().unwrap().next().await
-                        })
-                        .unwrap();
-                        match event {
-                            libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
-                            _ => panic!("Unexpected event"),
+                            match event {
+                                libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
+                                _ => panic!("Unexpected event"),
+                            }
+                        } else {
+                            info_entry
                         }
-                    } else {
+                    }
+                    else {
                         info_entry
                     };
 
-                    domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
+                domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
 
-                    cq_type = if shared_cqs {
-                        CqType::Shared(shared_cq_builder.build(&domain).unwrap())
-                    } else {
-                        CqType::Separate((
-                            tx_cq_builder.build(&domain).unwrap(),
-                            rx_cq_builder.build(&domain).unwrap(),
-                        ))
-                    };
-                    let ep = match EndpointBuilder::new(&info_entry).build(&domain).unwrap() {
-                        Endpoint::Connectionless(_) => panic!("Expected connected EP"),
-                        Endpoint::ConnectionOriented(unconn_ep) => unconn_ep,
-                    };
-                    ep.bind_eq(&eq).unwrap();
-                    match cq_type {
-                        CqType::Separate((ref tx_cq, ref rx_cq)) => {
-                            ep.bind_separate_cqs(tx_cq, rx_cq).unwrap()
-                        }
-                        CqType::Shared(ref scq) => ep.bind_shared_cq(&scq).unwrap(),
+                let ep_builder = EndpointBuilder::new(&info_entry);
+                cq_type = if shared_cqs {
+                    CqType::Shared(shared_cq_builder.build(&domain).unwrap())
+                } else {
+                    CqType::Separate((
+                        tx_cq_builder.build(&domain).unwrap(),
+                        rx_cq_builder.build(&domain).unwrap(),
+                    ))
+                };
+
+                let ep = match &cq_type {
+                    CqType::Separate((tx_cq, rx_cq)) => {
+                        ep_builder.build_with_separate_cqs(&domain, tx_cq, rx_cq).unwrap()
+                    } ,
+                    CqType::Shared(scq) => {
+                        ep_builder.build_with_shared_cq(&domain, scq).unwrap()
                     }
-
-                    let ep = ep.enable().unwrap();
-
-                    let ep = if !server {
-                        async_std::task::block_on(async {
-                            ep.connect_async(info_entry.dest_addr().unwrap()).await
-                        })
-                        .unwrap()
-                    } else {
-                        async_std::task::block_on(async { ep.accept_async().await }).unwrap()
-                    };
-
-                    mr = if info_entry.domain_attr().mr_mode().is_local()
-                        || info_entry.caps().is_rma()
-                    {
-                        let mr = MemoryRegionBuilder::new(
-                            &mut reg_mem,
-                            libfabric::enums::HmemIface::System,
-                        )
-                        .access_read()
-                        .access_write()
-                        .access_send()
-                        .access_recv()
-                        .build(&domain)?;
-                        let mr = match mr {
-                            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                                mr.bind_ep(&ep).unwrap();
-                                mr.enable().unwrap()
+                };
+                match ep {
+                    Endpoint::Connectionless(ep) => {
+                        let av = match info_entry.domain_attr().av_type() {
+                            libfabric::enums::AddressVectorType::Unspec => {
+                                AddressVectorBuilder::new(&eq)
                             }
-                        };
-                        Some(mr)
-                    } else {
-                        None
-                    };
-
-                    (info_entry, MyEndpoint::Connected(ep), None)
-                }
-                _ => {
-                    domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
-
-                    cq_type = if shared_cqs {
-                        CqType::Shared(shared_cq_builder.build(&domain).unwrap())
-                    } else {
-                        CqType::Separate((
-                            tx_cq_builder.build(&domain).unwrap(),
-                            rx_cq_builder.build(&domain).unwrap(),
-                        ))
-                    };
-
-                    let ep = match EndpointBuilder::new(&info_entry).build(&domain).unwrap() {
-                        Endpoint::Connectionless(ep) => ep,
-                        Endpoint::ConnectionOriented(_) => panic!("Expected connectionless ep"),
-                    };
-                    match cq_type {
-                        CqType::Separate((ref tx_cq, ref rx_cq)) => {
-                            ep.bind_separate_cqs(tx_cq, rx_cq).unwrap()
+                            _ => AddressVectorBuilder::new(&eq)
+                                .type_(*info_entry.domain_attr().av_type()),
                         }
-                        CqType::Shared(ref scq) => ep.bind_shared_cq(&scq).unwrap(),
-                    }
-
-                    let av = match info_entry.domain_attr().av_type() {
-                        libfabric::enums::AddressVectorType::Unspec => {
-                            AddressVectorBuilder::new(&eq)
-                        }
-                        _ => AddressVectorBuilder::new(&eq)
-                            .type_(*info_entry.domain_attr().av_type()),
-                    }
-                    .build(&domain)
-                    .unwrap();
-                    ep.bind_av(&av).unwrap();
-                    let ep = ep.enable().unwrap();
-
-                    mr = if info_entry.domain_attr().mr_mode().is_local()
-                        || info_entry.caps().is_rma()
-                    {
-                        let mr = MemoryRegionBuilder::new(
-                            &mut reg_mem,
-                            libfabric::enums::HmemIface::System,
-                        )
-                        .access_read()
-                        .access_write()
-                        .access_send()
-                        .access_recv()
-                        .build(&domain)?;
-                        let mr = match mr {
-                            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                                mr.bind_ep(&ep).unwrap();
-                                mr.enable().unwrap()
-                            }
-                        };
-                        Some(mr)
-                    } else {
-                        None
-                    };
-
-                    let mapped_address = if let Some(dest_addr) = info_entry.dest_addr() {
-                        let mapped_address = av
-                            .insert(std::slice::from_ref(dest_addr).into(), AVOptions::new())
-                            .unwrap()
-                            .pop()
-                            .unwrap()
-                            .unwrap();
-                        let epname = ep.getname().unwrap();
-                        let epname_bytes = epname.as_bytes();
-                        let addrlen = epname_bytes.len();
-                        reg_mem[..addrlen].copy_from_slice(epname_bytes);
-
-                        let mut ctx = info_entry.allocate_context();
-                        async_std::task::block_on(ep.send_to_async(
-                            &reg_mem[..addrlen],
-                            None,
-                            &mapped_address,
-                            &mut ctx,
-                        ))
+                        .build(&domain)
                         .unwrap();
+                        // ep.bind_av(&av).unwrap();
+                        let ep = ep.enable(&av).unwrap();
 
-                        async_std::task::block_on(ep.recv_from_any_async(
-                            std::slice::from_mut(&mut reg_mem[0]),
-                            None,
-                            &mut ctx,
-                        ))
-                        .unwrap();
-
-                        MyRc::new(mapped_address)
-                    } else {
-                        let epname = ep.getname().unwrap();
-                        let addrlen = epname.as_bytes().len();
-
-                        let mr_desc = if let Some(ref mr) = mr {
-                            Some(mr.descriptor())
+                        mr = if info_entry.domain_attr().mr_mode().is_local()
+                            || info_entry.caps().is_rma()
+                        {
+                            let mr = MemoryRegionBuilder::new(
+                                &mut reg_mem,
+                                libfabric::enums::HmemIface::System,
+                            )
+                            .access_read()
+                            .access_write()
+                            .access_send()
+                            .access_recv()
+                            .build(&domain)?;
+                            let mr = match mr {
+                                libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                                libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                                    match disabled_mr {
+                                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => ep_binding_memory_region.enable(&ep).unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                    }
+                                }
+                            };
+                            Some(mr)
                         } else {
                             None
                         };
-                        let mut ctx = info_entry.allocate_context();
 
-                        async_std::task::block_on(ep.recv_from_any_async(
-                            &mut reg_mem[..addrlen],
-                            mr_desc.as_ref(),
-                            &mut ctx,
-                        ))
-                        .unwrap();
+                        let mapped_address = if let Some(dest_addr) = info_entry.dest_addr() {
+                            let mapped_address = av
+                                .insert(std::slice::from_ref(dest_addr).into(), AVOptions::new())
+                                .unwrap()
+                                .pop()
+                                .unwrap()
+                                .unwrap();
+                            let epname = ep.getname().unwrap();
+                            let epname_bytes = epname.as_bytes();
+                            let addrlen = epname_bytes.len();
+                            reg_mem[..addrlen].copy_from_slice(epname_bytes);
 
-                        let remote_address = unsafe { Address::from_bytes(&reg_mem) };
-                        let mapped_address = av
-                            .insert(
-                                std::slice::from_ref(&remote_address).into(),
-                                AVOptions::new(),
-                            )
-                            .unwrap()
-                            .pop()
-                            .unwrap()
+                            let mut ctx = info_entry.allocate_context();
+                            async_std::task::block_on(ep.send_to_async(
+                                &reg_mem[..addrlen],
+                                None,
+                                &mapped_address,
+                                &mut ctx,
+                            ))
                             .unwrap();
 
-                        async_std::task::block_on(ep.send_to_async(
-                            &std::slice::from_ref(&reg_mem[0]),
-                            mr_desc.as_ref(),
-                            &mapped_address,
-                            &mut ctx,
-                        ))
-                        .unwrap();
+                            async_std::task::block_on(ep.recv_from_any_async(
+                                std::slice::from_mut(&mut reg_mem[0]),
+                                None,
+                                &mut ctx,
+                            ))
+                            .unwrap();
 
-                        MyRc::new(mapped_address)
-                    };
-                    (
-                        info_entry,
-                        MyEndpoint::Connectionless(ep),
-                        Some(mapped_address),
-                    )
+                            MyRc::new(mapped_address)
+                        } else {
+                            let epname = ep.getname().unwrap();
+                            let addrlen = epname.as_bytes().len();
+
+                            let mr_desc = if let Some(ref mr) = mr {
+                                Some(mr.descriptor())
+                            } else {
+                                None
+                            };
+                            let mut ctx = info_entry.allocate_context();
+
+                            async_std::task::block_on(ep.recv_from_any_async(
+                                &mut reg_mem[..addrlen],
+                                mr_desc.as_ref(),
+                                &mut ctx,
+                            ))
+                            .unwrap();
+
+                            let remote_address = unsafe { Address::from_bytes(&reg_mem) };
+                            let mapped_address = av
+                                .insert(
+                                    std::slice::from_ref(&remote_address).into(),
+                                    AVOptions::new(),
+                                )
+                                .unwrap()
+                                .pop()
+                                .unwrap()
+                                .unwrap();
+
+                            async_std::task::block_on(ep.send_to_async(
+                                &std::slice::from_ref(&reg_mem[0]),
+                                mr_desc.as_ref(),
+                                &mapped_address,
+                                &mut ctx,
+                            ))
+                            .unwrap();
+
+                            MyRc::new(mapped_address)
+                        };
+                        (
+                            info_entry,
+                            MyEndpoint::Connectionless(ep),
+                            Some(mapped_address),
+                        )
+                    },
+                    Endpoint::ConnectionOriented(ep) => {
+                        let ep = ep.enable(&eq).unwrap();
+                        let ep = if !server {
+                            async_std::task::block_on(async {
+                                ep.connect_async(info_entry.dest_addr().unwrap()).await
+                            })
+                            .unwrap()
+                        } else {
+                            async_std::task::block_on(async { ep.accept_async().await }).unwrap()
+                        };
+
+                        mr = if info_entry.domain_attr().mr_mode().is_local()
+                            || info_entry.caps().is_rma()
+                        {
+                            let mr = MemoryRegionBuilder::new(
+                                &mut reg_mem,
+                                libfabric::enums::HmemIface::System,
+                            )
+                            .access_read()
+                            .access_write()
+                            .access_send()
+                            .access_recv()
+                            .build(&domain)?;
+                            let mr = match mr {
+                                libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                                libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                                    match disabled_mr {
+                                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => ep_binding_memory_region.enable(&ep).unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                    }
+                                }
+                            };
+                            Some(mr)
+                        } else {
+                            None
+                        };
+
+                        (info_entry, MyEndpoint::Connected(ep), None)
+                    }
                 }
             };
+
             if server {
                 unsafe { std::env::remove_var(name) };
             }
@@ -787,9 +776,11 @@ pub mod async_ofi {
 
             let mr = match mr {
                 libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                    bind_mr(&self.ep, &mr);
-                    mr.enable().unwrap()
+                libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                    match disabled_mr {
+                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
+                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                    }
                 }
             };
             let mut ctx = self.info_entry.allocate_context();
@@ -1664,9 +1655,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
@@ -1768,9 +1761,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
@@ -1813,10 +1808,10 @@ pub mod async_ofi {
         sendrecvdata(false, "conn_sendrecvdata0", true);
     }
 
-    fn bind_mr<E: 'static>(ep: &MyEndpoint<E>, mr: &DisabledMemoryRegion) {
+    fn enable_ep_mr<E: 'static>(ep: &MyEndpoint<E>, mr: EpBindingMemoryRegion) -> MemoryRegion {
         match ep {
-            MyEndpoint::Connected(ep) => mr.bind_ep(ep).unwrap(),
-            MyEndpoint::Connectionless(ep) => mr.bind_ep(ep).unwrap(),
+            MyEndpoint::Connected(ep) => mr.enable(ep).unwrap(),
+            MyEndpoint::Connectionless(ep) => mr.enable(ep).unwrap(),
         }
     }
 
@@ -1839,9 +1834,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
@@ -1950,9 +1947,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
@@ -2189,9 +2188,11 @@ pub mod async_ofi {
             .unwrap();
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
@@ -2465,9 +2466,11 @@ pub mod async_ofi {
             .unwrap();
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
@@ -2583,9 +2586,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
         let desc = Some(mr.descriptor());
@@ -2830,9 +2835,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
         let desc = Some(mr.descriptor());
@@ -2978,9 +2985,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
@@ -3279,9 +3288,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
         let desc = Some(mr.descriptor());
@@ -3493,9 +3504,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
         let desc = Some(mr.descriptor());
@@ -3599,9 +3612,11 @@ pub mod async_ofi {
             .unwrap();
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
         let mapped_addr = ofi.mapped_addr.clone();
@@ -3721,9 +3736,11 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(mr) => {
-                bind_mr(&ofi.ep, &mr);
-                mr.enable().unwrap()
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
             }
         };
 
