@@ -359,7 +359,7 @@ impl<EP>
             .bind_separate_cqs(&tx_cq.inner, false, &rx_cq.inner, false)
     }
 
-    pub(crate) fn bind_eq<T: AsyncReadEq + 'static>(
+    pub fn bind_eq<T: AsyncReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
     ) -> Result<(), crate::error::Error> {
