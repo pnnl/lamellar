@@ -1,3 +1,9 @@
+use libfabric::comm::atomic::AtomicCASRemoteMemAddrSliceEp;
+use libfabric::comm::atomic::AtomicFetchRemoteMemAddrSliceEp;
+use libfabric::comm::atomic::AtomicWriteRemoteMemAddrSliceEp;
+use libfabric::comm::atomic::ConnectedAtomicCASRemoteMemAddrSliceEp;
+use libfabric::comm::atomic::ConnectedAtomicFetchRemoteMemAddrSliceEp;
+use libfabric::comm::atomic::ConnectedAtomicWriteRemoteMemAddrSliceEp;
 use libfabric::comm::rma::ConnectedReadRemoteMemAddrSliceEp;
 use libfabric::comm::rma::ReadRemoteMemAddrSliceEp;
 use libfabric::comm::rma::ConnectedWriteRemoteMemAddrSliceEp;
@@ -1530,34 +1536,32 @@ impl<I: AtomicDefaultCap> Ofi<I> {
     pub fn atomic<T: libfabric::AsFiType>(
         &self,
         buf: &[T],
-        dest_addr: u64,
+        dest_addr: usize,
         desc: Option<&MemoryRegionDesc>,
         op: AtomicOp,
     ) {
-        let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
-        let base_mem_addr = remote_mem_info.borrow().mem_address();
-        let key = remote_mem_info.borrow().key();
+        let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
+
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         unsafe {
-                            ep.inject_atomic_to(
+                            ep.inject_atomic_slice_to(
                                 buf,
                                 self.mapped_addr.as_ref().unwrap(),
-                                base_mem_addr + dest_addr,
-                                &key,
+                                &dst_slice,
                                 op,
                             )
                         }
                     } else {
                         unsafe {
-                            ep.atomic_to(
+                            ep.atomic_slice_to(
                                 buf,
                                 desc,
                                 self.mapped_addr.as_ref().unwrap(),
-                                base_mem_addr + dest_addr,
-                                &key,
+                                &dst_slice,
                                 op,
                             )
                         }
@@ -1566,20 +1570,18 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         unsafe {
-                            ep.inject_atomic(
+                            ep.inject_atomic_slice(
                                 buf,
-                                base_mem_addr + dest_addr,
-                                &key,
+                                &dst_slice,
                                 op,
                             )
                         }
                     } else {
                         unsafe {
-                            ep.atomic(
+                            ep.atomic_slice(
                                 buf,
                                 desc,
-                                base_mem_addr + dest_addr,
-                                &key,
+                                &dst_slice,
                                 op,
                             )
                         }
@@ -1596,32 +1598,32 @@ impl<I: AtomicDefaultCap> Ofi<I> {
     pub fn atomicv<T: libfabric::AsFiType>(
         &self,
         ioc: &[libfabric::iovec::Ioc<T>],
-        dest_addr: u64,
+        dest_addr: usize,
         desc: Option<&[MemoryRegionDesc]>,
         op: AtomicOp,
     ) {
-        let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
-        let base_mem_addr = remote_mem_info.borrow().mem_address();
-        let key = remote_mem_info.borrow().key();
+        let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let ioc_len = ioc.iter().fold(0, |acc, x| acc + x.len());
+        let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + ioc_len);
+        // let base_mem_addr = remote_mem_info.borrow().mem_address();
+        // let key = remote_mem_info.borrow().key();
 
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.atomicv_to(
+                    ep.atomicv_slice_to(
                         ioc,
                         desc,
                         self.mapped_addr.as_ref().unwrap(),
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &dst_slice,
                         op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.atomicv(
+                    ep.atomicv_slice(
                         ioc,
                         desc,
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &dst_slice,
                         op,
                     )
                 },
@@ -1660,36 +1662,36 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &self,
         buf: &[T],
         res: &mut [T],
-        dest_addr: u64,
+        dest_addr: usize,
         desc: Option<&MemoryRegionDesc>,
         res_desc: Option<&MemoryRegionDesc>,
         op: FetchAtomicOp,
     ) {
-        let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
-        let base_mem_addr = remote_mem_info.borrow().mem_address();
-        let key = remote_mem_info.borrow().key();
+        let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
+
+        // let base_mem_addr = remote_mem_info.borrow().mem_address();
+        // let key = remote_mem_info.borrow().key();
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.fetch_atomic_from(
+                    ep.fetch_atomic_slice_from(
                         buf,
                         desc,
                         res,
                         res_desc,
                         self.mapped_addr.as_ref().unwrap(),
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &src_slice,
                         op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.fetch_atomic(
+                    ep.fetch_atomic_slice(
                         buf,
                         desc,
                         res,
                         res_desc,
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &src_slice,
                         op,
                     )
                 },
@@ -1705,36 +1707,35 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         &self,
         ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        dest_addr: u64,
+        dest_addr: usize,
         desc: Option<&[MemoryRegionDesc]>,
         res_desc: Option<&[MemoryRegionDesc]>,
         op: FetchAtomicOp,
     ) {
-        let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
-        let base_mem_addr = remote_mem_info.borrow().mem_address();
-        let key = remote_mem_info.borrow().key();
+        let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+        let src_slice = remote_mem_info.slice(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
+        // let base_mem_addr = remote_mem_info.borrow().mem_address();
+        // let key = remote_mem_info.borrow().key();
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.fetch_atomicv_from(
+                    ep.fetch_atomicv_slice_from(
                         ioc,
                         desc,
                         res_ioc,
                         res_desc,
                         self.mapped_addr.as_ref().unwrap(),
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &src_slice,
                         op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.fetch_atomicv(
+                    ep.fetch_atomicv_slice(
                         ioc,
                         desc,
                         res_ioc,
                         res_desc,
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &src_slice,
                         op,
                     )
                 },
@@ -1780,19 +1781,21 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         buf: &[T],
         comp: &[T],
         res: &mut [T],
-        dest_addr: u64,
+        dest_addr: usize,
         desc: Option<&MemoryRegionDesc>,
         comp_desc: Option<&MemoryRegionDesc>,
         res_desc: Option<&MemoryRegionDesc>,
         op: CompareAtomicOp,
     ) {
-        let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
-        let base_mem_addr = remote_mem_info.borrow().mem_address();
-        let key = remote_mem_info.borrow().key();
+        let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
+
+        // let base_mem_addr = remote_mem_info.borrow().mem_address();
+        // let key = remote_mem_info.borrow().key();
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.compare_atomic_to(
+                    ep.compare_atomic_slice_to(
                         buf,
                         desc,
                         comp,
@@ -1800,21 +1803,19 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                         res,
                         res_desc,
                         self.mapped_addr.as_ref().unwrap(),
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &dst_slice,
                         op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.compare_atomic(
+                    ep.compare_atomic_slice(
                         buf,
                         desc,
                         comp,
                         comp_desc,
                         res,
                         res_desc,
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &dst_slice,
                         op,
                     )
                 },
@@ -1831,19 +1832,19 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         ioc: &[libfabric::iovec::Ioc<T>],
         comp_ioc: &[libfabric::iovec::Ioc<T>],
         res_ioc: &mut [libfabric::iovec::IocMut<T>],
-        dest_addr: u64,
+        dest_addr: usize,
         desc: Option<&[MemoryRegionDesc]>,
         comp_desc: Option<&[MemoryRegionDesc]>,
         res_desc: Option<&[MemoryRegionDesc]>,
         op: CompareAtomicOp,
     ) {
-        let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
-        let base_mem_addr = remote_mem_info.borrow().mem_address();
-        let key = remote_mem_info.borrow().key();
+        let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
+
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.compare_atomicv_to(
+                    ep.compare_atomicv_slice_to(
                         ioc,
                         desc,
                         comp_ioc,
@@ -1851,21 +1852,19 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                         res_ioc,
                         res_desc,
                         self.mapped_addr.as_ref().unwrap(),
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &dst_slice,
                         op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.compare_atomicv(
+                    ep.compare_atomicv_slice(
                         ioc,
                         desc,
                         comp_ioc,
                         comp_desc,
                         res_ioc,
                         res_desc,
-                        base_mem_addr + dest_addr,
-                        &key,
+                        &dst_slice,
                         op,
                     )
                 },

@@ -108,6 +108,7 @@ impl<'a, T> Ioc<'a, T> {
         }
     }
 
+
     pub fn from_slice(mem: &'a [T]) -> Self {
         let c_ioc = libfabric_sys::fi_ioc {
             addr: (mem.as_ptr() as *mut T).cast(),
@@ -118,6 +119,10 @@ impl<'a, T> Ioc<'a, T> {
             c_ioc,
             borrow: PhantomData,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.c_ioc.count * std::mem::size_of::<T>()
     }
 
     #[allow(dead_code)]

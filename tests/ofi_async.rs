@@ -1,14 +1,21 @@
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_ofi {
 
+    use std::borrow::BorrowMut;
     use std::cell::RefCell;
 
     use libfabric::async_::comm::atomic::AsyncAtomicCASEp;
+    use libfabric::async_::comm::atomic::AsyncAtomicCASRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::AsyncAtomicFetchEp;
+    use libfabric::async_::comm::atomic::AsyncAtomicFetchRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::AsyncAtomicWriteEp;
+    use libfabric::async_::comm::atomic::AsyncAtomicWriteRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::ConnectedAsyncAtomicCASEp;
+    use libfabric::async_::comm::atomic::ConnectedAsyncAtomicCASRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::ConnectedAsyncAtomicFetchEp;
+    use libfabric::async_::comm::atomic::ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::ConnectedAsyncAtomicWriteEp;
+    use libfabric::async_::comm::atomic::ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp;
     use libfabric::async_::comm::message::AsyncRecvEp;
     use libfabric::async_::comm::message::AsyncSendEp;
     use libfabric::async_::comm::message::ConnectedAsyncRecvEp;
@@ -1104,36 +1111,36 @@ pub mod async_ofi {
         pub fn atomic<T: libfabric::AsFiType>(
             &self,
             buf: &[T],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&MemoryRegionDesc>,
             op: AtomicOp,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let key = &remote_mem_info.key();
-            let base_addr = remote_mem_info.mem_address();
+            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len() );
+
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
                             unsafe {
-                                ep.inject_atomic_to_async(
+                                ep.inject_atomic_slice_to_async(
                                     buf,
                                     self.mapped_addr.as_ref().unwrap(),
-                                    base_addr + dest_addr,
-                                    key,
+                                    &dst_slice,
                                     op,
                                 )
                                 .await
                             }
                         } else {
                             unsafe {
-                                ep.atomic_to_async(
+                                ep.atomic_slice_to_async(
                                     buf,
                                     desc,
                                     self.mapped_addr.as_ref().unwrap(),
-                                    base_addr + dest_addr,
-                                    key,
+                                    &dst_slice,
                                     op,
                                     ctx,
                                 )
@@ -1145,21 +1152,19 @@ pub mod async_ofi {
                     MyEndpoint::Connected(ep) => {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
                             unsafe {
-                                ep.inject_atomic_async(
+                                ep.inject_atomic_slice_async(
                                     buf,
-                                    base_addr + dest_addr,
-                                    key,
+                                    &dst_slice,
                                     op,
                                 )
                                 .await
                             }
                         } else {
                             unsafe {
-                                ep.atomic_async(
+                                ep.atomic_slice_async(
                                     buf,
                                     desc,
-                                    base_addr + dest_addr,
-                                    key,
+                                    &dst_slice,
                                     op,
                                     ctx,
                                 )
@@ -1176,34 +1181,33 @@ pub mod async_ofi {
         pub fn atomicv<T: libfabric::AsFiType>(
             &self,
             ioc: &[libfabric::iovec::Ioc<T>],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&[MemoryRegionDesc]>,
             op: AtomicOp,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let key = &remote_mem_info.key();
-            let base_addr = remote_mem_info.mem_address();
+            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dest_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| {acc + x.len()}) );
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
-                        ep.atomicv_to_async(
+                        ep.atomicv_slice_to_async(
                             ioc,
                             desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            base_addr + dest_addr,
-                            key,
+                            &dest_slice,
                             op,
                             ctx,
                         )
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.atomicv_async(
+                        ep.atomicv_slice_async(
                             ioc,
                             desc,
-                            base_addr + dest_addr,
-                            key,
+                            &dest_slice,
                             op,
                             ctx,
                         )
@@ -1238,39 +1242,38 @@ pub mod async_ofi {
             &self,
             buf: &[T],
             res: &mut [T],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&MemoryRegionDesc>,
             res_desc: Option<&MemoryRegionDesc>,
             op: FetchAtomicOp,
             ctx: &mut Context,
         ) {
             let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let key = &remote_mem_info.key();
-            let base_addr = remote_mem_info.mem_address();
+            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len() );
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
-                        ep.fetch_atomic_from_async(
+                        ep.fetch_atomic_slice_from_async(
                             buf,
                             desc,
                             res,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            base_addr + dest_addr,
-                            key,
+                            &src_slice,
                             op,
                             ctx,
                         )
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.fetch_atomic_async(
+                        ep.fetch_atomic_slice_async(
                             buf,
                             desc,
                             res,
                             res_desc,
-                            base_addr + dest_addr,
-                            key,
+                            &src_slice,
                             op,
                             ctx,
                         )
@@ -1285,39 +1288,38 @@ pub mod async_ofi {
             &self,
             ioc: &[libfabric::iovec::Ioc<T>],
             res_ioc: &mut [libfabric::iovec::IocMut<T>],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&[MemoryRegionDesc]>,
             res_desc: Option<&[MemoryRegionDesc]>,
             op: FetchAtomicOp,
             ctx: &mut Context,
         ) {
             let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let key = &remote_mem_info.key();
-            let base_addr = remote_mem_info.mem_address();
+            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| {acc + x.len()}) );
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
-                        ep.fetch_atomicv_from_async(
+                        ep.fetch_atomicv_slice_from_async(
                             ioc,
                             desc,
                             res_ioc,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            base_addr + dest_addr,
-                            key,
+                            &src_slice,
                             op,
                             ctx,
                         )
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.fetch_atomicv_async(
+                        ep.fetch_atomicv_slice_async(
                             ioc,
                             desc,
                             res_ioc,
                             res_desc,
-                            base_addr + dest_addr,
-                            key,
+                            &src_slice,
                             op,
                             ctx,
                         )
@@ -1360,20 +1362,21 @@ pub mod async_ofi {
             buf: &[T],
             comp: &[T],
             res: &mut [T],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&MemoryRegionDesc>,
             comp_desc: Option<&MemoryRegionDesc>,
             res_desc: Option<&MemoryRegionDesc>,
             op: CompareAtomicOp,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let key = &remote_mem_info.key();
-            let base_addr = remote_mem_info.mem_address();
+            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len() );
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
-                        ep.compare_atomic_to_async(
+                        ep.compare_atomic_slice_to_async(
                             buf,
                             desc,
                             comp,
@@ -1381,23 +1384,21 @@ pub mod async_ofi {
                             res,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            base_addr + dest_addr,
-                            key,
+                            &dst_slice,
                             op,
                             ctx,
                         )
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.compare_atomic_async(
+                        ep.compare_atomic_slice_async(
                             buf,
                             desc,
                             comp,
                             comp_desc,
                             res,
                             res_desc,
-                            base_addr + dest_addr,
-                            key,
+                            &dst_slice,
                             op,
                             ctx,
                         )
@@ -1413,20 +1414,21 @@ pub mod async_ofi {
             ioc: &[libfabric::iovec::Ioc<T>],
             comp_ioc: &[libfabric::iovec::Ioc<T>],
             res_ioc: &mut [libfabric::iovec::IocMut<T>],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&[MemoryRegionDesc]>,
             comp_desc: Option<&[MemoryRegionDesc]>,
             res_desc: Option<&[MemoryRegionDesc]>,
             op: CompareAtomicOp,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let key = &remote_mem_info.key();
-            let base_addr = remote_mem_info.mem_address();
+            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| {acc + x.len()}) );
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
-                        ep.compare_atomicv_to_async(
+                        ep.compare_atomicv_slice_to_async(
                             ioc,
                             desc,
                             comp_ioc,
@@ -1434,23 +1436,21 @@ pub mod async_ofi {
                             res_ioc,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            base_addr + dest_addr,
-                            key,
+                            &dst_slice,
                             op,
                             ctx,
                         )
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.compare_atomicv_async(
+                        ep.compare_atomicv_slice_async(
                             ioc,
                             desc,
                             comp_ioc,
                             comp_desc,
                             res_ioc,
                             res_desc,
-                            base_addr + dest_addr,
-                            key,
+                            &dst_slice,
                             op,
                             ctx,
                         )

@@ -27,6 +27,8 @@ use crate::xcontext::TxContextBase;
 use crate::xcontext::TxContextImplBase;
 use crate::AsFiType;
 use crate::Context;
+use crate::RemoteMemAddrSlice;
+use crate::RemoteMemAddrSliceMut;
 use crate::FI_ADDR_UNSPEC;
 
 pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
@@ -284,6 +286,299 @@ pub trait ConnectedAtomicWriteEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
+    unsafe fn atomic_slice_to<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic_to(
+            buf,
+            desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_slice_to_with_context<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic_to_with_context(
+            buf,
+            desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_slice_to_triggered<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic_to_triggered(
+            buf,
+            desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+    
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomicv_slice_to<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
+        self.atomicv_to(
+            ioc,
+            desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomicv_slice_to_with_context<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
+        self.atomicv_to_with_context(
+            ioc,
+            desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomicv_slice_to_triggered<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
+        self.atomicv_to_triggered(
+            ioc,
+            desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn atomicmsg_slice_to<T: AsFiType>(
+        &self,
+        msg: &crate::msg::MsgAtomic<T>,
+        options: AtomicMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(msg.slice().mem_len() == std::mem::size_of_val(msg.buf()));
+        self.atomicmsg_to(msg, options)
+    }
+
+    unsafe fn inject_atomic_slice_to<T: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.inject_atomic_to(
+            buf,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+}
+
+pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
+    unsafe fn atomic_slice<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic(
+            buf,
+            desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+
+    unsafe fn atomic_slice_with_context<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic_with_context(
+            buf,
+            desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn atomic_slice_triggered<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic_triggered(
+            buf,
+            desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn atomicv_slice<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
+        self.atomicv(
+            ioc,
+            desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+
+    unsafe fn atomicv_slice_with_context<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
+        self.atomicv_with_context(
+            ioc,
+            desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn atomicv_slice_triggered<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
+        self.atomicv_triggered(
+            ioc,
+            desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn atomicmsg_slcie<T: AsFiType>(
+        &self,
+        msg: &crate::msg::MsgAtomicConnected<T>,
+        options: AtomicMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        // assert!(msg.slice().mem_len() == std::mem::size_of_val(msg.buf()));
+        self.atomicmsg(msg, options)
+    }
+
+    unsafe fn inject_atomic_slice<T: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        self.inject_atomic(
+            buf,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+}
+
+impl<EP: AtomicWriteEp> AtomicWriteRemoteMemAddrSliceEp for EP {}
+
 impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     #[inline]
     unsafe fn atomic_to<T: AsFiType>(
@@ -420,6 +715,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         self.inject_atomic_impl(buf, Some(dest_addr), mem_addr, mapped_key, op)
     }
 }
+
 impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
     #[inline]
     #[allow(clippy::too_many_arguments)]
@@ -555,6 +851,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         self.inject_atomic_impl(buf, None, mem_addr, mapped_key, op)
     }
 }
+
+impl<EP: ConnectedAtomicWriteEp> ConnectedAtomicWriteRemoteMemAddrSliceEp for EP {}
 
 // impl<E: AtomicCap+ WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointBase<E> {
 impl<EP: AtomicCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicWriteEpImpl
@@ -1136,6 +1434,332 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         self.fetch_atomicmsg_impl(Either::Right(msg), resultv, res_desc, options)
     }
 }
+
+
+pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice_from<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic_from(
+            buf,
+            desc,
+            res,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice_from_with_context<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic_from_with_context(
+            buf,
+            desc,
+            res,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice_from_triggered<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic_from_triggered(
+            buf,
+            desc,
+            res,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice_from<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, you can check total length of ioc/resultv matches src_slice.mem_len()
+        self.fetch_atomicv_from(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice_from_with_context<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_from_with_context(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice_from_triggered<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_from_triggered(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn fetch_atomicmsg_slice_from<T: AsFiType>(
+        &self,
+        msg: &crate::msg::MsgFetchAtomic<T>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicFetchMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, you can check msg.slice().mem_len() == total resultv size
+        self.fetch_atomicmsg_from(msg, resultv, res_desc, options)
+    }
+}
+
+impl<EP: AtomicFetchEp> AtomicFetchRemoteMemAddrSliceEp for EP {}
+
+pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic(
+            buf,
+            desc,
+            res,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice_with_context<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic_with_context(
+            buf,
+            desc,
+            res,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice_triggered<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic_triggered(
+            buf,
+            desc,
+            res,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, you can check total length of ioc/resultv matches src_slice.mem_len()
+        self.fetch_atomicv(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice_with_context<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_with_context(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice_triggered<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_triggered(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn fetch_atomicmsg_slice<T: AsFiType>(
+        &self,
+        msg: &crate::msg::MsgFetchAtomicConnected<T>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicFetchMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, you can check msg.slice().mem_len() == total resultv size
+        self.fetch_atomicmsg(msg, resultv, res_desc, options)
+    }
+}
+
+impl<EP: ConnectedAtomicFetchEp> ConnectedAtomicFetchRemoteMemAddrSliceEp for EP {}
+
 
 impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicFetchEpImpl
     for EndpointImplBase<EP, EQ, CQ>
@@ -1880,6 +2504,391 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
         )
     }
 }
+
+pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice_to<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic_to(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice_to_with_context<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic_to_with_context(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice_to_triggered<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic_to_triggered(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice_to<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, check lengths of ioc/comparetv/resultv match dest_slice.mem_len()
+        self.compare_atomicv_to(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice_to_with_context<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.compare_atomicv_to_with_context(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice_to_triggered<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.compare_atomicv_to_triggered(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicmsg_slice_to<T: AsFiType>(
+        &self,
+        msg: &crate::msg::MsgCompareAtomic<T>,
+        comparev: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, check msg.slice().mem_len() == total resultv size
+        self.compare_atomicmsg_to(msg, comparev, compare_desc, resultv, res_desc, options)
+    }
+}
+
+impl<EP: AtomicCASEp> AtomicCASRemoteMemAddrSliceEp for EP {}
+
+pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice_with_context<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic_with_context(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice_triggered<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic_triggered(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, check lengths of ioc/comparetv/resultv match dest_slice.mem_len()
+        self.compare_atomicv(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice_with_context<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.compare_atomicv_with_context(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice_triggered<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.compare_atomicv_triggered(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dest_slice.mem_address(),
+            &dest_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicmsg_slice<T: AsFiType>(
+        &self,
+        msg: &crate::msg::MsgCompareAtomicConnected<T>,
+        comparev: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        // Optionally, check msg.slice().mem_len() == total resultv size
+        self.compare_atomicmsg(msg, comparev, compare_desc, resultv, res_desc, options)
+    }
+}
+
+impl<EP: ConnectedAtomicCASEp> ConnectedAtomicCASRemoteMemAddrSliceEp for EP {}
+
 impl<EP: AtomicCap + ReadMod + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicCASImpl
     for EndpointImplBase<EP, EQ, CQ>
 {

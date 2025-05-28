@@ -10,6 +10,7 @@ use crate::ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpSta
 use crate::infocapsoptions::{AtomicCap, ReadMod, WriteMod};
 use crate::mr::MemoryRegionDesc;
 use crate::utils::Either;
+use crate::{RemoteMemAddrSlice, RemoteMemAddrSliceMut};
 use crate::{
     async_::ep::AsyncTxEp, comm::atomic::AtomicWriteEpImpl, cq::SingleCompletion,
     mr::MappedMemoryRegionKey, AsFiType, Context,
@@ -323,6 +324,148 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     }
 }
 
+
+
+pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_slice_to_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(dst_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic_to_async(
+            buf,
+            desc,
+            dest_addr,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn inject_atomic_slice_to_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        assert!(dst_slice.mem_len() == std::mem::size_of_val(buf));
+        self.inject_atomic_to_async(
+            buf,
+            dest_addr,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomicv_slice_to_async<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(ioc));
+        self.atomicv_to_async(
+            ioc,
+            desc,
+            dest_addr,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn atomicmsg_slice_to_async<T: AsFiType + 'static>(
+        &self,
+        msg: &mut crate::msg::MsgAtomic<T>,
+        options: AtomicMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomicmsg_to_async(msg, options)
+    }
+}
+
+impl<EP: AsyncAtomicWriteEp> AsyncAtomicWriteRemoteMemAddrSliceEp for EP {}
+
+pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWriteEp {
+    unsafe fn atomic_slice_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(dst_slice.mem_len() == std::mem::size_of_val(buf));
+        self.atomic_async(
+            buf,
+            desc,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn inject_atomic_slice_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        assert!(dst_slice.mem_len() == std::mem::size_of_val(buf));
+        self.inject_atomic_async(
+            buf,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+        )
+    }
+
+    unsafe fn atomicv_slice_async<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(ioc));
+        self.atomicv_async(
+            ioc,
+            desc,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn atomicmsg_slice_async<T: AsFiType + 'static>(
+        &self,
+        msg: &mut crate::msg::MsgAtomicConnected<T>,
+        options: AtomicMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomicmsg_async(msg, options)
+    }
+}
+
+impl<EP: ConnectedAsyncAtomicWriteEp> ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp for EP {}
+
+
 pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
     #[allow(clippy::too_many_arguments)]
     async fn fetch_atomic_async_impl<T: AsFiType>(
@@ -610,6 +753,134 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
         self.fetch_atomicmsg_async_impl(Either::Right(msg), resultv, res_desc, options)
     }
 }
+
+pub trait AsyncAtomicFetchRemoteMemAddrSliceEp: AsyncAtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice_from_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic_from_async(
+            buf,
+            desc,
+            res,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice_from_async<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(src_slice.mem_len() == crate::iovec::Ioc::total_len(resultv));
+        self.fetch_atomicv_from_async(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn fetch_atomicmsg_slice_from_async<T: AsFiType + 'static>(
+        &self,
+        msg: &mut crate::msg::MsgFetchAtomic<T>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicFetchMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.fetch_atomicmsg_from_async(msg, resultv, res_desc, options)
+    }
+}
+
+impl<EP: AsyncAtomicFetchEp> AsyncAtomicFetchRemoteMemAddrSliceEp for EP {}
+
+pub trait ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp: ConnectedAsyncAtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_slice_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<&MemoryRegionDesc<'_>>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        self.fetch_atomic_async(
+            buf,
+            desc,
+            res,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomicv_slice_async<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_slice: &RemoteMemAddrSlice,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(src_slice.mem_len() == crate::iovec::Ioc::total_len(resultv));
+        self.fetch_atomicv_async(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            src_slice.mem_address(),
+            &src_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    unsafe fn fetch_atomicmsg_slice_async<T: AsFiType + 'static>(
+        &self,
+        msg: &mut crate::msg::MsgFetchAtomicConnected<T>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicFetchMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.fetch_atomicmsg_async(msg, resultv, res_desc, options)
+    }
+}
+
+impl<EP: ConnectedAsyncAtomicFetchEp> ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp for EP {}
 
 pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
     #[allow(clippy::too_many_arguments)]
@@ -992,3 +1263,153 @@ impl<EP: AsyncAtomicCASImpl + ConnectedEp> ConnectedAsyncAtomicCASEp for EP {
         )
     }
 }
+
+pub trait AsyncAtomicCASRemoteMemAddrSliceEp: AsyncAtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice_to_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(dst_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic_to_async(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dest_addr,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice_to_async<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(resultv));
+        self.compare_atomicv_to_async(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicmsg_slice_to_async<T: AsFiType + 'static>(
+        &self,
+        msg: &mut crate::msg::MsgCompareAtomic<T>,
+        comparev: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.compare_atomicmsg_to_async(msg, comparev, compare_desc, resultv, res_desc, options)
+    }
+}
+
+impl<EP: AsyncAtomicCASEp> AsyncAtomicCASRemoteMemAddrSliceEp for EP {}
+
+pub trait ConnectedAsyncAtomicCASRemoteMemAddrSliceEp: ConnectedAsyncAtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_slice_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        compare: &[T],
+        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(dst_slice.mem_len() == std::mem::size_of_val(result));
+        self.compare_atomic_async(
+            buf,
+            desc,
+            compare,
+            compare_desc,
+            result,
+            result_desc,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicv_slice_async<T: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        comparetv: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dst_slice: &RemoteMemAddrSliceMut,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(resultv));
+        self.compare_atomicv_async(
+            ioc,
+            desc,
+            comparetv,
+            compare_desc,
+            resultv,
+            res_desc,
+            dst_slice.mem_address(),
+            &dst_slice.key(),
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomicmsg_slice_async<T: AsFiType + 'static>(
+        &self,
+        msg: &mut crate::msg::MsgCompareAtomicConnected<T>,
+        comparev: &[crate::iovec::Ioc<T>],
+        compare_desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        options: AtomicMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.compare_atomicmsg_async(msg, comparev, compare_desc, resultv, res_desc, options)
+    }
+}
+
+impl<EP: ConnectedAsyncAtomicCASEp> ConnectedAsyncAtomicCASRemoteMemAddrSliceEp for EP {}
