@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::mr::MappedMemoryRegionKey;
+use crate::{mr::MappedMemoryRegionKey, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
 
 unsafe impl<'a> Send for IoVec<'a> {}
 unsafe impl<'a> Sync for IoVec<'a> {}
@@ -33,6 +33,10 @@ impl<'a> IoVec<'a> {
             c_iovec,
             borrow: PhantomData,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.c_iovec.iov_len
     }
 
     #[allow(dead_code)]
@@ -73,6 +77,10 @@ impl<'a> IoVecMut<'a> {
             c_iovec,
             borrow: PhantomData,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.c_iovec.iov_len
     }
 
     #[allow(dead_code)]
@@ -155,64 +163,70 @@ impl<'a, T> IocMut<'a, T> {
     }
 }
 
-#[repr(C)]
+
 #[derive(Clone, Debug)]
-pub struct RmaIoVec {
-    pub(crate) c_rma_iovec: libfabric_sys::fi_rma_iov,
+pub struct RemoteMemAddrVec<'a> {
+    pub(crate) c_rma_iovecs: Vec<libfabric_sys::fi_rma_iov>,
+    phantom: PhantomData<&'a ()>
 }
 
-impl RmaIoVec {
+impl<'a> RemoteMemAddrVec<'a> {
     pub fn new() -> Self {
         Self {
-            c_rma_iovec: libfabric_sys::fi_rma_iov {
-                addr: 0,
-                len: 0,
-                key: 0,
-            },
+            c_rma_iovecs: Vec::new(),
+            phantom: PhantomData,
         }
     }
 
-    pub fn address(mut self, addr: u64) -> Self {
-        self.c_rma_iovec.addr = addr;
-        self
+    pub fn push(&mut self, rma_iovec: RemoteMemAddrSlice<'a>) {
+        let c_rma_iov = libfabric_sys::fi_rma_iov {
+            addr: rma_iovec.mem_address(),
+            len: rma_iovec.mem_len(),
+            key: rma_iovec.key().key(),
+        };
+
+        self.c_rma_iovecs.push(c_rma_iov);
+    }
+    
+    pub fn len(&self) -> usize {
+        self.c_rma_iovecs.len()
     }
 
-    pub fn len(mut self, len: usize) -> Self {
-        self.c_rma_iovec.len = len;
-        self
-    }
-
-    pub fn key(mut self, key: u64) -> Self {
-        self.c_rma_iovec.key = key;
-        self
-    }
-
-    pub fn mapped_key(mut self, key: &MappedMemoryRegionKey) -> Self {
-        self.c_rma_iovec.key = key.key();
-        self
-    }
-
-    pub fn get_address(&self) -> u64 {
-        self.c_rma_iovec.addr
-    }
-
-    pub fn get_len(&self) -> usize {
-        self.c_rma_iovec.len
-    }
-
-    pub fn get_key(&self) -> u64 {
-        self.c_rma_iovec.key
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_rma_iov {
-        &self.c_rma_iovec
+    pub(crate) fn get(&self) -> &[libfabric_sys::fi_rma_iov] {
+        &self.c_rma_iovecs
     }
 }
 
-impl Default for RmaIoVec {
-    fn default() -> Self {
-        Self::new()
+#[derive(Clone, Debug)]
+pub struct RemoteMemAddrVecMut<'a> { // [TODO Change this to only be obtainable as a slice of a RemoteMemAddressInfo
+    pub(crate) c_rma_iovecs: Vec<libfabric_sys::fi_rma_iov>,
+    phantom: PhantomData<&'a mut ()>
+}
+
+impl<'a> RemoteMemAddrVecMut<'a> {
+    pub fn new() -> Self {
+        Self {
+            c_rma_iovecs: Vec::new(),
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn push(&mut self, rma_iovec: RemoteMemAddrSliceMut<'a>) {
+        let c_rma_iov = libfabric_sys::fi_rma_iov {
+            addr: rma_iovec.mem_address(),
+            len: rma_iovec.mem_len(),
+            key: rma_iovec.key().key(),
+        };
+
+        self.c_rma_iovecs.push(c_rma_iov);
+    }
+
+    pub fn len(&self) -> usize {
+        self.c_rma_iovecs.len()
+    }
+
+    pub(crate) fn get(&self) -> &[libfabric_sys::fi_rma_iov] {
+        &self.c_rma_iovecs
     }
 }
 

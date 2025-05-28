@@ -30,7 +30,9 @@ pub mod parallel_async_ofi {
     use libfabric::mr::EpBindingMemoryRegion;
     use libfabric::mr::MemoryRegionDesc;
     use libfabric::mr::MemoryRegionKey;
+    use libfabric::MemAddressInfo;
     use libfabric::MyRc;
+    use libfabric::RemoteMemAddressInfo;
     use libfabric::{
         async_::{
             av::AddressVectorBuilder,
@@ -48,7 +50,7 @@ pub mod parallel_async_ofi {
         info::InfoEntry,
         infocapsoptions::{Caps, CollCap, MsgDefaultCap, RmaDefaultCap, TagDefaultCap},
         iovec::IoVec,
-        mr::{MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder},
+        mr::{MemoryRegion, MemoryRegionBuilder},
         Context, EqCaps, MappedAddress,
     };
 
@@ -94,8 +96,8 @@ pub mod parallel_async_ofi {
     pub struct Ofi<I> {
         pub info_entry: InfoEntry<I>,
         pub mr: Option<MemoryRegion>,
-        pub remote_key: Option<MappedMemoryRegionKey>,
-        pub remote_mem_addr: Option<(u64, u64)>,
+        pub remote_mem_info: Option<RemoteMemAddressInfo>,
+        // pub remote_mem_addr: Option<(u64, u64)>,
         pub domain: Domain,
         pub cq_type: CqType,
         pub ep: Arc<MyEndpoint<I>>,
@@ -422,8 +424,7 @@ pub mod parallel_async_ofi {
                 info_entry,
                 mapped_addr,
                 mr,
-                remote_key: None,
-                remote_mem_addr: None,
+                remote_mem_info: None,
                 cq_type,
                 domain,
                 ep,
@@ -993,37 +994,38 @@ pub mod parallel_async_ofi {
         //         }
         //     }
 
-        pub fn exchange_keys(
+        pub fn exchange_keys<T: Copy>(
             &mut self,
             server: bool,
-            key: MemoryRegionKey,
-            addr: usize,
-            len: usize,
+            key: &MemoryRegionKey,
+            mem_slice: &[T]
         ) {
-            let mut len = unsafe {
-                std::slice::from_raw_parts(
-                    &len as *const usize as *const u8,
-                    std::mem::size_of::<usize>(),
-                )
-            }
-            .to_vec();
-            let mut addr = unsafe {
-                std::slice::from_raw_parts(
-                    &addr as *const usize as *const u8,
-                    std::mem::size_of::<usize>(),
-                )
-            }
-            .to_vec();
+            let mem_info = libfabric::MemAddressInfo::from_slice(mem_slice, 0, key, &self.info_entry);
+            let mut mem_bytes = mem_info.to_bytes().to_vec();
+            // let mut len = unsafe {
+            //     std::slice::from_raw_parts(
+            //         &len as *const usize as *const u8,
+            //         std::mem::size_of::<usize>(),
+            //     )
+            // }
+            // .to_vec();
+            // let mut addr = unsafe {
+            //     std::slice::from_raw_parts(
+            //         &addr as *const usize as *const u8,
+            //         std::mem::size_of::<usize>(),
+            //     )
+            // }
+            // .to_vec();
 
-            let key_bytes = key.to_bytes();
-            let mut reg_mem = Vec::new();
-            reg_mem.append(&mut key_bytes.clone());
-            reg_mem.append(&mut len);
-            reg_mem.append(&mut addr);
-            let total_len = reg_mem.len();
-            reg_mem.append(&mut vec![0; total_len]);
+            // let key_bytes = key.to_bytes();
+            // let mut reg_mem = Vec::new();
+            // reg_mem.append(&mut key_bytes.clone());
+            // reg_mem.append(&mut len);
+            // reg_mem.append(&mut addr);
+            // let total_len = reg_mem.len();
+            // reg_mem.append(&mut vec![0; total_len]);
 
-            let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            let mr = MemoryRegionBuilder::new(&mem_slice, libfabric::enums::HmemIface::System)
                 .access_recv()
                 .access_send()
                 .build(&self.domain)
@@ -1045,7 +1047,7 @@ pub mod parallel_async_ofi {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
                         ep.send_async(
-                            &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                            &mem_bytes,
                             desc.as_ref(),
                             &mut ctx,
                         )
@@ -1054,7 +1056,7 @@ pub mod parallel_async_ofi {
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.send_to_async(
-                            &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                            &mem_bytes,
                             desc.as_ref(),
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
@@ -1067,8 +1069,7 @@ pub mod parallel_async_ofi {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
                         ep.recv_async(
-                            &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                                ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                            &mut mem_bytes,
                             desc.as_ref(),
                             &mut ctx,
                         )
@@ -1077,8 +1078,7 @@ pub mod parallel_async_ofi {
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.recv_from_async(
-                            &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                                ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                        &mut mem_bytes,
                             desc.as_ref(),
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
@@ -1091,8 +1091,7 @@ pub mod parallel_async_ofi {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
                         ep.recv_async(
-                            &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                                ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                        &mut mem_bytes,
                             desc.as_ref(),
                             &mut ctx,
                         )
@@ -1101,8 +1100,7 @@ pub mod parallel_async_ofi {
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.recv_from_async(
-                            &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                                ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                        &mut mem_bytes,
                             desc.as_ref(),
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
@@ -1115,7 +1113,7 @@ pub mod parallel_async_ofi {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
                         ep.send_async(
-                            &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                            mem_info.to_bytes(),
                             desc.as_ref(),
                             &mut ctx,
                         )
@@ -1124,7 +1122,7 @@ pub mod parallel_async_ofi {
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.send_to_async(
-                            &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                            mem_info.to_bytes(),
                             desc.as_ref(),
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
@@ -1134,43 +1132,48 @@ pub mod parallel_async_ofi {
                     .unwrap(),
                 };
             }
-            let remote_key = unsafe {
-                MappedMemoryRegionKey::from_raw(
-                    &reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                        ..2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()],
-                    &self.domain,
-                )
-            }
-            .unwrap();
-            let len = unsafe {
-                std::slice::from_raw_parts(
-                    reg_mem[2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                        ..2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()]
-                        .as_ptr() as *const u8 as *const u64,
-                    1,
-                )
-            }[0];
-            let addr = unsafe {
-                std::slice::from_raw_parts(
-                    reg_mem[2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()
-                        ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()]
-                        .as_ptr() as *const u8 as *const u64,
-                    1,
-                )
-            }[0];
-            self.remote_key = Some(remote_key);
-            self.remote_mem_addr = Some((addr, addr + len));
+
+            let mem_info = unsafe { MemAddressInfo::from_bytes(&mem_bytes) };
+            let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
+            
+            // let remote_key = unsafe {
+            //     MappedMemoryRegionKey::from_raw(
+            //         &reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
+            //             ..2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+            //         &self.domain,
+            //     )
+            // }
+            // .unwrap();
+            // let len = unsafe {
+            //     std::slice::from_raw_parts(
+            //         reg_mem[2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()
+            //             ..2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()]
+            //             .as_ptr() as *const u8 as *const u64,
+            //         1,
+            //     )
+            // }[0];
+            // let addr = unsafe {
+            //     std::slice::from_raw_parts(
+            //         reg_mem[2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()
+            //             ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()]
+            //             .as_ptr() as *const u8 as *const u64,
+            //         1,
+            //     )
+            // }[0];
+            self.remote_mem_info = Some(remote_mem_info);
         }
     }
 
     impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
         pub fn write(&mut self, buf: &[u8], dest_addr: u64, data: Option<u64>) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            let key = remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             let handles: Vec<_> = (0..100)
                 .map(|_| {
                     let ep = self.ep.clone();
                     let mapped_addr = Arc::new(self.mapped_addr.clone());
-                    let key = self.remote_key.clone();
+                    let key = key.clone();
 
                     let mut ctx = self.info_entry.allocate_context();
 
@@ -1206,8 +1209,8 @@ pub mod parallel_async_ofi {
                                                     &reg_mem,
                                                     data.unwrap(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                 )
                                                 .await
                                             }
@@ -1216,8 +1219,8 @@ pub mod parallel_async_ofi {
                                                 ep.inject_write_to_async(
                                                     &reg_mem,
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                 )
                                                 .await
                                             }
@@ -1230,8 +1233,8 @@ pub mod parallel_async_ofi {
                                                     desc.as_ref(),
                                                     data.unwrap(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                     &mut ctx,
                                                 )
                                                 .await
@@ -1242,8 +1245,8 @@ pub mod parallel_async_ofi {
                                                     &reg_mem,
                                                     desc.as_ref(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                     &mut ctx,
                                                 )
                                                 .await
@@ -1259,8 +1262,8 @@ pub mod parallel_async_ofi {
                                                 ep.inject_writedata_async(
                                                     &reg_mem,
                                                     data.unwrap(),
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                 )
                                                 .await
                                             }
@@ -1268,8 +1271,8 @@ pub mod parallel_async_ofi {
                                             unsafe {
                                                 ep.inject_write_async(
                                                     &reg_mem,
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                 )
                                                 .await
                                             }
@@ -1281,8 +1284,8 @@ pub mod parallel_async_ofi {
                                                     &reg_mem,
                                                     desc.as_ref(),
                                                     data.unwrap(),
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                     &mut ctx,
                                                 )
                                                 .await
@@ -1292,8 +1295,8 @@ pub mod parallel_async_ofi {
                                                 ep.write_async(
                                                     &reg_mem,
                                                     desc.as_ref(),
-                                                    start + dest_addr,
-                                                    key.as_ref().as_ref().unwrap(),
+                                            base_addr + dest_addr,
+                                            &key,
                                                     &mut ctx,
                                                 )
                                                 .await
@@ -1322,12 +1325,14 @@ pub mod parallel_async_ofi {
         }
         // }
         pub fn read(&mut self, buf: &mut [u8], dest_addr: u64) -> Vec<Vec<u8>> {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            let key = &remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             let handles: Vec<_> = (0..100)
                 .map(|_| {
                     let ep = self.ep.clone();
                     let mapped_addr = Arc::new(self.mapped_addr.clone());
-                    let key = Arc::new(self.remote_key.clone());
+                    let key = Arc::new(key.clone());
 
                     let mut ctx = self.info_entry.allocate_context();
 
@@ -1359,8 +1364,8 @@ pub mod parallel_async_ofi {
                                         &mut reg_mem,
                                         desc.as_ref(),
                                         mapped_addr.as_ref().as_ref().unwrap(),
-                                        start + dest_addr,
-                                        key.as_ref().as_ref().unwrap(),
+                                        base_addr + dest_addr,
+                                        &key,
                                         &mut ctx,
                                     )
                                     .await
@@ -1371,8 +1376,8 @@ pub mod parallel_async_ofi {
                                     ep.read_async(
                                         &mut reg_mem,
                                         desc.as_ref(),
-                                        start + dest_addr,
-                                        key.as_ref().as_ref().unwrap(),
+                                        base_addr + dest_addr,
+                                        &key,
                                         &mut ctx,
                                     )
                                     .await
@@ -1393,7 +1398,9 @@ pub mod parallel_async_ofi {
     }
 
     //     pub fn writev(&mut self, iov: &[IoVec], dest_addr: u64, desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1433,7 +1440,9 @@ pub mod parallel_async_ofi {
     //     }
 
     //     pub fn readv(&mut self, iov: &[IoVecMut], dest_addr: u64, desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1547,7 +1556,9 @@ pub mod parallel_async_ofi {
     //         op: AtomicOp,
     //         ctx: &mut Context
     //     ) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => {
@@ -1621,7 +1632,9 @@ pub mod parallel_async_ofi {
     //         op: AtomicOp,
     //         ctx: &mut Context
     //     ) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1699,7 +1712,9 @@ pub mod parallel_async_ofi {
     //         op: FetchAtomicOp,
     //         ctx: &mut Context
     //     ) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1754,7 +1769,9 @@ pub mod parallel_async_ofi {
     //         op: FetchAtomicOp,
     //         ctx: &mut Context
     //     ) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1848,7 +1865,9 @@ pub mod parallel_async_ofi {
     //         op: CompareAtomicOp,
     //         ctx: &mut Context
     //     ) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1908,7 +1927,9 @@ pub mod parallel_async_ofi {
     //         op: CompareAtomicOp,
     //         ctx: &mut Context
     //     ) {
-    //         let (start, _end) = self.remote_mem_addr.unwrap();
+//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -2880,7 +2901,7 @@ pub mod parallel_async_ofi {
 
         // let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
-        ofi.exchange_keys(server, key, reg_mem.as_ptr() as usize, 1024 * 2);
+        ofi.exchange_keys(server, &key, &reg_mem[..]);
         let expected: Vec<_> = (0..1024).map(|v: usize| (v % 256) as u8).collect();
 
         if server {
@@ -2998,7 +3019,7 @@ pub mod parallel_async_ofi {
     //     let mapped_addr = ofi.mapped_addr.clone();
 
     //     let key = mr.key().unwrap();
-    //     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+    //     ofi.exchange_keys(&key, &reg_mem[..]);
     //     let expected: Vec<u8> = (0..1024).map(|v: usize| (v % 256) as u8).collect();
 
     //     let (start, _end) = ofi.remote_mem_addr.unwrap();
@@ -3220,7 +3241,7 @@ pub mod parallel_async_ofi {
     //     let mut descs = [desc.clone(), desc];
     //     // let mapped_addr = ofi.mapped_addr.clone();
     //     let key = mr.key().unwrap();
-    //     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+    //     ofi.exchange_keys(&key, &reg_mem[..]);
     //     let mut ctx = ofi.info_entry.allocate_context();
 
     //     if server {
@@ -3363,7 +3384,7 @@ pub mod parallel_async_ofi {
     //     let mut desc1 = mr.descriptor();
     //     // let mapped_addr = ofi.mapped_addr.clone();
     //     let key = mr.key().unwrap();
-    //     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+    //     ofi.exchange_keys(&key, &reg_mem[..]);
     //     let mut ctx = ofi.info_entry.allocate_context();
     //     if server {
     //         let mut expected: Vec<_> = vec![1; 256];
@@ -3587,7 +3608,7 @@ pub mod parallel_async_ofi {
     //     let mut comp_desc = mr.descriptor();
     //     let mut res_desc = mr.descriptor();
     //     let key = mr.key().unwrap();
-    //     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+    //     ofi.exchange_keys(&key, &reg_mem[..]);
     //     let mut ctx = ofi.info_entry.allocate_context();
 
     //     if server {
@@ -3802,7 +3823,7 @@ pub mod parallel_async_ofi {
     //     let mut descs = [desc.clone(), desc];
     //     let mapped_addr = ofi.mapped_addr.clone();
     //     let key = mr.key().unwrap();
-    //     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+    //     ofi.exchange_keys(&key, &reg_mem[..]);
     //     let (start, _end) = ofi.remote_mem_addr.unwrap();
 
     //     let mut ctx = ofi.info_entry.allocate_context();
@@ -3905,7 +3926,7 @@ pub mod parallel_async_ofi {
     //     };
     //     let mapped_addr = ofi.mapped_addr.clone();
     //     let key = mr.key().unwrap();
-    //     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+    //     ofi.exchange_keys(&key, &reg_mem[..]);
     //     let (start, _end) = ofi.remote_mem_addr.unwrap();
     //     let mut ctx = ofi.info_entry.allocate_context();
 
@@ -4031,7 +4052,7 @@ pub mod parallel_async_ofi {
     //     let mut desc = mr.descriptor();
     //     let mapped_addr = ofi.mapped_addr.clone();
     //     let key = mr.key().unwrap();
-    //     ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+    //     ofi.exchange_keys(&key, &reg_mem[..]);
     //     let (start, _end) = ofi.remote_mem_addr.unwrap();
     //     let mut ctx = ofi.info_entry.allocate_context();
 

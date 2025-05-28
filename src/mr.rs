@@ -656,30 +656,6 @@ impl OwnedMemoryRegionDesc {
     }
 }
 
-// impl AsFid for MemoryRegion {
-//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-//         self.inner.as_fid()
-//     }
-// }
-
-// impl AsFid for MemoryRegionImpl {
-//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-//         self.c_mr.as_fid()
-//     }
-// }
-
-// impl AsRawFid for MemoryRegion {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.inner.as_raw_fid()
-//     }
-// }
-
-// impl AsRawFid for MemoryRegionImpl {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.c_mr.as_raw_fid()
-//     }
-// }
-
 impl AsTypedFid<MrRawFid> for MemoryRegion {
     fn as_typed_fid(&self) -> BorrowedTypedFid<MrRawFid> {
         self.inner.as_typed_fid()
@@ -1287,7 +1263,7 @@ mod tests {
                             super::DisabledMemoryRegion::RmaEvent(disabled_mr) => disabled_mr.enable().unwrap(),
                         }
                     };
-                    let desc = mr.descriptor();
+                    let _desc = mr.descriptor();
                     // mr.close().unwrap();
                 }
             }

@@ -3,6 +3,10 @@ compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive
 
 #[cfg(not(feature = "thread-safe"))]
 use std::cell::OnceCell;
+use std::ops::Range;
+use std::ops::RangeFrom;
+use std::ops::RangeFull;
+use std::ops::RangeTo;
 #[cfg(not(feature = "thread-safe"))]
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
@@ -12,8 +16,12 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use cq::SingleCompletion;
+use domain::DomainBase;
 use enums::AddressVectorType;
 use eq::Event;
+use info::InfoEntry;
+use mr::MappedMemoryRegionKey;
+use mr::MemoryRegionKey;
 #[cfg(feature = "thread-safe")]
 use parking_lot::RwLock;
 
@@ -85,6 +93,247 @@ pub struct UnspecMappedAddress {
 pub struct MapMappedAddress {
     raw_mapped_addr: u64,
     av: AddressSource,
+}
+
+
+pub struct MemAddressInfo {
+    bytes: Vec<u8>,
+}
+
+impl MemAddressInfo {
+    pub fn from_slice<T : Copy, I>(slice_base: &[T], offset: usize, key: &MemoryRegionKey, info: &InfoEntry<I>)  -> MemAddressInfo {
+        let addr = if info.domain_attr().mr_mode().is_basic() || info.domain_attr().mr_mode().is_virt_addr() {
+            let base_addr = slice_base.as_ptr() as u64;
+            base_addr + (std::mem::size_of::<T>() * offset) as u64
+        }
+        else {
+            (std::mem::size_of::<T>() * offset) as u64
+        };
+
+        let key_raw = match key.key {
+            mr::OwnedMemoryRegionKey::Key(_) => false,
+            mr::OwnedMemoryRegionKey::RawKey(_) => true,
+        };
+
+        let mut key_bytes = key.to_bytes();
+        let mut bytes = if key_raw {
+            key_bytes
+        }
+        else {
+            println!("Address sent {:?}", addr);
+            key_bytes.extend(
+                unsafe { std::slice::from_raw_parts(&addr as *const u64 as *const u8, std::mem::size_of::<u64>()) }
+            );
+            key_bytes
+        };
+
+        let addr_size = std::mem::size_of_val(slice_base) - offset as usize * std::mem::size_of::<T>();
+        bytes.extend(
+            unsafe { std::slice::from_raw_parts(&addr_size as *const usize as *const u8, std::mem::size_of::<usize>()) }
+        );
+        Self {
+            bytes,
+        }
+    }
+
+    pub fn to_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
+        Self {
+            bytes: bytes.to_vec()
+        }
+    }
+
+    pub fn into_remote_info<EQ: ?Sized + SyncSend + 'static>(self, domain: &DomainBase<EQ>) -> Result<RemoteMemAddressInfo, crate::error::Error> {
+        let mapped_key = self.mapped_mr_key(domain)?;
+        let (addr, addr_size) = self.addr();
+        Ok(RemoteMemAddressInfo::new(addr, addr_size, mapped_key))
+    }
+
+    fn mapped_mr_key<EQ: ?Sized + SyncSend + 'static>(&self, domain: &DomainBase<EQ>) -> Result<MappedMemoryRegionKey, crate::error::Error> {
+        unsafe {MappedMemoryRegionKey::from_raw(&self.bytes[..self.bytes.len()-( std::mem::size_of::<u64>() + std::mem::size_of::<usize>())], domain)}
+    }
+
+    fn addr(&self) -> (u64, usize) {
+        let mut addr = 0u64;
+        unsafe { std::slice::from_raw_parts_mut(&mut addr as *mut u64 as *mut u8, 8)
+            .copy_from_slice(&self.bytes[self.bytes.len() - ( std::mem::size_of::<u64>() + std::mem::size_of::<usize>()) ..self.bytes.len() - std::mem::size_of::<usize>()])};
+
+        let mut addr_size = 0usize;
+        unsafe { std::slice::from_raw_parts_mut(&mut addr_size as *mut usize as *mut u8, 8)
+            .copy_from_slice(&self.bytes[self.bytes.len() -  std::mem::size_of::<usize>()..])};
+        
+        (addr, addr_size)
+    }
+}
+
+pub trait RemoteMemRange {
+    fn bounds(&self, len: usize) -> (usize, usize);
+}
+
+impl RemoteMemRange for Range<usize> {
+    fn bounds(&self, _len: usize) -> (usize, usize) {
+        (self.start, self.end)
+    }
+}
+
+impl RemoteMemRange for RangeFrom<usize> {
+    fn bounds(&self, len: usize) -> (usize, usize) {
+        (self.start, len)
+    }
+}
+
+impl RemoteMemRange for RangeFull {
+    fn bounds(&self, len: usize) -> (usize, usize) {
+        (0, len)
+    }
+}
+
+impl RemoteMemRange for RangeTo<usize> {
+    fn bounds(&self, _len: usize) -> (usize, usize) {
+        (0, self.end)
+    }
+}
+
+pub struct RemoteMemAddrSlice<'a> {
+    mem_address: u64,
+    len: usize,
+    key: MappedMemoryRegionKey,
+    phantom: std::marker::PhantomData<&'a ()>,
+}
+
+
+impl<'a> RemoteMemAddrSlice<'a> {
+    pub(crate) fn new(mem_address: u64, len: usize, key: MappedMemoryRegionKey) -> Self {
+        Self {
+            mem_address,
+            len,
+            key,
+            phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub fn mem_address(&self) -> u64 {
+        self.mem_address
+    }
+
+    pub fn mem_len(&self) -> usize {
+        self.len
+    }
+
+    pub fn key(&self) -> &MappedMemoryRegionKey {
+        &self.key
+    }
+
+
+    pub fn split_at(&self, mid: usize) -> (Self, Self) {
+        let first_start  = self.mem_address();  
+        let second_start = self.mem_address() + mid as u64;
+
+        let first = Self::new(first_start, mid, self.key.clone());
+        
+        let second = Self::new(second_start, self.mem_len() - mid, self.key.clone());
+
+        (first, second)
+    }    
+}
+
+pub struct RemoteMemAddrSliceMut<'a> {
+    mem_address: u64,
+    len: usize,
+    key: MappedMemoryRegionKey,
+    phantom: std::marker::PhantomData<&'a mut ()>,
+}
+
+
+impl<'a> RemoteMemAddrSliceMut<'a> {
+    pub(crate) fn new(mem_address: u64, len: usize, key: MappedMemoryRegionKey) -> Self {
+        Self {
+            mem_address,
+            len,
+            key,
+            phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub fn mem_address(&self) -> u64 {
+        self.mem_address
+    }
+
+    pub fn mem_len(&self) -> usize {
+        self.len
+    }
+
+    pub fn key(&self) -> &MappedMemoryRegionKey {
+        &self.key
+    }
+
+    pub fn split_at_mut(&mut self, mid: usize) -> (Self, Self) {
+        let first_start  = self.mem_address();  
+        let second_start = self.mem_address() + mid as u64;
+
+        let first = Self::new(first_start, mid, self.key.clone());
+        
+        let second = Self::new(second_start, self.mem_len() - mid, self.key.clone());
+
+        (first, second)
+    }
+}
+
+pub struct RemoteMemAddressInfo {
+    mem_address: u64,
+    len: usize,
+    key: MappedMemoryRegionKey,
+}
+
+impl RemoteMemAddressInfo {
+    pub(crate) fn new(mem_address: u64, len: usize, key: MappedMemoryRegionKey) -> Self {
+        Self {
+            mem_address,
+            len,
+            key,
+        }
+    }
+
+    pub fn mem_address(&self) -> u64 {
+        self.mem_address
+    }
+
+    pub fn mem_len(&self) -> usize {
+        self.len
+    }
+
+    pub fn key(&self) -> MappedMemoryRegionKey {
+        self.key.clone()
+    }
+
+    pub fn slice<R: RemoteMemRange>(&self, range: R) -> RemoteMemAddrSlice<'_> {
+        let (start, end) = range.bounds(self.len);
+        let len = end - start;
+        assert!((self.mem_address + start as u64) < (self.mem_address + self.len as u64) && (self.mem_address + end as u64 -1) < (self.mem_address + self.len as u64), "Out of bounds access to remote memory slice");
+        RemoteMemAddrSlice::new(self.mem_address + start as u64, len, self.key.clone())
+    }
+
+    pub unsafe fn slice_unchecked<R: RemoteMemRange>(&self, range: R) -> RemoteMemAddrSlice<'_> {
+        let (start, end) = range.bounds(self.len);
+        let len = end - start;
+        RemoteMemAddrSlice::new(self.mem_address + start as u64, len, self.key.clone())
+    }
+    
+    pub fn slice_mut<R: RemoteMemRange>(&mut self, range: R) -> RemoteMemAddrSliceMut<'_> {
+        let (start, end) = range.bounds(self.len);
+        let len = end - start;
+        assert!((self.mem_address + start as u64) < (self.mem_address + self.len as u64) && (self.mem_address + end as u64 -1) < (self.mem_address + self.len as u64), "Out of bounds access to remote memory slice");
+        RemoteMemAddrSliceMut::new(self.mem_address + start as u64, len, self.key.clone())
+    }
+
+    pub unsafe fn slice_mut_unchecked<R: RemoteMemRange>(&mut self, range: R) -> RemoteMemAddrSliceMut<'_> {
+        let (start, end) = range.bounds(self.len);
+        let len = end - start;
+        RemoteMemAddrSliceMut::new(self.mem_address + start as u64, len, self.key.clone())
+    }
 }
 
 #[derive(Clone, Debug)]

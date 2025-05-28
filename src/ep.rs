@@ -1964,20 +1964,6 @@ pub enum Endpoint<EP> {
 
 impl<EP> Endpoint<EP> {
 
-    pub(crate) fn bind_av<EQ: ?Sized + ReadEq + 'static>(
-        &self,
-        av: &AddressVectorBase<EQ>,
-    ) -> Result<(), crate::error::Error> {
-        match self {
-            Endpoint::Connectionless(endpoint_base) => {
-                endpoint_base.bind_av(av)
-            },
-            Endpoint::ConnectionOriented(endpoint_base) => {
-                endpoint_base.bind_av(av)
-            },
-        }
-    }
-
     pub fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,

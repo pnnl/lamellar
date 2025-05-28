@@ -15,7 +15,7 @@ use libfabric::{
     fabric::{self, Fabric},
     info::{Info, InfoCapsImpl, InfoEntry, InfoHints},
     infocapsoptions::{self, MsgDefaultCap, TagDefaultCap},
-    mr::{MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder},
+    mr::{MemoryRegion, MemoryRegionBuilder},
     Context, MappedAddress,
 };
 use libfabric::{
@@ -100,7 +100,7 @@ pub struct TestsGlobalCtx {
     pub rx_ctx: Option<Context>,
     pub options: u64,
 }
-use libfabric::FabInfoCaps;
+use libfabric::{FabInfoCaps, MemAddressInfo, RemoteMemAddressInfo};
 
 pub type MsgRma = libfabric::info_caps_type!(FabInfoCaps::MSG, FabInfoCaps::RMA);
 pub type MsgTagRma =
@@ -110,34 +110,6 @@ pub type CqAsync = libfabric::async_cq_caps_type!();
 pub enum HintsCaps<M: MsgDefaultCap, T: TagDefaultCap> {
     Msg(InfoHints<M>),
     Tagged(InfoHints<T>),
-}
-
-pub struct RmaInfo {
-    mem_address: u64,
-    len: usize,
-    key: MappedMemoryRegionKey,
-}
-
-impl RmaInfo {
-    pub fn new(mem_address: u64, len: usize, key: MappedMemoryRegionKey) -> Self {
-        Self {
-            mem_address,
-            len,
-            key,
-        }
-    }
-
-    pub fn mem_address(&self) -> u64 {
-        self.mem_address
-    }
-
-    pub fn mem_len(&self) -> usize {
-        self.len
-    }
-
-    pub fn key(&self) -> &MappedMemoryRegionKey {
-        &self.key
-    }
 }
 
 // pub enum Caps<M: MsgDefaultCap, T: TagDefaultCap> {
@@ -402,13 +374,10 @@ pub fn ft_alloc_active_res<E, EQ: AsyncReadEq + 'static>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_prepare_ep<T: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, I, E>(
+pub fn ft_prepare_ep<CNTR: WaitCntr + 'static, I, E>(
     info: &InfoEntry<I>,
     gl_ctx: &mut TestsGlobalCtx,
     ep: &Endpoint<E>,
-    cq_type: &CqType,
-    eq: &EventQueue<T>,
-    av: &Option<AddressVector>,
     tx_cntr: &Option<Counter<CNTR>>,
     rx_cntr: &Option<Counter<CNTR>>,
     rma_cntr: &Option<Counter<CNTR>>,
@@ -569,7 +538,7 @@ pub async fn ft_server_connect<
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) =
                 ft_alloc_active_res(&new_info, gl_ctx, &domain, eq);
             let mr = ft_enable_ep_recv(
-                &new_info, gl_ctx, &ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr, &rma_cntr,
+                &new_info, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
@@ -591,7 +560,7 @@ pub async fn ft_server_connect<
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, mut ep, _) =
                 ft_alloc_active_res(&new_info, gl_ctx, &domain, eq);
             let mr = ft_enable_ep_recv(
-                &new_info, gl_ctx, &mut ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr,
+                &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr,
                 &rma_cntr,
             );
             let ep = match ep {
@@ -771,21 +740,18 @@ pub fn ft_ep_recv<
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ft_enable_ep_recv<EQ: AsyncReadEq + 'static, CNTR: WaitCntr + 'static, E, T: 'static>(
+pub fn ft_enable_ep_recv<CNTR: WaitCntr + 'static, E, T: 'static>(
     info: &InfoEntry<E>,
     gl_ctx: &mut TestsGlobalCtx,
     ep: &Endpoint<T>,
     domain: &DomainBase<NoEventQueue>,
-    cq_type: &CqType,
-    eq: &EventQueue<EQ>,
-    av: &Option<AddressVector>,
     tx_cntr: &Option<Counter<CNTR>>,
     rx_cntr: &Option<Counter<CNTR>>,
     rma_cntr: &Option<Counter<CNTR>>,
 ) -> Option<MemoryRegion> {
     let mr = {
         ft_prepare_ep(
-            info, gl_ctx, ep, cq_type, eq, av, tx_cntr, rx_cntr, rma_cntr,
+            info, gl_ctx, ep, tx_cntr, rx_cntr, rma_cntr,
         );
         ft_alloc_msgs(info, gl_ctx, domain, ep)
     };
@@ -835,7 +801,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
             let (cq_type, tx_cntr, rx_cntr, rma_ctr, ep, av) =
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
             let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
+                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessMsg(match ep {
                 Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
@@ -880,7 +846,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
             // let mut ep = EndpointCaps::Tagged(ep);
 
             let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &av, &tx_cntr, &rx_cntr, &rma_ctr,
+                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_ctr,
             );
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
                 Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
@@ -1016,7 +982,7 @@ pub fn ft_post_rma_inject<CQ: ReadCq>(
     rma_op: &RmaOp,
     offset: usize,
     size: usize,
-    remote: &RmaInfo,
+    remote: &RemoteMemAddressInfo,
     ep: &impl WriteEp,
     tx_cq: &CompletionQueue<CQ>,
 ) {
@@ -1039,7 +1005,7 @@ pub fn ft_post_rma_inject<CQ: ReadCq>(
                     buf,
                     fi_addr,
                     addr,
-                    key
+                    &key
                 );
             }
         }
@@ -1063,7 +1029,7 @@ pub fn ft_post_rma_inject<CQ: ReadCq>(
                     remote_cq_data,
                     fi_addr,
                     addr,
-                    key
+                    &key
                 );
             }
         }
@@ -1081,7 +1047,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
     rma_op: &RmaOp,
     offset: usize,
     size: usize,
-    remote: &RmaInfo,
+    remote: &RemoteMemAddressInfo,
     ep: &ConnectionlessEndpoint<E>,
     mr: &Option<libfabric::mr::MemoryRegion>,
     tx_cq: &CompletionQueue<CQ>,
@@ -1102,7 +1068,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
                     mr_desc.as_ref(),
                     fi_addr,
                     addr,
-                    key,
+                    &key,
                     &mut gl_ctx.tx_ctx.as_mut().unwrap(),
                 )
                 .await
@@ -1124,7 +1090,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
                     remote_cq_data,
                     fi_addr,
                     addr,
-                    key,
+                    &key,
                     gl_ctx.tx_ctx.as_mut().unwrap(),
                 )
                 .await
@@ -1151,7 +1117,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
                     mr_desc.as_ref(),
                     fi_addr,
                     addr,
-                    key
+                    &key
                 );
             }
         }
@@ -2257,57 +2223,58 @@ pub async fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefault
     domain: &DomainBase<NoEventQueue>,
     ep: &EndpointCaps<M, T>,
     mr: &Option<libfabric::mr::MemoryRegion>,
-) -> RmaInfo {
+) -> RemoteMemAddressInfo {
     // let mut addr ;
     // let mut key_size = 0;
-    let mut rma_iov = libfabric::iovec::RmaIoVec::new();
+    // let mut rma_iov = libfabric::iovec::RmaIoVec::new();
 
     // if info.domain_attr().mr_mode().is_raw() {
     //     addr = mr.address( 0).unwrap(); // [TODO] Change this to return base_addr, key_size
     // }
 
-    let len = std::mem::size_of::<libfabric::iovec::RmaIoVec>();
-    // if key_size >= len - std::mem::size_of_val(&rma_iov.get_key()) {
-    //     panic!("Key size does not fit");
+    // let len = std::mem::size_of::<libfabric::iovec::RmaIoVec>();
+    // // if key_size >= len - std::mem::size_of_val(&rma_iov.get_key()) {
+    // //     panic!("Key size does not fit");
+    // // }
+
+    // if info.domain_attr().mr_mode().is_basic() || info.domain_attr().mr_mode().is_virt_addr() {
+    //     let addr = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)]
+    //         .as_mut_ptr() as u64;
+    //     rma_iov = rma_iov.address(addr);
     // }
 
-    if info.domain_attr().mr_mode().is_basic() || info.domain_attr().mr_mode().is_virt_addr() {
-        let addr = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)]
-            .as_mut_ptr() as u64;
-        rma_iov = rma_iov.address(addr);
-    }
+    // let key = mr.as_ref().unwrap().key().unwrap();
 
-    let key = mr.as_ref().unwrap().key().unwrap();
+    // let key_bytes = key.to_bytes();
+    // let key_len = key_bytes.len();
+    // if key_len > std::mem::size_of::<u64>() {
+    //     panic!("Key size does not fit");
+    // }
+    // let mut key = 0u64;
+    // unsafe {
+    //     std::slice::from_raw_parts_mut(&mut key as *mut u64 as *mut u8, 8)
+    //         .copy_from_slice(&key_bytes)
+    // };
 
-    let key_bytes = key.to_bytes();
-    let key_len = key_bytes.len();
-    if key_len > std::mem::size_of::<u64>() {
-        panic!("Key size does not fit");
-    }
-    let mut key = 0u64;
-    unsafe {
-        std::slice::from_raw_parts_mut(&mut key as *mut u64 as *mut u8, 8)
-            .copy_from_slice(&key_bytes)
-    };
+    // rma_iov = rma_iov.key(key);
+    // let mut key = 0u64;
+    // unsafe {
+    //     std::slice::from_raw_parts_mut(&mut key as *mut u64 as *mut u8, 8)
+    //         .copy_from_slice(&key_bytes)
+    // };
 
-    rma_iov = rma_iov.key(key);
-    let mut key = 0u64;
-    unsafe {
-        std::slice::from_raw_parts_mut(&mut key as *mut u64 as *mut u8, 8)
-            .copy_from_slice(&key_bytes)
-    };
+    let mem_info = MemAddressInfo::from_slice(&gl_ctx.buf[..], gl_ctx.rx_buf_index, &mr.as_ref().unwrap().key().unwrap(), info);
+    let mem_info_bytes = mem_info.to_bytes();
 
-    gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + len].copy_from_slice(unsafe {
-        std::slice::from_raw_parts(
-            &rma_iov as *const libfabric::iovec::RmaIoVec as *const u8,
-            std::mem::size_of::<libfabric::iovec::RmaIoVec>(),
-        )
-    });
+
+    gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + mem_info_bytes.len()].copy_from_slice(
+        mem_info_bytes
+    );
 
     ft_tx(
         gl_ctx,
         ep,
-        len + ft_tx_prefix_size(info),
+        mem_info_bytes.len() + ft_tx_prefix_size(info),
         mr,
         cq_type,
         tx_cntr,
@@ -2315,24 +2282,12 @@ pub async fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefault
     .await;
     ft_get_rx_comp(gl_ctx, rx_cntr, cq_type, gl_ctx.rx_seq);
 
-    unsafe {
-        std::slice::from_raw_parts_mut(
-            &mut rma_iov as *mut libfabric::iovec::RmaIoVec as *mut u8,
-            std::mem::size_of::<libfabric::iovec::RmaIoVec>(),
-        )
-    }
-    .copy_from_slice(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + len]);
+    let mem_info = unsafe { MemAddressInfo::from_bytes(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + mem_info_bytes.len()]) };
 
-    let mapped_key = unsafe {
-        MappedMemoryRegionKey::from_raw(
-            &gl_ctx.buf[(gl_ctx.rx_buf_index + len - std::mem::size_of::<u64>())
-                ..gl_ctx.rx_buf_index + len],
-            domain,
-        )
-    }
-    .unwrap();
-    let peer_info = RmaInfo::new(rma_iov.get_address(), rma_iov.get_len(), mapped_key);
-
+    let peer_info =  {
+        mem_info.into_remote_info(domain).unwrap()
+    };
+    
     match cq_type {
         // CqType::Spin(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
         // CqType::Sread(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
@@ -2431,7 +2386,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
 
             let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr,
+                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
 
             let ep = match ep {
@@ -2460,7 +2415,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
 
             let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr, &rma_cntr,
+                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
@@ -2725,7 +2680,7 @@ pub async fn pingpong_rma<
     ep: &EndpointCaps<M, T>,
     mr: &Option<libfabric::mr::MemoryRegion>,
     op: RmaOp,
-    remote: &RmaInfo,
+    remote: &RemoteMemAddressInfo,
     iters: usize,
     warmup: usize,
     size: usize,

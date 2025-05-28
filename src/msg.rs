@@ -881,7 +881,7 @@ impl<'a> MsgRma<'a> {
         iovs: &'a [iovec::IoVec],
         descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
-        rma_iovs: &'a [iovec::RmaIoVec],
+        rma_iovs: &'a iovec::RemoteMemAddrVec,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -896,7 +896,7 @@ impl<'a> MsgRma<'a> {
                 iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
-                rma_iov: rma_iovs.as_ptr().cast(),
+                rma_iov: rma_iovs.get().as_ptr().cast(),
                 rma_iov_count: rma_iovs.len(),
                 data: data.unwrap_or(0),
             },
@@ -909,7 +909,7 @@ impl<'a> MsgRma<'a> {
         iovs: &'a [iovec::IoVec],
         descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
-        rma_iovs: &'a [iovec::RmaIoVec],
+        rma_iovs: &'a iovec::RemoteMemAddrVec,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -920,7 +920,7 @@ impl<'a> MsgRma<'a> {
         iov: &'a iovec::IoVec,
         desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
-        rma_iov: &'a iovec::RmaIoVec,
+        rma_iov: &'a iovec::RemoteMemAddrVec,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -928,7 +928,7 @@ impl<'a> MsgRma<'a> {
             std::slice::from_ref(iov),
             desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
-            std::slice::from_ref(rma_iov),
+            rma_iov,
             data,
             context,
         )
@@ -956,7 +956,7 @@ impl<'a> MsgRmaConnected<'a> {
     pub fn from_iov_slice(
         iov: &'a [iovec::IoVec],
         desc: Option<&'a [MemoryRegionDesc<'_>]>,
-        rma_iov: &'a [iovec::RmaIoVec],
+        rma_iov: &'a iovec::RemoteMemAddrVec,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -968,7 +968,7 @@ impl<'a> MsgRmaConnected<'a> {
     pub fn from_iov(
         iov: &'a iovec::IoVec,
         desc: Option<&'a MemoryRegionDesc<'_>>,
-        rma_iov: &'a iovec::RmaIoVec,
+        rma_iov: &'a iovec::RemoteMemAddrVec,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -977,7 +977,7 @@ impl<'a> MsgRmaConnected<'a> {
                 std::slice::from_ref(iov),
                 desc.map(|d| std::slice::from_ref(d)),
                 None,
-                std::slice::from_ref(rma_iov),
+                rma_iov,
                 data,
                 context,
             ),
@@ -1009,7 +1009,7 @@ impl<'a> MsgRmaMut<'a> {
         iovs: &'a mut [iovec::IoVecMut],
         descs: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: Option<&'a MappedAddress>,
-        rma_iovs: &'a [iovec::RmaIoVec],
+        rma_iovs: &'a iovec::RemoteMemAddrVecMut,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -1024,7 +1024,7 @@ impl<'a> MsgRmaMut<'a> {
                 iov_count: iovs.len(),
                 addr: mapped_addr.map_or_else(|| FI_ADDR_UNSPEC, |v| v.raw_addr()),
                 context: context.inner_mut(),
-                rma_iov: rma_iovs.as_ptr().cast(),
+                rma_iov: rma_iovs.get().as_ptr().cast(),
                 rma_iov_count: rma_iovs.len(),
                 data: data.unwrap_or(0),
             },
@@ -1037,7 +1037,7 @@ impl<'a> MsgRmaMut<'a> {
         iov: &'a mut [iovec::IoVecMut],
         desc: Option<&'a [MemoryRegionDesc<'_>]>,
         mapped_addr: &'a MappedAddress,
-        rma_iov: &'a [iovec::RmaIoVec],
+        rma_iov: &'a iovec::RemoteMemAddrVecMut,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -1048,7 +1048,7 @@ impl<'a> MsgRmaMut<'a> {
         iov: &'a mut iovec::IoVecMut,
         desc: Option<&'a MemoryRegionDesc<'_>>,
         mapped_addr: &'a MappedAddress,
-        rma_iov: &'a iovec::RmaIoVec,
+        rma_iov: &'a iovec::RemoteMemAddrVecMut,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -1056,7 +1056,7 @@ impl<'a> MsgRmaMut<'a> {
             std::slice::from_mut(iov),
             desc.map(|d| std::slice::from_ref(d)),
             Some(mapped_addr),
-            std::slice::from_ref(rma_iov),
+            rma_iov,
             data,
             context,
         )
@@ -1092,7 +1092,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
     pub fn from_iov_slice(
         iovs: &'a mut [iovec::IoVecMut],
         descs: Option<&'a [MemoryRegionDesc<'_>]>,
-        rma_iovs: &'a [iovec::RmaIoVec],
+        rma_iovs: &'a iovec::RemoteMemAddrVecMut,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -1104,7 +1104,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
     pub fn from_iov(
         iov: &'a mut iovec::IoVecMut,
         desc: Option<&'a MemoryRegionDesc<'_>>,
-        rma_iov: &'a iovec::RmaIoVec,
+        rma_iov: &'a iovec::RemoteMemAddrVecMut,
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
@@ -1113,7 +1113,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
                 std::slice::from_mut(iov),
                 desc.map(|d| std::slice::from_ref(d)),
                 None,
-                std::slice::from_ref(rma_iov),
+                rma_iov,
                 data,
                 context,
             ),

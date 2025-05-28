@@ -1,6 +1,8 @@
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_ofi {
 
+    use std::cell::RefCell;
+
     use libfabric::async_::comm::atomic::AsyncAtomicCASEp;
     use libfabric::async_::comm::atomic::AsyncAtomicFetchEp;
     use libfabric::async_::comm::atomic::AsyncAtomicWriteEp;
@@ -12,9 +14,13 @@ pub mod async_ofi {
     use libfabric::async_::comm::message::ConnectedAsyncRecvEp;
     use libfabric::async_::comm::message::ConnectedAsyncSendEp;
     use libfabric::async_::comm::rma::AsyncReadEp;
+    use libfabric::async_::comm::rma::AsyncReadRemoteMemAddrSliceEp;
     use libfabric::async_::comm::rma::AsyncWriteEp;
+    use libfabric::async_::comm::rma::AsyncWriteRemoteMemAddrSliceEp;
     use libfabric::async_::comm::rma::ConnectedAsyncReadEp;
+    use libfabric::async_::comm::rma::ConnectedAsyncReadRemoteMemAddrSliceEp;
     use libfabric::async_::comm::rma::ConnectedAsyncWriteEp;
+    use libfabric::async_::comm::rma::ConnectedAsyncWriteRemoteMemAddrSliceEp;
     use libfabric::async_::comm::tagged::AsyncTagRecvEp;
     use libfabric::async_::comm::tagged::AsyncTagSendEp;
     use libfabric::async_::comm::tagged::ConnectedAsyncTagRecvEp;
@@ -25,12 +31,15 @@ pub mod async_ofi {
     use libfabric::infocapsoptions::InfoCaps;
     use libfabric::iovec::Ioc;
     use libfabric::iovec::IocMut;
-    use libfabric::iovec::RmaIoVec;
+    use libfabric::iovec::RemoteMemAddrVec;
+    use libfabric::iovec::RemoteMemAddrVecMut;
     use libfabric::iovec::RmaIoc;
     use libfabric::mr::EpBindingMemoryRegion;
     use libfabric::mr::MemoryRegionDesc;
     use libfabric::mr::MemoryRegionKey;
+    use libfabric::MemAddressInfo;
     use libfabric::MyRc;
+    use libfabric::RemoteMemAddressInfo;
     use libfabric::{
         async_::{
             av::AddressVectorBuilder,
@@ -53,7 +62,7 @@ pub mod async_ofi {
             AtomicDefaultCap, Caps, CollCap, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
         },
         iovec::{IoVec, IoVecMut},
-        mr::{MappedMemoryRegionKey, MemoryRegion, MemoryRegionBuilder},
+        mr::{MemoryRegion, MemoryRegionBuilder},
         msg::{
             Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCompareAtomicConnected,
             MsgConnected, MsgConnectedMut, MsgFetchAtomic, MsgFetchAtomicConnected, MsgMut, MsgRma,
@@ -105,8 +114,8 @@ pub mod async_ofi {
     pub struct Ofi<I> {
         pub info_entry: InfoEntry<I>,
         pub mr: Option<MemoryRegion>,
-        pub remote_key: Option<MappedMemoryRegionKey>,
-        pub remote_mem_addr: Option<(u64, u64)>,
+        pub remote_mem_info: Option<RefCell<RemoteMemAddressInfo>>,
+        // pub remote_mem_addr: Option<(u64, u64)>,
         pub domain: Domain,
         pub cq_type: CqType,
         pub ep: MyEndpoint<I>,
@@ -391,8 +400,7 @@ pub mod async_ofi {
                 info_entry,
                 mapped_addr,
                 mr,
-                remote_key: None,
-                remote_mem_addr: None,
+                remote_mem_info: None,
                 cq_type,
                 domain,
                 ep,
@@ -477,7 +485,7 @@ pub mod async_ofi {
         }
 
         pub fn tsendv(
-            &mut self,
+            &self,
             iov: &[IoVec],
             desc: Option<&[MemoryRegionDesc]>,
             tag: u64,
@@ -496,7 +504,7 @@ pub mod async_ofi {
         }
 
         pub fn trecvv(
-            &mut self,
+            &self,
             iov: &[IoVecMut],
             desc: Option<&[MemoryRegionDesc]>,
             tag: u64,
@@ -522,7 +530,7 @@ pub mod async_ofi {
         }
 
         pub fn trecv<T>(
-            &mut self,
+            &self,
             buf: &mut [T],
             desc: Option<&MemoryRegionDesc>,
             tag: u64,
@@ -547,7 +555,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn tsendmsg(&mut self, msg: &mut Either<MsgTagged, MsgTaggedConnected>) {
+        pub fn tsendmsg(&self, msg: &mut Either<MsgTagged, MsgTaggedConnected>) {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => match msg {
@@ -569,7 +577,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn trecvmsg(&mut self, msg: &mut Either<MsgTaggedMut, MsgTaggedConnectedMut>) {
+        pub fn trecvmsg(&self, msg: &mut Either<MsgTaggedMut, MsgTaggedConnectedMut>) {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => match msg {
@@ -653,7 +661,7 @@ pub mod async_ofi {
         }
 
         pub fn sendv(
-            &mut self,
+            &self,
             iov: &[IoVec],
             desc: Option<&[MemoryRegionDesc]>,
             ctx: &mut Context,
@@ -671,7 +679,7 @@ pub mod async_ofi {
         }
 
         pub fn recvv(
-            &mut self,
+            &self,
             iov: &[IoVecMut],
             desc: Option<&[MemoryRegionDesc]>,
             ctx: &mut Context,
@@ -689,7 +697,7 @@ pub mod async_ofi {
         }
 
         pub fn recv<T>(
-            &mut self,
+            &self,
             buf: &mut [T],
             desc: Option<&MemoryRegionDesc>,
             ctx: &mut Context,
@@ -706,7 +714,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn sendmsg(&mut self, msg: &mut Either<Msg, MsgConnected>) {
+        pub fn sendmsg(&self, msg: &mut Either<Msg, MsgConnected>) {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => match msg {
@@ -728,7 +736,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn recvmsg(&mut self, msg: &mut Either<MsgMut, MsgConnectedMut>) {
+        pub fn recvmsg(&self, msg: &mut Either<MsgMut, MsgConnectedMut>) {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => match msg {
@@ -744,31 +752,33 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn exchange_keys(&mut self, key: MemoryRegionKey, addr: usize, len: usize) {
-            let mut len = unsafe {
-                std::slice::from_raw_parts(
-                    &len as *const usize as *const u8,
-                    std::mem::size_of::<usize>(),
-                )
-            }
-            .to_vec();
-            let mut addr = unsafe {
-                std::slice::from_raw_parts(
-                    &addr as *const usize as *const u8,
-                    std::mem::size_of::<usize>(),
-                )
-            }
-            .to_vec();
+        pub fn exchange_keys<T: Copy>(&mut self, key: &MemoryRegionKey, mem_slice: &[T]) {
+            let mem_info = libfabric::MemAddressInfo::from_slice(mem_slice, 0, key, &self.info_entry);
+            let mut mem_bytes = mem_info.to_bytes().to_vec();
+            // let mut len = unsafe {
+            //     std::slice::from_raw_parts(
+            //         &len as *const usize as *const u8,
+            //         std::mem::size_of::<usize>(),
+            //     )
+            // }
+            // .to_vec();
+            // let mut addr = unsafe {
+            //     std::slice::from_raw_parts(
+            //         &addr as *const usize as *const u8,
+            //         std::mem::size_of::<usize>(),
+            //     )
+            // }
+            // .to_vec();
 
-            let key_bytes = key.to_bytes();
-            let mut reg_mem = Vec::new();
-            reg_mem.append(&mut key_bytes.clone());
-            reg_mem.append(&mut len);
-            reg_mem.append(&mut addr);
-            let total_len = reg_mem.len();
-            reg_mem.append(&mut vec![0; total_len]);
+            // let key_bytes = key.to_bytes();
+            // let mut reg_mem = Vec::new();
+            // reg_mem.append(&mut key_bytes.clone());
+            // reg_mem.append(&mut len);
+            // reg_mem.append(&mut addr);
+            // let total_len = reg_mem.len();
+            // reg_mem.append(&mut vec![0; total_len]);
 
-            let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            let mr = MemoryRegionBuilder::new(&mem_bytes, libfabric::enums::HmemIface::System)
                 .access_recv()
                 .access_send()
                 .build(&self.domain)
@@ -787,80 +797,54 @@ pub mod async_ofi {
 
             let desc = Some(mr.descriptor());
             self.send(
-                &reg_mem[..key_bytes.len() + 2 * std::mem::size_of::<usize>()],
+                &mem_bytes,
                 desc.as_ref(),
                 None,
                 &mut ctx,
             );
             self.recv(
-                &mut reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                    ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()],
+                &mut mem_bytes,
                 desc.as_ref(),
                 &mut ctx,
             );
 
-            let remote_key = unsafe {
-                MappedMemoryRegionKey::from_raw(
-                    &reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                        ..2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()],
-                    &self.domain,
-                )
-            }
-            .unwrap();
-
-            let len = unsafe {
-                std::slice::from_raw_parts(
-                    reg_mem[2 * key_bytes.len() + 2 * std::mem::size_of::<usize>()
-                        ..2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()]
-                        .as_ptr() as *const u8 as *const u64,
-                    1,
-                )
-            }[0];
-            let addr = unsafe {
-                std::slice::from_raw_parts(
-                    reg_mem[2 * key_bytes.len() + 3 * std::mem::size_of::<usize>()
-                        ..2 * key_bytes.len() + 4 * std::mem::size_of::<usize>()]
-                        .as_ptr() as *const u8 as *const u64,
-                    1,
-                )
-            }[0];
-            self.remote_key = Some(remote_key);
-            self.remote_mem_addr = Some((addr, addr + len));
+            let mem_info = unsafe { MemAddressInfo::from_bytes(&mem_bytes) };
+            let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
+            self.remote_mem_info = Some(RefCell::new(remote_mem_info));
         }
     }
 
     impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         pub fn write<T>(
-            &mut self,
+            &self,
             buf: &[T],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&MemoryRegionDesc>,
             data: Option<u64>,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dest_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len() );
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
                             if data.is_some() {
                                 unsafe {
-                                    ep.inject_writedata_to_async(
+                                    ep.inject_writedata_slice_to_async(
                                         buf,
                                         data.unwrap(),
                                         self.mapped_addr.as_ref().unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice
                                     )
                                     .await
                                 }
                             } else {
                                 unsafe {
-                                    ep.inject_write_to_async(
+                                    ep.inject_write_slice_to_async(
                                         buf,
                                         self.mapped_addr.as_ref().unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice,
                                     )
                                     .await
                                 }
@@ -868,25 +852,23 @@ pub mod async_ofi {
                         } else {
                             if data.is_some() {
                                 unsafe {
-                                    ep.writedata_to_async(
+                                    ep.writedata_slice_to_async(
                                         buf,
                                         desc,
                                         data.unwrap(),
                                         self.mapped_addr.as_ref().unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice,
                                         ctx,
                                     )
                                     .await
                                 }
                             } else {
                                 unsafe {
-                                    ep.write_to_async(
+                                    ep.write_slice_to_async(
                                         buf,
                                         desc,
                                         self.mapped_addr.as_ref().unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice,
                                         ctx,
                                     )
                                     .await
@@ -899,20 +881,18 @@ pub mod async_ofi {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
                             if data.is_some() {
                                 unsafe {
-                                    ep.inject_writedata_async(
+                                    ep.inject_writedata_slice_async(
                                         buf,
                                         data.unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice,
                                     )
                                     .await
                                 }
                             } else {
                                 unsafe {
-                                    ep.inject_write_async(
+                                    ep.inject_write_slice_async(
                                         buf,
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice,
                                     )
                                     .await
                                 }
@@ -920,23 +900,21 @@ pub mod async_ofi {
                         } else {
                             if data.is_some() {
                                 unsafe {
-                                    ep.writedata_async(
+                                    ep.writedata_slice_async(
                                         buf,
                                         desc,
                                         data.unwrap(),
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice,
                                         ctx,
                                     )
                                     .await
                                 }
                             } else {
                                 unsafe {
-                                    ep.write_async(
+                                    ep.write_slice_async(
                                         buf,
                                         desc,
-                                        start + dest_addr,
-                                        self.remote_key.as_ref().unwrap(),
+                                        &dest_slice,
                                         ctx,
                                     )
                                     .await
@@ -951,24 +929,24 @@ pub mod async_ofi {
         }
 
         pub fn read<T>(
-            &mut self,
+            &self,
             buf: &mut [T],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&MemoryRegionDesc>,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len() );
 
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
                         {
-                            ep.read_from_async(
+                            ep.read_slice_from_async(
                                 buf,
                                 desc,
                                 self.mapped_addr.as_ref().unwrap(),
-                                start + dest_addr,
-                                self.remote_key.as_ref().unwrap(),
+                                &src_slice,
                                 ctx,
                             )
                             .await
@@ -976,11 +954,10 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         {
-                            ep.read_async(
+                            ep.read_slice_async(
                                 buf,
                                 desc,
-                                start + dest_addr,
-                                self.remote_key.as_ref().unwrap(),
+                                &src_slice,
                                 ctx,
                             )
                             .await
@@ -992,23 +969,23 @@ pub mod async_ofi {
         }
 
         pub fn writev(
-            &mut self,
+            &self,
             iov: &[IoVec],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&[MemoryRegionDesc]>,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
                         {
-                            ep.writev_to_async(
+                            ep.writev_slice_to_async(
                                 iov,
                                 desc,
                                 self.mapped_addr.as_ref().unwrap(),
-                                start + dest_addr,
-                                self.remote_key.as_ref().unwrap(),
+                                &dst_slice,
                                 ctx,
                             )
                             .await
@@ -1016,11 +993,10 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         {
-                            ep.writev_async(
+                            ep.writev_slice_async(
                                 iov,
                                 desc,
-                                start + dest_addr,
-                                self.remote_key.as_ref().unwrap(),
+                                &dst_slice,
                                 ctx,
                             )
                             .await
@@ -1032,23 +1008,26 @@ pub mod async_ofi {
         }
 
         pub fn readv(
-            &mut self,
+            &self,
             iov: &[IoVecMut],
-            dest_addr: u64,
+            dest_addr: usize,
             desc: Option<&[MemoryRegionDesc]>,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
+            
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
                         {
-                            ep.readv_from_async(
+                            ep.readv_slice_from_async(
                                 iov,
                                 desc,
                                 self.mapped_addr.as_ref().unwrap(),
-                                start + dest_addr,
-                                self.remote_key.as_ref().unwrap(),
+                                &src_slice,
                                 ctx,
                             )
                             .await
@@ -1056,11 +1035,10 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         {
-                            ep.readv_async(
+                            ep.readv_slice_async(
                                 iov,
                                 desc,
-                                start + dest_addr,
-                                self.remote_key.as_ref().unwrap(),
+                                &src_slice,
                                 ctx,
                             )
                             .await
@@ -1073,7 +1051,7 @@ pub mod async_ofi {
 
         // [TODO] Enabling .remote_cq_data causes the buffer not being written correctly
         // on the remote side.
-        pub fn writemsg(&mut self, msg: &mut Either<MsgRma, MsgRmaConnected>) {
+        pub fn writemsg(&self, msg: &mut Either<MsgRma, MsgRmaConnected>) {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => match msg {
@@ -1097,7 +1075,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn readmsg(&mut self, msg: &mut Either<MsgRmaMut, MsgRmaConnectedMut>) {
+        pub fn readmsg(&self, msg: &mut Either<MsgRmaMut, MsgRmaConnectedMut>) {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => match msg {
@@ -1124,14 +1102,16 @@ pub mod async_ofi {
 
     impl<I: AtomicDefaultCap> Ofi<I> {
         pub fn atomic<T: libfabric::AsFiType>(
-            &mut self,
+            &self,
             buf: &[T],
             dest_addr: u64,
             desc: Option<&MemoryRegionDesc>,
             op: AtomicOp,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let key = &remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
@@ -1140,8 +1120,8 @@ pub mod async_ofi {
                                 ep.inject_atomic_to_async(
                                     buf,
                                     self.mapped_addr.as_ref().unwrap(),
-                                    start + dest_addr,
-                                    self.remote_key.as_ref().unwrap(),
+                                    base_addr + dest_addr,
+                                    key,
                                     op,
                                 )
                                 .await
@@ -1152,8 +1132,8 @@ pub mod async_ofi {
                                     buf,
                                     desc,
                                     self.mapped_addr.as_ref().unwrap(),
-                                    start + dest_addr,
-                                    self.remote_key.as_ref().unwrap(),
+                                    base_addr + dest_addr,
+                                    key,
                                     op,
                                     ctx,
                                 )
@@ -1167,8 +1147,8 @@ pub mod async_ofi {
                             unsafe {
                                 ep.inject_atomic_async(
                                     buf,
-                                    start + dest_addr,
-                                    self.remote_key.as_ref().unwrap(),
+                                    base_addr + dest_addr,
+                                    key,
                                     op,
                                 )
                                 .await
@@ -1178,8 +1158,8 @@ pub mod async_ofi {
                                 ep.atomic_async(
                                     buf,
                                     desc,
-                                    start + dest_addr,
-                                    self.remote_key.as_ref().unwrap(),
+                                    base_addr + dest_addr,
+                                    key,
                                     op,
                                     ctx,
                                 )
@@ -1194,14 +1174,16 @@ pub mod async_ofi {
         }
 
         pub fn atomicv<T: libfabric::AsFiType>(
-            &mut self,
+            &self,
             ioc: &[libfabric::iovec::Ioc<T>],
             dest_addr: u64,
             desc: Option<&[MemoryRegionDesc]>,
             op: AtomicOp,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let key = &remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
@@ -1209,8 +1191,8 @@ pub mod async_ofi {
                             ioc,
                             desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1220,8 +1202,8 @@ pub mod async_ofi {
                         ep.atomicv_async(
                             ioc,
                             desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1233,7 +1215,7 @@ pub mod async_ofi {
         }
 
         pub fn atomicmsg<T: libfabric::AsFiType + 'static>(
-            &mut self,
+            &self,
             msg: &mut Either<MsgAtomic<T>, MsgAtomicConnected<T>>,
         ) {
             let opts = AtomicMsgOptions::new();
@@ -1253,7 +1235,7 @@ pub mod async_ofi {
         }
 
         pub fn fetch_atomic<T: libfabric::AsFiType>(
-            &mut self,
+            &self,
             buf: &[T],
             res: &mut [T],
             dest_addr: u64,
@@ -1262,7 +1244,9 @@ pub mod async_ofi {
             op: FetchAtomicOp,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let key = &remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
@@ -1272,8 +1256,8 @@ pub mod async_ofi {
                             res,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1285,8 +1269,8 @@ pub mod async_ofi {
                             desc,
                             res,
                             res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1298,7 +1282,7 @@ pub mod async_ofi {
         }
 
         pub fn fetch_atomicv<T: libfabric::AsFiType>(
-            &mut self,
+            &self,
             ioc: &[libfabric::iovec::Ioc<T>],
             res_ioc: &mut [libfabric::iovec::IocMut<T>],
             dest_addr: u64,
@@ -1307,7 +1291,9 @@ pub mod async_ofi {
             op: FetchAtomicOp,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let key = &remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
@@ -1317,8 +1303,8 @@ pub mod async_ofi {
                             res_ioc,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1330,8 +1316,8 @@ pub mod async_ofi {
                             desc,
                             res_ioc,
                             res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1343,7 +1329,7 @@ pub mod async_ofi {
         }
 
         pub fn fetch_atomicmsg<T: libfabric::AsFiType + 'static>(
-            &mut self,
+            &self,
             msg: &mut Either<MsgFetchAtomic<T>, MsgFetchAtomicConnected<T>>,
             res_ioc: &mut [libfabric::iovec::IocMut<T>],
             res_desc: Option<&[MemoryRegionDesc]>,
@@ -1370,7 +1356,7 @@ pub mod async_ofi {
         }
 
         pub fn compare_atomic<T: libfabric::AsFiType>(
-            &mut self,
+            &self,
             buf: &[T],
             comp: &[T],
             res: &mut [T],
@@ -1381,7 +1367,9 @@ pub mod async_ofi {
             op: CompareAtomicOp,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let key = &remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
@@ -1393,8 +1381,8 @@ pub mod async_ofi {
                             res,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1408,8 +1396,8 @@ pub mod async_ofi {
                             comp_desc,
                             res,
                             res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1421,7 +1409,7 @@ pub mod async_ofi {
         }
 
         pub fn compare_atomicv<T: libfabric::AsFiType>(
-            &mut self,
+            &self,
             ioc: &[libfabric::iovec::Ioc<T>],
             comp_ioc: &[libfabric::iovec::Ioc<T>],
             res_ioc: &mut [libfabric::iovec::IocMut<T>],
@@ -1432,7 +1420,9 @@ pub mod async_ofi {
             op: CompareAtomicOp,
             ctx: &mut Context,
         ) {
-            let (start, _end) = self.remote_mem_addr.unwrap();
+            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
+            let key = &remote_mem_info.key();
+            let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
@@ -1444,8 +1434,8 @@ pub mod async_ofi {
                             res_ioc,
                             res_desc,
                             self.mapped_addr.as_ref().unwrap(),
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1459,8 +1449,8 @@ pub mod async_ofi {
                             comp_desc,
                             res_ioc,
                             res_desc,
-                            start + dest_addr,
-                            self.remote_key.as_ref().unwrap(),
+                            base_addr + dest_addr,
+                            key,
                             op,
                             ctx,
                         )
@@ -1472,7 +1462,7 @@ pub mod async_ofi {
         }
 
         pub fn compare_atomicmsg<T: libfabric::AsFiType + 'static>(
-            &mut self,
+            &self,
             msg: &mut Either<MsgCompareAtomic<T>, MsgCompareAtomicConnected<T>>,
             comp_ioc: &[libfabric::iovec::Ioc<T>],
             res_ioc: &mut [libfabric::iovec::IocMut<T>],
@@ -1637,7 +1627,7 @@ pub mod async_ofi {
     }
 
     fn sendrecv(server: bool, name: &str, connected: bool) {
-        let mut ofi = if connected {
+        let ofi = if connected {
             handshake(server, name, Some(InfoCaps::new().msg()))
         } else {
             handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
@@ -1743,7 +1733,7 @@ pub mod async_ofi {
     }
 
     fn sendrecvdata(server: bool, name: &str, connected: bool) {
-        let mut ofi = if connected {
+        let ofi = if connected {
             handshake(server, name, Some(InfoCaps::new().msg()))
         } else {
             handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
@@ -1816,7 +1806,7 @@ pub mod async_ofi {
     }
 
     fn tsendrecv(server: bool, name: &str, connected: bool) {
-        let mut ofi = if connected {
+        let ofi = if connected {
             handshake(server, name, Some(InfoCaps::new().msg().tagged()))
         } else {
             handshake_connectionless(server, name, Some(InfoCaps::new().msg().tagged()))
@@ -1929,7 +1919,7 @@ pub mod async_ofi {
     }
 
     fn sendrecvmsg(server: bool, name: &str, connected: bool) {
-        let mut ofi = if connected {
+        let ofi = if connected {
             handshake(server, name, Some(InfoCaps::new().msg()))
         } else {
             handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
@@ -2171,7 +2161,7 @@ pub mod async_ofi {
     }
 
     fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
-        let mut ofi = if connected {
+        let ofi = if connected {
             handshake(server, name, Some(InfoCaps::new().msg().tagged()))
         } else {
             handshake_connectionless(server, name, Some(InfoCaps::new().msg().tagged()))
@@ -2478,7 +2468,7 @@ pub mod async_ofi {
         let descs = [mr.descriptor(), mr.descriptor()];
         // let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+        ofi.exchange_keys(&key, &reg_mem[..]);
         let expected: Vec<_> = (0..1024).map(|v: usize| (v % 256) as u8).collect();
         let mut ctx = ofi.info_entry.allocate_context();
 
@@ -2598,18 +2588,19 @@ pub mod async_ofi {
         let mapped_addr = ofi.mapped_addr.clone();
 
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+        ofi.exchange_keys(&key, &reg_mem[..]);
         let expected: Vec<u8> = (0..1024).map(|v: usize| (v % 256) as u8).collect();
 
-        let (start, _end) = ofi.remote_mem_addr.unwrap();
+        
         let mut ctx = ofi.info_entry.allocate_context();
         if server {
-            let rma_iov = RmaIoVec::new()
-                .address(start)
-                .len(128)
-                .mapped_key(ofi.remote_key.as_ref().unwrap());
-
+            let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+            let rma_addr = remote_mem_info.slice(..128);
             let iov = IoVec::from_slice(&reg_mem[..128]);
+            let mut rma_iov = RemoteMemAddrVec::new();
+            rma_iov.push(rma_addr);
+
+
             let mut msg = if connected {
                 Either::Right(MsgRmaConnected::from_iov(
                     &iov,
@@ -2636,10 +2627,9 @@ pub mod async_ofi {
             ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
             let iov = IoVec::from_slice(&reg_mem[..512]);
-            let rma_iov = RmaIoVec::new()
-                .address(start)
-                .len(512)
-                .mapped_key(ofi.remote_key.as_ref().unwrap());
+            let rma_addr = remote_mem_info.slice(..512);
+            let mut rma_iov = RemoteMemAddrVec::new();
+            rma_iov.push(rma_addr);
 
             let mut msg = if connected {
                 Either::Right(MsgRmaConnected::from_iov(
@@ -2669,22 +2659,17 @@ pub mod async_ofi {
             let iov0 = IoVec::from_slice(&reg_mem[..512]);
             let iov1 = IoVec::from_slice(&reg_mem[512..1024]);
             let iovs = [iov0, iov1];
-            let rma_iov0 = RmaIoVec::new()
-                .address(start)
-                .len(512)
-                .mapped_key(ofi.remote_key.as_ref().unwrap());
-
-            let rma_iov1 = RmaIoVec::new()
-                .address(start + 512)
-                .len(512)
-                .mapped_key(ofi.remote_key.as_ref().unwrap());
-            let rma_iovs = [rma_iov0, rma_iov1];
+            let rma_addr0 = remote_mem_info.slice(..512);
+            let rma_addr1 = remote_mem_info.slice(512..1024);
+            let mut rma_iov = RemoteMemAddrVec::new();
+            rma_iov.push(rma_addr0);
+            rma_iov.push(rma_addr1);
 
             let mut msg = if connected {
                 Either::Right(MsgRmaConnected::from_iov_slice(
                     &iovs,
                     Some(&descs),
-                    &rma_iovs,
+                    &rma_iov,
                     None,
                     &mut ctx,
                 ))
@@ -2693,7 +2678,7 @@ pub mod async_ofi {
                     &iovs,
                     Some(&descs),
                     mapped_addr.as_ref().unwrap(),
-                    &rma_iovs,
+                    &rma_iov,
                     None,
                     &mut ctx,
                 ))
@@ -2707,6 +2692,8 @@ pub mod async_ofi {
             // Recv a completion ack
             ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
         } else {
+            let mut remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow_mut();
+
             // Recv a completion ack
             ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
             assert_eq!(&reg_mem[..128], &expected[..128]);
@@ -2721,12 +2708,17 @@ pub mod async_ofi {
 
             reg_mem.iter_mut().for_each(|v| *v = 0);
 
+            // let base_addr = remote_mem_info.mem_address();
             {
                 let mut iov = IoVecMut::from_slice(&mut reg_mem[1024..1536]);
-                let rma_iov = RmaIoVec::new()
-                    .address(start)
-                    .len(512)
-                    .mapped_key(ofi.remote_key.as_ref().unwrap());
+                let rma_addr = remote_mem_info.slice_mut(..512);
+                let mut rma_iov = RemoteMemAddrVecMut::new();
+                rma_iov.push(rma_addr);
+
+                // RmaIoVec::new()
+                //     .address(base_addr)
+                //     .len(512)
+                //     .mapped_key(&key);
                 // Read buffer from remote memory
                 let mut msg = if connected {
                     Either::Right(MsgRmaConnectedMut::from_iov(
@@ -2753,21 +2745,17 @@ pub mod async_ofi {
             // // Read vector of buffers from remote memory
             let (mem0, mem1) = reg_mem[1536..].split_at_mut(256);
             let mut iovs = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-            let rma_iov0 = RmaIoVec::new()
-                .address(start)
-                .len(256)
-                .mapped_key(ofi.remote_key.as_ref().unwrap());
-            let rma_iov1 = RmaIoVec::new()
-                .address(start + 256)
-                .len(256)
-                .mapped_key(ofi.remote_key.as_ref().unwrap());
-            let rma_iovs = [rma_iov0, rma_iov1];
+            let (rma_addr0, rma_addr1) = remote_mem_info.slice_mut(..512).split_at_mut(256);
+            let mut rma_iov = RemoteMemAddrVecMut::new();
+            rma_iov.push(rma_addr0);
+            rma_iov.push(rma_addr1);
+
 
             let mut msg = if connected {
                 Either::Right(MsgRmaConnectedMut::from_iov_slice(
                     &mut iovs,
                     Some(&descs),
-                    &rma_iovs,
+                    &rma_iov,
                     None,
                     &mut ctx,
                 ))
@@ -2776,7 +2764,7 @@ pub mod async_ofi {
                     &mut iovs,
                     Some(&descs),
                     mapped_addr.as_ref().unwrap(),
-                    &rma_iovs,
+                    &rma_iov,
                     None,
                     &mut ctx,
                 ))
@@ -2846,7 +2834,7 @@ pub mod async_ofi {
         let descs = [mr.descriptor(), mr.descriptor()];
         // let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+        ofi.exchange_keys(&key, &reg_mem[..]);
         let mut ctx = ofi.info_entry.allocate_context();
 
         if server {
@@ -2997,7 +2985,7 @@ pub mod async_ofi {
         let desc1 = Some(mr.descriptor());
         // let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+        ofi.exchange_keys(&key, &reg_mem[..]);
         let mut ctx = ofi.info_entry.allocate_context();
         if server {
             let mut expected: Vec<_> = vec![1; 256];
@@ -3299,7 +3287,7 @@ pub mod async_ofi {
         let comp_desc = Some(mr.descriptor());
         let res_desc = Some(mr.descriptor());
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
+        ofi.exchange_keys(&key, &reg_mem[..]);
         let mut ctx = ofi.info_entry.allocate_context();
 
         if server {
@@ -3515,8 +3503,10 @@ pub mod async_ofi {
         let descs = [mr.descriptor(), mr.descriptor()];
         let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
-        let (start, _end) = ofi.remote_mem_addr.unwrap();
+        ofi.exchange_keys(&key, &reg_mem[..]);
+        let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+        let base_addr = remote_mem_info.mem_address();
+        let key = &remote_mem_info.key();
 
         let mut ctx = ofi.info_entry.allocate_context();
 
@@ -3525,8 +3515,8 @@ pub mod async_ofi {
                 Ioc::from_slice(&reg_mem[..256]),
                 Ioc::from_slice(&reg_mem[256..512]),
             ];
-            let rma_ioc0 = RmaIoc::new(start, 256, ofi.remote_key.as_ref().unwrap());
-            let rma_ioc1 = RmaIoc::new(start + 256, 256, ofi.remote_key.as_ref().unwrap());
+            let rma_ioc0 = RmaIoc::new(base_addr, 256, key);
+            let rma_ioc1 = RmaIoc::new(base_addr + 256, 256, key);
             let rma_iocs = [rma_ioc0, rma_ioc1];
 
             let mut msg = if connected {
@@ -3621,8 +3611,10 @@ pub mod async_ofi {
         };
         let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
-        let (start, _end) = ofi.remote_mem_addr.unwrap();
+        ofi.exchange_keys(&key, &reg_mem[..]);
+        let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+        let base_addr = remote_mem_info.mem_address();
+        let key = &remote_mem_info.key();
         let mut ctx = ofi.info_entry.allocate_context();
 
         if server {
@@ -3643,8 +3635,8 @@ pub mod async_ofi {
             let desc0 = Some(mr.descriptor());
             let descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
-            let rma_ioc0 = RmaIoc::new(start, 128, ofi.remote_key.as_ref().unwrap());
-            let rma_ioc1 = RmaIoc::new(start + 128, 128, ofi.remote_key.as_ref().unwrap());
+            let rma_ioc0 = RmaIoc::new(base_addr, 128, key);
+            let rma_ioc1 = RmaIoc::new(base_addr + 128, 128, key);
             let rma_iocs = [rma_ioc0, rma_ioc1];
 
             let mut msg = if connected {
@@ -3747,8 +3739,10 @@ pub mod async_ofi {
         let desc = Some(mr.descriptor());
         let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
-        ofi.exchange_keys(key, reg_mem.as_ptr() as usize, 1024 * 2);
-        let (start, _end) = ofi.remote_mem_addr.unwrap();
+        ofi.exchange_keys(&key, &reg_mem[..]);
+        let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+        let base_addr = remote_mem_info.mem_address();
+        let key = &remote_mem_info.key();
         let mut ctx = ofi.info_entry.allocate_context();
 
         if server {
@@ -3769,8 +3763,8 @@ pub mod async_ofi {
             let buf_descs = [mr.descriptor(), mr.descriptor()];
             let comp_descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
-            let rma_ioc0 = RmaIoc::new(start, 128, ofi.remote_key.as_ref().unwrap());
-            let rma_ioc1 = RmaIoc::new(start + 128, 128, ofi.remote_key.as_ref().unwrap());
+            let rma_ioc0 = RmaIoc::new(base_addr, 128, key);
+            let rma_ioc1 = RmaIoc::new(base_addr + 128, 128, key);
             let rma_iocs = [rma_ioc0, rma_ioc1];
 
             let mut msg = if connected {

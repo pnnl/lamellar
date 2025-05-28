@@ -284,17 +284,10 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncReadCq>, Un
         self.inner.bind_cntr()
     }
 
-    pub(crate) fn bind_av<EQ: ?Sized + ReadEq + 'static>(
-        &self,
-        av: &AddressVectorBase<EQ>,
-    ) -> Result<(), crate::error::Error> {
-        self.inner.bind_av(av)
-    }
-
     // pub fn alias(&self, flags: u64) -> Result<Self, crate::error::Error> {
     //     Ok(
     //         Self {
-    //             inner: MyRc::new (self.inner.alias(flags)?),
+    //             inner: MyRc::new (self.inner.alias(flags)?sss),
     //         }
     //     )
     // }

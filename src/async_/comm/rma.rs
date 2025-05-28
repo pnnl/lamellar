@@ -9,7 +9,7 @@ use crate::infocapsoptions::RmaCap;
 use crate::mr::MemoryRegionDesc;
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};
 use crate::utils::Either;
-use crate::Context;
+use crate::{Context, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
 use crate::{
     async_::{cq::AsyncReadCq, eq::AsyncReadEq},
     cq::SingleCompletion,
@@ -129,6 +129,62 @@ pub trait AsyncReadEp {
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
+pub trait AsyncReadRemoteMemAddrSliceEp: AsyncReadEp {
+    /// Async version of [crate::comm::rma::ReadEp::read_from]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::read_from]
+    unsafe fn read_slice_from_async<T0>(
+        &self,
+        buf: &mut [T0],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        src_addr: &MappedAddress,
+        rma_slice: &RemoteMemAddrSlice,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.read_from_async(
+            buf,
+            desc,
+            src_addr,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::ReadEp::readv_from]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readv_from]
+    unsafe fn readv_slice_from_async<'a>(
+        &self,
+        iov: &[crate::iovec::IoVecMut<'a>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_addr: &MappedAddress,
+        rma_slice: &RemoteMemAddrSlice,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(crate::iovec::IoVecMut::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.readv_from_async(
+            iov,
+            desc,
+            src_addr,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    unsafe fn readmsg_slice_from_async(
+        &self,
+        msg: &mut crate::msg::MsgRmaMut,
+        options: ReadMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+
+        self.readmsg_from_async(msg, options)
+    }
+}
+
 pub trait ConnectedAsyncReadEp {
     /// Async version of [crate::comm::rma::ReadEp::read]
     /// # Safety
@@ -162,6 +218,59 @@ pub trait ConnectedAsyncReadEp {
         msg: &mut crate::msg::MsgRmaConnectedMut,
         options: ReadMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+}
+
+pub trait ConnectedAsyncReadRemoteMemAddrSliceEp: ConnectedAsyncReadEp {
+    /// Async version of [crate::comm::rma::ReadEp::read]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::read]
+    unsafe fn read_slice_async<T0>(
+        &self,
+        buf: &mut [T0],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_slice: &RemoteMemAddrSlice,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.read_async(
+            buf,
+            desc,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::ReadEp::readv]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readv]
+    unsafe fn readv_slice_async<'a>(
+        &self,
+        iov: &[crate::iovec::IoVecMut<'a>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_slice: &RemoteMemAddrSlice,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(crate::iovec::IoVecMut::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.readv_async(
+            iov,
+            desc,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::ReadEp::readmsg]
+    /// # Safety
+    /// See [crate::comm::rma::ReadEp::readmsg]
+    unsafe fn readmsg_slice_async(
+        &self,
+        msg: &mut crate::msg::MsgRmaConnectedMut,
+        options: ReadMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.readmsg_async(msg, options)
+    }
 }
 
 // impl<E: ReadMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E> {
@@ -454,6 +563,125 @@ pub trait AsyncWriteEp: WriteEp {
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
 
+pub trait AsyncWriteRemoteMemAddrSliceEp: AsyncWriteEp {
+    /// Async version of [crate::comm::rma::WriteEp::write_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::write_to]
+    unsafe fn write_slice_to_async<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &MappedAddress,
+        rma_slice: &RemoteMemAddrSliceMut,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.write_to_async(
+            buf,
+            desc,
+            dest_addr,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::inject_write_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::inject_write_to]
+    unsafe fn inject_write_slice_to_async<T>(
+        &self,
+        buf: &[T],
+        dest_addr: &MappedAddress,
+        rma_slice: &RemoteMemAddrSliceMut,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.inject_write_to_async(
+            buf,
+            dest_addr,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::writev_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writev_to]
+    unsafe fn writev_slice_to_async<'a>(
+        &self,
+        iov: &[crate::iovec::IoVec<'a>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &MappedAddress,
+        rma_slice: &RemoteMemAddrSliceMut,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(crate::iovec::IoVec::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.writev_to_async(
+            iov,
+            desc,
+            dest_addr,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::writemsg_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writemsg_to]
+    unsafe fn writemsg_slice_to_async(
+        &self,
+        msg: &mut crate::msg::MsgRma,
+        options: WriteMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.writemsg_to_async(msg, options)
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::writedata_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writedata_to]
+    unsafe fn writedata_slice_to_async<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        dest_addr: &MappedAddress,
+        rma_slice: &RemoteMemAddrSliceMut,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.writedata_to_async(
+            buf,
+            desc,
+            data,
+            dest_addr,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::inject_writedata_to]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::inject_writedata_to]
+    unsafe fn inject_writedata_slice_to_async<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        dest_addr: &MappedAddress,
+        rma_slice: &RemoteMemAddrSliceMut,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.inject_writedata_to_async(
+            buf,
+            data,
+            dest_addr,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+        )
+    }
+}
+
 pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::write]
     /// # Safety
@@ -521,6 +749,115 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
         mem_addr: u64,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
+}
+
+pub trait ConnectedAsyncWriteRemoteMemAddrSliceEp: ConnectedAsyncWriteEp {
+    /// Async version of [crate::comm::rma::WriteEp::write]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::write]
+    unsafe fn write_slice_async<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_slice: &RemoteMemAddrSliceMut,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.write_async(
+            buf,
+            desc,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::inject_write]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::inject_write]
+    unsafe fn inject_write_slice_async<T>(
+        &self,
+        buf: &[T],
+        rma_slice: &RemoteMemAddrSliceMut,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.inject_write_async(
+            buf,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::writev]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writev]
+    unsafe fn writev_slice_async<'a>(
+        &self,
+        iov: &[crate::iovec::IoVec<'a>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_slice: &RemoteMemAddrSliceMut,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        // assert!(crate::iovec::IoVec::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.writev_async(
+            iov,
+            desc,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::writemsg]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writemsg]
+    unsafe fn writemsg_slice_async(
+        &self,
+        msg: &mut crate::msg::MsgRmaConnected,
+        options: WriteMsgOptions,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.writemsg_async(msg, options)
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::writedata]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::writedata]
+    unsafe fn writedata_slice_async<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        rma_slice: &RemoteMemAddrSliceMut,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.writedata_async(
+            buf,
+            desc,
+            data,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+            ctx,
+        )
+    }
+
+    /// Async version of [crate::comm::rma::WriteEp::inject_writedata]
+    /// # Safety
+    /// See [crate::comm::rma::WriteEp::inject_writedata]
+    unsafe fn inject_writedata_slice_async<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        rma_slice: &RemoteMemAddrSliceMut,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        self.inject_writedata_async(
+            buf,
+            data,
+            rma_slice.mem_address(),
+            &rma_slice.key(),
+        )
+    }
 }
 
 // impl<E: WriteMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E> {
@@ -842,5 +1179,13 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     }
 }
 
+impl <EP: AsyncReadEp> AsyncReadRemoteMemAddrSliceEp for EP {}
+impl <EP: AsyncWriteEp> AsyncWriteRemoteMemAddrSliceEp for EP {}
+
+impl <EP: ConnectedAsyncReadEp> ConnectedAsyncReadRemoteMemAddrSliceEp for EP {}
+impl <EP: ConnectedAsyncWriteEp> ConnectedAsyncWriteRemoteMemAddrSliceEp for EP {}
+
 pub trait AsyncReadWriteEp: AsyncReadEp + AsyncWriteEp {}
 impl<EP: AsyncReadEp + AsyncWriteEp> AsyncReadWriteEp for EP {}
+
+pub trait AsyncReadWriteRemoteMemAddrSliceEp: AsyncReadRemoteMemAddrSliceEp + AsyncWriteRemoteMemAddrSliceEp {}

@@ -1,3 +1,5 @@
+use crate::RemoteMemAddrSliceMut;
+use crate::RemoteMemAddrSlice;
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::cq::ReadCq;
@@ -197,6 +199,120 @@ pub trait ReadEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait ReadRemoteMemAddrSliceEp: ReadEp {
+    /// Read data from a remote memory region into local buffer `buf`
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_read` without a provided context
+    unsafe fn read_slice_from<T>(
+        &self,
+        buf: &mut [T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        src_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSlice,
+    ) -> Result<(), crate::error::Error> {
+        assert!(std::mem::size_of_val(buf) == rma_iov.mem_len(), "Source and destination slice sizes do not match");
+        ReadEp::read_from(self, buf, desc, src_addr, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [ReadEp::read_from] but with a context argument provided
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_read`
+    unsafe fn read_slice_from_with_context<T>(
+        &self,
+        buf: &mut [T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        src_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        assert!(std::mem::size_of_val(buf) == rma_iov.mem_len(), "Source and destination slice sizes do not match");
+        ReadEp::read_from_with_context(self, buf, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    unsafe fn read_slice_from_triggered<T>(
+        &self,
+        buf: &mut [T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        src_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        assert!(std::mem::size_of_val(buf) == rma_iov.mem_len(), "Source and destination slice sizes do not match");
+        ReadEp::read_from_triggered(self, buf, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+
+    /// Similar to [ReadEp::read_from] with a list of buffers `iov` instead of a single buffer to store the data ranges read
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_readv` with no context`
+    unsafe fn readv_slice_from(
+        &self,
+        iov: &[crate::iovec::IoVecMut],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSlice,
+    ) -> Result<(), crate::error::Error> {
+        ReadEp::readv_from(self, iov, desc, src_addr, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [ReadEp::readv_from] but providing a context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_readv`
+    unsafe fn readv_slice_from_with_context(
+        &self,
+        iov: &[crate::iovec::IoVecMut],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        ReadEp::readv_from_with_context(self, iov, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+    
+    unsafe fn readv_slice_from_triggered(
+        &self,
+        iov: &[crate::iovec::IoVecMut],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        ReadEp::readv_from_triggered(self, iov, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    unsafe fn readmsg_slice_from(
+        &self,
+        msg: &crate::msg::MsgRmaMut,
+        options: ReadMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        ReadEp::readmsg_from(self, msg, options)
+    }
+}
+
 pub trait ConnectedReadEp {
     /// Similar to [ReadEp::read_from] but without specifying a src network address
     ///
@@ -300,6 +416,121 @@ pub trait ConnectedReadEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
+    /// Similar to [ReadEp::read_from] but without specifying a src network address
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_read` with no context and `src_addr` = `FI_ADDR_UNSPEC`
+    unsafe fn read_slice<T>(
+        &self,
+        buf: &mut [T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_iov: &RemoteMemAddrSlice,
+    ) -> Result<(), crate::error::Error> {
+        ConnectedReadEp::read(self, buf, desc, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [ReadEp::read] but providing a context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_read` with `src_addr` = `FI_ADDR_UNSPEC`
+    unsafe fn read_slice_with_context<T>(
+        &self,
+        buf: &mut [T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        ConnectedReadEp::read_with_context(self, buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+
+    unsafe fn read_slice_triggered<T>(
+        &self,
+        buf: &mut [T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        ConnectedReadEp::read_triggered(self, buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// Similar to [ReadEp::readv_from] but without specifying a network address
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_readv` with no context and `src_addr` set to `FI_ADDR_UNSPEC`
+    unsafe fn readv_slice(
+        &self,
+        iov: &[crate::iovec::IoVecMut],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_iov: &RemoteMemAddrSlice,
+    ) -> Result<(), crate::error::Error> {
+        ConnectedReadEp::readv(self, iov, desc, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [ReadEp::readv] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_readv` with `src_addr` set to `FI_ADDR_UNSPEC`
+    unsafe fn readv_slice_with_context(
+        &self,
+        iov: &[crate::iovec::IoVecMut],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        ConnectedReadEp::readv_with_context(self, iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    unsafe fn readv_slice_triggered(
+        &self,
+        iov: &[crate::iovec::IoVecMut],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_iov: &RemoteMemAddrSlice,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        ConnectedReadEp::readv_triggered(self, iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// Read from remote node with the specifications provided by the `msg` argument
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's reading from cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_readmsg`
+    unsafe fn readmsg_slice(
+        &self,
+        msg: &crate::msg::MsgRmaConnectedMut,
+        options: ReadMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        ConnectedReadEp::readmsg(self, msg, options)
+    }
+}
+
+
 impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn read_from<T>(
         &self,
@@ -401,6 +632,9 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         self.readmsg_impl(Either::Left(msg), options)
     }
 }
+
+impl<EP: ReadEp> ReadRemoteMemAddrSliceEp for EP {}
+
 impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn read<T>(
         &self,
@@ -502,6 +736,8 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         self.readmsg_impl(Either::Right(msg), options)
     }
 }
+
+impl<EP: ConnectedReadEp> ConnectedReadRemoteMemAddrSliceEp for EP {}
 
 impl<EP: RmaCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> ReadEpImpl
     for EndpointImplBase<EP, EQ, CQ>
@@ -670,6 +906,215 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
             )
         };
         check_error(err)
+    }
+}
+
+pub trait WriteRemoteMemAddrSliceEp: WriteEp {
+    /// Write data to a remote memory region from local buffer `buf` to remote address mem_addr
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_write` without a provided context
+    unsafe fn write_slice_to<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.write_to(buf, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [WriteEp::write_to] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_write`.
+    unsafe fn write_slice_to_with_context<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.write_to_with_context(buf, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// Similar to [WriteEp::write_to] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_write`.
+    unsafe fn write_slice_to_triggered<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.write_to_triggered(buf, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_inject`.
+    unsafe fn inject_write_slice_to<T>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.inject_write_to(buf, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_inject_writedata`.
+    unsafe fn inject_writedata_slice_to<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.inject_writedata_to(buf, data, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [WriteEp::write_to] but with a list of buffers `iov` instead of a single buffer to transfer
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writev` without a provided context
+    unsafe fn writev_slice_to(
+        &self,
+        iov: &[crate::iovec::IoVec],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.writev_to(iov, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [WriteEp::writev_to] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writev`.
+    unsafe fn writev_slice_to_with_context(
+        &self,
+        iov: &[crate::iovec::IoVec],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.writev_to_with_context(iov, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// Similar to [WriteEp::writev_to] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writev`.
+    unsafe fn writev_slice_to_triggered(
+        &self,
+        iov: &[crate::iovec::IoVec],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.writev_to_triggered(iov, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writedata` without providing a context.
+    unsafe fn writedata_slice_to<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.writedata_to(buf, desc, data, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writedata` .
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn writedata_slice_to_with_context<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.writedata_to_with_context(buf, desc, data, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writedata` .
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn writedata_slice_to_triggered<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        dest_addr: &crate::MappedAddress,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.writedata_to_triggered(buf, desc, data, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    unsafe fn writemsg_slice_to(
+        &self,
+        msg: &crate::msg::MsgRma,
+        options: WriteMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        self.writemsg_to(msg, options)
     }
 }
 
@@ -1061,6 +1506,211 @@ pub trait ConnectedWriteEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
+    /// Similar to [WriteEp::write_to] but without specifying a destination network address (e.g., for connected endpoints)
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_write` with dest_addr = FI_ADDR_UNSPEC and no context.
+    unsafe fn write_slice<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.write(buf, desc, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [WriteEp::write] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_write` with `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn write_slice_with_context<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.write_with_context(buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// Similar to [WriteEp::write] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_write` with `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn write_slice_triggered<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.write_triggered(buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_inject` with `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn inject_write_slice<T>(
+        &self,
+        buf: &[T],
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.inject_write(buf, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_inject_writedata` with `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn inject_writedata_slice<T>(
+        &self,
+        buf: &[T],
+        data: u64,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.inject_writedata(buf, data, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [WriteEp::writev_to] but without specifying a network address
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writev` with `dest_addr` = `FI_ADDR_UNSPEC` and no contex.
+    unsafe fn writev_slice(
+        &self,
+        iov: &[crate::iovec::IoVec],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.writev(iov, desc, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// Similar to [WriteEp::writev] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writev` with `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn writev_slice_with_context(
+        &self,
+        iov: &[crate::iovec::IoVec],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.writev_with_context(iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// Similar to [WriteEp::writev] but with a provided context
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writev` with `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn writev_slice_triggered(
+        &self,
+        iov: &[crate::iovec::IoVec],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.writev_triggered(iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writedata` with no context and `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn writedata_slice<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        rma_iov: &RemoteMemAddrSliceMut,
+    ) -> Result<(), crate::error::Error> {
+        self.writedata(buf, desc, data, rma_iov.mem_address(), &rma_iov.key())
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writedata` `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn writedata_slice_with_context<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.writedata_with_context(buf, desc, data, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writedata` `dest_addr` = `FI_ADDR_UNSPEC`.
+    unsafe fn writedata_slice_triggered<T>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        data: u64,
+        rma_iov: &RemoteMemAddrSliceMut,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.writedata_triggered(buf, desc, data, rma_iov.mem_address(), &rma_iov.key(), context)
+    }
+
+    /// Transfer data base on the specifications provided by the `msg`
+    ///
+    /// The operation is only expected to have completed when a respective Completion has been generated
+    ///
+    /// # Safety
+    /// This function is unsafe because the remote memory address that it's writing to cannot be guaranteed
+    /// to be valid
+    ///  
+    /// Equivalent to `fi_writemsg`
+    unsafe fn writemsg_slice(
+        &self,
+        msg: &crate::msg::MsgRmaConnected,
+        options: WriteMsgOptions,
+    ) -> Result<(), crate::error::Error> {
+        self.writemsg(msg, options)
+    }
+}
+
 impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     #[inline]
     unsafe fn write_to<T>(
@@ -1252,6 +1902,8 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     }
 }
 
+impl<EP: WriteEp> WriteRemoteMemAddrSliceEp for EP {}
+
 impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     #[inline]
     unsafe fn write<T>(
@@ -1435,6 +2087,8 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         self.writemsg_impl(Either::Right(msg), options)
     }
 }
+
+impl<EP: ConnectedWriteEp> ConnectedWriteRemoteMemAddrSliceEp for EP {}
 
 impl<EP: RmaCap + WriteMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> WriteEpImpl
     for EndpointImplBase<EP, EQ, CQ>
