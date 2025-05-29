@@ -4119,9 +4119,9 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(&key, &reg_mem[..]);
-    let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap();
-    let key = &remote_mem_info.borrow().key();
-    let base_addr = remote_mem_info.borrow().mem_address();
+    let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+    let dst_slice = remote_mem_info.slice(..512);
+    let (dst_slice0, dst_slice1) = dst_slice.split_at(256 * std::mem::size_of::<u8>());
 
     let mut ctx = ofi.info_entry.allocate_context();
     if server {
@@ -4129,8 +4129,8 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
             Ioc::from_slice(&reg_mem[..256]),
             Ioc::from_slice(&reg_mem[256..512]),
         ];
-        let rma_ioc0 = RmaIoc::new(base_addr, 256, key);
-        let rma_ioc1 = RmaIoc::new(unsafe {base_addr.add(256)}, 256, key);
+        let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
+        let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
         let rma_iocs = [rma_ioc0, rma_ioc1];
 
         let msg = if connected {
@@ -4230,9 +4230,10 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(&key, &reg_mem[..]);
-    let remote_mem_info =  ofi.remote_mem_info.as_ref().unwrap();
-    let key = &remote_mem_info.borrow().key();
-    let base_addr = remote_mem_info.borrow().mem_address();
+    let remote_mem_info =  ofi.remote_mem_info.as_ref().unwrap().borrow();
+    let dst_slice = remote_mem_info.slice(..256);
+    let (dst_slice0, dst_slice1) = dst_slice.split_at(128);
+
     let mut ctx = ofi.info_entry.allocate_context();
     if server {
         let expected = vec![1u8; 256];
@@ -4252,8 +4253,8 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         let desc0 = Some(mr.descriptor());
         let descs = [mr.descriptor(), mr.descriptor()];
         let res_descs = [mr.descriptor(), mr.descriptor()];
-        let rma_ioc0 = RmaIoc::new(base_addr, 128, key);
-        let rma_ioc1 = RmaIoc::new(unsafe {base_addr.add(128)}, 128, key);
+        let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
+        let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
         let rma_iocs = [rma_ioc0, rma_ioc1];
 
         let msg = if connected {
@@ -4360,9 +4361,10 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
     let mapped_addr = ofi.mapped_addr.clone();
     let key = mr.key().unwrap();
     ofi.exchange_keys(&key, &reg_mem[..]);
-    let remote_mem_info =  ofi.remote_mem_info.as_ref().unwrap();
-    let key = &remote_mem_info.borrow().key();
-    let base_addr = remote_mem_info.borrow().mem_address();
+    let remote_mem_info =  ofi.remote_mem_info.as_ref().unwrap().borrow();
+    let dst_slice = remote_mem_info.slice(..256);
+    let (dst_slice0, dst_slice1) = dst_slice.split_at(128);
+
     let mut ctx = ofi.info_entry.allocate_context();
     if server {
         let expected = vec![1u8; 256];
@@ -4382,8 +4384,8 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         let buf_descs = [mr.descriptor(), mr.descriptor()];
         let comp_descs = [mr.descriptor(), mr.descriptor()];
         let res_descs = [mr.descriptor(), mr.descriptor()];
-        let rma_ioc0 = RmaIoc::new(base_addr, 128, key);
-        let rma_ioc1 = RmaIoc::new(unsafe {base_addr.add(128)}, 128, key);
+        let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
+        let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
         let rma_iocs = [rma_ioc0, rma_ioc1];
 
         let msg = if connected {

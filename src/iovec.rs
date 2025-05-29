@@ -235,11 +235,12 @@ impl<'a> RemoteMemAddrVecMut<'a> {
     }
 }
 
-pub struct RmaIoc {
+pub struct RmaIoc<T> {
     pub(crate) c_rma_ioc: libfabric_sys::fi_rma_ioc,
+    phantom: PhantomData<T>,
 }
 
-impl RmaIoc {
+impl<T: Copy> RmaIoc<T> {
     pub fn new(addr: RemoteMemoryAddress, count: usize, key: &MappedMemoryRegionKey) -> Self {
         Self {
             c_rma_ioc: libfabric_sys::fi_rma_ioc {
@@ -247,6 +248,18 @@ impl RmaIoc {
                 count,
                 key: key.key(),
             },
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn from_slice(addr: &RemoteMemAddrSlice) -> Self {
+        Self {
+            c_rma_ioc: libfabric_sys::fi_rma_ioc {
+                addr: addr.mem_address().into(),
+                count: addr.mem_len() / std::mem::size_of::<T>(),
+                key: addr.key().key(),
+            },
+            phantom: PhantomData,
         }
     }
 
@@ -254,55 +267,8 @@ impl RmaIoc {
         self.c_rma_ioc.count
     }
 
-    // pub fn addr(&self) -> u64 {
-    //     self.c_rma_ioc.addr
-    // }
-
     #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_rma_ioc {
         &self.c_rma_ioc
     }
 }
-
-// #[cfg(test)]
-// #[cfg(ignore)]
-// mod rust_lifetime_tests {
-//     use crate::iovec::IoVec;
-
-//     fn foo(data: &mut [usize]) {}
-//     fn foo_ref(data: & [usize]) {}
-//     fn foo2<T>(data: & iovec::IoVec<T>) {}
-
-//     #[test]
-//     fn iovec_lifetime() {
-//         let mut  data: Vec<usize> = Vec::new();
-//         let iov = iovec::IoVec::from_slice(&data);
-//         drop(data);
-//         iov.get();
-//     }
-
-//     #[test]
-//     fn iovec_borrow_mut() {
-//         let mut  data: Vec<usize> = Vec::new();
-//         let iov = iovec::IoVec::from_slice(&data);
-//         foo(&mut data);
-//         drop(data);
-//         iov.get();
-//     }
-
-//     #[test]
-//     fn iovec_mut_mut() {
-//         let mut  data: Vec<usize> = Vec::new();
-//         let iov = iovec::IoVec::from_slice_mut(&mut data);
-//         foo(&mut data);
-//         iov.get();
-//     }
-
-//     #[test]
-//     fn iovec_mut_borrow() {
-//         let mut  data: Vec<usize> = Vec::new();
-//         let iov = iovec::IoVec::from_slice_mut(&mut data);
-//         foo_ref(&data);
-//         iov.get();
-//     }
-// }
