@@ -3,6 +3,7 @@ compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive
 
 #[cfg(not(feature = "thread-safe"))]
 use std::cell::OnceCell;
+use std::hash::Hash;
 use std::ops::Range;
 use std::ops::RangeFrom;
 use std::ops::RangeFull;
@@ -125,6 +126,26 @@ impl<T: Copy> RemoteMemoryAddress<T> {
         Self {
             raw_mem_addr: unsafe {self.raw_mem_addr.offset(offset) }
         }
+    }
+}
+
+impl<T> Eq for RemoteMemoryAddress<T> {}
+
+impl<T> PartialEq for RemoteMemoryAddress<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw_mem_addr == other.raw_mem_addr
+    }
+}
+
+impl<T> PartialOrd for RemoteMemoryAddress<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for RemoteMemoryAddress<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.raw_mem_addr.cmp(&other.raw_mem_addr)
     }
 }
 
