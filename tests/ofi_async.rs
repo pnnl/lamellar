@@ -3516,7 +3516,7 @@ pub mod async_ofi {
                 Ioc::from_slice(&reg_mem[256..512]),
             ];
             let rma_ioc0 = RmaIoc::new(base_addr, 256, key);
-            let rma_ioc1 = RmaIoc::new(base_addr + 256, 256, key);
+            let rma_ioc1 = RmaIoc::new(unsafe {base_addr.add(256)}, 256, key);
             let rma_iocs = [rma_ioc0, rma_ioc1];
 
             let mut msg = if connected {
@@ -3636,7 +3636,7 @@ pub mod async_ofi {
             let descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
             let rma_ioc0 = RmaIoc::new(base_addr, 128, key);
-            let rma_ioc1 = RmaIoc::new(base_addr + 128, 128, key);
+            let rma_ioc1 = RmaIoc::new(unsafe {base_addr.add(128)}, 128, key);
             let rma_iocs = [rma_ioc0, rma_ioc1];
 
             let mut msg = if connected {
@@ -3764,7 +3764,7 @@ pub mod async_ofi {
             let comp_descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
             let rma_ioc0 = RmaIoc::new(base_addr, 128, key);
-            let rma_ioc1 = RmaIoc::new(base_addr + 128, 128, key);
+            let rma_ioc1 = RmaIoc::new(unsafe {base_addr.add(128)}, 128, key);
             let rma_iocs = [rma_ioc0, rma_ioc1];
 
             let mut msg = if connected {

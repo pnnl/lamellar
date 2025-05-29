@@ -1165,7 +1165,7 @@ pub mod parallel_async_ofi {
     }
 
     impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
-        pub fn write(&mut self, buf: &[u8], dest_addr: u64, data: Option<u64>) {
+        pub fn write(&mut self, buf: &[u8], dest_addr: usize, data: Option<u64>) {
             let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
             let key = remote_mem_info.key();
             let base_addr = remote_mem_info.mem_address();
@@ -1209,7 +1209,7 @@ pub mod parallel_async_ofi {
                                                     &reg_mem,
                                                     data.unwrap(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                            base_addr + dest_addr,
+                                                    unsafe{base_addr.add(dest_addr)},
                                             &key,
                                                 )
                                                 .await
@@ -1219,7 +1219,7 @@ pub mod parallel_async_ofi {
                                                 ep.inject_write_to_async(
                                                     &reg_mem,
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                            base_addr + dest_addr,
+                                                    unsafe{base_addr.add(dest_addr)},
                                             &key,
                                                 )
                                                 .await
@@ -1233,7 +1233,7 @@ pub mod parallel_async_ofi {
                                                     desc.as_ref(),
                                                     data.unwrap(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                            base_addr + dest_addr,
+                                                    unsafe{base_addr.add(dest_addr)},
                                             &key,
                                                     &mut ctx,
                                                 )
@@ -1245,8 +1245,8 @@ pub mod parallel_async_ofi {
                                                     &reg_mem,
                                                     desc.as_ref(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
-                                            base_addr + dest_addr,
-                                            &key,
+                                                    unsafe{base_addr.add(dest_addr)},
+                                                    &key,
                                                     &mut ctx,
                                                 )
                                                 .await
@@ -1262,8 +1262,8 @@ pub mod parallel_async_ofi {
                                                 ep.inject_writedata_async(
                                                     &reg_mem,
                                                     data.unwrap(),
-                                            base_addr + dest_addr,
-                                            &key,
+                                                    unsafe{base_addr.add(dest_addr)},
+                                                    &key,
                                                 )
                                                 .await
                                             }
@@ -1271,8 +1271,8 @@ pub mod parallel_async_ofi {
                                             unsafe {
                                                 ep.inject_write_async(
                                                     &reg_mem,
-                                            base_addr + dest_addr,
-                                            &key,
+                                                    unsafe{base_addr.add(dest_addr)},
+                                                    &key,
                                                 )
                                                 .await
                                             }
@@ -1284,8 +1284,8 @@ pub mod parallel_async_ofi {
                                                     &reg_mem,
                                                     desc.as_ref(),
                                                     data.unwrap(),
-                                            base_addr + dest_addr,
-                                            &key,
+                                                    unsafe{base_addr.add(dest_addr)},
+                                                    &key,
                                                     &mut ctx,
                                                 )
                                                 .await
@@ -1295,8 +1295,8 @@ pub mod parallel_async_ofi {
                                                 ep.write_async(
                                                     &reg_mem,
                                                     desc.as_ref(),
-                                            base_addr + dest_addr,
-                                            &key,
+                                                    unsafe{base_addr.add(dest_addr)},
+                                                    &key,
                                                     &mut ctx,
                                                 )
                                                 .await
@@ -1324,7 +1324,7 @@ pub mod parallel_async_ofi {
                 .for_each(|h| async_std::task::block_on(h.0))
         }
         // }
-        pub fn read(&mut self, buf: &mut [u8], dest_addr: u64) -> Vec<Vec<u8>> {
+        pub fn read(&mut self, buf: &mut [u8], dest_addr: usize) -> Vec<Vec<u8>> {
             let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
             let key = &remote_mem_info.key();
             let base_addr = remote_mem_info.mem_address();
@@ -1364,7 +1364,7 @@ pub mod parallel_async_ofi {
                                         &mut reg_mem,
                                         desc.as_ref(),
                                         mapped_addr.as_ref().as_ref().unwrap(),
-                                        base_addr + dest_addr,
+                                        base_addr.add(dest_addr),
                                         &key,
                                         &mut ctx,
                                     )
@@ -1376,7 +1376,7 @@ pub mod parallel_async_ofi {
                                     ep.read_async(
                                         &mut reg_mem,
                                         desc.as_ref(),
-                                        base_addr + dest_addr,
+                                        base_addr.add(dest_addr),
                                         &key,
                                         &mut ctx,
                                     )

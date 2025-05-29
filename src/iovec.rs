@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{mr::MappedMemoryRegionKey, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
+use crate::{mr::MappedMemoryRegionKey, RemoteMemoryAddress, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
 
 unsafe impl<'a> Send for IoVec<'a> {}
 unsafe impl<'a> Sync for IoVec<'a> {}
@@ -185,7 +185,7 @@ impl<'a> RemoteMemAddrVec<'a> {
 
     pub fn push(&mut self, rma_iovec: RemoteMemAddrSlice<'a>) {
         let c_rma_iov = libfabric_sys::fi_rma_iov {
-            addr: rma_iovec.mem_address(),
+            addr: rma_iovec.mem_address().into(),
             len: rma_iovec.mem_len(),
             key: rma_iovec.key().key(),
         };
@@ -218,7 +218,7 @@ impl<'a> RemoteMemAddrVecMut<'a> {
 
     pub fn push(&mut self, rma_iovec: RemoteMemAddrSliceMut<'a>) {
         let c_rma_iov = libfabric_sys::fi_rma_iov {
-            addr: rma_iovec.mem_address(),
+            addr: rma_iovec.mem_address().into(),
             len: rma_iovec.mem_len(),
             key: rma_iovec.key().key(),
         };
@@ -240,10 +240,10 @@ pub struct RmaIoc {
 }
 
 impl RmaIoc {
-    pub fn new(addr: u64, count: usize, key: &MappedMemoryRegionKey) -> Self {
+    pub fn new(addr: RemoteMemoryAddress, count: usize, key: &MappedMemoryRegionKey) -> Self {
         Self {
             c_rma_ioc: libfabric_sys::fi_rma_ioc {
-                addr,
+                addr: addr.into(),
                 count,
                 key: key.key(),
             },
@@ -254,9 +254,9 @@ impl RmaIoc {
         self.c_rma_ioc.count
     }
 
-    pub fn addr(&self) -> u64 {
-        self.c_rma_ioc.addr
-    }
+    // pub fn addr(&self) -> u64 {
+    //     self.c_rma_ioc.addr
+    // }
 
     #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_rma_ioc {

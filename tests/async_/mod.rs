@@ -989,7 +989,7 @@ pub fn ft_post_rma_inject<CQ: ReadCq>(
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
     match rma_op {
         RmaOp::RMA_WRITE => {
-            let addr = remote.mem_address() + offset as u64;
+            let addr = unsafe {remote.mem_address().add(offset)};
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1011,7 +1011,7 @@ pub fn ft_post_rma_inject<CQ: ReadCq>(
         }
 
         RmaOp::RMA_WRITEDATA => {
-            let addr = remote.mem_address() + offset as u64;
+            let addr = unsafe {remote.mem_address().add(offset)};
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1057,7 +1057,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
     match rma_op {
         RmaOp::RMA_WRITE => {
-            let addr = remote.mem_address() + offset as u64;
+            let addr = unsafe {remote.mem_address().add(offset)};
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1077,7 +1077,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
         }
 
         RmaOp::RMA_WRITEDATA => {
-            let addr = remote.mem_address() + offset as u64;
+            let addr = unsafe {remote.mem_address().add(offset)};
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1099,7 +1099,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
         }
 
         RmaOp::RMA_READ => {
-            let addr = remote.mem_address() + offset as u64;
+            let addr = unsafe {remote.mem_address().add(offset)};
             let key = remote.key();
             let buf =
                 &mut gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];

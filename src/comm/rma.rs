@@ -1,3 +1,4 @@
+use crate::RemoteMemoryAddress;
 use crate::RemoteMemAddrSliceMut;
 use crate::RemoteMemAddrSlice;
 use crate::conn_ep::ConnectedEp;
@@ -35,7 +36,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: Option<&crate::MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -47,7 +48,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
                 std::mem::size_of_val(buf),
                 desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
                 raw_addr,
-                mem_addr,
+                mem_addr.into(),
                 mapped_key.key(),
                 ctx,
             )
@@ -60,7 +61,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: Option<&crate::MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -72,7 +73,7 @@ pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
                 desc.map_or(std::ptr::null_mut(), |d| std::mem::transmute(d.as_ptr())),
                 iov.len(),
                 raw_addr,
-                mem_addr,
+                mem_addr.into(),
                 mapped_key.key(),
                 ctx,
             )
@@ -116,7 +117,7 @@ pub trait ReadEp {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -134,7 +135,7 @@ pub trait ReadEp {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -143,7 +144,7 @@ pub trait ReadEp {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -161,7 +162,7 @@ pub trait ReadEp {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -179,7 +180,7 @@ pub trait ReadEp {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -188,7 +189,7 @@ pub trait ReadEp {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -327,7 +328,7 @@ pub trait ConnectedReadEp {
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -344,7 +345,7 @@ pub trait ConnectedReadEp {
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -352,7 +353,7 @@ pub trait ConnectedReadEp {
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -370,7 +371,7 @@ pub trait ConnectedReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -387,7 +388,7 @@ pub trait ConnectedReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -395,7 +396,7 @@ pub trait ConnectedReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -537,7 +538,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.read_impl(buf, desc, Some(src_addr), mem_addr, mapped_key, None)
@@ -547,7 +548,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -565,7 +566,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -583,7 +584,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.readv_impl(iov, desc, Some(src_addr), mem_addr, mapped_key, None)
@@ -593,7 +594,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -611,7 +612,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -640,7 +641,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.read_impl(buf, desc, None, mem_addr, mapped_key, None)
@@ -650,7 +651,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -668,7 +669,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -686,7 +687,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.readv_impl(iov, desc, None, mem_addr, mapped_key, None)
@@ -696,7 +697,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -714,7 +715,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -763,7 +764,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -775,7 +776,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 std::mem::size_of_val(buf),
                 desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
                 raw_addr,
-                mem_addr,
+                mem_addr.into(),
                 mapped_key.key(),
                 ctx,
             )
@@ -787,7 +788,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         &self,
         buf: &[T],
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let raw_addr = if let Some(addr) = dest_addr {
@@ -802,7 +803,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 buf.as_ptr().cast(),
                 std::mem::size_of_val(buf),
                 raw_addr,
-                mem_addr,
+                mem_addr.into(),
                 mapped_key.key(),
             )
         };
@@ -814,7 +815,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -826,7 +827,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 desc.map_or(std::ptr::null_mut(), |d| std::mem::transmute(d.as_ptr())),
                 iov.len(),
                 raw_addr,
-                mem_addr,
+                mem_addr.into(),
                 mapped_key.key(),
                 ctx,
             )
@@ -841,7 +842,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -854,7 +855,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
                 data,
                 raw_addr,
-                mem_addr,
+                mem_addr.into(),
                 mapped_key.key(),
                 ctx,
             )
@@ -867,7 +868,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         buf: &[T],
         data: u64,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let raw_addr = if let Some(addr) = dest_addr {
@@ -882,7 +883,7 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
                 std::mem::size_of_val(buf),
                 data,
                 raw_addr,
-                mem_addr,
+                mem_addr.into(),
                 mapped_key.key(),
             )
         };
@@ -1133,7 +1134,7 @@ pub trait WriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1151,7 +1152,7 @@ pub trait WriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1170,7 +1171,7 @@ pub trait WriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1184,7 +1185,7 @@ pub trait WriteEp {
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1198,7 +1199,7 @@ pub trait WriteEp {
         buf: &[T],
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1216,7 +1217,7 @@ pub trait WriteEp {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1234,7 +1235,7 @@ pub trait WriteEp {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1253,7 +1254,7 @@ pub trait WriteEp {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1269,7 +1270,7 @@ pub trait WriteEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1285,7 +1286,7 @@ pub trait WriteEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1302,7 +1303,7 @@ pub trait WriteEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1328,7 +1329,7 @@ pub trait ConnectedWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1345,7 +1346,7 @@ pub trait ConnectedWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1363,7 +1364,7 @@ pub trait ConnectedWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1376,7 +1377,7 @@ pub trait ConnectedWriteEp {
     unsafe fn inject_write<T>(
         &self,
         buf: &[T],
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1389,7 +1390,7 @@ pub trait ConnectedWriteEp {
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1406,7 +1407,7 @@ pub trait ConnectedWriteEp {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1423,7 +1424,7 @@ pub trait ConnectedWriteEp {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1441,7 +1442,7 @@ pub trait ConnectedWriteEp {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1456,7 +1457,7 @@ pub trait ConnectedWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1470,7 +1471,7 @@ pub trait ConnectedWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1485,7 +1486,7 @@ pub trait ConnectedWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1718,7 +1719,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.write_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, None)
@@ -1729,7 +1730,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1748,7 +1749,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1767,7 +1768,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_impl(buf, Some(dest_addr), mem_addr, mapped_key)
@@ -1779,7 +1780,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.writev_impl(iov, desc, Some(dest_addr), mem_addr, mapped_key, None)
@@ -1790,7 +1791,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1809,7 +1810,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1830,7 +1831,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.writedata_impl(buf, desc, data, Some(dest_addr), mem_addr, mapped_key, None)
@@ -1843,7 +1844,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1865,7 +1866,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1886,7 +1887,7 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         buf: &[T],
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_impl(buf, data, Some(dest_addr), mem_addr, mapped_key)
@@ -1910,7 +1911,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.write_impl(buf, desc, None, mem_addr, mapped_key, None)
@@ -1921,7 +1922,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1940,7 +1941,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1958,7 +1959,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     unsafe fn inject_write<T>(
         &self,
         buf: &[T],
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_impl(buf, None, mem_addr, mapped_key)
@@ -1969,7 +1970,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.writev_impl(iov, desc, None, mem_addr, mapped_key, None)
@@ -1980,7 +1981,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1999,7 +2000,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -2019,7 +2020,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.writedata_impl(buf, desc, data, None, mem_addr, mapped_key, None)
@@ -2031,7 +2032,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -2052,7 +2053,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -2072,7 +2073,7 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_impl(buf, data, None, mem_addr, mapped_key)

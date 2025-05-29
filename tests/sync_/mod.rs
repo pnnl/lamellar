@@ -1084,7 +1084,7 @@ pub fn ft_post_rma_inject(
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
     match rma_op {
         RmaOp::RMA_WRITE => {
-            let addr = remote.mem_address() + offset as u64;
+            let addr = unsafe {remote.mem_address().add(offset)};
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1106,7 +1106,7 @@ pub fn ft_post_rma_inject(
         }
 
         RmaOp::RMA_WRITEDATA => {
-            let addr = remote.mem_address() + offset as u64;
+            let addr = unsafe {remote.mem_address().add(offset)};
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1148,7 +1148,7 @@ pub fn ft_post_rma(
     tx_cq: &impl ReadCq,
 ) {
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
-    let mem_addr = remote.mem_address() + offset as u64;
+    let mem_addr = unsafe {remote.mem_address().add(offset)};
     let key = remote.key();
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
     let data_desc = Some(mr.as_ref().unwrap().descriptor());

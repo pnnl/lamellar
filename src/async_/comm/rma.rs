@@ -9,7 +9,7 @@ use crate::infocapsoptions::RmaCap;
 use crate::mr::MemoryRegionDesc;
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};
 use crate::utils::Either;
-use crate::{Context, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
+use crate::{Context, RemoteMemoryAddress, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
 use crate::{
     async_::{cq::AsyncReadCq, eq::AsyncReadEq},
     cq::SingleCompletion,
@@ -28,7 +28,7 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -52,7 +52,7 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -104,7 +104,7 @@ pub trait AsyncReadEp {
         buf: &mut [T0],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -117,7 +117,7 @@ pub trait AsyncReadEp {
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -193,7 +193,7 @@ pub trait ConnectedAsyncReadEp {
         &self,
         buf: &mut [T0],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -205,7 +205,7 @@ pub trait ConnectedAsyncReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -292,7 +292,7 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
         buf: &mut [T0],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -305,7 +305,7 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -327,7 +327,7 @@ impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
         &self,
         buf: &mut [T0],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -339,7 +339,7 @@ impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -362,7 +362,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -386,7 +386,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         &self,
         buf: &[T],
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let cq = self.retrieve_tx_cq();
@@ -402,7 +402,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -428,7 +428,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -454,7 +454,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         buf: &[T],
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let cq = self.retrieve_tx_cq();
@@ -498,7 +498,7 @@ pub trait AsyncWriteEp: WriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -510,7 +510,7 @@ pub trait AsyncWriteEp: WriteEp {
         &self,
         buf: &[T],
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
@@ -522,7 +522,7 @@ pub trait AsyncWriteEp: WriteEp {
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -545,7 +545,7 @@ pub trait AsyncWriteEp: WriteEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -558,7 +558,7 @@ pub trait AsyncWriteEp: WriteEp {
         buf: &[T],
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
@@ -690,7 +690,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -701,7 +701,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     unsafe fn inject_write_async<T>(
         &self,
         buf: &[T],
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
@@ -712,7 +712,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
         &self,
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -734,7 +734,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -746,7 +746,7 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
@@ -876,7 +876,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -889,7 +889,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
         &self,
         buf: &[T],
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -902,7 +902,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -917,7 +917,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -931,7 +931,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
         buf: &[T],
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -954,7 +954,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -967,7 +967,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
         &self,
         buf: &[T],
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -980,7 +980,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -995,7 +995,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1009,7 +1009,7 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
         buf: &[T],
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -1033,7 +1033,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1046,7 +1046,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
         &self,
         buf: &[T],
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_async_impl(buf, Some(dest_addr), mem_addr, mapped_key)
@@ -1059,7 +1059,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1083,7 +1083,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1097,7 +1097,7 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
         buf: &[T],
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_async_impl(buf, data, Some(dest_addr), mem_addr, mapped_key)
@@ -1111,7 +1111,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1123,7 +1123,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     async unsafe fn inject_write_async<T>(
         &self,
         buf: &[T],
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_async_impl(buf, None, mem_addr, mapped_key)
@@ -1135,7 +1135,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
         &self,
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1158,7 +1158,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1171,7 +1171,7 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: u64,
+        mem_addr: RemoteMemoryAddress,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_async_impl(buf, data, None, mem_addr, mapped_key)
