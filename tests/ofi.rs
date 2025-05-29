@@ -8,6 +8,7 @@ use libfabric::comm::rma::ConnectedReadRemoteMemAddrSliceEp;
 use libfabric::comm::rma::ReadRemoteMemAddrSliceEp;
 use libfabric::comm::rma::ConnectedWriteRemoteMemAddrSliceEp;
 use libfabric::comm::rma::WriteRemoteMemAddrSliceEp;
+use libfabric::iovec::RemoteMemAddrAtomicVec;
 use libfabric::iovec::RemoteMemAddrVec;
 use libfabric::iovec::RemoteMemAddrVecMut;
 use std::cell::RefCell;
@@ -27,7 +28,7 @@ use libfabric::{
         TaggedSendMsgOptions, TferOptions, WriteMsgOptions,
     }, ep::{Address, BaseEndpoint, Endpoint, EndpointBuilder}, eq::{EventQueueBuilder, WaitEq}, error::{Error, ErrorKind}, fabric::FabricBuilder, info::{Info, InfoEntry}, infocapsoptions::{
         AtomicDefaultCap, Caps, CollCap, InfoCaps, MsgDefaultCap, RmaDefaultCap, TagDefaultCap,
-    }, iovec::{IoVec, IoVecMut, Ioc, IocMut, RmaIoc}, mr::{
+    }, iovec::{IoVec, IoVecMut, Ioc, IocMut}, mr::{
         EpBindingMemoryRegion, MemoryRegion, MemoryRegionBuilder,
         MemoryRegionDesc, MemoryRegionKey,
     }, msg::{
@@ -1302,7 +1303,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
 }
 
 impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
-    pub fn write<T>(
+    pub fn write<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: usize,
@@ -1404,7 +1405,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn read<T>(&self, buf: &mut [T], dest_addr: usize, desc: Option<&MemoryRegionDesc>) {
+    pub fn read<T: Copy>(&self, buf: &mut [T], dest_addr: usize, desc: Option<&MemoryRegionDesc>) {
         let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
         let read_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
 
@@ -3193,7 +3194,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
     let mut ctx = ofi.info_entry.allocate_context();
     if server {
         let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
-        let rma_addr = remote_mem_info.slice(..128);
+        let rma_addr = remote_mem_info.slice::<u8>(..128);
         let mut rma_iov = RemoteMemAddrVec::new();
         rma_iov.push(rma_addr);
         let iov = IoVec::from_slice(&reg_mem[..128]);
@@ -3226,7 +3227,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
         let iov = IoVec::from_slice(&reg_mem[..512]);
 
-        let rma_addr = remote_mem_info.slice(..512);
+        let rma_addr = remote_mem_info.slice::<u8>(..512);
         let mut rma_iov = RemoteMemAddrVec::new();
         rma_iov.push(rma_addr);
 
@@ -3260,9 +3261,9 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         let iov0 = IoVec::from_slice(&reg_mem[..512]);
         let iov1 = IoVec::from_slice(&reg_mem[512..1024]);
         let iovs = [iov0, iov1];
-        let rma_addr0 = remote_mem_info.slice(..512);
+        let rma_addr0 = remote_mem_info.slice::<u8>(..512);
 
-        let rma_addr1 = remote_mem_info.slice(512..1024);
+        let rma_addr1 = remote_mem_info.slice::<u8>(512..1024);
 
         let mut rma_iov = RemoteMemAddrVec::new();
         rma_iov.push(rma_addr0);
@@ -3320,7 +3321,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         // let mapped_key  = &remote_mem_info.borrow().key();
         {
             let mut iov = IoVecMut::from_slice(&mut reg_mem[1024..1536]);
-            let rma_addr = remote_mem_info.slice_mut(..);
+            let rma_addr = remote_mem_info.slice_mut::<u8>(..);
             let mut rma_iov = RemoteMemAddrVecMut::new();
             rma_iov.push(rma_addr);
 
@@ -3351,7 +3352,7 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
         // Read vector of buffers from remote memory
         let (mem0, mem1) = reg_mem[1536..].split_at_mut(256);
         let mut iovs = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-        let (rma_addr0, rma_addr1) = remote_mem_info.slice_mut(..512).split_at_mut(256);
+        let (rma_addr0, rma_addr1) = remote_mem_info.slice_mut::<u8>(..512).split_at_mut(256);
 
         let mut rma_iov = RemoteMemAddrVecMut::new();
         rma_iov.push(rma_addr0);
@@ -3609,7 +3610,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
     let key = mr.key().unwrap();
     ofi.exchange_keys(&key, &reg_mem[..]);
     if server {
-        let mut expected: Vec<_> = vec![1; 256];
+        let mut expected: Vec<u64> = vec![1; 256];
         let (op_mem, ack_mem) = reg_mem.split_at_mut(512);
         let (mem0, mem1) = op_mem.split_at_mut(256);
         ofi.fetch_atomic(
@@ -3813,7 +3814,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut ack_mem[..512], desc0.as_ref(), false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
     } else {
-        let mut expected = vec![2u8; 256];
+        let mut expected = vec![2u64; 256];
 
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), false);
@@ -4129,9 +4130,9 @@ fn atomicmsg(server: bool, name: &str, connected: bool) {
             Ioc::from_slice(&reg_mem[..256]),
             Ioc::from_slice(&reg_mem[256..512]),
         ];
-        let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
-        let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
-        let rma_iocs = [rma_ioc0, rma_ioc1];
+        let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+        rma_iocs.push(dst_slice0);
+        rma_iocs.push(dst_slice1);
 
         let msg = if connected {
             Either::Right(MsgAtomicConnected::from_ioc_slice(
@@ -4253,9 +4254,9 @@ fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         let desc0 = Some(mr.descriptor());
         let descs = [mr.descriptor(), mr.descriptor()];
         let res_descs = [mr.descriptor(), mr.descriptor()];
-        let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
-        let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
-        let rma_iocs = [rma_ioc0, rma_ioc1];
+        let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+        rma_iocs.push(dst_slice0);
+        rma_iocs.push(dst_slice1);
 
         let msg = if connected {
             Either::Right(MsgFetchAtomicConnected::from_ioc_slice(
@@ -4384,9 +4385,12 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         let buf_descs = [mr.descriptor(), mr.descriptor()];
         let comp_descs = [mr.descriptor(), mr.descriptor()];
         let res_descs = [mr.descriptor(), mr.descriptor()];
-        let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
-        let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
-        let rma_iocs = [rma_ioc0, rma_ioc1];
+        let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+        rma_iocs.push(dst_slice0);
+        rma_iocs.push(dst_slice1);
+        // let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
+        // let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
+        // let rma_iocs = [rma_ioc0, rma_ioc1];
 
         let msg = if connected {
             Either::Right(MsgCompareAtomicConnected::from_ioc_slice(

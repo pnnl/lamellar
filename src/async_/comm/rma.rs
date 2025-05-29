@@ -23,12 +23,12 @@ use crate::{
 use super::while_try_again;
 
 pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
-    async unsafe fn read_async_impl<T>(
+    async unsafe fn read_async_impl<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -99,12 +99,12 @@ pub trait AsyncReadEp {
     /// Async version of [crate::comm::rma::ReadEp::read_from]
     /// # Safety
     /// See [crate::comm::rma::ReadEp::read_from]
-    unsafe fn read_from_async<T0>(
+    unsafe fn read_from_async<T: Copy>(
         &self,
-        buf: &mut [T0],
+        buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -133,16 +133,16 @@ pub trait AsyncReadRemoteMemAddrSliceEp: AsyncReadEp {
     /// Async version of [crate::comm::rma::ReadEp::read_from]
     /// # Safety
     /// See [crate::comm::rma::ReadEp::read_from]
-    unsafe fn read_slice_from_async<T0>(
+    unsafe fn read_slice_from_async<T: Copy>(
         &self,
-        buf: &mut [T0],
+        buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &MappedAddress,
-        rma_slice: &RemoteMemAddrSlice,
+        rma_slice: &RemoteMemAddrSlice<T>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.read_from_async(
             buf,
             desc,
@@ -161,7 +161,7 @@ pub trait AsyncReadRemoteMemAddrSliceEp: AsyncReadEp {
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &MappedAddress,
-        rma_slice: &RemoteMemAddrSlice,
+        rma_slice: &RemoteMemAddrSlice<u8>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         // assert!(crate::iovec::IoVecMut::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
@@ -189,11 +189,11 @@ pub trait ConnectedAsyncReadEp {
     /// Async version of [crate::comm::rma::ReadEp::read]
     /// # Safety
     /// See [crate::comm::rma::ReadEp::read]
-    unsafe fn read_async<T0>(
+    unsafe fn read_async<T: Copy>(
         &self,
-        buf: &mut [T0],
+        buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -224,14 +224,14 @@ pub trait ConnectedAsyncReadRemoteMemAddrSliceEp: ConnectedAsyncReadEp {
     /// Async version of [crate::comm::rma::ReadEp::read]
     /// # Safety
     /// See [crate::comm::rma::ReadEp::read]
-    unsafe fn read_slice_async<T0>(
+    unsafe fn read_slice_async<T: Copy>(
         &self,
-        buf: &mut [T0],
+        buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_slice: &RemoteMemAddrSlice,
+        rma_slice: &RemoteMemAddrSlice<T>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.read_async(
             buf,
             desc,
@@ -248,7 +248,7 @@ pub trait ConnectedAsyncReadRemoteMemAddrSliceEp: ConnectedAsyncReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_slice: &RemoteMemAddrSlice,
+        rma_slice: &RemoteMemAddrSlice<u8>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         // assert!(crate::iovec::IoVecMut::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
@@ -287,12 +287,12 @@ impl<E: AsyncReadEpImpl> AsyncReadEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncReadEpImpl> AsyncReadEpImpl for EndpointBase<E, Connectionless> {}
 
 impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
-    async unsafe fn read_from_async<T0>(
+    async unsafe fn read_from_async<T: Copy>(
         &self,
-        buf: &mut [T0],
+        buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -323,11 +323,11 @@ impl<EP: AsyncReadEpImpl> AsyncReadEp for EP {
 }
 
 impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
-    async unsafe fn read_async<T0>(
+    async unsafe fn read_async<T: Copy>(
         &self,
-        buf: &mut [T0],
+        buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -357,12 +357,12 @@ impl<EP: AsyncReadEpImpl> ConnectedAsyncReadEp for EP {
 }
 
 pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
-    async unsafe fn write_async_impl<T>(
+    async unsafe fn write_async_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -382,11 +382,11 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         cq.wait_for_ctx_async(ctx).await
     }
 
-    async unsafe fn inject_write_async_impl<T>(
+    async unsafe fn inject_write_async_impl<T: Copy>(
         &self,
         buf: &[T],
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let cq = self.retrieve_tx_cq();
@@ -422,13 +422,13 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async unsafe fn writedata_async_impl<T>(
+    async unsafe fn writedata_async_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -449,12 +449,12 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async unsafe fn inject_writedata_async_impl<T>(
+    async unsafe fn inject_writedata_async_impl<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let cq = self.retrieve_tx_cq();
@@ -493,12 +493,12 @@ pub trait AsyncWriteEp: WriteEp {
     /// Async version of [crate::comm::rma::WriteEp::write_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::write_to]
-    unsafe fn write_to_async<T>(
+    unsafe fn write_to_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -506,11 +506,11 @@ pub trait AsyncWriteEp: WriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_write_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_write_to]
-    unsafe fn inject_write_to_async<T>(
+    unsafe fn inject_write_to_async<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
@@ -539,13 +539,13 @@ pub trait AsyncWriteEp: WriteEp {
     /// Async version of [crate::comm::rma::WriteEp::writedata_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::writedata_to]
-    unsafe fn writedata_to_async<T>(
+    unsafe fn writedata_to_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -553,12 +553,12 @@ pub trait AsyncWriteEp: WriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_writedata_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_writedata_to]
-    unsafe fn inject_writedata_to_async<T>(
+    unsafe fn inject_writedata_to_async<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
@@ -567,15 +567,15 @@ pub trait AsyncWriteRemoteMemAddrSliceEp: AsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::write_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::write_to]
-    unsafe fn write_slice_to_async<T>(
+    unsafe fn write_slice_to_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &MappedAddress,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.write_to_async(
             buf,
             desc,
@@ -589,13 +589,13 @@ pub trait AsyncWriteRemoteMemAddrSliceEp: AsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_write_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_write_to]
-    unsafe fn inject_write_slice_to_async<T>(
+    unsafe fn inject_write_slice_to_async<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: &MappedAddress,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.inject_write_to_async(
             buf,
             dest_addr,
@@ -612,7 +612,7 @@ pub trait AsyncWriteRemoteMemAddrSliceEp: AsyncWriteEp {
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &MappedAddress,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<u8>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         // assert!(crate::iovec::IoVec::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
@@ -640,16 +640,16 @@ pub trait AsyncWriteRemoteMemAddrSliceEp: AsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::writedata_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::writedata_to]
-    unsafe fn writedata_slice_to_async<T>(
+    unsafe fn writedata_slice_to_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &MappedAddress,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.writedata_to_async(
             buf,
             desc,
@@ -664,14 +664,14 @@ pub trait AsyncWriteRemoteMemAddrSliceEp: AsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_writedata_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_writedata_to]
-    unsafe fn inject_writedata_slice_to_async<T>(
+    unsafe fn inject_writedata_slice_to_async<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_addr: &MappedAddress,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.inject_writedata_to_async(
             buf,
             data,
@@ -686,11 +686,11 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::write]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::write]
-    unsafe fn write_async<T>(
+    unsafe fn write_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -698,10 +698,10 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_write]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_write]
-    unsafe fn inject_write_async<T>(
+    unsafe fn inject_write_async<T: Copy>(
         &self,
         buf: &[T],
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
@@ -729,12 +729,12 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::writedata]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::writedata]
-    unsafe fn writedata_async<T>(
+    unsafe fn writedata_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -742,11 +742,11 @@ pub trait ConnectedAsyncWriteEp: ConnectedWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_writedata]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_writedata]
-    unsafe fn inject_writedata_async<T>(
+    unsafe fn inject_writedata_async<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
@@ -755,14 +755,14 @@ pub trait ConnectedAsyncWriteRemoteMemAddrSliceEp: ConnectedAsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::write]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::write]
-    unsafe fn write_slice_async<T>(
+    unsafe fn write_slice_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.write_async(
             buf,
             desc,
@@ -775,12 +775,12 @@ pub trait ConnectedAsyncWriteRemoteMemAddrSliceEp: ConnectedAsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_write]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_write]
-    unsafe fn inject_write_slice_async<T>(
+    unsafe fn inject_write_slice_async<T: Copy>(
         &self,
         buf: &[T],
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.inject_write_async(
             buf,
             rma_slice.mem_address(),
@@ -795,7 +795,7 @@ pub trait ConnectedAsyncWriteRemoteMemAddrSliceEp: ConnectedAsyncWriteEp {
         &self,
         iov: &[crate::iovec::IoVec<'a>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<u8>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         // assert!(crate::iovec::IoVec::total_len(iov) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
@@ -822,15 +822,15 @@ pub trait ConnectedAsyncWriteRemoteMemAddrSliceEp: ConnectedAsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::writedata]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::writedata]
-    unsafe fn writedata_slice_async<T>(
+    unsafe fn writedata_slice_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.writedata_async(
             buf,
             desc,
@@ -844,13 +844,13 @@ pub trait ConnectedAsyncWriteRemoteMemAddrSliceEp: ConnectedAsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::inject_writedata]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::inject_writedata]
-    unsafe fn inject_writedata_slice_async<T>(
+    unsafe fn inject_writedata_slice_async<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
-        rma_slice: &RemoteMemAddrSliceMut,
+        rma_slice: &RemoteMemAddrSliceMut<T>,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        assert!(std::mem::size_of_val(buf) == rma_slice.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_slice.mem_size(), "Source and destination slice sizes do not match");
         self.inject_writedata_async(
             buf,
             data,
@@ -871,12 +871,12 @@ impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl for TxContextImpl<I,
 impl<I: RmaCap + WriteMod, STATE: EpState> AsyncWriteEpImpl for TxContext<I, STATE> {}
 
 impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
-    async unsafe fn write_async_impl<T>(
+    async unsafe fn write_async_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -885,11 +885,11 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
             .await
     }
 
-    async unsafe fn inject_write_async_impl<T>(
+    async unsafe fn inject_write_async_impl<T: Copy>(
         &self,
         buf: &[T],
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -911,13 +911,13 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
             .await
     }
 
-    async unsafe fn writedata_async_impl<T>(
+    async unsafe fn writedata_async_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -926,12 +926,12 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
             .await
     }
 
-    async unsafe fn inject_writedata_async_impl<T>(
+    async unsafe fn inject_writedata_async_impl<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -949,12 +949,12 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connected> {
 }
 
 impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
-    async unsafe fn write_async_impl<T>(
+    async unsafe fn write_async_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -963,11 +963,11 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
             .await
     }
 
-    async unsafe fn inject_write_async_impl<T>(
+    async unsafe fn inject_write_async_impl<T: Copy>(
         &self,
         buf: &[T],
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -989,13 +989,13 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
             .await
     }
 
-    async unsafe fn writedata_async_impl<T>(
+    async unsafe fn writedata_async_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1004,12 +1004,12 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
             .await
     }
 
-    async unsafe fn inject_writedata_async_impl<T>(
+    async unsafe fn inject_writedata_async_impl<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_mapped_addr: Option<&MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inner
@@ -1028,12 +1028,12 @@ impl<E: AsyncWriteEpImpl> AsyncWriteEpImpl for EndpointBase<E, Connectionless> {
 
 impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
     #[inline]
-    async unsafe fn write_to_async<T>(
+    async unsafe fn write_to_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1042,11 +1042,11 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
     }
 
     #[inline]
-    async unsafe fn inject_write_to_async<T>(
+    async unsafe fn inject_write_to_async<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_async_impl(buf, Some(dest_addr), mem_addr, mapped_key)
@@ -1077,13 +1077,13 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
     }
 
     #[inline]
-    async unsafe fn writedata_to_async<T>(
+    async unsafe fn writedata_to_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1092,12 +1092,12 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
     }
 
     #[inline]
-    async unsafe fn inject_writedata_to_async<T>(
+    async unsafe fn inject_writedata_to_async<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_addr: &MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_async_impl(buf, data, Some(dest_addr), mem_addr, mapped_key)
@@ -1107,11 +1107,11 @@ impl<EP: AsyncWriteEpImpl + ConnlessEp> AsyncWriteEp for EP {
 
 impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     #[inline]
-    async unsafe fn write_async<T>(
+    async unsafe fn write_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1120,10 +1120,10 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     }
 
     #[inline]
-    async unsafe fn inject_write_async<T>(
+    async unsafe fn inject_write_async<T: Copy>(
         &self,
         buf: &[T],
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_async_impl(buf, None, mem_addr, mapped_key)
@@ -1153,12 +1153,12 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     }
 
     #[inline]
-    async unsafe fn writedata_async<T>(
+    async unsafe fn writedata_async<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -1167,11 +1167,11 @@ impl<EP: AsyncWriteEpImpl + ConnectedEp> ConnectedAsyncWriteEp for EP {
     }
 
     #[inline]
-    async unsafe fn inject_writedata_async<T>(
+    async unsafe fn inject_writedata_async<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_async_impl(buf, data, None, mem_addr, mapped_key)

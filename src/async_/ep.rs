@@ -9,7 +9,6 @@ use super::{
 use crate::{
     av::AddressVectorBase,
     cq::ReadCq,
-    domain::DomainBase,
     enums::EndpointType,
     ep::{
         Connected, Connectionless, EndpointAttr, EndpointBase, EndpointImplBase, EpCq,

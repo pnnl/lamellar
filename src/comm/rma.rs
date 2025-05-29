@@ -31,12 +31,12 @@ use crate::FI_ADDR_UNSPEC;
 use super::message::extract_raw_addr_and_ctx;
 
 pub(crate) trait ReadEpImpl: AsTypedFid<EpRawFid> {
-    unsafe fn read_impl<T>(
+    unsafe fn read_impl<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -112,12 +112,12 @@ pub trait ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read` without a provided context
-    unsafe fn read_from<T>(
+    unsafe fn read_from<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -130,21 +130,21 @@ pub trait ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read`
-    unsafe fn read_from_with_context<T>(
+    unsafe fn read_from_with_context<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
-    unsafe fn read_from_triggered<T>(
+    unsafe fn read_from_triggered<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -210,14 +210,14 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read` without a provided context
-    unsafe fn read_slice_from<T>(
+    unsafe fn read_slice_from<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<T>,
     ) -> Result<(), crate::error::Error> {
-        assert!(std::mem::size_of_val(buf) == rma_iov.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_iov.mem_size(), "Source and destination slice sizes do not match");
         ReadEp::read_from(self, buf, desc, src_addr, rma_iov.mem_address(), &rma_iov.key())
     }
 
@@ -230,27 +230,27 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read`
-    unsafe fn read_slice_from_with_context<T>(
+    unsafe fn read_slice_from_with_context<T:Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<T>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        assert!(std::mem::size_of_val(buf) == rma_iov.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_iov.mem_size(), "Source and destination slice sizes do not match");
         ReadEp::read_from_with_context(self, buf, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
     }
 
-    unsafe fn read_slice_from_triggered<T>(
+    unsafe fn read_slice_from_triggered<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<T>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        assert!(std::mem::size_of_val(buf) == rma_iov.mem_len(), "Source and destination slice sizes do not match");
+        assert!(std::mem::size_of_val(buf) == rma_iov.mem_size(), "Source and destination slice sizes do not match");
         ReadEp::read_from_triggered(self, buf, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
     }
 
@@ -269,7 +269,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<u8>,
     ) -> Result<(), crate::error::Error> {
         ReadEp::readv_from(self, iov, desc, src_addr, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -288,7 +288,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<u8>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         ReadEp::readv_from_with_context(self, iov, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -299,7 +299,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<u8>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         ReadEp::readv_from_triggered(self, iov, desc, src_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -324,11 +324,11 @@ pub trait ConnectedReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read` with no context and `src_addr` = `FI_ADDR_UNSPEC`
-    unsafe fn read<T>(
+    unsafe fn read<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -341,19 +341,19 @@ pub trait ConnectedReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read` with `src_addr` = `FI_ADDR_UNSPEC`
-    unsafe fn read_with_context<T>(
+    unsafe fn read_with_context<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
-    unsafe fn read_triggered<T>(
+    unsafe fn read_triggered<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -427,11 +427,11 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read` with no context and `src_addr` = `FI_ADDR_UNSPEC`
-    unsafe fn read_slice<T>(
+    unsafe fn read_slice<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<T>,
     ) -> Result<(), crate::error::Error> {
         ConnectedReadEp::read(self, buf, desc, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -445,22 +445,22 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_read` with `src_addr` = `FI_ADDR_UNSPEC`
-    unsafe fn read_slice_with_context<T>(
+    unsafe fn read_slice_with_context<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<T>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         ConnectedReadEp::read_with_context(self, buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
     }
 
 
-    unsafe fn read_slice_triggered<T>(
+    unsafe fn read_slice_triggered<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<T>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         ConnectedReadEp::read_triggered(self, buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -479,7 +479,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<u8>,
     ) -> Result<(), crate::error::Error> {
         ConnectedReadEp::readv(self, iov, desc, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -497,7 +497,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<u8>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         ConnectedReadEp::readv_with_context(self, iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -507,7 +507,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_iov: &RemoteMemAddrSlice,
+        rma_iov: &RemoteMemAddrSlice<u8>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         ConnectedReadEp::readv_triggered(self, iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -533,22 +533,22 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
 
 
 impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
-    unsafe fn read_from<T>(
+    unsafe fn read_from<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.read_impl(buf, desc, Some(src_addr), mem_addr, mapped_key, None)
     }
-    unsafe fn read_from_with_context<T>(
+    unsafe fn read_from_with_context<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -561,12 +561,12 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
             Some(context.inner_mut()),
         )
     }
-    unsafe fn read_from_triggered<T>(
+    unsafe fn read_from_triggered<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -584,7 +584,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<u8>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.readv_impl(iov, desc, Some(src_addr), mem_addr, mapped_key, None)
@@ -594,7 +594,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<u8>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -612,7 +612,7 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         src_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<u8>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -637,21 +637,21 @@ impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
 impl<EP: ReadEp> ReadRemoteMemAddrSliceEp for EP {}
 
 impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
-    unsafe fn read<T>(
+    unsafe fn read<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.read_impl(buf, desc, None, mem_addr, mapped_key, None)
     }
 
-    unsafe fn read_with_context<T>(
+    unsafe fn read_with_context<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -665,11 +665,11 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         )
     }
 
-    unsafe fn read_triggered<T>(
+    unsafe fn read_triggered<T: Copy>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -687,7 +687,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<u8>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.readv_impl(iov, desc, None, mem_addr, mapped_key, None)
@@ -697,7 +697,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<u8>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -715,7 +715,7 @@ impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
         &self,
         iov: &[crate::iovec::IoVecMut],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<u8>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -759,12 +759,12 @@ impl<E: ReadEpImpl> ReadEpImpl for EndpointBase<E, Connected> {}
 impl<E: ReadEpImpl> ReadEpImpl for EndpointBase<E, Connectionless> {}
 
 pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
-    unsafe fn write_impl<T>(
+    unsafe fn write_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -784,11 +784,11 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         check_error(err)
     }
 
-    unsafe fn inject_write_impl<T>(
+    unsafe fn inject_write_impl<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let raw_addr = if let Some(addr) = dest_addr {
@@ -836,13 +836,13 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    unsafe fn writedata_impl<T>(
+    unsafe fn writedata_impl<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -863,12 +863,12 @@ pub(crate) trait WriteEpImpl: AsTypedFid<EpRawFid> {
         check_error(err)
     }
 
-    unsafe fn inject_writedata_impl<T>(
+    unsafe fn inject_writedata_impl<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let raw_addr = if let Some(addr) = dest_addr {
@@ -920,12 +920,12 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` without a provided context
-    unsafe fn write_slice_to<T>(
+    unsafe fn write_slice_to<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.write_to(buf, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -939,12 +939,12 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write`.
-    unsafe fn write_slice_to_with_context<T>(
+    unsafe fn write_slice_to_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.write_to_with_context(buf, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -959,12 +959,12 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write`.
-    unsafe fn write_slice_to_triggered<T>(
+    unsafe fn write_slice_to_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.write_to_triggered(buf, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -975,11 +975,11 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject`.
-    unsafe fn inject_write_slice_to<T>(
+    unsafe fn inject_write_slice_to<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_to(buf, dest_addr, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -989,12 +989,12 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject_writedata`.
-    unsafe fn inject_writedata_slice_to<T>(
+    unsafe fn inject_writedata_slice_to<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_to(buf, data, dest_addr, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1013,7 +1013,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<u8>,
     ) -> Result<(), crate::error::Error> {
         self.writev_to(iov, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1032,7 +1032,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<u8>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.writev_to_with_context(iov, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1052,7 +1052,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<u8>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.writev_to_triggered(iov, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1063,13 +1063,13 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` without providing a context.
-    unsafe fn writedata_slice_to<T>(
+    unsafe fn writedata_slice_to<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.writedata_to(buf, desc, data, dest_addr, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1080,13 +1080,13 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     ///  
     /// Equivalent to `fi_writedata` .
     #[allow(clippy::too_many_arguments)]
-    unsafe fn writedata_slice_to_with_context<T>(
+    unsafe fn writedata_slice_to_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.writedata_to_with_context(buf, desc, data, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1098,13 +1098,13 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
     ///  
     /// Equivalent to `fi_writedata` .
     #[allow(clippy::too_many_arguments)]
-    unsafe fn writedata_slice_to_triggered<T>(
+    unsafe fn writedata_slice_to_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.writedata_to_triggered(buf, desc, data, dest_addr, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1129,12 +1129,12 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` without a provided context
-    unsafe fn write_to<T>(
+    unsafe fn write_to<T:Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1147,12 +1147,12 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write`.
-    unsafe fn write_to_with_context<T>(
+    unsafe fn write_to_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1166,12 +1166,12 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write`.
-    unsafe fn write_to_triggered<T>(
+    unsafe fn write_to_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1181,11 +1181,11 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject`.
-    unsafe fn inject_write_to<T>(
+    unsafe fn inject_write_to<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1194,12 +1194,12 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject_writedata`.
-    unsafe fn inject_writedata_to<T>(
+    unsafe fn inject_writedata_to<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1264,13 +1264,13 @@ pub trait WriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` without providing a context.
-    unsafe fn writedata_to<T>(
+    unsafe fn writedata_to<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1280,13 +1280,13 @@ pub trait WriteEp {
     ///  
     /// Equivalent to `fi_writedata` .
     #[allow(clippy::too_many_arguments)]
-    unsafe fn writedata_to_with_context<T>(
+    unsafe fn writedata_to_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1297,13 +1297,13 @@ pub trait WriteEp {
     ///  
     /// Equivalent to `fi_writedata` .
     #[allow(clippy::too_many_arguments)]
-    unsafe fn writedata_to_triggered<T>(
+    unsafe fn writedata_to_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1325,11 +1325,11 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` with dest_addr = FI_ADDR_UNSPEC and no context.
-    unsafe fn write<T>(
+    unsafe fn write<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1342,11 +1342,11 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn write_with_context<T>(
+    unsafe fn write_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1360,11 +1360,11 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn write_triggered<T>(
+    unsafe fn write_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1374,10 +1374,10 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn inject_write<T>(
+    unsafe fn inject_write<T: Copy>(
         &self,
         buf: &[T],
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1386,11 +1386,11 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject_writedata` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn inject_writedata<T>(
+    unsafe fn inject_writedata<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1452,12 +1452,12 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` with no context and `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn writedata<T>(
+    unsafe fn writedata<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error>;
 
@@ -1466,12 +1466,12 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn writedata_with_context<T>(
+    unsafe fn writedata_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -1481,12 +1481,12 @@ pub trait ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn writedata_triggered<T>(
+    unsafe fn writedata_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -1517,11 +1517,11 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` with dest_addr = FI_ADDR_UNSPEC and no context.
-    unsafe fn write_slice<T>(
+    unsafe fn write_slice<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.write(buf, desc, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1535,11 +1535,11 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn write_slice_with_context<T>(
+    unsafe fn write_slice_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.write_with_context(buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1554,11 +1554,11 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_write` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn write_slice_triggered<T>(
+    unsafe fn write_slice_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.write_triggered(buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1569,10 +1569,10 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn inject_write_slice<T>(
+    unsafe fn inject_write_slice<T: Copy>(
         &self,
         buf: &[T],
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.inject_write(buf, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1582,11 +1582,11 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_inject_writedata` with `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn inject_writedata_slice<T>(
+    unsafe fn inject_writedata_slice<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata(buf, data, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1604,7 +1604,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<u8>,
     ) -> Result<(), crate::error::Error> {
         self.writev(iov, desc, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1622,7 +1622,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<u8>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.writev_with_context(iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1641,7 +1641,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         &self,
         iov: &[crate::iovec::IoVec],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<u8>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.writev_triggered(iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1652,12 +1652,12 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` with no context and `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn writedata_slice<T>(
+    unsafe fn writedata_slice<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
         self.writedata(buf, desc, data, rma_iov.mem_address(), &rma_iov.key())
     }
@@ -1667,12 +1667,12 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn writedata_slice_with_context<T>(
+    unsafe fn writedata_slice_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
         self.writedata_with_context(buf, desc, data, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1683,12 +1683,12 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     /// to be valid
     ///  
     /// Equivalent to `fi_writedata` `dest_addr` = `FI_ADDR_UNSPEC`.
-    unsafe fn writedata_slice_triggered<T>(
+    unsafe fn writedata_slice_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        rma_iov: &RemoteMemAddrSliceMut,
+        rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
         self.writedata_triggered(buf, desc, data, rma_iov.mem_address(), &rma_iov.key(), context)
@@ -1714,23 +1714,23 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
 
 impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     #[inline]
-    unsafe fn write_to<T>(
+    unsafe fn write_to<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.write_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, None)
     }
     #[inline]
-    unsafe fn write_to_with_context<T>(
+    unsafe fn write_to_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1744,12 +1744,12 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
         )
     }
     #[inline]
-    unsafe fn write_to_triggered<T>(
+    unsafe fn write_to_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1764,11 +1764,11 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     }
 
     #[inline]
-    unsafe fn inject_write_to<T>(
+    unsafe fn inject_write_to<T: Copy>(
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_impl(buf, Some(dest_addr), mem_addr, mapped_key)
@@ -1825,26 +1825,26 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     }
 
     #[inline]
-    unsafe fn writedata_to<T>(
+    unsafe fn writedata_to<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.writedata_impl(buf, desc, data, Some(dest_addr), mem_addr, mapped_key, None)
     }
 
     #[inline]
-    unsafe fn writedata_to_with_context<T>(
+    unsafe fn writedata_to_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1860,13 +1860,13 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     }
 
     #[inline]
-    unsafe fn writedata_to_triggered<T>(
+    unsafe fn writedata_to_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1882,12 +1882,12 @@ impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     }
 
     #[inline]
-    unsafe fn inject_writedata_to<T>(
+    unsafe fn inject_writedata_to<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_impl(buf, data, Some(dest_addr), mem_addr, mapped_key)
@@ -1907,22 +1907,22 @@ impl<EP: WriteEp> WriteRemoteMemAddrSliceEp for EP {}
 
 impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     #[inline]
-    unsafe fn write<T>(
+    unsafe fn write<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.write_impl(buf, desc, None, mem_addr, mapped_key, None)
     }
 
     #[inline]
-    unsafe fn write_with_context<T>(
+    unsafe fn write_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1937,11 +1937,11 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     }
 
     #[inline]
-    unsafe fn write_triggered<T>(
+    unsafe fn write_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1956,10 +1956,10 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     }
 
     #[inline]
-    unsafe fn inject_write<T>(
+    unsafe fn inject_write<T: Copy>(
         &self,
         buf: &[T],
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_write_impl(buf, None, mem_addr, mapped_key)
@@ -2015,24 +2015,24 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     }
 
     #[inline]
-    unsafe fn writedata<T>(
+    unsafe fn writedata<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.writedata_impl(buf, desc, data, None, mem_addr, mapped_key, None)
     }
 
     #[inline]
-    unsafe fn writedata_with_context<T>(
+    unsafe fn writedata_with_context<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -2048,12 +2048,12 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     }
 
     #[inline]
-    unsafe fn writedata_triggered<T>(
+    unsafe fn writedata_triggered<T: Copy>(
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -2069,11 +2069,11 @@ impl<EP: WriteEpImpl + ConnectedEp> ConnectedWriteEp for EP {
     }
 
     #[inline]
-    unsafe fn inject_writedata<T>(
+    unsafe fn inject_writedata<T: Copy>(
         &self,
         buf: &[T],
         data: u64,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         self.inject_writedata_impl(buf, data, None, mem_addr, mapped_key)

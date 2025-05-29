@@ -39,7 +39,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: Option<*mut std::ffi::c_void>,
@@ -68,7 +68,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: Option<*mut std::ffi::c_void>,
@@ -116,7 +116,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         &self,
         buf: &[T],
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -147,7 +147,7 @@ pub trait AtomicWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -157,7 +157,7 @@ pub trait AtomicWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -168,7 +168,7 @@ pub trait AtomicWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -179,7 +179,7 @@ pub trait AtomicWriteEp {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -189,7 +189,7 @@ pub trait AtomicWriteEp {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -200,7 +200,7 @@ pub trait AtomicWriteEp {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -214,7 +214,7 @@ pub trait AtomicWriteEp {
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -225,7 +225,7 @@ pub trait ConnectedAtomicWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -233,7 +233,7 @@ pub trait ConnectedAtomicWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -242,7 +242,7 @@ pub trait ConnectedAtomicWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -251,7 +251,7 @@ pub trait ConnectedAtomicWriteEp {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -259,7 +259,7 @@ pub trait ConnectedAtomicWriteEp {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -268,7 +268,7 @@ pub trait ConnectedAtomicWriteEp {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -281,7 +281,7 @@ pub trait ConnectedAtomicWriteEp {
     unsafe fn inject_atomic<T: AsFiType>(
         &self,
         buf: &[T],
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -293,10 +293,10 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.atomic_to(
             buf,
             desc,
@@ -312,11 +312,11 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.atomic_to_with_context(
             buf,
             desc,
@@ -334,12 +334,12 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
 
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.atomic_to_triggered(
             buf,
             desc,
@@ -357,7 +357,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
@@ -377,7 +377,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -399,7 +399,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -428,10 +428,10 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.inject_atomic_to(
             buf,
             dest_addr,
@@ -447,10 +447,10 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.atomic(
             buf,
             desc,
@@ -464,11 +464,11 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.atomic_with_context(
             buf,
             desc,
@@ -483,11 +483,11 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.atomic_triggered(
             buf,
             desc,
@@ -502,7 +502,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
@@ -519,7 +519,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -538,7 +538,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -565,10 +565,10 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
     unsafe fn inject_atomic_slice<T: AsFiType>(
         &self,
         buf: &[T],
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.inject_atomic(
             buf,
             dest_slice.mem_address(),
@@ -587,7 +587,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -600,7 +600,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -622,7 +622,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -644,7 +644,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -657,7 +657,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -679,7 +679,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -709,7 +709,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         &self,
         buf: &[T],
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -724,7 +724,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -737,7 +737,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -759,7 +759,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         &self,
         buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -781,7 +781,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -794,7 +794,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -816,7 +816,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -845,7 +845,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
     unsafe fn inject_atomic<T: AsFiType>(
         &self,
         buf: &[T],
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -883,7 +883,7 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: Option<*mut std::ffi::c_void>,
@@ -916,7 +916,7 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: Option<*mut std::ffi::c_void>,
@@ -977,7 +977,7 @@ pub trait AtomicFetchEp {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -989,7 +989,7 @@ pub trait AtomicFetchEp {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1002,7 +1002,7 @@ pub trait AtomicFetchEp {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1015,7 +1015,7 @@ pub trait AtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -1027,7 +1027,7 @@ pub trait AtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1040,7 +1040,7 @@ pub trait AtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1061,7 +1061,7 @@ pub trait ConnectedAtomicFetchEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -1072,7 +1072,7 @@ pub trait ConnectedAtomicFetchEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1084,7 +1084,7 @@ pub trait ConnectedAtomicFetchEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1096,7 +1096,7 @@ pub trait ConnectedAtomicFetchEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -1107,7 +1107,7 @@ pub trait ConnectedAtomicFetchEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1119,7 +1119,7 @@ pub trait ConnectedAtomicFetchEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1142,7 +1142,7 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -1166,7 +1166,7 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1191,7 +1191,7 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1216,7 +1216,7 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -1240,7 +1240,7 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1265,7 +1265,7 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1300,7 +1300,7 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -1316,7 +1316,7 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1341,7 +1341,7 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1366,7 +1366,7 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -1382,7 +1382,7 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1407,7 +1407,7 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1446,11 +1446,11 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(res));
         self.fetch_atomic_from(
             buf,
             desc,
@@ -1471,12 +1471,12 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(res));
         self.fetch_atomic_from_with_context(
             buf,
             desc,
@@ -1498,12 +1498,12 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(res));
         self.fetch_atomic_from_triggered(
             buf,
             desc,
@@ -1525,7 +1525,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
         // Optionally, you can check total length of ioc/resultv matches src_slice.mem_len()
@@ -1549,7 +1549,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1574,7 +1574,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1613,11 +1613,11 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(res));
         self.fetch_atomic(
             buf,
             desc,
@@ -1636,12 +1636,12 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(res));
         self.fetch_atomic_with_context(
             buf,
             desc,
@@ -1661,12 +1661,12 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         res: &mut [T],
         res_desc: Option<&MemoryRegionDesc<'_>>,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        assert!(src_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(src_slice.mem_len() == std::mem::size_of_val(res));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(src_slice.mem_size() == std::mem::size_of_val(res));
         self.fetch_atomic_triggered(
             buf,
             desc,
@@ -1686,7 +1686,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
         // Optionally, you can check total length of ioc/resultv matches src_slice.mem_len()
@@ -1708,7 +1708,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1731,7 +1731,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        src_slice: &RemoteMemAddrSlice,
+        src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1791,7 +1791,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: Option<*mut std::ffi::c_void>,
@@ -1828,7 +1828,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: Option<&crate::MappedAddress>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: Option<*mut std::ffi::c_void>,
@@ -1901,7 +1901,7 @@ pub trait AtomicCASEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -1916,7 +1916,7 @@ pub trait AtomicCASEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -1932,7 +1932,7 @@ pub trait AtomicCASEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -1948,7 +1948,7 @@ pub trait AtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -1963,7 +1963,7 @@ pub trait AtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -1979,7 +1979,7 @@ pub trait AtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -2007,7 +2007,7 @@ pub trait ConnectedAtomicCASEp {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -2021,7 +2021,7 @@ pub trait ConnectedAtomicCASEp {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -2036,7 +2036,7 @@ pub trait ConnectedAtomicCASEp {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -2051,7 +2051,7 @@ pub trait ConnectedAtomicCASEp {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error>;
@@ -2065,7 +2065,7 @@ pub trait ConnectedAtomicCASEp {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -2080,7 +2080,7 @@ pub trait ConnectedAtomicCASEp {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -2110,7 +2110,7 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -2140,7 +2140,7 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -2171,7 +2171,7 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -2202,7 +2202,7 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -2232,7 +2232,7 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -2263,7 +2263,7 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -2316,7 +2316,7 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -2345,7 +2345,7 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -2375,7 +2375,7 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -2405,7 +2405,7 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -2434,7 +2434,7 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -2464,7 +2464,7 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        mem_addr: RemoteMemoryAddress,
+        mem_addr: RemoteMemoryAddress<T>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
@@ -2517,12 +2517,12 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(result));
         self.compare_atomic_to(
             buf,
             desc,
@@ -2547,13 +2547,13 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(result));
         self.compare_atomic_to_with_context(
             buf,
             desc,
@@ -2579,13 +2579,13 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(result));
         self.compare_atomic_to_triggered(
             buf,
             desc,
@@ -2611,7 +2611,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
         // Optionally, check lengths of ioc/comparetv/resultv match dest_slice.mem_len()
@@ -2639,7 +2639,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -2668,7 +2668,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -2714,12 +2714,12 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(result));
         self.compare_atomic(
             buf,
             desc,
@@ -2742,13 +2742,13 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(result));
         self.compare_atomic_with_context(
             buf,
             desc,
@@ -2772,13 +2772,13 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
         compare_desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(buf));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(compare));
-        assert!(dest_slice.mem_len() == std::mem::size_of_val(result));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(compare));
+        assert!(dest_slice.mem_size() == std::mem::size_of_val(result));
         self.compare_atomic_triggered(
             buf,
             desc,
@@ -2802,7 +2802,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
         // Optionally, check lengths of ioc/comparetv/resultv match dest_slice.mem_len()
@@ -2828,7 +2828,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -2855,7 +2855,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
         compare_desc: Option<&[MemoryRegionDesc<'_>]>,
         resultv: &mut [crate::iovec::IocMut<T>],
         res_desc: Option<&[MemoryRegionDesc<'_>]>,
-        dest_slice: &RemoteMemAddrSliceMut,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {

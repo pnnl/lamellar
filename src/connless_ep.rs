@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    av::AddressVectorBase, cq::ReadCq, ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless}, eq::ReadEq, fid::{AsRawTypedFid, AsTypedFid, EpRawFid}, utils::check_error
+    av::AddressVectorBase, cq::ReadCq, ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless}, eq::ReadEq, fid::{AsRawTypedFid, AsTypedFid}, utils::check_error
 };
 
 pub type UninitConnectionlessEndpointBase<EP> = EndpointBase<EP, UninitConnectionless>;

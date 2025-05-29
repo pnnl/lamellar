@@ -24,7 +24,7 @@ struct ClosureWrapper {
 unsafe extern "C" fn prof_callback<'a>(
     fid: *mut libfabric_sys::fid_profile,
     desc: *mut libfabric_sys::fi_profile_desc,
-    data: *mut c_void,
+    _data: *mut c_void,
     size: usize,
     ctx: *mut c_void,
 ) -> i32 {

@@ -1,7 +1,5 @@
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_ofi {
-
-    use std::borrow::BorrowMut;
     use std::cell::RefCell;
 
     use libfabric::async_::comm::atomic::AsyncAtomicCASEp;
@@ -38,9 +36,9 @@ pub mod async_ofi {
     use libfabric::infocapsoptions::InfoCaps;
     use libfabric::iovec::Ioc;
     use libfabric::iovec::IocMut;
+    use libfabric::iovec::RemoteMemAddrAtomicVec;
     use libfabric::iovec::RemoteMemAddrVec;
     use libfabric::iovec::RemoteMemAddrVecMut;
-    use libfabric::iovec::RmaIoc;
     use libfabric::mr::EpBindingMemoryRegion;
     use libfabric::mr::MemoryRegionDesc;
     use libfabric::mr::MemoryRegionKey;
@@ -421,7 +419,7 @@ pub mod async_ofi {
     }
 
     impl<I: TagDefaultCap> Ofi<I> {
-        pub fn tsend<T>(
+        pub fn tsend<T:Copy>(
             &self,
             buf: &[T],
             desc: Option<&MemoryRegionDesc>,
@@ -536,7 +534,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn trecv<T>(
+        pub fn trecv<T:Copy>(
             &self,
             buf: &mut [T],
             desc: Option<&MemoryRegionDesc>,
@@ -602,7 +600,7 @@ pub mod async_ofi {
     }
 
     impl<I: MsgDefaultCap + 'static> Ofi<I> {
-        pub fn send<T>(
+        pub fn send<T:Copy>(
             &self,
             buf: &[T],
             desc: Option<&MemoryRegionDesc>,
@@ -703,7 +701,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn recv<T>(
+        pub fn recv<T:Copy>(
             &self,
             buf: &mut [T],
             desc: Option<&MemoryRegionDesc>,
@@ -822,7 +820,7 @@ pub mod async_ofi {
     }
 
     impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
-        pub fn write<T>(
+        pub fn write<T:Copy>(
             &self,
             buf: &[T],
             dest_addr: usize,
@@ -935,7 +933,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn read<T>(
+        pub fn read<T:Copy>(
             &self,
             buf: &mut [T],
             dest_addr: usize,
@@ -983,7 +981,7 @@ pub mod async_ofi {
             ctx: &mut Context,
         ) {
             let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
-            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
+            let dst_slice = remote_mem_info.slice_mut::<u8>(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
@@ -1022,7 +1020,7 @@ pub mod async_ofi {
             ctx: &mut Context,
         ) {
             let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
+            let src_slice = remote_mem_info.slice::<u8>(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
             
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
@@ -2595,7 +2593,7 @@ pub mod async_ofi {
         let mut ctx = ofi.info_entry.allocate_context();
         if server {
             let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
-            let rma_addr = remote_mem_info.slice(..128);
+            let rma_addr = remote_mem_info.slice::<u8>(..128);
             let iov = IoVec::from_slice(&reg_mem[..128]);
             let mut rma_iov = RemoteMemAddrVec::new();
             rma_iov.push(rma_addr);
@@ -2627,7 +2625,7 @@ pub mod async_ofi {
             ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
 
             let iov = IoVec::from_slice(&reg_mem[..512]);
-            let rma_addr = remote_mem_info.slice(..512);
+            let rma_addr = remote_mem_info.slice::<u8>(..512);
             let mut rma_iov = RemoteMemAddrVec::new();
             rma_iov.push(rma_addr);
 
@@ -2659,8 +2657,8 @@ pub mod async_ofi {
             let iov0 = IoVec::from_slice(&reg_mem[..512]);
             let iov1 = IoVec::from_slice(&reg_mem[512..1024]);
             let iovs = [iov0, iov1];
-            let rma_addr0 = remote_mem_info.slice(..512);
-            let rma_addr1 = remote_mem_info.slice(512..1024);
+            let rma_addr0 = remote_mem_info.slice::<u8>(..512);
+            let rma_addr1 = remote_mem_info.slice::<u8>(512..1024);
             let mut rma_iov = RemoteMemAddrVec::new();
             rma_iov.push(rma_addr0);
             rma_iov.push(rma_addr1);
@@ -2711,7 +2709,7 @@ pub mod async_ofi {
             // let base_addr = remote_mem_info.mem_address();
             {
                 let mut iov = IoVecMut::from_slice(&mut reg_mem[1024..1536]);
-                let rma_addr = remote_mem_info.slice_mut(..512);
+                let rma_addr = remote_mem_info.slice_mut::<u8>(..512);
                 let mut rma_iov = RemoteMemAddrVecMut::new();
                 rma_iov.push(rma_addr);
 
@@ -2745,7 +2743,7 @@ pub mod async_ofi {
             // // Read vector of buffers from remote memory
             let (mem0, mem1) = reg_mem[1536..].split_at_mut(256);
             let mut iovs = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-            let (rma_addr0, rma_addr1) = remote_mem_info.slice_mut(..512).split_at_mut(256);
+            let (rma_addr0, rma_addr1) = remote_mem_info.slice_mut::<u8>(..512).split_at_mut(256);
             let mut rma_iov = RemoteMemAddrVecMut::new();
             rma_iov.push(rma_addr0);
             rma_iov.push(rma_addr1);
@@ -3505,7 +3503,7 @@ pub mod async_ofi {
         let key = mr.key().unwrap();
         ofi.exchange_keys(&key, &reg_mem[..]);
         let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
-        let (dst_slice0, dst_slice1) = remote_mem_info.slice(..512).split_at(256);
+        let (dst_slice0, dst_slice1) = remote_mem_info.slice::<u8>(..512).split_at(256);
 
         let mut ctx = ofi.info_entry.allocate_context();
 
@@ -3514,9 +3512,9 @@ pub mod async_ofi {
                 Ioc::from_slice(&reg_mem[..256]),
                 Ioc::from_slice(&reg_mem[256..512]),
             ];
-            let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
-            let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
-            let rma_iocs = [rma_ioc0, rma_ioc1];
+            let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+            rma_iocs.push(dst_slice0);
+            rma_iocs.push(dst_slice1);
 
             let mut msg = if connected {
                 Either::Right(MsgAtomicConnected::from_ioc_slice(
@@ -3612,7 +3610,7 @@ pub mod async_ofi {
         let key = mr.key().unwrap();
         ofi.exchange_keys(&key, &reg_mem[..]);
         let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
-        let (dst_slice0, dst_slice1) = remote_mem_info.slice(..256).split_at(128);
+        let (dst_slice0, dst_slice1) = remote_mem_info.slice::<u8>(..256).split_at(128);
         // let base_addr = remote_mem_info.mem_address();
         // let key = &remote_mem_info.key();
         let mut ctx = ofi.info_entry.allocate_context();
@@ -3635,9 +3633,10 @@ pub mod async_ofi {
             let desc0 = Some(mr.descriptor());
             let descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
-            let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
-            let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
-            let rma_iocs = [rma_ioc0, rma_ioc1];
+            let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+            rma_iocs.push(dst_slice0);
+            rma_iocs.push(dst_slice1);
+
 
             let mut msg = if connected {
                 Either::Right(MsgFetchAtomicConnected::from_ioc_slice(
@@ -3741,7 +3740,7 @@ pub mod async_ofi {
         let key = mr.key().unwrap();
         ofi.exchange_keys(&key, &reg_mem[..]);
         let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
-        let (dst_slice0, dst_slice1) = remote_mem_info.slice(..256).split_at(128);
+        let (dst_slice0, dst_slice1) = remote_mem_info.slice::<u8>(..256).split_at(128);
         // let base_addr = remote_mem_info.mem_address();
         // let key = &remote_mem_info.key();
         let mut ctx = ofi.info_entry.allocate_context();
@@ -3764,9 +3763,9 @@ pub mod async_ofi {
             let buf_descs = [mr.descriptor(), mr.descriptor()];
             let comp_descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
-            let rma_ioc0 = RmaIoc::from_slice(&dst_slice0);
-            let rma_ioc1 = RmaIoc::from_slice(&dst_slice1);
-            let rma_iocs = [rma_ioc0, rma_ioc1];
+            let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+            rma_iocs.push(dst_slice0);
+            rma_iocs.push(dst_slice1);
 
             let mut msg = if connected {
                 Either::Right(MsgCompareAtomicConnected::from_ioc_slice(
