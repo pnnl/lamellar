@@ -393,7 +393,7 @@ impl<'a, T: Copy> RemoteMemAddrSliceMut<'a, T> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RemoteMemAddressInfo {
     mem_address: RemoteMemoryAddress,
     len: usize,
