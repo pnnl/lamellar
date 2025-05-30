@@ -110,6 +110,10 @@ impl<T: Copy> RemoteMemoryAddress<T> {
         Self {raw_mem_addr}
     }
 
+    pub fn from_raw(raw_mem_addr: *const T) -> Self {
+        Self {raw_mem_addr}
+    }
+
     pub unsafe fn add(&self, offset: usize) -> Self {
         Self {
             raw_mem_addr: unsafe {self.raw_mem_addr.add(offset) }
