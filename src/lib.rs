@@ -127,6 +127,14 @@ impl<T: Copy> RemoteMemoryAddress<T> {
             raw_mem_addr: unsafe {self.raw_mem_addr.offset(offset) }
         }
     }
+
+    pub unsafe fn offset_from(&self, origin: &RemoteMemoryAddress<T>) -> isize {
+        unsafe {self.raw_mem_addr.offset_from(origin.raw_mem_addr)}
+    }
+
+    pub fn as_ptr(&self) -> *const T {
+        self.raw_mem_addr
+    }
 }
 
 impl<T> Eq for RemoteMemoryAddress<T> {}
