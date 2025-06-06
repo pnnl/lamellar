@@ -112,6 +112,7 @@ impl MemoryRegionImpl {
                     if c_desc.is_null() {
                         panic!("Got nullptr for MemoryRegion descriptor");
                     }
+
                     return Ok((
                         res,
                         Self {
@@ -175,6 +176,7 @@ impl MemoryRegionImpl {
 
                     let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
 
+
                     return Ok((
                         res,
                         Self {
@@ -224,6 +226,7 @@ impl MemoryRegion {
             event,
             Self {
                 inner: MyRc::new(mr),
+                backing_buffer_range : (buf.as_ptr() as usize, std::mem::size_of_val(buf)),
             },
         ))
     }
@@ -236,13 +239,17 @@ impl MemoryRegion {
         ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
         // [TODO] Add context version
+        let backing_buffer_range = (unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_base as usize, unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_len); 
         let (event, mr) =
             MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags, ctx).await?;
+        
         Ok((
             event,
             Self {
                 inner: MyRc::new(mr),
+                backing_buffer_range
             },
+            
         ))
     }
 
@@ -264,10 +271,13 @@ impl MemoryRegion {
             ctx,
         )
         .await?;
+        let backing_buffer_range = (iov[0].get().iov_base as usize, iov[0].get().iov_len);
+        
         Ok((
             event,
             Self {
                 inner: MyRc::new(mr),
+                backing_buffer_range,
             },
         ))
     }

@@ -347,7 +347,7 @@ pub mod async_ofi {
 
                             async_std::task::block_on(ep.recv_from_any_async(
                                 &mut reg_mem[..addrlen],
-                                mr_desc.as_ref(),
+                                mr_desc.clone(),
                                 &mut ctx,
                             ))
                             .unwrap();
@@ -372,7 +372,7 @@ pub mod async_ofi {
 
                             async_std::task::block_on(ep.send_to_async(
                                 &std::slice::from_ref(&reg_mem[0]),
-                                mr_desc.as_ref(),
+                                mr_desc,
                                 &mapped_addresses[1],
                                 &mut ctx,
                             ))
@@ -464,7 +464,7 @@ pub mod async_ofi {
         pub fn tsend<T: Copy>(
             &self,
             buf: &[T],
-            desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
             tag: u64,
             data: Option<u64>,
             ctx: &mut Context,
@@ -589,7 +589,7 @@ pub mod async_ofi {
         pub fn trecv<T: Copy>(
             &self,
             buf: &mut [T],
-            desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
             tag: u64,
             ctx: &mut Context,
         ) {
@@ -655,7 +655,7 @@ pub mod async_ofi {
         pub fn send<T: Copy>(
             &self,
             buf: &[T],
-            desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
             data: Option<u64>,
             ctx: &mut Context,
         ) {
@@ -833,7 +833,7 @@ pub mod async_ofi {
         pub fn recv<T: Copy>(
             &self,
             buf: &mut [T],
-            desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
             ctx: &mut Context,
         ) {
             async_std::task::block_on(async {
@@ -935,8 +935,17 @@ pub mod async_ofi {
             let mut ctx = self.info_entry.allocate_context();
 
             let desc = Some(mr.descriptor());
-            self.send(&mem_bytes, desc.as_ref(), None, &mut ctx);
-            self.recv(&mut mem_bytes, desc.as_ref(), &mut ctx);
+            self.send(
+                &mem_bytes,
+                desc,
+                None,
+                &mut ctx,
+            );
+            self.recv(
+                &mut mem_bytes,
+                desc,
+                &mut ctx,
+            );
 
             let mem_info = unsafe { MemAddressInfo::from_bytes(&mem_bytes) };
             let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
@@ -949,7 +958,7 @@ pub mod async_ofi {
             &self,
             buf: &[T],
             dest_addr: usize,
-            desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
             data: Option<u64>,
             ctx: &mut Context,
         ) {
@@ -1044,7 +1053,7 @@ pub mod async_ofi {
             &self,
             buf: &mut [T],
             dest_addr: usize,
-            desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
             ctx: &mut Context,
         ) {
             let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
@@ -1201,7 +1210,7 @@ pub mod async_ofi {
             &self,
             buf: &[T],
             dest_addr: usize,
-            desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
             op: AtomicOp,
             ctx: &mut Context,
         ) {
@@ -1311,8 +1320,8 @@ pub mod async_ofi {
             buf: &[T],
             res: &mut [T],
             dest_addr: usize,
-            desc: Option<&MemoryRegionDesc>,
-            res_desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
+            res_desc: Option<MemoryRegionDesc>,
             op: FetchAtomicOp,
             ctx: &mut Context,
         ) {
@@ -1418,9 +1427,9 @@ pub mod async_ofi {
             comp: &[T],
             res: &mut [T],
             dest_addr: usize,
-            desc: Option<&MemoryRegionDesc>,
-            comp_desc: Option<&MemoryRegionDesc>,
-            res_desc: Option<&MemoryRegionDesc>,
+            desc: Option<MemoryRegionDesc>,
+            comp_desc: Option<MemoryRegionDesc>,
+            res_desc: Option<MemoryRegionDesc>,
             op: CompareAtomicOp,
             ctx: &mut Context,
         ) {
@@ -1700,13 +1709,13 @@ pub mod async_ofi {
 
         if server {
             // Send a single buffer
-            ofi.send(&reg_mem[..512], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[..512], desc0, None, &mut ctx);
             assert!(
                 std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size()
             );
 
             // Inject a buffer
-            ofi.send(&reg_mem[..128], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[..128], desc0, None, &mut ctx);
             // No cq.sread since inject does not generate completions
 
             // // Send single Iov
@@ -1727,12 +1736,12 @@ pub mod async_ofi {
             reg_mem.iter_mut().for_each(|v| *v = 0);
 
             // Receive a single buffer
-            ofi.recv(&mut reg_mem[..512], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[..512], desc0.clone(), &mut ctx);
             assert_eq!(reg_mem[..512], expected[..512]);
 
             // Receive inject
             reg_mem.iter_mut().for_each(|v| *v = 0);
-            ofi.recv(&mut reg_mem[..128], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[..128], desc0.clone(), &mut ctx);
             assert_eq!(reg_mem[..128], expected[..128]);
 
             reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -1875,7 +1884,7 @@ pub mod async_ofi {
         let mut ctx = ofi.info_entry.allocate_context();
         if server {
             // Send a single buffer
-            ofi.send(&reg_mem[..512], desc0.as_ref(), data, &mut ctx);
+            ofi.send(&reg_mem[..512], desc0, data, &mut ctx);
         } else {
             let expected: Vec<_> = (0..1024 * 2)
                 .into_iter()
@@ -1884,7 +1893,7 @@ pub mod async_ofi {
             reg_mem.iter_mut().for_each(|v| *v = 0);
 
             // Receive a single buffer
-            ofi.recv(&mut reg_mem[..512], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[..512], desc0, &mut ctx);
             assert_eq!(reg_mem[..512], expected[..512]);
         }
     }
@@ -1952,7 +1961,7 @@ pub mod async_ofi {
 
         if server {
             // Send a single buffer
-            ofi.tsend(&reg_mem[..512], desc0.as_ref(), 10, data, &mut ctx);
+            ofi.tsend(&reg_mem[..512], desc0, 10, data, &mut ctx);
             // match entry {
             //     Completion::Tagged(entry) => {assert_eq!(entry[0].data(), data.unwrap()); assert_eq!(entry[0].tag(), 10)},
             //     _ => panic!("Unexpected CQ entry format"),
@@ -1963,7 +1972,7 @@ pub mod async_ofi {
             );
 
             // Inject a buffer
-            ofi.tsend(&reg_mem[..128], desc0.as_ref(), 1, data, &mut ctx);
+            ofi.tsend(&reg_mem[..128], desc0, 1, data, &mut ctx);
             // No cq.sread since inject does not generate completions
 
             // // Send single Iov
@@ -1984,13 +1993,13 @@ pub mod async_ofi {
             reg_mem.iter_mut().for_each(|v| *v = 0);
 
             // Receive a single buffer
-            ofi.trecv(&mut reg_mem[..512], desc0.as_ref(), 10, &mut ctx);
+            ofi.trecv(&mut reg_mem[..512], desc0.clone(), 10, &mut ctx);
 
             assert_eq!(reg_mem[..512], expected[..512]);
 
             // Receive inject
             reg_mem.iter_mut().for_each(|v| *v = 0);
-            ofi.trecv(&mut reg_mem[..128], desc0.as_ref(), 1, &mut ctx);
+            ofi.trecv(&mut reg_mem[..128], desc0.clone(), 1, &mut ctx);
             assert_eq!(reg_mem[..128], expected[..128]);
 
             reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2593,16 +2602,16 @@ pub mod async_ofi {
 
         if server {
             // Write inject a single buffer
-            ofi.write(&reg_mem[..128], 0, desc.as_ref(), None, &mut ctx);
+            ofi.write(&reg_mem[..128], 0, desc, None, &mut ctx);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             // Write a single buffer
-            ofi.write(&reg_mem[..512], 0, desc.as_ref(), None, &mut ctx);
+            ofi.write(&reg_mem[..512], 0, desc, None, &mut ctx);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             // Write vector of buffers
             let iovs = [
@@ -2612,27 +2621,27 @@ pub mod async_ofi {
             ofi.writev(&iovs, 0, Some(&descs), &mut ctx);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc, &mut ctx);
         } else {
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..128], &expected[..128]);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..512], &expected[..512]);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[1024..1536], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[1024..1536], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..1024], &expected[..1024]);
 
             reg_mem.iter_mut().for_each(|v| *v = 0);
 
             // Read buffer from remote memory
-            ofi.read(&mut reg_mem[1024..1536], 0, desc.as_ref(), &mut ctx);
+            ofi.read(&mut reg_mem[1024..1536], 0, desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[1024..1536], &expected[512..1024]);
 
             // Read vector of buffers from remote memory
@@ -2644,7 +2653,7 @@ pub mod async_ofi {
             assert_eq!(mem1, &expected[..256]);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
         }
     }
 
@@ -2743,7 +2752,7 @@ pub mod async_ofi {
             ofi.writemsg(&mut msg);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             let iov = IoVec::from_slice(&reg_mem[..512]);
             let rma_addr = remote_mem_info.slice::<u8>(..512);
@@ -2773,7 +2782,7 @@ pub mod async_ofi {
             ofi.writemsg(&mut msg);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             let iov0 = IoVec::from_slice(&reg_mem[..512]);
             let iov1 = IoVec::from_slice(&reg_mem[512..1024]);
@@ -2806,23 +2815,23 @@ pub mod async_ofi {
             ofi.writemsg(&mut msg);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
         } else {
             let mut remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow_mut();
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..128], &expected[..128]);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..512], &expected[..512]);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[1024..1536], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[1024..1536], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..1024], &expected[..1024]);
 
             reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2893,7 +2902,7 @@ pub mod async_ofi {
             assert_eq!(mem1, &expected[..256]);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
         }
     }
 
@@ -2958,44 +2967,44 @@ pub mod async_ofi {
         let mut ctx = ofi.info_entry.allocate_context();
 
         if server {
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Min, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Min, &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Max, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Max, &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Sum, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Sum, &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Prod, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Prod, &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Bor, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Bor, &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Band, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Band, &mut ctx);
 
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
-
-            // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
-
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Lor, &mut ctx);
-
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Bxor, &mut ctx);
-
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Land, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lor, &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc.as_ref(), AtomicOp::Lxor, &mut ctx);
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Bxor, &mut ctx);
+
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+
+            // Recv a completion ack
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
+
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Land, &mut ctx);
+
+            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lxor, &mut ctx);
 
             ofi.atomic(
                 &reg_mem[..512],
                 0,
-                desc.as_ref(),
+                desc,
                 AtomicOp::AtomicWrite,
                 &mut ctx,
             );
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             let iocs = [
                 Ioc::from_slice(&reg_mem[..256]),
@@ -3003,7 +3012,7 @@ pub mod async_ofi {
             ];
 
             ofi.atomicv(&iocs, 0, Some(&descs), AtomicOp::Prod, &mut ctx);
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
             // match err {
             //     Err(e) => {
             //         if matches!(e.kind, libfabric::error::ErrorKind::ErrorAvailable) {
@@ -3015,36 +3024,36 @@ pub mod async_ofi {
             // }
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
         } else {
             let mut expected = vec![2u8; 1024 * 2];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..512], &expected[..512]);
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             expected = vec![3; 1024 * 2];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..512], &expected[..512]);
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             // expected = vec![2;1024*2];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             // assert_eq!(&reg_mem[..512], &expected[..512]);
 
             expected = vec![4; 1024 * 2];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..512], &expected[..512]);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
         }
     }
 
@@ -3117,8 +3126,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Min,
                 &mut ctx,
             );
@@ -3130,8 +3139,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Max,
                 &mut ctx,
             );
@@ -3143,8 +3152,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Sum,
                 &mut ctx,
             );
@@ -3156,8 +3165,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Prod,
                 &mut ctx,
             );
@@ -3169,8 +3178,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Bor,
                 &mut ctx,
             );
@@ -3182,8 +3191,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Band,
                 &mut ctx,
             );
@@ -3191,19 +3200,19 @@ pub mod async_ofi {
             assert_eq!(mem1, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
 
             // Send a done ack
 
-            ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
 
             expected = vec![2; 256];
             ofi.fetch_atomic(
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Lor,
                 &mut ctx,
             );
@@ -3215,8 +3224,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Bxor,
                 &mut ctx,
             );
@@ -3224,19 +3233,19 @@ pub mod async_ofi {
             assert_eq!(mem1, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
 
             // Send a done ack
 
-            ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
 
             expected = vec![3; 256];
             ofi.fetch_atomic(
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Land,
                 &mut ctx,
             );
@@ -3248,8 +3257,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::Lxor,
                 &mut ctx,
             );
@@ -3261,8 +3270,8 @@ pub mod async_ofi {
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::AtomicWrite,
                 &mut ctx,
             );
@@ -3270,17 +3279,17 @@ pub mod async_ofi {
             assert_eq!(mem1, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
 
-            ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
 
             expected = vec![2; 256];
             ofi.fetch_atomic(
                 &mem0,
                 mem1,
                 0,
-                desc0.as_ref(),
-                desc1.as_ref(),
+                desc0,
+                desc1.clone(),
                 FetchAtomicOp::AtomicRead,
                 &mut ctx,
             );
@@ -3315,41 +3324,41 @@ pub mod async_ofi {
             assert_eq!(write_mem, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
         } else {
             let mut expected = vec![2u8; 256];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
 
             expected = vec![3; 256];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
-            ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
 
             expected = vec![2; 256];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
-            ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
 
             expected = vec![4; 256];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
-            ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
         }
     }
 
@@ -3426,9 +3435,9 @@ pub mod async_ofi {
                 comp,
                 res,
                 0,
-                desc.as_ref(),
-                comp_desc.as_ref(),
-                res_desc.as_ref(),
+                desc,
+                comp_desc,
+                res_desc.clone(),
                 CompareAtomicOp::Cswap,
                 &mut ctx,
             );
@@ -3441,9 +3450,9 @@ pub mod async_ofi {
                 comp,
                 res,
                 0,
-                desc.as_ref(),
-                comp_desc.as_ref(),
-                res_desc.as_ref(),
+                desc,
+                comp_desc,
+                res_desc.clone(),
                 CompareAtomicOp::CswapNe,
                 &mut ctx,
             );
@@ -3457,9 +3466,9 @@ pub mod async_ofi {
                 comp,
                 res,
                 0,
-                desc.as_ref(),
-                comp_desc.as_ref(),
-                res_desc.as_ref(),
+                desc,
+                comp_desc,
+                res_desc.clone(),
                 CompareAtomicOp::CswapLe,
                 &mut ctx,
             );
@@ -3473,9 +3482,9 @@ pub mod async_ofi {
                 comp,
                 res,
                 0,
-                desc.as_ref(),
-                comp_desc.as_ref(),
-                res_desc.as_ref(),
+                desc,
+                comp_desc,
+                res_desc.clone(),
                 CompareAtomicOp::CswapLt,
                 &mut ctx,
             );
@@ -3489,9 +3498,9 @@ pub mod async_ofi {
                 comp,
                 res,
                 0,
-                desc.as_ref(),
-                comp_desc.as_ref(),
-                res_desc.as_ref(),
+                desc,
+                comp_desc,
+                res_desc.clone(),
                 CompareAtomicOp::CswapGe,
                 &mut ctx,
             );
@@ -3504,9 +3513,9 @@ pub mod async_ofi {
                 comp,
                 res,
                 0,
-                desc.as_ref(),
-                comp_desc.as_ref(),
-                res_desc.as_ref(),
+                desc,
+                comp_desc,
+                res_desc.clone(),
                 CompareAtomicOp::CswapGt,
                 &mut ctx,
             );
@@ -3514,11 +3523,11 @@ pub mod async_ofi {
             assert_eq!(res, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc, None, &mut ctx);
 
             // Send a done ack
 
-            ofi.recv(&mut ack_mem[..512], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc.clone(), &mut ctx);
 
             // expected = vec![2; 256];
             let (buf0, buf1) = buf.split_at_mut(128);
@@ -3547,27 +3556,27 @@ pub mod async_ofi {
             assert_eq!(res, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut ack_mem[..512], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc.clone(), &mut ctx);
         } else {
             let mut expected = vec![2u8; 256];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             expected = vec![3; 256];
             // // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
         }
     }
 
@@ -3667,19 +3676,19 @@ pub mod async_ofi {
 
             ofi.atomicmsg(&mut msg);
 
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
         } else {
             let expected = vec![3u8; 1024 * 2];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..512], &expected[..512]);
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
         }
     }
 
@@ -3793,21 +3802,21 @@ pub mod async_ofi {
             assert_eq!(write_mem, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut ack_mem[..512], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
         } else {
             let desc0 = Some(mr.descriptor());
             let expected = vec![2u8; 256];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
         }
     }
 
@@ -3930,20 +3939,20 @@ pub mod async_ofi {
             assert_eq!(res, &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc.as_ref(), None, &mut ctx);
+            ofi.send(&ack_mem[..512], desc, None, &mut ctx);
 
             // Recv a completion ack
-            ofi.recv(&mut ack_mem[..512], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut ack_mem[..512], desc.clone(), &mut ctx);
         } else {
             let expected = vec![2u8; 256];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.as_ref(), &mut ctx);
+            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
             assert_eq!(&reg_mem[..256], &expected);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc.as_ref(), None, &mut ctx);
+            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
         }
     }
 

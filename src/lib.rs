@@ -318,29 +318,29 @@ impl MemAddressInfo {
     }
 }
 
-pub trait RemoteMemRange {
+pub trait MemoryRange {
     fn bounds(&self, len: usize) -> (usize, usize);
 }
 
-impl RemoteMemRange for Range<usize> {
+impl MemoryRange for Range<usize> {
     fn bounds(&self, _len: usize) -> (usize, usize) {
         (self.start, self.end)
     }
 }
 
-impl RemoteMemRange for RangeFrom<usize> {
+impl MemoryRange for RangeFrom<usize> {
     fn bounds(&self, len: usize) -> (usize, usize) {
         (self.start, len)
     }
 }
 
-impl RemoteMemRange for RangeFull {
+impl MemoryRange for RangeFull {
     fn bounds(&self, len: usize) -> (usize, usize) {
         (0, len)
     }
 }
 
-impl RemoteMemRange for RangeTo<usize> {
+impl MemoryRange for RangeTo<usize> {
     fn bounds(&self, _len: usize) -> (usize, usize) {
         (0, self.end)
     }
@@ -504,7 +504,7 @@ impl RemoteMemAddressInfo {
         self.key.clone()
     }
 
-    pub fn slice<T: Copy>(&self, range: impl RemoteMemRange) -> RemoteMemAddrSlice<'_, T> {
+    pub fn slice<T: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, T> {
         let (start, end) = range.bounds(self.len);
         assert!(
             start < end,
@@ -533,20 +533,14 @@ impl RemoteMemAddressInfo {
         )
     }
 
-    pub unsafe fn slice_unchecked<T: Copy>(
-        &self,
-        range: impl RemoteMemRange,
-    ) -> RemoteMemAddrSlice<'_, T> {
+    pub unsafe fn slice_unchecked<T: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, T> {
         let (start, end) = range.bounds(self.len);
         let len = end - start;
         let start = start * std::mem::size_of::<T>();
         RemoteMemAddrSlice::new(self.mem_address.add(start), len, self.key.clone())
     }
-
-    pub fn slice_mut<T: Copy>(
-        &mut self,
-        range: impl RemoteMemRange,
-    ) -> RemoteMemAddrSliceMut<'_, T> {
+    
+    pub fn slice_mut<T: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, T> {
         let (start, end) = range.bounds(self.len);
         assert!(
             start < end,
@@ -574,10 +568,7 @@ impl RemoteMemAddressInfo {
         )
     }
 
-    pub unsafe fn slice_mut_unchecked<T: Copy>(
-        &mut self,
-        range: impl RemoteMemRange,
-    ) -> RemoteMemAddrSliceMut<'_, T> {
+    pub unsafe fn slice_mut_unchecked<T: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, T> {
         let (start, end) = range.bounds(self.len);
         let len = end - start;
         let start = start * std::mem::size_of::<T>();

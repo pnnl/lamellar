@@ -18,6 +18,8 @@ use crate::infocapsoptions::ReadMod;
 use crate::infocapsoptions::WriteMod;
 use crate::mr::MappedMemoryRegionKey;
 use crate::mr::MemoryRegionDesc;
+use crate::mr::MemoryRegionSlice;
+use crate::mr::MemoryRegionSliceMut;
 use crate::trigger::TriggeredContext;
 use crate::utils::check_error;
 use crate::utils::Either;
@@ -37,7 +39,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     fn atomic_impl<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -145,7 +147,7 @@ pub trait AtomicWriteEp {
     unsafe fn atomic_to<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -155,7 +157,7 @@ pub trait AtomicWriteEp {
     unsafe fn atomic_to_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -166,7 +168,7 @@ pub trait AtomicWriteEp {
     unsafe fn atomic_to_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -220,11 +222,70 @@ pub trait AtomicWriteEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait AtomicWriteEpMrSlice: AtomicWriteEp {
+    unsafe fn atomic_mr_slice_to<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_to(mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, op)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_mr_slice_to_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_to_with_context(mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, op, context)
+    }
+    
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_mr_slice_to_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_to_triggered(mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, op, context)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn inject_atomic_mr_slice_to<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.inject_atomic_to(
+            mr_slice.as_slice(),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+}
+
+impl<EP: AtomicWriteEp> AtomicWriteEpMrSlice for EP {}
+
 pub trait ConnectedAtomicWriteEp {
     unsafe fn atomic<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -232,7 +293,7 @@ pub trait ConnectedAtomicWriteEp {
     unsafe fn atomic_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -241,7 +302,7 @@ pub trait ConnectedAtomicWriteEp {
     unsafe fn atomic_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -287,11 +348,85 @@ pub trait ConnectedAtomicWriteEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait ConnectedAtomicWriteEpMrSlice: ConnectedAtomicWriteEp {
+    unsafe fn atomic_mr_slice<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.atomic(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_mr_slice_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_mr_slice_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn inject_atomic_mr_slice<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.inject_atomic(
+            mr_slice.as_slice(),
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+}
+
+impl<EP: ConnectedAtomicWriteEp> ConnectedAtomicWriteEpMrSlice for EP {}
+
 pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
     unsafe fn atomic_slice_to<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
@@ -310,7 +445,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
     unsafe fn atomic_slice_to_with_context<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
@@ -332,7 +467,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
     unsafe fn atomic_slice_to_triggered<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
@@ -445,7 +580,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
     unsafe fn atomic_slice<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -456,7 +591,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
     unsafe fn atomic_slice_with_context<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -475,7 +610,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
     unsafe fn atomic_slice_triggered<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
@@ -567,7 +702,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     unsafe fn atomic_to<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -580,7 +715,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     unsafe fn atomic_to_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -602,7 +737,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     unsafe fn atomic_to_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -705,7 +840,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
     unsafe fn atomic<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -718,7 +853,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
     unsafe fn atomic_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -740,7 +875,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
     unsafe fn atomic_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -861,9 +996,9 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     fn fetch_atomic_impl<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -955,9 +1090,9 @@ pub trait AtomicFetchEp {
     unsafe fn fetch_atomic_from<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -967,9 +1102,9 @@ pub trait AtomicFetchEp {
     unsafe fn fetch_atomic_from_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -980,9 +1115,9 @@ pub trait AtomicFetchEp {
     unsafe fn fetch_atomic_from_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1040,9 +1175,9 @@ pub trait ConnectedAtomicFetchEp {
     unsafe fn fetch_atomic<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -1051,9 +1186,9 @@ pub trait ConnectedAtomicFetchEp {
     unsafe fn fetch_atomic_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -1063,9 +1198,9 @@ pub trait ConnectedAtomicFetchEp {
     unsafe fn fetch_atomic_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -1115,14 +1250,168 @@ pub trait ConnectedAtomicFetchEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait AtomicFetchEpMrSlice: AtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice_from<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_from(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice_from_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_from_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice_from_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_from_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+}
+
+impl<EP: AtomicFetchEp> AtomicFetchEpMrSlice for EP {}
+
+pub trait ConnectedAtomicFetchEpMrSlice: ConnectedAtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+}
+
+impl<EP: ConnectedAtomicFetchEp> ConnectedAtomicFetchEpMrSlice for EP {}
+
 impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
     #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_from<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1144,9 +1433,9 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
     unsafe fn fetch_atomic_from_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1169,9 +1458,9 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
     unsafe fn fetch_atomic_from_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1279,9 +1568,9 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
     unsafe fn fetch_atomic<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -1295,9 +1584,9 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
     unsafe fn fetch_atomic_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -1320,9 +1609,9 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
     unsafe fn fetch_atomic_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -1423,9 +1712,9 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
     unsafe fn fetch_atomic_slice_from<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
@@ -1448,9 +1737,9 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
     unsafe fn fetch_atomic_slice_from_with_context<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
@@ -1475,9 +1764,9 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
     unsafe fn fetch_atomic_slice_from_triggered<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
@@ -1591,9 +1880,9 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
     unsafe fn fetch_atomic_slice<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -1614,9 +1903,9 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
     unsafe fn fetch_atomic_slice_with_context<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -1639,9 +1928,9 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
     unsafe fn fetch_atomic_slice_triggered<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut TriggeredContext,
@@ -1765,11 +2054,11 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     unsafe fn compare_atomic_impl<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1875,11 +2164,11 @@ pub trait AtomicCASEp {
     unsafe fn compare_atomic_to<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1890,11 +2179,11 @@ pub trait AtomicCASEp {
     unsafe fn compare_atomic_to_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1906,11 +2195,11 @@ pub trait AtomicCASEp {
     unsafe fn compare_atomic_to_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1977,16 +2266,187 @@ pub trait AtomicCASEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+pub trait AtomicCASEpMrSlice: AtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice_to<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_slice: &MemoryRegionSlice,
+        result_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        let desc = result_slice.desc();
+        
+        self.compare_atomic_to(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            compare_slice.as_slice(),
+            Some(compare_slice.desc()),
+            result_slice.as_mut_slice(),
+            Some(desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice_to_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_slice: &MemoryRegionSlice,
+        result_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let desc = result_slice.desc();
+        self.compare_atomic_to_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            compare_slice.as_slice(),
+            Some(compare_slice.desc()),
+            result_slice.as_mut_slice(),
+            Some(desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice_to_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_slice: &MemoryRegionSlice,
+        result_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = result_slice.desc();
+
+        self.compare_atomic_to_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            compare_slice.as_slice(),
+            Some(compare_slice.desc()),
+            result_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+}
+
+impl<EP: AtomicCASEp> AtomicCASEpMrSlice for EP {}
+
+pub trait ConnectedAtomicCASEpMrSlice: ConnectedAtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_slice: &MemoryRegionSlice,
+        result_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = result_slice.desc();
+
+        self.compare_atomic(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            compare_slice.as_slice(),
+            Some(compare_slice.desc()),
+            result_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_slice: &MemoryRegionSlice,
+        result_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = result_slice.desc();
+
+        self.compare_atomic_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            compare_slice.as_slice(),
+            Some(compare_slice.desc()),
+            result_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_slice: &MemoryRegionSlice,
+        result_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = result_slice.desc();
+
+        self.compare_atomic_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            compare_slice.as_slice(),
+            Some(compare_slice.desc()),
+            result_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+}
+
+impl<EP: ConnectedAtomicCASEp> ConnectedAtomicCASEpMrSlice for EP {}
+
 pub trait ConnectedAtomicCASEp {
     #[allow(clippy::too_many_arguments)]
     unsafe fn compare_atomic<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -1996,11 +2456,11 @@ pub trait ConnectedAtomicCASEp {
     unsafe fn compare_atomic_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -2011,11 +2471,11 @@ pub trait ConnectedAtomicCASEp {
     unsafe fn compare_atomic_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -2084,11 +2544,11 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
     unsafe fn compare_atomic_to<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -2114,11 +2574,11 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
     unsafe fn compare_atomic_to_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -2145,11 +2605,11 @@ impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
     unsafe fn compare_atomic_to_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -2291,11 +2751,11 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
     unsafe fn compare_atomic<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -2320,11 +2780,11 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
     unsafe fn compare_atomic_with_context<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -2350,11 +2810,11 @@ impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
     unsafe fn compare_atomic_triggered<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -2491,11 +2951,11 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
     unsafe fn compare_atomic_slice_to<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
@@ -2521,11 +2981,11 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
     unsafe fn compare_atomic_slice_to_with_context<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
@@ -2553,11 +3013,11 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
     unsafe fn compare_atomic_slice_to_triggered<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
@@ -2689,11 +3149,11 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
     unsafe fn compare_atomic_slice<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
     ) -> Result<(), crate::error::Error> {
@@ -2717,11 +3177,11 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
     unsafe fn compare_atomic_slice_with_context<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,
@@ -2747,11 +3207,11 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
     unsafe fn compare_atomic_slice_triggered<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut TriggeredContext,

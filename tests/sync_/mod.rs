@@ -1258,7 +1258,7 @@ pub fn ft_post_rma(
                 "fi_write",
                 ep,
                 buf,
-                data_desc.as_ref(),
+                data_desc,
                 fi_addr,
                 mem_addr,
                 &key
@@ -1277,7 +1277,7 @@ pub fn ft_post_rma(
                     "fi_write",
                     ep,
                     buf,
-                    data_desc.as_ref(),
+                    data_desc,
                     remote_cq_data,
                     fi_addr,
                     mem_addr,
@@ -1296,7 +1296,7 @@ pub fn ft_post_rma(
                 "fi_write",
                 ep,
                 buf,
-                data_desc.as_ref(),
+                data_desc,
                 fi_addr,
                 mem_addr,
                 &key
@@ -1348,7 +1348,7 @@ pub fn connected_msg_post(
                     "transmit",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     data,
                     ctx
                 );
@@ -1362,7 +1362,7 @@ pub fn connected_msg_post(
                     "transmit",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     ctx
                 );
             }
@@ -1428,7 +1428,7 @@ pub fn conless_msg_post(
                         "transmit",
                         ep,
                         base,
-                        desc.as_ref(),
+                        desc,
                         data,
                         fi_address,
                         ctx
@@ -1443,7 +1443,7 @@ pub fn conless_msg_post(
                         "transmit",
                         ep,
                         base,
-                        desc.as_ref(),
+                        desc,
                         fi_address,
                         ctx
                     );
@@ -1538,7 +1538,7 @@ pub fn msg_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
                     "receive",
                     ep,
                     base,
-                    mr_desc.as_ref(),
+                    mr_desc,
                     ctx
                 );
             }
@@ -1558,7 +1558,7 @@ pub fn msg_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
                         "receive",
                         ep,
                         base,
-                        mr_desc.as_ref(),
+                        mr_desc,
                         fi_address,
                         ctx
                     );
@@ -1572,7 +1572,7 @@ pub fn msg_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
                         "receive",
                         ep,
                         base,
-                        mr_desc.as_ref(),
+                        mr_desc,
                         ctx
                     );
                 }
@@ -1673,7 +1673,7 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
                     "transmit",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     data,
                     op_tag,
                     ctx
@@ -1688,7 +1688,7 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
                     "transmit",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     op_tag,
                     ctx
                 );
@@ -1766,7 +1766,7 @@ pub fn conless_tagged_post<E: TagDefaultCap>(
                     "transmit",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     data,
                     fi_address,
                     op_tag,
@@ -1782,7 +1782,7 @@ pub fn conless_tagged_post<E: TagDefaultCap>(
                     "transmit",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     fi_address,
                     op_tag,
                     ctx
@@ -1837,7 +1837,7 @@ pub fn connected_tagged_post_recv<T: TagDefaultCap>(
                 "receive",
                 ep,
                 base,
-                desc.as_ref(),
+                desc,
                 op_tag,
                 None,
                 ctx
@@ -1876,7 +1876,7 @@ pub fn connless_tagged_post_recv<T: TagDefaultCap>(
                 "receive",
                 ep,
                 base,
-                desc.as_ref(),
+                desc,
                 fi_address,
                 op_tag,
                 None,

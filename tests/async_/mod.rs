@@ -1075,7 +1075,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
             unsafe {
                 ep.write_to_async(
                     buf,
-                    mr_desc.as_ref(),
+                    mr_desc,
                     fi_addr,
                     addr,
                     &key,
@@ -1096,7 +1096,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
             unsafe {
                 ep.writedata_to_async(
                     buf,
-                    mr_desc.as_ref(),
+                    mr_desc,
                     remote_cq_data,
                     fi_addr,
                     addr,
@@ -1124,7 +1124,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
                     "fi_write",
                     ep,
                     buf,
-                    mr_desc.as_ref(),
+                    mr_desc,
                     fi_addr,
                     addr,
                     &key
@@ -1217,13 +1217,13 @@ pub async fn connless_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
                         "",
                         ep,
                         base,
-                        desc.as_ref(),
+                        desc,
                         data,
                         fi_address,
                         ctx
                     )
                 } else {
-                    ft_post_async!(send_to_async, "", ep, base, desc.as_ref(), fi_address, ctx)
+                    ft_post_async!(send_to_async, "", ep, base, desc, fi_address, ctx)
                 }
             }
         }
@@ -1258,9 +1258,9 @@ pub async fn connected_msg_post<CQ: ReadCq, E: MsgDefaultCap>(
         }
         SendOp::Send => {
             if data != NO_CQ_DATA {
-                ft_post_async!(senddata_async, "", ep, base, desc.as_ref(), data, ctx)
+                ft_post_async!(senddata_async, "", ep, base, desc, data, ctx)
             } else {
-                ft_post_async!(send_async, "", ep, base, desc.as_ref(), ctx)
+                ft_post_async!(send_async, "", ep, base, desc, ctx)
             }
         }
     }
@@ -1298,7 +1298,7 @@ pub fn connected_msg_post_recv<CQ: ReadCq, E: MsgDefaultCap>(
                 "receive",
                 ep,
                 base,
-                desc.as_ref(),
+                desc,
                 ctx
             );
         }
@@ -1338,7 +1338,7 @@ pub fn connless_msg_post_recv<CQ: ReadCq, E: MsgDefaultCap>(
                     "receive",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     fi_address,
                     ctx
                 );
@@ -1352,7 +1352,7 @@ pub fn connless_msg_post_recv<CQ: ReadCq, E: MsgDefaultCap>(
                     "receive",
                     ep,
                     base,
-                    desc.as_ref(),
+                    desc,
                     ctx
                 );
             }
@@ -1460,13 +1460,13 @@ pub async fn connless_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
                         "transmit",
                         ep,
                         base,
-                        mr_desc.as_ref(),
+                        mr_desc,
                         fi_address,
                         op_tag,
                         ctx
                     );
                 } else {
-                    ep.tsend_to_async(base, mr_desc.as_ref(), fi_address, op_tag, ctx)
+                    ep.tsend_to_async(base, mr_desc, fi_address, op_tag, ctx)
                         .await
                         .unwrap();
                 }
@@ -1512,11 +1512,11 @@ pub async fn connected_tagged_post<CQ: ReadCq, E: TagDefaultCap>(
         }
         TagSendOp::TagSend => {
             if data != NO_CQ_DATA {
-                ep.tsenddata_async(base, mr_desc.as_ref(), data, op_tag, ctx)
+                ep.tsenddata_async(base, mr_desc, data, op_tag, ctx)
                     .await
                     .unwrap();
             } else {
-                ep.tsenddata_async(base, mr_desc.as_ref(), data, op_tag, ctx)
+                ep.tsenddata_async(base, mr_desc, data, op_tag, ctx)
                     .await
                     .unwrap();
             }
@@ -1559,7 +1559,7 @@ pub fn connected_tagged_post_recv<CQ: ReadCq, E: TagDefaultCap>(
                 "receive",
                 ep,
                 base,
-                desc.as_ref(),
+                desc,
                 op_tag,
                 None,
                 ctx
@@ -1603,7 +1603,7 @@ pub fn connless_tagged_post_recv<CQ: ReadCq, E: TagDefaultCap>(
                 "receive",
                 ep,
                 base,
-                desc.as_ref(),
+                desc,
                 fi_address,
                 op_tag,
                 None,

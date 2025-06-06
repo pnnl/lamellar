@@ -8,7 +8,7 @@ use crate::connless_ep::ConnlessEp;
 use crate::enums::{AtomicFetchMsgOptions, AtomicMsgOptions};
 use crate::ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState};
 use crate::infocapsoptions::{AtomicCap, ReadMod, WriteMod};
-use crate::mr::MemoryRegionDesc;
+use crate::mr::{MemoryRegionDesc, MemoryRegionSlice, MemoryRegionSliceMut};
 use crate::utils::Either;
 use crate::{
     async_::ep::AsyncTxEp, comm::atomic::AtomicWriteEpImpl, cq::SingleCompletion,
@@ -23,7 +23,7 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     async fn atomic_async_impl<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -122,7 +122,7 @@ pub trait AsyncAtomicWriteEp {
     unsafe fn atomic_to_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -163,7 +163,7 @@ pub trait ConnectedAsyncAtomicWriteEp {
     unsafe fn atomic_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -195,6 +195,72 @@ pub trait ConnectedAsyncAtomicWriteEp {
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
+pub trait AsyncAtomicWriteEpMrSlice : AsyncAtomicWriteEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomic_to_async(mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, op, context)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn inject_atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.inject_atomic_to_async(mr_slice.as_slice(), dest_addr, mem_addr, mapped_key, op)
+    }
+}
+
+pub trait ConnectedAsyncAtomicWriteEpMrSlice: ConnectedAsyncAtomicWriteEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomic_async(
+            mr_slice.as_slice() ,
+            Some(mr_slice.desc()),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn inject_atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.inject_atomic_async(
+            mr_slice.as_slice() ,
+            mem_addr,
+            mapped_key,
+            op,
+        )
+    }
+}
+
+impl<EP: ConnectedAsyncAtomicWriteEp> ConnectedAsyncAtomicWriteEpMrSlice for EP {}
+
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
@@ -212,7 +278,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     unsafe fn atomic_to_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -280,7 +346,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     unsafe fn atomic_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::AtomicOp,
@@ -329,7 +395,7 @@ pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
     unsafe fn atomic_slice_to_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         dest_addr: &crate::MappedAddress,
         dst_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
@@ -402,7 +468,7 @@ pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWri
     unsafe fn atomic_slice_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         dst_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::AtomicOp,
         context: &mut Context,
@@ -463,9 +529,9 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
     async fn fetch_atomic_async_impl<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -556,9 +622,9 @@ pub trait AsyncAtomicFetchEp {
     unsafe fn fetch_atomic_from_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -594,9 +660,9 @@ pub trait ConnectedAsyncAtomicFetchEp {
     unsafe fn fetch_atomic_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -625,6 +691,65 @@ pub trait ConnectedAsyncAtomicFetchEp {
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
+pub trait AsyncAtomicFetchEpMrSlice: AsyncAtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice_from_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_mr_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        let result_desc = res_mr_slice.desc();
+        
+        self.fetch_atomic_from_async(
+            mr_slice.as_slice() ,
+            Some(mr_slice.desc()),
+            res_mr_slice.as_mut_slice() ,
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+}
+
+impl<EP: AsyncAtomicFetchEp> AsyncAtomicFetchEpMrSlice for EP {}
+
+pub trait ConnectedAsyncAtomicFetchEpMrSlice: ConnectedAsyncAtomicFetchEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_mr_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::FetchAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        let result_desc = res_mr_slice.desc();
+        
+        self.fetch_atomic_async(
+            mr_slice.as_slice() ,
+            Some(mr_slice.desc()),
+            res_mr_slice.as_mut_slice() ,
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+
+}
+
+impl<EP: ConnectedAsyncAtomicFetchEp> ConnectedAsyncAtomicFetchEpMrSlice for EP {}
+
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connectionless> {}
 
@@ -642,9 +767,9 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
     unsafe fn fetch_atomic_from_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -705,9 +830,9 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
     unsafe fn fetch_atomic_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::FetchAtomicOp,
@@ -751,9 +876,9 @@ pub trait AsyncAtomicFetchRemoteMemAddrSliceEp: AsyncAtomicFetchEp {
     unsafe fn fetch_atomic_slice_from_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
@@ -817,9 +942,9 @@ pub trait ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp: ConnectedAsyncAtomicFet
     unsafe fn fetch_atomic_slice_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         res: &mut [T],
-        res_desc: Option<&MemoryRegionDesc<'_>>,
+        res_desc: Option<MemoryRegionDesc<'_>>,
         src_slice: &RemoteMemAddrSlice<T>,
         op: crate::enums::FetchAtomicOp,
         context: &mut Context,
@@ -879,11 +1004,11 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
     async unsafe fn compare_atomic_async_impl<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc<'_>>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -990,11 +1115,11 @@ pub trait AsyncAtomicCASEp {
     unsafe fn compare_atomic_to_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1035,11 +1160,11 @@ pub trait ConnectedAsyncAtomicCASEp {
     unsafe fn compare_atomic_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -1073,6 +1198,68 @@ pub trait ConnectedAsyncAtomicCASEp {
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
+pub trait AsyncAtomicCASEpMrSlice: AsyncAtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_mr_slice: &MemoryRegionSlice,
+        result_mr_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        let result_desc = result_mr_slice.desc();
+        self.compare_atomic_to_async(
+            mr_slice.as_slice() ,
+            Some(mr_slice.desc()),
+            compare_mr_slice.as_slice() ,
+            Some(compare_mr_slice.desc()),
+            result_mr_slice.as_mut_slice() ,
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+}
+
+impl<EP: AsyncAtomicCASEp> AsyncAtomicCASEpMrSlice for EP {}
+
+pub trait ConnectedAsyncAtomicCASEpMrSlice: ConnectedAsyncAtomicCASEp {
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn compare_atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        compare_mr_slice: &MemoryRegionSlice,
+        result_mr_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::CompareAtomicOp,
+        context: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        let result_desc = result_mr_slice.desc();
+        self.compare_atomic_async(
+            mr_slice.as_slice() ,
+            Some(mr_slice.desc()),
+            compare_mr_slice.as_slice() ,
+            Some(compare_mr_slice.desc()),
+            result_mr_slice.as_mut_slice() ,
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            op,
+            context,
+        )
+    }
+}
+
+impl<EP: ConnectedAsyncAtomicCASEp> ConnectedAsyncAtomicCASEpMrSlice for EP {}
+
 impl<E: AsyncAtomicCASImpl> AsyncAtomicCASImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicCASImpl> AsyncAtomicCASImpl for EndpointBase<E, Connectionless> {}
 
@@ -1094,11 +1281,11 @@ impl<EP: AsyncAtomicCASImpl + ConnlessEp> AsyncAtomicCASEp for EP {
     unsafe fn compare_atomic_to_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
@@ -1179,11 +1366,11 @@ impl<EP: AsyncAtomicCASImpl + ConnectedEp> ConnectedAsyncAtomicCASEp for EP {
     unsafe fn compare_atomic_async<T: AsFiType, RT: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
         op: crate::enums::CompareAtomicOp,
@@ -1261,11 +1448,11 @@ pub trait AsyncAtomicCASRemoteMemAddrSliceEp: AsyncAtomicCASEp {
     unsafe fn compare_atomic_slice_to_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         dst_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
@@ -1338,11 +1525,11 @@ pub trait ConnectedAsyncAtomicCASRemoteMemAddrSliceEp: ConnectedAsyncAtomicCASEp
     unsafe fn compare_atomic_slice_async<T: AsFiType>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc>,
         compare: &[T],
-        compare_desc: Option<&MemoryRegionDesc<'_>>,
+        compare_desc: Option<MemoryRegionDesc>,
         result: &mut [T],
-        result_desc: Option<&MemoryRegionDesc<'_>>,
+        result_desc: Option<MemoryRegionDesc<'_>>,
         dst_slice: &RemoteMemAddrSliceMut<T>,
         op: crate::enums::CompareAtomicOp,
         context: &mut Context,

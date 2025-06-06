@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::OnceLock;
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
-#[derive(Clone, Copy)]
+#[derive(Hash, Clone, Copy)]
 pub struct Fid(pub(crate) usize);
 
 pub(crate) struct TypedFid<FID: AsRawFid>(pub(crate) FID);
