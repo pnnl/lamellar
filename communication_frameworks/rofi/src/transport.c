@@ -132,36 +132,51 @@ int rofi_transport_fini(rofi_transport_t *rofi) {
 void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi, rofi_names_t *prov_names, rofi_names_t *domain_names) {
     DEBUG_MSG("Selecting Provider: %p %p", prov_names, domain_names);
     struct fi_info *prov_cur = prov;
+    struct fi_info *prov_found = NULL;
     if (prov_names == NULL && domain_names == NULL) {
         rofi->info = fi_dupinfo(prov_cur);
-        WARN_MSG("No matches for the specified provider and/or domain");
+        WARN_MSG("No matches for the specified provider and/or domain", prov_names, domain_names);
+        WARN_MSG("Using first available provider: %s %s", prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
+        
         return;
     }
     else {
         while (prov_cur != NULL) {
             if (prov_names != NULL) {
                 for (int i = 0; i < prov_names->num; i++) {
-                    DEBUG_MSG("checking Provider: %s %s %s", prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name, prov_names->names[i]);
+                    DEBUG_MSG("checking Provider (%s): %s %s", prov_names->names[i], prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
                     if (strncmp(prov_cur->fabric_attr->prov_name, prov_names->names[i], strlen(prov_names->names[i])) == 0) {
+                        DEBUG_MSG("Matched Provider (%s): %s %s", prov_names->names[i], prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
+                        prov_found = prov_cur;
                         if (domain_names == NULL) {
                             rofi->info = fi_dupinfo(prov_cur);
                             return;
                         }
                         else {
                             for (int j = 0; j < domain_names->num; j++) {
+                                DEBUG_MSG("checking Domain (%s): %s %s", domain_names->names[j], prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
                                 if (strncmp(prov_cur->domain_attr->name, domain_names->names[j], strlen(domain_names->names[j])) == 0) {
+                                    DEBUG_MSG("Matched Domain (%s): %s %s", domain_names->names[j], prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
                                     rofi->info = fi_dupinfo(prov_cur);
                                     return;
                                 }
                             }
+                            DEBUG_MSG("No matching domain found for provider (%s): %s %s looking at next provider", prov_names->names[i], prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
                         }
                     }
+                }
+                if (prov_found) {
+                    WARN_MSG("Found provider without matching domain, using default domain for provider : %s %s", prov_found->fabric_attr->prov_name, prov_found->domain_attr->name);
+                    rofi->info = fi_dupinfo(prov_found);
+                    return;
                 }
             }
             else {
                 if (domain_names) {
                     for (int j = 0; j < domain_names->num; j++) {
+                        DEBUG_MSG("checking Domain (%s): %s %s", domain_names->names[j], prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
                         if (strncmp(prov_cur->domain_attr->name, domain_names->names[j], strlen(domain_names->names[j])) == 0) {
+                            DEBUG_MSG("Matched Domain (%s): %s %s", domain_names->names[j], prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
                             rofi->info = fi_dupinfo(prov_cur);
                             return;
                         }
@@ -247,11 +262,6 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         return ret;
     }
 
-    // if (strncmp(rofi->info->fabric_attr->prov_name, "verbs", 5)) {
-    //     ERR_MSG(" Only 'verbs' fabric is supported. Aborting.");
-    //     return -1;
-    // }
-
     rofi->desc.max_message_size = rofi->info->ep_attr->max_msg_size;
     rofi->desc.inject_size = rofi->info->tx_attr->inject_size;
 
@@ -264,7 +274,6 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_query_collective", ret);
         rofi->fi_collective = 0;
-        // return (ret);
     }
     else {
         rofi->fi_collective = FI_COLLECTIVE;
@@ -529,9 +538,9 @@ int rofi_transport_progress(rofi_transport_t *rofi) {
             if (ret > 0) {
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
-                // ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                //             ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
-                // );
+                ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
+                );
                 err = ebuf.err;
             }
             else if (ret < 0) {
@@ -542,19 +551,6 @@ int rofi_transport_progress(rofi_transport_t *rofi) {
                 PRINT_MSG("ret: %d", ret);
             }
         } while (ret == 1);
-        // if (ret > 0 && ebuf.err == -FI_EACCES) {
-            // ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
-            // const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-            // ERR_MSG("Error: %s %d %d \n", errmsg, ebuf.prov_errno, ebuf.err);
-            
-            // return -1;
-        // }
-        // else if (ret < 0 && ret != -FI_EAGAIN) {
-        //     ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
-        //     ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
-        //     return ret;
-        // }
-        // return (ret);
         return (err);
     }
     return 0;
@@ -574,9 +570,9 @@ int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err, struct 
                 int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
-                // DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                //             ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
-                // );
+                ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
+                );
                 // struct fi_cq_err_entry ebuf = {0};
                 // int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 // if (ret > 0 && ebuf.err == -FI_EACCES) {
@@ -599,24 +595,10 @@ int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err, struct 
                 int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
-                // DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                //             ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1
-                // );
+                ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1
+                );
             }
-            // ROFI_TRANSPORT_ERR_MSG("", err);
-            // struct fi_cq_err_entry ebuf = {0};
-            // int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-            // if (ret > 0){//} && ebuf.err == -FI_EACCES) {
-            //     const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-            //     ERR_MSG("Error: %s %d %d \n", errmsg, ebuf.prov_errno, ebuf.err);
-            //     abort();
-            //     return ret;
-            // }
-            // else if (ret < 0 && ret != -FI_EAGAIN) {
-            //     ROFI_TRANSPORT_ERR_MSG("fi_cq_readerr", ret);
-            //     return ret;
-            // }
-            // return err;
             return err;
         }
     }
@@ -687,19 +669,6 @@ int rofi_transport_locked_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending
     uint64_t err_cnt = fi_cntr_readerr(cntr);
     uint64_t old_cnt = cur_cnt;
     
-    // if (err_cnt > rofi->error_cnt) {
-    //     rofi->error_cnt = err_cnt;
-    //     DEBUG_MSG(" Waiting for  %lu  cnts... cur_cnt: %lu err_cnt: %lu", cnt, cur_cnt, err_cnt);
-    //     for (int j=0;j<err_cnt+1;j++){
-    //         struct fi_cq_err_entry ebuf = {0};
-    //         int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-    //         const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-    //         const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
-    //         DEBUG_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s",
-    //              ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1);
-            
-    //     }
-    // }
     do {
         prev_cnt = cnt;
         old_cnt = cur_cnt;
@@ -716,10 +685,6 @@ int rofi_transport_locked_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending
         }
         
     } while (cnt < cur_cnt || prev_cnt < cnt || cur_cnt != old_cnt);
-    // pthread_mutex_lock(&rofi->lock);
-    // uint64_t cnt = fi_cntr_read(cntr);
-    // uint64_t err_cnt = fi_cntr_readerr(cntr);
-    // pthread_mutex_unlock(&rofi->lock);
     DEBUG_MSG("Done Waiting for  %lu  prev_cnt: %lu gets to complete... cnt: %lu err_cnt: %lu", *pending_cntr, prev_cnt, cnt, err_cnt);
     assert(prev_cnt <= cnt);
     return 0;
@@ -739,9 +704,6 @@ int rofi_transport_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending_cntr, 
         old_cnt = cur_cnt;
         pthread_mutex_lock(&rofi->lock);
         int ret = rofi_transport_progress(rofi);
-        // if (ret) {
-        //     return ret;
-        // }
         ret = fi_cntr_wait(cntr, prev_cnt, 100);
         
         cur_cnt = fi_cntr_read(cntr);
@@ -756,16 +718,7 @@ int rofi_transport_wait_on_cntr(rofi_transport_t *rofi, uint64_t *pending_cntr, 
        
         pthread_mutex_unlock(&rofi->lock);
         cnt = *pending_cntr; // this could be updated by another thread
-        // ret = rofi_transport_ctx_check_err(rofi, ret);
-        // if (ret) {
-        //     return ret;
-        // }
     } while (cnt < cur_cnt || prev_cnt < cnt || cur_cnt != old_cnt);
-    // pthread_mutex_lock(&rofi->lock);
-    // uint64_t ncnt = fi_cntr_read(cntr);
-    // err_cnt = fi_cntr_readerr(cntr);
-    // pthread_mutex_unlock(&rofi->lock);
-    // DEBUG_MSG("Done Waiting for  %lu  prev_cnt: %lu gets to complete... cnt: %lu err_cnt: %lu", *pending_cntr, prev_cnt, ncnt, err_cnt);
     assert(prev_cnt <= cnt);
     return 0;
 }
