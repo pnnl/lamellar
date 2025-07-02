@@ -79,6 +79,7 @@ rofi_mr_desc *mr_add(rofi_transport_t *rofi, size_t size, unsigned long mode) {
                 MAP_ANON | MAP_PRIVATE, -1, 0);
 
     if (addr == MAP_FAILED) {
+        ERR_MSG("Error mapping memory region (%ld bytes) at %p. Aborting!", size, mr_next_addr);
         perror("mmap");
         goto err_lock;
     }
