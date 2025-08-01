@@ -123,6 +123,13 @@ impl Pmi for Pmi1 {
         check_error!(unsafe{ pmi_sys::PMI_Barrier() });
         Ok(())
     }
+
+    fn barrier(&self, collect_data: bool) -> Result<(), crate::pmi::PmiError> {
+        if self.ranks.len() > 1 {
+            check_error!(unsafe{ pmi_sys::PMI_Barrier() });
+        }
+        Ok(())
+    }
 }
 
 impl Drop for Pmi1 {

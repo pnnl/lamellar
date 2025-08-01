@@ -82,6 +82,7 @@ pub trait Pmi {
     fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError>;
     fn put(&self, key: &str, value: &[u8]) -> Result<(), PmiError>;
     fn exchange(&self) -> Result<(), PmiError>;
+    fn barrier(&self,collect_data: bool) -> Result<(), PmiError>;
 
 }
 

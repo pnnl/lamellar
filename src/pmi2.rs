@@ -89,6 +89,7 @@ impl  Pmi for Pmi2 {
             let kvs_val = self.encode(value);
 
             check_error!( unsafe { pmi2_sys::PMI2_KVS_Put(kvs_key, kvs_val.as_ptr().cast()) });
+            check_error!(unsafe{ pmi2_sys::PMI2_KVS_Fence() });
         }
         else {
             self.put_singleton(key, value)?;
@@ -101,6 +102,14 @@ impl  Pmi for Pmi2 {
             check_error!(unsafe{ pmi2_sys::PMI2_KVS_Fence() });
         }
 
+        Ok(())
+    }
+    
+    
+    fn barrier(&self, collect_data: bool) -> Result<(), PmiError> {
+        if self.ranks.len() > 1 {
+            check_error!(unsafe{ pmi2_sys::PMI2_KVS_Fence() });
+        }
         Ok(())
     }
 }
