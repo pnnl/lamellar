@@ -156,11 +156,13 @@ fn main() {
     println!("cargo:rustc-link-search={}", ofi_lib_path.display());
     println!("cargo:rustc-link-search={}", out_path.display());
 
-    println!("cargo:rustc-link-lib=static=fabric");
+    println!("cargo:rustc-link-lib=fabric");
     println!("cargo:rustc-link-lib=rt");
     println!("cargo:rustc-link-lib=rdmacm");
     println!("cargo:rustc-link-lib=ibverbs");
     println!("cargo:rustc-link-lib=atomic");
     println!("cargo:rustc-link-lib=pthread");
     println!("cargo:rustc-link-lib=dl");
+    println!("cargo:rustc-link-lib=numa");
+    println!("cargo:rustc-link-lib=uuid");
 }
