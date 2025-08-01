@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 #[cfg(all(feature = "use-tokio", feature = "use-async-std"))]
 compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive");
 
@@ -220,6 +222,10 @@ impl MemAddressInfo {
         &self.bytes
     }
 
+    pub fn to_bytes_mut(&mut self) -> &mut[u8] {
+        &mut self.bytes
+    }
+
     pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
         Self {
             bytes: bytes.to_vec()
@@ -259,6 +265,8 @@ impl RemoteMemRange for Range<usize> {
     }
 }
 
+
+//rdfriese: should this be self.start + len?
 impl RemoteMemRange for RangeFrom<usize> {
     fn bounds(&self, len: usize) -> (usize, usize) {
         (self.start, len)
@@ -458,6 +466,26 @@ impl RemoteMemAddressInfo {
         let len = end - start;
         let start = start * std::mem::size_of::<T>();
         RemoteMemAddrSliceMut::new(unsafe {self.mem_address.add(start)}, len, self.key.clone())
+    }
+
+    // SAFETY: using this function essentially creates mutable pointers to the same memory region.
+    // TODO: see if lamellar can manage this some other way...
+    pub unsafe fn sub_region(&self, range: impl RemoteMemRange) -> RemoteMemAddressInfo{
+        let (start, end) = range.bounds(self.len);
+        assert!(start < end, "Invalid range for remote memory sub-region: start: {}, end: {}", start, end);
+        let len = end - start;
+        println!("sub_region start: {} end: {} len: {} full_len: {}", start, end, len, self.len);
+        // Ensure that the sub-region is within bounds
+        assert!(start < self.len, "Out of bounds access to remote memory sub-region");
+        assert!(end-1 < self.len, "Out of bounds access to remote memory sub-region");
+        RemoteMemAddressInfo::new(unsafe {self.mem_address.add(start)}, len, self.key.clone())
+    }
+
+    pub fn contains(&self, addr: &usize) -> bool {
+        // let addr = addr.raw_mem_addr as usize;
+        let start = self.mem_address.raw_mem_addr as usize;
+        let end = start + self.len;
+        addr >= &start && addr < &end
     }
 }
 

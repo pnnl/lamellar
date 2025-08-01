@@ -186,7 +186,8 @@ pub(crate) struct MemoryRegionImpl {
 /// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_mr.3.html).
 ///
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
-/// are also dropped.
+/// are also dropped
+#[derive(Clone)]
 pub struct MemoryRegion {
     pub(crate) inner: MyRc<MemoryRegionImpl>,
 }
@@ -1103,7 +1104,7 @@ impl<'a> MemoryRegionBuilder<'a> {
         };
 
         let mr = MemoryRegion::from_attr(domain, self.mr_attr, self.flags)?;
-        
+
         if domain.mr_mode().is_endpoint() {
             Ok(MaybeDisabledMemoryRegion::Disabled(DisabledMemoryRegion::EpBind(EpBindingMemoryRegion {
                 mr,
