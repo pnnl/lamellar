@@ -1,7 +1,9 @@
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_ofi {
     use std::cell::RefCell;
+    // Use the `futures::join!` macro directly where needed.
 
+    use futures::join;
     use libfabric::async_::comm::atomic::AsyncAtomicCASEp;
     use libfabric::async_::comm::atomic::AsyncAtomicCASRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::AsyncAtomicFetchEp;
@@ -663,6 +665,88 @@ pub mod async_ofi {
                 }
             })
             .unwrap()
+        }
+
+        pub fn sendrecv_deadlock<T:Copy>(
+            &self,
+            buf: &mut [T],
+            desc: Option<&MemoryRegionDesc>,
+            data: Option<u64>,
+            send_ctx: &mut Context,
+            recv_ctx: &mut Context,
+        ) {
+            println!("sendrecv_deadlock called");
+            let send_fut = async {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => {
+                        if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                            if data.is_some() {
+                                ep.injectdata_to_async(
+                                    buf,
+                                    data.unwrap(),
+                                    self.mapped_addr.as_ref().unwrap(),
+                                )
+                                .await
+                            } else {
+                                ep.inject_to_async(&buf, self.mapped_addr.as_ref().unwrap())
+                                    .await
+                            }
+                        } else {
+                            if data.is_some() {
+                                ep.senddata_to_async(
+                                    &buf,
+                                    desc,
+                                    data.unwrap(),
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    send_ctx,
+                                )
+                                .await
+                            } else {
+                                ep.send_to_async(
+                                    &buf,
+                                    desc,
+                                    self.mapped_addr.as_ref().unwrap(),
+                                    send_ctx,
+                                )
+                                .await
+                            }
+                            .map(|_| {})
+                        }
+                    }
+                    MyEndpoint::Connected(ep) => {
+                        if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                            if data.is_some() {
+                                ep.injectdata_async(&buf, data.unwrap()).await
+                            } else {
+                                ep.inject_async(&buf).await
+                            }
+                        } else {
+                            if data.is_some() {
+                                ep.senddata_async(&buf, desc, data.unwrap(), send_ctx).await
+                            } else {
+                                ep.send_async(&buf, desc, send_ctx).await
+                            }
+                            .map(|_| {})
+                        }
+                    }
+                }.unwrap();
+            };
+            let mut buf = buf.to_vec();
+
+            let recv_fu = 
+            async {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => {
+                        ep.recv_from_async(&mut buf, desc, self.mapped_addr.as_ref().unwrap(), recv_ctx)
+                            .await
+                    }
+                    MyEndpoint::Connected(ep) => {ep.recv_async(&mut buf, desc, recv_ctx).await}
+                }.unwrap();
+            };
+
+            async_std::task::block_on(async {
+                join!(recv_fu, send_fut);
+            });
         }
 
         pub fn sendv(
@@ -1710,6 +1794,66 @@ pub mod async_ofi {
         }
     }
 
+    fn sendrecv_deadlock(server: bool, name: &str, connected: bool) {
+        let ofi = if connected {
+            handshake(server, name, Some(InfoCaps::new().msg()))
+        } else {
+            handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
+        };
+
+        let mut reg_mem: Vec<_> = (0..1024 * 2)
+            .into_iter()
+            .map(|v: usize| (v % 256) as u8)
+            .collect();
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+
+        let desc = [mr.descriptor(), mr.descriptor()];
+        let desc0 = Some(mr.descriptor());
+        let mut ctx = ofi.info_entry.allocate_context();
+        let mut send_ctx = ofi.info_entry.allocate_context();
+        let mut recv_ctx = ofi.info_entry.allocate_context();
+
+        if server {
+            // Send a single buffer
+            // ofi.send(&reg_mem[..512], desc0.as_ref(), None, &mut ctx);
+            // assert!(
+            //     std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size()
+            // );
+
+            ofi.sendrecv_deadlock(&mut reg_mem[..512], desc0.as_ref(), None, &mut send_ctx, &mut recv_ctx);
+            // Inject a buffer
+            // ofi.send(&reg_mem[..128], desc0.as_ref(), None, &mut ctx);
+            // // No cq.sread since inject does not generate completions
+
+            // // // Send single Iov
+            // let iov = [IoVec::from_slice(&reg_mem[..512])];
+            // ofi.sendv(&iov, Some(&desc[..1]), &mut ctx);
+
+            // // Send multi Iov
+            // let iov = [
+            //     IoVec::from_slice(&reg_mem[..512]),
+            //     IoVec::from_slice(&reg_mem[512..1024]),
+            // ];
+            // ofi.sendv(&iov, Some(&desc), &mut ctx);
+        } else {
+            ofi.sendrecv_deadlock(&mut reg_mem[..512], desc0.as_ref(), None, &mut send_ctx, &mut recv_ctx);
+        }
+    }
+
     #[test]
     fn async_sendrecv0() {
         sendrecv(true, "sendrecv0", false);
@@ -1718,6 +1862,16 @@ pub mod async_ofi {
     #[test]
     fn async_sendrecv1() {
         sendrecv(false, "sendrecv0", false);
+    }
+
+    #[test]
+    fn async_sendrecv_deadlock0() {
+        sendrecv_deadlock(true, "sendrecv0", false);
+    }
+
+    #[test]
+    fn async_sendrecv_deadlock1() {
+        sendrecv_deadlock(false, "sendrecv0", false);
     }
 
     #[test]

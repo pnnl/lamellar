@@ -485,6 +485,8 @@ impl<T> InfoBuilder<T> {
             }
         }
 
+        unsafe { libfabric_sys::fi_freeinfo(c_info) };
+
         Ok(Info::<T> { entries })
     }
 

@@ -687,6 +687,7 @@ struct Context1 {
     pub(crate) id: usize,
     pub(crate) ready: AtomicBool,
     pub(crate) state: MyOnceCell<ContextState>,
+    pub(crate) waker: MyOnceCell<std::task::Waker>,
 }
 
 impl Context1 {
@@ -700,6 +701,7 @@ impl Context1 {
             },
             ready: AtomicBool::new(false),
             state: MyOnceCell::new(),
+            waker: MyOnceCell::new(),
         }
     }
 
@@ -737,6 +739,7 @@ struct Context2 {
     pub(crate) id: usize,
     state: MyOnceCell<ContextState>,
     pub(crate) ready: AtomicBool,
+    pub(crate) waker: MyOnceCell<std::task::Waker>,
 }
 
 impl Context2 {
@@ -750,6 +753,7 @@ impl Context2 {
             },
             ready: AtomicBool::new(false),
             state: MyOnceCell::new(),
+            waker: MyOnceCell::new(),
         }
     }
 
@@ -855,6 +859,33 @@ impl ContextType {
         match self {
             ContextType::Context1(ctx) => &mut ctx.state,
             ContextType::Context2(ctx) => &mut ctx.state,
+        }
+    }
+
+    pub(crate) fn set_waker(&mut self, waker: std::task::Waker) {
+        match self {
+            ContextType::Context1(ctx) => {
+                ctx.waker.take(); // Clear any previous waker
+                ctx.waker.set(waker).unwrap(); // Set the new waker
+            }
+            ContextType::Context2(ctx) => {
+                ctx.waker.take(); // Clear any previous waker
+                ctx.waker.set(waker).unwrap(); // Set the new waker
+            }
+        }
+    }
+
+    pub(crate) fn get_waker(&mut self) -> MyOnceCell<std::task::Waker> {
+        match self {
+            ContextType::Context1(ctx) => ctx.waker.clone(),
+            ContextType::Context2(ctx) => ctx.waker.clone(),
+        }
+    }
+
+    pub(crate) fn get_type(&self) -> usize {
+        match self {
+            ContextType::Context1(_) => 1,
+            ContextType::Context2(_) => 2,
         }
     }
 }
