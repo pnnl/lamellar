@@ -60,7 +60,7 @@ pub type CompletionQueue<T> = CompletionQueueBase<T>;
 
 pub trait AsyncReadCq: ReadCq {
     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a>;
-    fn read_async(&self, count: usize) -> CqAsyncReadOwned;
+    // fn read_async(&self, count: usize,  ctx: &mut Context) -> CqAsyncReadOwned;
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a>;
 }
 
@@ -290,9 +290,9 @@ impl AsyncReadCq for AsyncCompletionQueueImpl {
     //     }
     // }
 
-    fn read_async(&self, count: usize) -> CqAsyncReadOwned {
-        CqAsyncReadOwned::new(count, self)
-    }
+    // fn read_async<'a>(&'a self, context: &'a mut Context) -> CqAsyncReadOwned<'a> {
+    //     CqAsyncReadOwned::new(self, context)
+    // }
 
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
         AsyncTransferCq::new(self, ctx)
@@ -319,9 +319,9 @@ impl AsyncReadCq for CompletionQueue<AsyncCompletionQueueImpl> {
     //     self.inner.read_in_async(buf, count)
     // }
 
-    fn read_async(&self, count: usize) -> CqAsyncReadOwned {
-        self.inner.read_async(count)
-    }
+    // fn read_async(&self, count: usize, context: &mut Context) -> CqAsyncReadOwned {
+    //     self.inner.read_async(count, context)
+    // }
 
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
         self.inner.wait_for_ctx_async(ctx)
@@ -375,7 +375,6 @@ impl AsyncCompletionQueueImpl {
 }
 
 pub struct AsyncTransferCq<'a> {
-    pub(crate) ctx: &'a mut crate::Context,
     fut: Pin<Box<CqAsyncReadOwned<'a>>>,
     waiting: bool,
     last_poll: Option<std::time::Instant>,
@@ -386,8 +385,7 @@ impl<'a> AsyncTransferCq<'a> {
     pub(crate) fn new(cq: &'a AsyncCompletionQueueImpl, ctx: &'a mut Context) -> Self {
         // println!("Issued : {} {:x}", ctx.0.id(), ctx.inner() as usize);
         Self {
-            fut: Box::pin(CqAsyncReadOwned::new(1, cq)),
-            ctx,
+            fut: Box::pin(CqAsyncReadOwned::new(cq, ctx)),
             waiting: false,
             last_poll: None,
         }
@@ -401,339 +399,357 @@ impl<'a> Future for AsyncTransferCq<'a> {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
+        // println!("Polling transfer cq for ctx {} {:x}", self.ctx.0.id(), self.ctx.inner() as usize);
         let mut_self = self.get_mut();
-        if mut_self.last_poll.is_none() {
-            mut_self.last_poll = Some(Instant::now());
-            // println!(
-            //     "{} {:x} is being polled",
-            //     mut_self.ctx.0.id(),
-            //     mut_self.ctx.inner() as usize
-            // );
-        } else {
-            if mut_self.last_poll.unwrap().elapsed().as_secs() > 5 {
-                // println!(
-                //     "{} {:x} is being polled",
-                //     mut_self.ctx.0.id(),
-                //     mut_self.ctx.inner() as usize
-                // );
-                mut_self.last_poll = Some(Instant::now());
-            }
-        }
-        loop {
-            if mut_self.waiting && mut_self.ctx.ready() {
-                // println!(
-                //     "{} {:x} Completed YEAH",
-                //     mut_self.ctx.0.id(),
-                //     mut_self.ctx.inner() as usize
-                // );
-                let state = mut_self.ctx.state().take();
-                mut_self
-                    .fut
-                    .cq
-                    .pending_entries
-                    .fetch_sub(1, Ordering::SeqCst);
-                mut_self.ctx.reset();
-                match state {
-                    Some(state) => match state {
-                        crate::ContextState::Eq(_) => panic!("Should never find events here"),
-                        crate::ContextState::Cq(comp) => return std::task::Poll::Ready(comp),
-                    },
-                    None => {
-                        panic!("Should always have something to read when ready");
-                    }
-                }
-            } else if mut_self.waiting {
-                // TODO: Reconsider if we should poll the cq here
-                // let ret = mut_self.fut.cq.read(0);
-                // match ret {
-                //     Err(error) => {
-                //         if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                //             panic!("Other error");
-                //         }
-                //     }
-                //     Ok(_) => {}
-                // }
-
-                // async_std::task::yield_now();
-                cx.waker().wake_by_ref();
-                return std::task::Poll::Pending;
-            } else {
-                // println!(
-                //     "{} {:x} Might block",
-                //     mut_self.ctx.0.id(),
-                //     mut_self.ctx.inner() as usize
-                // );
-                #[allow(clippy::let_unit_value)]
-                match ready!(mut_self.fut.as_mut().poll(cx)) {
-                    Ok(_) => {
-                        // println!(
-                        //     "{} {:x} Didn't block",
-                        //     mut_self.ctx.0.id(),
-                        //     mut_self.ctx.inner() as usize
-                        // );
-                    }
-                    Err(error) => {
-                        // println!(
-                        //     "{} {:x} Didn't block",
-                        //     mut_self.ctx.0.id(),
-                        //     mut_self.ctx.inner() as usize
-                        // );
-                        if let ErrorKind::ErrorInCompletionQueue(ref q_error) = error.kind {
-                            if q_error.c_err.op_context as usize == mut_self.ctx.inner() as usize {
-                                return std::task::Poll::Ready(Err(error));
-                            } else {
-                                mut_self
-                                    .fut
-                                    .cq
-                                    .pending_entries
-                                    .fetch_add(1, Ordering::SeqCst);
-                                match &mut_self.ctx.0 {
-                                    ContextType::Context1(_) => unsafe {
-                                        (q_error.c_err.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context1)
-                                            .as_mut()
-                                            .unwrap()
-                                    }
-                                    .set_completion_done(Err(error)),
-                                    ContextType::Context2(_) => unsafe {
-                                        (q_error.c_err.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context2)
-                                            .as_mut()
-                                            .unwrap()
-                                    }
-                                    .set_completion_done(Err(error)),
-                                }
-                                // mut_self.fut =
-                                //     Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
-                                continue;
-                            }
-                        } else {
-                            return std::task::Poll::Ready(Err(error));
-                        }
-                    }
-                }
-            }
-
-            // println!("Can read");
-            let mut found = None;
-            // let mut ctx_val = 0;
-            // let mut ctx_addr = 0usize;
-            match &mut_self.fut.buf {
-                Completion::Unspec(entries) => {
-                    for e in entries {
-                        if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            // ctx_val = mut_self.ctx.0.id();
-                            // ctx_addr = mut_self.ctx.inner() as usize;
-                            found = Some(SingleCompletion::Unspec(e.clone()));
-                        } else {
-                            mut_self
-                                .fut
-                                .cq
-                                .pending_entries
-                                .fetch_add(1, Ordering::SeqCst);
-                            match &mut_self.ctx.0 {
-                                ContextType::Context1(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context1)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Unspec(e.clone())))
-                                }
-                                ContextType::Context2(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context2)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Unspec(e.clone())))
-                                }
-                            }
-                        }
-                    }
-                }
-                Completion::Ctx(entries) => {
-                    for e in entries {
-                        if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            // ctx_val = mut_self.ctx.0.id();
-                            // ctx_addr = e.c_entry.op_context as usize;
-                            found = Some(SingleCompletion::Ctx(e.clone()));
-                        } else {
-                            mut_self
-                                .fut
-                                .cq
-                                .pending_entries
-                                .fetch_add(1, Ordering::SeqCst);
-                            match &mut_self.ctx.0 {
-                                ContextType::Context1(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context1)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Ctx(e.clone())))
-                                }
-                                ContextType::Context2(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context2)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Ctx(e.clone())))
-                                }
-                            }
-                        }
-                    }
-                }
-                Completion::Msg(entries) => {
-                    for e in entries {
-                        if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            // ctx_val = mut_self.ctx.0.id();
-                            // ctx_addr = e.c_entry.op_context as usize;
-                            found = Some(SingleCompletion::Msg(e.clone()));
-                        } else {
-                            mut_self
-                                .fut
-                                .cq
-                                .pending_entries
-                                .fetch_add(1, Ordering::SeqCst);
-                            match &mut_self.ctx.0 {
-                                ContextType::Context1(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context1)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Msg(e.clone())))
-                                }
-                                ContextType::Context2(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context2)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Msg(e.clone())))
-                                }
-                            }
-                        }
-                    }
-                }
-                Completion::Data(entries) => {
-                    for e in entries {
-                        if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            // ctx_val = mut_self.ctx.0.id();
-                            // ctx_addr = e.c_entry.op_context as usize;
-                            found = Some(SingleCompletion::Data(e.clone()));
-                        } else {
-                            mut_self
-                                .fut
-                                .cq
-                                .pending_entries
-                                .fetch_add(1, Ordering::SeqCst);
-                            match &mut_self.ctx.0 {
-                                ContextType::Context1(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context1)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Data(e.clone())))
-                                }
-                                ContextType::Context2(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context2)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Data(e.clone())))
-                                }
-                            }
-                        }
-                    }
-                }
-                Completion::Tagged(entries) => {
-                    for e in entries {
-                        if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
-                            // ctx_val = mut_self.ctx.0.id();
-                            // ctx_addr = e.c_entry.op_context as usize;
-                            found = Some(SingleCompletion::Tagged(e.clone()));
-                        } else {
-                            mut_self
-                                .fut
-                                .cq
-                                .pending_entries
-                                .fetch_add(1, Ordering::SeqCst);
-                            match &mut_self.ctx.0 {
-                                ContextType::Context1(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context1)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context1 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Tagged(e.clone())))
-                                }
-                                ContextType::Context2(_) => {
-                                    let ctx = unsafe {
-                                        (e.c_entry.op_context as *mut std::ffi::c_void
-                                            as *mut crate::Context2)
-                                            .as_mut()
-                                            .unwrap()
-                                    };
-                                    // ctx_addr = ctx as *mut crate::Context2 as usize;
-                                    // ctx_val = ctx.id;
-                                    ctx.set_completion_done(Ok(SingleCompletion::Tagged(e.clone())))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            match found {
-                Some(v) => {
-                    // println!("{} {:x} Finished right away", mut_self.ctx.0.id(), ctx_addr);
-                    return std::task::Poll::Ready(Ok(v));
-                }
+        ready!(mut_self.fut.as_mut().poll(cx))?;
+        let state = mut_self.fut.context.state().take();
+            // mut_self
+            //     .fut
+            //     .cq
+            //     .pending_entries
+            //     .fetch_sub(1, Ordering::SeqCst);
+            mut_self.fut.context.reset();
+            match state {
+                Some(state) => match state {
+                    crate::ContextState::Eq(_) => panic!("Should never find events here"),
+                    crate::ContextState::Cq(comp) => return std::task::Poll::Ready(comp),
+                },
                 None => {
-                    mut_self.waiting = true;
-
-                    // println!(
-                    //     "{} {:x} != {} {:x}!!!!Not for me!!!!!!!",
-                    //     ctx_val,
-                    //     ctx_addr,
-                    //     mut_self.ctx.0.id(),
-                    //     mut_self.ctx.inner() as usize
-                    // );
-                    // mut_self.fut = Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
+                    panic!("Should always have something to read when ready");
                 }
             }
-        }
+        // if mut_self.last_poll.is_none() {
+        //     mut_self.last_poll = Some(Instant::now());
+        //     // println!(
+        //     //     "{} {:x} is being polled",
+        //     //     mut_self.ctx.0.id(),
+        //     //     mut_self.ctx.inner() as usize
+        //     // );
+        // } else {
+        //     if mut_self.last_poll.unwrap().elapsed().as_secs() > 5 {
+        //         // println!(
+        //         //     "{} {:x} is being polled",
+        //         //     mut_self.ctx.0.id(),
+        //         //     mut_self.ctx.inner() as usize
+        //         // );
+        //         mut_self.last_poll = Some(Instant::now());
+        //     }
+        // }
+        // loop {
+        //     if mut_self.waiting && mut_self.ctx.ready() {
+        //         // println!(
+        //         //     "{} {:x} Completed YEAH",
+        //         //     mut_self.ctx.0.id(),
+        //         //     mut_self.ctx.inner() as usize
+        //         // );
+        //         let state = mut_self.ctx.state().take();
+        //         mut_self
+        //             .fut
+        //             .cq
+        //             .pending_entries
+        //             .fetch_sub(1, Ordering::SeqCst);
+        //         mut_self.ctx.reset();
+        //         match state {
+        //             Some(state) => match state {
+        //                 crate::ContextState::Eq(_) => panic!("Should never find events here"),
+        //                 crate::ContextState::Cq(comp) => return std::task::Poll::Ready(comp),
+        //             },
+        //             None => {
+        //                 panic!("Should always have something to read when ready");
+        //             }
+        //         }
+        //     } else if mut_self.waiting {
+        //         // TODO: Reconsider if we should poll the cq here
+        //         // let ret = mut_self.fut.cq.read(0);
+        //         // match ret {
+        //         //     Err(error) => {
+        //         //         if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+        //         //             panic!("Other error");
+        //         //         }
+        //         //     }
+        //         //     Ok(_) => {}
+        //         // }
+
+        //         // async_std::task::yield_now();
+        //         cx.waker().wake_by_ref();
+        //         return std::task::Poll::Pending;
+        //     } else {
+        //         // println!(
+        //         //     "{} {:x} Might block",
+        //         //     mut_self.ctx.0.id(),
+        //         //     mut_self.ctx.inner() as usize
+        //         // );
+        //         #[allow(clippy::let_unit_value)]
+        //         match ready!(mut_self.fut.as_mut().poll(cx)) {
+        //             Ok(_) => {
+        //                 // println!(
+        //                 //     "{} {:x} Didn't block",
+        //                 //     mut_self.ctx.0.id(),
+        //                 //     mut_self.ctx.inner() as usize
+        //                 // );
+        //             }
+        //             Err(error) => {
+        //                 // println!(
+        //                 //     "{} {:x} Didn't block",
+        //                 //     mut_self.ctx.0.id(),
+        //                 //     mut_self.ctx.inner() as usize
+        //                 // );
+        //                 if let ErrorKind::ErrorInCompletionQueue(ref q_error) = error.kind {
+        //                     if q_error.c_err.op_context as usize == mut_self.ctx.inner() as usize {
+        //                         return std::task::Poll::Ready(Err(error));
+        //                     } else {
+        //                         mut_self
+        //                             .fut
+        //                             .cq
+        //                             .pending_entries
+        //                             .fetch_add(1, Ordering::SeqCst);
+        //                         match &mut_self.ctx.0 {
+        //                             ContextType::Context1(_) => unsafe {
+        //                                 (q_error.c_err.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context1)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             }
+        //                             .set_completion_done(Err(error)),
+        //                             ContextType::Context2(_) => unsafe {
+        //                                 (q_error.c_err.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context2)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             }
+        //                             .set_completion_done(Err(error)),
+        //                         }
+        //                         // mut_self.fut =
+        //                         //     Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
+        //                         continue;
+        //                     }
+        //                 } else {
+        //                     return std::task::Poll::Ready(Err(error));
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     // println!("Can read");
+        //     let mut found = None;
+        //     // let mut ctx_val = 0;
+        //     // let mut ctx_addr = 0usize;
+        //     match &mut_self.fut.buf {
+        //         Completion::Unspec(entries) => {
+        //             for e in entries {
+        //                 if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
+        //                     // ctx_val = mut_self.ctx.0.id();
+        //                     // ctx_addr = mut_self.ctx.inner() as usize;
+        //                     found = Some(SingleCompletion::Unspec(e.clone()));
+        //                 } else {
+        //                     mut_self
+        //                         .fut
+        //                         .cq
+        //                         .pending_entries
+        //                         .fetch_add(1, Ordering::SeqCst);
+        //                     match &mut_self.ctx.0 {
+        //                         ContextType::Context1(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context1)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context1 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Unspec(e.clone())))
+        //                         }
+        //                         ContextType::Context2(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context2)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context2 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Unspec(e.clone())))
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         Completion::Ctx(entries) => {
+        //             for e in entries {
+        //                 if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
+        //                     // ctx_val = mut_self.ctx.0.id();
+        //                     // ctx_addr = e.c_entry.op_context as usize;
+        //                     found = Some(SingleCompletion::Ctx(e.clone()));
+        //                 } else {
+        //                     mut_self
+        //                         .fut
+        //                         .cq
+        //                         .pending_entries
+        //                         .fetch_add(1, Ordering::SeqCst);
+        //                     match &mut_self.ctx.0 {
+        //                         ContextType::Context1(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context1)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context1 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Ctx(e.clone())))
+        //                         }
+        //                         ContextType::Context2(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context2)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context2 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Ctx(e.clone())))
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         Completion::Msg(entries) => {
+        //             for e in entries {
+        //                 if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
+        //                     // ctx_val = mut_self.ctx.0.id();
+        //                     // ctx_addr = e.c_entry.op_context as usize;
+        //                     found = Some(SingleCompletion::Msg(e.clone()));
+        //                 } else {
+        //                     mut_self
+        //                         .fut
+        //                         .cq
+        //                         .pending_entries
+        //                         .fetch_add(1, Ordering::SeqCst);
+        //                     match &mut_self.ctx.0 {
+        //                         ContextType::Context1(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context1)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context1 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Msg(e.clone())))
+        //                         }
+        //                         ContextType::Context2(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context2)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context2 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Msg(e.clone())))
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         Completion::Data(entries) => {
+        //             for e in entries {
+        //                 if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
+        //                     // ctx_val = mut_self.ctx.0.id();
+        //                     // ctx_addr = e.c_entry.op_context as usize;
+        //                     found = Some(SingleCompletion::Data(e.clone()));
+        //                 } else {
+        //                     mut_self
+        //                         .fut
+        //                         .cq
+        //                         .pending_entries
+        //                         .fetch_add(1, Ordering::SeqCst);
+        //                     match &mut_self.ctx.0 {
+        //                         ContextType::Context1(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context1)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context1 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Data(e.clone())))
+        //                         }
+        //                         ContextType::Context2(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context2)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context2 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Data(e.clone())))
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         Completion::Tagged(entries) => {
+        //             for e in entries {
+        //                 if e.c_entry.op_context as usize == mut_self.ctx.inner() as usize {
+        //                     // ctx_val = mut_self.ctx.0.id();
+        //                     // ctx_addr = e.c_entry.op_context as usize;
+        //                     found = Some(SingleCompletion::Tagged(e.clone()));
+        //                 } else {
+        //                     mut_self
+        //                         .fut
+        //                         .cq
+        //                         .pending_entries
+        //                         .fetch_add(1, Ordering::SeqCst);
+        //                     match &mut_self.ctx.0 {
+        //                         ContextType::Context1(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context1)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context1 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Tagged(e.clone())))
+        //                         }
+        //                         ContextType::Context2(_) => {
+        //                             let ctx = unsafe {
+        //                                 (e.c_entry.op_context as *mut std::ffi::c_void
+        //                                     as *mut crate::Context2)
+        //                                     .as_mut()
+        //                                     .unwrap()
+        //                             };
+        //                             // ctx_addr = ctx as *mut crate::Context2 as usize;
+        //                             // ctx_val = ctx.id;
+        //                             ctx.set_completion_done(Ok(SingleCompletion::Tagged(e.clone())))
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     match found {
+        //         Some(v) => {
+        //             // println!("{} {:x} Finished right away", mut_self.ctx.0.id(), ctx_addr);
+        //             return std::task::Poll::Ready(Ok(v));
+        //         }
+        //         None => {
+        //             mut_self.waiting = true;
+
+        //             // println!(
+        //             //     "{} {:x} != {} {:x}!!!!Not for me!!!!!!!",
+        //             //     ctx_val,
+        //             //     ctx_addr,
+        //             //     mut_self.ctx.0.id(),
+        //             //     mut_self.ctx.inner() as usize
+        //             // );
+        //             // mut_self.fut = Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
+        //         }
+            // }
+        // }
     }
 }
 
@@ -825,42 +841,21 @@ impl<'a> Future for AsyncTransferCq<'a> {
 // }
 
 impl<'a> CqAsyncReadOwned<'a> {
-    pub(crate) fn new(num_entries: usize, cq: &'a AsyncCompletionQueueImpl) -> Self {
-        let entry_buff = match &cq.base {
-            AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
-                #[cfg(feature = "thread-safe")]
-                {
-                    async_cq.get_ref().entry_buff.read()
-                }
-                #[cfg(not(feature = "thread-safe"))]
-                {
-                    async_cq.get_ref().entry_buff.borrow()
-                }
-            }
-            AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
-                #[cfg(feature = "thread-safe")]
-                {
-                    cq.entry_buff.read()
-                }
-                #[cfg(not(feature = "thread-safe"))]
-                {
-                    cq.entry_buff.borrow()
-                }
-            }
-        };
+    pub(crate) fn new(cq: &'a AsyncCompletionQueueImpl, context: &'a mut Context) -> Self {
+    
         Self {
-            buf: alloc_cq_entry!(*entry_buff, num_entries),
-            num_entries,
+            buf: None,
             cq,
             fut: None,
+            context,
         }
     }
 }
 
 pub struct CqAsyncReadOwned<'a> {
-    num_entries: usize,
-    buf: Completion,
+    buf: Option<SingleCompletion>,
     cq: &'a AsyncCompletionQueueImpl,
+    context: &'a mut Context,
     #[cfg(feature = "use-async-std")]
     fut: Option<Pin<Box<Readable<'a, CompletionQueueImpl<true, true, true>>>>>,
     #[cfg(feature = "use-tokio")]
@@ -889,6 +884,7 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         let mut_self = self.get_mut();
+        // println!("Polling cq for {} entries", mut_self.num_entries);
         // let mut first = true;
         loop {
             // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
@@ -897,104 +893,169 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
             //     println!("BLOCKED {}", *blocked);
             //     assert!(*blocked == 0);
             // }
+            // mut_self.context.0.set_waker(cx.waker().clone());
+            if mut_self.context.ready() {
+                return std::task::Poll::Ready(Ok(()));
+            }
             // println!("About to block in CQ");
 
             // TODO: Reenable blocking on the file descriptor becoming readable
             // Note that we probably need to make sure no one polls the cq before we
             // actually create the future
-            let (err, _guard) = match &mut_self.cq.base {
-                AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
-                    let can_wait = mut_self.cq.trywait();
-                    if can_wait.is_err() {
-                        // println!("Cannot block");
-                        let to_ret = (
-                            async_cq
-                                .get_ref()
-                                .read_in(mut_self.num_entries, &mut mut_self.buf),
-                            None,
-                        );
-                        to_ret
-                    } else {
-                        // TODO: Do we need to skip calling readable if we were awaken?
-                        // Does being awaken means that readable has returned true?
-                        if mut_self.fut.is_none() {
-                            // println!("Can wait in CQ {}", can_wait.is_ok());
-                            // mut_self.cq.trywait().unwrap();
-                            mut_self.fut = Some(Box::pin(async_cq.readable()))
+            if mut_self.buf.is_none() {
+
+                let (err, _guard) = match &mut_self.cq.base {
+                    AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
+                        let can_wait = mut_self.cq.trywait();
+                        if can_wait.is_err() {
+                            // println!("Cannot block");
+                            let to_ret = (
+                                async_cq
+                                    .get_ref()
+                                    .read(1),
+                                None);
+                            to_ret
+                        } else {
+                            // TODO: Do we need to skip calling readable if we were awaken?
+                            // Does being awaken means that readable has returned true?
+                            if mut_self.fut.is_none() {
+                                // println!("Can wait in CQ {}", can_wait.is_ok());
+                                // mut_self.cq.trywait().unwrap();
+                                mut_self.fut = Some(Box::pin(async_cq.readable()))
+                            }
+                            #[allow(clippy::let_unit_value)]
+                            // drop(blocked);
+                            let _guard =
+                                ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
+
+                            #[allow(clippy::let_underscore_future)]
+                            let _ = mut_self.fut.take().unwrap();
+                            // println!("Did not block");
+                            // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
+
+                            (
+                                async_cq.get_ref().read(1),
+                                Some(_guard),
+                            )
                         }
-                        #[allow(clippy::let_unit_value)]
-                        // drop(blocked);
-                        let _guard =
-                            ready!(mut_self.fut.as_mut().unwrap().as_mut().poll(cx)).unwrap();
+                    }
+                    AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
+                        let to_ret = ( cq.read(1), None);
+                        to_ret
+                    }
+                };
 
-                        #[allow(clippy::let_underscore_future)]
-                        let _ = mut_self.fut.take().unwrap();
-                        // println!("Did not block");
-                        // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
 
-                        (
-                            async_cq.get_ref().read_in(1, &mut mut_self.buf),
-                            Some(_guard),
-                        )
+                match err {
+                    Err(error) => {
+                        if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
+                            // println!("Found error!");
+                            if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
+                                let mut err = CompletionError::new();
+                                mut_self.cq.readerr_in(&mut err, 0)?;
+                                if err.c_err.op_context as usize == mut_self.context.inner() as usize {
+                                    // println!("Found error in context!");
+                                    // panic!("Error {:?}", err.error());
+                                    return std::task::Poll::Ready(Err(Error::from_completion_queue_err(
+                                        err,
+                                    )));
+                                }
+                                else
+                                {
+                                    // println!("Found error in context but not for me!");
+                                    // We need to return the error to the context
+                                    match mut_self.context.0 {
+                                        ContextType::Context1(_) => unsafe {
+                                            (err.c_err.op_context as *mut std::ffi::c_void
+                                                as *mut crate::Context1)
+                                                .as_mut()
+                                                .unwrap()
+                                        }
+                                        .set_completion_done(Err(Error::from_completion_queue_err(
+                                            err,
+                                        ))),
+                                        ContextType::Context2(_) => unsafe {
+                                            (err.c_err.op_context as *mut std::ffi::c_void
+                                                as *mut crate::Context2)
+                                                .as_mut()
+                                                .unwrap()
+                                        }
+                                        .set_completion_done(Err(Error::from_completion_queue_err(
+                                            err,
+                                        ))),
+                                    }
+                                    cx.waker().wake_by_ref();
+                                    return std::task::Poll::Pending;
+                                }
+                            }
+                        } else {
+                            // println!("Will continue");
+                            #[cfg(feature = "use-tokio")]
+                            if let Some(mut guard) = _guard {
+                                if mut_self.cq.pending_entries.load(Ordering::SeqCst) == 0 {
+                                    guard.clear_ready()
+                                }
+                            }
+                            cx.waker().wake_by_ref();
+                            return std::task::Poll::Pending;
+                        }
+                    }
+                    Ok(mut completion) => {
+                        mut_self.buf = completion.pop();
                     }
                 }
-                AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
-                    let to_ret = (cq.read_in(mut_self.num_entries, &mut mut_self.buf), None);
-                    to_ret
-                }
-            };
-
-            match err {
-                Err(error) => {
-                    if !matches!(error.kind, crate::error::ErrorKind::TryAgain) {
-                        // println!("Found error!");
-                        if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
-                            let mut err = CompletionError::new();
-                            mut_self.cq.readerr_in(&mut err, 0)?;
-                            // println!("Found error Avail!");
-                            // panic!("Error {:?}", err.error());
-                            return std::task::Poll::Ready(Err(Error::from_completion_queue_err(
-                                err,
-                            )));
-                        }
-                    } else {
-                        // println!("Will continue");
-                        #[cfg(feature = "use-tokio")]
-                        if let Some(mut guard) = _guard {
-                            if mut_self.cq.pending_entries.load(Ordering::SeqCst) == 0 {
-                                guard.clear_ready()
+            }
+            let done = match &mut mut_self.buf {
+                Some(d) => unsafe {
+                    // println!("Signaling {:?}", data[0].c_entry.op_context);
+                    let mut done = true;
+                    match mut_self.context.0 {
+                        ContextType::Context1(_) => {
+                            let context = (d.op_context() as *mut std::ffi::c_void
+                                as *mut crate::Context1)
+                                .as_mut()
+                                .unwrap();
+                            if d.op_context() as usize != mut_self.context.inner() as usize {
+                                context.set_completion_done(Ok(d.clone()));
+                                mut_self.buf = None;
+                                done = false;
+                            }
+                            else {
+                                context.set_completion_done(Ok(d.clone()));
                             }
                         }
-                        cx.waker().wake_by_ref();
-                        return std::task::Poll::Pending;
+                        ContextType::Context2(_) => {
+                            let context = (d.op_context() as *mut std::ffi::c_void
+                                as *mut crate::Context2)
+                                .as_mut()
+                                .unwrap();
+                            if d.op_context() as usize != mut_self.context.inner() as usize {
+                                context.set_completion_done(Ok(d.clone()));
+                                mut_self.buf = None;
+                                done = false;
+                            }
+                            else {
+                                context.set_completion_done(Ok(d.clone()));
+                                mut_self.buf = None;
+                            }
+                        }
                     }
+                    
+                    done
+                },
+                None => {
+                    panic!("Should always have something to read when ready");
                 }
-                Ok(len) => {
-                    // println!("Actually read something {}", len);
-                    match &mut mut_self.buf {
-                        Completion::Unspec(data) => unsafe {
-                            // println!("Signaling {:?}", data[0].c_entry.op_context);
-                            data.set_len(len)
-                        },
-                        Completion::Ctx(data) => unsafe {
-                            // println!("Signaling {:?}", data[0].c_entry.op_context);
-                            data.set_len(len)
-                        },
-                        Completion::Msg(data) => unsafe {
-                            // println!("Signaling {:?}", data[0].c_entry.op_context);
-                            data.set_len(len)
-                        },
-                        Completion::Data(data) => unsafe {
-                            // println!("Signaling {:?}", data[0].c_entry.op_context);
-                            data.set_len(len)
-                        },
-                        Completion::Tagged(data) => unsafe {
-                            // println!("Signaling {:?}", data[0].c_entry.op_context);
-                            data.set_len(len)
-                        },
-                    }
-                    return std::task::Poll::Ready(Ok(()));
-                }
+            };
+            if done {
+                // If we handled all contexts, we can return Ready
+                // Otherwise we need to poll again to handle the remaining ones
+                // println!("All done");
+                return std::task::Poll::Ready(Ok(()));
+            }
+            else {
+                cx.waker().wake_by_ref();
+                return std::task::Poll::Pending;
             }
         }
     }

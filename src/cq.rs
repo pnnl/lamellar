@@ -65,12 +65,61 @@ pub enum Completion {
     Tagged(Vec<CompletionEntry<TaggedEntry>>),
 }
 
+impl Completion {
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Completion::Unspec(v) => v.len(),
+            Completion::Ctx(v) => v.len(),
+            Completion::Msg(v) => v.len(),
+            Completion::Data(v) => v.len(),
+            Completion::Tagged(v) => v.len(),
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub(crate) unsafe fn set_len(&mut self, new_len: usize) {
+        match self {
+            Completion::Unspec(v) => v.set_len(new_len),
+            Completion::Ctx(v) => v.set_len(new_len),
+            Completion::Msg(v) => v.set_len(new_len),
+            Completion::Data(v) => v.set_len(new_len),
+            Completion::Tagged(v) => v.set_len(new_len),
+        }
+    }
+
+    pub(crate) fn pop(&mut self) -> Option<SingleCompletion> {
+        match self {
+            Completion::Unspec(v) => v.pop().map(|c| SingleCompletion::Unspec(c)),
+            Completion::Ctx(v) => v.pop().map(|c| SingleCompletion::Ctx(c)),
+            Completion::Msg(v) => v.pop().map(|c| SingleCompletion::Msg(c)),
+            Completion::Data(v) => v.pop().map(|c| SingleCompletion::Data(c)),
+            Completion::Tagged(v) => v.pop().map(|c| SingleCompletion::Tagged(c)),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub enum SingleCompletion {
     Unspec(CompletionEntry<CtxEntry>),
     Ctx(CompletionEntry<CtxEntry>),
     Msg(CompletionEntry<MsgEntry>),
     Data(CompletionEntry<DataEntry>),
     Tagged(CompletionEntry<TaggedEntry>),
+}
+
+impl SingleCompletion {
+    pub fn op_context(&self) -> *mut std::ffi::c_void {
+        match self {
+            SingleCompletion::Unspec(c) => c.c_entry.op_context,
+            SingleCompletion::Ctx(c) => c.c_entry.op_context,
+            SingleCompletion::Msg(c) => c.c_entry.op_context,
+            SingleCompletion::Data(c) => c.c_entry.op_context,
+            SingleCompletion::Tagged(c) => c.c_entry.op_context,
+        }
+    }
 }
 
 pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> {

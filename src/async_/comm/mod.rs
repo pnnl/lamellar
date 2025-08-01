@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::{cq::ReadCq, error::ErrorKind};
 
 pub mod atomic;
@@ -32,19 +34,26 @@ async fn while_try_again(
     cq: &(impl ReadCq + ?Sized),
     mut foo: impl FnMut() -> Result<(), crate::error::Error>,
 ) -> Result<(), crate::error::Error> {
+    // let mut temp_now = Instant::now();
+    // println!("while_try_again started");
     loop {
         match foo() {
-            Ok(()) => break,
+            Ok(()) => {break},
             Err(error) => {
                 if matches!(error.kind, ErrorKind::TryAgain) {
                     progress(cq)?;
+                    // println!("while_try_again: TryAgain error, retrying...");
                     async_std::task::yield_now().await;
                 } else {
                     return Err(error);
                 }
             }
         }
+        // if temp_now.elapsed().as_secs() > 5 {
+        //     println!("Probably stuck in trying to put/read\n {}", std::backtrace::Backtrace::capture());
+        //     temp_now = Instant::now();
+        // }
     }
-
+    // println!("while_try_again finished");
     Ok(())
 }
