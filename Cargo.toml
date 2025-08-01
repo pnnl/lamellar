@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pmi-sys = {path = "/people/thom895/rofi/pmi-sys", optional = true}
-pmi2-sys = {path = "/people/thom895/rofi/pmi2-sys", optional = true}
-pmix-sys = {path = "/people/thom895/rofi/pmix-sys", optional = true}
+pmi-sys = {path = "../pmi-sys", optional = true}
+pmi2-sys = {path = "../pmi2-sys", optional = true}
+pmix-sys = {path = "../pmix-sys", optional = true}
 
 
 [features]
-default = ["with-pmi2", "with-pmi1"]
+default = ["with-pmix"]
 with-pmi1 = ["pmi-sys"]
 with-pmi2 = ["pmi2-sys"]
 with-pmix = ["pmix-sys"]
