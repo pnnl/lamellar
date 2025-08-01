@@ -5,7 +5,7 @@ edition = "2021"
 
 
 [dependencies]
-libfabric-sys = { path = "../libfabric-sys" }
+libfabric-sys = { path = "../libfabric-sys"}
 debug_print = "1.0.0"
 tokio = { version = "1.38", optional = true, features = [
     "net",
