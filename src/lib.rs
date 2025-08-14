@@ -3,7 +3,6 @@ compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive
 
 #[cfg(not(feature = "thread-safe"))]
 use std::cell::OnceCell;
-use std::hash::Hash;
 use std::ops::Range;
 use std::ops::RangeFrom;
 use std::ops::RangeFull;

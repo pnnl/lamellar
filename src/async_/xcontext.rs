@@ -8,7 +8,7 @@ use super::{
 use crate::{
     cntr::{Counter, ReadCntr},
     enums::TransferOptions,
-    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
+    ep::{ActiveEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid, OwnedEpFid},
     xcontext::{
         MsgOrder, Receive, RxAttr, RxCompOrder, RxContextBase, Transmit, TxAttr, TxCompOrder,

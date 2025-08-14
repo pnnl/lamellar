@@ -561,7 +561,7 @@ impl<T> InfoEntry<T> {
             rx_attr,
             ep_attr,
             nic,
-            info: FabricInfo(c_info),
+            info: FabricInfo::new(c_info),
             phantom: PhantomData,
         }
     }
@@ -783,7 +783,7 @@ impl Info<()> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(version: &Version) -> InfoBuilder<()> {
         InfoBuilder::<()> {
-            hints_info: FabricInfo(unsafe { libfabric_sys::inlined_fi_allocinfo() }),
+            hints_info: FabricInfo::new(unsafe { libfabric_sys::inlined_fi_allocinfo() }),
             c_version: version.as_raw(),
             c_node: std::ffi::CString::new("").unwrap(),
             c_service: std::ffi::CString::new("").unwrap(),
@@ -794,7 +794,7 @@ impl Info<()> {
 
     pub fn with_numeric_host(version: &Version, host: &str) -> InfoBuilder<()> {
         InfoBuilder::<()> {
-            hints_info: FabricInfo(unsafe { libfabric_sys::inlined_fi_allocinfo() }),
+            hints_info: FabricInfo::new(unsafe { libfabric_sys::inlined_fi_allocinfo() }),
             c_version: version.as_raw(),
             c_node: std::ffi::CString::new(host).unwrap(),
             c_service: std::ffi::CString::new("").unwrap(),
@@ -821,9 +821,46 @@ impl Drop for FabricInfo {
 pub struct InfoHints<T> {
     info_builder: InfoBuilder<T>,
 }
-pub(crate) struct FabricInfo(pub(crate) *mut libfabric_sys::fi_info);
+pub(crate) struct FabricInfo(*mut libfabric_sys::fi_info);
 
 impl FabricInfo {
+    fn new(info: *mut libfabric_sys::fi_info) -> Self {
+        let mut fabric_info = Self(info);
+        
+        #[cfg(feature="thread-safe")]
+        {
+            let mut threading;
+            #[cfg(feature="threading-domain")]
+            {
+                threading = Threading::Domain;
+            }
+            #[cfg(feature="threading-thread-safe")]
+            {
+                threading = Threading::Safe;
+            }
+            #[cfg(feature="threading-completion")]
+            {
+                threading = Threading::Completion;
+            }
+            
+            // Don't change the order of these two below as endpoint enables fid 
+            #[cfg(feature="threading-fid")]
+            {
+                threading = Threading::Fid;
+            }
+            #[cfg(feature="threading-endpoint")]
+            {
+                threading = Threading::Endpoint;
+            }
+
+
+            fabric_info.set_domain_threading(threading);
+        }
+        
+
+        fabric_info
+    } 
+
     fn set_mode(&mut self, mode: Mode) {
         unsafe { (*self.0).mode = mode.as_raw() };
     }
@@ -1001,6 +1038,11 @@ impl FabricInfo {
     fn set_rx_iov_limit(&mut self, iov_limit: usize) {
         unsafe { (*(*self.0).rx_attr).iov_limit = iov_limit };
     }
+
+    pub(crate) fn as_raw(&self) -> *mut libfabric_sys::fi_info {
+        self.0
+    }
+
 }
 
 pub struct EndpointAttrIn<T> {
@@ -1060,6 +1102,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    #[cfg(not(feature="thread-safe"))]
     pub fn threading(mut self, threading: Threading) -> Self {
         self.hints
             .info_builder

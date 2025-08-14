@@ -456,7 +456,7 @@ impl ScalableEndpointImpl {
         let err = unsafe {
             libfabric_sys::inlined_fi_scalable_ep(
                 domain.as_typed_fid_mut().as_raw_typed_fid(),
-                info.info.0,
+                info.info.as_raw(),
                 &mut c_sep,
                 context,
             )
@@ -661,7 +661,7 @@ impl<EQ: ?Sized> PassiveEndpointImplBase<(), EQ> {
         let err = unsafe {
             libfabric_sys::inlined_fi_passive_ep(
                 fabric.as_typed_fid_mut().as_raw_typed_fid(),
-                info.info.0,
+                info.info.as_raw(),
                 &mut c_pep,
                 context,
             )
@@ -954,7 +954,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
         let err = unsafe {
             libfabric_sys::inlined_fi_endpoint2(
                 domain.as_typed_fid_mut().as_raw_typed_fid(),
-                info.info.0,
+                info.info.as_raw(),
                 &mut c_ep,
                 flags,
                 context,

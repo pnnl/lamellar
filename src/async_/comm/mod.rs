@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::{cq::ReadCq, error::ErrorKind};
 
 pub mod atomic;

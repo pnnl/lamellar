@@ -68,7 +68,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
             unsafe {
                 libfabric_sys::inlined_fi_domain(
                     fabric.as_typed_fid_mut().as_raw_typed_fid(),
-                    info.info.0,
+                    info.info.as_raw(),
                     &mut c_domain,
                     context,
                 )
@@ -77,7 +77,7 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
             unsafe {
                 libfabric_sys::inlined_fi_domain2(
                     fabric.as_typed_fid_mut().as_raw_typed_fid(),
-                    info.info.0,
+                    info.info.as_raw(),
                     &mut c_domain,
                     flags,
                     context,

@@ -1,8 +1,7 @@
 use crate::cq::ReadCq;
 use crate::cq::WaitCq;
-use crate::cq::{CompletionEntry, SingleCompletion};
+use crate::cq::SingleCompletion;
 use crate::domain::{DomainBase, DomainImplBase};
-use crate::error::ErrorKind;
 use crate::fid::AsTypedFid;
 use crate::fid::BorrowedTypedFid;
 use crate::fid::CqRawFid;
@@ -11,7 +10,6 @@ use crate::SyncSend;
 use crate::{
     cq::{
         Completion, CompletionError, CompletionQueueAttr, CompletionQueueBase, CompletionQueueImpl,
-        CtxEntry, DataEntry, MsgEntry, TaggedEntry,
     },
     error::Error,
     MappedAddress,
@@ -21,40 +19,38 @@ use crate::{Context, MyRc};
 use async_io::{Async, Readable};
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-use std::time::Instant;
 use std::{future::Future, task::ready};
 #[cfg(feature = "use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
 use super::AsyncFid;
-macro_rules! alloc_cq_entry {
-    ($format: expr, $count: expr) => {
-        match $format {
-            Completion::Ctx(_) => {
-                let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
-                Completion::Ctx(entries)
-            }
-            Completion::Data(_) => {
-                let entries: Vec<CompletionEntry<DataEntry>> = Vec::with_capacity($count);
-                Completion::Data(entries)
-            }
-            Completion::Tagged(_) => {
-                let entries: Vec<CompletionEntry<TaggedEntry>> = Vec::with_capacity($count);
-                Completion::Tagged(entries)
-            }
-            Completion::Msg(_) => {
-                let entries: Vec<CompletionEntry<MsgEntry>> = Vec::with_capacity($count);
-                Completion::Msg(entries)
-            }
-            Completion::Unspec(_) => {
-                let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
+// macro_rules! alloc_cq_entry {
+//     ($format: expr, $count: expr) => {
+//         match $format {
+//             Completion::Ctx(_) => {
+//                 let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
+//                 Completion::Ctx(entries)
+//             }
+//             Completion::Data(_) => {
+//                 let entries: Vec<CompletionEntry<DataEntry>> = Vec::with_capacity($count);
+//                 Completion::Data(entries)
+//             }
+//             Completion::Tagged(_) => {
+//                 let entries: Vec<CompletionEntry<TaggedEntry>> = Vec::with_capacity($count);
+//                 Completion::Tagged(entries)
+//             }
+//             Completion::Msg(_) => {
+//                 let entries: Vec<CompletionEntry<MsgEntry>> = Vec::with_capacity($count);
+//                 Completion::Msg(entries)
+//             }
+//             Completion::Unspec(_) => {
+//                 let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
 
-                Completion::Unspec(entries)
-            }
-        }
-    };
-}
+//                 Completion::Unspec(entries)
+//             }
+//         }
+//     };
+// }
 
 pub type CompletionQueue<T> = CompletionQueueBase<T>;
 

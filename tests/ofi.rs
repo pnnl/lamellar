@@ -1923,7 +1923,6 @@ macro_rules! gen_info {
                     .type_($ep_type)
                     .leave_ep_attr()
                     .enter_domain_attr()
-                    .threading(libfabric::enums::Threading::Domain)
                     .mr_mode(
                         libfabric::enums::MrMode::new()
                             .prov_key()

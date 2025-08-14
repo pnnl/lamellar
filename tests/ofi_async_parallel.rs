@@ -2030,7 +2030,6 @@ pub mod parallel_async_ofi {
                         .type_($ep_type)
                         .leave_ep_attr()
                         .enter_domain_attr()
-                        .threading(libfabric::enums::Threading::Safe)
                         .mr_mode(
                             libfabric::enums::MrMode::new()
                                 .prov_key()
