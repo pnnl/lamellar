@@ -67,8 +67,8 @@ fn build_ofi() -> std::path::PathBuf {
                 .reconf("-ivf")
                 .disable_shared()
                 .enable_static()
-                .cflag("-O3")
-                .cxxflag("-O3")
+                .cflag("-g -O3")
+                .cxxflag("-g -O3")
                 .build();
 
             #[cfg(feature = "shared")]
@@ -144,6 +144,13 @@ fn main() {
     let bindings = bindgen::Builder::default()
         .clang_arg(format!("-I{}", ofi_include_path.to_str().unwrap()))
         .header(out_path.to_str().unwrap().to_owned() + "/fabric_sys.h")
+        .blocklist_function("qgcvt")
+        .blocklist_function("qgcvt_r")
+        .blocklist_function("qfcvt")
+        .blocklist_function("qfcvt_r")
+        .blocklist_function("qecvt")
+        .blocklist_function("qecvt_r")
+        .blocklist_function("strtold")
         .generate()
         .expect("Unable to generate bindings");
 
