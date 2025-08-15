@@ -472,12 +472,15 @@ impl RemoteMemAddressInfo {
     // TODO: see if lamellar can manage this some other way...
     pub unsafe fn sub_region(&self, range: impl RemoteMemRange) -> RemoteMemAddressInfo{
         let (start, end) = range.bounds(self.len);
-        assert!(start < end, "Invalid range for remote memory sub-region: start: {}, end: {}", start, end);
+        // We can create a zero-length sub-region.
+        assert!(start <= end, "Invalid range for remote memory sub-region: start: {}, end: {}", start, end);
         let len = end - start;
-        println!("sub_region start: {} end: {} len: {} full_len: {}", start, end, len, self.len);
+        // println!("sub_region start: {} end: {} len: {} full_len: {}", start, end, len, self.len);
         // Ensure that the sub-region is within bounds
-        assert!(start < self.len, "Out of bounds access to remote memory sub-region");
-        assert!(end-1 < self.len, "Out of bounds access to remote memory sub-region");
+
+        // We can create a zero-length sub-region.
+        assert!(start <= self.len, "Out of bounds access to remote memory sub-region start:{}  len: {}", start, self.len);
+        assert!(end-1 < self.len, "Out of bounds access to remote memory sub-region start:{}  len: {}", start,self.len);
         RemoteMemAddressInfo::new(unsafe {self.mem_address.add(start)}, len, self.key.clone())
     }
 
