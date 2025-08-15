@@ -1,11 +1,10 @@
 use std::{
-    cell::RefCell,
     collections::HashMap,
     sync::{Arc, RwLock},
     thread::panicking,
 };
 
-use crate::pmi::{self, EncDec, ErrorKind, Pmi, PmiError};
+use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
     ($err_code: expr) => {
         if $err_code as u32 != pmix_sys::PMIX_SUCCESS {
@@ -87,7 +86,7 @@ impl Pmi for PmiX {
         &self.ranks
     }
 
-    fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
+    fn get(&self, key: &str, _len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
         if self.ranks.len() > 1 {
             let proc = pmix_sys::pmix_proc {
                 nspace: self.nspace.clone(),
@@ -141,7 +140,7 @@ impl Pmi for PmiX {
             check_error!(unsafe {
                 pmix_sys::PMIx_Put(pmix_sys::PMIX_GLOBAL as u8, kvs_key, &mut val)
             });
-            check_error!(unsafe { pmix_sys::PMIx_Commit() });
+            // check_error!(unsafe { pmix_sys::PMIx_Commit() });
         } else {
             self.put_singleton(key, value)?;
         }
