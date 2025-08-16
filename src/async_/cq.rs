@@ -379,7 +379,6 @@ pub struct AsyncTransferCq<'a> {
 impl<'a> AsyncTransferCq<'a> {
     #[allow(dead_code)]
     pub(crate) fn new(cq: &'a AsyncCompletionQueueImpl, ctx: &'a mut Context) -> Self {
-        // println!("Issued : {} {:x}", ctx.0.id(), ctx.inner() as usize);
         Self {
             fut: Box::pin(CqAsyncReadOwned::new(cq, ctx)),
             waiting: false,

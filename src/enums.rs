@@ -3,7 +3,7 @@ use std::os::fd::BorrowedFd;
 use libfabric_sys::{FI_RECV, FI_TRANSMIT};
 
 macro_rules! gen_enum {
-    ($name: ident, $type_: ty, $(($var: ident, $val: path)),*) => {
+    ($name: ident, $type_: ty, $(($var: ident, $val: expr)),*) => {
         #[derive(Clone, Copy, Debug)]
         pub enum $name {
             $($var,)*
@@ -26,6 +26,46 @@ macro_rules! gen_enum {
             }
         }
     };
+}
+
+gen_enum!(
+    Dscp,
+    u8,
+    (CS0 ,0),
+    (CS1 ,8),
+    (CS2 ,16),
+    (CS3 ,24),
+    (CS4 ,32),
+    (CS5 ,40),
+    (CS6 ,48),
+    (CS7 ,56),
+    (AF11, 10),
+    (AF12, 12),
+    (AF13, 14),
+    (AF21, 18),
+    (AF22, 20),
+    (AF23, 22),
+    (AF31, 26),
+    (AF32, 28),
+    (AF33, 30),
+    (AF41, 34),
+    (AF42, 36),
+    (AF43, 38),
+    (EF, 46),
+    (VoiceAdmit, 44),
+    (LowerEffort, 1)
+);
+
+impl From<TrafficClass> for Dscp {
+    fn from(tc: TrafficClass) -> Self {
+        unsafe {Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_get(tc.as_raw()))}
+    }
+}
+
+impl From<Dscp> for TrafficClass {
+    fn from(dscp: Dscp) -> Self {
+        unsafe {Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_set(dscp.as_raw()))}
+    }
 }
 
 gen_enum!(

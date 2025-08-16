@@ -842,7 +842,6 @@ impl FabricInfo {
             {
                 threading = Threading::Completion;
             }
-            
             // Don't change the order of these two below as endpoint enables fid 
             #[cfg(feature="threading-fid")]
             {

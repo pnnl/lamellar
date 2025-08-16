@@ -1,3 +1,10 @@
+#[cfg(any(
+        all(feature = "threading-thread-safe", any(feature = "threading-domain", feature = "threading-fid", feature = "threading-endpoint", feature = "threading-completion"))
+        ,all(feature = "threading-domain", any(feature = "threading-thread-safe", feature = "threading-fid", feature = "threading-endpoint", feature = "threading-completion"))
+        ,all(feature = "threading-fid", any(feature = "threading-thread-safe", feature = "threading-domain", feature = "threading-completion"))
+        ,all(feature = "threading-endpoint", any(feature = "threading-thread-safe", feature = "threading-domain", feature = "threading-completion"))
+))]
+compile_error!("threading features are mutually exclusive");
 #[cfg(all(feature = "use-tokio", feature = "use-async-std"))]
 compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive");
 
@@ -930,7 +937,7 @@ impl Context {
 // }
 
 pub trait FdRetrievable {}
-pub trait Waitable {}
+pub trait Waitable : AsRawFid{}
 pub trait Writable {}
 pub trait WaitRetrievable {}
 
@@ -987,6 +994,10 @@ pub enum SyncCaps {
 
 pub use SyncCaps as CntrCaps;
 pub use SyncCaps as CqCaps;
+
+use crate::enums::Dscp;
+use crate::enums::TrafficClass;
+use crate::fid::AsRawFid;
 
 pub enum EqCaps {
     WAIT = 0,
@@ -1248,3 +1259,9 @@ pub trait SyncSend: Sync + Send {}
 
 #[cfg(not(feature = "thread-safe"))]
 pub trait SyncSend {}
+
+#[test]
+fn tc_to_dscp() {
+    let dscp: Dscp = TrafficClass::Scavenger.into();
+    println!("{:?}", dscp);
+}

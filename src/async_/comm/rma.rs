@@ -33,7 +33,6 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let cq = self.retrieve_tx_cq();
-        // println!("Issued READaaa");
         while_try_again(cq.as_ref(), || {
             // println!("READ: while_try_again");
 
@@ -47,7 +46,6 @@ pub(crate) trait AsyncReadEpImpl: AsyncTxEp + ReadEpImpl {
             )
         })
         .await?;
-        // println!("Issued READ DONE");
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -371,7 +369,6 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let cq = self.retrieve_tx_cq();
-        // println!("Issued WRITE");
         while_try_again(cq.as_ref(), || {
             // println!("WRITE: while_try_again");
             self.write_impl(
@@ -384,7 +381,6 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
             )
         })
         .await?;
-        // println!("Issued WRITE DONE");
         cq.wait_for_ctx_async(ctx).await
     }
 
@@ -396,13 +392,11 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
         mapped_key: &MappedMemoryRegionKey,
     ) -> Result<(), crate::error::Error> {
         let cq = self.retrieve_tx_cq();
-        // println!("Issued INJECT WRITE");
 
         let res = while_try_again(cq.as_ref(), || {
             self.inject_write_impl(buf, dest_mapped_addr, mem_addr, mapped_key)
         })
         .await;
-        // println!("Issued INJECT WRITE DONE");
 
         res
     }

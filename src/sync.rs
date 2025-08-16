@@ -9,7 +9,7 @@ use crate::{
         PollRawFid, WaitRawFid,
     },
     utils::check_error,
-    MyRc,
+    MyRc, Waitable,
 };
 
 //================== Wait (fi_wait) ==================//
@@ -350,8 +350,7 @@ impl PollSetImpl {
         }
     }
 
-    pub(crate) fn add(&self, fid: &impl AsRawFid, flags: u64) -> Result<(), crate::error::Error> {
-        //[TODO] fid should implement Waitable trait
+    pub(crate) fn add(&self, fid: &impl Waitable, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_poll_add(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
@@ -363,8 +362,7 @@ impl PollSetImpl {
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn del(&self, fid: &impl AsRawFid, flags: u64) -> Result<(), crate::error::Error> {
-        //[TODO] fid should implement Waitable trait
+    pub(crate) fn del(&self, fid: &impl Waitable, flags: u64) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_poll_del(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
@@ -469,13 +467,11 @@ impl PollSet {
         self.inner.poll(contexts)
     }
 
-    pub fn add(&self, fid: &impl AsRawFid) -> Result<(), crate::error::Error> {
-        //[TODO] fid should implement Waitable trait
+    pub fn add(&self, fid: &impl Waitable) -> Result<(), crate::error::Error> {
         self.inner.add(fid, 0)
     }
 
-    pub fn del(&self, fid: &impl AsRawFid) -> Result<(), crate::error::Error> {
-        //[TODO] fid should implement Waitable trait
+    pub fn del(&self, fid: &impl Waitable) -> Result<(), crate::error::Error> {
         self.inner.del(fid, 0)
     }
 

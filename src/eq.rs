@@ -1123,6 +1123,13 @@ impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
     }
 }
 
+
+impl<const ETYPE: libfabric_sys::_bindgen_ty_18> Drop for EventQueueCmEntry<ETYPE> {
+    fn drop(&mut self) {
+        unsafe{ libfabric_sys::fi_freeinfo(self.c_entry.info)}
+    }
+}
+
 // impl Default for EventQueueCmEntry {
 //     fn default() -> Self {
 //         Self::new()
