@@ -54,6 +54,7 @@ use std::sync::atomic;
 
 use av::{AddressVectorImplT, AddressVectorSetImpl};
 
+pub mod mcast;
 pub mod av;
 pub mod cntr;
 pub mod cntroptions;
@@ -556,7 +557,7 @@ impl MappedAddress {
         }
     }
 
-    pub(crate) fn raw_addr(&self) -> libfabric_sys::fi_addr_t {
+    pub fn raw_addr(&self) -> libfabric_sys::fi_addr_t {
         match self {
             Self::Map(t) => t.raw_mapped_addr,
             Self::Table(m) => m.raw_mapped_addr,

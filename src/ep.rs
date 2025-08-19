@@ -32,6 +32,7 @@ use crate::{
 use crate::fid::EpCompletionOwnedTypedFid;
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct Address {
     pub(crate) address: Vec<u8>,
 }

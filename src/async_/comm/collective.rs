@@ -5,71 +5,72 @@ use crate::{
         eq::AsyncReadEq,
     },
     comm::collective::{
-        CollectiveEp, CollectiveEpImpl, MulticastGroupCollective, MulticastGroupCollectiveImpl,
+        CollectiveEp, CollectiveEpImpl,
     },
     cq::SingleCompletion,
     enums::{CollectiveOptions, JoinOptions},
     ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
     eq::Event,
     error::Error,
-    fid::{AsRawFid, AsTypedFid, EpRawFid, Fid},
+    fid::{AsTypedFid, EpRawFid, Fid},
     infocapsoptions::CollCap,
     mr::MemoryRegionDesc,
     AsFiType, Context, MyRc, SyncSend,
+    mcast::MultiCastGroup,
 };
 
 use super::while_try_again;
 
-impl MulticastGroupCollectiveImpl {
-    // pub(crate) async fn join_async_impl(&self, ep: &MyRc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event, Error> {
-    //     let mut async_ctx = AsyncCtx{user_ctx};
-    //     self.join_impl(ep, options, Some(&mut async_ctx as *mut AsyncCtx as *mut std::ffi::c_void))?;
-    //     let eq = ep.retrieve_eq();
-    //     eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await
-    // }
+// impl MultiCastGroupImpl {
+//     // pub(crate) async fn join_async_impl(&self, ep: &MyRc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event, Error> {
+//     //     let mut async_ctx = AsyncCtx{user_ctx};
+//     //     self.join_impl(ep, options, Some(&mut async_ctx as *mut AsyncCtx as *mut std::ffi::c_void))?;
+//     //     let eq = ep.retrieve_eq();
+//     //     eq.async_event_wait(libfabric_sys::FI_JOIN_COMPLETE, self.as_raw_fid(),  &mut async_ctx as *mut AsyncCtx as usize).await
+//     // }
 
-    pub(crate) async fn join_collective_async_impl(
-        &self,
-        ep: &MyRc<impl AsyncCollectiveEp + AsTypedFid<EpRawFid> + 'static>,
-        options: JoinOptions,
-        ctx: &mut Context,
-    ) -> Result<Event, Error> {
-        // let mut async_ctx = AsyncCtx::new(user_ctx );
-        self.join_collective_impl(ep, options, Some(ctx.inner_mut()))?;
-        let eq = ep.retrieve_eq();
-        eq.async_event_wait(
-            libfabric_sys::FI_JOIN_COMPLETE,
-            Fid(self.as_typed_fid().as_raw_fid() as usize),
-            Some(ctx),
-        )
-        .await
-    }
-}
+//     pub(crate) async fn join_collective_async_impl(
+//         &self,
+//         ep: &MyRc<impl AsyncCollectiveEp + AsTypedFid<EpRawFid> + 'static>,
+//         options: JoinOptions,
+//         ctx: &mut Context,
+//     ) -> Result<Event, Error> {
+//         // let mut async_ctx = AsyncCtx::new(user_ctx );
+//         self.join_collective_impl(ep, options, Some(ctx.inner_mut()))?;
+//         let eq = ep.retrieve_eq();
+//         eq.async_event_wait(
+//             libfabric_sys::FI_JOIN_COMPLETE,
+//             Fid(self.as_typed_fid().as_raw_fid() as usize),
+//             Some(ctx),
+//         )
+//         .await
+//     }
+// }
 
-impl MulticastGroupCollective {
-    // pub async fn join_async(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, addr: &Address, options: JoinOptions) -> Result<Event, Error> {
-    //     self.inner.join_async_impl(&ep.inner, addr, options, None).await
-    // }
+// impl MultiCastGroup {
+//     // pub async fn join_async(&self, ep: &EndpointBase<impl AsyncCollectiveEp + 'static + AsRawTypedFid<Output = EpRawFid>>, addr: &Address, options: JoinOptions) -> Result<Event, Error> {
+//     //     self.inner.join_async_impl(&ep.inner, addr, options, None).await
+//     // }
 
-    pub async fn join_collective_async<
-        E: CollectiveEp + AsTypedFid<EpRawFid> + 'static + AsyncCollectiveEp,
-        STATE: EpState,
-    >(
-        &self,
-        ep: &EndpointBase<E, STATE>,
-        options: JoinOptions,
-        ctx: &mut Context,
-    ) -> Result<Event, Error> {
-        self.inner
-            .join_collective_async_impl(&ep.inner, options, ctx)
-            .await
-    }
-}
+//     pub async fn join_collective_async<
+//         E: CollectiveEp + AsTypedFid<EpRawFid> + 'static + AsyncCollectiveEp,
+//         STATE: EpState,
+//     >(
+//         &self,
+//         ep: &EndpointBase<E, STATE>,
+//         options: JoinOptions,
+//         ctx: &mut Context,
+//     ) -> Result<Event, Error> {
+//         self.inner
+//             .join_collective_async_impl(&ep.inner, options, ctx)
+//             .await
+//     }
+// }
 
 trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     async fn barrier_impl_async(
         &self,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: Option<CollectiveOptions>,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -86,7 +87,7 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: Option<&crate::MappedAddress>,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -110,11 +111,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     #[allow(clippy::too_many_arguments)]
     async fn alltoall_impl_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -138,11 +139,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     #[allow(clippy::too_many_arguments)]
     async fn allreduce_impl_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -168,11 +169,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     #[allow(clippy::too_many_arguments)]
     async fn allgather_impl_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -195,11 +196,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     #[allow(clippy::too_many_arguments)]
     async fn reduce_scatter_impl_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -225,11 +226,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     #[allow(clippy::too_many_arguments)]
     async fn reduce_impl_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: Option<&crate::MappedAddress>,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
@@ -257,11 +258,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     #[allow(clippy::too_many_arguments)]
     async fn scatter_impl_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: Option<&crate::MappedAddress>,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -287,11 +288,11 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
     #[allow(clippy::too_many_arguments)]
     async fn gather_impl_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: Option<&crate::MappedAddress>,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -318,127 +319,127 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
 pub trait AsyncCollectiveEp: CollectiveEp + AsyncTxEp + AsyncCmEp + SyncSend {
     fn barrier_async(
         &self,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
     fn barrier_with_options_async(
         &self,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    // fn barrier_triggered_async<T>(&self, mc_group: &MulticastGroupCollective, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
-    // fn barrier_triggered_with_options_async<T>(&self, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context : &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    // fn barrier_triggered_async<T>(&self, mc_group: &MultiCastGroup, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
+    // fn barrier_triggered_with_options_async<T>(&self, mc_group: &MultiCastGroup, options: CollectiveOptions, context : &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> ;
     fn broadcast_async<T: AsFiType>(
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-    // fn broadcast_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn broadcast_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context : &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn alltoall_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
-        result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
-        options: CollectiveOptions,
-        ctx: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-
-    // #[allow(clippy::too_many_arguments)]
-    // fn alltoall_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut T, result_desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
-    #[allow(clippy::too_many_arguments)]
-    fn allreduce_async<T: AsFiType>(
-        &self,
-        buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
-        result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
-        op: crate::enums::CollAtomicOp,
-        options: CollectiveOptions,
-        ctx: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-
-    // #[allow(clippy::too_many_arguments)]
-    // fn allreduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut T, result_desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
-    #[allow(clippy::too_many_arguments)]
-    fn allgather_async<T: AsFiType>(
-        &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
     // #[allow(clippy::too_many_arguments)]
-    // fn allgather_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn alltoall_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    #[allow(clippy::too_many_arguments)]
+    fn allreduce_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        mc_group: &MultiCastGroup,
+        op: crate::enums::CollAtomicOp,
+        options: CollectiveOptions,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+    // #[allow(clippy::too_many_arguments)]
+    // fn allreduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    #[allow(clippy::too_many_arguments)]
+    fn allgather_async<T: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<&MemoryRegionDesc<'_>>,
+        result: &mut [T],
+        result_desc: Option<&MemoryRegionDesc<'_>>,
+        mc_group: &MultiCastGroup,
+        options: CollectiveOptions,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+    // #[allow(clippy::too_many_arguments)]
+    // fn allgather_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn reduce_scatter_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    // fn reduce_scatter_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut T, result_desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn reduce_scatter_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn reduce_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    // fn reduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut T, result_desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress,op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn reduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, root_mapped_addr: &crate::MappedAddress,op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn scatter_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    // fn scatter_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut T, result_desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn scatter_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn gather_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    // fn gather_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut T, result_desc: Option<& impl DataDescriptor, mc_group: &MulticastGroupCollective, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn gather_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, root_mapped_addr: &crate::MappedAddress, options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
 }
 
 // impl<E, EQ: ?Sized + AsyncReadEq,  CQ: ?Sized + AsyncReadCq> EndpointBase<E, EQ, CQ> {
@@ -455,7 +456,7 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
     #[inline]
     fn barrier_async(
         &self,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
         self.barrier_impl_async(mc_group, None, ctx)
@@ -463,7 +464,7 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
 
     fn barrier_with_options_async(
         &self,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
@@ -474,7 +475,7 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
         &self,
         buf: &mut [T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -485,11 +486,11 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
     #[allow(clippy::too_many_arguments)]
     fn alltoall_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
@@ -499,11 +500,11 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
     #[allow(clippy::too_many_arguments)]
     fn allreduce_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -513,11 +514,11 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
 
     fn allgather_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
@@ -527,11 +528,11 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
     #[allow(clippy::too_many_arguments)]
     fn reduce_scatter_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -542,11 +543,11 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
     #[allow(clippy::too_many_arguments)]
     fn reduce_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         op: crate::enums::CollAtomicOp,
         options: CollectiveOptions,
@@ -568,11 +569,11 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
     #[allow(clippy::too_many_arguments)]
     fn scatter_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         options: CollectiveOptions,
         ctx: &mut Context,
@@ -592,11 +593,11 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
     #[allow(clippy::too_many_arguments)]
     fn gather_async<T: AsFiType>(
         &self,
-        buf: &mut [T],
+        buf: &[T],
         desc: Option<&MemoryRegionDesc<'_>>,
-        result: &mut T,
+        result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
-        mc_group: &MulticastGroupCollective,
+        mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
         options: CollectiveOptions,
         ctx: &mut Context,

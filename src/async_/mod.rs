@@ -1,5 +1,6 @@
 use crate::error::Error;
 
+pub mod mcast;
 pub mod av;
 pub mod comm;
 pub mod conn_ep;
