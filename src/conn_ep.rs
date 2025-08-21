@@ -101,6 +101,13 @@ impl<E> UnconnectedEndpoint<E> {
             phantom: PhantomData,
         }
     }
+    pub unsafe fn connect_complete_unchecked(self, _event: ConnectedEvent) -> ConnectedEndpoint<E> {
+
+        ConnectedEndpoint {
+            inner: self.inner.clone(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 pub trait ConnectedEp {}

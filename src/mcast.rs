@@ -1,4 +1,4 @@
-use crate::{av::{AddressVectorSet, AddressVectorSetImpl}, comm::{collective::CollectiveEp, message::extract_raw_ctx}, enums::{AddressVectorType, JoinOptions}, ep::{EndpointBase, EpState}, eq::JoinCompleteEvent, error::Error, fid::{AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, McRawFid, MutBorrowedTypedFid, OwnedMcFid}, Context, MappedAddress, MyOnceCell, MyRc, MyRefCell, RawMappedAddress, SyncSend};
+use crate::{av::{AddressVectorSet, AddressVectorSetImpl}, comm::{collective::CollectiveEp, message::extract_raw_ctx}, enums::{AddressVectorType, JoinOptions}, ep::{EndpointBase, EpState}, eq::JoinCompleteEvent, error::Error, fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, McRawFid, MutBorrowedTypedFid, OwnedMcFid}, Context, MappedAddress, MyOnceCell, MyRc, MyRefCell, RawMappedAddress, SyncSend};
 
 pub(crate) enum MulticastAddressSource {
     MulticastGroup(MyRc<MulticastGroupImpl>),
@@ -168,8 +168,8 @@ pub(crate) struct MulticastGroupImpl {
     avset: MyOnceCell<MyRc<AddressVectorSetImpl>>,
 }
 
-pub(crate) trait CollectiveValidEp: SyncSend {}
-impl<EP: CollectiveEp + SyncSend> CollectiveValidEp for EP {}
+pub(crate) trait CollectiveValidEp: SyncSend + AsTypedFid<EpRawFid> {}
+impl<EP: CollectiveEp + SyncSend + AsTypedFid<EpRawFid>> CollectiveValidEp for EP {}
 
 impl MulticastGroupImpl {
     // pub(crate) fn new(addr: MulticastAddressSource) -> Self {

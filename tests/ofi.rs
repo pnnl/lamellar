@@ -315,7 +315,6 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             
                             let event = eq.sread(-1).unwrap();
                             if let Event::AVComplete(av_complete) = event {
-                                println!("EVENT FID: {:?}", av_complete.fid());
                                 pending.av_complete(av_complete)
                                     .into_iter()
                                     .map(|x| {std::rc::Rc::new(x) })
@@ -384,7 +383,6 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             
                             let event = eq.sread(-1).unwrap();
                             if let Event::AVComplete(av_complete) = event {
-                                println!("EVENT FID: {:?}", av_complete.fid());
                                 pending.av_complete(av_complete)
                                     .into_iter()
                                     .map(|x| {std::rc::Rc::new(x) })
