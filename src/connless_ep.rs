@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    av::AddressVectorBase, cq::ReadCq, ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless}, eq::ReadEq, fid::{AsRawTypedFid, AsTypedFid}, utils::check_error
+    av::{AVSyncMode, AddressVectorBase}, cq::ReadCq, ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless}, eq::ReadEq, fid::{AsRawTypedFid, AsTypedFid}, utils::check_error
 };
 
 pub type UninitConnectionlessEndpointBase<EP> = EndpointBase<EP, UninitConnectionless>;
@@ -26,7 +26,7 @@ impl<EP> ConnlessEp for ConnectionlessEndpointBase<EP> {}
     //     self.inner.bind_av(av)
     // }
 impl<E> UninitConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
-    pub fn enable<EQ: ?Sized + ReadEq + 'static>(self, av: &AddressVectorBase<EQ>) -> Result<ConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
+    pub fn enable< Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static>(self, av: &AddressVectorBase<Mode, EQ>) -> Result<ConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
         // TODO: Move this into an UninitEp struct
         self.bind_av(av)?;
         let err =

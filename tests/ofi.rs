@@ -1,5 +1,6 @@
 use libfabric::av::AddressVector;
 use libfabric::av::AddressVectorSetBuilder;
+use libfabric::av::NoBlockAddressVector;
 use libfabric::comm::atomic::AtomicCASRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::AtomicFetchRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::AtomicWriteRemoteMemAddrSliceEp;
@@ -112,7 +113,7 @@ pub struct Ofi<I> {
     pub rx_context: MyRxContext<I>,
     pub reg_mem: Vec<u8>,
     pub mapped_addr: Option<Vec<MyRc<MappedAddress>>>,
-    pub av: Option<AddressVector>,
+    pub av: Option<NoBlockAddressVector>,
     pub eq: EventQueue<EqOptions>,
     // pub tx_pending_cnt: AtomicUsize,
     // pub tx_complete_cnt: AtomicUsize,
@@ -264,13 +265,20 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
             match ep {
                 Endpoint::Connectionless(ep) => {
-                        let av = match info_entry.domain_attr().av_type() {
-                        libfabric::enums::AddressVectorType::Unspec => AddressVectorBuilder::new(),
-                        _ => AddressVectorBuilder::new().type_(*info_entry.domain_attr().av_type()),
-                    }
-                    .build(&domain)
-                    .unwrap();
                     let eq = EventQueueBuilder::new(&fabric).build()?;
+                        let av = match info_entry.domain_attr().av_type() {
+                        libfabric::enums::AddressVectorType::Unspec => {
+                            AddressVectorBuilder::new()
+                                .no_block(&eq)
+                                .build(&domain)
+                                .unwrap()
+                        },
+                        _ => AddressVectorBuilder::new()
+                                .type_(*info_entry.domain_attr().av_type())
+                                .no_block(&eq)
+                                .build(&domain)
+                                .unwrap()
+                    };
                     ep.bind_eq(&eq)?;
                     let ep = ep.enable(&av).unwrap();
                     let tx_context = TxContextBuilder::new(&ep, 0).build();
@@ -302,13 +310,22 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
                     let mapped_addresses = if let Some(dest_addr) = info_entry.dest_addr() {
                         let all_addresses =  [ep.getname().unwrap(), dest_addr.clone()];
-                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = av
-                            .insert(all_addresses.as_ref().into(), AVOptions::new())
-                            .unwrap()
-                            .into_iter()
-                            .filter_map(|x| x)
-                            .map(|x| {std::rc::Rc::new(x) })
-                            .collect();
+                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = { 
+                            let pending = av
+                                .insert_no_block(all_addresses.as_ref().into(), AVOptions::new())
+                                .unwrap();
+                            
+                            let event = eq.sread(-1).unwrap();
+                            if let Event::AVComplete(av_complete) = event {
+                                pending.av_complete(av_complete)
+                                    .into_iter()
+                                    .map(|x| {std::rc::Rc::new(x) })
+                                    .collect()
+                            }
+                            else {
+                                panic!("Unexpected event retrieved");
+                            }
+                        };
                             // .pop()
                             // .unwrap()
                             // .unwrap();
@@ -360,17 +377,23 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         cq_type.rx_cq().sread(1, -1).unwrap();
                         // ep.recv(&mut reg_mem, &mut mr_desc).unwrap();
                         let remote_address = unsafe { Address::from_bytes(&reg_mem) };
-                        let all_addreses = [epname, remote_address];
-                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = av
-                            .insert(
-                                all_addreses.as_ref().into(),
-                                AVOptions::new(),
-                            )
-                            .unwrap()
-                            .into_iter()
-                            .filter_map(|x| x)
-                            .map(|x| {std::rc::Rc::new(x) })
-                            .collect();
+                        let all_addresses = [epname, remote_address];
+                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = { 
+                            let pending = av
+                                .insert_no_block(all_addresses.as_ref().into(), AVOptions::new())
+                                .unwrap();
+                            
+                            let event = eq.sread(-1).unwrap();
+                            if let Event::AVComplete(av_complete) = event {
+                                pending.av_complete(av_complete)
+                                    .into_iter()
+                                    .map(|x| {std::rc::Rc::new(x) })
+                                    .collect()
+                            }
+                            else {
+                                panic!("Unexpected event retrieved");
+                            }
+                        };
 
                         post!(
                             send_to,

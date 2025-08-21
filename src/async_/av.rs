@@ -1,8 +1,6 @@
-use libfabric_sys::FI_EVENT;
-
 use super::eq::{AsyncReadEq, EventQueue};
 use crate::{
-    av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase},
+    av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase, NoBlock},
     domain::DomainBase,
     enums::AVOptions,
     ep::Address,
@@ -67,7 +65,7 @@ impl AsyncAddressVectorImpl {
     }
 }
 
-pub type AddressVector = AddressVectorBase<dyn AsyncReadEq>;
+pub type AddressVector = AddressVectorBase<NoBlock, dyn AsyncReadEq>;
 
 impl AddressVector {
     pub async fn insert_async(

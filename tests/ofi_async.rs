@@ -350,17 +350,17 @@ pub mod async_ofi {
                             .unwrap();
 
                             let remote_address = unsafe { Address::from_bytes(&reg_mem) };
-                            let all_addreses = [epname, remote_address];
-                            let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = av
-                                .insert(
-                                    all_addreses.as_ref().into(),
-                                    AVOptions::new(),
-                                )
-                                .unwrap()
-                                .into_iter()
-                                .filter_map(|x| x)
-                                .map(|x| {std::rc::Rc::new(x) })
-                                .collect();
+                            let all_addresses = [epname, remote_address];
+                            let mut ctx = info_entry.allocate_context();
+                            let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = async_std::task::block_on(async {
+                               av
+                                .insert_async(all_addresses.as_ref().into(), AVOptions::new(), &mut ctx)
+                                .await
+                            })
+                            .unwrap()
+                            .1.into_iter()
+                            .map(|x| {std::rc::Rc::new(x) })
+                            .collect();
 
                             async_std::task::block_on(ep.send_to_async(
                                 &std::slice::from_ref(&reg_mem[0]),

@@ -7,7 +7,7 @@ use super::{
     eq::AsyncReadEq,
 };
 use crate::{
-    av::AddressVectorBase,
+    av::{AddressVectorBase, NoBlock},
     cq::ReadCq,
     enums::EndpointType,
     ep::{
@@ -323,7 +323,7 @@ impl<EP>
 
     pub(crate) fn bind_av<EQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<EQ>,
+        av: &AddressVectorBase<NoBlock, EQ>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_av(av)
     }

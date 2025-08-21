@@ -15,6 +15,7 @@ use crate::{
     info::{InfoEntry, InfoHints},
     infocapsoptions::Caps,
 };
+use futures::future::Join;
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_CONNECTED, FI_CONNREQ, FI_SHUTDOWN, FI_WRITE};
 
 pub type ConnReqEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNREQ }>;
@@ -566,17 +567,17 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
             }
 
             if event == &libfabric_sys::FI_MR_COMPLETE {
-                Event::MrComplete(EventQueueEntry::<MrRawFid> {
+                Event::MrComplete(MrCompleteEvent{
                     c_entry,
                     phantom: PhantomData,
                 })
             } else if event == &libfabric_sys::FI_AV_COMPLETE {
-                Event::AVComplete(EventQueueEntry::<AvRawFid> {
+                Event::AVComplete(AVCompleteEvent {
                     c_entry,
                     phantom: PhantomData,
                 })
             } else if event == &libfabric_sys::FI_JOIN_COMPLETE {
-                Event::JoinComplete(EventQueueEntry::<EpRawFid> {
+                Event::JoinComplete(JoinCompleteEvent {
                     c_entry,
                     phantom: PhantomData,
                 })

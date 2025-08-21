@@ -8,7 +8,7 @@ use libfabric_sys::{
     inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG,
 };
 
-use crate::connless_ep::UninitConnectionlessEndpoint;
+use crate::{av::AVSyncMode, connless_ep::UninitConnectionlessEndpoint};
 use crate::{
     av::{AddressVector, AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
     cntr::{Counter, ReadCntr},
@@ -1203,9 +1203,9 @@ impl<EP, EQ: ?Sized + 'static + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<EP
         IncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_av<AVEQ: ?Sized + ReadEq + 'static>(
+    pub(crate) fn bind_av<Mode: AVSyncMode, AVEQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<AVEQ>,
+        av: &AddressVectorBase<Mode, AVEQ>,
     ) -> Result<(), crate::error::Error> {
         self.bind_av_(&av.inner, 0)
     }
@@ -1269,9 +1269,9 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
         self.inner.bind_cntr()
     }
 
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+    pub fn bind_av<Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<EQ>,
+        av: &AddressVectorBase<Mode, EQ>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_av(av)
     }
@@ -1316,9 +1316,9 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
         self.inner.bind_cntr()
     }
 
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+    pub fn bind_av< Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<EQ>,
+        av: &AddressVectorBase<Mode, EQ>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_av(av)
     }
