@@ -1,5 +1,5 @@
-use crate::fid::{AsTypedFid, BorrowedTypedFid};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
+use crate::fid::{AsTypedFid, AvRawFid, BorrowedTypedFid, EpRawFid, MrRawFid};
+use std::{marker::PhantomData, os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd}};
 
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -20,15 +20,18 @@ use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_CONNECTED, FI_CONNREQ, FI_SHU
 pub type ConnReqEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNREQ }>;
 pub type ConnectedEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNECTED }>;
 pub type ShutdownEvent = EventQueueCmEntry<{ libfabric_sys::FI_SHUTDOWN }>;
+pub type MrCompleteEvent = EventQueueEntry<MrRawFid>;
+pub type AVCompleteEvent = EventQueueEntry<AvRawFid>;
+pub type JoinCompleteEvent = EventQueueEntry<EpRawFid>;
 
 pub enum Event {
     // Notify(EventQueueEntry<T, NotifyEventFid>),
     ConnReq(ConnReqEvent),
     Connected(ConnectedEvent),
     Shutdown(ShutdownEvent),
-    MrComplete(EventQueueEntry<RawFid>),
-    AVComplete(EventQueueEntry<RawFid>),
-    JoinComplete(EventQueueEntry<RawFid>),
+    MrComplete(MrCompleteEvent),
+    AVComplete(AVCompleteEvent),
+    JoinComplete(JoinCompleteEvent),
 }
 
 // [TODO]
@@ -563,19 +566,19 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
             }
 
             if event == &libfabric_sys::FI_MR_COMPLETE {
-                Event::MrComplete(EventQueueEntry::<RawFid> {
+                Event::MrComplete(EventQueueEntry::<MrRawFid> {
                     c_entry,
-                    event_fid: c_entry.fid,
+                    phantom: PhantomData,
                 })
             } else if event == &libfabric_sys::FI_AV_COMPLETE {
-                Event::AVComplete(EventQueueEntry::<RawFid> {
+                Event::AVComplete(EventQueueEntry::<AvRawFid> {
                     c_entry,
-                    event_fid: c_entry.fid,
+                    phantom: PhantomData,
                 })
             } else if event == &libfabric_sys::FI_JOIN_COMPLETE {
-                Event::JoinComplete(EventQueueEntry::<RawFid> {
+                Event::JoinComplete(EventQueueEntry::<EpRawFid> {
                     c_entry,
-                    event_fid: c_entry.fid,
+                    phantom: PhantomData,
                 })
             } else {
                 panic!("Unexpected value for Event")
@@ -1023,7 +1026,7 @@ impl Default for EventError {
 #[derive(Clone)]
 pub struct EventQueueEntry<F> {
     pub(crate) c_entry: libfabric_sys::fi_eq_entry,
-    event_fid: F,
+    phantom: PhantomData<F>,
 }
 
 impl<F: AsRawFid> EventQueueEntry<F> {
@@ -1038,11 +1041,11 @@ impl<F: AsRawFid> EventQueueEntry<F> {
             data: 0,
         };
 
-        Self { c_entry, event_fid }
+        Self { c_entry, phantom: PhantomData}
     }
 
-    pub fn fid(&mut self) -> &F {
-        &self.event_fid
+    pub fn fid(&mut self) -> &RawFid {
+        &self.c_entry.fid
     }
 
     pub fn set_context<T>(&mut self, context: &mut Context) -> &mut Self {

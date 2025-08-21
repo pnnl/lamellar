@@ -1,4 +1,4 @@
-use crate::{av::{AddressVectorSet, AddressVectorSetImpl}, comm::{collective::CollectiveEp, message::extract_raw_ctx}, enums::{AddressVectorType, JoinOptions}, ep::{EndpointBase, EpState}, eq::{Event, EventQueueCmEntry}, error::Error, fid::{AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, McRawFid, MutBorrowedTypedFid, OwnedMcFid}, Context, MappedAddress, MyOnceCell, MyRc, MyRefCell, RawMappedAddress, SyncSend};
+use crate::{av::{AddressVectorSet, AddressVectorSetImpl}, comm::{collective::CollectiveEp, message::extract_raw_ctx}, enums::{AddressVectorType, JoinOptions}, ep::{EndpointBase, EpState}, eq::{Event, EventQueueCmEntry, JoinCompleteEvent}, error::Error, fid::{AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, McRawFid, MutBorrowedTypedFid, OwnedMcFid}, Context, MappedAddress, MyOnceCell, MyRc, MyRefCell, RawMappedAddress, SyncSend};
 
 pub(crate) enum MulticastAddressSource {
     MulticastGroup(MyRc<MulticastGroupImpl>),
@@ -78,8 +78,7 @@ impl MulticastGroupCollectiveBuilder {
 
 impl WaitingMulticastGroupCollective {
 
-    pub fn join_complete(self, event: Event) -> MultiCastGroup {
-        assert!(matches!(event, Event::JoinComplete(_)));
+    pub fn join_complete(self, _event: JoinCompleteEvent) -> MultiCastGroup {
         MultiCastGroup {
             inner: self.inner
         }

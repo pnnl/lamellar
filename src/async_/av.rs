@@ -1,3 +1,5 @@
+use libfabric_sys::FI_EVENT;
+
 use super::eq::{AsyncReadEq, EventQueue};
 use crate::{
     av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase},
@@ -18,7 +20,6 @@ impl AsyncAddressVectorImpl {
         flags: u64,
         ctx: &mut Context,
     ) -> Result<(Event, Vec<u64>), crate::error::Error> {
-        // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len());
         let mut serialized: Vec<u8> = Vec::with_capacity(total_size);
@@ -56,6 +57,8 @@ impl AsyncAddressVectorImpl {
                     None,
                 )
                 .await?;
+
+
             if let Event::AVComplete(ref entry) = res {
                 fi_addresses.truncate(entry.data() as usize);
             }

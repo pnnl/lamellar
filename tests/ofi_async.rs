@@ -298,13 +298,16 @@ pub mod async_ofi {
 
                         let mapped_addresses = if let Some(dest_addr) = info_entry.dest_addr() {
                             let all_addresses =  [ep.getname().unwrap(), dest_addr.clone()];
-                            let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = av
-                                .insert(all_addresses.as_ref().into(), AVOptions::new())
-                                .unwrap()
-                                .into_iter()
-                                .filter_map(|x| x)
-                                .map(|x| {std::rc::Rc::new(x) })
-                                .collect();
+                            let mut ctx = info_entry.allocate_context();
+                            let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = async_std::task::block_on(async {
+                               av
+                                .insert_async(all_addresses.as_ref().into(), AVOptions::new(), &mut ctx)
+                                .await
+                            })
+                            .unwrap()
+                            .1.into_iter()
+                            .map(|x| {std::rc::Rc::new(x) })
+                            .collect();
 
                             let epname = ep.getname().unwrap();
                             let epname_bytes = epname.as_bytes();

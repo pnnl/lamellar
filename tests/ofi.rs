@@ -4593,20 +4593,20 @@ fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, 
     };
 
 
-    let mut join_event;
+    let join_event;
     loop {
-        join_event = ofi.eq.read();
-        if join_event.is_ok() {
-            break;
+        let event = ofi.eq.read();
+        if let Ok(event ) = event {
+
+            if let Event::JoinComplete(join) = event  {
+                join_event =  join;
+                break;
+            }
         }
         let _ = ofi.cq_type.tx_cq().read(0);
         let _ = ofi.cq_type.rx_cq().read(0);
     };
 
-    let join_event = join_event.unwrap();
-
-    // let join_event = ofi.eq.sread(-1).unwrap();
-    assert!(matches!(join_event, Event::JoinComplete(_)));
 
     (ofi, mc.join_complete(join_event))
 }
