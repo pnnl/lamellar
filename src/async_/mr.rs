@@ -44,7 +44,7 @@ impl MemoryRegionImpl {
                 } else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(),&mut async_ctx as *mut AsyncCtx as usize).await?;
                     let res = eq
-                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
+                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx), None)
                         .await?;
 
                     let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
@@ -105,7 +105,7 @@ impl MemoryRegionImpl {
                 } else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), attr.c_attr.context as usize).await?;
                     let res = eq
-                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
+                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx), None)
                         .await?;
 
                     let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
@@ -170,7 +170,7 @@ impl MemoryRegionImpl {
                 } else {
                     // let res = crate::async_::eq::EventQueueFut::<{libfabric_sys::FI_MR_COMPLETE}>::new(std::ptr::null_mut(), eq.clone(), &mut async_ctx as *mut AsyncCtx as usize).await?;
                     let res = eq
-                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx))
+                        .async_event_wait(libfabric_sys::FI_MR_COMPLETE, Fid(0), Some(ctx), None)
                         .await?;
 
                     let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };

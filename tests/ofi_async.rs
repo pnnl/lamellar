@@ -4070,31 +4070,15 @@ pub mod async_ofi {
 
         let mut ctx = ofi.info_entry.allocate_context();
         let mc = libfabric::mcast::MulticastGroupBuilder::from_av_set(&avset).build();
-
-        let mc = 
+        let mut ctx = ofi.info_entry.allocate_context();
+        let mc = async_std::task::block_on(async {
             match &ofi.ep {
-                MyEndpoint::Connected(ep) => mc.join_collective_with_context(&ep,  libfabric::enums::JoinOptions::new(), &mut ctx).unwrap(),
-                MyEndpoint::Connectionless(ep) => mc.join_collective_with_context(&ep,  libfabric::enums::JoinOptions::new(), &mut ctx).unwrap(),
-            };
-        // (ofi, mc.1)
-
-
-        let mut join_event;
-        loop {
-            join_event = ofi.eq.read();
-            if join_event.is_ok() {
-                break;
+                MyEndpoint::Connected(ep) => mc.join_collective_async(&ep,  libfabric::enums::JoinOptions::new(), &mut ctx).await.unwrap(),
+                MyEndpoint::Connectionless(ep) => mc.join_collective_async(&ep,  libfabric::enums::JoinOptions::new(), &mut ctx).await.unwrap(),
             }
-            let _ = ofi.cq_type.tx_cq().read(0);
-            let _ = ofi.cq_type.rx_cq().read(0);
-        };
+        });
 
-        let join_event = join_event.unwrap();
-
-        // let join_event = ofi.eq.sread(-1).unwrap();
-        assert!(matches!(join_event, Event::JoinComplete(_)));
-
-        (ofi, mc.join_complete(join_event))
+        (ofi, mc.1)
     }
 
     #[test]

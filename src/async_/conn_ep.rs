@@ -44,6 +44,7 @@ impl<EP> UnconnectedEndpoint<EP> {
                 libfabric_sys::FI_CONNECTED,
                 Fid(self.as_typed_fid().as_raw_fid() as usize),
                 None,
+                None,
             )
             .await?;
 
@@ -72,6 +73,7 @@ impl<EP> UnconnectedEndpoint<EP> {
             .async_event_wait(
                 libfabric_sys::FI_CONNECTED,
                 Fid(self.as_typed_fid().as_raw_fid() as usize),
+                None,
                 None,
             )
             .await?;

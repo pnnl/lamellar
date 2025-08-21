@@ -1,11 +1,7 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::atomic::Ordering, task::ready};
 
 use crate::{
-    cq::WaitObjectRetrieve,
-    eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
-    error::{Error, ErrorKind},
-    fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid},
-    Context, MyRc, MyRefCell, SyncSend,
+    cq::{ReadCq, WaitObjectRetrieve}, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid}, Context, MyRc, MyRefCell, SyncSend
 };
 #[cfg(feature = "use-async-std")]
 use async_io::Async;
@@ -461,6 +457,7 @@ pub trait AsyncReadEq: ReadEq + AsyncFid {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> AsyncEventEq<'a>;
 }
 
@@ -498,8 +495,9 @@ impl AsyncReadEq for AsyncEventQueueImpl<true> {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> AsyncEventEq<'a> {
-        AsyncEventEq::new(event_type, req_fid, EqType::Write(self), ctx)
+        AsyncEventEq::new(event_type, req_fid, EqType::Write(self), ctx, cq)
     }
 }
 
@@ -513,8 +511,9 @@ impl AsyncReadEq for AsyncEventQueueImpl<false> {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> AsyncEventEq<'a> {
-        AsyncEventEq::new(event_type, req_fid, EqType::NoWrite(self), ctx)
+        AsyncEventEq::new(event_type, req_fid, EqType::NoWrite(self), ctx, cq)
     }
 }
 
@@ -528,8 +527,9 @@ impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> AsyncEventEq<'a> {
-        self.inner.async_event_wait(event_type, req_fid, ctx)
+        self.inner.async_event_wait(event_type, req_fid, ctx, cq)
     }
 }
 
@@ -734,6 +734,7 @@ pub struct AsyncEventEq<'a> {
     pub(crate) ctx: Option<&'a mut crate::Context>,
     event_type: libfabric_sys::_bindgen_ty_18,
     fut: Pin<Box<EqAsyncReadOwned<'a>>>,
+    cq: Option<Box<&'a dyn ReadCq>>,
 }
 
 impl<'a> AsyncEventEq<'a> {
@@ -742,12 +743,14 @@ impl<'a> AsyncEventEq<'a> {
         req_fid: Fid,
         eq: EqType<'a>,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> Self {
         Self {
             event_type,
             fut: Box::pin(EqAsyncReadOwned::new(eq)),
             req_fid,
             ctx,
+            cq,
         }
     }
 }
@@ -799,7 +802,27 @@ impl<'a> Future for AsyncEventEq<'a> {
                 }
             };
 
-            let res = match ready!(ev.fut.as_mut().poll(cx)) {
+            let ready = ev.fut.as_mut().poll(cx);
+            let res = match ready {
+                std::task::Poll::Ready(res) => res,
+                std::task::Poll::Pending => {
+                    if let Some(cq) = &ev.cq {
+                        cx.waker().wake_by_ref();
+                        let cq_read =  cq.read(0);
+                        if let Err(error) = cq_read {
+                            if !matches!(error.kind, ErrorKind::TryAgain)
+                            {
+                                return std::task::Poll::Ready(Err::<Event, Error>(error));
+                            }
+                        }
+                        return std::task::Poll::Pending;
+                    }
+                    else {
+                        return std::task::Poll::Pending;
+                    }
+                },
+            };
+            let res = match res {
                 // Ok(len) => len,
                 Err(error) => {
                     if matches!(error.kind, ErrorKind::ErrorInEventQueue(_)) {

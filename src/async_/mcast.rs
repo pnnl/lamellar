@@ -1,4 +1,4 @@
-use crate::{async_::{comm::collective::AsyncCollectiveEp, eq::AsyncReadEq}, comm::collective::CollectiveEp, enums::JoinOptions, ep::{EndpointBase, EpState}, eq::Event, error::Error, fid::{AsRawFid, AsTypedFid, EpRawFid, Fid}, mcast::{MultiCastGroup, MulticastGroupImpl, PendingMulticastGroupCollective}, Context, MyRc};
+use crate::{async_::{comm::collective::AsyncCollectiveEp, cq::AsyncReadCq, eq::AsyncReadEq}, comm::collective::CollectiveEp, enums::JoinOptions, ep::{EndpointBase, EpState}, eq::Event, error::Error, fid::{AsRawFid, AsTypedFid, EpRawFid, Fid}, mcast::{MultiCastGroup, MulticastGroupImpl, PendingMulticastGroupCollective}, Context, MyRc};
 
 impl MulticastGroupImpl {
     // pub(crate) async fn join_async_impl(&self, ep: &MyRc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event, Error> {
@@ -17,10 +17,12 @@ impl MulticastGroupImpl {
         // let mut async_ctx = AsyncCtx::new(user_ctx );
         self.join_collective_impl(ep, options, Some(ctx.inner_mut()))?;
         let eq = ep.retrieve_eq();
+        let cq = ep.retrieve_tx_cq().get();
         eq.async_event_wait(
             libfabric_sys::FI_JOIN_COMPLETE,
             Fid(self.as_typed_fid().as_raw_fid() as usize),
             Some(ctx),
+            Some(Box::new(cq)),
         )
         .await
     }

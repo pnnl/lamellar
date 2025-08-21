@@ -58,6 +58,7 @@ pub trait AsyncReadCq: ReadCq {
     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a>;
     // fn read_async(&self, count: usize,  ctx: &mut Context) -> CqAsyncReadOwned;
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a>;
+    fn get(&self) -> &dyn ReadCq;
 }
 
 impl CompletionQueue<AsyncCompletionQueueImpl> {
@@ -293,6 +294,10 @@ impl AsyncReadCq for AsyncCompletionQueueImpl {
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
         AsyncTransferCq::new(self, ctx)
     }
+
+    fn get(&self) -> &dyn ReadCq {
+        self
+    }
 }
 
 impl AsyncFid for AsyncCompletionQueueImpl {
@@ -321,6 +326,10 @@ impl AsyncReadCq for CompletionQueue<AsyncCompletionQueueImpl> {
 
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
         self.inner.wait_for_ctx_async(ctx)
+    }
+
+    fn get(&self) -> &dyn ReadCq {
+        &*self.inner
     }
 
     // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
