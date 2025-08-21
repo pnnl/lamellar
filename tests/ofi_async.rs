@@ -1,9 +1,11 @@
+#[cfg(test)]
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_ofi {
     use std::cell::RefCell;
-    // Use the `futures::join!` macro directly where needed.
+    pub type EqOptions = libfabric::async_eq_caps_type!(EqCaps::WAIT);
 
     use futures::join;
+    use libfabric::async_::av::AddressVector;
     use libfabric::async_::comm::atomic::AsyncAtomicCASEp;
     use libfabric::async_::comm::atomic::AsyncAtomicCASRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::AsyncAtomicFetchEp;
@@ -16,6 +18,7 @@ pub mod async_ofi {
     use libfabric::async_::comm::atomic::ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp;
     use libfabric::async_::comm::atomic::ConnectedAsyncAtomicWriteEp;
     use libfabric::async_::comm::atomic::ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp;
+    use libfabric::async_::comm::collective::AsyncCollectiveEp;
     use libfabric::async_::comm::message::AsyncRecvEp;
     use libfabric::async_::comm::message::AsyncSendEp;
     use libfabric::async_::comm::message::ConnectedAsyncRecvEp;
@@ -33,7 +36,12 @@ pub mod async_ofi {
     use libfabric::async_::comm::tagged::ConnectedAsyncTagRecvEp;
     use libfabric::async_::comm::tagged::ConnectedAsyncTagSendEp;
     use libfabric::async_::domain::Domain;
+    use libfabric::async_::eq::EventQueue;
+    use libfabric::av::AddressVectorSetBuilder;
+    use libfabric::cq::ReadCq;
+    use libfabric::enums::CollectiveOptions;
     use libfabric::ep::BaseEndpoint;
+    use libfabric::eq::Event;
     use libfabric::info::Info;
     use libfabric::infocapsoptions::InfoCaps;
     use libfabric::iovec::Ioc;
@@ -41,6 +49,7 @@ pub mod async_ofi {
     use libfabric::iovec::RemoteMemAddrAtomicVec;
     use libfabric::iovec::RemoteMemAddrVec;
     use libfabric::iovec::RemoteMemAddrVecMut;
+    use libfabric::mcast::MultiCastGroup;
     use libfabric::mr::EpBindingMemoryRegion;
     use libfabric::mr::MemoryRegionDesc;
     use libfabric::mr::MemoryRegionKey;
@@ -126,8 +135,10 @@ pub mod async_ofi {
         pub domain: Domain,
         pub cq_type: CqType,
         pub ep: MyEndpoint<I>,
-        pub mapped_addr: Option<MyRc<MappedAddress>>,
         pub reg_mem: Vec<u8>,
+        pub mapped_addr: Option<Vec<MyRc<MappedAddress>>>,
+        pub av: Option<AddressVector>,
+        pub eq: EventQueue<EqOptions>,
         // pub tx_pending_cnt: AtomicUsize,
         // pub tx_complete_cnt: AtomicUsize,
         // pub rx_pending_cnt: AtomicUsize,
@@ -197,7 +208,7 @@ pub mod async_ofi {
             // let mut rx_complete_cnt: usize = 0;
             let mut reg_mem = vec![0u8; 1024 * 1024];
             
-            let (info_entry, ep, mapped_addr) = 
+            let (info_entry, ep, mapped_addr, av, eq) = 
             {
                 let eq = EventQueueBuilder::new(&fabric).build().unwrap();
                 let info_entry = 
@@ -255,6 +266,8 @@ pub mod async_ofi {
                         .build(&domain)
                         .unwrap();
                         // ep.bind_av(&av).unwrap();
+                        let eq = EventQueueBuilder::new(&fabric).build()?;
+                        ep.bind_eq(&eq)?;
                         let ep = ep.enable(&av).unwrap();
 
                         mr = if info_entry.domain_attr().mr_mode().is_local()
@@ -283,13 +296,16 @@ pub mod async_ofi {
                             None
                         };
 
-                        let mapped_address = if let Some(dest_addr) = info_entry.dest_addr() {
-                            let mapped_address = av
-                                .insert(std::slice::from_ref(dest_addr).into(), AVOptions::new())
+                        let mapped_addresses = if let Some(dest_addr) = info_entry.dest_addr() {
+                            let all_addresses =  [ep.getname().unwrap(), dest_addr.clone()];
+                            let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = av
+                                .insert(all_addresses.as_ref().into(), AVOptions::new())
                                 .unwrap()
-                                .pop()
-                                .unwrap()
-                                .unwrap();
+                                .into_iter()
+                                .filter_map(|x| x)
+                                .map(|x| {std::rc::Rc::new(x) })
+                                .collect();
+
                             let epname = ep.getname().unwrap();
                             let epname_bytes = epname.as_bytes();
                             let addrlen = epname_bytes.len();
@@ -299,7 +315,7 @@ pub mod async_ofi {
                             async_std::task::block_on(ep.send_to_async(
                                 &reg_mem[..addrlen],
                                 None,
-                                &mapped_address,
+                                &mapped_addresses[1],
                                 &mut ctx,
                             ))
                             .unwrap();
@@ -311,7 +327,7 @@ pub mod async_ofi {
                             ))
                             .unwrap();
 
-                            MyRc::new(mapped_address)
+                            mapped_addresses
                         } else {
                             let epname = ep.getname().unwrap();
                             let addrlen = epname.as_bytes().len();
@@ -331,30 +347,34 @@ pub mod async_ofi {
                             .unwrap();
 
                             let remote_address = unsafe { Address::from_bytes(&reg_mem) };
-                            let mapped_address = av
+                            let all_addreses = [epname, remote_address];
+                            let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = av
                                 .insert(
-                                    std::slice::from_ref(&remote_address).into(),
+                                    all_addreses.as_ref().into(),
                                     AVOptions::new(),
                                 )
                                 .unwrap()
-                                .pop()
-                                .unwrap()
-                                .unwrap();
+                                .into_iter()
+                                .filter_map(|x| x)
+                                .map(|x| {std::rc::Rc::new(x) })
+                                .collect();
 
                             async_std::task::block_on(ep.send_to_async(
                                 &std::slice::from_ref(&reg_mem[0]),
                                 mr_desc.as_ref(),
-                                &mapped_address,
+                                &mapped_addresses[1],
                                 &mut ctx,
                             ))
                             .unwrap();
 
-                            MyRc::new(mapped_address)
+                            mapped_addresses
                         };
                         (
                             info_entry,
                             MyEndpoint::Connectionless(ep),
-                            Some(mapped_address),
+                            Some(mapped_addresses),
+                            Some(av),
+                            eq,
                         )
                     },
                     Endpoint::ConnectionOriented(ep) => {
@@ -394,7 +414,7 @@ pub mod async_ofi {
                             None
                         };
 
-                        (info_entry, MyEndpoint::Connected(ep), None)
+                        (info_entry, MyEndpoint::Connected(ep), None, None, eq)
                     }
                 }
             };
@@ -412,6 +432,8 @@ pub mod async_ofi {
                 domain,
                 ep,
                 reg_mem,
+                av,
+                eq
                 // tx_pending_cnt,
                 // tx_complete_cnt,
                 // rx_pending_cnt,
@@ -437,12 +459,12 @@ pub mod async_ofi {
                                 ep.tinjectdata_to_async(
                                     &buf,
                                     data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     tag,
                                 )
                                 .await
                             } else {
-                                ep.tinject_to_async(&buf, self.mapped_addr.as_ref().unwrap(), tag)
+                                ep.tinject_to_async(&buf, &self.mapped_addr.as_ref().unwrap()[1], tag)
                                     .await
                             }
                         } else {
@@ -451,7 +473,7 @@ pub mod async_ofi {
                                     &buf,
                                     desc,
                                     data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     tag,
                                     ctx,
                                 )
@@ -460,7 +482,7 @@ pub mod async_ofi {
                                 ep.tsend_to_async(
                                     &buf,
                                     desc,
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     tag,
                                     ctx,
                                 )
@@ -501,7 +523,7 @@ pub mod async_ofi {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
-                        ep.tsendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), tag, ctx)
+                        ep.tsendv_to_async(iov, desc, &self.mapped_addr.as_ref().unwrap()[1], tag, ctx)
                             .await
                     }
                     MyEndpoint::Connected(ep) => ep.tsendv_async(iov, desc, tag, ctx).await,
@@ -523,7 +545,7 @@ pub mod async_ofi {
                         ep.trecvv_from_async(
                             iov,
                             desc,
-                            self.mapped_addr.as_ref().unwrap(),
+                            &self.mapped_addr.as_ref().unwrap()[1],
                             tag,
                             None,
                             ctx,
@@ -549,7 +571,7 @@ pub mod async_ofi {
                         ep.trecv_from_async(
                             buf,
                             desc,
-                            self.mapped_addr.as_ref().unwrap(),
+                            &self.mapped_addr.as_ref().unwrap()[1],
                             tag,
                             None,
                             ctx,
@@ -617,11 +639,11 @@ pub mod async_ofi {
                                 ep.injectdata_to_async(
                                     buf,
                                     data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                 )
                                 .await
                             } else {
-                                ep.inject_to_async(&buf, self.mapped_addr.as_ref().unwrap())
+                                ep.inject_to_async(&buf, &self.mapped_addr.as_ref().unwrap()[1])
                                     .await
                             }
                         } else {
@@ -630,7 +652,7 @@ pub mod async_ofi {
                                     &buf,
                                     desc,
                                     data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     ctx,
                                 )
                                 .await
@@ -638,7 +660,7 @@ pub mod async_ofi {
                                 ep.send_to_async(
                                     &buf,
                                     desc,
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     ctx,
                                 )
                                 .await
@@ -684,11 +706,11 @@ pub mod async_ofi {
                                 ep.injectdata_to_async(
                                     buf,
                                     data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                 )
                                 .await
                             } else {
-                                ep.inject_to_async(&buf, self.mapped_addr.as_ref().unwrap())
+                                ep.inject_to_async(&buf, &self.mapped_addr.as_ref().unwrap()[1])
                                     .await
                             }
                         } else {
@@ -697,7 +719,7 @@ pub mod async_ofi {
                                     &buf,
                                     desc,
                                     data.unwrap(),
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     send_ctx,
                                 )
                                 .await
@@ -705,7 +727,7 @@ pub mod async_ofi {
                                 ep.send_to_async(
                                     &buf,
                                     desc,
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     send_ctx,
                                 )
                                 .await
@@ -737,7 +759,7 @@ pub mod async_ofi {
             async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
-                        ep.recv_from_async(&mut buf, desc, self.mapped_addr.as_ref().unwrap(), recv_ctx)
+                        ep.recv_from_async(&mut buf, desc, &self.mapped_addr.as_ref().unwrap()[1], recv_ctx)
                             .await
                     }
                     MyEndpoint::Connected(ep) => {ep.recv_async(&mut buf, desc, recv_ctx).await}
@@ -758,7 +780,7 @@ pub mod async_ofi {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
-                        ep.sendv_to_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx)
+                        ep.sendv_to_async(iov, desc, &self.mapped_addr.as_ref().unwrap()[1], ctx)
                             .await
                     }
                     MyEndpoint::Connected(ep) => ep.sendv_async(iov, desc, ctx).await,
@@ -776,7 +798,7 @@ pub mod async_ofi {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
-                        ep.recvv_from_async(iov, desc, self.mapped_addr.as_ref().unwrap(), ctx)
+                        ep.recvv_from_async(iov, desc, &self.mapped_addr.as_ref().unwrap()[1], ctx)
                             .await
                     }
                     MyEndpoint::Connected(ep) => ep.recvv_async(iov, desc, ctx).await,
@@ -794,7 +816,7 @@ pub mod async_ofi {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
-                        ep.recv_from_async(buf, desc, self.mapped_addr.as_ref().unwrap(), ctx)
+                        ep.recv_from_async(buf, desc, &self.mapped_addr.as_ref().unwrap()[1], ctx)
                             .await
                     }
                     MyEndpoint::Connected(ep) => ep.recv_async(buf, desc, ctx).await,
@@ -923,7 +945,7 @@ pub mod async_ofi {
                                     ep.inject_writedata_slice_to_async(
                                         buf,
                                         data.unwrap(),
-                                        self.mapped_addr.as_ref().unwrap(),
+                                        &self.mapped_addr.as_ref().unwrap()[1],
                                         &dest_slice
                                     )
                                     .await
@@ -932,7 +954,7 @@ pub mod async_ofi {
                                 unsafe {
                                     ep.inject_write_slice_to_async(
                                         buf,
-                                        self.mapped_addr.as_ref().unwrap(),
+                                        &self.mapped_addr.as_ref().unwrap()[1],
                                         &dest_slice,
                                     )
                                     .await
@@ -945,7 +967,7 @@ pub mod async_ofi {
                                         buf,
                                         desc,
                                         data.unwrap(),
-                                        self.mapped_addr.as_ref().unwrap(),
+                                        &self.mapped_addr.as_ref().unwrap()[1],
                                         &dest_slice,
                                         ctx,
                                     )
@@ -956,7 +978,7 @@ pub mod async_ofi {
                                     ep.write_slice_to_async(
                                         buf,
                                         desc,
-                                        self.mapped_addr.as_ref().unwrap(),
+                                        &self.mapped_addr.as_ref().unwrap()[1],
                                         &dest_slice,
                                         ctx,
                                     )
@@ -1034,7 +1056,7 @@ pub mod async_ofi {
                             ep.read_slice_from_async(
                                 buf,
                                 desc,
-                                self.mapped_addr.as_ref().unwrap(),
+                                &self.mapped_addr.as_ref().unwrap()[1],
                                 &src_slice,
                                 ctx,
                             )
@@ -1073,7 +1095,7 @@ pub mod async_ofi {
                             ep.writev_slice_to_async(
                                 iov,
                                 desc,
-                                self.mapped_addr.as_ref().unwrap(),
+                                &self.mapped_addr.as_ref().unwrap()[1],
                                 &dst_slice,
                                 ctx,
                             )
@@ -1115,7 +1137,7 @@ pub mod async_ofi {
                             ep.readv_slice_from_async(
                                 iov,
                                 desc,
-                                self.mapped_addr.as_ref().unwrap(),
+                                &self.mapped_addr.as_ref().unwrap()[1],
                                 &src_slice,
                                 ctx,
                             )
@@ -1210,7 +1232,7 @@ pub mod async_ofi {
                             unsafe {
                                 ep.inject_atomic_slice_to_async(
                                     buf,
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     &dst_slice,
                                     op,
                                 )
@@ -1221,7 +1243,7 @@ pub mod async_ofi {
                                 ep.atomic_slice_to_async(
                                     buf,
                                     desc,
-                                    self.mapped_addr.as_ref().unwrap(),
+                                    &self.mapped_addr.as_ref().unwrap()[1],
                                     &dst_slice,
                                     op,
                                     ctx,
@@ -1278,7 +1300,7 @@ pub mod async_ofi {
                         ep.atomicv_slice_to_async(
                             ioc,
                             desc,
-                            self.mapped_addr.as_ref().unwrap(),
+                            &self.mapped_addr.as_ref().unwrap()[1],
                             &dest_slice,
                             op,
                             ctx,
@@ -1342,7 +1364,7 @@ pub mod async_ofi {
                             desc,
                             res,
                             res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
+                            &self.mapped_addr.as_ref().unwrap()[1],
                             &src_slice,
                             op,
                             ctx,
@@ -1388,7 +1410,7 @@ pub mod async_ofi {
                             desc,
                             res_ioc,
                             res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
+                            &self.mapped_addr.as_ref().unwrap()[1],
                             &src_slice,
                             op,
                             ctx,
@@ -1465,7 +1487,7 @@ pub mod async_ofi {
                             comp_desc,
                             res,
                             res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
+                            &self.mapped_addr.as_ref().unwrap()[1],
                             &dst_slice,
                             op,
                             ctx,
@@ -1517,7 +1539,7 @@ pub mod async_ofi {
                             comp_desc,
                             res_ioc,
                             res_desc,
-                            self.mapped_addr.as_ref().unwrap(),
+                            &self.mapped_addr.as_ref().unwrap()[1],
                             &dst_slice,
                             op,
                             ctx,
@@ -2113,7 +2135,7 @@ pub mod async_ofi {
                 Either::Left(Msg::from_iov(
                     &iov0,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     data,
                     &mut ctx,
                 ))
@@ -2139,7 +2161,7 @@ pub mod async_ofi {
                 Either::Left(Msg::from_iov_slice(
                     &iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     data,
                     &mut ctx,
                 ))
@@ -2159,7 +2181,7 @@ pub mod async_ofi {
                 Either::Left(Msg::from_iov(
                     &iovs[0],
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     &mut ctx,
                 ))
@@ -2178,7 +2200,7 @@ pub mod async_ofi {
                 Either::Left(Msg::from_iov_slice(
                     &iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     &mut ctx,
                 ))
@@ -2202,7 +2224,7 @@ pub mod async_ofi {
                 Either::Left(MsgMut::from_iov(
                     &mut iov,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     &mut ctx,
                 ))
@@ -2226,7 +2248,7 @@ pub mod async_ofi {
                 Either::Left(MsgMut::from_iov(
                     &mut iov,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     &mut ctx,
                 ))
@@ -2252,7 +2274,7 @@ pub mod async_ofi {
                 Either::Left(MsgMut::from_iov_slice(
                     &mut iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     &mut ctx,
                 ))
@@ -2279,7 +2301,7 @@ pub mod async_ofi {
                 Either::Left(MsgMut::from_iov_slice(
                     &mut iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     &mut ctx,
                 ))
@@ -2360,7 +2382,7 @@ pub mod async_ofi {
                 Either::Left(MsgTagged::from_iov(
                     &iov0,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     data,
                     0,
                     None,
@@ -2384,7 +2406,7 @@ pub mod async_ofi {
                 Either::Left(MsgTagged::from_iov_slice(
                     &iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     1,
                     None,
@@ -2408,7 +2430,7 @@ pub mod async_ofi {
                 Either::Left(MsgTagged::from_iov(
                     &iovs[0],
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     Some(0),
                     2,
                     None,
@@ -2431,7 +2453,7 @@ pub mod async_ofi {
                 Either::Left(MsgTagged::from_iov_slice(
                     &iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     3,
                     None,
@@ -2459,7 +2481,7 @@ pub mod async_ofi {
                 Either::Left(MsgTaggedMut::from_iov(
                     &mut iov,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     0,
                     None,
@@ -2486,7 +2508,7 @@ pub mod async_ofi {
                 Either::Left(MsgTaggedMut::from_iov(
                     &mut iov,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     1,
                     None,
@@ -2516,7 +2538,7 @@ pub mod async_ofi {
                 Either::Left(MsgTaggedMut::from_iov_slice(
                     &mut iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     2,
                     None,
@@ -2547,7 +2569,7 @@ pub mod async_ofi {
                 Either::Left(MsgTaggedMut::from_iov_slice(
                     &mut iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     None,
                     3,
                     None,
@@ -2764,7 +2786,7 @@ pub mod async_ofi {
                 Either::Left(MsgRma::from_iov(
                     &iov,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     &rma_iov,
                     None,
                     &mut ctx,
@@ -2794,7 +2816,7 @@ pub mod async_ofi {
                 Either::Left(MsgRma::from_iov(
                     &iov,
                     desc.as_ref(),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     &rma_iov,
                     Some(128),
                     &mut ctx,
@@ -2828,7 +2850,7 @@ pub mod async_ofi {
                 Either::Left(MsgRma::from_iov_slice(
                     &iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     &rma_iov,
                     None,
                     &mut ctx,
@@ -2883,7 +2905,7 @@ pub mod async_ofi {
                     Either::Left(MsgRmaMut::from_iov(
                         &mut iov,
                         desc.as_ref(),
-                        mapped_addr.as_ref().unwrap(),
+                        &mapped_addr.as_ref().unwrap()[1],
                         &rma_iov,
                         None,
                         &mut ctx,
@@ -2914,7 +2936,7 @@ pub mod async_ofi {
                 Either::Left(MsgRmaMut::from_iov_slice(
                     &mut iovs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     &rma_iov,
                     None,
                     &mut ctx,
@@ -3682,7 +3704,7 @@ pub mod async_ofi {
                 Either::Left(MsgAtomic::from_ioc_slice(
                     &iocs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     &rma_iocs,
                     AtomicOp::Bor,
                     Some(128),
@@ -3804,7 +3826,7 @@ pub mod async_ofi {
                 Either::Left(MsgFetchAtomic::from_ioc_slice(
                     &iocs,
                     Some(&descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     &rma_iocs,
                     FetchAtomicOp::Prod,
                     None,
@@ -3933,7 +3955,7 @@ pub mod async_ofi {
                 Either::Left(MsgCompareAtomic::from_ioc_slice(
                     &buf_iocs,
                     Some(&buf_descs),
-                    mapped_addr.as_ref().unwrap(),
+                    &mapped_addr.as_ref().unwrap()[1],
                     &rma_iocs,
                     CompareAtomicOp::CswapGe,
                     None,
@@ -3989,4 +4011,567 @@ pub mod async_ofi {
     // fn async_conn_compare_atomic1() {
     //     compare_atomic(false, "conn_compare_atomic0", true);
     // }
+
+
+    fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, MultiCastGroup){
+        let mut ofi = if connected {
+            handshake(server, name, Some(InfoCaps::new().msg().collective()))
+        } else {
+            handshake_connectionless(server, name, Some(InfoCaps::new().msg().collective()))
+        };
+
+        let reg_mem: Vec<_> = if server {
+            vec![2; 1024 * 2]
+        } else {
+            vec![1; 1024 * 2]
+        };
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+
+        let key = mr.key().unwrap();
+        ofi.exchange_keys(&key, &reg_mem[..]);
+
+        let mut avset = if server {
+            AddressVectorSetBuilder::new_from_range(&ofi.av.as_ref().unwrap(), &ofi.mapped_addr.as_ref().unwrap()[0], &ofi.mapped_addr.as_ref().unwrap()[0], 1)
+            .count(2)
+            .build().unwrap()
+        }
+        else {
+            AddressVectorSetBuilder::new_from_range(&ofi.av.as_ref().unwrap(), &ofi.mapped_addr.as_ref().unwrap()[1], &ofi.mapped_addr.as_ref().unwrap()[1], 1)
+            .count(2)
+            .build().unwrap()
+        };
+
+        if server {
+            for addr in ofi.mapped_addr.as_ref().unwrap().iter().skip(1) {
+                avset.insert(addr).unwrap();
+            }
+        }
+        else {
+            avset.insert(&ofi.mapped_addr.as_ref().unwrap()[0]).unwrap();
+        }
+
+        let mut ctx = ofi.info_entry.allocate_context();
+        let mc = libfabric::mcast::MulticastGroupBuilder::from_av_set(&avset).build();
+
+        let mc = 
+            match &ofi.ep {
+                MyEndpoint::Connected(ep) => mc.join_collective_with_context(&ep,  libfabric::enums::JoinOptions::new(), &mut ctx).unwrap(),
+                MyEndpoint::Connectionless(ep) => mc.join_collective_with_context(&ep,  libfabric::enums::JoinOptions::new(), &mut ctx).unwrap(),
+            };
+        // (ofi, mc.1)
+
+
+        let mut join_event;
+        loop {
+            join_event = ofi.eq.read();
+            if join_event.is_ok() {
+                break;
+            }
+            let _ = ofi.cq_type.tx_cq().read(0);
+            let _ = ofi.cq_type.rx_cq().read(0);
+        };
+
+        let join_event = join_event.unwrap();
+
+        // let join_event = ofi.eq.sread(-1).unwrap();
+        assert!(matches!(join_event, Event::JoinComplete(_)));
+
+        (ofi, mc.join_complete(join_event))
+    }
+
+    #[test]
+    fn collective_0() {
+        collective(true, "collective_0", false);
+    }
+
+    #[test]
+    fn collective_1() {
+        collective(false, "collective_0", false);
+    }
+
+
+    fn barrier(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => ep.barrier_async(&mc, &mut ctx).await.unwrap(),
+            }
+        });
+    }
+
+
+    #[test]
+    fn barrier0() {
+        barrier(true, "barrier0", false);
+    }
+
+    #[test]
+    fn barrier1() {
+        barrier(false, "barrier0", false);
+    }
+
+
+    fn broadcast(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let mut reg_mem: Vec<_> = if server {
+            vec![2; 1024 * 2]
+        } else {
+            vec![1; 1024 * 2]
+        };
+
+        let expected = if server {
+            reg_mem.clone()
+        }
+        else {
+            reg_mem.iter().map(|v| v + 1).collect()
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.broadcast_async(&mut reg_mem[..], Some(&mr.descriptor()), &mc, &ofi.mapped_addr.as_ref().unwrap()[0], CollectiveOptions::new(), &mut ctx).await.unwrap();
+
+                    
+                },
+            }
+        });
+        assert_eq!(reg_mem, expected);
+    }
+
+
+    #[test]
+    fn broadcast0() {
+        broadcast(true, "broadcast0", false);
+    }
+
+    #[test]
+    fn broadcast1() {
+        broadcast(false, "broadcast0", false);
+    }
+
+
+    fn alltoall(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let (mut reg_mem, expected) = if server {
+            (vec![2; 1024 * 2], vec![1; 1024 * 2])
+        } else {
+            (vec![1; 1024 * 2], vec![2; 1024 * 2])
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        let half = reg_mem.len()/2;
+        let (send_buf, recv_buf) = reg_mem.split_at_mut(half);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.alltoall_async(send_buf, Some(&mr.descriptor()), recv_buf, Some(&mr.descriptor()),  &mc, CollectiveOptions::new(), &mut ctx).await.unwrap();
+                    
+                },
+            }
+        });
+        assert_eq!(reg_mem, expected);
+        
+    }
+
+
+    #[test]
+    fn alltoall0() {
+        alltoall(true, "alltoall0", false);
+    }
+
+    #[test]
+    fn alltoall1() {
+        alltoall(false, "alltoall0", false);
+    }
+
+    fn allreduce(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let (mut reg_mem, expected) = if server {
+            (vec![2; 1024 * 2], vec![3; 1024 * 1])
+        } else {
+            (vec![1; 1024 * 2], vec![3; 1024 * 1])
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        let half = reg_mem.len()/2;
+        let (send_buf, recv_buf) = reg_mem.split_at_mut(half);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.allreduce_async(send_buf, Some(&mr.descriptor()), recv_buf, Some(&mr.descriptor()),  &mc, libfabric::enums::CollAtomicOp::Sum, CollectiveOptions::new(), &mut ctx).await.unwrap();
+                },
+            }
+        });
+        assert_eq!(recv_buf, expected);
+        
+    }
+
+
+    #[test]
+    fn allreduce0() {
+        allreduce(true, "allreduce0", false);
+    }
+
+    #[test]
+    fn allreduce1() {
+        allreduce(false, "allreduce0", false);
+    }
+
+
+    fn allgather(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let (mut reg_mem, expected) = if server {
+            (vec![2; 1536], [vec![2; 512],vec![1; 512]].concat())
+        } else {
+            (vec![1; 1536], [vec![2; 512],vec![1; 512]].concat())
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        // let quart = reg_mem.len()/4;
+        let (send_buf, recv_buf) = reg_mem.split_at_mut(512);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.allgather_async(send_buf, Some(&mr.descriptor()), &mut recv_buf[..1024], Some(&mr.descriptor()),  &mc, CollectiveOptions::new(), &mut ctx).await.unwrap();
+                },
+            }
+        });
+        assert_eq!(recv_buf, expected);
+        
+    }
+
+
+
+    #[test]
+    fn allgather0() {
+        allgather(true, "allgather0", false);
+    }
+
+    #[test]
+    fn allgather1() {
+        allgather(false, "allgather0", false);
+    }
+
+
+    fn reduce_scatter(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let (mut reg_mem, expected) = if server {
+            (vec![2; 1024 * 2], vec![3; 1024])
+        } else {
+            (vec![1; 1024 * 2], vec![3; 1024])
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        // let quart = reg_mem.len()/4;
+        let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.reduce_scatter_async(send_buf, Some(&mr.descriptor()), &mut recv_buf[..1024], Some(&mr.descriptor()),  &mc, libfabric::enums::CollAtomicOp::Sum, CollectiveOptions::new(), &mut ctx).await.unwrap();
+                },
+            }
+        });
+        assert_eq!(recv_buf[..1024], expected);
+        
+    }
+
+
+
+    #[test]
+    fn reduce_scatter0() {
+        reduce_scatter(true, "reduce_scatter0", false);
+    }
+
+    #[test]
+    fn reduce_scatter1() {
+        reduce_scatter(false, "reduce_scatter0", false);
+    }
+
+    fn reduce(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let (mut reg_mem, expected) = if server {
+            (vec![2; 1024 * 2], vec![3; 1024])
+        } else {
+            (vec![1; 1024 * 2], vec![1; 1024])
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        // let quart = reg_mem.len()/4;
+        let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.reduce_async(send_buf, Some(&mr.descriptor()), &mut recv_buf[..1024], Some(&mr.descriptor()),  &mc, &ofi.mapped_addr.as_ref().unwrap()[0], libfabric::enums::CollAtomicOp::Sum, CollectiveOptions::new(), &mut ctx).await.unwrap();
+                },
+            }
+        });
+        assert_eq!(recv_buf[..1024], expected);
+    }
+
+
+
+    #[test]
+    fn reduce0() {
+        reduce(true, "reduce0", false);
+    }
+
+    #[test]
+    fn reduce1() {
+        reduce(false, "reduce0", false);
+    }
+
+    fn scatter(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let (mut reg_mem, expected) = if server {
+            (vec![2; 1024 * 2], vec![2; 512])
+        } else {
+            (vec![1; 1024 * 2], vec![2; 512])
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        // let quart = reg_mem.len()/4;
+        let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.scatter_async(send_buf, Some(&mr.descriptor()), &mut recv_buf[..512], Some(&mr.descriptor()),  &mc, &ofi.mapped_addr.as_ref().unwrap()[0], CollectiveOptions::new(), &mut ctx).await.unwrap();
+                },
+            }
+        });
+        assert_eq!(recv_buf[..512], expected);
+    }
+
+
+
+    #[test]
+    fn scatter0() {
+        scatter(true, "scatter0", false);
+    }
+
+    #[test]
+    fn scatter1() {
+        scatter(false, "scatter0", false);
+    }
+
+    fn gather(server: bool, name: &str, connected: bool) {
+        let (ofi, mc) = collective(server, name, connected);
+        let (mut reg_mem, expected) = if server {
+            (vec![2; 1024 * 2], [vec![2; 512], vec![1; 512]].concat())
+        } else {
+            (vec![1; 1024 * 2], vec![1; 512])
+        };
+
+        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
+            .access_recv()
+            .access_send()
+            .access_write()
+            .access_read()
+            .access_remote_write()
+            .access_remote_read()
+            .access_collective()
+            .build(&ofi.domain)
+            .unwrap();
+
+        let mr: MemoryRegion = match mr {
+            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                match disabled_mr {
+                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
+                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                }
+            }
+        };
+        // let quart = reg_mem.len()/4;
+        let (send_buf, recv_buf) = reg_mem.split_at_mut(512);
+        let mut ctx = ofi.info_entry.allocate_context();
+        async_std::task::block_on(async {
+            match &ofi.ep {
+                MyEndpoint::Connected(_) => todo!(),
+                MyEndpoint::Connectionless(ep) => {
+                    ep.gather_async(send_buf, Some(&mr.descriptor()), &mut recv_buf[..1024], Some(&mr.descriptor()),  &mc, &ofi.mapped_addr.as_ref().unwrap()[0], CollectiveOptions::new(), &mut ctx).await.unwrap();
+                },
+            }
+        });
+        assert_eq!(recv_buf[..1024], expected);
+    }
+
+
+
+    #[test]
+    fn gather0() {
+        gather(true, "gather0", false);
+    }
+
+    #[test]
+    fn gather1() {
+        gather(false, "gather0", false);
+    }
 }
