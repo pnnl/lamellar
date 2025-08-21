@@ -1,4 +1,3 @@
-use libfabric::av::AddressVector;
 use libfabric::av::AddressVectorSetBuilder;
 use libfabric::av::NoBlockAddressVector;
 use libfabric::comm::atomic::AtomicCASRemoteMemAddrSliceEp;
@@ -12,7 +11,6 @@ use libfabric::comm::rma::ConnectedReadRemoteMemAddrSliceEp;
 use libfabric::comm::rma::ReadRemoteMemAddrSliceEp;
 use libfabric::comm::rma::ConnectedWriteRemoteMemAddrSliceEp;
 use libfabric::comm::rma::WriteRemoteMemAddrSliceEp;
-use libfabric::enums::CollectiveOp;
 use libfabric::enums::CollectiveOptions;
 use libfabric::eq::Event;
 use libfabric::eq::EventQueue;
@@ -317,6 +315,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             
                             let event = eq.sread(-1).unwrap();
                             if let Event::AVComplete(av_complete) = event {
+                                println!("EVENT FID: {:?}", av_complete.fid());
                                 pending.av_complete(av_complete)
                                     .into_iter()
                                     .map(|x| {std::rc::Rc::new(x) })
@@ -385,6 +384,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             
                             let event = eq.sread(-1).unwrap();
                             if let Event::AVComplete(av_complete) = event {
+                                println!("EVENT FID: {:?}", av_complete.fid());
                                 pending.av_complete(av_complete)
                                     .into_iter()
                                     .map(|x| {std::rc::Rc::new(x) })

@@ -825,6 +825,7 @@ pub(crate) struct FabricInfo(*mut libfabric_sys::fi_info);
 
 impl FabricInfo {
     fn new(info: *mut libfabric_sys::fi_info) -> Self {
+        #[allow(unused_mut)]
         let mut fabric_info = Self(info);
         
         #[cfg(feature="thread-safe")]

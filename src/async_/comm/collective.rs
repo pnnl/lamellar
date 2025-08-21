@@ -8,14 +8,11 @@ use crate::{
         CollectiveEp, CollectiveEpImpl,
     },
     cq::SingleCompletion,
-    enums::{CollectiveOptions, JoinOptions},
-    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
-    eq::Event,
-    error::Error,
-    fid::{AsTypedFid, EpRawFid, Fid},
+    enums::CollectiveOptions,
+    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase},
     infocapsoptions::CollCap,
     mr::MemoryRegionDesc,
-    AsFiType, Context, MyRc, SyncSend,
+    AsFiType, Context, SyncSend,
     mcast::MultiCastGroup,
 };
 

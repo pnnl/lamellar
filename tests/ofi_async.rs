@@ -38,10 +38,8 @@ pub mod async_ofi {
     use libfabric::async_::domain::Domain;
     use libfabric::async_::eq::EventQueue;
     use libfabric::av::AddressVectorSetBuilder;
-    use libfabric::cq::ReadCq;
     use libfabric::enums::CollectiveOptions;
     use libfabric::ep::BaseEndpoint;
-    use libfabric::eq::Event;
     use libfabric::info::Info;
     use libfabric::infocapsoptions::InfoCaps;
     use libfabric::iovec::Ioc;
@@ -1845,9 +1843,7 @@ pub mod async_ofi {
             }
         };
 
-        let desc = [mr.descriptor(), mr.descriptor()];
         let desc0 = Some(mr.descriptor());
-        let mut ctx = ofi.info_entry.allocate_context();
         let mut send_ctx = ofi.info_entry.allocate_context();
         let mut recv_ctx = ofi.info_entry.allocate_context();
 
@@ -4073,7 +4069,6 @@ pub mod async_ofi {
 
         let mut ctx = ofi.info_entry.allocate_context();
         let mc = libfabric::mcast::MulticastGroupBuilder::from_av_set(&avset).build();
-        let mut ctx = ofi.info_entry.allocate_context();
         let mc = async_std::task::block_on(async {
             match &ofi.ep {
                 MyEndpoint::Connected(ep) => mc.join_collective_async(&ep,  libfabric::enums::JoinOptions::new(), &mut ctx).await.unwrap(),

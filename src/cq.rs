@@ -66,6 +66,7 @@ pub enum Completion {
 }
 
 impl Completion {
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         match self {
             Completion::Unspec(v) => v.len(),
@@ -76,10 +77,12 @@ impl Completion {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
+    
+    #[allow(dead_code)]
     pub(crate) unsafe fn set_len(&mut self, new_len: usize) {
         match self {
             Completion::Unspec(v) => v.set_len(new_len),

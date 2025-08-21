@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{av::{AVSyncMode, AddressVectorBase, NoBlock}, ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless}, eq::ReadEq, fid::{AsRawTypedFid, AsTypedFid}, utils::check_error};
+use crate::{av::{AddressVectorBase, NoBlock}, ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless}, eq::ReadEq, fid::{AsRawTypedFid, AsTypedFid}, utils::check_error};
 
 use super::{cq::AsyncReadCq, eq::AsyncReadEq};
 

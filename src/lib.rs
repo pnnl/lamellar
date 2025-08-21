@@ -868,33 +868,6 @@ impl ContextType {
             ContextType::Context2(ctx) => &mut ctx.state,
         }
     }
-
-    pub(crate) fn set_waker(&mut self, waker: std::task::Waker) {
-        match self {
-            ContextType::Context1(ctx) => {
-                ctx.waker.take(); // Clear any previous waker
-                ctx.waker.set(waker).unwrap(); // Set the new waker
-            }
-            ContextType::Context2(ctx) => {
-                ctx.waker.take(); // Clear any previous waker
-                ctx.waker.set(waker).unwrap(); // Set the new waker
-            }
-        }
-    }
-
-    pub(crate) fn get_waker(&mut self) -> MyOnceCell<std::task::Waker> {
-        match self {
-            ContextType::Context1(ctx) => ctx.waker.clone(),
-            ContextType::Context2(ctx) => ctx.waker.clone(),
-        }
-    }
-
-    pub(crate) fn get_type(&self) -> usize {
-        match self {
-            ContextType::Context1(_) => 1,
-            ContextType::Context2(_) => 2,
-        }
-    }
 }
 
 impl Context {
@@ -996,8 +969,7 @@ pub enum SyncCaps {
 pub use SyncCaps as CntrCaps;
 pub use SyncCaps as CqCaps;
 
-use crate::enums::Dscp;
-use crate::enums::TrafficClass;
+
 use crate::fid::AsRawFid;
 
 pub enum EqCaps {
@@ -1263,6 +1235,8 @@ pub trait SyncSend {}
 
 #[test]
 fn tc_to_dscp() {
+    use crate::enums::Dscp;
+    use crate::enums::TrafficClass;
     let dscp: Dscp = TrafficClass::Scavenger.into();
     println!("{:?}", dscp);
 }

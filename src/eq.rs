@@ -15,7 +15,6 @@ use crate::{
     info::{InfoEntry, InfoHints},
     infocapsoptions::Caps,
 };
-use futures::future::Join;
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_CONNECTED, FI_CONNREQ, FI_SHUTDOWN, FI_WRITE};
 
 pub type ConnReqEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNREQ }>;
@@ -1045,7 +1044,7 @@ impl<F: AsRawFid> EventQueueEntry<F> {
         Self { c_entry, phantom: PhantomData}
     }
 
-    pub fn fid(&mut self) -> &RawFid {
+    pub fn fid(&self) -> &RawFid {
         &self.c_entry.fid
     }
 

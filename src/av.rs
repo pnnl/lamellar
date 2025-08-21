@@ -1,7 +1,7 @@
 use std::ffi::CString;
 use std::marker::PhantomData;
 
-use crate::eq::{AVCompleteEvent, EventQueueBase, EventQueueEntry};
+use crate::eq::{AVCompleteEvent, EventQueueBase};
 use crate::fid::MutBorrowedTypedFid;
 use crate::fid::{AsTypedFid, BorrowedTypedFid};
 use crate::utils::check_error;
@@ -19,11 +19,11 @@ use crate::{
     FI_ADDR_NOTAVAIL,
 };
 
-pub(crate) trait AddressVectorImplT: SyncSend {
+pub(crate) trait AddressVectorImplT: SyncSend + AsTypedFid<AvRawFid>{
     fn type_(&self) -> AddressVectorType;
 }
 
-impl<EQ: ?Sized + SyncSend> AddressVectorImplT for AddressVectorImplBase<EQ> {
+impl<EQ: ?Sized + SyncSend + ReadEq> AddressVectorImplT for AddressVectorImplBase<EQ> {
     fn type_(&self) -> AddressVectorType {
         self.type_
     }
@@ -96,7 +96,20 @@ pub struct PendingAVTranslation {
 
 
 impl PendingAVTranslation {
-    pub fn av_complete(self, _event: AVCompleteEvent) -> Vec<MappedAddress> {
+    pub fn av_complete(self, event: AVCompleteEvent) -> Vec<MappedAddress> {
+        assert_eq!(event.fid(), &self.av.as_typed_fid().as_raw_fid());
+        self.fi_addresses
+        .into_iter()
+        .map(|fi_addr| {
+            MappedAddress::from_raw_addr(
+                RawMappedAddress::from_raw(self.av.type_(), fi_addr),
+                AddressSource::Av(self.av.clone()),
+            )
+        })
+        .collect::<Vec<_>>()
+    }
+    
+    pub fn av_complete_unchecked(self, _event: AVCompleteEvent) -> Vec<MappedAddress> {
         self.fi_addresses
         .into_iter()
         .map(|fi_addr| {
@@ -760,7 +773,6 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<NoBlock, EQ> {
         addr: AvInAddress,
         options: AVOptions,
     ) -> Result<PendingAVTranslation, crate::error::Error> {
-        // [TODO] handle async
         let fi_addresses = match addr {
             AvInAddress::String(str_addr) => {
                 self.inner.insertsvc_str(str_addr, options.as_raw(), None)?

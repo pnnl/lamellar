@@ -239,6 +239,7 @@ enum AsyncCompletionQueueImplBase {
 
 pub struct AsyncCompletionQueueImpl {
     base: AsyncCompletionQueueImplBase,
+    #[allow(dead_code)]
     pub(crate) pending_entries: AtomicUsize,
 }
 impl SyncSend for AsyncCompletionQueueImpl {}
@@ -381,8 +382,6 @@ impl AsyncCompletionQueueImpl {
 
 pub struct AsyncTransferCq<'a> {
     fut: Pin<Box<CqAsyncReadOwned<'a>>>,
-    waiting: bool,
-    last_poll: Option<std::time::Instant>,
 }
 
 impl<'a> AsyncTransferCq<'a> {
@@ -390,8 +389,6 @@ impl<'a> AsyncTransferCq<'a> {
     pub(crate) fn new(cq: &'a AsyncCompletionQueueImpl, ctx: &'a mut Context) -> Self {
         Self {
             fut: Box::pin(CqAsyncReadOwned::new(cq, ctx)),
-            waiting: false,
-            last_poll: None,
         }
     }
 }
