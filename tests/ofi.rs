@@ -420,15 +420,15 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     let eq = eq.unwrap();
                     let ep = ep.enable(&eq).unwrap();
 
-                    if !server {
-                        ep.connect(info_entry.dest_addr().unwrap()).unwrap();
-                    } else {
-                        ep.accept().unwrap();
-                    }
+                    let connection_pending = match ep {
+                        libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => ep.connect(info_entry.dest_addr().unwrap()).unwrap(),
+                        libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => ep.accept().unwrap(),
+                    };
+
 
                     let ep = match eq.sread(-1) {
                         Ok(event) => match event {
-                            libfabric::eq::Event::Connected(event) => ep.connect_complete(event),
+                            libfabric::eq::Event::Connected(event) => connection_pending.connect_complete(event),
                             _ => panic!("Unexpected Event type"),
                         },
                         Err(err) => {

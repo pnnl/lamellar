@@ -1,3 +1,4 @@
+use libfabric::async_::conn_ep::AcceptPendingEndpoint;
 use libfabric::domain::NoEventQueue;
 use libfabric::{
     async_::{
@@ -480,7 +481,7 @@ pub fn ft_prepare_ep<CNTR: WaitCntr + 'static, I, E>(
 // }
 
 pub async fn ft_accept_connection<EQ: AsyncReadEq, E>(
-    ep: UnconnectedEndpoint<E>,
+    ep: AcceptPendingEndpoint<E>,
     _eq: &EventQueue<EQ>,
 ) -> ConnectedEndpoint<E> {
     ep.accept_async().await.unwrap()
@@ -544,7 +545,12 @@ pub async fn ft_server_connect<
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
             };
-            let ep = ft_accept_connection(ep, eq).await;
+            let pending_ep = match ep {
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => panic!("This should be a server"),
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => ep,
+            };
+
+            let ep = ft_accept_connection(pending_ep, eq).await;
             let mut ep = EndpointCaps::ConnectedMsg(ep);
             ft_ep_recv(
                 &new_info, gl_ctx, &mut ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr,
@@ -567,7 +573,13 @@ pub async fn ft_server_connect<
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
             };
-            let ep = ft_accept_connection(ep, eq).await;
+
+            let pending_ep = match ep {
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(_) => panic!("This should be a server"),
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => ep,
+            };
+
+            let ep = ft_accept_connection(pending_ep, eq).await;
             let mut ep = EndpointCaps::ConnectedTagged(ep);
             ft_ep_recv(
                 &new_info, gl_ctx, &mut ep, &domain, &cq_type, eq, &None, &tx_cntr, &rx_cntr,
@@ -2393,8 +2405,13 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
+            
+            let pending_ep = match ep {
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => ep,
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => panic!("This should be a client"),
+            };
 
-            let ep = ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await;
+            let ep = ft_connect_ep(pending_ep, &eq, &entry.dest_addr().as_ref().unwrap()).await;
 
             let mut ep = EndpointCaps::ConnectedMsg(ep);
             ft_ep_recv(
@@ -2421,7 +2438,13 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
-            let ep = ft_connect_ep(ep, &eq, &entry.dest_addr().as_ref().unwrap()).await;
+            
+            let pending_ep = match ep {
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => ep,
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_) => panic!("This should be a client"),
+            };
+
+            let ep = ft_connect_ep(pending_ep, &eq, &entry.dest_addr().as_ref().unwrap()).await;
             let mut ep = EndpointCaps::ConnectedTagged(ep);
             ft_ep_recv(
                 &entry, gl_ctx, &mut ep, &domain, &cq_type, &eq, &None, &tx_cntr, &rx_cntr,

@@ -379,13 +379,17 @@ pub mod async_ofi {
                     },
                     Endpoint::ConnectionOriented(ep) => {
                         let ep = ep.enable(&eq).unwrap();
-                        let ep = if !server {
-                            async_std::task::block_on(async {
-                                ep.connect_async(info_entry.dest_addr().unwrap()).await
-                            })
-                            .unwrap()
-                        } else {
-                            async_std::task::block_on(async { ep.accept_async().await }).unwrap()
+                        
+                        let ep = match ep {
+                            libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => {
+                                async_std::task::block_on(async {
+                                    ep.connect_async(info_entry.dest_addr().unwrap()).await
+                                })
+                                .unwrap()
+                            },
+                            libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => {
+                                async_std::task::block_on(async { ep.accept_async().await }).unwrap()
+                            },
                         };
 
                         mr = if info_entry.domain_attr().mr_mode().is_local()

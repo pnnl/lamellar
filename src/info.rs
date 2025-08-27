@@ -872,7 +872,7 @@ impl Drop for FabricInfo {
 pub struct InfoHints<T> {
     info_builder: InfoBuilder<T>,
 }
-pub(crate) struct FabricInfo(*mut libfabric_sys::fi_info);
+pub(crate) struct FabricInfo(pub(crate) *mut libfabric_sys::fi_info);
 
 impl FabricInfo {
     fn new(info: *mut libfabric_sys::fi_info) -> Self {

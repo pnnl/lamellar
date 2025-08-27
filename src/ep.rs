@@ -8,7 +8,7 @@ use libfabric_sys::{
     inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG,
 };
 
-use crate::{av::AVSyncMode, connless_ep::UninitConnectionlessEndpoint};
+use crate::{av::AVSyncMode, connless_ep::UninitConnectionlessEndpoint, eq::ConnReqEvent};
 use crate::{
     av::{AddressVector, AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
     cntr::{Counter, ReadCntr},
@@ -85,6 +85,7 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     _bound_av: MyOnceCell<MyRc<dyn AddressVectorImplT>>,
     _domain_rc: MyRc<dyn DomainImplT>,
     phantom: PhantomData<fn() -> T>, // fn() -> T because we only need to track the Endpoint capabilities requested but avoid requiring caps to implement Sync+Send
+    pub(crate) has_conn_req: bool,
 }
 
 // pub type Endpoint<T, STATE: EpState> =
@@ -94,17 +95,20 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
 pub trait EpState: SyncSend {}
 pub struct Connected;
 pub struct Unconnected;
+pub struct PendingAccept;
 pub struct UninitUnconnected;
 pub struct Connectionless;
 pub struct UninitConnectionless;
 
 impl SyncSend for Connected {}
+impl SyncSend for PendingAccept {}
 impl SyncSend for Unconnected {}
 impl SyncSend for UninitUnconnected {}
 impl SyncSend for Connectionless {}
 impl SyncSend for UninitConnectionless {}
 
 impl EpState for Connected {}
+impl EpState for PendingAccept {}
 impl EpState for Unconnected {}
 impl EpState for UninitUnconnected {}
 impl EpState for Connectionless {}
@@ -756,14 +760,14 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
     pub fn reject<T0>(
         &self,
         fid: &impl AsRawFid,
-        params: &[T0],
+        params: Option<&[T0]>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_reject(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 fid.as_raw_fid(),
-                params.as_ptr().cast(),
-                params.len(),
+                params.map_or_else(|| {std::ptr::null()}, |v| v.as_ptr().cast()),
+                params.map_or(0, |v| v.len()),
             )
         };
 
@@ -795,16 +799,25 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointBase<E, EQ> {
     }
 
 
-    //[TODO] Abstract fid parameter. Maybe pass a Connection request Event instead?
     /// Rejects an incoming connection request.
     /// 
     /// Corresponds to `fi_reject` in libfabric.
-    pub fn reject<T0>(
+    pub fn reject(
         &self,
-        fid: &impl AsRawFid,
+        event: ConnReqEvent,
+    ) -> Result<(), crate::error::Error> {
+        self.inner.reject::<()>(&event.fid(), None)
+    }
+
+    /// Rejects an incoming connection request and sends back the provided params.
+    /// 
+    /// Corresponds to `fi_reject` in libfabric.
+    pub fn reject_with_params<T0>(
+        &self,
+        event: ConnReqEvent,
         params: &[T0],
     ) -> Result<(), crate::error::Error> {
-        self.inner.reject(fid, params)
+        self.inner.reject(&event.fid(), Some(params))
     }
 
 
@@ -1022,6 +1035,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
                 eq: MyOnceCell::new(),
                 _domain_rc: domain.clone(),
                 phantom: PhantomData,
+                has_conn_req: !unsafe{*info.info.0}.handle.is_null(),
             })
         }
     }
