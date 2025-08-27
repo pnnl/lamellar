@@ -1104,6 +1104,8 @@ macro_rules! cntr_caps_type_N {
     };
 }
 
+
+/// Convenience macro for creating information capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  info_caps_type{
     ($($opt: expr),*) => {
@@ -1111,6 +1113,7 @@ macro_rules!  info_caps_type{
     };
 }
 
+/// Convenience macro for creating completion queue capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  cq_caps_type{
     ($($opt: expr),*) => {
@@ -1118,6 +1121,8 @@ macro_rules!  cq_caps_type{
     };
 }
 
+
+/// Convenience macro for creating event queue capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  eq_caps_type{
     ($($opt: expr),*) => {
@@ -1125,6 +1130,8 @@ macro_rules!  eq_caps_type{
     };
 }
 
+
+/// Convenience macro for creating counter capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  cntr_caps_type{
     ($($opt: expr),*) => {
@@ -1150,6 +1157,8 @@ macro_rules! async_eq_caps_type_N {
     };
 }
 
+
+/// Convenience macro for creating async completion queue capabilities.
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  async_cq_caps_type{
@@ -1158,6 +1167,7 @@ macro_rules!  async_cq_caps_type{
     };
 }
 
+/// Convenience macro for creating async event queue capabilities.
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  async_eq_caps_type{

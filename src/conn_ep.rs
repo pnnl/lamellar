@@ -146,12 +146,17 @@ impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
     /// 
     /// After calling this method, the endpoint will no longer be able to send or receive data.
     /// Corresponds to `fi_shutdown` in libfabric.
-    pub fn shutdown(&self) -> Result<(), crate::error::Error> {
+    pub fn shutdown(&self) -> Result<UnconnectedEndpointBase<EP>, crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_shutdown(self.as_typed_fid_mut().as_raw_typed_fid(), 0)
         };
 
-        check_error(err.try_into().unwrap())
+        check_error(err.try_into().unwrap())?;
+
+        Ok(UnconnectedEndpointBase {
+            inner: self.inner.clone(),
+            phantom: PhantomData,
+        })
     }
 
     /// Retrieves the address of the remote peer connected to this endpoint.

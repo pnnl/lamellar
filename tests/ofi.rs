@@ -129,7 +129,7 @@ impl<I> Drop for Ofi<I> {
     fn drop(&mut self) {
         match self.info_entry.ep_attr().type_() {
             EndpointType::Msg => match &self.ep {
-                MyEndpoint::Connected(ep) => ep.shutdown().unwrap(),
+                MyEndpoint::Connected(ep) => {ep.shutdown().unwrap();},
                 MyEndpoint::Connectionless(_) => todo!(),
             },
             EndpointType::Unspec | EndpointType::Dgram | EndpointType::Rdm => {}
