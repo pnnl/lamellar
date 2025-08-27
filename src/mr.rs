@@ -18,36 +18,31 @@ use crate::{
     fid::{AsTypedFid, BorrowedTypedFid},
 };
 
+/// Represents a DMA buffer.
+/// 
+/// Corresponds to `libfabric_sys::fi_mr_dmabuf`.
 pub struct DmaBuf {
     c_dmabuf: libfabric_sys::fi_mr_dmabuf,
 }
-
-/// Represents a key needed to access a remote [MemoryRegion].
-///
-/// This enum encapsulates either a  'regular' key obtained from `fi_mr_key` or a 'raw' key obtained from `fir_mr_raw_attr`,
-/// depending on the requirements of the provider.
 pub(crate) enum OwnedMemoryRegionKey {
     Key(u64),
     RawKey((Vec<u8>, u64)),
 }
 
+
+/// Represents a key needed to access a remote [MemoryRegion].
 pub struct MemoryRegionKey<'a> {
     pub(crate) key: &'a OwnedMemoryRegionKey,
 }
 
 impl<'a> MemoryRegionKey<'a> {
+    /// Convert the memory region key to a byte representation.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.key.to_bytes()
     }
 }
 
 impl OwnedMemoryRegionKey {
-    // pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
-    //     let mut raw_key = vec![0u8; len];
-    //     raw_key.copy_from_slice(std::slice::from_raw_parts(raw, len));
-    //     Self::RawKey(raw_key)
-    // }
-
     /// Construct a new [OwnedMemoryRegionKey] from a slice of bytes, usually received
     /// from remote node using raw keys.
     ///
@@ -62,6 +57,7 @@ impl OwnedMemoryRegionKey {
         OwnedMemoryRegionKey::from_bytes_impl(raw, &*domain.inner)
     }
 
+    /// Convert the memory region key to a byte representation.
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             OwnedMemoryRegionKey::Key(key) => {
@@ -141,6 +137,8 @@ pub struct MappedMemoryRegionKey {
 }
 
 impl MappedMemoryRegionKey {
+    /// Construct a new [MappedMemoryRegionKey] from a slice of bytes, usually received
+    /// from a peer in the network
     pub unsafe fn from_raw<EQ: ?Sized + SyncSend + 'static>(
         raw: &[u8],
         domain: &crate::domain::DomainBase<EQ>,
@@ -627,6 +625,9 @@ impl OwnedMemoryRegionDesc {
 
 #[repr(C)]
 #[derive(Debug)]
+/// Represents a descriptor for a memory region.
+///
+/// Its lifetime is bound to a [MemoryRegion].
 pub struct MemoryRegionDesc<'a> {
     c_desc: *mut std::ffi::c_void,
     phantom: PhantomData<&'a ()>,
@@ -835,10 +836,12 @@ impl Default for MemoryRegionAttr {
     }
 }
 
+/// A memory region bound to an [crate::ep::Endpoint]
 pub struct EpBindingMemoryRegion {
     mr: MemoryRegion,
 }
 
+/// A memory region bound to a [MemoryRegion]
 pub struct RmaEventMemoryRegion {
     mr: MemoryRegion,
 }
@@ -907,7 +910,7 @@ pub enum MaybeDisabledMemoryRegion {
     Disabled(DisabledMemoryRegion),
 }
 
-
+/// A disabled memory region that needs to be bound to an [crate::ep::Endpoint] or a [MemoryRegion].
 pub enum DisabledMemoryRegion {
     EpBind(EpBindingMemoryRegion),
     RmaEvent(RmaEventMemoryRegion)
@@ -1063,21 +1066,33 @@ impl<'a> MemoryRegionBuilder<'a> {
         self
     }
 
+    /// Indicates that the memory region is only accessible from the device.
+    ///
+    /// Corresponds to setting the `FI_HMEM_DEVICE_ONLY` flag
     pub fn hmem_device_only(mut self) -> Self {
         self.flags = self.flags.hmem_device_only();
         self
     }
 
+    /// Indicates that the memory region is allocated from host memory.
+    ///
+    /// Corresponds to setting the `FI_HMEM_HOST_ALLOC` flag
     pub fn hmem_host_alloc(mut self) -> Self {
         self.flags = self.flags.hmem_host_alloc();
         self
     }
 
+    /// Indicates that the memory region is used for RMA events.
+    ///
+    /// Corresponds to setting the `FI_RMA_EVENT` flag
     pub fn rma_event(mut self) -> Self {
         self.flags = self.flags.rma_event();
         self
     }
 
+    /// Indicates that the memory region is used for persistent memory.
+    ///
+    /// Corresponds to setting the `FI_RMA_PMEM` flag
     pub fn rma_pmem(mut self) -> Self {
         self.flags = self.flags.rma_pmem();
         self

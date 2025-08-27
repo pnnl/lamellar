@@ -108,8 +108,20 @@ pub struct TxContextBase<I, STATE: EpState, CQ: ?Sized> {
     pub(crate) inner: XContextBase<Transmit, I, STATE, CQ>,
 }
 
+
+/// Represents a context for transmitting data.
+///
+/// Corresponds to `fi_tx_context`
 pub type TxContext<EP, STATE> = TxContextBase<EP, STATE, dyn ReadCq>;
+
+/// Represents a connected context for transmitting data.
+///
+/// Corresponds to `fi_tx_context`
 pub type ConnectedTxContext<EP> = TxContext<EP, Connected>;
+
+/// Represents a connectionless context for transmitting data.
+///
+/// Corresponds to `fi_tx_context`
 pub type ConnlessTxContext<EP> = TxContext<EP, Connectionless>;
 
 impl<I, CQ: ?Sized> ConnectedEp for TxContextBase<I, Connected, CQ> {}
@@ -250,16 +262,20 @@ impl<I: 'static, STATE: EpState> TxContext<I, STATE> {
 }
 
 impl<I, STATE: EpState> TxContext<I, STATE> {
+    /// Binds a [crate::cq::CompletionQueue] to the context.
     pub fn bind_cq(&self) -> TxIncompleteBindCq<I, STATE> {
         self.inner.inner.bind_cq()
     }
 
+    /// Binds a [Counter] to the context.
     pub fn bind_cntr(&self) -> TxIncompleteBindCntr<I, STATE> {
         self.inner.inner.bind_cntr()
     }
 }
 
-//================== TxContext Builder ==================//
+///================== TxContext Builder ==================///
+
+/// A builder for creating a [TxContext].
 pub struct TxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
@@ -287,52 +303,82 @@ impl<'a, I: 'static, STATE: EpState> TxContextBuilder<'a, I, STATE> {
     //     self
     // }
 
+    /// Sets the mode for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::mode`.
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
         self.tx_attr.set_mode(mode);
         self
     }
 
+    /// Sets the transmit options for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::op_flags`.
     pub fn set_transmit_options(mut self, ops: TransferOptions) -> Self {
         ops.transmit();
         self.tx_attr.set_op_flags(ops);
         self
     }
 
+    /// Sets the message order for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::msg_order`.
     pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
         self.tx_attr.set_msg_order(msg_order);
         self
     }
 
+    /// Sets the completion order for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::comp_order`.
     pub fn comp_order(mut self, comp_order: TxCompOrder) -> Self {
         self.tx_attr.set_comp_order(comp_order);
         self
     }
 
+    /// Sets the inject size for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::inject_size`.
     pub fn inject_size(mut self, size: usize) -> Self {
         self.tx_attr.set_inject_size(size);
         self
     }
 
+    /// Sets the size for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::size`.
     pub fn size(mut self, size: usize) -> Self {
         self.tx_attr.set_size(size);
         self
     }
 
+    /// Sets the I/O vector limit for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::iov_limit`.
     pub fn iov_limit(mut self, iov_limit: usize) -> Self {
         self.tx_attr.set_iov_limit(iov_limit);
         self
     }
 
+    /// Sets the RMA I/O vector limit for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::rma_iov_limit`.
     pub fn rma_iov_limit(mut self, rma_iov_limit: usize) -> Self {
         self.tx_attr.set_rma_iov_limit(rma_iov_limit);
         self
     }
 
+    /// Sets the traffic class for the transmission context.
+    ///
+    /// Corresponds to `fi_tx_attr::tclass`.
     pub fn tclass(mut self, class: crate::enums::TrafficClass) -> Self {
         self.tx_attr.set_traffic_class(class);
         self
     }
 
+    /// Sets the context for the transmission context creation.
+    ///
+    /// Corresponds to the context passed to `fi_tx_context`.
     pub fn context(self, ctx: &'a mut Context) -> TxContextBuilder<'a, I, STATE> {
         TxContextBuilder {
             tx_attr: self.tx_attr,
@@ -342,6 +388,9 @@ impl<'a, I: 'static, STATE: EpState> TxContextBuilder<'a, I, STATE> {
         }
     }
 
+    /// Builds the transmission context.
+    ///
+    /// Corresponds to calling `fi_tx_context`.
     pub fn build(self) -> Result<TxContext<I, STATE>, crate::error::Error> {
         TxContext::new(self.ep, self.index, self.tx_attr, self.ctx)
     }
@@ -513,9 +562,14 @@ pub struct RxContextBase<I, STATE: EpState, CQ: ?Sized> {
     pub(crate) inner: XContextBase<Receive, I, STATE, CQ>,
 }
 
+/// Represents a context for receiving data.
 pub type RxContext<I, STATE> = RxContextBase<I, STATE, dyn ReadCq>;
+
+/// Represents a connected context for receiving data.
 pub type ConnectedRxContext<I> = RxContext<I, Connected>;
+/// Represents a connectionless context for receiving data.
 pub type ConnlessRxContext<I> = RxContext<I, Connectionless>;
+
 pub(crate) type RxContextImpl<I, STATE> = XContextBaseImpl<Receive, I, STATE, dyn ReadCq>;
 pub(crate) type RxContextImplBase<I, STATE, CQ> = XContextBaseImpl<Receive, I, STATE, CQ>;
 
@@ -659,10 +713,12 @@ impl<I: 'static, STATE: EpState> RxContext<I, STATE> {
 }
 
 impl<I, STATE: EpState> RxContextBase<I, STATE, dyn ReadCq> {
+    /// Binds a completion queue to the receive context.
     pub fn bind_cq(&self) -> RxIncompleteBindCq<I, STATE> {
         self.inner.inner.bind_cq()
     }
 
+    /// Binds a [Counter] to the context
     pub fn bind_cntr(&self) -> RxIncompleteBindCntr<I, STATE> {
         self.inner.inner.bind_cntr()
     }
@@ -696,42 +752,66 @@ impl<'a, I: 'static, STATE: EpState> RxContextBuilder<'a, I, STATE> {
     //     self
     // }
 
+    /// Sets the mode for the receive context.
+    ///
+    /// Corresponds to `fi_rx_attr::mode`.
     pub fn mode(mut self, mode: crate::enums::Mode) -> Self {
         self.rx_attr.set_mode(mode);
         self
     }
 
+    /// Sets the message order for the receive context.
+    ///
+    /// Corresponds to `fi_rx_attr::msg_order`.
     pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
         self.rx_attr.set_msg_order(msg_order);
         self
     }
 
+    /// Sets the completion order for the receive context.
+    ///
+    /// Corresponds to `fi_rx_attr::comp_order`.
     pub fn comp_order(mut self, comp_order: RxCompOrder) -> Self {
         self.rx_attr.set_comp_order(comp_order);
         self
     }
 
+    /// Sets the total buffered receive size for the receive context.
+    ///
+    /// Corresponds to `fi_rx_attr::total_buffered_recv`.
     pub fn total_buffered_recv(mut self, total_buffered_recv: usize) -> Self {
         self.rx_attr.set_total_buffered_recv(total_buffered_recv);
         self
     }
 
+    /// Sets the size for the receive context.
+    ///
+    /// Corresponds to `fi_rx_attr::size`.
     pub fn size(mut self, size: usize) -> Self {
         self.rx_attr.set_size(size);
         self
     }
 
+    /// Sets the I/O vector limit for the receive context.
+    ///
+    /// Corresponds to `fi_rx_attr::iov_limit`.
     pub fn iov_limit(mut self, iov_limit: usize) -> Self {
         self.rx_attr.set_iov_limit(iov_limit);
         self
     }
 
+    /// Sets the receive options for the receive context.
+    ///
+    /// Corresponds to `fi_rx_attr::op_flags`.
     pub fn set_receive_options(mut self, ops: TransferOptions) -> Self {
         ops.recv();
         self.rx_attr.set_op_flags(ops);
         self
     }
 
+    /// Sets the context for the receive context.
+    ///
+    /// Corresponds to the context passed to `fi_rx_context`.
     pub fn context(self, ctx: &'a mut Context) -> RxContextBuilder<'a, I, STATE> {
         RxContextBuilder {
             rx_attr: self.rx_attr,
@@ -741,6 +821,9 @@ impl<'a, I: 'static, STATE: EpState> RxContextBuilder<'a, I, STATE> {
         }
     }
 
+    /// Builds the receive context.
+    ///
+    /// Corresponds to calling `fi_rx_context`.
     pub fn build(self) -> Result<RxContext<I, STATE>, crate::error::Error> {
         RxContext::new(self.ep, self.index, self.rx_attr, self.ctx)
     }
@@ -879,110 +962,6 @@ impl RxAttr {
     }
 }
 
-// impl RxAttr {
-//     pub fn new() -> Self {
-//         let c_attr = libfabric_sys::fi_rx_attr {
-//             caps: 0,
-//             mode: 0,
-//             op_flags: 0,
-//             msg_order: 0,
-//             comp_order: 0,
-//             total_buffered_recv: 0,
-//             size: 0,
-//             iov_limit: 0,
-//         };
-
-//         Self { c_attr }
-//     }
-
-//     pub(crate) fn from(c_rx_attr: *mut libfabric_sys::fi_rx_attr) -> Self {
-//         let c_attr = unsafe { *c_rx_attr };
-
-//         Self { c_attr }
-//     }
-
-//     pub fn caps(&mut self, caps: RxCaps) -> &mut Self {
-//         self.c_attr.caps = caps.get_value();
-//         self
-//     }
-
-//     pub fn mode(&mut self, mode: crate::enums::Mode) -> &mut Self {
-//         self.c_attr.mode = mode.into();
-//         self
-//     }
-
-//     pub fn msg_order(&mut self, msg_order: MsgOrder) -> &mut Self {
-//         self.c_attr.msg_order = msg_order.get_value();
-//         self
-//     }
-
-//     pub fn comp_order(&mut self, comp_order: RxCompOrder) -> &mut Self {
-//         self.c_attr.comp_order = comp_order.get_value();
-//         self
-//     }
-
-//     pub fn total_buffered_recv(&mut self, total_buffered_recv: usize) -> &mut Self {
-//         self.c_attr.total_buffered_recv = total_buffered_recv;
-//         self
-//     }
-
-//     pub fn size(&mut self, size: usize) -> &mut Self {
-//         self.c_attr.size = size;
-//         self
-//     }
-
-//     pub fn iov_limit(&mut self, iov_limit: usize) -> &mut Self {
-//         self.c_attr.iov_limit = iov_limit;
-//         self
-//     }
-
-//     pub fn op_flags(&mut self, tfer: crate::enums::TransferOptions) -> &mut Self {
-//         self.c_attr.op_flags = tfer.get_value().into();
-//         self
-//     }
-
-//     pub fn get_caps(&self) -> u64 {
-//         self.c_attr.caps
-//     }
-
-//     pub fn get_mode(&self) -> crate::enums::Mode {
-//         crate::enums::Mode::from_value(self.c_attr.mode)
-//     }
-
-//     pub fn get_op_flags(&self) -> u64 {
-//         self.c_attr.op_flags
-//     }
-
-//     pub fn get_msg_order(&self) -> u64 {
-//         self.c_attr.msg_order
-//     }
-
-//     pub fn get_comp_order(&self) -> u64 {
-//         self.c_attr.comp_order
-//     }
-
-//     pub fn get_size(&self) -> usize {
-//         self.c_attr.size
-//     }
-
-//     pub fn get_iov_limit(&self) -> usize {
-//         self.c_attr.iov_limit
-//     }
-
-//     pub fn get_total_buffered_recv(&self) -> usize {
-//         self.c_attr.total_buffered_recv
-//     }
-
-//     #[allow(dead_code)]
-//     pub(crate) fn get(&self) -> *const libfabric_sys::fi_rx_attr {
-//         &self.c_attr
-//     }
-
-//     pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_rx_attr {
-//         &mut self.c_attr
-//     }
-// }
-
 impl Default for RxAttr {
     fn default() -> Self {
         Self::new()
@@ -995,6 +974,7 @@ pub struct TxIncompleteBindCq<'a, I, STATE: EpState> {
 }
 
 impl<'a, I, STATE: EpState> TxIncompleteBindCq<'a, I, STATE> {
+    /// Sets the transmit flag for the binding [CompletionQueue]
     pub fn transmit(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |=
@@ -1008,6 +988,7 @@ impl<'a, I, STATE: EpState> TxIncompleteBindCq<'a, I, STATE> {
         }
     }
 
+    /// Binds the [CompletionQueue] to the context.
     pub fn cq<T: ReadCq + AsRawFid + 'static>(
         &mut self,
         cq: &crate::cq::CompletionQueue<T>,

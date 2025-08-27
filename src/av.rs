@@ -32,6 +32,7 @@ impl<EQ: ?Sized + SyncSend + ReadEq> AddressVectorImplT for AddressVectorImplBas
 impl<EQ: ?Sized + SyncSend> SyncSend for AddressVectorImplBase<EQ> {}
 
 #[repr(C)]
+/// Represents an authorization key as the one returned by the `fi_av_lookup_auth_key` function.
 pub struct AuthKey {
     pub(crate) auth_key: Vec<u8>,
 }
@@ -89,6 +90,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
     }
 }
 
+/// The result of a pending, non-blocking AddressVector insert operation.
 pub struct PendingAVTranslation {
     fi_addresses: Vec<u64>,
     av: MyRc<dyn AddressVectorImplT>
@@ -96,6 +98,8 @@ pub struct PendingAVTranslation {
 
 
 impl PendingAVTranslation {
+
+    /// Completes a pending AddressVector insert operation, returning the resulting MappedAddresses.
     pub fn av_complete(self, event: AVCompleteEvent) -> Vec<MappedAddress> {
         assert_eq!(event.fid(), &self.av.as_typed_fid().as_raw_fid());
         self.fi_addresses
@@ -109,6 +113,7 @@ impl PendingAVTranslation {
         .collect::<Vec<_>>()
     }
     
+    /// Completes a pending AddressVector insert operation without checking the event target fid.
     pub fn av_complete_unchecked(self, _event: AVCompleteEvent) -> Vec<MappedAddress> {
         self.fi_addresses
         .into_iter()
@@ -476,6 +481,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
     }
 }
 
+/// Enum with the different ways to provide an address to be inserted into an AddressVector.
 pub enum AvInAddress<'a> {
     String(&'a str),
     Encoded(&'a [Address]),
@@ -507,7 +513,7 @@ impl<'a> From<(&'a str, usize, &'a str, usize)> for AvInAddress<'a> {
     }
 }
 
-/// Owned wrapper around a libfabric `fid_av`.
+/// Owned wrapper around a blocking libfabric `fid_av`.
 ///
 /// This type wraps an instance of a `fid_av`, monitoring its lifetime and closing it when it goes out of scope.
 /// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_av.3.html).
@@ -515,10 +521,16 @@ impl<'a> From<(&'a str, usize, &'a str, usize)> for AvInAddress<'a> {
 /// Note that other objects that rely on an AddressVector (e.g., [MappedAddress]) will extend its lifetime until they
 /// are also dropped.
 pub type AddressVector = AddressVectorBase<Block, dyn ReadEq>;
+
+
+/// Owned wrapper around a non-blocking libfabric `fid_av`.
 pub type NoBlockAddressVector = AddressVectorBase<NoBlock, dyn ReadEq>;
+
+
 pub struct Block {}
 pub struct NoBlock {}
 
+/// A trait that marks whether an AddressVector is blocking or non-blocking.
 pub trait  AVSyncMode {}
 
 impl AVSyncMode for Block {}
@@ -553,34 +565,6 @@ impl<Mode: AVSyncMode, EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Mode, EQ
             phantom: PhantomData,
         })
     }
-    // /// Same as [Self::insert] but with an extra argument to provide a context
-    // ///
-    // pub fn insert_with_context<T>(&self, addr: &[Address], options: AVOptions, ctx: &mut T) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] handle async
-    //     let fi_addresses = self.inner.insert(addr, options.as_raw(), Some(ctx))?;
-    //     Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone())))}).collect::<Vec<_>>())
-    // }
-
-    // /// Similar to [Self::insert] but with address formatted as node, service [String]s
-    // ///
-    // /// Directly corrsponds to `fi_av_insertsvc`
-    // pub fn insertsvc(&self, node: &str, service: &str, options: AVOptions) -> Result<Option<MappedAddress>, crate::error::Error> {
-    //     let fi_addr = self.inner.insertsvc(node, service, options.as_raw())?;
-    //     if fi_addr != FI_ADDR_NOTAVAIL {
-    //         Ok(Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone()))))
-    //     }
-    //     else {
-    //         Ok(None)
-    //     }
-
-    // }
-
-    // /// Similar to [Self::insert] but with address(es) formatted as a base `node` + increments up to `nodecnt`, base `service`  + increments up to `svccnt`
-    // ///
-    // /// Directly corresponds to `fi_av_insertsym`
-    // pub fn insertsym(&self, node: &str, nodecnt :usize, service: &str, svccnt: usize, options: AVOptions) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> { // [TODO] Handle case where operation partially failed
-    //     let fi_addresses = self.inner.insertsym(node, nodecnt, service, svccnt, options.as_raw())?;
-    //     Ok(fi_addresses.into_iter().map(|fi_addr| if fi_addr == FI_ADDR_NOTAVAIL {None} else {Some(MappedAddress::from_raw_addr(fi_addr, AddressSource::Av(self.inner.clone())))}).collect::<Vec<_>>())
-    // }
 
     /// Removes the given [MappedAddress]es from the AddressVector.
     ///
@@ -608,10 +592,16 @@ impl<Mode: AVSyncMode, EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Mode, EQ
         self.inner.straddr(addr)
     }
 
+    /// Inserts an authorization key into the AddressVector.
+    /// 
+    /// Directly corresponds to `fi_av_insert_auth_key`
     pub fn insert_auth_key(&self, auth_key: &AuthKey) -> Result<(), crate::error::Error> {
         self.inner.insert_auth_key(auth_key)
     }
 
+    /// Looks up the authorization key associated with a mapped address.
+    /// 
+    /// Directly corresponds to `fi_av_lookup_auth_key`
     pub fn lookup_auth_key(
         &self,
         mapped_addr: &crate::MappedAddress,
@@ -619,6 +609,9 @@ impl<Mode: AVSyncMode, EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Mode, EQ
         self.inner.lookup_auth_key(mapped_addr)
     }
 
+    /// Sets the user ID associated with a mapped address.
+    /// 
+    /// Directly corresponds to `fi_av_set_user_id`
     pub fn set_user_id(
         &self,
         mapped_addr: &MappedAddress,
@@ -631,7 +624,7 @@ impl<Mode: AVSyncMode, EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Mode, EQ
 
 impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Block, EQ> {
 
-    /// Insert one or more addresses into the [AddressVector] and return a [Vec] of [MappedAddress]es, one for each input address.
+    /// Insert one or more addresses into the [AddressVector] and return a [Vec] of [MappedAddress]es, one for each input address and wait for the operation to complete.
     /// Addresses can be of types:
     /// - A single string ([AvInAddress::String]) that provides both a node and a service
     /// - A slice of [Address] ([AvInAddress::Encoded])
@@ -734,6 +727,40 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Block, EQ> {
 
 impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<NoBlock, EQ> {
 
+    /// Similar to [Self::insert] but does not wait for the operation to complete and returns a [PendingAVTranslation] instead.
+    pub fn insert_no_block(
+        &self,
+        addr: AvInAddress,
+        options: AVOptions,
+    ) -> Result<PendingAVTranslation, crate::error::Error> {
+        let fi_addresses = match addr {
+            AvInAddress::String(str_addr) => {
+                self.inner.insertsvc_str(str_addr, options.as_raw(), None)?
+            }
+            AvInAddress::Encoded(addresses) => {
+                self.inner.insert::<()>(addresses, options.as_raw(), None)?
+            }
+            AvInAddress::Service((node, svc)) => {
+                self
+                    .inner
+                    .insertsvc::<()>(node, svc, options.as_raw(), None)?
+                // vec![mapped_addr]
+            }
+            AvInAddress::Symmetric((node, nodecnt, svc, svccnt)) => {
+                self.inner
+                    .insertsym::<()>(node, nodecnt, svc, svccnt, options.as_raw(), None)?
+            }
+        };
+
+        Ok(
+            PendingAVTranslation {
+                fi_addresses,
+                av: self.inner.clone()
+            }
+        )
+    }
+
+    /// Same as [Self::insert_no_block] but with an extra argument to provide a context
     pub fn insert_with_context_no_block<T>(
         &self,
         addr: AvInAddress,
@@ -768,37 +795,6 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<NoBlock, EQ> {
         )
     }
 
-    pub fn insert_no_block(
-        &self,
-        addr: AvInAddress,
-        options: AVOptions,
-    ) -> Result<PendingAVTranslation, crate::error::Error> {
-        let fi_addresses = match addr {
-            AvInAddress::String(str_addr) => {
-                self.inner.insertsvc_str(str_addr, options.as_raw(), None)?
-            }
-            AvInAddress::Encoded(addresses) => {
-                self.inner.insert::<()>(addresses, options.as_raw(), None)?
-            }
-            AvInAddress::Service((node, svc)) => {
-                self
-                    .inner
-                    .insertsvc::<()>(node, svc, options.as_raw(), None)?
-                // vec![mapped_addr]
-            }
-            AvInAddress::Symmetric((node, nodecnt, svc, svccnt)) => {
-                self.inner
-                    .insertsym::<()>(node, nodecnt, svc, svccnt, options.as_raw(), None)?
-            }
-        };
-
-        Ok(
-            PendingAVTranslation {
-                fi_addresses,
-                av: self.inner.clone()
-            }
-        )
-    }
 }
 
 /// Builder for the [`AddressVector`] type.
@@ -814,7 +810,7 @@ pub struct AddressVectorBuilder<'a, EQ: ?Sized, Mode= Block> where Mode: AVSyncM
 }
 
 impl<'a> AddressVectorBuilder<'a, ()> {
-    /// Initiates the creation of a new [AddressVector] on `domain`.
+    /// Initiates the creation of a new [AddressVector].
     ///
     /// The initial configuration is what would be set if no `fi_av_attr` or `context` was provided to
     /// the `fi_av_open` call.
@@ -916,15 +912,14 @@ impl<'a, EQ, Mode: AVSyncMode> AddressVectorBuilder<'a, EQ, Mode> {
 }
 
 impl<'a> AddressVectorBuilder<'a, (), Block> {
-    // [TODO] Asynchronous insertion does not work correctly
-    // / Requests that insertions to [AddressVector] be done asynchronously.
-    // /
-    // / An asynchronous address vector is required to be bound to an [EventQueue] before any insertions take place.
-    // / Thus, setting this option requires the user to specify the queue that will be used to report the completion
-    // / of address insertions.
-    // /
-    // / Corresponds to setting the corresponding bit (`FI_EVENT`) of the field `fi_av_attr::flags` and calling
-    // / `fi_av_bind(eq)`, once the address vector has been constructed.
+    /// Requests that insertions to [AddressVector] be done asynchronously.
+    ///
+    /// An asynchronous address vector is required to be bound to an [EventQueue] before any insertions take place.
+    /// Thus, setting this option requires the user to specify the queue that will be used to report the completion
+    /// of address insertions.
+    ///
+    /// Corresponds to setting the corresponding bit (`FI_EVENT`) of the field `fi_av_attr::flags` and calling
+    /// `fi_av_bind(eq)`, once the address vector has been constructed.
     pub fn no_block<EQ: ReadEq + 'static>(mut self, eq: &'a EventQueueBase<EQ>) -> AddressVectorBuilder<'a, dyn ReadEq, NoBlock> {
         self.av_attr.async_();
         AddressVectorBuilder {
@@ -961,8 +956,7 @@ impl<'a> AddressVectorBuilder<'a, ()> {
     /// Constructs a new [AddressVector] with the configurations requested so far.
     ///
     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
-    /// calling `fi_av_open` with an optional `context`, and, if asynchronous, binding with
-    /// the selected [EventQueue].
+    /// and calling `fi_av_open` with an optional `context`.
     pub fn build<DEQ: ?Sized + 'static + SyncSend>(
         self,
         domain: &DomainBase<DEQ>,
@@ -987,20 +981,15 @@ impl<'a, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, EQ> {
     ) -> Result<AddressVectorBase<Block, EQ>, crate::error::Error> {
         
         AddressVectorBase::new(domain, self.av_attr, self.ctx)
-        // if let Some(eq) = self.eq {
-        //     av.inner.bind(eq)?;
-        // }
-
-        // Ok(av)
     }
 }
 
 impl<'a, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, EQ, NoBlock> {
-//     /// Constructs a new [AddressVector] with the configurations requested so far.
-//     ///
-//     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
-//     /// calling `fi_av_open` with an optional `context`, and, if asynchronous, binding with
-//     /// the selected [EventQueue].
+    /// Constructs a new [AddressVector] with the configurations requested so far.
+    ///
+    /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
+    /// calling `fi_av_open` with an optional `context`, and, binding with
+    /// the selected [EventQueue].
     pub fn build<DEQ: 'static + SyncSend>(
         self,
         domain: &DomainBase<DEQ>,
@@ -1242,6 +1231,9 @@ impl AddressVectorSet {
         self.inner.remove(mapped_addr)
     }
 
+    /// Retrieves an address associated with the [AddressVectorSet].
+    /// 
+    /// Corresponds to `fi_av_set_addr`
     pub fn address(&self) -> Result<crate::MappedAddress, crate::error::Error> {
         let raw_addr = self.inner.address()?;
         Ok(MappedAddress::from_raw_addr(
@@ -1263,6 +1255,8 @@ pub struct AddressVectorSetBuilder<'a, Mode: AVSyncMode, EQ: ReadEq + ?Sized> {
 }
 
 impl<'a,  Mode: AVSyncMode, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, Mode, EQ> {
+
+    /// Initiates the creation of a new [AddressVectorSet] from a range of addresses in an existing [AddressVector] of Table type.
     pub fn new_from_range(
         av: &'a AddressVectorBase<Mode, EQ>,
         start_addr: &crate::MappedAddress,
@@ -1286,6 +1280,7 @@ impl<'a,  Mode: AVSyncMode, EQ: ?Sized + ReadEq> AddressVectorSetBuilder<'a, Mod
         }
     }
 
+    /// Initiates the creation of a new empty [AddressVectorSet] from an existing [AddressVector].
     pub fn new(av: &'a AddressVectorBase<Mode, EQ>) -> AddressVectorSetBuilder<'a, Mode, EQ> {
         let mut avset_attr = AddressVectorSetAttr::new();
         avset_attr.c_attr.start_addr = FI_ADDR_NOTAVAIL;
@@ -1356,7 +1351,7 @@ pub(crate) struct AddressVectorAttr {
 }
 
 impl AddressVectorAttr {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let c_attr = libfabric_sys::fi_av_attr {
             type_: crate::enums::AddressVectorType::Unspec.as_raw(),
             rx_ctx_bits: 0,
@@ -1370,44 +1365,44 @@ impl AddressVectorAttr {
         Self { c_attr }
     }
 
-    pub fn type_(&mut self, av_type: crate::enums::AddressVectorType) -> &mut Self {
+    pub(crate) fn type_(&mut self, av_type: crate::enums::AddressVectorType) -> &mut Self {
         self.c_attr.type_ = av_type.as_raw();
         self
     }
 
-    pub fn rx_ctx_bits(&mut self, rx_ctx_bits: i32) -> &mut Self {
+    pub(crate) fn rx_ctx_bits(&mut self, rx_ctx_bits: i32) -> &mut Self {
         self.c_attr.rx_ctx_bits = rx_ctx_bits;
         self
     }
 
-    pub fn count(&mut self, count: usize) -> &mut Self {
+    pub(crate) fn count(&mut self, count: usize) -> &mut Self {
         self.c_attr.count = count;
         self
     }
 
-    pub fn ep_per_node(&mut self, count: usize) -> &mut Self {
+    pub(crate) fn ep_per_node(&mut self, count: usize) -> &mut Self {
         self.c_attr.ep_per_node = count;
         self
     }
 
-    pub fn name(&mut self, name: String) -> &mut Self {
+    pub(crate) fn name(&mut self, name: String) -> &mut Self {
         let c_str = std::ffi::CString::new(name).unwrap();
         self.c_attr.name = c_str.into_raw();
         self
     }
 
-    pub fn map_addr(&mut self, addr: usize) -> &mut Self {
+    pub(crate) fn map_addr(&mut self, addr: usize) -> &mut Self {
         //[TODO] Datatype correct??
         self.c_attr.map_addr = addr as *mut std::ffi::c_void;
         self
     }
 
-    pub fn read_only(&mut self) -> &mut Self {
+    pub(crate) fn read_only(&mut self) -> &mut Self {
         self.c_attr.flags |= libfabric_sys::FI_READ as u64;
         self
     }
 
-    pub fn symmetric(&mut self) -> &mut Self {
+    pub(crate) fn symmetric(&mut self) -> &mut Self {
         self.c_attr.flags |= libfabric_sys::FI_SYMMETRIC;
         self
     }

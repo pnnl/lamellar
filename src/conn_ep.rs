@@ -8,26 +8,24 @@ use crate::{
     utils::check_error,
 };
 
+/// A connection-oriented endpoint that is not yet enabled.
 pub type UninitUnconnectedEndpointBase<EP> = EndpointBase<EP, UninitUnconnected>;
 
 pub type UninitUnconnectedEndpoint<T> =
     UninitUnconnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
 
+/// A connection-oriented endpoint that is not yet connected, but is enabled.
 pub type UnconnectedEndpointBase<EP> = EndpointBase<EP, Unconnected>;
 
 pub type UnconnectedEndpoint<T> =
     UnconnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
 
-// impl<EP: AsRawTypedFid<Output = EpRawFid> + AsRawFid> UninitEndpoint
-//     for UninitUnconnectedEndpointBase<EP>
-// {
-// }
-
-    // pub fn bind_eq<T: ReadEq + 'static>(
-    //     &self,
-    //     eq: &EventQueueBase<T>,
-    // ) -> Result<(), crate::error::Error> {
 impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
+
+    /// Enables the endpoint and binds it to the specified event queue.
+    /// After enabling, the endpoint can be used to initiate or accept connections.
+    ///
+    /// Corresponds to `fi_bind` followed by `fi_enable` in libfabric.
     pub fn enable<EQ: ReadEq + 'static>(self, eq: &EventQueueBase<EQ>) -> Result<UnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
         self.bind_eq(eq)?;
         let err =
@@ -41,6 +39,10 @@ impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq
 }
 
 impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
+    
+    /// Initiates a connection to a remote endpoint specified by `addr`, with additional parameters.
+    /// 
+    /// Corrsponds to `fi_connect` in libfabric.
     pub fn connect_with<T>(&self, addr: &Address, param: &[T]) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_connect(
@@ -54,6 +56,9 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Initiates a connection to a remote endpoint specified by `addr`.
+    /// 
+    /// Corrsponds to `fi_connect` in libfabric without the param argument.
     pub fn connect(&self, addr: &Address) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_connect(
@@ -67,6 +72,9 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Accepts an incoming connection request with additional parameters.
+    /// 
+    /// Corrsponds to `fi_accept` in libfabric.
     pub fn accept_with<T0>(&self, param: &[T0]) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_accept(
@@ -79,6 +87,9 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Accepts an incoming connection request.
+    /// 
+    /// Corrsponds to `fi_accept` in libfabric without the param argument.
     pub fn accept(&self) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_accept(
@@ -93,6 +104,12 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
 }
 
 impl<E> UnconnectedEndpoint<E> {
+
+    /// Completes the connection process using the provided `ConnectedEvent` and returns a [ConnectedEndpoint] ready for use.
+    /// This method asserts that the event's fid matches the endpoint's fid.
+    /// 
+    /// # Panics
+    /// Panics if the event's fid does not match the endpoint's fid.
     pub fn connect_complete(self, event: ConnectedEvent) -> ConnectedEndpoint<E> {
         assert_eq!(event.fid(), self.as_typed_fid_mut().as_raw_fid());
 
@@ -101,6 +118,8 @@ impl<E> UnconnectedEndpoint<E> {
             phantom: PhantomData,
         }
     }
+
+    /// Same as [connect_complete](Self::connect_complete) but does not check that the event's fid matches the endpoint's fid.
     pub unsafe fn connect_complete_unchecked(self, _event: ConnectedEvent) -> ConnectedEndpoint<E> {
 
         ConnectedEndpoint {
@@ -110,8 +129,10 @@ impl<E> UnconnectedEndpoint<E> {
     }
 }
 
+/// A trait for connection-oriented endpoints that are in the connected state.
 pub trait ConnectedEp {}
 
+/// A connection-oriented endpoint that is in the connected state.
 pub type ConnectedEndpointBase<EP> = EndpointBase<EP, Connected>;
 
 pub type ConnectedEndpoint<T> = ConnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
@@ -119,6 +140,12 @@ pub type ConnectedEndpoint<T> = ConnectedEndpointBase<EndpointImplBase<T, dyn Re
 impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
 
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
+
+    // [TODO]: Should this consume self and return an UnconnectedEndpoint?
+    /// Shuts down the connection associated with the endpoint.
+    /// 
+    /// After calling this method, the endpoint will no longer be able to send or receive data.
+    /// Corresponds to `fi_shutdown` in libfabric.
     pub fn shutdown(&self) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_shutdown(self.as_typed_fid_mut().as_raw_typed_fid(), 0)
@@ -127,6 +154,9 @@ impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Retrieves the address of the remote peer connected to this endpoint.
+    /// 
+    /// Corresponds to `fi_getpeer` in libfabric.
     pub fn peer(&self) -> Result<Address, crate::error::Error> {
         let mut len = 0;
         let err = unsafe {

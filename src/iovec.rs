@@ -5,12 +5,15 @@ use crate::{mr::MappedMemoryRegionKey, RemoteMemoryAddress, RemoteMemAddrSlice, 
 unsafe impl<'a> Send for IoVec<'a> {}
 unsafe impl<'a> Sync for IoVec<'a> {}
 #[repr(C)]
+/// A wrapper for `libfabric_sys::iovec`
 pub struct IoVec<'a> {
     c_iovec: libfabric_sys::iovec,
     borrow: PhantomData<&'a ()>,
 }
 
 impl<'a> IoVec<'a> {
+
+    /// Creates a new IoVec from a reference to a memory region.
     pub fn from<T>(mem: &'a T) -> Self {
         let c_iovec = libfabric_sys::iovec {
             iov_base: (mem as *const T as *mut T).cast(),
@@ -23,6 +26,7 @@ impl<'a> IoVec<'a> {
         }
     }
 
+    /// Creates a new IoVec from a slice of data
     pub fn from_slice<T>(mem: &'a [T]) -> Self {
         let c_iovec = libfabric_sys::iovec {
             iov_base: (mem.as_ptr() as *mut T).cast(),
@@ -35,6 +39,7 @@ impl<'a> IoVec<'a> {
         }
     }
 
+    /// Returns the length of the IoVec
     pub fn len(&self) -> usize {
         self.c_iovec.iov_len
     }
@@ -49,6 +54,7 @@ unsafe impl<'a> Send for IoVecMut<'a> {}
 unsafe impl<'a> Sync for IoVecMut<'a> {}
 
 #[repr(C)]
+/// Represents a mutable [IoVec]
 pub struct IoVecMut<'a> {
     c_iovec: libfabric_sys::iovec,
     borrow: PhantomData<&'a mut ()>,

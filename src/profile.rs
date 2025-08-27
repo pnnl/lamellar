@@ -13,6 +13,9 @@ use crate::{
     Context,
 };
 
+/// Represents a profile in the system.
+///
+/// Corresponds to a `fi_profile` struct.
 pub struct Profile {
     c_profile: OwnedProfileFid,
 }
@@ -59,6 +62,9 @@ impl Profile {
         })
     }
 
+    /// Resets the profile to its initial state.
+    ///
+    /// Corresponds to a `fi_profile_reset` function.
     pub fn reset(&mut self) {
         unsafe {
             libfabric_sys::inlined_fi_profile_reset(
@@ -68,6 +74,9 @@ impl Profile {
         }
     }
 
+    /// Queries the variables of the profile.
+    ///
+    /// Corresponds to a `fi_profile_query_vars` function.
     pub fn query_vars(&self) -> Result<Vec<ProfileDesc>, crate::error::Error> {
         let mut count: usize = 0;
         let err = unsafe {
@@ -101,6 +110,9 @@ impl Profile {
             .collect())
     }
 
+    /// Queries the events of the profile.
+    ///
+    /// Corresponds to a `fi_profile_query_events` function.
     pub fn query_events(&self) -> Result<Vec<ProfileDesc>, crate::error::Error> {
         let mut count: usize = 0;
         let err = unsafe {
@@ -134,6 +146,9 @@ impl Profile {
             .collect())
     }
 
+    /// Reads a 64-bit unsigned integer variable from the profile.
+    ///
+    /// Corresponds to a `fi_profile_read_u64` function.
     pub fn read_u64(&self, var_id: u32) -> Result<u64, crate::error::Error> {
         let mut value: u64 = 0;
         let err = unsafe {
@@ -149,6 +164,9 @@ impl Profile {
         Ok(value)
     }
 
+    /// Registers a callback for profile events.
+    ///
+    /// Corresponds to a `fi_profile_register_callback` function.
     pub fn register_callback<'a>(
         &self,
         event_id: u32,
@@ -201,6 +219,7 @@ pub struct ProfileBuilder<'a> {
 }
 
 impl<'a> ProfileBuilder<'a> {
+    /// Initiates the process for building a Profile for a specific [crate::ep::Endpoint].
     pub fn endpoint(ep: &impl AsTypedFid<EpRawFid>) -> Self {
         Self {
             fid: ep.as_typed_fid().as_raw_fid(),
@@ -208,6 +227,7 @@ impl<'a> ProfileBuilder<'a> {
         }
     }
 
+    /// Initiates the process for building a Profile for a specific [crate::domain::Domain].
     pub fn domain(domain: &impl AsTypedFid<DomainRawFid>) -> Self {
         Self {
             fid: domain.as_typed_fid().as_raw_fid(),
@@ -215,16 +235,21 @@ impl<'a> ProfileBuilder<'a> {
         }
     }
 
+    /// Sets a [Context] for the ProfileBuilder.
     pub fn context(mut self, ctx: &'a mut Context) -> Self {
         self.ctx = Some(ctx);
         self
     }
 
+    /// Builds the Profile.
     pub fn build(self) -> Result<Profile, crate::error::Error> {
         Profile::new(&self.fid, self.ctx)
     }
 }
 
+/// Represents a profile descriptor in the system.
+///
+/// Corresponds to a `fi_profile_desc` struct.
 pub struct ProfileDesc<'a> {
     id: u32,
     flags: u64,
@@ -254,22 +279,27 @@ impl<'a> ProfileDesc<'a> {
         }
     }
 
+    /// Returns the ID of the profile.
     pub fn id(&self) -> u32 {
         self.id
     }
 
+    /// Returns the flags of the profile.
     pub fn flags(&self) -> u64 {
         self.flags
     }
 
+    /// Returns the profile data of the profile.
     pub fn profile_data(&self) -> &ProfileDataType {
         &self.profile_data
     }
 
+    /// Returns the name of the profile.
     pub fn name(&self) -> &str {
         self.name
     }
 
+    /// Returns the description of the profile.
     pub fn desc(&self) -> &str {
         self.desc
     }

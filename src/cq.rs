@@ -50,13 +50,32 @@ impl EntryFormat for libfabric_sys::fi_cq_data_entry {}
 impl EntryFormat for libfabric_sys::fi_cq_tagged_entry {}
 impl EntryFormat for () {}
 
+/// A single completion entry returned from a completion queue.
+/// 
+/// Corresponds to `fi_cq_entry` in libfabric.
 pub type CtxEntry = libfabric_sys::fi_cq_entry;
+
+/// A single completion msg entry returned from a completion queue.
+/// 
+/// Corresponds to `fi_cq_msg_entry` in libfabric.
 pub type MsgEntry = libfabric_sys::fi_cq_msg_entry;
+
+/// A single completion data entry returned from a completion queue.
+/// 
+/// Corresponds to `fi_cq_data_entry` in libfabric.
 pub type DataEntry = libfabric_sys::fi_cq_data_entry;
+
+/// A single completion tagged entry returned from a completion queue.
+/// 
+/// Corresponds to `fi_cq_tagged_entry` in libfabric.
 pub type TaggedEntry = libfabric_sys::fi_cq_tagged_entry;
+
 pub type UnspecEntry = ();
 
 #[derive(Clone)]
+/// A enum of a vector of completion entries of some type returned from a completion queue.
+/// 
+/// Corresponds to `fi_cq_entry`, `fi_cq_msg_entry`, `fi_cq_data_entry`, or `fi_cq_tagged_entry` in libfabric.
 pub enum Completion {
     Unspec(Vec<CompletionEntry<CtxEntry>>), // fi_cq_entry seems to be the bare minimum needed
     Ctx(Vec<CompletionEntry<CtxEntry>>),
@@ -105,6 +124,9 @@ impl Completion {
 }
 
 #[derive(Clone)]
+/// A single completion entry of some type returned from a completion queue.
+/// 
+/// Corresponds to `fi_cq_entry`, `fi_cq_msg_entry`, `fi_cq_data_entry`, or `fi_cq_tagged_entry` in libfabric.
 pub enum SingleCompletion {
     Unspec(CompletionEntry<CtxEntry>),
     Ctx(CompletionEntry<CtxEntry>),
@@ -114,6 +136,9 @@ pub enum SingleCompletion {
 }
 
 impl SingleCompletion {
+    /// Returns the operation context associated with this completion entry.
+    /// 
+    /// Corresponds to the `op_context` field in libfabric's completion entry structures.
     pub fn op_context(&self) -> *mut std::ffi::c_void {
         match self {
             SingleCompletion::Unspec(c) => c.c_entry.op_context,
@@ -149,6 +174,7 @@ pub struct CompletionQueueBase<CQ: ?Sized> {
     pub(crate) inner: MyRc<CQ>,
 }
 
+/// A trait that provides the ability to wait on a completion queue configured as waitable.
 pub trait WaitCq: AsTypedFid<CqRawFid> {
     /// Blocking version of [ReadCq::read_in]
     ///
@@ -285,7 +311,13 @@ pub trait WaitCq: AsTypedFid<CqRawFid> {
         }
     }
 }
+
+/// A trait that provides the default capabilities of a completion queue.
 pub trait ReadCq: AsTypedFid<CqRawFid> + SyncSend {
+    
+    /// Returns a reference to the underlying `fid_cq`.
+    /// 
+    /// Corresponds to the fid field in libfabric's `fid_cq` structure.
     fn fid(&self) -> &OwnedCqFid;
 
     /// Reads one or more completions from a completion queue
@@ -371,6 +403,9 @@ pub trait ReadCq: AsTypedFid<CqRawFid> + SyncSend {
         }
     }
 
+    /// Prints a human-readable error message for a given completion error entry.
+    /// 
+    /// Corresponds to `fi_cq_strerror` in libfabric.
     fn print_error(&self, err_entry: &crate::cq::CompletionError) {
         let ret = unsafe {
             libfabric_sys::inlined_fi_cq_strerror(
@@ -533,6 +568,7 @@ impl<'a, const WAIT: bool, const FD: bool> WaitObjectRetrieve<'a>
     }
 }
 
+/// A trait that provides the ability to retrieve the underlying wait object of a libfabric object configured with a retrievable wait object.
 pub trait WaitObjectRetrieve<'a> {
     /// Retreives the low-level wait object associated with the counter.
     ///
@@ -1055,6 +1091,8 @@ impl Default for CompletionQueueAttr {
 }
 
 // //================== CompletionQueue Entry (fi_cq_entry) ==================//
+
+/// A single completion entry of type `Format`.
 #[derive(Clone, Debug)]
 pub struct CompletionEntry<Format> {
     pub(crate) c_entry: Format,
@@ -1065,6 +1103,7 @@ impl CompletionEntry<()> {
         Self { c_entry: () }
     }
 }
+
 impl CompletionEntry<CtxEntry> {
     fn new() -> Self {
         Self {
@@ -1133,12 +1172,20 @@ impl CompletionEntry<TaggedEntry> {
 }
 
 impl CompletionEntry<CtxEntry> {
+
+    /// Checks if the operation context of this completion entry is equal to the provided context.
+    ///
+    /// Corresponds to accessing the `fi_cq_entry::op_context` field.
     pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
         std::ptr::eq(self.c_entry.op_context, ctx.inner())
     }
 }
 
 impl CompletionEntry<MsgEntry> {
+
+    /// Checks if the operation context of this completion entry is equal to the provided context.
+    /// 
+    /// Corresponds to accessing the `fi_cq_msg_entry::op_context` field.
     pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
         std::ptr::eq(self.c_entry.op_context, ctx.inner())
     }
@@ -1152,6 +1199,10 @@ impl CompletionEntry<MsgEntry> {
 }
 
 impl CompletionEntry<DataEntry> {
+
+    /// Checks if the operation context of this completion entry is equal to the provided context.
+    /// 
+    /// Corresponds to accessing the `fi_cq_data_entry::op_context` field.
     pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
         std::ptr::eq(self.c_entry.op_context, ctx.inner())
     }
@@ -1187,10 +1238,17 @@ impl CompletionEntry<DataEntry> {
 }
 
 impl CompletionEntry<TaggedEntry> {
+
+    /// Checks if the operation context of this completion entry is equal to the provided context.
+    /// 
+    /// Corresponds to accessing the `fi_cq_tagged_entry::op_context` field
     pub fn is_op_context_equal(&self, ctx: &Context) -> bool {
         std::ptr::eq(self.c_entry.op_context, ctx.inner())
     }
 
+    /// Returns the completion flags related to this completion entry
+    /// 
+    /// Corresponds to accessing the `fi_cq_tagged_entry::flags` field.
     pub fn flags(&self) -> CompletionFlags {
         CompletionFlags::from_raw(self.c_entry.flags)
     }
@@ -1357,10 +1415,14 @@ impl CompletionError {
         Error::from_err_code(self.c_err.err as u32)
     }
 
+    /// Checks if the operation context of this completion error entry is equal to the provided context.
+    /// 
+    /// Corresponds to accessing the `fi_cq_err_entry::op_context` field.
     pub fn is_op_context_equal(&self, ctx: &crate::Context) -> bool {
         std::ptr::eq(self.c_err.op_context, ctx.inner())
     }
 
+    
     pub(crate) fn err_data(&self) -> *const std::ffi::c_void {
         self.c_err.err_data
     }

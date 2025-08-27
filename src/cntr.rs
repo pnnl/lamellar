@@ -33,7 +33,9 @@ pub struct CounterImpl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
     _domain_rc: MyRc<dyn DomainImplT>,
 }
 
+/// A trait that provides the default operations of a Counter. 
 pub trait ReadCntr: AsTypedFid<CntrRawFid> + SyncSend {
+
     fn fid(&self) -> &OwnedCntrFid;
 
     fn read(&self) -> u64 {
@@ -79,9 +81,9 @@ pub trait ReadCntr: AsTypedFid<CntrRawFid> + SyncSend {
     }
 }
 
+/// A trait that provides the wait operation of a Counter configured with the ability to block/wait.
 pub trait WaitCntr: AsTypedFid<CntrRawFid> + ReadCntr {
     fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> {
-        // [TODO]
         let err = unsafe {
             libfabric_sys::inlined_fi_cntr_wait(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
@@ -408,16 +410,6 @@ impl<T: AsTypedFid<CntrRawFid>> AsTypedFid<CntrRawFid> for Counter<T> {
     }
 }
 
-// impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawTypedFid
-//     for CounterImpl<WAIT, RETRIEVE, FD>
-// {
-//     type Output = CntrRawFid;
-
-//     fn as_raw_typed_fid(&self) -> Self::Output {
-//         self.c_cntr.as_raw_typed_fid()
-//     }
-// }
-
 impl AsFd for CounterImpl<true, true, true> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
@@ -433,13 +425,6 @@ impl<T: AsFd> AsFd for Counter<T> {
         self.inner.as_fd()
     }
 }
-
-// impl<T: ReadCntr + 'static> crate::Bind for Counter<T> {
-//     fn inner(&self) -> MyRc<dyn AsRawFid> {
-//         self.inner.clone()
-//     }
-// }
-
 //================== Attribute objects ==================//
 
 #[derive(Clone, Copy)]
@@ -472,12 +457,6 @@ impl CounterAttr {
         self.c_attr.wait_obj = wait_obj.as_raw();
         self
     }
-
-    // pub(crate) fn flags(&mut self, flags: u64) -> &mut Self {
-    //     self.c_attr.flags = flags;
-
-    //     self
-    // }
 
     #[allow(dead_code)]
     pub(crate) fn get(&self) -> *const libfabric_sys::fi_cntr_attr {

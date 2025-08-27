@@ -13,6 +13,7 @@ use crate::{
 };
 
 //================== Wait (fi_wait) ==================//
+/// A builder for a [WaitSet].
 
 pub struct WaitSetBuilder<'a> {
     wait_attr: WaitSetAttr,
@@ -27,11 +28,13 @@ impl<'a> WaitSetBuilder<'a> {
         }
     }
 
+    /// Sets the wait object for the WaitSet.
     pub fn wait_obj(mut self, wait_obj: enums::WaitObj2) -> Self {
         self.wait_attr.wait_obj(wait_obj);
         self
     }
 
+    /// Builds the WaitSet.
     pub fn build(self) -> Result<WaitSet, crate::error::Error> {
         WaitSet::new(self.fabric, self.wait_attr)
     }
@@ -42,6 +45,10 @@ pub(crate) struct WaitSetImpl {
     _fabric_rc: MyRc<FabricImpl>,
 }
 
+
+/// Represents a wait set in the system.
+///
+/// Corresponds to a `fi_wait_set` struct.
 pub struct WaitSet {
     inner: MyRc<WaitSetImpl>,
 }
@@ -169,10 +176,16 @@ impl WaitSet {
         })
     }
 
+    /// Waits for events on the WaitSet.
+    /// 
+    /// Corresponds to `fi_wait`
     pub fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> {
         self.inner.wait(timeout)
     }
 
+    /// Returns the wait object associated with the WaitSet.
+    ///
+    /// Corresponds to `fi_control` with FI_GETWAITOBJ command.
     pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
         self.inner.wait_object()
     }
@@ -271,6 +284,7 @@ impl WaitSetAttr {
 
 //================== Poll (fi_poll) ==================//
 
+// A builder for a [PollSet].
 pub struct PollSetBuilder {
     poll_attr: PollSetAttr,
 }
@@ -300,6 +314,9 @@ pub(crate) struct PollSetImpl {
     pub(crate) c_poll: OwnedPollFid,
 }
 
+/// Represents a set for polling events.
+///
+/// Corresponds to a `fi_poll_set` struct.
 pub struct PollSet {
     inner: MyRc<PollSetImpl>,
 }
@@ -463,18 +480,30 @@ impl PollSet {
         })
     }
 
+    /// Polls the set for events.
+    ///
+    /// Corresponds to a `fi_poll` function.
     pub fn poll<T0>(&self, contexts: &mut [T0]) -> Result<usize, crate::error::Error> {
         self.inner.poll(contexts)
     }
 
+    /// Adds a waitable object to the PollSet.
+    ///
+    /// Corresponds to a `fi_poll_add` function.
     pub fn add(&self, fid: &impl Waitable) -> Result<(), crate::error::Error> {
         self.inner.add(fid, 0)
     }
 
+    /// Removes a waitable object from the PollSet.
+    ///
+    /// Corresponds to a `fi_poll_del` function.
     pub fn del(&self, fid: &impl Waitable) -> Result<(), crate::error::Error> {
         self.inner.del(fid, 0)
     }
 
+    /// Returns the wait object associated with the PollSet.
+    ///
+    /// Corresponds to a `fi_control` function with `FI_GETWAITOBJ` command.
     pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
         self.inner.wait_object()
     }

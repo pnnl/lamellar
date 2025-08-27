@@ -4,9 +4,11 @@ use crate::{
     av::{AVSyncMode, AddressVectorBase}, cq::ReadCq, ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless}, eq::ReadEq, fid::{AsRawTypedFid, AsTypedFid}, utils::check_error
 };
 
+/// A connectionless endpoint that is not yet enabled.
 pub type UninitConnectionlessEndpointBase<EP> = EndpointBase<EP, UninitConnectionless>;
 pub type ConnectionlessEndpointBase<EP> = EndpointBase<EP, Connectionless>;
 
+/// A connectionless endpoint that is enabled and ready for use.
 pub type ConnectionlessEndpoint<E> =
     ConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>;
 
@@ -15,17 +17,13 @@ pub type UninitConnectionlessEndpoint<E> =
 
 pub trait ConnlessEp {}
 impl<EP> ConnlessEp for ConnectionlessEndpointBase<EP> {}
-// impl<EP: AsRawTypedFid<Output = EpRawFid> + AsRawFid> UninitEndpoint
-//     for UninitConnectionlessEndpointBase<EP>
-// {
-// }
-    // pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
-    //     &self,
-    //     av: &AddressVectorBase<EQ>,
-    // ) -> Result<(), crate::error::Error> {
-    //     self.inner.bind_av(av)
-    // }
+
 impl<E> UninitConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
+    /// Enables the endpoint and binds it to the specified address vector.
+    /// 
+    /// After enabling, the endpoint can be used to send and receive messages.
+    ///
+    /// Corresponds to `fi_bind` followed by `fi_enable` in libfabric.
     pub fn enable< Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static>(self, av: &AddressVectorBase<Mode, EQ>) -> Result<ConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
         // TODO: Move this into an UninitEp struct
         self.bind_av(av)?;

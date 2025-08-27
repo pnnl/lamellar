@@ -360,10 +360,17 @@ impl Default for InfoCapsImpl {
     }
 }
 
+/// Represents the information of the libfabric providers found in the system.
+/// 
+/// Corresponds to `fi_info`
 pub struct Info<T> {
     entries: VecDeque<InfoEntry<T>>,
 }
 
+
+/// Builder for `Info` struct to set various parameters before querying.
+/// 
+/// Corresponds to `fi_getinfo` after setting some parameters
 pub struct InfoBuilder<T> {
     hints_info: FabricInfo,
     c_version: u32,
@@ -374,6 +381,8 @@ pub struct InfoBuilder<T> {
 }
 
 impl<T> InfoBuilder<T> {
+
+    /// Sets the source address for the info query.
     pub fn source(self, source: ServiceAddress) -> Self {
         let (c_node, c_service) = match source {
             ServiceAddress::String(fulladdress) => (
@@ -402,6 +411,7 @@ impl<T> InfoBuilder<T> {
         }
     }
 
+    /// Sets the node for the info query.
     pub fn node(self, node: &str) -> Self {
         Self {
             c_node: std::ffi::CString::new(node).unwrap(),
@@ -409,6 +419,7 @@ impl<T> InfoBuilder<T> {
         }
     }
 
+    /// Sets the service for the info query.
     pub fn service(self, service: &str) -> Self {
         Self {
             c_service: std::ffi::CString::new(service).unwrap(),
@@ -416,16 +427,25 @@ impl<T> InfoBuilder<T> {
         }
     }
 
+    /// Sets the numeric host flag for the info query.
+    ///
+    /// Corresponds to `FI_NUMERICHOST` flag in `fi_getinfo`
     pub fn numeric_host(mut self) -> Self {
         self.flags |= libfabric_sys::FI_NUMERICHOST;
         self
     }
 
+    /// Sets the provider attribute only flag for the info query.
+    ///
+    /// Corresponds to `FI_PROV_ATTR_ONLY` flag in `fi_getinfo`
     pub fn prov_attr_only(mut self) -> Self {
         self.flags |= libfabric_sys::FI_PROV_ATTR_ONLY;
         self
     }
 
+    /// Gets the info for the specified parameters.
+    ///
+    /// Corresponds to `fi_getinfo`
     pub fn get(self) -> Result<Info<T>, crate::error::Error> {
         let mut c_info = std::ptr::null_mut();
         let node = if self.c_node.is_empty() {
@@ -490,12 +510,15 @@ impl<T> InfoBuilder<T> {
         Ok(Info::<T> { entries })
     }
 
+    /// Enters the hints for the info query.
     pub fn enter_hints(self) -> InfoHints<T> {
         InfoHints::new(self)
     }
 }
 
-// #[derive(Clone)]
+/// Represents a single entry in the `Info` struct.
+///
+/// Corresponds to a single entry returned by `fi_getinfo`.
 pub struct InfoEntry<T> {
     ctx_id: AtomicUsize,
     caps: InfoCapsImpl,
@@ -566,6 +589,9 @@ impl<T> InfoEntry<T> {
         }
     }
 
+    /// Maps a receive address based on the provided index and context bits.
+    ///
+    /// Corresponds to `fi_rx_addr` after setting some parameters.
     pub fn rx_addr(
         &self,
         rx_index: i32,
@@ -591,6 +617,9 @@ impl<T> InfoEntry<T> {
         }
     }
 
+    /// Allocates a new Context.
+    /// 
+    /// Corresponds to allocating a new `fi_context(2)`.
     pub fn allocate_context(&self) -> Context {
         let ctx_id = self
             .ctx_id
@@ -602,6 +631,9 @@ impl<T> InfoEntry<T> {
         }
     }
 
+    /// Allocates a new TriggeredContext
+    ///
+    /// Corresponds to allocating a new `fi_triggered_context(2)`.
     pub fn allocate_triggered_context<'a, 'b>(
         &self,
         event: &'a mut TriggerEvent<'b>,
@@ -617,47 +649,58 @@ impl<T> InfoEntry<T> {
         }
     }
 
+    /// Returns the destination address, if it exists.
     pub fn dest_addr(&self) -> Option<&Address> {
         self.dest_address.as_ref()
     }
 
+    /// Returns the source address, if it exists.
     pub fn src_addr(&self) -> Option<&Address> {
         self.src_address.as_ref()
     }
 
+    /// Returns the mode of the `Info`
     pub fn mode(&self) -> &crate::enums::Mode {
         &self.mode
     }
 
+    /// Returns the domain attributes of the `Info`
     pub fn domain_attr(&self) -> &crate::domain::DomainAttr {
         &self.domain_attr
     }
 
+    /// Returns the fabric attributes of the `Info`
     pub fn fabric_attr(&self) -> &crate::fabric::FabricAttr {
         &self.fabric_attr
     }
 
+    /// Returns the transmit attributes of the `Info`
     pub fn tx_attr(&self) -> &crate::xcontext::TxAttr {
         &self.tx_attr
     }
 
+    /// Returns the receive attributes of the `Info`
     pub fn rx_attr(&self) -> &crate::xcontext::RxAttr {
         &self.rx_attr
     }
 
+    /// Returns the endpoint attributes of the `Info`
     pub fn ep_attr(&self) -> &crate::ep::EndpointAttr {
         &self.ep_attr
     }
 
+    /// Returns the capabilities of the `Info`
     pub fn caps(&self) -> &InfoCapsImpl {
         &self.caps
     }
 
+    /// Returns the NIC associated with the `Info`, if it exists.
     pub fn nic(&self) -> Option<Nic> {
         self.nic.clone()
     }
 }
 
+/// Represents an iterator over the entries of an `Info` object.
 pub struct InfoIterator<'a, T> {
     info: &'a Info<T>,
     index: usize,
@@ -686,6 +729,7 @@ impl<'a, T> Iterator for InfoIterator<'a, T> {
     }
 }
 
+/// Represents an `Into` iterator over the entries of an `Info` object.
 pub struct InfoIntoIterator<T> {
     info: Info<T>,
 }
@@ -772,10 +816,15 @@ impl<T: Caps> Caps for InfoEntry<T> {
     }
 }
 
+/// Represents a service address.
 pub enum ServiceAddress {
+    /// A string representation of the service and node as a single `String`.
     String(String),
+    /// A combination of node and service as separate `String`s.
     NodeAndService(String, String),
+    /// A node address.
     Node(String),
+    /// A service address.
     Service(String),
 }
 
@@ -792,6 +841,7 @@ impl Info<()> {
         }
     }
 
+    /// Returns a new `InfoBuilder` with a numeric host.
     pub fn with_numeric_host(version: &Version, host: &str) -> InfoBuilder<()> {
         InfoBuilder::<()> {
             hints_info: FabricInfo::new(unsafe { libfabric_sys::inlined_fi_allocinfo() }),
@@ -818,6 +868,7 @@ impl Drop for FabricInfo {
     }
 }
 
+/// Represents the hints for creating an `Info` object.
 pub struct InfoHints<T> {
     info_builder: InfoBuilder<T>,
 }
@@ -1042,23 +1093,26 @@ impl FabricInfo {
     pub(crate) fn as_raw(&self) -> *mut libfabric_sys::fi_info {
         self.0
     }
-
 }
 
+/// Represents the attributes of an endpoint to be used in a `Info` query. 
 pub struct EndpointAttrIn<T> {
     hints: InfoHints<T>,
 }
 
 impl<T> EndpointAttrIn<T> {
+    /// Leaves the endpoint attribute configuration and returns to the hints builder.
     pub fn leave_ep_attr(self) -> InfoHints<T> {
         self.hints
     }
 
+    /// Sets the endpoint type.
     pub fn type_(mut self, eptype: EndpointType) -> Self {
         self.hints.info_builder.hints_info.set_eptype(eptype);
         self
     }
 
+    /// Sets the memory tag format for the endpoint.
     pub fn mem_tag_format(mut self, tag: u64) -> Self {
         self.hints
             .info_builder
@@ -1067,42 +1121,50 @@ impl<T> EndpointAttrIn<T> {
         self
     }
 
+    /// Sets the transmit context count for the endpoint.
     pub fn tx_ctx_cnt(mut self, size: usize) -> Self {
         self.hints.info_builder.hints_info.set_ep_tx_ctx_cnt(size);
         self
     }
 
+    /// Sets the receive context count for the endpoint.
     pub fn rx_ctx_cnt(mut self, size: usize) -> Self {
         self.hints.info_builder.hints_info.set_ep_rx_ctx_cnt(size);
         self
     }
 
+    /// Sets the authentication key for the endpoint.
     pub fn auth_key(mut self, key: &[u8]) -> Self {
         self.hints.info_builder.hints_info.set_ep_auth_key(key);
         self
     }
 }
 
+/// Represents the attributes of a domain to be used in a `Info` query.
 pub struct DomainAttrIn<T> {
     hints: InfoHints<T>,
 }
 
 impl<T> DomainAttrIn<T> {
+    /// Leaves the domain attribute configuration and returns to the hints builder.
     pub fn leave_domain_attr(self) -> InfoHints<T> {
         self.hints
     }
 
+    /// Sets the domain.
     pub fn domain<EQ>(mut self, name: &DomainBase<EQ>) -> Self {
         self.hints.info_builder.hints_info.set_domain(name);
         self
     }
 
+    /// Sets the domain name.
     pub fn name(mut self, name: &str) -> Self {
         self.hints.info_builder.hints_info.set_domain_name(name);
         self
     }
 
     #[cfg(not(feature="thread-safe"))]
+    /// Sets the threading model for the domain.
     pub fn threading(mut self, threading: Threading) -> Self {
         self.hints
             .info_builder
@@ -1111,6 +1173,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the control progress model for the domain
     pub fn control_progress(mut self, cntrl_progress: Progress) -> Self {
         self.hints
             .info_builder
@@ -1119,6 +1182,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the data progress model for the domain
     pub fn data_progress(mut self, data_progress: Progress) -> Self {
         self.hints
             .info_builder
@@ -1127,6 +1191,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the resource management model for the domain
     pub fn resource_mgmt(mut self, resource_mgmt: ResourceMgmt) -> Self {
         self.hints
             .info_builder
@@ -1135,6 +1200,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the address vector type for the domain
     pub fn av_type(mut self, av_type: AddressVectorType) -> Self {
         self.hints
             .info_builder
@@ -1143,6 +1209,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the memory registration mode for the domain
     pub fn mr_mode(mut self, mr_mode: MrMode) -> Self {
         self.hints
             .info_builder
@@ -1151,16 +1218,19 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the capabilities for the domain.
     pub fn caps(mut self, caps: DomainCaps) -> Self {
         self.hints.info_builder.hints_info.set_domain_caps(caps);
         self
     }
 
+    /// Sets the mode for the domain.
     pub fn mode(mut self, mode: Mode) -> Self {
         self.hints.info_builder.hints_info.set_domain_mode(mode);
         self
     }
 
+    /// Sets the authentication key for the domain.
     pub fn auth_key(mut self, auth_key: &[u8]) -> Self {
         self.hints
             .info_builder
@@ -1169,6 +1239,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the memory region count for the domain.
     pub fn mr_count(mut self, mr_count: usize) -> Self {
         self.hints
             .info_builder
@@ -1177,6 +1248,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
+    /// Sets the traffic class for the domain.
     pub fn traffic_class(mut self, traffic_class: TrafficClass) -> Self {
         self.hints
             .info_builder
@@ -1186,25 +1258,30 @@ impl<T> DomainAttrIn<T> {
     }
 }
 
+/// Represents the attributes of a fabric to be used in a `Info` query.
 pub struct FabricAttrIn<T> {
     hints: InfoHints<T>,
 }
 
 impl<T> FabricAttrIn<T> {
+    /// Leaves the fabric attribute configuration and returns to the hints builder.
     pub fn leave_fab_attr(self) -> InfoHints<T> {
         self.hints
     }
 
+    /// Sets the fabric.
     pub fn fabric(mut self, fabric: &Fabric) -> Self {
         self.hints.info_builder.hints_info.set_fabric(fabric);
         self
     }
 
+    /// Sets the fabric name
     pub fn name(mut self, name: &str) -> Self {
         self.hints.info_builder.hints_info.set_fabric_name(name);
         self
     }
 
+    /// Sets the provideer name
     pub fn prov_name(mut self, prov_name: &str) -> Self {
         self.hints
             .info_builder
@@ -1213,6 +1290,7 @@ impl<T> FabricAttrIn<T> {
         self
     }
 
+    /// Sets the API version
     pub fn api_version(mut self, api_version: &Version) -> Self {
         self.hints
             .info_builder
@@ -1222,30 +1300,37 @@ impl<T> FabricAttrIn<T> {
     }
 }
 
+
+/// Represents the transmit attributes to be used in a `Info` query.
 pub struct TxAttrIn<T> {
     hints: InfoHints<T>,
 }
 
 impl<T> TxAttrIn<T> {
+    /// Leaves the transmit attribute configuration and returns to the hints builder.
     pub fn leave_tx_attr(self) -> InfoHints<T> {
         self.hints
     }
 
+    /// Sets the capabilities for the transmit attributes.
     pub fn caps(mut self, tx_caps: TxCaps) -> Self {
         self.hints.info_builder.hints_info.set_tx_caps(tx_caps);
         self
     }
 
+    /// Sets the mode for the transmit attributes.
     pub fn mode(mut self, mode: Mode) -> Self {
         self.hints.info_builder.hints_info.set_tx_mode(mode);
         self
     }
 
+    /// Sets the operation flags for the transmit attributes.
     pub fn op_flags(mut self, op_flags: TransferOptions) -> Self {
         self.hints.info_builder.hints_info.set_tx_op_flags(op_flags);
         self
     }
 
+    /// Sets the message order for the transmit attributes.
     pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
         self.hints
             .info_builder
@@ -1254,6 +1339,7 @@ impl<T> TxAttrIn<T> {
         self
     }
 
+    /// Sets the completion order for the transmit attributes.
     pub fn comp_order(mut self, comp_order: TxCompOrder) -> Self {
         self.hints
             .info_builder
@@ -1262,6 +1348,7 @@ impl<T> TxAttrIn<T> {
         self
     }
 
+    /// Sets the inject size for the transmit attributes.
     pub fn inject_size(mut self, inject_size: usize) -> Self {
         self.hints
             .info_builder
@@ -1270,11 +1357,13 @@ impl<T> TxAttrIn<T> {
         self
     }
 
+    /// Sets the size for the transmit attributes.
     pub fn size(mut self, size: usize) -> Self {
         self.hints.info_builder.hints_info.set_tx_size(size);
         self
     }
 
+    /// Sets the I/O vector limit for the transmit attributes.
     pub fn iov_limit(mut self, iov_limit: usize) -> Self {
         self.hints
             .info_builder
@@ -1283,6 +1372,7 @@ impl<T> TxAttrIn<T> {
         self
     }
 
+    /// Sets the RMA I/O vector limit for the transmit attributes.
     pub fn rma_iov_limit(mut self, rma_iov_limit: usize) -> Self {
         self.hints
             .info_builder
@@ -1291,6 +1381,7 @@ impl<T> TxAttrIn<T> {
         self
     }
 
+    /// Sets the traffic class for the transmit attributes.
     pub fn traffic_class(mut self, traffic_class: TrafficClass) -> Self {
         self.hints
             .info_builder
@@ -1300,30 +1391,37 @@ impl<T> TxAttrIn<T> {
     }
 }
 
+
+/// Represents the receive attributes to be used in a `Info` query.
 pub struct RxAttrIn<T> {
     hints: InfoHints<T>,
 }
 
 impl<T> RxAttrIn<T> {
+    /// Leaves the receive attribute configuration and returns to the hints builder.
     pub fn leave_rx_attr(self) -> InfoHints<T> {
         self.hints
     }
 
+    /// Sets the capabilities for the receive attributes.
     pub fn caps(mut self, rx_caps: RxCaps) -> Self {
         self.hints.info_builder.hints_info.set_rx_caps(rx_caps);
         self
     }
 
+    /// Sets the mode for the receive attributes.
     pub fn mode(mut self, mode: Mode) -> Self {
         self.hints.info_builder.hints_info.set_rx_mode(mode);
         self
     }
 
+    /// Sets the operation flags for the receive attributes.
     pub fn op_flags(mut self, op_flags: TransferOptions) -> Self {
         self.hints.info_builder.hints_info.set_rx_op_flags(op_flags);
         self
     }
 
+    /// Sets the message order for the receive attributes.
     pub fn msg_order(mut self, msg_order: MsgOrder) -> Self {
         self.hints
             .info_builder
@@ -1332,6 +1430,7 @@ impl<T> RxAttrIn<T> {
         self
     }
 
+    /// Sets the completion order for the receive attributes.
     pub fn comp_order(mut self, comp_order: RxCompOrder) -> Self {
         self.hints
             .info_builder
@@ -1340,6 +1439,7 @@ impl<T> RxAttrIn<T> {
         self
     }
 
+    /// Sets the total buffered receive size for the receive attributes.
     pub fn total_buffered_recv(mut self, total_buffered_recv: usize) -> Self {
         self.hints
             .info_builder
@@ -1348,11 +1448,13 @@ impl<T> RxAttrIn<T> {
         self
     }
 
+    /// Sets the size for the receive attributes.
     pub fn size(mut self, size: usize) -> Self {
         self.hints.info_builder.hints_info.set_rx_size(size);
         self
     }
 
+    /// Sets the I/O vector limit for the receive attributes.
     pub fn iov_limit(mut self, iov_limit: usize) -> Self {
         self.hints
             .info_builder
@@ -1367,6 +1469,7 @@ impl<T> InfoHints<T> {
         Self { info_builder }
     }
 
+    /// Sets the capabilities for the hints and transitions to a new `InfoHints` with the specified capabilities.
     pub fn caps<N: Caps>(self, _caps: N) -> InfoHints<N> {
         unsafe { (*self.info_builder.hints_info.0).caps = N::bitfield() };
 
@@ -1384,6 +1487,7 @@ impl<T> InfoHints<T> {
 }
 
 impl<T> InfoHints<T> {
+    /// Leaves the hints configuration and returns to the `InfoBuilder`.
     pub fn leave_hints(self) -> InfoBuilder<T> {
         InfoBuilder::<T> {
             hints_info: self.info_builder.hints_info,
@@ -1395,36 +1499,43 @@ impl<T> InfoHints<T> {
         }
     }
 
+    /// Sets the mode
     pub fn mode(mut self, mode: Mode) -> Self {
         self.info_builder.hints_info.set_mode(mode);
         self
     }
 
+    /// Sets the address format.
     pub fn addr_format(mut self, addr_format: AddressFormat) -> Self {
         self.info_builder.hints_info.set_addr_format(addr_format);
         self
     }
 
+    /// Enters the endpoint attributes configuration.
     pub fn enter_ep_attr(self) -> EndpointAttrIn<T> {
         assert!(!unsafe { (*self.info_builder.hints_info.0).ep_attr.is_null() });
         EndpointAttrIn { hints: self }
     }
 
+    /// Enters the domain attributes configuration.
     pub fn enter_domain_attr(self) -> DomainAttrIn<T> {
         assert!(!unsafe { (*self.info_builder.hints_info.0).domain_attr.is_null() });
         DomainAttrIn { hints: self }
     }
 
+    /// Enters the fabric attributes configuration.
     pub fn enter_fabric_attr(self) -> FabricAttrIn<T> {
         assert!(!unsafe { (*self.info_builder.hints_info.0).fabric_attr.is_null() });
         FabricAttrIn { hints: self }
     }
 
+    /// Enters the transmit attributes configuration.
     pub fn enter_tx_attr(self) -> TxAttrIn<T> {
         assert!(!unsafe { (*self.info_builder.hints_info.0).tx_attr.is_null() });
         TxAttrIn { hints: self }
     }
 
+    /// Enters the receive attributes configuration.
     pub fn enter_rx_attr(self) -> RxAttrIn<T> {
         assert!(!unsafe { (*self.info_builder.hints_info.0).rx_attr.is_null() });
         RxAttrIn { hints: self }
@@ -1514,12 +1625,14 @@ impl<T: Caps> Caps for InfoHints<T> {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Represents a version, consisting of a major and a minor value.
 pub struct Version {
     pub major: u32,
     pub minor: u32,
 }
 
 impl Version {
+    /// Create a new version consisting of a major and a minor value.
     pub fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
     }

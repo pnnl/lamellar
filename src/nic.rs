@@ -1,4 +1,7 @@
 #[derive(Clone)]
+/// Represents a Network Interface Card (NIC) in the system.
+/// 
+/// Corresponds to a `fi_nic` struct.
 pub struct Nic {
     pub device_attr: Option<DeviceAttr>,
     pub bus_attr: Option<BusAttr>,
@@ -35,6 +38,9 @@ impl Nic {
 }
 
 #[derive(Clone)]
+/// Represents the device attributes of a Network Interface Card (NIC).
+///
+/// Corresponds to a `fi_device_attr` struct.
 pub struct DeviceAttr {
     pub name: Option<String>,
     pub device_id: Option<String>,
@@ -107,6 +113,9 @@ impl DeviceAttr {
 }
 
 #[derive(Clone)]
+/// Represents the link attributes of a Network Interface Card (NIC).
+///
+/// Corresponds to a `fi_link_attr` struct.
 pub struct LinkAttr {
     pub address: Option<String>,
     pub mtu: usize,
@@ -150,6 +159,9 @@ impl LinkAttr {
 }
 
 #[derive(Clone)]
+/// Represents the link status of a Network Interface Card (NIC).
+///
+/// Corresponds to a `fi_link_state` enum.
 pub enum LinkState {
     Unknown,
     Down,
@@ -171,6 +183,9 @@ impl LinkState {
 }
 
 #[derive(Clone)]
+/// Represents the bus attributes of a Network Interface Card (NIC).
+///
+/// Corresponds to a `fi_bus_attr` struct.
 pub struct BusAttr {
     pub bus_type: BusType,
     pub pci: PciAttr,
@@ -187,6 +202,9 @@ impl BusAttr {
 }
 
 #[derive(Clone)]
+/// Represents the bus type of the Network Interface Card (NIC) bus.
+///
+/// Corresponds to a `fi_bus_type` enum.
 pub enum BusType {
     Pci,
     Unknown,
@@ -208,6 +226,9 @@ impl BusType {
 }
 
 #[derive(Clone)]
+/// Represents the PCI attributes of a Network Interface Card (NIC).
+///
+/// Corresponds to a `fi_pci_attr` struct.
 pub struct PciAttr {
     pub domain_id: u16,
     pub bus_id: u8,

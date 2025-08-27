@@ -101,6 +101,9 @@ impl Fabric {
         })
     }
 
+    /// Tries to wait for a slice of event queue entries.
+    ///
+    /// Corresponds to `libfabric_sys::fi_trywait`
     pub fn trywait_slice<FID: AsRawFid>(
         &self,
         fids: &[&impl AsTypedFid<FID>],
@@ -109,6 +112,9 @@ impl Fabric {
         self.inner.trywait_slice(fids)
     }
 
+    /// Tries to wait for a single event queue entry.
+    ///
+    /// Corresponds to `libfabric_sys::fi_trywait`
     pub fn trywait<FID: AsRawFid>(
         &self,
         fid: &impl AsTypedFid<FID>,
@@ -230,22 +236,27 @@ impl FabricAttr {
         }
     }
 
+    /// Returns the id of the fabric
     pub fn fabric_id(&self) -> usize {
         self.fabric_id
     }
 
+    /// Returns the provider name of the fabric
     pub fn prov_name(&self) -> &str {
         &self.prov_name
     }
 
+    /// Returns the name of the fabric
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Returns the provider version of the fabric
     pub fn prov_version(&self) -> Version {
         self.prov_version
     }
 
+    /// Returns the API version of the fabric
     pub fn api_version(&self) -> Version {
         self.api_version
     }

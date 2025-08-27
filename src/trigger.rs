@@ -103,6 +103,7 @@ impl<'a, 'b> TriggeredContext<'a, 'b> {
     }
 }
 
+#[derive(Clone)]
 pub struct TriggerThreshold<'a> {
     pub(crate) c_thold: libfabric_sys::fi_trigger_threshold,
     phantom: PhantomData<&'a ()>,
@@ -175,6 +176,7 @@ pub enum TriggerVal {
 //     }
 // }
 
+#[derive(Clone)]
 pub struct TriggerXpu {
     hmem_iface: HmemIface,
     trigger_vars: Vec<libfabric_sys::fi_trigger_var>,
