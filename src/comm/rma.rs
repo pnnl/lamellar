@@ -227,7 +227,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
             desc,
             src_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
         )
     }
 
@@ -258,7 +258,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
             desc,
             src_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -281,7 +281,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
             desc,
             src_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -308,7 +308,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
             desc,
             src_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
         )
     }
 
@@ -335,7 +335,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
             desc,
             src_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -354,7 +354,7 @@ pub trait ReadRemoteMemAddrSliceEp: ReadEp {
             desc,
             src_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -487,7 +487,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         rma_iov: &RemoteMemAddrSlice<T>,
     ) -> Result<(), crate::error::Error> {
-        ConnectedReadEp::read(self, buf, desc, rma_iov.mem_address(), &rma_iov.key())
+        ConnectedReadEp::read(self, buf, desc, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [ReadEp::read] but providing a context
@@ -511,7 +511,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
             buf,
             desc,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -528,7 +528,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
             buf,
             desc,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -548,7 +548,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         rma_iov: &RemoteMemAddrSlice<u8>,
     ) -> Result<(), crate::error::Error> {
-        ConnectedReadEp::readv(self, iov, desc, rma_iov.mem_address(), &rma_iov.key())
+        ConnectedReadEp::readv(self, iov, desc, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [ReadEp::readv] but with a provided context
@@ -572,7 +572,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
             iov,
             desc,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -589,7 +589,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
             iov,
             desc,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1007,7 +1007,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
         dest_addr: &crate::MappedAddress,
         rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
-        self.write_to(buf, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+        self.write_to(buf, desc, dest_addr, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [WriteEp::write_to] but with a provided context
@@ -1032,7 +1032,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
             desc,
             dest_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1059,7 +1059,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
             desc,
             dest_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1075,7 +1075,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
         dest_addr: &crate::MappedAddress,
         rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
-        self.inject_write_to(buf, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+        self.inject_write_to(buf, dest_addr, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// # Safety
@@ -1090,7 +1090,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
         dest_addr: &crate::MappedAddress,
         rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
-        self.inject_writedata_to(buf, data, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+        self.inject_writedata_to(buf, data, dest_addr, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [WriteEp::write_to] but with a list of buffers `iov` instead of a single buffer to transfer
@@ -1109,7 +1109,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
         dest_addr: &crate::MappedAddress,
         rma_iov: &RemoteMemAddrSliceMut<u8>,
     ) -> Result<(), crate::error::Error> {
-        self.writev_to(iov, desc, dest_addr, rma_iov.mem_address(), &rma_iov.key())
+        self.writev_to(iov, desc, dest_addr, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [WriteEp::writev_to] but with a provided context
@@ -1134,7 +1134,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
             desc,
             dest_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1161,7 +1161,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
             desc,
             dest_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1185,7 +1185,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
             data,
             dest_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
         )
     }
 
@@ -1210,7 +1210,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
             data,
             dest_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1236,7 +1236,7 @@ pub trait WriteRemoteMemAddrSliceEp: WriteEp {
             data,
             dest_addr,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1654,7 +1654,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         desc: Option<&MemoryRegionDesc<'_>>,
         rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
-        self.write(buf, desc, rma_iov.mem_address(), &rma_iov.key())
+        self.write(buf, desc, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [WriteEp::write] but with a provided context
@@ -1673,7 +1673,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        self.write_with_context(buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+        self.write_with_context(buf, desc, rma_iov.mem_address(), rma_iov.key(), context)
     }
 
     /// Similar to [WriteEp::write] but with a provided context
@@ -1692,7 +1692,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         rma_iov: &RemoteMemAddrSliceMut<T>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        self.write_triggered(buf, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+        self.write_triggered(buf, desc, rma_iov.mem_address(), rma_iov.key(), context)
     }
 
     /// # Safety
@@ -1705,7 +1705,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         buf: &[T],
         rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
-        self.inject_write(buf, rma_iov.mem_address(), &rma_iov.key())
+        self.inject_write(buf, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// # Safety
@@ -1719,7 +1719,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         data: u64,
         rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
-        self.inject_writedata(buf, data, rma_iov.mem_address(), &rma_iov.key())
+        self.inject_writedata(buf, data, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [WriteEp::writev_to] but without specifying a network address
@@ -1737,7 +1737,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         desc: Option<&[MemoryRegionDesc<'_>]>,
         rma_iov: &RemoteMemAddrSliceMut<u8>,
     ) -> Result<(), crate::error::Error> {
-        self.writev(iov, desc, rma_iov.mem_address(), &rma_iov.key())
+        self.writev(iov, desc, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// Similar to [WriteEp::writev] but with a provided context
@@ -1756,7 +1756,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         rma_iov: &RemoteMemAddrSliceMut<u8>,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
-        self.writev_with_context(iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+        self.writev_with_context(iov, desc, rma_iov.mem_address(), rma_iov.key(), context)
     }
 
     /// Similar to [WriteEp::writev] but with a provided context
@@ -1775,7 +1775,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         rma_iov: &RemoteMemAddrSliceMut<u8>,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-        self.writev_triggered(iov, desc, rma_iov.mem_address(), &rma_iov.key(), context)
+        self.writev_triggered(iov, desc, rma_iov.mem_address(), rma_iov.key(), context)
     }
 
     /// # Safety
@@ -1790,7 +1790,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
         data: u64,
         rma_iov: &RemoteMemAddrSliceMut<T>,
     ) -> Result<(), crate::error::Error> {
-        self.writedata(buf, desc, data, rma_iov.mem_address(), &rma_iov.key())
+        self.writedata(buf, desc, data, rma_iov.mem_address(), rma_iov.key())
     }
 
     /// # Safety
@@ -1811,7 +1811,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
             desc,
             data,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }
@@ -1834,7 +1834,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
             desc,
             data,
             rma_iov.mem_address(),
-            &rma_iov.key(),
+            rma_iov.key(),
             context,
         )
     }

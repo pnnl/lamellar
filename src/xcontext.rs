@@ -272,7 +272,7 @@ impl<I, STATE: EpState> TxContext<I, STATE> {
     }
 }
 
-///================== TxContext Builder ==================///
+//================== TxContext Builder ==================//
 
 /// A builder for creating a [TxContext].
 pub struct TxContextBuilder<'a, I, STATE: EpState> {
@@ -972,7 +972,7 @@ pub struct TxIncompleteBindCq<'a, I, STATE: EpState> {
     pub(crate) flags: u64,
 }
 
-impl<'a, I, STATE: EpState> TxIncompleteBindCq<'a, I, STATE> {
+impl<I, STATE: EpState> TxIncompleteBindCq<'_, I, STATE> {
     /// Sets the transmit flag for the binding [CompletionQueue]
     pub fn transmit(&mut self, selective: bool) -> &mut Self {
         if selective {
@@ -1001,7 +1001,7 @@ pub struct TxIncompleteBindCntr<'a, I, STATE: EpState> {
     pub(crate) flags: u64,
 }
 
-impl<'a, I: 'static, STATE: EpState> TxIncompleteBindCntr<'a, I, STATE> {
+impl<I: 'static, STATE: EpState> TxIncompleteBindCntr<'_, I, STATE> {
     pub fn remote_write(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_REMOTE_WRITE as u64;
 
@@ -1168,7 +1168,7 @@ pub struct RxIncompleteBindCq<'a, I, STATE: EpState> {
     pub(crate) flags: u64,
 }
 
-impl<'a, I, STATE: EpState> RxIncompleteBindCq<'a, I, STATE> {
+impl<I, STATE: EpState> RxIncompleteBindCq<'_, I, STATE> {
     pub fn recv(&mut self, selective: bool) -> &mut Self {
         if selective {
             self.flags |= libfabric_sys::FI_SELECTIVE_COMPLETION | libfabric_sys::FI_RECV as u64;
@@ -1194,7 +1194,7 @@ pub struct RxIncompleteBindCntr<'a, I, STATE: EpState> {
     pub(crate) flags: u64,
 }
 
-impl<'a, I: 'static, STATE: EpState> RxIncompleteBindCntr<'a, I, STATE> {
+impl<I: 'static, STATE: EpState> RxIncompleteBindCntr<'_, I, STATE> {
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
 

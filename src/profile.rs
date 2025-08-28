@@ -106,7 +106,7 @@ impl Profile {
         unsafe { descs.set_len(err as usize) };
         Ok(descs
             .into_iter()
-            .map(|desc| ProfileDesc::from_raw(desc))
+            .map(ProfileDesc::from_raw)
             .collect())
     }
 
@@ -142,7 +142,7 @@ impl Profile {
         unsafe { descs.set_len(err as usize) };
         Ok(descs
             .into_iter()
-            .map(|desc| ProfileDesc::from_raw(desc))
+            .map(ProfileDesc::from_raw)
             .collect())
     }
 
@@ -258,7 +258,7 @@ pub struct ProfileDesc<'a> {
     desc: &'a str,
 }
 
-impl<'a> ProfileDesc<'a> {
+impl ProfileDesc<'_> {
     fn from_raw(c_profile_desc: libfabric_sys::fi_profile_desc) -> Self {
         let profile_data = if c_profile_desc.datatype_sel
             == libfabric_sys::fi_profile_type_fi_primitive_type

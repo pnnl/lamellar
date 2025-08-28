@@ -57,7 +57,7 @@ impl<'a> Msg<'a> {
     ) -> Self {
         Msg::new(
             std::slice::from_ref(iov),
-            desc.map(|d| std::slice::from_ref(d)),
+            desc.map(std::slice::from_ref),
             Some(mapped_addr),
             data,
             context,
@@ -65,7 +65,7 @@ impl<'a> Msg<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     pub fn data(&self) -> Option<u64> {
@@ -100,7 +100,7 @@ impl<'a> MsgConnected<'a> {
         Self {
             msg: Msg::new(
                 std::slice::from_ref(iov),
-                desc.map(|d| std::slice::from_ref(d)),
+                desc.map(std::slice::from_ref),
                 None,
                 data,
                 context,
@@ -120,7 +120,7 @@ impl<'a> MsgConnected<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     pub fn data(&self) -> Option<u64> {
@@ -177,7 +177,7 @@ impl<'a> MsgMut<'a> {
     ) -> Self {
         MsgMut::new(
             std::slice::from_mut(iov),
-            desc.map(|d| std::slice::from_ref(d)),
+            desc.map(std::slice::from_ref),
             Some(mapped_addr),
             data,
             context,
@@ -195,7 +195,7 @@ impl<'a> MsgMut<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     pub fn data(&self) -> Option<u64> {
@@ -230,7 +230,7 @@ impl<'a> MsgConnectedMut<'a> {
         Self {
             msg: MsgMut::new(
                 std::slice::from_mut(iov),
-                desc.map(|d| std::slice::from_ref(d)),
+                desc.map(std::slice::from_ref),
                 None,
                 data,
                 context,
@@ -250,7 +250,7 @@ impl<'a> MsgConnectedMut<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     pub fn data(&self) -> Option<u64> {
@@ -325,7 +325,7 @@ impl<'a> MsgTagged<'a> {
     ) -> Self {
         MsgTagged::new(
             std::slice::from_ref(iov),
-            desc.map(|d| std::slice::from_ref(d)),
+            desc.map(std::slice::from_ref),
             Some(mapped_addr),
             data,
             tag,
@@ -343,7 +343,7 @@ impl<'a> MsgTagged<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_tagged {
@@ -384,7 +384,7 @@ impl<'a> MsgTaggedConnected<'a> {
         Self {
             msg: MsgTagged::new(
                 std::slice::from_ref(iov),
-                desc.map(|d| std::slice::from_ref(d)),
+                desc.map(std::slice::from_ref),
                 None,
                 data,
                 tag,
@@ -399,7 +399,7 @@ impl<'a> MsgTaggedConnected<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_tagged {
@@ -458,7 +458,7 @@ impl<'a> MsgTaggedMut<'a> {
     ) -> Self {
         MsgTaggedMut::new(
             std::slice::from_mut(iov),
-            desc.map(|d| std::slice::from_ref(d)),
+            desc.map(std::slice::from_ref),
             Some(mapped_addr),
             data,
             tag,
@@ -488,7 +488,7 @@ impl<'a> MsgTaggedMut<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_tagged {
@@ -530,7 +530,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
         Self {
             msg: MsgTaggedMut::new(
                 std::slice::from_mut(iov),
-                desc.map(|d| std::slice::from_ref(d)),
+                desc.map(std::slice::from_ref),
                 None,
                 data,
                 tag,
@@ -541,7 +541,7 @@ impl<'a> MsgTaggedConnectedMut<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     pub fn data(&self) -> Option<u64> {
@@ -635,7 +635,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicBase<'a, T, OP> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_atomic {
@@ -692,7 +692,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedBase<'a, T, OP> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_atomic {
@@ -758,7 +758,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
         data: Option<u64>,
         context: &'a mut Context,
     ) -> Self {
-        Self::new(iovs, descs, Some(&mapped_addr), rma_iovs, op, data, context)
+        Self::new(iovs, descs, Some(mapped_addr), rma_iovs, op, data, context)
     }
 
     pub fn from_ioc(
@@ -790,7 +790,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicMutBase<'a, T, OP> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     #[allow(dead_code)]
@@ -852,7 +852,7 @@ impl<'a, T: AsFiType, OP: AtomicOperation> MsgAtomicConnectedMutBase<'a, T, OP> 
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     #[allow(dead_code)]
@@ -926,7 +926,7 @@ impl<'a> MsgRma<'a> {
     ) -> Self {
         Self::new(
             std::slice::from_ref(iov),
-            desc.map(|d| std::slice::from_ref(d)),
+            desc.map(std::slice::from_ref),
             Some(mapped_addr),
             rma_iov,
             data,
@@ -935,7 +935,7 @@ impl<'a> MsgRma<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_rma {
@@ -975,7 +975,7 @@ impl<'a> MsgRmaConnected<'a> {
         Self {
             msg: MsgRma::new(
                 std::slice::from_ref(iov),
-                desc.map(|d| std::slice::from_ref(d)),
+                desc.map(std::slice::from_ref),
                 None,
                 rma_iov,
                 data,
@@ -985,7 +985,7 @@ impl<'a> MsgRmaConnected<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_rma {
@@ -1054,7 +1054,7 @@ impl<'a> MsgRmaMut<'a> {
     ) -> Self {
         Self::new(
             std::slice::from_mut(iov),
-            desc.map(|d| std::slice::from_ref(d)),
+            desc.map(std::slice::from_ref),
             Some(mapped_addr),
             rma_iov,
             data,
@@ -1071,7 +1071,7 @@ impl<'a> MsgRmaMut<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.context
+        self.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_rma {
@@ -1111,7 +1111,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
         Self {
             msg: MsgRmaMut::new(
                 std::slice::from_mut(iov),
-                desc.map(|d| std::slice::from_ref(d)),
+                desc.map(std::slice::from_ref),
                 None,
                 rma_iov,
                 data,
@@ -1125,7 +1125,7 @@ impl<'a> MsgRmaConnectedMut<'a> {
     }
 
     pub fn context(&mut self) -> &mut Context {
-        &mut self.msg.context
+        self.msg.context
     }
 
     pub(crate) fn inner(&self) -> &libfabric_sys::fi_msg_rma {

@@ -302,7 +302,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
         )
     }
@@ -322,7 +322,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -344,7 +344,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -365,7 +365,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
         )
     }
@@ -386,7 +386,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -408,7 +408,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -435,7 +435,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             buf,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
         )
     }
@@ -450,7 +450,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
-        self.atomic(buf, desc, dest_slice.mem_address(), &dest_slice.key(), op)
+        self.atomic(buf, desc, dest_slice.mem_address(), dest_slice.key(), op)
     }
 
     unsafe fn atomic_slice_with_context<T: AsFiType>(
@@ -466,7 +466,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             buf,
             desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -485,7 +485,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             buf,
             desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -499,7 +499,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
-        self.atomicv(ioc, desc, dest_slice.mem_address(), &dest_slice.key(), op)
+        self.atomicv(ioc, desc, dest_slice.mem_address(), dest_slice.key(), op)
     }
 
     unsafe fn atomicv_slice_with_context<T: AsFiType>(
@@ -515,7 +515,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             ioc,
             desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -534,7 +534,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             ioc,
             desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -556,7 +556,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
-        self.inject_atomic(buf, dest_slice.mem_address(), &dest_slice.key(), op)
+        self.inject_atomic(buf, dest_slice.mem_address(), dest_slice.key(), op)
     }
 }
 
@@ -1439,7 +1439,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             res_desc,
             dest_addr,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
         )
     }
@@ -1465,7 +1465,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             res_desc,
             dest_addr,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -1492,7 +1492,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             res_desc,
             dest_addr,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -1517,7 +1517,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             res_desc,
             dest_addr,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
         )
     }
@@ -1541,7 +1541,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             res_desc,
             dest_addr,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -1566,7 +1566,7 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             res_desc,
             dest_addr,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -1605,7 +1605,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             res,
             res_desc,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
         )
     }
@@ -1629,7 +1629,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             res,
             res_desc,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -1654,7 +1654,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             res,
             res_desc,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -1677,7 +1677,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             resultv,
             res_desc,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
         )
     }
@@ -1699,7 +1699,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             resultv,
             res_desc,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -1722,7 +1722,7 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             resultv,
             res_desc,
             src_slice.mem_address(),
-            &src_slice.key(),
+            src_slice.key(),
             op,
             context,
         )
@@ -2512,7 +2512,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
             result_desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
         )
     }
@@ -2543,7 +2543,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
             result_desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -2575,7 +2575,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
             result_desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -2604,7 +2604,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
             res_desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
         )
     }
@@ -2632,7 +2632,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
             res_desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -2661,7 +2661,7 @@ pub trait AtomicCASRemoteMemAddrSliceEp: AtomicCASEp {
             res_desc,
             dest_addr,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -2708,7 +2708,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
             result,
             result_desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
         )
     }
@@ -2737,7 +2737,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
             result,
             result_desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -2767,7 +2767,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
             result,
             result_desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -2794,7 +2794,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
             resultv,
             res_desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
         )
     }
@@ -2820,7 +2820,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
             resultv,
             res_desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )
@@ -2847,7 +2847,7 @@ pub trait ConnectedAtomicCASRemoteMemAddrSliceEp: ConnectedAtomicCASEp {
             resultv,
             res_desc,
             dest_slice.mem_address(),
-            &dest_slice.key(),
+            dest_slice.key(),
             op,
             context,
         )

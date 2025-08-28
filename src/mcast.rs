@@ -310,21 +310,19 @@ impl MulticastGroupImpl {
         } else {
             if let Err(old_mc) = self.c_mc.set(OwnedMcFid::from(c_mc)) {
                 assert!(old_mc.as_typed_fid().as_raw_typed_fid() == c_mc);
+            } else if let Some(avset) = self.avset.get() {
+                self.addr
+                    .set(RawMappedAddress::from_raw(avset._av_rc.type_(), unsafe {
+                        libfabric_sys::inlined_fi_mc_addr(c_mc)
+                    }))
+                    .unwrap()
             } else {
-                if let Some(avset) = self.avset.get() {
-                    self.addr
-                        .set(RawMappedAddress::from_raw(avset._av_rc.type_(), unsafe {
-                            libfabric_sys::inlined_fi_mc_addr(c_mc)
-                        }))
-                        .unwrap()
-                } else {
-                    self.addr
-                        .set(RawMappedAddress::from_raw(
-                            AddressVectorType::Unspec,
-                            unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc) },
-                        ))
-                        .unwrap()
-                }
+                self.addr
+                    .set(RawMappedAddress::from_raw(
+                        AddressVectorType::Unspec,
+                        unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc) },
+                    ))
+                    .unwrap()
             }
             #[cfg(feature = "thread-safe")]
             self.eps.write().push(ep.clone());

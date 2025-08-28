@@ -114,11 +114,11 @@ impl Completion {
 
     pub(crate) fn pop(&mut self) -> Option<SingleCompletion> {
         match self {
-            Completion::Unspec(v) => v.pop().map(|c| SingleCompletion::Unspec(c)),
-            Completion::Ctx(v) => v.pop().map(|c| SingleCompletion::Ctx(c)),
-            Completion::Msg(v) => v.pop().map(|c| SingleCompletion::Msg(c)),
-            Completion::Data(v) => v.pop().map(|c| SingleCompletion::Data(c)),
-            Completion::Tagged(v) => v.pop().map(|c| SingleCompletion::Tagged(c)),
+            Completion::Unspec(v) => v.pop().map(SingleCompletion::Unspec),
+            Completion::Ctx(v) => v.pop().map(SingleCompletion::Ctx),
+            Completion::Msg(v) => v.pop().map(SingleCompletion::Msg),
+            Completion::Data(v) => v.pop().map(SingleCompletion::Data),
+            Completion::Tagged(v) => v.pop().map(SingleCompletion::Tagged),
         }
     }
 }
@@ -829,7 +829,7 @@ impl<'a> CompletionQueueBuilder<'a, true, false, false> {
     }
 }
 
-impl<'a> Default for CompletionQueueBuilder<'a, true, false, false> {
+impl Default for CompletionQueueBuilder<'_, true, false, false> {
     fn default() -> Self {
         Self::new()
     }

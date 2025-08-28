@@ -281,7 +281,7 @@ pub enum WaitObj<'a> {
     PollFd,
 }
 
-impl<'a> WaitObj<'a> {
+impl WaitObj<'_> {
     pub(crate) fn as_raw(&self) -> u32 {
         match self {
             WaitObj::None => libfabric_sys::fi_wait_obj_FI_WAIT_NONE,
@@ -764,7 +764,7 @@ pub enum TriggerEvent<'a> {
     Xpu(TriggerXpu),
 }
 
-impl<'a> TriggerEvent<'a> {
+impl TriggerEvent<'_> {
     pub fn as_raw(
         &mut self,
     ) -> (
@@ -1159,6 +1159,12 @@ pub enum WaitObjType2<'a> {
 #[derive(Clone, Debug)]
 pub struct DomainCaps {
     c_flags: u64,
+}
+
+impl Default for DomainCaps {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DomainCaps {

@@ -14,7 +14,6 @@ use crate::{
 
 //================== Wait (fi_wait) ==================//
 /// A builder for a [WaitSet].
-
 pub struct WaitSetBuilder<'a> {
     wait_attr: WaitSetAttr,
     fabric: &'a crate::fabric::Fabric,

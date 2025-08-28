@@ -383,13 +383,13 @@ impl<'a> AddressVectorBuilder<'a, ()> {
     }
 }
 
-impl<'a> Default for AddressVectorBuilder<'a, ()> {
+impl Default for AddressVectorBuilder<'_, ()> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a, EQ, Mode: AVSyncMode> AddressVectorBuilder<'a, EQ, Mode> {
+impl<EQ, Mode: AVSyncMode> AddressVectorBuilder<'_, EQ, Mode> {
     /// Sets the type of the [AddressVector].
     ///
     /// Corresponds to setting field `fi_av_attr::type`
@@ -484,7 +484,7 @@ impl<'a, EQ, Mode: AVSyncMode> AddressVectorBuilder<'a, EQ, Mode> {
         }
     }
 }
-impl<'a> AddressVectorBuilder<'a, ()> {
+impl AddressVectorBuilder<'_, ()> {
     /// Constructs a new [AddressVector] with the configurations requested so far.
     ///
     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
@@ -501,7 +501,7 @@ impl<'a> AddressVectorBuilder<'a, ()> {
         // }
     }
 }
-impl<'a, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, EQ> {
+impl<EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'_, EQ> {
     /// Constructs a new [AddressVector] with the configurations requested so far.
     ///
     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,
@@ -515,7 +515,7 @@ impl<'a, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, EQ> {
     }
 }
 
-impl<'a, EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'a, EQ, NoBlock> {
+impl<EQ: ?Sized + ReadEq + 'static> AddressVectorBuilder<'_, EQ, NoBlock> {
     /// Constructs a new [AddressVector] with the configurations requested so far.
     ///
     /// Corresponds to creating an `fi_av_attr`, setting its fields to the requested ones,

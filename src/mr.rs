@@ -34,7 +34,7 @@ pub struct MemoryRegionKey<'a> {
     pub(crate) key: &'a OwnedMemoryRegionKey,
 }
 
-impl<'a> MemoryRegionKey<'a> {
+impl MemoryRegionKey<'_> {
     /// Convert the memory region key to a byte representation.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.key.to_bytes()
@@ -614,7 +614,7 @@ pub(crate) struct OwnedMemoryRegionDesc {
 }
 
 impl OwnedMemoryRegionDesc {
-    fn as_borrowed<'a>(&'a self) -> MemoryRegionDesc<'a> {
+    fn as_borrowed(&self) -> MemoryRegionDesc<'_> {
         MemoryRegionDesc {
             c_desc: self.c_desc,
             phantom: PhantomData,
@@ -1325,7 +1325,7 @@ mod tests {
 
     #[test]
     fn try_wrapper() {
-        let mut vec = vec![0u8; 10];
+        let mut vec = [0u8; 10];
         let mut wrapped_vec = MemoryRegionSlice {
             slice: &mut vec[..],
         };

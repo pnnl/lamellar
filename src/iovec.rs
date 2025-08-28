@@ -4,8 +4,8 @@ use crate::{
     mr::MappedMemoryRegionKey, RemoteMemAddrSlice, RemoteMemAddrSliceMut, RemoteMemoryAddress,
 };
 
-unsafe impl<'a> Send for IoVec<'a> {}
-unsafe impl<'a> Sync for IoVec<'a> {}
+unsafe impl Send for IoVec<'_> {}
+unsafe impl Sync for IoVec<'_> {}
 #[repr(C)]
 /// A wrapper for `libfabric_sys::iovec`
 pub struct IoVec<'a> {
@@ -51,8 +51,8 @@ impl<'a> IoVec<'a> {
     }
 }
 
-unsafe impl<'a> Send for IoVecMut<'a> {}
-unsafe impl<'a> Sync for IoVecMut<'a> {}
+unsafe impl Send for IoVecMut<'_> {}
+unsafe impl Sync for IoVecMut<'_> {}
 
 #[repr(C)]
 /// Represents a mutable [IoVec]
@@ -180,6 +180,12 @@ pub struct RemoteMemAddrVec<'a> {
     phantom: PhantomData<&'a ()>,
 }
 
+impl Default for RemoteMemAddrVec<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> RemoteMemAddrVec<'a> {
     pub fn new() -> Self {
         Self {
@@ -210,6 +216,12 @@ impl<'a> RemoteMemAddrVec<'a> {
 pub struct RemoteMemAddrVecMut<'a> {
     pub(crate) c_rma_iovecs: Vec<libfabric_sys::fi_rma_iov>,
     phantom: PhantomData<&'a mut ()>,
+}
+
+impl Default for RemoteMemAddrVecMut<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a> RemoteMemAddrVecMut<'a> {
@@ -252,6 +264,12 @@ impl<'a> RemoteMemAddrVecMut<'a> {
 pub struct RemoteMemAddrAtomicVec<'a, T> {
     pub(crate) c_rma_iocs: Vec<libfabric_sys::fi_rma_ioc>,
     phantom: PhantomData<&'a T>,
+}
+
+impl<T: Copy> Default for RemoteMemAddrAtomicVec<'_, T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a, T: Copy> RemoteMemAddrAtomicVec<'a, T> {
@@ -299,6 +317,12 @@ impl<'a, T: Copy> RemoteMemAddrAtomicVec<'a, T> {
 pub struct RemoteMemAddrAtomicVecMut<'a, T> {
     pub(crate) c_rma_iocs: Vec<libfabric_sys::fi_rma_ioc>,
     phantom: PhantomData<&'a mut T>,
+}
+
+impl<T: Copy> Default for RemoteMemAddrAtomicVecMut<'_, T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a, T: Copy> RemoteMemAddrAtomicVecMut<'a, T> {

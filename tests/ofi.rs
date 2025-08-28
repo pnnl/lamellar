@@ -272,7 +272,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     .unwrap(),
 
                 CqType::Shared(ref scq) => ep_builder
-                    .build_with_shared_cq(&domain, &scq, false)
+                    .build_with_shared_cq(&domain, scq, false)
                     .unwrap(),
             };
 
@@ -300,7 +300,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         || info_entry.caps().is_rma()
                     {
                         let mr = MemoryRegionBuilder::new(
-                            &mut reg_mem,
+                            &reg_mem,
                             libfabric::enums::HmemIface::System,
                         )
                         .access_read()
@@ -338,7 +338,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                                 pending
                                     .av_complete(av_complete)
                                     .into_iter()
-                                    .map(|x| std::rc::Rc::new(x))
+                                    .map(std::rc::Rc::new)
                                     .collect()
                             } else {
                                 panic!("Unexpected event retrieved");
@@ -378,11 +378,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         let epname = ep.getname().unwrap();
                         let addrlen = epname.as_bytes().len();
 
-                        let mr_desc = if let Some(ref mr) = mr {
-                            Some(mr.descriptor())
-                        } else {
-                            None
-                        };
+                        let mr_desc = mr.as_ref().map(|mr| mr.descriptor());
 
                         post!(
                             recv_from_any,
@@ -406,7 +402,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                                 pending
                                     .av_complete(av_complete)
                                     .into_iter()
-                                    .map(|x| std::rc::Rc::new(x))
+                                    .map(std::rc::Rc::new)
                                     .collect()
                             } else {
                                 panic!("Unexpected event retrieved");
@@ -474,7 +470,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         || info_entry.caps().is_rma()
                     {
                         let mr = MemoryRegionBuilder::new(
-                            &mut reg_mem,
+                            &reg_mem,
                             libfabric::enums::HmemIface::System,
                         )
                         .access_read()
@@ -545,17 +541,15 @@ fn conn_send<T>(
     max_inject_size: usize,
 ) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
-        if data.is_some() {
-            sender.injectdata(buf, data.unwrap())
+        if let Some(data) = data {
+            sender.injectdata(buf, data)
         } else {
             sender.inject(buf)
         }
+    } else if let Some(data) = data {
+        sender.senddata(buf, desc, data)
     } else {
-        if data.is_some() {
-            sender.senddata(buf, desc, data.unwrap())
-        } else {
-            sender.send(buf, desc)
-        }
+        sender.send(buf, desc)
     }
 }
 
@@ -568,17 +562,15 @@ fn connless_send<T>(
     max_inject_size: usize,
 ) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
-        if data.is_some() {
-            sender.injectdata_to(buf, data.unwrap(), addr.as_ref())
+        if let Some(data) = data {
+            sender.injectdata_to(buf, data, addr.as_ref())
         } else {
             sender.inject_to(buf, addr.as_ref())
         }
+    } else if let Some(data) = data {
+        sender.senddata_to(buf, desc, data, addr.as_ref())
     } else {
-        if data.is_some() {
-            sender.senddata_to(buf, desc, data.unwrap(), addr.as_ref())
-        } else {
-            sender.send_to(buf, desc, addr.as_ref())
-        }
+        sender.send_to(buf, desc, addr.as_ref())
     }
 }
 
@@ -596,7 +588,7 @@ fn connless_sendv(
     desc: Option<&[MemoryRegionDesc]>,
     mapped_addr: &MyRc<MappedAddress>,
 ) -> Result<(), libfabric::error::Error> {
-    sender.sendv_to(iov, desc, &mapped_addr)
+    sender.sendv_to(iov, desc, mapped_addr)
 }
 
 fn connless_recv<T>(
@@ -657,17 +649,15 @@ fn conn_tsend<T>(
     max_inject_size: usize,
 ) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
-        if data.is_some() {
-            sender.tinjectdata(buf, data.unwrap(), tag)
+        if let Some(data) = data {
+            sender.tinjectdata(buf, data, tag)
         } else {
             sender.tinject(buf, tag)
         }
+    } else if let Some(data) = data {
+        sender.tsenddata(buf, desc, data, tag)
     } else {
-        if data.is_some() {
-            sender.tsenddata(buf, desc, data.unwrap(), tag)
-        } else {
-            sender.tsend(buf, desc, tag)
-        }
+        sender.tsend(buf, desc, tag)
     }
 }
 
@@ -681,17 +671,15 @@ fn connless_tsend<T>(
     max_inject_size: usize,
 ) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
-        if data.is_some() {
-            sender.tinjectdata_to(buf, data.unwrap(), addr.as_ref(), tag)
+        if let Some(data) = data {
+            sender.tinjectdata_to(buf, data, addr.as_ref(), tag)
         } else {
             sender.tinject_to(buf, addr.as_ref(), tag)
         }
+    } else if let Some(data) = data {
+        sender.tsenddata_to(buf, desc, data, addr.as_ref(), tag)
     } else {
-        if data.is_some() {
-            sender.tsenddata_to(buf, desc, data.unwrap(), addr.as_ref(), tag)
-        } else {
-            sender.tsend_to(buf, desc, addr.as_ref(), tag)
-        }
+        sender.tsend_to(buf, desc, addr.as_ref(), tag)
     }
 }
 
@@ -711,7 +699,7 @@ fn connless_tsendv(
     mapped_addr: &MyRc<MappedAddress>,
     tag: u64,
 ) -> Result<(), libfabric::error::Error> {
-    sender.tsendv_to(iov, desc, &mapped_addr, tag)
+    sender.tsendv_to(iov, desc, mapped_addr, tag)
 }
 
 fn connless_trecv<T>(
@@ -743,7 +731,7 @@ fn connless_trecvv(
     tag: u64,
     ignore: Option<u64>,
 ) -> Result<(), libfabric::error::Error> {
-    recver.trecvv_from(iov, desc, &mapped_addr, tag, ignore)
+    recver.trecvv_from(iov, desc, mapped_addr, tag, ignore)
 }
 
 fn conn_trecvv(
@@ -823,16 +811,16 @@ impl<I: TagDefaultCap> Ofi<I> {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => connless_tsend(
                         ep,
-                        &buf,
+                        buf,
                         desc,
                         tag,
                         data,
-                        &&self.mapped_addr.as_ref().unwrap()[1],
+                        &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
                     ),
                     MyEndpoint::Connected(ep) => conn_tsend(
                         ep,
-                        &buf,
+                        buf,
                         desc,
                         tag,
                         data,
@@ -843,16 +831,16 @@ impl<I: TagDefaultCap> Ofi<I> {
                 match &self.tx_context {
                     MyTxContext::Connectionless(tx_context) => connless_tsend(
                         tx_context.as_ref().unwrap(),
-                        &buf,
+                        buf,
                         desc,
                         tag,
                         data,
-                        &&self.mapped_addr.as_ref().unwrap()[1],
+                        &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
                     ),
                     MyTxContext::Connected(tx_context) => conn_tsend(
                         tx_context.as_ref().unwrap(),
-                        &buf,
+                        buf,
                         desc,
                         tag,
                         data,
@@ -1132,47 +1120,43 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
+                        if let Some(data) = data {
                             ep.injectdata_to(
                                 buf,
-                                data.unwrap(),
+                                data,
                                 &self.mapped_addr.as_ref().unwrap()[1],
                             )
                         } else {
-                            ep.inject_to(&buf, &self.mapped_addr.as_ref().unwrap()[1])
+                            ep.inject_to(buf, &self.mapped_addr.as_ref().unwrap()[1])
                         }
+                    } else if let Some(data) = data {
+                        ep.senddata_to_with_context(
+                            buf,
+                            desc,
+                            data,
+                            &self.mapped_addr.as_ref().unwrap()[1],
+                            context,
+                        )
                     } else {
-                        if data.is_some() {
-                            ep.senddata_to_with_context(
-                                &buf,
-                                desc,
-                                data.unwrap(),
-                                &self.mapped_addr.as_ref().unwrap()[1],
-                                context,
-                            )
-                        } else {
-                            ep.send_to_with_context(
-                                &buf,
-                                desc,
-                                &self.mapped_addr.as_ref().unwrap()[1],
-                                context,
-                            )
-                        }
+                        ep.send_to_with_context(
+                            buf,
+                            desc,
+                            &self.mapped_addr.as_ref().unwrap()[1],
+                            context,
+                        )
                     }
                 }
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            ep.injectdata(&buf, data.unwrap())
+                        if let Some(data) = data {
+                            ep.injectdata(buf, data)
                         } else {
-                            ep.inject(&buf)
+                            ep.inject(buf)
                         }
+                    } else if let Some(data) = data {
+                        ep.senddata_with_context(buf, desc, data, context)
                     } else {
-                        if data.is_some() {
-                            ep.senddata_with_context(&buf, desc, data.unwrap(), context)
-                        } else {
-                            ep.send_with_context(&buf, desc, context)
-                        }
+                        ep.send_with_context(buf, desc, context)
                     }
                 }
             };
@@ -1427,11 +1411,11 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
+                        if let Some(data) = data {
                             unsafe {
                                 ep.inject_writedata_slice_to(
                                     buf,
-                                    data.unwrap(),
+                                    data,
                                     &self.mapped_addr.as_ref().unwrap()[1],
                                     &write_slice,
                                 )
@@ -1445,42 +1429,38 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                                 )
                             }
                         }
+                    } else if let Some(data) = data {
+                        unsafe {
+                            ep.writedata_slice_to(
+                                buf,
+                                desc,
+                                data,
+                                &self.mapped_addr.as_ref().unwrap()[1],
+                                &write_slice,
+                            )
+                        }
                     } else {
-                        if data.is_some() {
-                            unsafe {
-                                ep.writedata_slice_to(
-                                    buf,
-                                    desc,
-                                    data.unwrap(),
-                                    &self.mapped_addr.as_ref().unwrap()[1],
-                                    &write_slice,
-                                )
-                            }
-                        } else {
-                            unsafe {
-                                ep.write_slice_to(
-                                    buf,
-                                    desc,
-                                    &self.mapped_addr.as_ref().unwrap()[1],
-                                    &write_slice,
-                                )
-                            }
+                        unsafe {
+                            ep.write_slice_to(
+                                buf,
+                                desc,
+                                &self.mapped_addr.as_ref().unwrap()[1],
+                                &write_slice,
+                            )
                         }
                     }
                 }
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        if data.is_some() {
-                            unsafe { ep.inject_writedata_slice(buf, data.unwrap(), &write_slice) }
+                        if let Some(data) = data {
+                            unsafe { ep.inject_writedata_slice(buf, data, &write_slice) }
                         } else {
                             unsafe { ep.inject_write_slice(buf, &write_slice) }
                         }
+                    } else if let Some(data) = data {
+                        unsafe { ep.writedata_slice(buf, desc, data, &write_slice) }
                     } else {
-                        if data.is_some() {
-                            unsafe { ep.writedata_slice(buf, desc, data.unwrap(), &write_slice) }
-                        } else {
-                            unsafe { ep.write_slice(buf, desc, &write_slice) }
-                        }
+                        unsafe { ep.write_slice(buf, desc, &write_slice) }
                     }
                 }
             };
@@ -2079,7 +2059,6 @@ fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
     };
 
     let mut reg_mem: Vec<_> = (0..1024 * 2)
-        .into_iter()
         .map(|v: usize| (v % 256) as u8)
         .collect();
     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
@@ -2136,7 +2115,6 @@ fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         let expected: Vec<_> = (0..1024 * 2)
-            .into_iter()
             .map(|v: usize| (v % 256) as u8)
             .collect();
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2154,8 +2132,8 @@ fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
         // // Receive into a single Iov
-        let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-        ofi.recvv(&mut iov, Some(&desc[..1]));
+        let iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
+        ofi.recvv(&iov, Some(&desc[..1]));
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(reg_mem[..512], expected[..512]);
 
@@ -2220,7 +2198,6 @@ fn sendrecvdata(server: bool, name: &str, connected: bool, use_context: bool) {
     };
 
     let mut reg_mem: Vec<_> = (0..1024 * 2)
-        .into_iter()
         .map(|v: usize| (v % 256) as u8)
         .collect();
     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
@@ -2249,7 +2226,6 @@ fn sendrecvdata(server: bool, name: &str, connected: bool, use_context: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         let expected: Vec<_> = (0..1024 * 2)
-            .into_iter()
             .map(|v: usize| (v % 256) as u8)
             .collect();
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2321,7 +2297,6 @@ fn tsendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
     };
 
     let mut reg_mem: Vec<_> = (0..1024 * 2)
-        .into_iter()
         .map(|v: usize| (v % 256) as u8)
         .collect();
     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
@@ -2374,7 +2349,6 @@ fn tsendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
         let expected: Vec<_> = (0..1024 * 2)
-            .into_iter()
             .map(|v: usize| (v % 256) as u8)
             .collect();
         reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -2399,8 +2373,8 @@ fn tsendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
 
         reg_mem.iter_mut().for_each(|v| *v = 0);
         // // Receive into a single Iov
-        let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-        ofi.trecvv(&mut iov, Some(&desc[..1]), 2, use_context);
+        let iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
+        ofi.trecvv(&iov, Some(&desc[..1]), 2, use_context);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(reg_mem[..512], expected[..512]);
 
@@ -2465,7 +2439,6 @@ fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
     };
 
     let mut reg_mem: Vec<_> = (0..1024 * 2)
-        .into_iter()
         .map(|v: usize| (v % 256) as u8)
         .collect();
     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
@@ -2750,7 +2723,6 @@ fn tsendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
     };
 
     let mut reg_mem: Vec<_> = (0..1024 * 2)
-        .into_iter()
         .map(|v: usize| (v % 256) as u8)
         .collect();
     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
@@ -3061,7 +3033,6 @@ fn writeread(server: bool, name: &str, connected: bool) {
 
     let mut reg_mem: Vec<_> = if server {
         (0..1024 * 2)
-            .into_iter()
             .map(|v: usize| (v % 256) as u8)
             .collect()
     } else {
@@ -3192,7 +3163,6 @@ fn writereadmsg(server: bool, name: &str, connected: bool) {
 
     let mut reg_mem: Vec<_> = if server {
         (0..1024 * 2)
-            .into_iter()
             .map(|v: usize| (v % 256) as u8)
             .collect()
     } else {
@@ -3539,14 +3509,11 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         ofi.send(&reg_mem[512..1024], desc0.as_ref(), None, false);
         let err = ofi.cq_type.tx_cq().sread(1, -1);
-        match err {
-            Err(e) => {
-                if matches!(e.kind, libfabric::error::ErrorKind::ErrorAvailable) {
-                    let realerr = ofi.cq_type.tx_cq().readerr(0).unwrap();
-                    panic!("{:?}", realerr.error());
-                }
+        if let Err(e) = err {
+            if matches!(e.kind, libfabric::error::ErrorKind::ErrorAvailable) {
+                let realerr = ofi.cq_type.tx_cq().readerr(0).unwrap();
+                panic!("{:?}", realerr.error());
             }
-            Ok(_) => {}
         }
 
         // Recv a completion ack
@@ -3654,7 +3621,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         let (op_mem, ack_mem) = reg_mem.split_at_mut(512);
         let (mem0, mem1) = op_mem.split_at_mut(256);
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3666,7 +3633,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![1; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3678,7 +3645,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![2; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3690,7 +3657,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![4; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3702,7 +3669,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![8; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3714,7 +3681,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![10; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3734,7 +3701,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![2; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3746,7 +3713,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![1; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3766,7 +3733,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![3; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3778,7 +3745,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![1; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3790,7 +3757,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![0; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3810,7 +3777,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![2; 256];
         ofi.fetch_atomic(
-            &mem0,
+            mem0,
             mem1,
             0,
             desc0.as_ref(),
@@ -3958,7 +3925,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         comp.iter_mut().for_each(|v| *v = 1);
 
         ofi.compare_atomic(
-            &buf,
+            buf,
             comp,
             res,
             0,
@@ -3972,7 +3939,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![2; 256];
         ofi.compare_atomic(
-            &buf,
+            buf,
             comp,
             res,
             0,
@@ -3987,7 +3954,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         buf.iter_mut().for_each(|v| *v = 3);
         expected = vec![2; 256];
         ofi.compare_atomic(
-            &buf,
+            buf,
             comp,
             res,
             0,
@@ -4002,7 +3969,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         buf.iter_mut().for_each(|v| *v = 2);
         expected = vec![3; 256];
         ofi.compare_atomic(
-            &buf,
+            buf,
             comp,
             res,
             0,
@@ -4017,7 +3984,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         buf.iter_mut().for_each(|v| *v = 3);
         expected = vec![2; 256];
         ofi.compare_atomic(
-            &buf,
+            buf,
             comp,
             res,
             0,
@@ -4031,7 +3998,7 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
 
         expected = vec![2; 256];
         ofi.compare_atomic(
-            &buf,
+            buf,
             comp,
             res,
             0,
@@ -4056,8 +4023,8 @@ fn compare_atomic(server: bool, name: &str, connected: bool) {
         let (comp0, comp1) = comp.split_at_mut(128);
         let (res0, res1) = res.split_at_mut(128);
 
-        let buf_iocs = [Ioc::from_slice(&buf0), Ioc::from_slice(&buf1)];
-        let comp_iocs = [Ioc::from_slice(&comp0), Ioc::from_slice(&comp1)];
+        let buf_iocs = [Ioc::from_slice(buf0), Ioc::from_slice(buf1)];
+        let comp_iocs = [Ioc::from_slice(comp0), Ioc::from_slice(comp1)];
         let mut res_iocs = [IocMut::from_slice(res0), IocMut::from_slice(res1)];
         let buf_descs = [mr.descriptor(), mr.descriptor()];
         let comp_descs = [mr.descriptor(), mr.descriptor()];
@@ -4427,8 +4394,8 @@ fn compare_atomicmsg(server: bool, name: &str, connected: bool) {
         let (comp0, comp1) = comp.split_at_mut(128);
         let (res0, res1) = res.split_at_mut(128);
 
-        let buf_iocs = [Ioc::from_slice(&buf0), Ioc::from_slice(&buf1)];
-        let comp_iocs = [Ioc::from_slice(&comp0), Ioc::from_slice(&comp1)];
+        let buf_iocs = [Ioc::from_slice(buf0), Ioc::from_slice(buf1)];
+        let comp_iocs = [Ioc::from_slice(comp0), Ioc::from_slice(comp1)];
         let mut res_iocs = [IocMut::from_slice(res0), IocMut::from_slice(res1)];
         let buf_descs = [mr.descriptor(), mr.descriptor()];
         let comp_descs = [mr.descriptor(), mr.descriptor()];
@@ -4552,7 +4519,7 @@ fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, 
 
     let mut avset = if server {
         AddressVectorSetBuilder::new_from_range(
-            &ofi.av.as_ref().unwrap(),
+            ofi.av.as_ref().unwrap(),
             &ofi.mapped_addr.as_ref().unwrap()[0],
             &ofi.mapped_addr.as_ref().unwrap()[0],
             1,
@@ -4562,7 +4529,7 @@ fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, 
         .unwrap()
     } else {
         AddressVectorSetBuilder::new_from_range(
-            &ofi.av.as_ref().unwrap(),
+            ofi.av.as_ref().unwrap(),
             &ofi.mapped_addr.as_ref().unwrap()[1],
             &ofi.mapped_addr.as_ref().unwrap()[1],
             1,
@@ -4585,21 +4552,19 @@ fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, 
 
     let mc = match &ofi.ep {
         MyEndpoint::Connected(ep) => mc
-            .join_collective_with_context(&ep, libfabric::enums::JoinOptions::new(), &mut ctx)
+            .join_collective_with_context(ep, libfabric::enums::JoinOptions::new(), &mut ctx)
             .unwrap(),
         MyEndpoint::Connectionless(ep) => mc
-            .join_collective_with_context(&ep, libfabric::enums::JoinOptions::new(), &mut ctx)
+            .join_collective_with_context(ep, libfabric::enums::JoinOptions::new(), &mut ctx)
             .unwrap(),
     };
 
     let join_event;
     loop {
         let event = ofi.eq.read();
-        if let Ok(event) = event {
-            if let Event::JoinComplete(join) = event {
-                join_event = join;
-                break;
-            }
+        if let Ok(Event::JoinComplete(join)) = event {
+            join_event = join;
+            break;
         }
         let _ = ofi.cq_type.tx_cq().read(0);
         let _ = ofi.cq_type.rx_cq().read(0);
@@ -4767,9 +4732,9 @@ fn alltoall1() {
 fn allreduce(server: bool, name: &str, connected: bool) {
     let (ofi, mc) = collective(server, name, connected);
     let (mut reg_mem, expected) = if server {
-        (vec![2; 1024 * 2], vec![3; 1024 * 1])
+        (vec![2; 1024 * 2], vec![3; 1024])
     } else {
-        (vec![1; 1024 * 2], vec![3; 1024 * 1])
+        (vec![1; 1024 * 2], vec![3; 1024])
     };
 
     let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)

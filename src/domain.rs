@@ -274,8 +274,6 @@ impl<EQ: ?Sized> DomainImplBase<EQ> {
 ///
 /// Note that other objects that rely on a Domain (e.g., [`Endpoint`](crate::ep::Endpoint)) will extend its lifetime until they
 /// are also dropped.
-// pub type Domain = DomainBase<dyn EventQueueImplT>;
-
 pub struct DomainBase<EQ: ?Sized> {
     pub(crate) inner: MyRc<DomainImplBase<EQ>>,
 }
@@ -822,7 +820,7 @@ impl<'a, E> DomainBuilder<'a, E> {
     }
 }
 
-impl<'a, E> DomainBuilder<'a, E> {
+impl<E> DomainBuilder<'_, E> {
     /// Constructs a new [Domain] with the configurations requested so far.
     ///
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,
@@ -845,7 +843,7 @@ impl<'a, E> DomainBuilder<'a, E> {
     }
 }
 
-impl<'a, E> DomainBuilder<'a, E> {
+impl<E> DomainBuilder<'_, E> {
     /// Constructs a new [Domain] with the configurations requested so far.
     ///
     /// Corresponds to creating a `fi_domain_attr`, setting its fields to the requested ones,

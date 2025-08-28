@@ -360,7 +360,7 @@ pub fn ft_alloc_ep_res<E, EQ: ?Sized + 'static + libfabric::SyncSend>(
                     libfabric::av::AddressVectorBuilder::new()
                 }
                 _ => libfabric::av::AddressVectorBuilder::new()
-                    .type_(info.domain_attr().av_type().clone()),
+                    .type_(*info.domain_attr().av_type()),
             }
             .count(1)
             .build(domain)
@@ -712,7 +712,7 @@ pub fn ft_server_connect<
                 &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -741,7 +741,7 @@ pub fn ft_server_connect<
                 &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
-                Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
+                Endpoint::ConnectionOriented(ep) => ep.enable(eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
 
@@ -975,12 +975,12 @@ pub fn ft_enable_ep_recv<CNTR: ReadCntr + 'static, E, T: 'static>(
     rx_cntr: &Option<Counter<CNTR>>,
     rma_cntr: &Option<Counter<CNTR>>,
 ) -> Option<libfabric::mr::MemoryRegion> {
-    let mr = {
+    
+
+    {
         ft_prepare_ep(info, gl_ctx, ep, tx_cntr, rx_cntr, rma_cntr);
         ft_alloc_msgs(info, gl_ctx, domain, ep)
-    };
-
-    mr
+    }
 }
 
 pub enum InfoWithCaps<M, T> {
@@ -1316,11 +1316,7 @@ pub fn connected_msg_post(
     base: &mut [u8],
     data: u64,
 ) {
-    let desc = if let Some(mr) = mr {
-        Some(mr.descriptor())
-    } else {
-        None
-    };
+    let desc = mr.as_ref().map(|mr| mr.descriptor());
 
     match op {
         SendOp::MsgSend => {
@@ -1398,11 +1394,7 @@ pub fn conless_msg_post(
     base: &mut [u8],
     data: u64,
 ) {
-    let desc = if let Some(mr) = mr {
-        Some(mr.descriptor())
-    } else {
-        None
-    };
+    let desc = mr.as_ref().map(|mr| mr.descriptor());
     match op {
         SendOp::MsgSend => {
             let iov = libfabric::iovec::IoVec::from_slice(base);
@@ -1529,11 +1521,7 @@ pub fn msg_post_recv<M: MsgDefaultCap, T: TagDefaultCap>(
     base: &mut [u8],
     _data: u64,
 ) {
-    let mr_desc = if let Some(mr) = mr {
-        Some(mr.descriptor())
-    } else {
-        None
-    };
+    let mr_desc = mr.as_ref().map(|mr| mr.descriptor());
 
     match ep {
         EndpointCaps::ConnectedMsg(ep) => match op {
@@ -1612,7 +1600,7 @@ pub fn tagged_post<M: MsgDefaultCap, T: TagDefaultCap>(
     match &ep {
         // pub fn conless_tagged_post<E: TagDefaultCap>(op: TagSendOp, tx_seq: &mut u64, tx_cq_cntr: &mut u64, ctx : &mut Context, remote_address: &MappedAddress,  ft_tag: u64, tx_cq: &impl ReadCq, ep: &libfabric::ep::Endpoint<E>, mr: &mut Option<libfabric::mr::MemoryRegionDesc>, base: &mut [u8], data: u64) {
         EndpointCaps::ConnectedTagged(ep) => connected_tagged_post(
-            op, tx_seq, tx_cq_cntr, ctx, *tx_seq, tx_cq, &ep, mr, base, data,
+            op, tx_seq, tx_cq_cntr, ctx, *tx_seq, tx_cq, ep, mr, base, data,
         ),
         EndpointCaps::ConnlessTagged(ep) => conless_tagged_post(
             op,
@@ -1622,7 +1610,7 @@ pub fn tagged_post<M: MsgDefaultCap, T: TagDefaultCap>(
             remote_address,
             *tx_seq,
             tx_cq,
-            &ep,
+            ep,
             mr,
             base,
             data,
@@ -1645,11 +1633,7 @@ pub fn connected_tagged_post<E: TagDefaultCap>(
     data: u64,
 ) {
     let flag = libfabric::enums::TaggedSendMsgOptions::new().transmit_complete();
-    let desc = if let Some(mr) = mr {
-        Some(mr.descriptor())
-    } else {
-        None
-    };
+    let desc = mr.as_ref().map(|mr| mr.descriptor());
 
     match op {
         TagSendOp::TagMsgSend => {
@@ -1742,11 +1726,7 @@ pub fn conless_tagged_post<E: TagDefaultCap>(
 ) {
     let flag: enums::TferOptions<true, true, false, false, true, false> =
         libfabric::enums::TaggedSendMsgOptions::new().transmit_complete();
-    let desc = if let Some(mr) = mr {
-        Some(mr.descriptor())
-    } else {
-        None
-    };
+    let desc = mr.as_ref().map(|mr| mr.descriptor());
     let fi_address = remote_address.as_ref().unwrap();
     match op {
         TagSendOp::TagMsgSend => {
@@ -1840,11 +1820,7 @@ pub fn connected_tagged_post_recv<T: TagDefaultCap>(
     base: &mut [u8],
     _data: u64,
 ) {
-    let desc = if let Some(mr) = mr {
-        Some(mr.descriptor())
-    } else {
-        None
-    };
+    let desc = mr.as_ref().map(|mr| mr.descriptor());
     match op {
         TagRecvOp::TagMsgRecv => {
             todo!()
@@ -1883,11 +1859,7 @@ pub fn connless_tagged_post_recv<T: TagDefaultCap>(
     base: &mut [u8],
     _data: u64,
 ) {
-    let desc = if let Some(mr) = mr {
-        Some(mr.descriptor())
-    } else {
-        None
-    };
+    let desc = mr.as_ref().map(|mr| mr.descriptor());
     match op {
         TagRecvOp::TagMsgRecv => {
             todo!()
@@ -1932,7 +1904,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
                 SendOp::Send,
                 &mut gl_ctx.tx_seq,
                 &mut gl_ctx.tx_cq_cntr,
-                &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                gl_ctx.tx_ctx.as_mut().unwrap(),
                 fi_addr,
                 tx_cq,
                 ep,
@@ -1946,7 +1918,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
                 TagSendOp::TagSend,
                 &mut gl_ctx.tx_seq,
                 &mut gl_ctx.tx_cq_cntr,
-                &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                gl_ctx.tx_ctx.as_mut().unwrap(),
                 fi_addr,
                 gl_ctx.ft_tag,
                 tx_cq,
@@ -1961,7 +1933,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
                 SendOp::Send,
                 &mut gl_ctx.tx_seq,
                 &mut gl_ctx.tx_cq_cntr,
-                &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                gl_ctx.tx_ctx.as_mut().unwrap(),
                 fi_addr,
                 tx_cq,
                 ep,
@@ -1975,7 +1947,7 @@ pub fn ft_post_tx<M: MsgDefaultCap, T: TagDefaultCap>(
                 TagSendOp::TagSend,
                 &mut gl_ctx.tx_seq,
                 &mut gl_ctx.tx_cq_cntr,
-                &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                gl_ctx.tx_ctx.as_mut().unwrap(),
                 fi_addr,
                 gl_ctx.ft_tag,
                 tx_cq,
@@ -2046,7 +2018,7 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
                 RecvOp::Recv,
                 &mut gl_ctx.rx_seq,
                 &mut gl_ctx.rx_cq_cntr,
-                &mut gl_ctx.rx_ctx.as_mut().unwrap(),
+                gl_ctx.rx_ctx.as_mut().unwrap(),
                 &gl_ctx.remote_address,
                 rx_cq,
                 ep,
@@ -2060,7 +2032,7 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
                 TagRecvOp::TagRecv,
                 &mut gl_ctx.rx_seq,
                 &mut gl_ctx.rx_cq_cntr,
-                &mut gl_ctx.rx_ctx.as_mut().unwrap(),
+                gl_ctx.rx_ctx.as_mut().unwrap(),
                 &gl_ctx.remote_address,
                 gl_ctx.ft_tag,
                 rx_cq,
@@ -2075,7 +2047,7 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
                 RecvOp::Recv,
                 &mut gl_ctx.rx_seq,
                 &mut gl_ctx.rx_cq_cntr,
-                &mut gl_ctx.rx_ctx.as_mut().unwrap(),
+                gl_ctx.rx_ctx.as_mut().unwrap(),
                 &gl_ctx.remote_address,
                 rx_cq,
                 ep,
@@ -2089,7 +2061,7 @@ pub fn ft_post_rx<M: MsgDefaultCap, T: TagDefaultCap>(
                 TagRecvOp::TagRecv,
                 &mut gl_ctx.rx_seq,
                 &mut gl_ctx.rx_cq_cntr,
-                &mut gl_ctx.rx_ctx.as_mut().unwrap(),
+                gl_ctx.rx_ctx.as_mut().unwrap(),
                 &gl_ctx.remote_address,
                 gl_ctx.ft_tag,
                 rx_cq,
@@ -2157,7 +2129,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
                 SendOp::Inject,
                 &mut gl_ctx.tx_seq,
                 &mut gl_ctx.tx_cq_cntr,
-                &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                gl_ctx.tx_ctx.as_mut().unwrap(),
                 fi_addr,
                 tx_cq,
                 ep,
@@ -2171,7 +2143,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
                 SendOp::Inject,
                 &mut gl_ctx.tx_seq,
                 &mut gl_ctx.tx_cq_cntr,
-                &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                gl_ctx.tx_ctx.as_mut().unwrap(),
                 fi_addr,
                 tx_cq,
                 ep,
@@ -2184,7 +2156,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
             TagSendOp::TagInject,
             &mut gl_ctx.tx_seq,
             &mut gl_ctx.tx_cq_cntr,
-            &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+            gl_ctx.tx_ctx.as_mut().unwrap(),
             fi_addr,
             gl_ctx.ft_tag,
             tx_cq,
@@ -2197,7 +2169,7 @@ pub fn ft_post_inject<M: MsgDefaultCap, T: TagDefaultCap>(
             TagSendOp::TagInject,
             &mut gl_ctx.tx_seq,
             &mut gl_ctx.tx_cq_cntr,
-            &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+            gl_ctx.tx_ctx.as_mut().unwrap(),
             fi_addr,
             gl_ctx.ft_tag,
             tx_cq,
@@ -2274,7 +2246,7 @@ pub fn ft_init_av_dst_addr<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap
     if !server {
         gl_ctx.remote_address = Some(ft_av_insert(
             av,
-            &info.dest_addr().unwrap(),
+            info.dest_addr().unwrap(),
             AVOptions::new(),
         ));
         let epname = match ep {
@@ -2865,7 +2837,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
             };
             let pending_conn_ep = match enable_ep {
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => {
-                    ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap())
+                    ft_connect_ep(ep, &eq, entry.dest_addr().unwrap())
                 }
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_) => {
                     panic!("This should be a client")
@@ -2901,7 +2873,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
             };
             let pending_conn_ep = match enable_ep {
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => {
-                    ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap())
+                    ft_connect_ep(ep, &eq, entry.dest_addr().unwrap())
                 }
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_) => {
                     panic!("This should be a client")
@@ -2948,7 +2920,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -2962,7 +2934,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -2976,7 +2948,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -2990,7 +2962,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -3004,7 +2976,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -3020,7 +2992,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3035,7 +3007,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3050,7 +3022,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3065,7 +3037,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3080,7 +3052,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3097,7 +3069,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -3111,7 +3083,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -3125,7 +3097,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -3139,7 +3111,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -3153,7 +3125,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     SendOp::MsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     tx_cq,
                     ep,
@@ -3169,7 +3141,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3184,7 +3156,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3199,7 +3171,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3214,7 +3186,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,
@@ -3229,7 +3201,7 @@ pub fn ft_finalize_ep<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
                     TagSendOp::TagMsgSend,
                     &mut gl_ctx.tx_seq,
                     &mut gl_ctx.tx_cq_cntr,
-                    &mut gl_ctx.tx_ctx.as_mut().unwrap(),
+                    gl_ctx.tx_ctx.as_mut().unwrap(),
                     &gl_ctx.remote_address,
                     gl_ctx.ft_tag,
                     tx_cq,

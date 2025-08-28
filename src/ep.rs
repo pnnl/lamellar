@@ -765,7 +765,7 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
             libfabric_sys::inlined_fi_reject(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 fid.as_raw_fid(),
-                params.map_or_else(|| std::ptr::null(), |v| v.as_ptr().cast()),
+                params.map_or_else(std::ptr::null, |v| v.as_ptr().cast()),
                 params.map_or(0, |v| v.len()),
             )
         };
@@ -945,8 +945,8 @@ pub struct IncompleteBindCntr<'a, EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> 
     pub(crate) flags: u64,
 }
 
-impl<'a, EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq>
-    IncompleteBindCntr<'a, EP, EQ, CQ>
+impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq>
+    IncompleteBindCntr<'_, EP, EQ, CQ>
 {
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
@@ -2146,7 +2146,7 @@ impl<EP> Endpoint<EP> {
     }
 }
 
-impl<'a, E> EndpointBuilder<'a, E> {
+impl<E> EndpointBuilder<'_, E> {
     /// Builds an endpoint with separate completion queues for transmit and receive operations.
     /// `tx_selective_completion` enables selective completion for the transmit queue if true.
     /// `rx_selective_completion` enables selective completion for the receive queue if true.

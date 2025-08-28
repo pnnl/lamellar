@@ -282,6 +282,12 @@ pub struct FabricBuilder<'a> {
     ctx: Option<&'a mut Context>,
 }
 
+impl Default for FabricBuilder<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> FabricBuilder<'a> {
     /// Initiates the creation of a new [Fabric] based on the respective field of the `info` entry.
     ///

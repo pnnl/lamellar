@@ -252,7 +252,7 @@ impl MemAddressInfo {
         };
 
         let addr_size =
-            std::mem::size_of_val(slice_base) - offset as usize * std::mem::size_of::<T>();
+            std::mem::size_of_val(slice_base) - offset * std::mem::size_of::<T>();
         bytes.extend(unsafe {
             std::slice::from_raw_parts(
                 &addr_size as *const usize as *const u8,
@@ -354,7 +354,7 @@ pub struct RemoteMemAddrSlice<'a, T> {
     phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, T: std::marker::Copy> RemoteMemAddrSlice<'a, T> {
+impl<T: std::marker::Copy> RemoteMemAddrSlice<'_, T> {
     pub(crate) fn new<TT: Copy>(
         mem_address: RemoteMemoryAddress<TT>,
         len: usize,
@@ -417,7 +417,7 @@ pub struct RemoteMemAddrSliceMut<'a, T> {
     phantom: std::marker::PhantomData<&'a mut ()>,
 }
 
-impl<'a, T: Copy> RemoteMemAddrSliceMut<'a, T> {
+impl<T: Copy> RemoteMemAddrSliceMut<'_, T> {
     pub(crate) fn new<TT: Copy>(
         mem_address: RemoteMemoryAddress<TT>,
         len: usize,
@@ -965,8 +965,8 @@ impl ContextType {
 
     pub(crate) fn ready(&self) -> bool {
         match self {
-            ContextType::Context1(ctx) => ctx.ready.load(atomic::Ordering::Relaxed) == true,
-            ContextType::Context2(ctx) => ctx.ready.load(atomic::Ordering::Relaxed) == true,
+            ContextType::Context1(ctx) => ctx.ready.load(atomic::Ordering::Relaxed),
+            ContextType::Context2(ctx) => ctx.ready.load(atomic::Ordering::Relaxed),
         }
     }
 

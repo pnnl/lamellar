@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::OnceLock;
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
-#[derive(Hash, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Fid(pub(crate) usize);
 
 pub(crate) struct TypedFid<FID: AsRawFid>(pub(crate) FID);
@@ -259,7 +259,7 @@ pub struct UnprotectedBorrowedTypedFid<'a, FID: AsRawFid> {
 //     }
 // }
 
-impl<'a, FID: AsRawFid + AsRawTypedFid<Output = FID>> AsRawTypedFid for BorrowedTypedFid<'a, FID> {
+impl<FID: AsRawFid + AsRawTypedFid<Output = FID>> AsRawTypedFid for BorrowedTypedFid<'_, FID> {
     type Output = FID;
     #[inline]
     fn as_raw_typed_fid(&self) -> Self::Output {
@@ -282,8 +282,8 @@ impl<'a, FID: AsRawFid + AsRawTypedFid<Output = FID>> AsRawTypedFid for Borrowed
     }
 }
 
-impl<'a, FID: AsRawFid + AsRawTypedFid<Output = FID>> AsRawTypedFid
-    for MutBorrowedTypedFid<'a, FID>
+impl<FID: AsRawFid + AsRawTypedFid<Output = FID>> AsRawTypedFid
+    for MutBorrowedTypedFid<'_, FID>
 {
     type Output = FID;
     #[inline]
@@ -307,7 +307,7 @@ impl<'a, FID: AsRawFid + AsRawTypedFid<Output = FID>> AsRawTypedFid
     }
 }
 
-impl<'a, FID: AsRawFid> AsRawFid for BorrowedTypedFid<'a, FID> {
+impl<FID: AsRawFid> AsRawFid for BorrowedTypedFid<'_, FID> {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
         match self {
@@ -329,7 +329,7 @@ impl<'a, FID: AsRawFid> AsRawFid for BorrowedTypedFid<'a, FID> {
     }
 }
 
-impl<'a, FID: AsRawFid> AsRawFid for MutBorrowedTypedFid<'a, FID> {
+impl<FID: AsRawFid> AsRawFid for MutBorrowedTypedFid<'_, FID> {
     #[inline]
     fn as_raw_fid(&self) -> RawFid {
         match self {

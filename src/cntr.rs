@@ -102,7 +102,7 @@ pub struct CounterBuilder<'a, const WAIT: bool, const RETRIEVE: bool, const FD: 
     ctx: Option<&'a mut Context>,
 }
 
-impl<'a> CounterBuilder<'a, true, false, false> {
+impl CounterBuilder<'_, true, false, false> {
     /// Initiates the creation of new [Counter] on `domain`.
     ///
     /// The initial configuration is what would be set if no `fi_cntr_attr` or `context` was provided to
@@ -115,7 +115,7 @@ impl<'a> CounterBuilder<'a, true, false, false> {
     }
 }
 
-impl<'a> Default for CounterBuilder<'a, true, false, false> {
+impl Default for CounterBuilder<'_, true, false, false> {
     fn default() -> Self {
         Self::new()
     }
