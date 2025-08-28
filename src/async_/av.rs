@@ -56,7 +56,6 @@ impl AsyncAddressVectorImpl {
                 )
                 .await?;
 
-
             if let Event::AVComplete(ref entry) = res {
                 fi_addresses.truncate(entry.data() as usize);
             }

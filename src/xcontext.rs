@@ -108,7 +108,6 @@ pub struct TxContextBase<I, STATE: EpState, CQ: ?Sized> {
     pub(crate) inner: XContextBase<Transmit, I, STATE, CQ>,
 }
 
-
 /// Represents a context for transmitting data.
 ///
 /// Corresponds to `fi_tx_context`

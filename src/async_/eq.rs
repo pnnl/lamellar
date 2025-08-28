@@ -1,7 +1,11 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::atomic::Ordering, task::ready};
 
 use crate::{
-    cq::{ReadCq, WaitObjectRetrieve}, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid}, Context, MyRc, MyRefCell, SyncSend
+    cq::{ReadCq, WaitObjectRetrieve},
+    eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
+    error::{Error, ErrorKind},
+    fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid},
+    Context, MyRc, MyRefCell, SyncSend,
 };
 #[cfg(feature = "use-async-std")]
 use async_io::Async;
@@ -808,19 +812,17 @@ impl<'a> Future for AsyncEventEq<'a> {
                 std::task::Poll::Pending => {
                     if let Some(cq) = &ev.cq {
                         cx.waker().wake_by_ref();
-                        let cq_read =  cq.read(0);
+                        let cq_read = cq.read(0);
                         if let Err(error) = cq_read {
-                            if !matches!(error.kind, ErrorKind::TryAgain)
-                            {
+                            if !matches!(error.kind, ErrorKind::TryAgain) {
                                 return std::task::Poll::Ready(Err::<Event, Error>(error));
                             }
                         }
                         return std::task::Poll::Pending;
-                    }
-                    else {
+                    } else {
                         return std::task::Poll::Pending;
                     }
-                },
+                }
             };
             let res = match res {
                 // Ok(len) => len,

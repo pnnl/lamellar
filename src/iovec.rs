@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::{mr::MappedMemoryRegionKey, RemoteMemoryAddress, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
+use crate::{
+    mr::MappedMemoryRegionKey, RemoteMemAddrSlice, RemoteMemAddrSliceMut, RemoteMemoryAddress,
+};
 
 unsafe impl<'a> Send for IoVec<'a> {}
 unsafe impl<'a> Sync for IoVec<'a> {}
@@ -12,7 +14,6 @@ pub struct IoVec<'a> {
 }
 
 impl<'a> IoVec<'a> {
-
     /// Creates a new IoVec from a reference to a memory region.
     pub fn from<T>(mem: &'a T) -> Self {
         let c_iovec = libfabric_sys::iovec {
@@ -114,7 +115,6 @@ impl<'a, T> Ioc<'a, T> {
         }
     }
 
-
     pub fn from_slice(mem: &'a [T]) -> Self {
         let c_ioc = libfabric_sys::fi_ioc {
             addr: (mem.as_ptr() as *mut T).cast(),
@@ -174,11 +174,10 @@ impl<'a, T> IocMut<'a, T> {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct RemoteMemAddrVec<'a> {
     pub(crate) c_rma_iovecs: Vec<libfabric_sys::fi_rma_iov>,
-    phantom: PhantomData<&'a ()>
+    phantom: PhantomData<&'a ()>,
 }
 
 impl<'a> RemoteMemAddrVec<'a> {
@@ -198,7 +197,7 @@ impl<'a> RemoteMemAddrVec<'a> {
 
         self.c_rma_iovecs.push(c_rma_iov);
     }
-    
+
     pub fn len(&self) -> usize {
         self.c_rma_iovecs.len()
     }
@@ -208,9 +207,9 @@ impl<'a> RemoteMemAddrVec<'a> {
     }
 }
 
-pub struct RemoteMemAddrVecMut<'a> { 
+pub struct RemoteMemAddrVecMut<'a> {
     pub(crate) c_rma_iovecs: Vec<libfabric_sys::fi_rma_iov>,
-    phantom: PhantomData<&'a mut ()>
+    phantom: PhantomData<&'a mut ()>,
 }
 
 impl<'a> RemoteMemAddrVecMut<'a> {
@@ -252,7 +251,7 @@ impl<'a> RemoteMemAddrVecMut<'a> {
 
 pub struct RemoteMemAddrAtomicVec<'a, T> {
     pub(crate) c_rma_iocs: Vec<libfabric_sys::fi_rma_ioc>,
-    phantom: PhantomData<&'a T>
+    phantom: PhantomData<&'a T>,
 }
 
 impl<'a, T: Copy> RemoteMemAddrAtomicVec<'a, T> {
@@ -273,7 +272,12 @@ impl<'a, T: Copy> RemoteMemAddrAtomicVec<'a, T> {
         self.c_rma_iocs.push(c_rma_ioc);
     }
 
-    pub fn push_raw(&mut self, addr: RemoteMemoryAddress, count: usize, key: &MappedMemoryRegionKey) {
+    pub fn push_raw(
+        &mut self,
+        addr: RemoteMemoryAddress,
+        count: usize,
+        key: &MappedMemoryRegionKey,
+    ) {
         let c_rma_ioc = libfabric_sys::fi_rma_ioc {
             addr: addr.into(),
             count,
@@ -294,7 +298,7 @@ impl<'a, T: Copy> RemoteMemAddrAtomicVec<'a, T> {
 
 pub struct RemoteMemAddrAtomicVecMut<'a, T> {
     pub(crate) c_rma_iocs: Vec<libfabric_sys::fi_rma_ioc>,
-    phantom: PhantomData<&'a mut T>
+    phantom: PhantomData<&'a mut T>,
 }
 
 impl<'a, T: Copy> RemoteMemAddrAtomicVecMut<'a, T> {
@@ -315,7 +319,12 @@ impl<'a, T: Copy> RemoteMemAddrAtomicVecMut<'a, T> {
         self.c_rma_iocs.push(c_rma_ioc);
     }
 
-    pub fn push_raw(&mut self, addr: RemoteMemoryAddress, count: usize, key: &MappedMemoryRegionKey) {
+    pub fn push_raw(
+        &mut self,
+        addr: RemoteMemoryAddress,
+        count: usize,
+        key: &MappedMemoryRegionKey,
+    ) {
         let c_rma_ioc = libfabric_sys::fi_rma_ioc {
             addr: addr.into(),
             count,

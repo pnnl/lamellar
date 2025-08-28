@@ -578,147 +578,147 @@ impl DomainAttr {
     }
 
     /// Returns the domain ID.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::domain` field.
     pub fn domain_id(&self) -> usize {
         self.domain_id
     }
 
     /// Returns the name of the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::name` field.
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Returns the threading model used by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::threading` field.
     pub fn threading(&self) -> &Threading {
         &self.threading
     }
 
     /// Returns the progress model used for control operations in the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::control_progress` field.
     pub fn control_progress(&self) -> &Progress {
         &self.control_progress
     }
 
     /// Returns the progress model used for data operations in the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::data_progress` field.
     pub fn data_progress(&self) -> &Progress {
         &self.data_progress
     }
 
     /// Returns the resource management model used by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::resource_mgmt` field.
     pub fn resource_mgmt(&self) -> &ResourceMgmt {
         &self.resource_mgmt
     }
 
     /// Returns the address vector type used by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::av_type` field.
     pub fn av_type(&self) -> &AddressVectorType {
         &self.av_type
     }
 
     /// Returns the memory registration mode used by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::mr_mode` field.
     pub fn mr_mode(&self) -> &MrMode {
         &self.mr_mode
     }
 
     /// Returns the size of the memory registration key used by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::mr_key_size` field.
     pub fn mr_key_size(&self) -> usize {
         self.mr_key_size
     }
 
     /// Returns the size of the completion queue data used by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::cq_data_size` field.
     pub fn cq_data_size(&self) -> usize {
         self.cq_data_size
     }
 
     /// Returns the number of completion queues supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::cq_cnt` field.
     pub fn cq_cnt(&self) -> usize {
         self.cq_cnt
     }
 
     ///  Returns the number of endpoints supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::ep_cnt` field.
     pub fn ep_cnt(&self) -> usize {
         self.ep_cnt
     }
 
     /// Returns the number of transmit contexts supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::tx_ctx_cnt` field.
     pub fn tx_ctx_cnt(&self) -> usize {
         self.tx_ctx_cnt
     }
 
     /// Returns the number of receive contexts supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::rx_ctx_cnt` field.
     pub fn rx_ctx_cnt(&self) -> usize {
         self.rx_ctx_cnt
     }
 
     /// Returns the maximum number of transmit contexts per endpoint supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::max_ep_tx_ctx` field.
     pub fn max_ep_tx_ctx(&self) -> usize {
         self.max_ep_tx_ctx
     }
 
     /// Returns the maximum number of receive contexts per endpoint supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::max_ep_rx_ctx` field.
     pub fn max_ep_rx_ctx(&self) -> usize {
         self.max_ep_rx_ctx
     }
 
     /// Returns the maximum number of shared transmit contexts per endpoint supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::max_ep_stx_ctx` field
     pub fn max_ep_stx_ctx(&self) -> usize {
         self.max_ep_stx_ctx
     }
 
     /// Returns the maximum number of shared receive contexts per endpoint supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::max_ep_srx_ctx` field
     pub fn max_ep_srx_ctx(&self) -> usize {
         self.max_ep_srx_ctx
     }
 
     /// Returns the number of counters supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::cntr_cnt` field
     pub fn cntr_cnt(&self) -> usize {
         self.cntr_cnt
     }
 
     /// Returns the maximum number of memory regions that can be registered.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::mr_iov_limit` field
     pub fn mr_iov_limit(&self) -> usize {
         self.mr_iov_limit
     }
 
     /// Returns the maximum size of error data that can be reported.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::max_err_data` field
     pub fn max_err_data(&self) -> usize {
         self.max_err_data
@@ -729,28 +729,28 @@ impl DomainAttr {
     }
 
     /// Returns the capabilities supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::caps` field
     pub fn caps(&self) -> &DomainCaps {
         &self.caps
     }
 
     /// Returns the operational modes supported by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::mode` field
     pub fn mode(&self) -> &Mode {
         &self.mode
     }
 
     /// Returns the authentication key used by the domain, if any.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::auth_key` field
     pub fn auth_key(&self) -> &Option<Vec<u8>> {
         &self.auth_key
     }
 
     /// Return the traffica class used by the domain.
-    /// 
+    ///
     /// Corresponds to accessing the `fi_domain_attr::tclass` field
     pub fn traffic_class(&self) -> &TrafficClass {
         &self.traffic_class

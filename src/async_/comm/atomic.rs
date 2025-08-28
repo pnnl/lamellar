@@ -10,11 +10,11 @@ use crate::ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpSta
 use crate::infocapsoptions::{AtomicCap, ReadMod, WriteMod};
 use crate::mr::MemoryRegionDesc;
 use crate::utils::Either;
-use crate::{RemoteMemoryAddress, RemoteMemAddrSlice, RemoteMemAddrSliceMut};
 use crate::{
     async_::ep::AsyncTxEp, comm::atomic::AtomicWriteEpImpl, cq::SingleCompletion,
     mr::MappedMemoryRegionKey, AsFiType, Context,
 };
+use crate::{RemoteMemAddrSlice, RemoteMemAddrSliceMut, RemoteMemoryAddress};
 
 use super::while_try_again;
 
@@ -324,8 +324,6 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     }
 }
 
-
-
 pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
     #[allow(clippy::too_many_arguments)]
     unsafe fn atomic_slice_to_async<T: AsFiType>(
@@ -427,12 +425,7 @@ pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWri
         op: crate::enums::AtomicOp,
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
         assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
-        self.inject_atomic_async(
-            buf,
-            dst_slice.mem_address(),
-            &dst_slice.key(),
-            op,
-        )
+        self.inject_atomic_async(buf, dst_slice.mem_address(), &dst_slice.key(), op)
     }
 
     unsafe fn atomicv_slice_async<T: AsFiType>(
@@ -464,7 +457,6 @@ pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWri
 }
 
 impl<EP: ConnectedAsyncAtomicWriteEp> ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp for EP {}
-
 
 pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
     #[allow(clippy::too_many_arguments)]

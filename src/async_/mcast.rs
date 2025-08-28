@@ -1,4 +1,14 @@
-use crate::{async_::{comm::collective::AsyncCollectiveEp, cq::AsyncReadCq, eq::AsyncReadEq}, comm::collective::CollectiveEp, enums::JoinOptions, ep::{EndpointBase, EpState}, eq::Event, error::Error, fid::{AsRawFid, AsTypedFid, EpRawFid, Fid}, mcast::{MultiCastGroup, MulticastGroupImpl, PendingMulticastGroupCollective}, Context, MyRc};
+use crate::{
+    async_::{comm::collective::AsyncCollectiveEp, cq::AsyncReadCq, eq::AsyncReadEq},
+    comm::collective::CollectiveEp,
+    enums::JoinOptions,
+    ep::{EndpointBase, EpState},
+    eq::Event,
+    error::Error,
+    fid::{AsRawFid, AsTypedFid, EpRawFid, Fid},
+    mcast::{MultiCastGroup, MulticastGroupImpl, PendingMulticastGroupCollective},
+    Context, MyRc,
+};
 
 impl MulticastGroupImpl {
     // pub(crate) async fn join_async_impl(&self, ep: &MyRc<impl AsyncCmEp + AsyncCollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static>, addr: &Address, options: JoinOptions, user_ctx: Option<*mut std::ffi::c_void>) -> Result<Event, Error> {
@@ -42,13 +52,10 @@ impl PendingMulticastGroupCollective {
         options: JoinOptions,
         ctx: &mut Context,
     ) -> Result<(Event, MultiCastGroup), Error> {
-        let event = self.inner
+        let event = self
+            .inner
             .join_collective_async_impl(&ep.inner, options, ctx)
             .await?;
-        Ok(
-            (event, MultiCastGroup {
-                inner: self.inner,
-            })
-        )
+        Ok((event, MultiCastGroup { inner: self.inner }))
     }
 }

@@ -1,10 +1,22 @@
-use crate::{av::{AddressVectorSet, AddressVectorSetImpl}, comm::{collective::CollectiveEp, message::extract_raw_ctx}, enums::{AddressVectorType, JoinOptions}, ep::{EndpointBase, EpState}, eq::JoinCompleteEvent, error::Error, fid::{AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, McRawFid, MutBorrowedTypedFid, OwnedMcFid}, Context, MappedAddress, MyOnceCell, MyRc, MyRefCell, RawMappedAddress, SyncSend};
+use crate::{
+    av_set::{AddressVectorSet, AddressVectorSetImpl},
+    comm::{collective::CollectiveEp, message::extract_raw_ctx},
+    enums::{AddressVectorType, JoinOptions},
+    ep::{EndpointBase, EpState},
+    eq::JoinCompleteEvent,
+    error::Error,
+    fid::{
+        AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, McRawFid, MutBorrowedTypedFid,
+        OwnedMcFid,
+    },
+    Context, MappedAddress, MyOnceCell, MyRc, MyRefCell, RawMappedAddress, SyncSend,
+};
 
 pub(crate) enum MulticastAddressSource {
     MulticastGroup(MyRc<MulticastGroupImpl>),
     AVSet(MyRc<AddressVectorSetImpl>),
     #[allow(dead_code)]
-    RawAddress(RawMappedAddress)
+    RawAddress(RawMappedAddress),
 }
 
 /// Represents a multicast group that is ready for use
@@ -19,12 +31,10 @@ pub struct MulticastGroupCollectiveBuilder {
     pub(crate) avset: MyRc<AddressVectorSetImpl>,
     addr_source: MulticastAddressSource,
 }
-    /// A builder for a [MultiCastGroup]
+/// A builder for a [MultiCastGroup]
 pub struct MulticastGroupBuilder {
     addr_source: MulticastAddressSource,
 }
-
-
 
 /// A mutlicast group that has not been joined yet
 pub struct PendingMulticastGroup {
@@ -53,20 +63,22 @@ impl MulticastGroupBuilder {
 
     /// Creates a new [MulticastGroupBuilder] from a [MultiCastGroup]
     pub fn from_multicast_group(mc_group: &MultiCastGroup) -> Self {
-        Self{
-            addr_source: MulticastAddressSource::MulticastGroup(mc_group.inner.clone())
+        Self {
+            addr_source: MulticastAddressSource::MulticastGroup(mc_group.inner.clone()),
         }
     }
 
     /// Creates a new [MulticastGroupBuilder] from a [MappedAddress]
     pub fn from_raw_addr(raw_addr: &MappedAddress) -> Self {
         Self {
-            addr_source: MulticastAddressSource::RawAddress(RawMappedAddress::Unspec(raw_addr.raw_addr())),
+            addr_source: MulticastAddressSource::RawAddress(RawMappedAddress::Unspec(
+                raw_addr.raw_addr(),
+            )),
         }
     }
 
     /// Creates a new [MulticastGroupCollectiveBuilder] from an [AddressVectorSet]
-    pub fn collective(self, avset: &AddressVectorSet) -> MulticastGroupCollectiveBuilder{
+    pub fn collective(self, avset: &AddressVectorSet) -> MulticastGroupCollectiveBuilder {
         MulticastGroupCollectiveBuilder {
             avset: avset.inner.clone(),
             addr_source: self.addr_source,
@@ -81,27 +93,24 @@ impl MulticastGroupBuilder {
     }
 }
 
-
 impl MulticastGroupCollectiveBuilder {
     /// Builds a new incomplete [MultiCastGroup]
     pub fn build(self) -> PendingMulticastGroupCollective {
         PendingMulticastGroupCollective {
-            inner: MyRc::new(MulticastGroupImpl::new_collective(self.addr_source, &self.avset))
+            inner: MyRc::new(MulticastGroupImpl::new_collective(
+                self.addr_source,
+                &self.avset,
+            )),
         }
     }
 }
-
 
 impl WaitingMulticastGroupCollective {
-
     /// Completes the join process for the multicast group and return the fully established group
     pub fn join_complete(self, _event: JoinCompleteEvent) -> MultiCastGroup {
-        MultiCastGroup {
-            inner: self.inner
-        }
+        MultiCastGroup { inner: self.inner }
     }
 }
-
 
 // impl PendingMulticastGroup {
 //         pub fn join_with_context<
@@ -136,9 +145,7 @@ impl WaitingMulticastGroupCollective {
 //     }
 // }
 
-
 impl PendingMulticastGroupCollective {
-
     /// Joins the multicast group collectively with the given endpoint and options
     pub fn join_collective_with_context<
         E: CollectiveEp + AsTypedFid<EpRawFid> + 'static + SyncSend,
@@ -152,7 +159,7 @@ impl PendingMulticastGroupCollective {
         self.inner
             .join_collective_impl(&ep.inner, options, Some(context.inner_mut()))?;
         Ok(WaitingMulticastGroupCollective {
-            inner: self.inner.clone()
+            inner: self.inner.clone(),
         })
     }
 
@@ -168,10 +175,9 @@ impl PendingMulticastGroupCollective {
     ) -> Result<WaitingMulticastGroupCollective, Error> {
         self.inner.join_collective_impl(&ep.inner, options, None)?;
         Ok(WaitingMulticastGroupCollective {
-            inner: self.inner.clone()
+            inner: self.inner.clone(),
         })
     }
-
 }
 
 // pub struct MultiCastGroup {
@@ -200,8 +206,10 @@ impl MulticastGroupImpl {
     //     }
     // }
 
-
-    pub(crate) fn new_collective(addr: MulticastAddressSource, avset: &MyRc<AddressVectorSetImpl>) -> Self {
+    pub(crate) fn new_collective(
+        addr: MulticastAddressSource,
+        avset: &MyRc<AddressVectorSetImpl>,
+    ) -> Self {
         let oc_set: std::cell::OnceCell<std::rc::Rc<AddressVectorSetImpl>> = MyOnceCell::new();
         if let Err(_err) = oc_set.set(avset.clone()) {
             panic!("Could not set multicast group")
@@ -238,13 +246,13 @@ impl MulticastGroupImpl {
     //     let err =
     //         if let Some(ctx) = context {
     //             unsafe { libfabric_sys::inlined_fi_join(
-    //                 ep.as_typed_fid_mut().as_raw_typed_fid(), 
+    //                 ep.as_typed_fid_mut().as_raw_typed_fid(),
     //                 raw_addr.get(), options.as_raw(), &mut c_mc, (ctx as *mut T).cast()
     //             ) }
     //         }
     //         else {
     //             unsafe { libfabric_sys::inlined_fi_join(
-    //                 ep.as_typed_fid_mut().as_raw_typed_fid(), 
+    //                 ep.as_typed_fid_mut().as_raw_typed_fid(),
     //                 raw_addr.get(), options.as_raw(), &mut c_mc, std::ptr::null_mut()
     //             ) }
     //         };
@@ -281,7 +289,9 @@ impl MulticastGroupImpl {
             match &self.addr_source {
                 MulticastAddressSource::MulticastGroup(mc) => mc.addr.get().unwrap().clone(),
                 MulticastAddressSource::AVSet(avset) => avset.address()?,
-                MulticastAddressSource::RawAddress(_) => {panic!("Cannot call join_collective without a AV set or MC group");}
+                MulticastAddressSource::RawAddress(_) => {
+                    panic!("Cannot call join_collective without a AV set or MC group");
+                }
             }
         };
         let err = unsafe {
@@ -303,19 +313,17 @@ impl MulticastGroupImpl {
             } else {
                 if let Some(avset) = self.avset.get() {
                     self.addr
-                        .set(RawMappedAddress::from_raw(
-                            avset._av_rc.type_(),
-                            unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc) },
-                        ))
+                        .set(RawMappedAddress::from_raw(avset._av_rc.type_(), unsafe {
+                            libfabric_sys::inlined_fi_mc_addr(c_mc)
+                        }))
                         .unwrap()
-                }
-                else {
-                  self.addr
+                } else {
+                    self.addr
                         .set(RawMappedAddress::from_raw(
                             AddressVectorType::Unspec,
                             unsafe { libfabric_sys::inlined_fi_mc_addr(c_mc) },
                         ))
-                        .unwrap()  
+                        .unwrap()
                 }
             }
             #[cfg(feature = "thread-safe")]
@@ -346,7 +354,6 @@ impl MultiCastGroup {
     // pub fn join_with_context<E: CollectiveEp + AsRawTypedFid<Output = EpRawFid> + 'static,T>(&self, ep: &EndpointBase<E>, addr: &Address, options: JoinOptions, context: &mut Context) -> Result<(), Error> {
     //     self.inner.join_impl(&ep.inner, addr, options, Some(context.inner_mut()))
     // }
-
 }
 
 impl AsTypedFid<McRawFid> for MultiCastGroup {

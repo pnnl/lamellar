@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Represents a DMA buffer.
-/// 
+///
 /// Corresponds to `libfabric_sys::fi_mr_dmabuf`.
 pub struct DmaBuf {
     c_dmabuf: libfabric_sys::fi_mr_dmabuf,
@@ -28,7 +28,6 @@ pub(crate) enum OwnedMemoryRegionKey {
     Key(u64),
     RawKey((Vec<u8>, u64)),
 }
-
 
 /// Represents a key needed to access a remote [MemoryRegion].
 pub struct MemoryRegionKey<'a> {
@@ -875,7 +874,10 @@ impl EpBindingMemoryRegion {
     /// Enables a memory region for use.
     ///
     /// Corresponds to `fi_mr_enable`
-    pub fn enable<EP: ActiveEndpoint + 'static, STATE: EpState>(self, ep: &crate::ep::EndpointBase<EP, STATE>) -> Result<MemoryRegion, crate::error::Error> {
+    pub fn enable<EP: ActiveEndpoint + 'static, STATE: EpState>(
+        self,
+        ep: &crate::ep::EndpointBase<EP, STATE>,
+    ) -> Result<MemoryRegion, crate::error::Error> {
         self.bind_ep(ep)?;
         self.mr.inner.enable()?;
         Ok(self.mr)
@@ -913,7 +915,7 @@ pub enum MaybeDisabledMemoryRegion {
 /// A disabled memory region that needs to be bound to an [crate::ep::Endpoint] or a [MemoryRegion].
 pub enum DisabledMemoryRegion {
     EpBind(EpBindingMemoryRegion),
-    RmaEvent(RmaEventMemoryRegion)
+    RmaEvent(RmaEventMemoryRegion),
 }
 
 pub(crate) enum MRBackingBuf<'a> {
@@ -973,7 +975,7 @@ impl<'a> MemoryRegionBuilder<'a> {
 
     /// Indicates that the MR may be used for collective operations.
     /// [Self::access_send] or/and [Self::access_recv] should also be called.
-    /// 
+    ///
     /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_collective(mut self) -> Self {
         //[TODO] Required if the FI_MR_COLLECTIVE mr_mode bit has been set on the domain.
@@ -1119,11 +1121,11 @@ impl<'a> MemoryRegionBuilder<'a> {
         };
 
         let mr = MemoryRegion::from_attr(domain, self.mr_attr, self.flags)?;
-        
+
         if domain.mr_mode().is_endpoint() {
-            Ok(MaybeDisabledMemoryRegion::Disabled(DisabledMemoryRegion::EpBind(EpBindingMemoryRegion {
-                mr,
-            })))
+            Ok(MaybeDisabledMemoryRegion::Disabled(
+                DisabledMemoryRegion::EpBind(EpBindingMemoryRegion { mr }),
+            ))
         } else {
             Ok(MaybeDisabledMemoryRegion::Enabled(mr))
         }
@@ -1276,8 +1278,10 @@ mod tests {
                         MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
                             super::DisabledMemoryRegion::EpBind(_disabled_mr) => todo!(), //disabled_mr.enable(ep),
-                            super::DisabledMemoryRegion::RmaEvent(disabled_mr) => disabled_mr.enable().unwrap(),
-                        }
+                            super::DisabledMemoryRegion::RmaEvent(disabled_mr) => {
+                                disabled_mr.enable().unwrap()
+                            }
+                        },
                     };
                     let _desc = mr.descriptor();
                     // mr.close().unwrap();

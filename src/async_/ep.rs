@@ -38,7 +38,12 @@ impl ConnectionListener {
     pub async fn next(&self) -> Result<Event, crate::error::Error> {
         let res = self
             .eq
-            .async_event_wait(libfabric_sys::FI_CONNREQ, Fid(self.ep_fid as usize), None, None)
+            .async_event_wait(
+                libfabric_sys::FI_CONNREQ,
+                Fid(self.ep_fid as usize),
+                None,
+                None,
+            )
             .await?;
         Ok(res)
     }
@@ -460,8 +465,7 @@ impl<'a> EndpointBuilder<'a, ()> {
 }
 
 impl<'a, E> EndpointBuilder<'a, E> {
-
-        pub fn build_with_separate_cqs<EQ: ?Sized + 'static + SyncSend, CQ: AsyncReadCq + 'static>(
+    pub fn build_with_separate_cqs<EQ: ?Sized + 'static + SyncSend, CQ: AsyncReadCq + 'static>(
         self,
         domain: &crate::domain::DomainBase<EQ>,
         tx_cq: &CompletionQueue<CQ>,
@@ -470,12 +474,14 @@ impl<'a, E> EndpointBuilder<'a, E> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
             EndpointType::Msg => {
-                let conn_ep =  UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                let conn_ep =
+                    UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
                 conn_ep.bind_separate_cqs(tx_cq, rx_cq)?;
                 Ok(Endpoint::ConnectionOriented(conn_ep))
             }
             EndpointType::Dgram | EndpointType::Rdm => {
-                let connless_ep =  UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                let connless_ep =
+                    UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
                 connless_ep.bind_separate_cqs(tx_cq, rx_cq)?;
                 Ok(Endpoint::Connectionless(connless_ep))
             }
@@ -490,12 +496,14 @@ impl<'a, E> EndpointBuilder<'a, E> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
             EndpointType::Msg => {
-                let conn_ep =  UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                let conn_ep =
+                    UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
                 conn_ep.bind_shared_cq(cq)?;
                 Ok(Endpoint::ConnectionOriented(conn_ep))
             }
             EndpointType::Dgram | EndpointType::Rdm => {
-                let connless_ep = UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                let connless_ep =
+                    UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
                 connless_ep.bind_shared_cq(cq)?;
                 Ok(Endpoint::Connectionless(connless_ep))
             }

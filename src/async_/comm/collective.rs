@@ -4,16 +4,14 @@ use crate::{
         ep::{AsyncCmEp, AsyncTxEp},
         eq::AsyncReadEq,
     },
-    comm::collective::{
-        CollectiveEp, CollectiveEpImpl,
-    },
+    comm::collective::{CollectiveEp, CollectiveEpImpl},
     cq::SingleCompletion,
     enums::CollectiveOptions,
     ep::{Connected, Connectionless, EndpointBase, EndpointImplBase},
     infocapsoptions::CollCap,
+    mcast::MultiCastGroup,
     mr::MemoryRegionDesc,
     AsFiType, Context, SyncSend,
-    mcast::MultiCastGroup,
 };
 
 use super::while_try_again;

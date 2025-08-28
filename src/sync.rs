@@ -45,7 +45,6 @@ pub(crate) struct WaitSetImpl {
     _fabric_rc: MyRc<FabricImpl>,
 }
 
-
 /// Represents a wait set in the system.
 ///
 /// Corresponds to a `fi_wait_set` struct.
@@ -177,7 +176,7 @@ impl WaitSet {
     }
 
     /// Waits for events on the WaitSet.
-    /// 
+    ///
     /// Corresponds to `fi_wait`
     pub fn wait(&self, timeout: i32) -> Result<(), crate::error::Error> {
         self.inner.wait(timeout)

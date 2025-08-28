@@ -361,15 +361,14 @@ impl Default for InfoCapsImpl {
 }
 
 /// Represents the information of the libfabric providers found in the system.
-/// 
+///
 /// Corresponds to `fi_info`
 pub struct Info<T> {
     entries: VecDeque<InfoEntry<T>>,
 }
 
-
 /// Builder for `Info` struct to set various parameters before querying.
-/// 
+///
 /// Corresponds to `fi_getinfo` after setting some parameters
 pub struct InfoBuilder<T> {
     hints_info: FabricInfo,
@@ -381,7 +380,6 @@ pub struct InfoBuilder<T> {
 }
 
 impl<T> InfoBuilder<T> {
-
     /// Sets the source address for the info query.
     pub fn source(self, source: ServiceAddress) -> Self {
         let (c_node, c_service) = match source {
@@ -618,7 +616,7 @@ impl<T> InfoEntry<T> {
     }
 
     /// Allocates a new Context.
-    /// 
+    ///
     /// Corresponds to allocating a new `fi_context(2)`.
     pub fn allocate_context(&self) -> Context {
         let ctx_id = self
@@ -878,39 +876,37 @@ impl FabricInfo {
     fn new(info: *mut libfabric_sys::fi_info) -> Self {
         #[allow(unused_mut)]
         let mut fabric_info = Self(info);
-        
-        #[cfg(feature="thread-safe")]
+
+        #[cfg(feature = "thread-safe")]
         {
             let mut threading;
-            #[cfg(feature="threading-domain")]
+            #[cfg(feature = "threading-domain")]
             {
                 threading = Threading::Domain;
             }
-            #[cfg(feature="threading-thread-safe")]
+            #[cfg(feature = "threading-thread-safe")]
             {
                 threading = Threading::Safe;
             }
-            #[cfg(feature="threading-completion")]
+            #[cfg(feature = "threading-completion")]
             {
                 threading = Threading::Completion;
             }
-            // Don't change the order of these two below as endpoint enables fid 
-            #[cfg(feature="threading-fid")]
+            // Don't change the order of these two below as endpoint enables fid
+            #[cfg(feature = "threading-fid")]
             {
                 threading = Threading::Fid;
             }
-            #[cfg(feature="threading-endpoint")]
+            #[cfg(feature = "threading-endpoint")]
             {
                 threading = Threading::Endpoint;
             }
 
-
             fabric_info.set_domain_threading(threading);
         }
-        
 
         fabric_info
-    } 
+    }
 
     fn set_mode(&mut self, mode: Mode) {
         unsafe { (*self.0).mode = mode.as_raw() };
@@ -1095,7 +1091,7 @@ impl FabricInfo {
     }
 }
 
-/// Represents the attributes of an endpoint to be used in a `Info` query. 
+/// Represents the attributes of an endpoint to be used in a `Info` query.
 pub struct EndpointAttrIn<T> {
     hints: InfoHints<T>,
 }
@@ -1163,7 +1159,7 @@ impl<T> DomainAttrIn<T> {
         self
     }
 
-    #[cfg(not(feature="thread-safe"))]
+    #[cfg(not(feature = "thread-safe"))]
     /// Sets the threading model for the domain.
     pub fn threading(mut self, threading: Threading) -> Self {
         self.hints
@@ -1300,7 +1296,6 @@ impl<T> FabricAttrIn<T> {
     }
 }
 
-
 /// Represents the transmit attributes to be used in a `Info` query.
 pub struct TxAttrIn<T> {
     hints: InfoHints<T>,
@@ -1390,7 +1385,6 @@ impl<T> TxAttrIn<T> {
         self
     }
 }
-
 
 /// Represents the receive attributes to be used in a `Info` query.
 pub struct RxAttrIn<T> {

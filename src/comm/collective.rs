@@ -21,8 +21,6 @@ use crate::utils::check_error;
 use crate::AsFiType;
 use crate::Context;
 
-
-
 pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
     fn barrier_impl(
         &self,
@@ -1158,8 +1156,6 @@ impl<EP: CollCap, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> CollectiveEpImpl
 
 impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E, Connected> {}
 impl<E: CollectiveEpImpl> CollectiveEpImpl for EndpointBase<E, Connectionless> {}
-
-
 
 pub struct CollectiveAttr<T> {
     pub(crate) c_attr: libfabric_sys::fi_collective_attr,

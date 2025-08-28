@@ -2,7 +2,6 @@ use core::panic;
 use libfabric::conn_ep::AcceptPendingEndpoint;
 use libfabric::conn_ep::ConnectionPendingEndpoint;
 use libfabric::connless_ep::ConnectionlessEndpoint;
-use libfabric::{enums, MemAddressInfo, RemoteMemAddressInfo};
 use libfabric::mr::MemoryRegion;
 use libfabric::{
     cntr::{Counter, CounterBuilder, ReadCntr, WaitCntr},
@@ -22,6 +21,7 @@ use libfabric::{
     infocapsoptions::{self, MsgDefaultCap, RmaCap, RmaDefaultCap, TagDefaultCap},
     Context, MappedAddress,
 };
+use libfabric::{enums, MemAddressInfo, RemoteMemAddressInfo};
 use std::time::Instant;
 pub enum CompMeth {
     Spin,
@@ -221,7 +221,6 @@ pub enum ConfDomain {
     Bound(BoundDomain),
 }
 
-
 pub fn ft_open_fabric_res<E>(
     info: &InfoEntry<E>,
 ) -> (
@@ -394,53 +393,142 @@ pub fn ft_alloc_active_res<E>(
     // let (tx_cq, tx_cntr, rx_cq, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain);
 
     let ep = match domain {
-        ConfDomain::Unbound(domain) => 
-            match &cq_type {
-                CqType::Spin(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0),
-                },
-                CqType::Sread(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0),
-                },
-                CqType::WaitSet(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0),
-                },
-                CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
-                },
-                CqType::WaitYield(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
-                },
-            }
-        ConfDomain::Bound(domain) => 
-            match &cq_type {
-                CqType::Spin(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
-                },
-                CqType::Sread(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
-                },
-                CqType::WaitSet(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
-                },
-                CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
-                },
-                CqType::WaitYield(eq_cq_opt) => match eq_cq_opt {
-                    EqCqOpt::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false),
-                    EqCqOpt::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, gl_ctx.options & FT_OPT_TX_CQ == 0, rx_cq, gl_ctx.options & FT_OPT_RX_CQ == 0,),
-                },
-            }
-    }.unwrap();
+        ConfDomain::Unbound(domain) => match &cq_type {
+            CqType::Spin(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::Sread(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::WaitSet(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::WaitYield(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+        },
+        ConfDomain::Bound(domain) => match &cq_type {
+            CqType::Spin(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::Sread(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::WaitSet(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+            CqType::WaitYield(eq_cq_opt) => match eq_cq_opt {
+                EqCqOpt::Shared(scq) => {
+                    EndpointBuilder::new(info).build_with_shared_cq(domain, scq, false)
+                }
+                EqCqOpt::Separate(tx_cq, rx_cq) => EndpointBuilder::new(info)
+                    .build_with_separate_cqs(
+                        domain,
+                        tx_cq,
+                        gl_ctx.options & FT_OPT_TX_CQ == 0,
+                        rx_cq,
+                        gl_ctx.options & FT_OPT_RX_CQ == 0,
+                    ),
+            },
+        },
+    }
+    .unwrap();
 
     (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, av)
 }
@@ -456,7 +544,6 @@ pub fn ft_prepare_ep<CNTR: ReadCntr + 'static, I, E>(
 ) {
     match ep {
         Endpoint::Connectionless(ep) => {
-
             let mut bind_cntr = ep.bind_cntr();
 
             if gl_ctx.options & FT_OPT_TX_CNTR != 0 {
@@ -536,8 +623,6 @@ pub fn ft_prepare_ep<CNTR: ReadCntr + 'static, I, E>(
         }
     }
 }
-
-
 
 pub fn ft_complete_connect<E>(
     pending_ep: ConnectionPendingEndpoint<E>,
@@ -624,8 +709,7 @@ pub fn ft_server_connect<
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, mut ep, _) =
                 ft_alloc_active_res(&new_info, gl_ctx, &domain);
             let mr = ft_enable_ep_recv(
-                &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr,
-                &rma_cntr,
+                &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
@@ -633,10 +717,10 @@ pub fn ft_server_connect<
             };
 
             let ep = match ep {
-                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(_) => todo!(),
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(_) => panic!("This should be a server"),
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => ep,
             };
-            
+
             let peding = ft_accept_connection(ep, eq);
             let connected_ep = ft_complete_connect(peding, eq);
             let mut ep = EndpointCaps::ConnectedMsg(connected_ep);
@@ -654,8 +738,7 @@ pub fn ft_server_connect<
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, mut ep, _) =
                 ft_alloc_active_res(&new_info, gl_ctx, &domain);
             let mr = ft_enable_ep_recv(
-                &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr,
-                &rma_cntr,
+                &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
@@ -666,7 +749,7 @@ pub fn ft_server_connect<
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(_) => todo!(),
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => ep,
             };
-            
+
             let peding = ft_accept_connection(ep, eq);
             let connected_ep = ft_complete_connect(peding, eq);
             let mut ep = EndpointCaps::ConnectedTagged(connected_ep);
@@ -893,9 +976,7 @@ pub fn ft_enable_ep_recv<CNTR: ReadCntr + 'static, E, T: 'static>(
     rma_cntr: &Option<Counter<CNTR>>,
 ) -> Option<libfabric::mr::MemoryRegion> {
     let mr = {
-        ft_prepare_ep(
-            info, gl_ctx, ep, tx_cntr, rx_cntr, rma_cntr,
-        );
+        ft_prepare_ep(info, gl_ctx, ep, tx_cntr, rx_cntr, rma_cntr);
         ft_alloc_msgs(info, gl_ctx, domain, ep)
     };
 
@@ -1098,7 +1179,7 @@ pub fn ft_post_rma_inject(
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
     match rma_op {
         RmaOp::RMA_WRITE => {
-            let addr = unsafe {remote.mem_address().add(offset)};
+            let addr = unsafe { remote.mem_address().add(offset) };
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1120,7 +1201,7 @@ pub fn ft_post_rma_inject(
         }
 
         RmaOp::RMA_WRITEDATA => {
-            let addr = unsafe {remote.mem_address().add(offset)};
+            let addr = unsafe { remote.mem_address().add(offset) };
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1162,7 +1243,7 @@ pub fn ft_post_rma(
     tx_cq: &impl ReadCq,
 ) {
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
-    let mem_addr = unsafe {remote.mem_address().add(offset)};
+    let mem_addr = unsafe { remote.mem_address().add(offset) };
     let key = remote.key();
     let buf = &mut gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
     let data_desc = Some(mr.as_ref().unwrap().descriptor());
@@ -2554,16 +2635,16 @@ pub fn ft_reg_mr<I, E: 'static>(
     let mr = match mr {
         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
 
-        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => 
-            match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    match ep {
-                        Endpoint::Connectionless(ep) => ep_binding_memory_region.enable(ep),
-                        Endpoint::ConnectionOriented(ep) => ep_binding_memory_region.enable(ep),
-                    }.unwrap()
-                },
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+            libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => match ep {
+                Endpoint::Connectionless(ep) => ep_binding_memory_region.enable(ep),
+                Endpoint::ConnectionOriented(ep) => ep_binding_memory_region.enable(ep),
             }
+            .unwrap(),
+            libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                rma_event_memory_region.enable().unwrap()
+            }
+        },
     };
 
     mr.into()
@@ -2606,14 +2687,17 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
     //     panic!("Key size does not fit");
     // }
 
-    let mem_info = MemAddressInfo::from_slice(&gl_ctx.buf[..], gl_ctx.rx_buf_index, &mr.as_ref().unwrap().key().unwrap(), info);
+    let mem_info = MemAddressInfo::from_slice(
+        &gl_ctx.buf[..],
+        gl_ctx.rx_buf_index,
+        &mr.as_ref().unwrap().key().unwrap(),
+        info,
+    );
     // if info.domain_attr().mr_mode().is_basic() || info.domain_attr().mr_mode().is_virt_addr() {
     //     let addr = gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + ft_rx_prefix_size(info)]
     //         .as_mut_ptr() as u64;
     //     rma_iov = rma_iov.address(addr);
     // }
-
-
 
     // let key = mr.as_ref().unwrap().key().unwrap();
 
@@ -2629,9 +2713,8 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
     // };
     // rma_iov = rma_iov.key(key);
     let mem_info_bytes = mem_info.to_bytes();
-    gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + mem_info_bytes.len()].copy_from_slice(
-        mem_info_bytes
-    );
+    gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + mem_info_bytes.len()]
+        .copy_from_slice(mem_info_bytes);
 
     ft_tx(
         gl_ctx,
@@ -2643,18 +2726,18 @@ pub fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefaultCap>(
     );
     ft_get_rx_comp(gl_ctx, rx_cntr, cq_type, gl_ctx.rx_seq);
 
-    let mem_info = unsafe { MemAddressInfo::from_bytes(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + mem_info_bytes.len()]) };
+    let mem_info = unsafe {
+        MemAddressInfo::from_bytes(
+            &gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + mem_info_bytes.len()],
+        )
+    };
 
-    
     let peer_info = match domain {
-        ConfDomain::Unbound(domain) => {
-            mem_info.into_remote_info(domain)
-        }
+        ConfDomain::Unbound(domain) => mem_info.into_remote_info(domain),
 
-        ConfDomain::Bound(domain) => {            
-            mem_info.into_remote_info(domain)
-        }
-    }.unwrap();
+        ConfDomain::Bound(domain) => mem_info.into_remote_info(domain),
+    }
+    .unwrap();
 
     match cq_type {
         CqType::Spin(cq_type) => match cq_type {
@@ -2774,16 +2857,19 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
                 ft_alloc_active_res(&entry, gl_ctx, &domain);
 
             let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr,
-                &rma_cntr,
+                &entry, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let enable_ep = match ep {
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),
             };
             let pending_conn_ep = match enable_ep {
-                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap()),
-                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_) => panic!("This should be a client"),
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => {
+                    ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap())
+                }
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_) => {
+                    panic!("This should be a client")
+                }
             };
 
             let ep = ft_complete_connect(pending_conn_ep, &eq);
@@ -2806,8 +2892,7 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, mut ep, _) =
                 ft_alloc_active_res(&entry, gl_ctx, &domain);
             let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr,
-                &rma_cntr,
+                &entry, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
 
             let enable_ep = match ep {
@@ -2815,8 +2900,12 @@ pub fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'static>
                 _ => panic!("Unexpected Endpoint Type"),
             };
             let pending_conn_ep = match enable_ep {
-                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap()),
-                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_) => panic!("This should be a client"),
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => {
+                    ft_connect_ep(ep, &eq, &entry.dest_addr().unwrap())
+                }
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_) => {
+                    panic!("This should be a client")
+                }
             };
 
             let ep = ft_complete_connect(pending_conn_ep, &eq);

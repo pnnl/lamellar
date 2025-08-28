@@ -1,5 +1,8 @@
 use crate::fid::{AsTypedFid, AvRawFid, BorrowedTypedFid, EpRawFid, MrRawFid};
-use std::{marker::PhantomData, os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd}};
+use std::{
+    marker::PhantomData,
+    os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd},
+};
 
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -249,7 +252,6 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
     /// Peeks an error event from the event queue and returns it without removing it from the queue
     fn peekerr(&self) -> Result<EventError, crate::error::Error>;
 }
-
 
 /// A trait that provides the operations of an [EventQueue] configured with wait capabilities
 pub trait WaitEq: ReadEq {
@@ -610,7 +612,7 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
             }
 
             if event == &libfabric_sys::FI_MR_COMPLETE {
-                Event::MrComplete(MrCompleteEvent{
+                Event::MrComplete(MrCompleteEvent {
                     c_entry,
                     phantom: PhantomData,
                 })
@@ -856,13 +858,11 @@ impl<'a> EventQueueBuilder<'a, false, true, false, false> {
 impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
     EventQueueBuilder<'a, WRITE, WAIT, RETRIEVE, FD>
 {
-
     /// Sets the size of the event queue
     pub fn size(mut self, size: usize) -> Self {
         self.eq_attr.size(size);
         self
     }
-
 
     /// Enables write operations on the event queue
     pub fn write(mut self) -> EventQueueBuilder<'a, true, WAIT, RETRIEVE, FD> {
@@ -910,7 +910,6 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
             ctx: self.ctx,
         }
     }
-
 
     /// Enables waiting on the event queue using a mutex condition variable
     pub fn wait_mutex(mut self) -> EventQueueBuilder<'a, WRITE, true, true, false> {
@@ -1103,7 +1102,10 @@ impl<F: AsRawFid> EventQueueEntry<F> {
             data: 0,
         };
 
-        Self { c_entry, phantom: PhantomData}
+        Self {
+            c_entry,
+            phantom: PhantomData,
+        }
     }
 
     /// Returns a reference to the raw event queue identifier.
@@ -1118,7 +1120,6 @@ impl<F: AsRawFid> EventQueueEntry<F> {
         unsafe { *context_writable_usize = *(context.inner_mut() as *mut usize) };
         self
     }
-
 
     /// Sets the data for the event queue entry.
     pub fn set_data(&mut self, data: u64) -> &mut Self {
@@ -1198,10 +1199,9 @@ impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
     }
 }
 
-
 impl<const ETYPE: libfabric_sys::_bindgen_ty_18> Drop for EventQueueCmEntry<ETYPE> {
     fn drop(&mut self) {
-        unsafe{ libfabric_sys::fi_freeinfo(self.c_entry.info)}
+        unsafe { libfabric_sys::fi_freeinfo(self.c_entry.info) }
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::cq::ReadCq;
-use crate::cq::WaitCq;
 use crate::cq::SingleCompletion;
+use crate::cq::WaitCq;
 use crate::domain::{DomainBase, DomainImplBase};
 use crate::fid::AsTypedFid;
 use crate::fid::BorrowedTypedFid;
@@ -404,21 +404,21 @@ impl<'a> Future for AsyncTransferCq<'a> {
         let mut_self = self.get_mut();
         ready!(mut_self.fut.as_mut().poll(cx))?;
         let state = mut_self.fut.context.state().take();
-            // mut_self
-            //     .fut
-            //     .cq
-            //     .pending_entries
-            //     .fetch_sub(1, Ordering::SeqCst);
-            mut_self.fut.context.reset();
-            match state {
-                Some(state) => match state {
-                    crate::ContextState::Eq(_) => panic!("Should never find events here"),
-                    crate::ContextState::Cq(comp) => return std::task::Poll::Ready(comp),
-                },
-                None => {
-                    panic!("Should always have something to read when ready");
-                }
+        // mut_self
+        //     .fut
+        //     .cq
+        //     .pending_entries
+        //     .fetch_sub(1, Ordering::SeqCst);
+        mut_self.fut.context.reset();
+        match state {
+            Some(state) => match state {
+                crate::ContextState::Eq(_) => panic!("Should never find events here"),
+                crate::ContextState::Cq(comp) => return std::task::Poll::Ready(comp),
+            },
+            None => {
+                panic!("Should always have something to read when ready");
             }
+        }
         // if mut_self.last_poll.is_none() {
         //     mut_self.last_poll = Some(Instant::now());
         //     // println!(
@@ -749,7 +749,7 @@ impl<'a> Future for AsyncTransferCq<'a> {
         //             // );
         //             // mut_self.fut = Box::pin(CqAsyncReadOwned::new(1, mut_self.fut.cq));
         //         }
-            // }
+        // }
         // }
     }
 }
@@ -843,7 +843,6 @@ impl<'a> Future for AsyncTransferCq<'a> {
 
 impl<'a> CqAsyncReadOwned<'a> {
     pub(crate) fn new(cq: &'a AsyncCompletionQueueImpl, context: &'a mut Context) -> Self {
-    
         Self {
             buf: None,
             cq,
@@ -904,17 +903,12 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
             // Note that we probably need to make sure no one polls the cq before we
             // actually create the future
             if mut_self.buf.is_none() {
-
                 let (err, _guard) = match &mut_self.cq.base {
                     AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
                         let can_wait = mut_self.cq.trywait();
                         if can_wait.is_err() {
                             // println!("Cannot block");
-                            let to_ret = (
-                                async_cq
-                                    .get_ref()
-                                    .read(1),
-                                None);
+                            let to_ret = (async_cq.get_ref().read(1), None);
                             to_ret
                         } else {
                             // TODO: Do we need to skip calling readable if we were awaken?
@@ -934,18 +928,14 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                             // println!("Did not block");
                             // let cq_guard = mut_self.cq.base.get_ref().entry_buff.write();
 
-                            (
-                                async_cq.get_ref().read(1),
-                                Some(_guard),
-                            )
+                            (async_cq.get_ref().read(1), Some(_guard))
                         }
                     }
                     AsyncCompletionQueueImplBase::SpinningCQ(cq) => {
-                        let to_ret = ( cq.read(1), None);
+                        let to_ret = (cq.read(1), None);
                         to_ret
                     }
                 };
-
 
                 match err {
                     Err(error) => {
@@ -954,15 +944,15 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                             if matches!(error.kind, crate::error::ErrorKind::ErrorAvailable) {
                                 let mut err = CompletionError::new();
                                 mut_self.cq.readerr_in(&mut err, 0)?;
-                                if err.c_err.op_context as usize == mut_self.context.inner() as usize {
+                                if err.c_err.op_context as usize
+                                    == mut_self.context.inner() as usize
+                                {
                                     // println!("Found error in context!");
                                     // panic!("Error {:?}", err.error());
-                                    return std::task::Poll::Ready(Err(Error::from_completion_queue_err(
-                                        err,
-                                    )));
-                                }
-                                else
-                                {
+                                    return std::task::Poll::Ready(Err(
+                                        Error::from_completion_queue_err(err),
+                                    ));
+                                } else {
                                     // println!("Found error in context but not for me!");
                                     // We need to return the error to the context
                                     match mut_self.context.0 {
@@ -972,18 +962,18 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                                                 .as_mut()
                                                 .unwrap()
                                         }
-                                        .set_completion_done(Err(Error::from_completion_queue_err(
-                                            err,
-                                        ))),
+                                        .set_completion_done(Err(
+                                            Error::from_completion_queue_err(err),
+                                        )),
                                         ContextType::Context2(_) => unsafe {
                                             (err.c_err.op_context as *mut std::ffi::c_void
                                                 as *mut crate::Context2)
                                                 .as_mut()
                                                 .unwrap()
                                         }
-                                        .set_completion_done(Err(Error::from_completion_queue_err(
-                                            err,
-                                        ))),
+                                        .set_completion_done(Err(
+                                            Error::from_completion_queue_err(err),
+                                        )),
                                     }
                                     cx.waker().wake_by_ref();
                                     return std::task::Poll::Pending;
@@ -1020,8 +1010,7 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                                 context.set_completion_done(Ok(d.clone()));
                                 mut_self.buf = None;
                                 done = false;
-                            }
-                            else {
+                            } else {
                                 context.set_completion_done(Ok(d.clone()));
                             }
                         }
@@ -1034,14 +1023,13 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                                 context.set_completion_done(Ok(d.clone()));
                                 mut_self.buf = None;
                                 done = false;
-                            }
-                            else {
+                            } else {
                                 context.set_completion_done(Ok(d.clone()));
                                 mut_self.buf = None;
                             }
                         }
                     }
-                    
+
                     done
                 },
                 None => {
@@ -1053,8 +1041,7 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                 // Otherwise we need to poll again to handle the remaining ones
                 // println!("All done");
                 return std::task::Poll::Ready(Ok(()));
-            }
-            else {
+            } else {
                 cx.waker().wake_by_ref();
                 return std::task::Poll::Pending;
             }

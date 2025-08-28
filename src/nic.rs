@@ -1,6 +1,6 @@
 #[derive(Clone)]
 /// Represents a Network Interface Card (NIC) in the system.
-/// 
+///
 /// Corresponds to a `fi_nic` struct.
 pub struct Nic {
     pub device_attr: Option<DeviceAttr>,

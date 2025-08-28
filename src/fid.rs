@@ -1,7 +1,7 @@
+use crate::{error, MyRc};
 use std::marker::PhantomData;
 #[cfg(feature = "threading-completion")]
 use std::sync::OnceLock;
-use crate::{error, MyRc};
 pub(crate) type RawFid = *mut libfabric_sys::fid;
 
 #[derive(Hash, Clone, Copy)]

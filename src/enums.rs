@@ -57,16 +57,15 @@ gen_enum!(
     (LowerEffort, 1)
 );
 
-
 impl From<TrafficClass> for Dscp {
     fn from(tc: TrafficClass) -> Self {
-        unsafe {Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_get(tc.as_raw()))}
+        unsafe { Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_get(tc.as_raw())) }
     }
 }
 
 impl From<Dscp> for TrafficClass {
     fn from(dscp: Dscp) -> Self {
-        unsafe {Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_set(dscp.as_raw()))}
+        unsafe { Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_set(dscp.as_raw())) }
     }
 }
 
@@ -137,7 +136,7 @@ gen_enum!(
 );
 
 /// A trait for atomic operations that can be converted to their raw representation.
-/// 
+///
 /// Used as a bound for functions that accept atomic operations.
 pub trait AtomicOperation {
     fn as_raw(&self) -> u32;
@@ -384,7 +383,7 @@ gen_enum!(
 
 gen_enum!(
     /// An enumeration of endpoint option levels.
-    /// 
+    ///
     /// Corresponds to `FI_OPT_ENDPOINT` in libfabric.
     EndpointOptLevel,
     libfabric_sys::_bindgen_ty_19,
@@ -393,7 +392,7 @@ gen_enum!(
 
 gen_enum!(
     /// An enumeration of endpoint types.
-    /// 
+    ///
     /// Corresponds to `fi_ep_type` in libfabric.
     EndpointType,
     libfabric_sys::fi_ep_type,
@@ -405,7 +404,7 @@ gen_enum!(
 
 gen_enum!(
     /// An enumeration of host memory peer-to-peer support levels.
-    /// 
+    ///
     /// Corresponds to `FI_HMEM_P2P_` values in libfabric.
     HmemP2p,
     libfabric_sys::_bindgen_ty_21,
@@ -480,7 +479,7 @@ use crate::trigger::{TriggerThreshold, TriggerXpu};
 
 #[derive(Clone, Copy, Debug)]
 /// Represents the mode flags for an endpoint, domain, or fabric.
-/// 
+///
 /// Corresponds to `mode` field in different structs in libfabric.
 pub struct Mode {
     c_flags: u64,
@@ -542,9 +541,8 @@ impl Default for Mode {
     }
 }
 
-
 ///  Memory registration mode flags.
-/// 
+///
 /// Corresponds to `FI_MR_` values in libfabric.
 #[derive(Clone, Copy, Debug)]
 pub struct MrMode {
@@ -678,8 +676,8 @@ impl Default for MrAccess {
 }
 gen_enum!(
     /// An enumeration of authentication key types.
-    UserId, 
-    u64, 
+    UserId,
+    u64,
     (AuthKey, libfabric_sys::FI_AUTH_KEY)
 );
 

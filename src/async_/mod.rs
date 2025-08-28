@@ -1,6 +1,5 @@
 use crate::error::Error;
 
-pub mod mcast;
 pub mod av;
 pub mod comm;
 pub mod conn_ep;
@@ -9,6 +8,7 @@ pub mod cq;
 pub mod domain;
 pub mod ep;
 pub mod eq;
+pub mod mcast;
 pub mod mr;
 pub mod xcontext;
 
