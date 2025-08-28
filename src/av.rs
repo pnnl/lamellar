@@ -1311,13 +1311,75 @@ impl<'a,  Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static> AddressVectorSetBuild
 
     /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
     ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_BARRIER_SET .
+    pub fn support_barrier(mut self) -> Self {
+        self.avset_attr.support_barrier();
+        self
+    }
+
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_BROADCAST_SET .
+    pub fn support_broadcast(mut self) -> Self {
+        self.avset_attr.support_broadcast();
+        self
+    }
+
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
     /// `options` captures the [flags](AVSetOptions) that can be possibly set for an AV set.
     ///
-    /// Corresponds to setting the `fi_av_set_attr::flags` field.
-    pub fn options(mut self, options: AVSetOptions) -> Self {
-        //[TODO] We should provide different function for each bitflag.
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_ALLTOALL_SET .
+    pub fn support_alltoall(mut self) -> Self {
+        self.avset_attr.support_alltoall();
+        self
+    }
 
-        self.avset_attr.options(options);
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_ALLREDUCE_SET .
+    pub fn support_allreduce(mut self) -> Self {
+        self.avset_attr.support_allreduce();
+        self
+    }
+
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_GATHER_SET .
+    pub fn support_allgather(mut self) -> Self {
+        self.avset_attr.support_allgather();
+        self
+    }
+
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_REDUCE_SCATTER_SET .
+    pub fn support_reduce_scatter(mut self) -> Self {
+        self.avset_attr.support_reduce_scatter();
+        self
+    }
+
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_REDUCE_SET .
+    pub fn support_reduce(mut self) -> Self {
+        self.avset_attr.support_reduce();
+        self
+    }
+
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_SCATTER_SET .
+    pub fn support_scatter(mut self) -> Self {
+        self.avset_attr.support_scatter();
+        self
+    }
+
+    /// May be used to configure the AV set, including restricting which collective operations the AV set needs to support.
+    ///
+    /// Corresponds to oring the `fi_av_set_attr::flags` field with FI_GATHER_SET .
+    pub fn support_gather(mut self) -> Self {
+        self.avset_attr.support_gather();
         self
     }
 
@@ -1470,8 +1532,48 @@ impl AddressVectorSetAttr {
         self
     }
 
-    pub(crate) fn options(&mut self, options: AVSetOptions) -> &mut Self {
-        self.c_attr.flags = options.as_raw();
+    pub(crate) fn support_barrier(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_BARRIER_SET;
+        self
+    }
+
+    pub(crate) fn support_broadcast(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_BROADCAST_SET;
+        self
+    }
+    
+    pub(crate) fn support_alltoall(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_ALLTOALL_SET;
+        self
+    }
+
+    pub(crate) fn support_allreduce(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_ALLREDUCE_SET;
+        self
+    }
+
+    pub(crate) fn support_allgather(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_ALLGATHER_SET;
+        self
+    }
+
+    pub(crate) fn support_reduce_scatter(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_REDUCE_SCATTER_SET;
+        self
+    }
+
+    pub(crate) fn support_reduce(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_REDUCE_SET;
+        self
+    }
+
+    pub(crate) fn support_scatter(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_REDUCE_SCATTER_SET;
+        self
+    }
+
+    pub(crate) fn support_gather(&mut self) -> &mut Self {
+        self.c_attr.flags |= libfabric_sys::FI_GATHER_SET;
         self
     }
 
