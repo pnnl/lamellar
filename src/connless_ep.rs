@@ -25,7 +25,6 @@ impl<E> UninitConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn Rea
     ///
     /// Corresponds to `fi_bind` followed by `fi_enable` in libfabric.
     pub fn enable< Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static>(self, av: &AddressVectorBase<Mode, EQ>) -> Result<ConnectionlessEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
-        // TODO: Move this into an UninitEp struct
         self.bind_av(av)?;
         let err =
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };

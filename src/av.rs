@@ -643,7 +643,6 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Block, EQ> {
         addr: AvInAddress,
         options: AVOptions,
     ) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> {
-        // [TODO] handle async
         let fi_addresses = match addr {
             AvInAddress::String(str_addr) => {
                 self.inner.insertsvc_str(str_addr, options.as_raw(), None)?
@@ -688,7 +687,6 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<Block, EQ> {
         options: AVOptions,
         ctx: &mut Context,
     ) -> Result<Vec<Option<MappedAddress>>, crate::error::Error> {
-        // [TODO] handle async
         let fi_addresses = match addr {
             AvInAddress::String(str_addr) => {
                 self.inner
@@ -767,7 +765,6 @@ impl<EQ: ReadEq + ?Sized + 'static> AddressVectorBase<NoBlock, EQ> {
         options: AVOptions,
         ctx: &mut Context,
     ) -> Result<PendingAVTranslation, crate::error::Error> {
-        // [TODO] handle async
         let fi_addresses = match addr {
             AvInAddress::String(str_addr) => {
                 self.inner

@@ -972,7 +972,8 @@ impl<'a> MemoryRegionBuilder<'a> {
     }
 
     /// Indicates that the MR may be used for collective operations.
-    ///
+    /// [Self::access_send] or/and [Self::access_recv] should also be called.
+    /// 
     /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_collective(mut self) -> Self {
         //[TODO] Required if the FI_MR_COLLECTIVE mr_mode bit has been set on the domain.

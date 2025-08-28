@@ -1723,7 +1723,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
-    //[TODO] FIXME
     /// Sets whether CUDA API usage is permitted for the endpoint.
     /// 
     /// Corresponds to `fi_setopt` with `FI_OPT_CUDA_API_PERMITTED`
@@ -1744,7 +1743,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
     
-    //[TODO] FIXME
     /// Sets whether shared memory usage is permitted for the endpoint.
     /// 
     /// Corresponds to `fi_setopt` with `FI_OPT_SHARED_MEMORY_PERMITTED`
@@ -1765,7 +1763,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
-    //[TODO] FIXME
     /// Sets whether maximum message size operations are permitted for the endpoint.
     /// 
     /// Corresponds to `fi_setopt` with `FI_OPT_MAX_MSG_SIZE`
@@ -1786,7 +1783,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
-    //[TODO] FIXME
     /// Sets whether maximum tagged message size operations are permitted for the endpoint.
     /// 
     /// Corresponds to `fi_setopt` with `FI_OPT_MAX_TAGGED_SIZE`
@@ -1807,7 +1803,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
-    //[TODO] FIXME
     /// Sets whether maximum RMA size operations are permitted for the endpoint.
     /// 
     /// Corresponds to `fi_setopt` with `FI_OPT_MAX_RMA_SIZE`
@@ -1829,7 +1824,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
     }
 
     
-    //[TODO] FIXME
     fn set_max_atomic_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1847,7 +1841,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
-    //[TODO] FIXME
     fn set_inject_tagged_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1865,7 +1858,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
-    //[TODO] FIXME
     fn set_inject_rma_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1883,7 +1875,6 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
-    //[TODO] FIXME
     fn set_inject_atomic_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();

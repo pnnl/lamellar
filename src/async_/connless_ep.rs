@@ -18,7 +18,6 @@ impl<EP> ConnlessEp for ConnectionlessEndpointBase<EP> {}
 
 impl<E> UninitConnectionlessEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
     pub fn enable<EQ: ?Sized + ReadEq + 'static>(self, av: &AddressVectorBase<NoBlock, EQ>) -> Result<ConnectionlessEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>>, crate::error::Error> {
-        // TODO: Move this into an UninitEp struct
         self.bind_av(av)?;
         let err =
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };

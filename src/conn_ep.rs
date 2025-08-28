@@ -83,8 +83,6 @@ impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq
 
 impl<EP: AsTypedFid<EpRawFid>> AcceptPendingEndpointBase<EP> {
     
-    // [TODO] Should only be available when ep was created from a connection request Info
-    /// Accepts an incoming connection request with additional parameters.
     /// 
     /// Corrsponds to `fi_accept` in libfabric.
     pub fn accept_with<T0>(self, param: &[T0]) -> Result<ConnectionPendingEndpointBase<EP>, crate::error::Error> {
@@ -216,7 +214,6 @@ impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
 
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
 
-    // [TODO]: Should this consume self and return an UnconnectedEndpoint?
     /// Shuts down the connection associated with the endpoint.
     /// 
     /// After calling this method, the endpoint will no longer be able to send or receive data.
