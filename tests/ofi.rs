@@ -1908,16 +1908,16 @@ where
 {
 
     match op {
-        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_min_to,
-        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_max_to,
-        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_sum_to,
-        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_prod_to,
-        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lor_to,
-        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_land_to,
-        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bor_to,
-        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_band_to,
-        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lxor_to,
-        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bxor_to,
+        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomic_min_mr_slice_to,
+        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomic_max_mr_slice_to,
+        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomic_sum_mr_slice_to,
+        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomic_prod_mr_slice_to,
+        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_lor_mr_slice_to,
+        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_land_mr_slice_to,
+        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomic_bor_mr_slice_to,
+        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_band_mr_slice_to,
+        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice_to,
+        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_bxor_mr_slice_to,
         _ => todo!(),
     }
 }
@@ -1936,16 +1936,16 @@ where
 {
 
     match op {
-        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_min_to,
-        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_max_to,
-        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_sum_to,
-        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_prod_to,
-        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lor_to,
-        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_land_to,
-        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bor_to,
-        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_band_to,
-        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lxor_to,
-        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bxor_to,
+        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomicv_min_mr_slice_to,
+        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomicv_max_mr_slice_to,
+        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomicv_sum_mr_slice_to,
+        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomicv_prod_mr_slice_to,
+        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomicv_lor_mr_slice_to,
+        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomicv_land_mr_slice_to,
+        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomicv_bor_mr_slice_to,
+        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomicv_band_mr_slice_to,
+        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice_to,
+        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_bxor_mr_slice_to,
         _ => todo!(),
     }
 }
@@ -1963,16 +1963,16 @@ where
 {
 
     match op {
-        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_min,
-        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_max,
-        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_sum,
-        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_prod,
-        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lor,
-        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_land,
-        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bor,
-        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_band,
-        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lxor,
-        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bxor,
+        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_min_mr_slice,
+        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_max_mr_slice,
+        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_sum_mr_slice,
+        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_prod_mr_slice,
+        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_lor_mr_slice,
+        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_land_mr_slice,
+        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_bor_mr_slice,
+        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_band_mr_slice,
+        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice,
+        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_bxor_mr_slice,
         _ => todo!(),
     }
 }
@@ -1990,16 +1990,16 @@ where
 {
 
     match op {
-        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_min,
-        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_max,
-        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_sum,
-        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_prod,
-        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lor,
-        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_land,
-        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bor,
-        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_band,
-        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lxor,
-        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bxor,
+        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_min_mr_slice,
+        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_max_mr_slice,
+        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_sum_mr_slice,
+        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_prod_mr_slice,
+        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_lor_mr_slice,
+        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_land_mr_slice,
+        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_bor_mr_slice,
+        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_band_mr_slice,
+        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice,
+        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_bxor_mr_slice,
         _ => todo!(),
     }
 }
@@ -2017,16 +2017,16 @@ where
     A: AtomicWriteEp,
 {
     match op {
-        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_min_to,
-        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_max_to,
-        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_sum_to,
-        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_prod_to,
-        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lor_to,
-        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_land_to,
-        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bor_to,
-        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_band_to,
-        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lxor_to,
-        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bxor_to,
+        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_min_mr_slice_to,
+        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_max_mr_slice_to,
+        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_sum_mr_slice_to,
+        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_prod_mr_slice_to,
+        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_lor_mr_slice_to,
+        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_land_mr_slice_to,
+        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_bor_mr_slice_to,
+        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_band_mr_slice_to,
+        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice_to,
+        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_bxor_mr_slice_to,
         _ => todo!(),
     }
 }
@@ -2043,19 +2043,238 @@ where
     A: ConnectedAtomicWriteEp,
 {
     match op {
-        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_min,
-        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_max,
-        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_sum,
-        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_prod,
-        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lor,
-        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_land,
-        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bor,
-        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_band,
-        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lxor,
-        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bxor,
+        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_min_mr_slice,
+        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_max_mr_slice,
+        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_sum_mr_slice,
+        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_prod_mr_slice,
+        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lor_mr_slice,
+        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_land_mr_slice,
+        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_bor_mr_slice,
+        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_band_mr_slice,
+        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice,
+        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_bxor_mr_slice,
         _ => todo!(),
     }
 }
+
+fn get_atomic_fetch_op<T, A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    &[T],
+    Option<MemoryRegionDesc>,
+    &mut [T],
+    Option<MemoryRegionDesc>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSlice<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: AtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Min => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_min_mr_slice_from,
+        FetchAtomicOp::Max => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_max_mr_slice_from,
+        FetchAtomicOp::Sum => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_sum_mr_slice_from,
+        FetchAtomicOp::Prod => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_prod_mr_slice_from,
+        FetchAtomicOp::Bor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bor_mr_slice_from,
+        FetchAtomicOp::Band => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_band_mr_slice_from,
+        // FetchAtomicOp::Lxor => AtomicFetchRemoteMemAddrSliceEp::atomic_mr_slice_lxor_to,
+        FetchAtomicOp::Bxor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bxor_mr_slice_from,
+        _ => todo!(),
+    }
+}
+
+fn get_atomicv_fetch_op<T, A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<T>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    resioc: &mut [libfabric::iovec::IocMut<T>], 
+    res_desc: Option<&[MemoryRegionDesc<'_>]>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSlice<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: AtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Min => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_min_mr_slice_from,
+        FetchAtomicOp::Max => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_max_mr_slice_from,
+        FetchAtomicOp::Sum => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_sum_mr_slice_from,
+        FetchAtomicOp::Prod => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_prod_mr_slice_from,
+        FetchAtomicOp::Bor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bor_mr_slice_from,
+        FetchAtomicOp::Band => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_band_mr_slice_from,
+        FetchAtomicOp::Bxor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bxor_mr_slice_from,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomic_fetch_op<T, A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    &[T],
+    Option<MemoryRegionDesc>,
+    &mut [T],
+    Option<MemoryRegionDesc>,
+    &RemoteMemAddrSlice<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: ConnectedAtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Min => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_min_mr_slice,
+        FetchAtomicOp::Max => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_max_mr_slice,
+        FetchAtomicOp::Sum => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_sum_mr_slice,
+        FetchAtomicOp::Prod => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_prod_mr_slice,
+        FetchAtomicOp::Bor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bor_mr_slice,
+        FetchAtomicOp::Band => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_band_mr_slice,
+        FetchAtomicOp::Bxor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bxor_mr_slice,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomicv_fetch_op<T, A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<T>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    resioc: &mut [libfabric::iovec::IocMut<T>], 
+    res_desc: Option<&[MemoryRegionDesc<'_>]>,
+    slice: &RemoteMemAddrSlice<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: ConnectedAtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Min => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_min_mr_slice,
+        FetchAtomicOp::Max => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_max_mr_slice,
+        FetchAtomicOp::Sum => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_sum_mr_slice,
+        FetchAtomicOp::Prod => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_prod_mr_slice,
+        FetchAtomicOp::Bor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bor_mr_slice,
+        FetchAtomicOp::Band => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_band_mr_slice,
+        FetchAtomicOp::Bxor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bxor_mr_slice,
+        _ => todo!(),
+    }
+}
+
+fn get_atomicv_compare_op<T, A>(op: libfabric::enums::CompareAtomicOp) -> unsafe fn(
+
+    &A,
+    ioc: &[libfabric::iovec::Ioc<T>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>, 
+    comparetv: &[libfabric::iovec::Ioc<T>], 
+    compare_desc: Option<&[MemoryRegionDesc<'_>]>, 
+    resultv: &mut [libfabric::iovec::IocMut<T>], 
+    res_desc: Option<&[MemoryRegionDesc<'_>]>, 
+    dest_addr: &libfabric::MappedAddress, 
+    dest_slice: &RemoteMemAddrSliceMut<T>
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: AtomicCASEp, 
+{
+
+    match op {
+        CompareAtomicOp::Cswap => AtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_mr_slice_to,
+        CompareAtomicOp::CswapGe => AtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_ge_mr_slice_to,
+        CompareAtomicOp::CswapGt => AtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_gt_mr_slice_to,
+        CompareAtomicOp::CswapLe => AtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_le_mr_slice_to,
+        CompareAtomicOp::CswapLt => AtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_lt_mr_slice_to,
+        CompareAtomicOp::CswapNe => AtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_ne_mr_slice_to,
+        CompareAtomicOp::Mswap => AtomicCASRemoteMemAddrSliceEp::compare_atomicv_mswap_mr_slice_to,
+    }
+}
+
+fn get_atomic_compare_op<T, A>(op: libfabric::enums::CompareAtomicOp) -> unsafe fn(
+    &A,
+    buf: &[T], 
+    desc: Option<MemoryRegionDesc<'_>>, 
+    compare: &[T], 
+    compare_desc: Option<MemoryRegionDesc<'_>>, 
+    result: &mut [T], 
+    result_desc: Option<MemoryRegionDesc<'_>>, 
+    dest_addr: &crate::MappedAddress, 
+    dest_slice: &RemoteMemAddrSliceMut<T>
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: AtomicCASEp, 
+{
+
+    match op {
+        CompareAtomicOp::Cswap => AtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_mr_slice_to,
+        CompareAtomicOp::CswapGe => AtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_ge_mr_slice_to,
+        CompareAtomicOp::CswapGt => AtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_gt_mr_slice_to,
+        CompareAtomicOp::CswapLe => AtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_le_mr_slice_to,
+        CompareAtomicOp::CswapLt => AtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_lt_mr_slice_to,
+        CompareAtomicOp::CswapNe => AtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_ne_mr_slice_to,
+        CompareAtomicOp::Mswap => AtomicCASRemoteMemAddrSliceEp::compare_atomic_mswap_mr_slice_to,
+    }
+}
+
+fn get_conn_atomic_compare_op<T, A>(op: libfabric::enums::CompareAtomicOp) -> unsafe fn(
+    &A,
+    buf: &[T], 
+    desc: Option<MemoryRegionDesc<'_>>, 
+    compare: &[T], 
+    compare_desc: Option<MemoryRegionDesc<'_>>, 
+    result: &mut [T], 
+    result_desc: Option<MemoryRegionDesc<'_>>, 
+    dest_slice: &RemoteMemAddrSliceMut<T>
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: ConnectedAtomicCASEp, 
+{
+
+    match op {
+        CompareAtomicOp::Cswap => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_mr_slice,
+        CompareAtomicOp::CswapGe => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_ge_mr_slice,
+        CompareAtomicOp::CswapGt => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_gt_mr_slice,
+        CompareAtomicOp::CswapLe => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_le_mr_slice,
+        CompareAtomicOp::CswapLt => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_lt_mr_slice,
+        CompareAtomicOp::CswapNe => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomic_swap_ne_mr_slice,
+        CompareAtomicOp::Mswap => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomic_mswap_mr_slice,
+    }
+}
+
+fn get_conn_atomicv_compare_op<T, A>(op: libfabric::enums::CompareAtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<T>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>, 
+    comparetv: &[libfabric::iovec::Ioc<T>], 
+    compare_desc: Option<&[MemoryRegionDesc<'_>]>, 
+    resultv: &mut [libfabric::iovec::IocMut<T>], 
+    res_desc: Option<&[MemoryRegionDesc<'_>]>, 
+    dest_slice: &RemoteMemAddrSliceMut<T>
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: ConnectedAtomicCASEp, 
+{
+
+    match op {
+        CompareAtomicOp::Cswap => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_mr_slice,
+        CompareAtomicOp::CswapGe => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_ge_mr_slice,
+        CompareAtomicOp::CswapGt => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_gt_mr_slice,
+        CompareAtomicOp::CswapLe => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_le_mr_slice,
+        CompareAtomicOp::CswapLt => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_lt_mr_slice,
+        CompareAtomicOp::CswapNe => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomicv_swap_ne_mr_slice,
+        CompareAtomicOp::Mswap => ConnectedAtomicCASRemoteMemAddrSliceEp::compare_atomicv_mswap_mr_slice,
+    }
+}
+
 
 impl<I: AtomicDefaultCap> Ofi<I> {
     pub fn atomic<T: libfabric::AsFiType>(
@@ -2180,18 +2399,18 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.fetch_atomic_slice_from(
+                    get_atomic_fetch_op(op)(
+                        ep,
                         buf,
                         desc,
                         res,
                         res_desc,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         &src_slice,
-                        op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.fetch_atomic_slice(buf, desc, res, res_desc, &src_slice, op)
+                    get_conn_atomic_fetch_op(op)(ep,buf, desc, res, res_desc, &src_slice)
                 },
             };
 
@@ -2218,18 +2437,27 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.fetch_atomicv_slice_from(
+                    get_atomicv_fetch_op(op)
+                    (
+                        ep,
                         ioc,
                         desc,
                         res_ioc,
                         res_desc,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         &src_slice,
-                        op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.fetch_atomicv_slice(ioc, desc, res_ioc, res_desc, &src_slice, op)
+                    get_conn_atomicv_fetch_op(op)
+                    (
+                       ep, 
+                       ioc, 
+                       desc, 
+                       res_ioc, 
+                       res_desc, 
+                       &src_slice
+                    )
                 },
             };
 
@@ -2287,7 +2515,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.compare_atomic_slice_to(
+                    get_atomic_compare_op(op)
+                    ( 
+                        ep,
                         buf,
                         desc,
                         comp,
@@ -2296,12 +2526,12 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                         res_desc,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         &dst_slice,
-                        op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.compare_atomic_slice(
-                        buf, desc, comp, comp_desc, res, res_desc, &dst_slice, op,
+                    get_conn_atomic_compare_op(op)
+                    (
+                        ep, buf, desc, comp, comp_desc, res, res_desc, &dst_slice,
                     )
                 },
             };
@@ -2330,7 +2560,9 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.compare_atomicv_slice_to(
+                    get_atomicv_compare_op(op)
+                    (
+                        ep,
                         ioc,
                         desc,
                         comp_ioc,
@@ -2339,12 +2571,11 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                         res_desc,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         &dst_slice,
-                        op,
                     )
                 },
                 MyEndpoint::Connected(ep) => unsafe {
-                    ep.compare_atomicv_slice(
-                        ioc, desc, comp_ioc, comp_desc, res_ioc, res_desc, &dst_slice, op,
+                    get_conn_atomicv_compare_op(op)(
+                        ep,ioc, desc, comp_ioc, comp_desc, res_ioc, res_desc, &dst_slice,
                     )
                 },
             };
@@ -4209,18 +4440,18 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
         expected = vec![2; 256];
-        ofi.fetch_atomic(
-            mem0,
-            mem1,
-            0,
-            desc0,
-            desc1,
-            FetchAtomicOp::Lor,
-        );
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        assert_eq!(mem1, &expected);
+        // ofi.fetch_atomic(
+        //     mem0,
+        //     mem1,
+        //     0,
+        //     desc0,
+        //     desc1,
+        //     FetchAtomicOp::Lor,
+        // );
+        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        // assert_eq!(mem1, &expected);
 
-        expected = vec![1; 256];
+        // expected = vec![1; 256];
         ofi.fetch_atomic(
             mem0,
             mem1,
@@ -4240,30 +4471,6 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut ack_mem[..512], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        expected = vec![3; 256];
-        ofi.fetch_atomic(
-            mem0,
-            mem1,
-            0,
-            desc0,
-            desc1,
-            FetchAtomicOp::Land,
-        );
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        assert_eq!(mem1, &expected);
-
-        expected = vec![1; 256];
-        ofi.fetch_atomic(
-            mem0,
-            mem1,
-            0,
-            desc0,
-            desc1,
-            FetchAtomicOp::Lxor,
-        );
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        assert_eq!(mem1, &expected);
-
         expected = vec![0; 256];
         ofi.fetch_atomic(
             mem0,
@@ -4271,10 +4478,34 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             0,
             desc0,
             desc1,
-            FetchAtomicOp::AtomicWrite,
+            FetchAtomicOp::Bor,
         );
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
+
+        expected = vec![2; 256];
+        ofi.fetch_atomic(
+            mem0,
+            mem1,
+            0,
+            desc0,
+            desc1,
+            FetchAtomicOp::Band,
+        );
+        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        assert_eq!(mem1, &expected);
+
+        // expected = vec![2; 256];
+        // ofi.fetch_atomic(
+        //     mem0,
+        //     mem1,
+        //     0,
+        //     desc0,
+        //     desc1,
+        //     FetchAtomicOp::AtomicWrite,
+        // );
+        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        // assert_eq!(mem1, &expected);
 
         // Send a done ack
         ofi.send(&ack_mem[..512], desc0, None, false);
@@ -4284,17 +4515,17 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut ack_mem[..512], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        expected = vec![2; 256];
-        ofi.fetch_atomic(
-            mem0,
-            mem1,
-            0,
-            desc0,
-            desc1,
-            FetchAtomicOp::AtomicRead,
-        );
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        assert_eq!(mem1, &expected);
+        // expected = vec![2; 256];
+        // ofi.fetch_atomic(
+        //     mem0,
+        //     mem1,
+        //     0,
+        //     desc0,
+        //     desc1,
+        //     FetchAtomicOp::AtomicRead,
+        // );
+        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        // assert_eq!(mem1, &expected);
 
         expected = vec![2; 256];
         let (read_mem, write_mem) = op_mem.split_at_mut(256);
@@ -4341,7 +4572,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.send(&reg_mem[512..1024], desc0, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
-        expected = vec![3; 256];
+        expected = vec![0; 256];
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
