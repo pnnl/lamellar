@@ -1299,6 +1299,7 @@ macro_rules! impl_as_fi_type {
 
 impl_as_fi_type!(
     ((), libfabric_sys::fi_datatype_FI_VOID),
+    (bool, libfabric_sys::fi_datatype_FI_INT8),
     (i8, libfabric_sys::fi_datatype_FI_INT8),
     (i16, libfabric_sys::fi_datatype_FI_INT16),
     (i32, libfabric_sys::fi_datatype_FI_INT32),

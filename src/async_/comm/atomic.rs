@@ -1,3 +1,4 @@
+use crate::enums::AtomicOp;
 use crate::async_::cq::AsyncReadCq;
 use crate::async_::eq::AsyncReadEq;
 use crate::async_::xcontext::{TxContext, TxContextImpl};
@@ -27,8 +28,8 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
         ctx: &mut Context,
+        op: crate::enums::AtomicOp,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let cq = self.retrieve_tx_cq();
         while_try_again(cq.as_ref(), || {
@@ -38,8 +39,8 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
                 dest_addr,
                 mem_addr,
                 mapped_key,
-                op,
                 Some(ctx.inner_mut()),
+                op,
             )
         })
         .await?;
@@ -70,8 +71,8 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
         dest_addr: Option<&crate::MappedAddress>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
         ctx: &mut Context,
+        op: crate::enums::AtomicOp,
     ) -> Result<SingleCompletion, crate::error::Error> {
         let cq = self.retrieve_tx_cq();
         while_try_again(cq.as_ref(), || {
@@ -81,8 +82,8 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
                 dest_addr,
                 mem_addr,
                 mapped_key,
-                op,
                 Some(ctx.inner_mut()),
+                op,
             )
         })
         .await?;
@@ -117,146 +118,433 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     }
 }
 
+
+macro_rules! gen_atomic_op_decl_single {
+    ($res_type:ty, $func:ident (< $( $N:ident $(: $b0:ident $(+$b:ident)* )? ),* >),  ($self: ident, $($p: ident : $t: ty),*)) =>
+    {
+        unsafe fn $func< $( $N $(: $b0 $(+$b)* )? ),* >
+        (
+            &$self,
+            $($p: $t),*
+        ) ->  impl std::future::Future<Output = Result<$res_type, crate::error::Error>>;
+    };
+
+    ($res_type:ty, $func:ident (),  $($p_and_t: tt)*) => {
+        gen_atomic_op_decl_single!($res_type, $func (<>), $($p_and_t),*);
+    };
+}
+
+macro_rules! gen_atomic_op_decl {
+    ($gen: tt, $args: tt -> $res_type:ty, $($func:ident),+) =>
+    {
+        $(
+            gen_atomic_op_decl_single!($res_type, $func $gen, $args);
+        )+
+    }
+}
+
+macro_rules! gen_atomic_op_def_single {
+    ($res_type:ty, $func:ident (< $( $N:ident $(: $b0:ident $(+$b:ident)* )? ),* >),  ($self: ident, $($p: ident : $t: ty),*), $inner_func:ident ($($vals: expr),*), $op: path) =>
+    {
+        #[inline]
+        unsafe fn $func< $( $N $(: $b0 $(+$b)* )? ),* >
+        (
+            &$self,
+            $($p: $t),*
+        ) -> impl std::future::Future<Output = Result<$res_type, crate::error::Error>>
+        {
+            $self.$inner_func($($vals,)* $op)
+        }
+    };
+
+    ($res_type:ty, $func:ident (),  $p_and_t: tt, $inner_func:ident $vals: tt, $op: path) => {
+        gen_atomic_op_def_single!($res_type, $func (<>), $p_and_t, $inner_func $vals, $op);
+    };
+}
+
+macro_rules! gen_atomic_op_def {
+    ($gen: tt, $args: tt -> $res_type:ty, $inner_func: ident $vals: tt, $($op: path,)+, $($func:ident),+) =>
+    {
+        $(
+            gen_atomic_op_def_single!($res_type, $func $gen, $args, $inner_func $vals, $op);
+        )+
+    }
+}
+
+
+
 pub trait AsyncAtomicWriteEp {
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomic_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+        self,
         buf: &[T],
-        desc: Option<MemoryRegionDesc>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+        context: &mut Context
+    )-> SingleCompletion,
+    atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async
+    );
 
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn inject_atomic_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
-        buf: &[T],
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress<RT>,
+        mem_addr: RemoteMemoryAddress<bool>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
+        context: &mut Context
+    )-> SingleCompletion,
+    atomic_lor_to_async, atomic_land_to_async, atomic_lxor_to_async
+    );
 
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomicv_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    // gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+    //     self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ),
+    // atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered 
+    // );
+
+    // gen_atomic_op_decl!((), (
+    //     self,
+    //     buf: &[bool],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<bool>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ),
+    // atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered
+    // );
+
+    gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+        self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+        context: &mut Context
+    )-> SingleCompletion,
+    atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async,  atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    )-> SingleCompletion,
+    atomicv_lor_to_async, atomicv_land_to_async, atomicv_lxor_to_async
+    );
 
     unsafe fn atomicmsg_to_async<T: AsFiType + 'static>(
         &self,
         msg: &mut crate::msg::MsgAtomic<T>,
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+
+    gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+        self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey
+    )-> (),
+    atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    )-> (),
+    atomic_inject_lor_to_async, atomic_inject_land_to_async, atomic_inject_lxor_to_async
+    );
 }
 
 pub trait ConnectedAsyncAtomicWriteEp {
-    unsafe fn atomic_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+        self,
         buf: &[T],
-        desc: Option<MemoryRegionDesc>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
-
-    unsafe fn inject_atomic_async<T: AsFiType, RT: AsFiType>(
-        &self,
-        buf: &[T],
-        mem_addr: RemoteMemoryAddress<RT>,
+        context: &mut Context
+    )-> SingleCompletion,
+    atomic_min_async, atomic_max_async, atomic_sum_async, atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async
+    );
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
+        context: &mut Context
+    )-> SingleCompletion,
+    atomic_lor_async, atomic_land_async, atomic_lxor_async
+    );
+    
+    // gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+    //     self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ), 
+    // atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered, atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered
+    // );
 
-    unsafe fn atomicv_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    // gen_atomic_op_decl!((), (
+    //     self,
+    //     buf: &[bool],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     mem_addr: RemoteMemoryAddress<bool>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ), 
+    // atomic_lor_triggered, atomic_land_triggered, atomic_lxor_triggered
+    // );
+
+    gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+        self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+        context: &mut Context
+    )-> SingleCompletion,
+    atomicv_min_async, atomicv_max_async, atomicv_sum_async, atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async
+    );
 
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    )-> SingleCompletion,
+    atomicv_lor_async, atomicv_land_async, atomicv_lxor_async
+    );
+
+    // gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<T>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ),
+    // atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered, atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered
+    // );
+
+    // gen_atomic_op_decl!((), (
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<bool>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     mem_addr: RemoteMemoryAddress<bool>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ),
+    // atomicv_lor_triggered, atomicv_land_triggered, atomicv_lxor_triggered
+    // );
     unsafe fn atomicmsg_async<T: AsFiType + 'static>(
         &self,
         msg: &mut crate::msg::MsgAtomicConnected<T>,
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
+
+    gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
+        self,
+        buf: &[T],
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey
+    )-> (),
+    atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async, atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    )-> (),
+    atomic_inject_lor_async, atomic_inject_land_async, atomic_inject_lxor_async
+    );
 }
 
-pub trait AsyncAtomicWriteEpMrSlice : AsyncAtomicWriteEp {
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
-        mr_slice: &MemoryRegionSlice,
-        dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress<RT>,
-        mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomic_to_async(mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, op, context)
-    }
 
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn inject_atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
+macro_rules! gen_atomic_mr_op_def_single {
+    ($res_type: ty, $func:ident (< $( $N:ident $(: $b0:ident $(+$b:ident)* )? ),* >),  ($self: ident, $($p: ident : $t: ty),*), ($($vals: expr),*), $base_func: ident) =>
+    {
+        unsafe fn $func< $( $N $(: $b0 $(+$b)* )? ),* >
+        (
+            &$self,
+            $($p: $t),*
+        ) -> impl std::future::Future<Output = Result<$res_type, crate::error::Error>>
+        {
+            $self.$base_func($($vals,)*)
+        }
+    };
+
+    ($res_type: ty, $func:ident (),  $p_and_t: tt, $vals: tt, $base_func: ident) => {
+        gen_atomic_mr_op_def_single!($res_type, $func (<>), $p_and_t, $vals, $base_func);
+    };
+}
+
+macro_rules! gen_atomic_mr_op_def {
+    ($gen: tt, $args: tt -> $res_type: ty, $vals: tt, $($base_func: ident,)+, $($func:ident),+) =>
+    {
+        $(
+            gen_atomic_mr_op_def_single!($res_type, $func $gen, $args, $vals, $base_func);
+        )+
+    }
+}
+
+
+pub trait AsyncAtomicWriteEpMrSlice : AsyncAtomicWriteEp {
+    gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
+        self,
         mr_slice: &MemoryRegionSlice,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        self.inject_atomic_to_async(mr_slice.as_slice(), dest_addr, mem_addr, mapped_key, op)
-    }
+        context: &mut Context
+    ) -> SingleCompletion,
+        (mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, context),
+        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async,, atomic_mr_min_to_async, atomic_mr_max_to_async, atomic_mr_sum_to_async,  atomic_mr_prod_to_async, atomic_mr_bor_to_async, atomic_mr_band_to_async, atomic_mr_bxor_to_async
+    );
+
+    // gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
+    //     self,
+    //     mr_slice: &MemoryRegionSlice,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ) -> SingleCompletion ,
+    //     (mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, context),
+    //     atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered,, atomic_mr_min_to_triggered, atomic_mr_max_to_triggered, atomic_mr_sum_to_triggered,  atomic_mr_prod_to_triggered, atomic_mr_bor_to_triggered, atomic_mr_band_to_triggered, atomic_mr_bxor_to_triggered
+    // );
+
+    gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
+        self,
+        mr_slice: &MemoryRegionSlice,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey
+    ) -> (),
+        (mr_slice.as_slice(), dest_addr, mem_addr, mapped_key),
+        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async,, atomic_mr_inject_min_to_async, atomic_mr_inject_max_to_async, atomic_mr_inject_sum_to_async,  atomic_mr_inject_prod_to_async, atomic_mr_inject_bor_to_async, atomic_mr_inject_band_to_async, atomic_mr_inject_bxor_to_async
+    );
+    // #[allow(clippy::too_many_arguments)]
+    // unsafe fn atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
+    //     &self,
+    //     mr_slice: &MemoryRegionSlice,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     self.atomic_to_async(mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, op, context)
+    // }
+
+    // #[allow(clippy::too_many_arguments)]
+    // unsafe fn inject_atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
+    //     &self,
+    //     mr_slice: &MemoryRegionSlice,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     op: crate::enums::AtomicOp,
+    // ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+    //     self.inject_atomic_to_async(mr_slice.as_slice(), dest_addr, mem_addr, mapped_key, op)
+    // }
 }
 
 pub trait ConnectedAsyncAtomicWriteEpMrSlice: ConnectedAsyncAtomicWriteEp {
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
-        &self,
-        mr_slice: &MemoryRegionSlice,
-        mem_addr: RemoteMemoryAddress<RT>,
-        mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomic_async(
-            mr_slice.as_slice() ,
-            Some(mr_slice.desc()),
-            mem_addr,
-            mapped_key,
-            op,
-            context,
-        )
-    }
+    // #[allow(clippy::too_many_arguments)]
+    // unsafe fn atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
+    //     &self,
+    //     mr_slice: &MemoryRegionSlice,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     self.atomic_async(
+    //         mr_slice.as_slice() ,
+    //         Some(mr_slice.desc()),
+    //         mem_addr,
+    //         mapped_key,
+    //         op,
+    //         context,
+    //     )
+    // }
 
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn inject_atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    // #[allow(clippy::too_many_arguments)]
+    // unsafe fn inject_atomic_mr_slice_async<T: AsFiType, RT: AsFiType>(
+    //     &self,
+    //     mr_slice: &MemoryRegionSlice,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     op: crate::enums::AtomicOp,
+    // ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+    //     self.inject_atomic_async(
+    //         mr_slice.as_slice() ,
+    //         mem_addr,
+    //         mapped_key,
+    //         op,
+    //     )
+    // }
+
+    gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
+        self,
         mr_slice: &MemoryRegionSlice,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        self.inject_atomic_async(
-            mr_slice.as_slice() ,
-            mem_addr,
-            mapped_key,
-            op,
-        )
-    }
+        context: &mut Context
+    ) -> SingleCompletion,
+        (mr_slice.as_slice(), Some(mr_slice.desc()), mem_addr, mapped_key, context),
+        atomic_min_async, atomic_max_async, atomic_sum_async,  atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async,, atomic_mr_min_async, atomic_mr_max_async, atomic_mr_sum_async,  atomic_mr_prod_async, atomic_mr_bor_async, atomic_mr_band_async, atomic_mr_bxor_async
+    );
+
+
+    // gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
+    //     self,
+    //     mr_slice: &MemoryRegionSlice,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ),
+    //     (mr_slice.as_slice(), Some(mr_slice.desc()), mem_addr, mapped_key, context),
+    //     atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered,  atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered,, atomic_mr_min_triggered, atomic_mr_max_triggered, atomic_mr_sum_triggered,  atomic_mr_prod_triggered, atomic_mr_bor_triggered, atomic_mr_band_triggered, atomic_mr_bxor_triggered
+    // );
+
+    gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
+        self,
+        mr_slice: &MemoryRegionSlice,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey
+    ) -> (),
+        (mr_slice.as_slice(), mem_addr, mapped_key),
+        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async,  atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async,, atomic_mr_inject_min, atomic_mr_inject_max, atomic_mr_inject_sum,  atomic_mr_inject_prod, atomic_mr_inject_bor, atomic_mr_inject_band, atomic_mr_inject_bxor
+    );
 }
 
 impl<EP: ConnectedAsyncAtomicWriteEp> ConnectedAsyncAtomicWriteEpMrSlice for EP {}
@@ -274,61 +562,188 @@ impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl for TxConte
 impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl for TxContext<I, STATE> {}
 
 impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
-    #[inline]
-    unsafe fn atomic_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+        self,
         buf: &[T],
-        desc: Option<MemoryRegionDesc>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomic_async_impl(
-            buf,
-            desc,
-            Some(dest_addr),
-            mem_addr,
-            mapped_key,
-            op,
-            context,
-        )
-    }
-
-    #[inline]
-    unsafe fn inject_atomic_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
-        buf: &[T],
+        context: &mut Context
+    )-> SingleCompletion,
+        atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async, atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async
+    );
+    
+    gen_atomic_op_def!((), ( 
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        mem_addr: RemoteMemoryAddress<RT>,
+        mem_addr: RemoteMemoryAddress<bool>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        self.inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key, op)
-    }
+        context: &mut Context
+    )-> SingleCompletion,
+        atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
+        atomic_lor_to_async, atomic_land_to_async, atomic_lxor_to_async
+    );
 
-    #[inline]
-    unsafe fn atomicv_to_async<T: AsFiType, RT: AsFiType>(
-        &self,
+
+    // gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+    //     self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ),
+    //     atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context),  AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
+    //     atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered, atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered
+    // );
+
+    // gen_atomic_op_def!((), ( 
+    //     self,
+    //     buf: &[bool],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<bool>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // ),
+    //     atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context),  AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,,
+    //     atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered
+    // );
+
+
+    gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+        self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomicv_async_impl(
-            ioc,
-            desc,
-            Some(dest_addr),
-            mem_addr,
-            mapped_key,
-            op,
-            context,
-        )
-    }
+        ctx: &mut Context
+    )-> SingleCompletion,
+        atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
+        atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async, atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async
+    );
+
+    gen_atomic_op_def!((), ( 
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        ctx: &mut Context
+    )-> SingleCompletion,
+        atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,,
+        atomicv_lor_to_async, atomicv_land_to_async, atomicv_lxor_to_async
+    );
+
+    // gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<T>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     ctx: &mut TriggeredContext
+    // ),
+    //     atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
+    //     atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered, atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered
+    // );
+
+    // gen_atomic_op_def!((), ( 
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<bool>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<bool>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     ctx: &mut TriggeredContext
+    // ),
+    //     atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,,
+    //     atomicv_lor_to_triggered, atomicv_land_to_triggered, atomicv_lxor_to_triggered
+    // );
+
+    gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+        self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey
+    )-> (),
+        inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
+        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async, atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async
+    );
+
+    gen_atomic_op_def!((), ( 
+        self,
+        buf: &[bool],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    )-> (),
+        inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,,
+        atomic_inject_lor_to_async, atomic_inject_land_to_async, atomic_inject_lxor_to_async
+    );
+    // #[inline]
+    // unsafe fn atomic_to_async<T: AsFiType, RT: AsFiType>(
+    //     &self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     self.atomic_async_impl(
+    //         buf,
+    //         desc,
+    //         Some(dest_addr),
+    //         mem_addr,
+    //         mapped_key,
+    //         op,
+    //         context,
+    //     )
+    // }
+
+    // #[inline]
+    // unsafe fn inject_atomic_to_async<T: AsFiType, RT: AsFiType>(
+    //     &self,
+    //     buf: &[T],
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     op: crate::enums::AtomicOp,
+    // ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+    //     self.inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key, op)
+    // }
+
+    // #[inline]
+    // unsafe fn atomicv_to_async<T: AsFiType, RT: AsFiType>(
+    //     &self,
+    //     ioc: &[crate::iovec::Ioc<T>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     dest_addr: &crate::MappedAddress,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     self.atomicv_async_impl(
+    //         ioc,
+    //         desc,
+    //         Some(dest_addr),
+    //         mem_addr,
+    //         mapped_key,
+    //         op,
+    //         context,
+    //     )
+    // }
 
     #[inline]
     unsafe fn atomicmsg_to_async<T: AsFiType + 'static>(
@@ -341,45 +756,143 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
 }
 
 impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for EP {
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomic_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+        self,
         buf: &[T],
-        desc: Option<MemoryRegionDesc>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomic_async_impl(buf, desc, None, mem_addr, mapped_key, op, context)
-    }
-
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn inject_atomic_async<T: AsFiType, RT: AsFiType>(
-        &self,
-        buf: &[T],
-        mem_addr: RemoteMemoryAddress<RT>,
+        context: &mut Context
+    )->SingleCompletion,
+        atomic_async_impl(buf, desc, None, mem_addr, mapped_key, context), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+        atomic_min_async, atomic_max_async, atomic_sum_async, atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async
+    );
+    
+    gen_atomic_op_def!((), ( 
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        self.inject_atomic_async_impl(buf, None, mem_addr, mapped_key, op)
-    }
+        context: &mut Context
+    )->SingleCompletion,
+        atomic_async_impl(buf, desc, None, mem_addr, mapped_key, context), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
+        atomic_lor_async, atomic_land_async, atomic_lxor_async
+    );
 
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomicv_async<T: AsFiType, RT: AsFiType>(
-        &self,
+    // gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+    //     self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // )->SingleCompletion,
+    //     atomic_impl(
+    //         buf,
+    //         desc,
+    //         None,
+    //         mem_addr,
+    //         mapped_key,
+    //         Some(context.inner_mut())
+    //     ),
+    //     AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+    //     atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered, atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered
+    // );
+
+    // gen_atomic_op_def!((), ( 
+    //     self,
+    //     buf: &[bool],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     mem_addr: RemoteMemoryAddress<bool>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // )->SingleCompletion,
+    //     atomic_impl(
+    //         buf,
+    //         desc,
+    //         None,
+    //         mem_addr,
+    //         mapped_key,
+    //         Some(context.inner_mut())
+    //     ),
+    //     AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
+    //     atomic_lor_triggered, atomic_land_triggered, atomic_lxor_triggered
+    // );
+
+    gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+        self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        self.atomicv_async_impl(ioc, desc, None, mem_addr, mapped_key, op, context)
-    }
+        context: &mut Context
+    )->SingleCompletion, 
+        atomicv_async_impl(ioc, desc, None, mem_addr, mapped_key, context),
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+        atomicv_min_async, atomicv_max_async, atomicv_sum_async, atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async
+    );
+
+    gen_atomic_op_def!((), ( 
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    )->SingleCompletion,
+        atomicv_async_impl(ioc, desc, None, mem_addr, mapped_key, context),
+        AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
+        atomicv_lor_async, atomicv_land_async, atomicv_lxor_async
+    );
+
+    // gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<T>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     mem_addr: RemoteMemoryAddress<RT>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // )->SingleCompletion,
+    //     atomicv_impl(ioc, desc, None, mem_addr, mapped_key, Some(context.inner_mut())),
+    //     AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+    //     atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered, atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered
+    // );
+
+    // gen_atomic_op_def!((), ( 
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<bool>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     mem_addr: RemoteMemoryAddress<bool>,
+    //     mapped_key: &MappedMemoryRegionKey,
+    //     context: &mut TriggeredContext
+    // )->SingleCompletion,
+    //     atomicv_impl(ioc, desc, None, mem_addr, mapped_key, Some(context.inner_mut())),
+    //     AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
+    //     atomicv_lor_triggered, atomicv_land_triggered, atomicv_lxor_triggered
+    // );
+
+    gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
+        self,
+        buf: &[T],
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey
+    )->(),
+        inject_atomic_async_impl(buf, None, mem_addr, mapped_key),
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async, atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async
+    );
+
+    gen_atomic_op_def!((), ( 
+        self,
+        buf: &[bool],
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    )->(),
+        inject_atomic_async_impl(buf, None, mem_addr, mapped_key),
+        AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
+        atomic_inject_lor_async, atomic_inject_land_async, atomic_inject_lxor_async
+    );
 
     unsafe fn atomicmsg_async<T: AsFiType + 'static>(
         &self,
@@ -391,67 +904,249 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
 }
 
 pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomic_slice_to_async<T: AsFiType>(
-        &self,
+    gen_atomic_mr_op_def!((<T: AsFiType>), (
+        self,
         buf: &[T],
-        desc: Option<MemoryRegionDesc>,
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dst_slice: &RemoteMemAddrSliceMut<T>,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
-        self.atomic_to_async(
+        dest_slice: &RemoteMemAddrSliceMut<T>,
+        context: &mut Context
+    ) -> SingleCompletion,   
+        (
             buf,
             desc,
             dest_addr,
-            dst_slice.mem_address(),
-            &dst_slice.key(),
-            op,
-            context,
-        )
-    }
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async,, atomic_mr_slice_min_to_async, atomic_mr_slice_max_to_async, atomic_mr_slice_sum_to_async,  atomic_mr_slice_prod_to_async, atomic_mr_slice_bor_to_async, atomic_mr_slice_band_to_async, atomic_mr_slice_bxor_to_async
+    );
 
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn inject_atomic_slice_to_async<T: AsFiType>(
-        &self,
-        buf: &[T],
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
         dest_addr: &crate::MappedAddress,
-        dst_slice: &RemoteMemAddrSliceMut<T>,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
-        self.inject_atomic_to_async(
+        dest_slice: &RemoteMemAddrSliceMut<bool>,
+        context: &mut Context
+    ) -> SingleCompletion,
+        (
             buf,
+            desc,
             dest_addr,
-            dst_slice.mem_address(),
-            &dst_slice.key(),
-            op,
-        )
-    }
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomic_lor_to_async, atomic_land_to_async, atomic_lxor_to_async,, atomic_mr_slice_lor_to_async, atomic_mr_slice_land_to_async, atomic_mr_slice_lxor_to_async
+    );
 
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn atomicv_slice_to_async<T: AsFiType>(
-        &self,
+    // gen_atomic_mr_op_def!((<T: AsFiType>), (
+    //     self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dest_slice: &RemoteMemAddrSliceMut<T>,
+    //     context: &mut TriggeredContext
+    // ) -> SingleCompletion,
+    //     (
+    //         buf,
+    //         desc,
+    //         dest_addr,
+    //         dest_slice.mem_address(),
+    //         dest_slice.key(),
+    //         context
+    //     ),
+    //     atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered,, atomic_mr_slice_min_to_triggered, atomic_mr_slice_max_to_triggered, atomic_mr_slice_sum_to_triggered,  atomic_mr_slice_prod_to_triggered, atomic_mr_slice_bor_to_triggered, atomic_mr_slice_band_to_triggered, atomic_mr_slice_bxor_to_triggered
+    // );
+
+    // gen_atomic_mr_op_def!((), (
+    //     self,
+    //     buf: &[bool],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dest_slice: &RemoteMemAddrSliceMut<bool>,
+    //     context: &mut TriggeredContext
+    // ) -> SingleCompletion,   
+    //     (
+    //         buf,
+    //         desc,
+    //         dest_addr,
+    //         dest_slice.mem_address(),
+    //         dest_slice.key(),
+    //         context
+    //     ),
+    //     atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered,, atomic_mr_slice_lor_to_triggered, atomic_mr_slice_land_to_triggered, atomic_mr_slice_lxor_to_triggered
+    // );
+
+    gen_atomic_mr_op_def!((<T: AsFiType>), (
+        self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
         dest_addr: &crate::MappedAddress,
-        dst_slice: &RemoteMemAddrSliceMut<T>,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(ioc));
-        self.atomicv_to_async(
+        dest_slice: &RemoteMemAddrSliceMut<T>,
+        context: &mut Context
+    ) -> SingleCompletion, 
+        (
             ioc,
             desc,
             dest_addr,
-            dst_slice.mem_address(),
-            &dst_slice.key(),
-            op,
-            context,
-        )
-    }
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async,  atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async,, atomicv_mr_slice_min_to_async, atomicv_mr_slice_max_to_async, atomicv_mr_slice_sum_to_async,  atomicv_mr_slice_prod_to_async, atomicv_mr_slice_bor_to_async, atomicv_mr_slice_band_to_async, atomicv_mr_slice_bxor_to_async
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut<bool>,
+        context: &mut Context
+    ) -> SingleCompletion,
+        (
+            ioc,
+            desc,
+            dest_addr,
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomicv_lor_to_async, atomicv_land_to_async, atomicv_lxor_to_async,, atomicv_mr_slice_lor_to_async, atomicv_mr_slice_land_to_async, atomicv_mr_slice_lxor_to_async
+    );
+
+    // gen_atomic_mr_op_def!((<T: AsFiType>), (
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<T>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dest_slice: &RemoteMemAddrSliceMut<T>,
+    //     context: &mut TriggeredContext
+    // ) -> SingleCompletion,
+    //     (
+    //         ioc,
+    //         desc,
+    //         dest_addr,
+    //         dest_slice.mem_address(),
+    //         dest_slice.key(),
+    //         context
+    //     ),
+    //     atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered,  atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered,, atomicv_mr_slice_min_to_triggered, atomicv_mr_slice_max_to_triggered, atomicv_mr_slice_sum_to_triggered,  atomicv_mr_slice_prod_to_triggered, atomicv_mr_slice_bor_to_triggered, atomicv_mr_slice_band_to_triggered, atomicv_mr_slice_bxor_to_triggered
+    // );
+
+    // gen_atomic_mr_op_def!((), (
+    //     self,
+    //     ioc: &[crate::iovec::Ioc<bool>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dest_slice: &RemoteMemAddrSliceMut<bool>,
+    //     context: &mut TriggeredContext
+    // ) -> SingleCompletion,
+    //     (
+    //         ioc,
+    //         desc,
+    //         dest_addr,
+    //         dest_slice.mem_address(),
+    //         dest_slice.key(),
+    //         context
+    //     ),
+    //     atomicv_lor_to_triggered, atomicv_land_to_triggered, atomicv_lxor_to_triggered,, atomicv_mr_slice_lor_to_triggered, atomicv_mr_slice_land_to_triggered, atomicv_mr_slice_lxor_to_triggered
+    // );
+
+    gen_atomic_mr_op_def!((<T: AsFiType>), (
+        self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut<T>
+    ) -> (),
+        (
+            buf,
+            dest_addr,
+            dest_slice.mem_address(),
+            dest_slice.key()
+        ),
+        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async,, atomic_inject_mr_slice_min_to_async, atomic_inject_mr_slice_max_to_async, atomic_inject_mr_slice_sum_to_async,  atomic_inject_mr_slice_prod_to_async, atomic_inject_mr_slice_bor_to_async, atomic_inject_mr_slice_band_to_async, atomic_inject_mr_slice_bxor_to_async
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        dest_addr: &crate::MappedAddress,
+        dest_slice: &RemoteMemAddrSliceMut<bool>
+    ) -> (),
+        (
+            buf,
+            dest_addr,
+            dest_slice.mem_address(),
+            dest_slice.key()
+        ),
+        atomic_inject_lor_to_async, atomic_inject_land_to_async, atomic_inject_lxor_to_async,, atomic_inject_mr_slice_lor_to_async, atomic_inject_mr_slice_land_to_async, atomic_inject_mr_slice_lxor_to_async
+    );
+
+    // #[allow(clippy::too_many_arguments)]
+    // unsafe fn atomic_slice_to_async<T: AsFiType>(
+    //     &self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dst_slice: &RemoteMemAddrSliceMut<T>,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
+    //     self.atomic_to_async(
+    //         buf,
+    //         desc,
+    //         dest_addr,
+    //         dst_slice.mem_address(),
+    //         &dst_slice.key(),
+    //         op,
+    //         context,
+    //     )
+    // }
+
+    // #[allow(clippy::too_many_arguments)]
+    // unsafe fn inject_atomic_slice_to_async<T: AsFiType>(
+    //     &self,
+    //     buf: &[T],
+    //     dest_addr: &crate::MappedAddress,
+    //     dst_slice: &RemoteMemAddrSliceMut<T>,
+    //     op: crate::enums::AtomicOp,
+    // ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+    //     assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
+    //     self.inject_atomic_to_async(
+    //         buf,
+    //         dest_addr,
+    //         dst_slice.mem_address(),
+    //         &dst_slice.key(),
+    //         op,
+    //     )
+    // }
+
+    // #[allow(clippy::too_many_arguments)]
+    // unsafe fn atomicv_slice_to_async<T: AsFiType>(
+    //     &self,
+    //     ioc: &[crate::iovec::Ioc<T>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dst_slice: &RemoteMemAddrSliceMut<T>,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(ioc));
+    //     self.atomicv_to_async(
+    //         ioc,
+    //         desc,
+    //         dest_addr,
+    //         dst_slice.mem_address(),
+    //         &dst_slice.key(),
+    //         op,
+    //         context,
+    //     )
+    // }
 
     unsafe fn atomicmsg_slice_to_async<T: AsFiType + 'static>(
         &self,
@@ -465,53 +1160,186 @@ pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
 impl<EP: AsyncAtomicWriteEp> AsyncAtomicWriteRemoteMemAddrSliceEp for EP {}
 
 pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWriteEp {
-    unsafe fn atomic_slice_async<T: AsFiType>(
-        &self,
+    gen_atomic_mr_op_def!((<T: AsFiType>), (
+        self,
         buf: &[T],
-        desc: Option<MemoryRegionDesc>,
-        dst_slice: &RemoteMemAddrSliceMut<T>,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
-        self.atomic_async(
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut<T>,
+        context: &mut Context
+    ) -> SingleCompletion,   
+        (
             buf,
             desc,
-            dst_slice.mem_address(),
-            &dst_slice.key(),
-            op,
-            context,
-        )
-    }
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomic_min_async, atomic_max_async, atomic_sum_async,  atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async,, atomic_mr_slice_min_async, atomic_mr_slice_max_async, atomic_mr_slice_sum_async,  atomic_mr_slice_prod_async, atomic_mr_slice_bor_async, atomic_mr_slice_band_async, atomic_mr_slice_bxor_async
+    );
 
-    unsafe fn inject_atomic_slice_async<T: AsFiType>(
-        &self,
-        buf: &[T],
-        dst_slice: &RemoteMemAddrSliceMut<T>,
-        op: crate::enums::AtomicOp,
-    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
-        assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
-        self.inject_atomic_async(buf, dst_slice.mem_address(), &dst_slice.key(), op)
-    }
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_slice: &RemoteMemAddrSliceMut<bool>,
+        context: &mut Context
+    ) -> SingleCompletion,
+        (
+            buf,
+            desc,
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomic_lor_async, atomic_land_async, atomic_lxor_async,, atomic_mr_slice_lor_async, atomic_mr_slice_land_async, atomic_mr_slice_lxor_async
+    );
 
-    unsafe fn atomicv_slice_async<T: AsFiType>(
-        &self,
+    // gen_atomic_mr_op_def!((<T: AsFiType>), (
+    //     self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dest_slice: &RemoteMemAddrSliceMut<T>,
+    //     context: &mut TriggeredContext
+    // ) -> SingleCompletion,
+    //     (
+    //         buf,
+    //         desc,
+    //         dest_addr,
+    //         dest_slice.mem_address(),
+    //         dest_slice.key(),
+    //         context
+    //     ),
+    //     atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered,, atomic_mr_slice_min_to_triggered, atomic_mr_slice_max_to_triggered, atomic_mr_slice_sum_to_triggered,  atomic_mr_slice_prod_to_triggered, atomic_mr_slice_bor_to_triggered, atomic_mr_slice_band_to_triggered, atomic_mr_slice_bxor_to_triggered
+    // );
+
+    // gen_atomic_mr_op_def!((), (
+    //     self,
+    //     buf: &[bool],
+    //     desc: Option<MemoryRegionDesc<'_>>,
+    //     dest_addr: &crate::MappedAddress,
+    //     dest_slice: &RemoteMemAddrSliceMut<bool>,
+    //     context: &mut TriggeredContext
+    // ) -> SingleCompletion,   
+    //     (
+    //         buf,
+    //         desc,
+    //         dest_addr,
+    //         dest_slice.mem_address(),
+    //         dest_slice.key(),
+    //         context
+    //     ),
+    //     atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered,, atomic_mr_slice_lor_to_triggered, atomic_mr_slice_land_to_triggered, atomic_mr_slice_lxor_to_triggered
+    // );
+
+    gen_atomic_mr_op_def!((<T: AsFiType>), (
+        self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
-        dst_slice: &RemoteMemAddrSliceMut<T>,
-        op: crate::enums::AtomicOp,
-        context: &mut Context,
-    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
-        // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(ioc));
-        self.atomicv_async(
+        dest_slice: &RemoteMemAddrSliceMut<T>,
+        context: &mut Context
+    ) -> SingleCompletion, 
+        (
             ioc,
             desc,
-            dst_slice.mem_address(),
-            &dst_slice.key(),
-            op,
-            context,
-        )
-    }
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomicv_min_async, atomicv_max_async, atomicv_sum_async,  atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async,, atomicv_mr_slice_min_async, atomicv_mr_slice_max_async, atomicv_mr_slice_sum_async,  atomicv_mr_slice_prod_async, atomicv_mr_slice_bor_async, atomicv_mr_slice_band_async, atomicv_mr_slice_bxor_async
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_slice: &RemoteMemAddrSliceMut<bool>,
+        context: &mut Context
+    ) -> SingleCompletion,
+        (
+            ioc,
+            desc,
+            dest_slice.mem_address(),
+            dest_slice.key(),
+            context
+        ),
+        atomicv_lor_async, atomicv_land_async, atomicv_lxor_async,, atomicv_mr_slice_lor_async, atomicv_mr_slice_land_async, atomicv_mr_slice_lxor_async
+    );
+
+    gen_atomic_mr_op_def!((<T: AsFiType>), (
+        self,
+        buf: &[T],
+        dest_slice: &RemoteMemAddrSliceMut<T>
+    ) -> (),
+        (
+            buf,
+            dest_slice.mem_address(),
+            dest_slice.key()
+        ),
+        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async,  atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async,, atomic_inject_mr_slice_min_async, atomic_inject_mr_slice_max_async, atomic_inject_mr_slice_sum_async,  atomic_inject_mr_slice_prod_async, atomic_inject_mr_slice_bor_async, atomic_inject_mr_slice_band_async, atomic_inject_mr_slice_bxor_async
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        dest_slice: &RemoteMemAddrSliceMut<bool>
+    ) -> (),
+        (
+            buf,
+            dest_slice.mem_address(),
+            dest_slice.key()
+        ),
+        atomic_inject_lor_async, atomic_inject_land_async, atomic_inject_lxor_async,, atomic_inject_mr_slice_lor_async, atomic_inject_mr_slice_land_async, atomic_inject_mr_slice_lxor_async
+    );
+
+
+    // unsafe fn atomic_slice_async<T: AsFiType>(
+    //     &self,
+    //     buf: &[T],
+    //     desc: Option<MemoryRegionDesc>,
+    //     dst_slice: &RemoteMemAddrSliceMut<T>,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
+    //     self.atomic_async(
+    //         buf,
+    //         desc,
+    //         dst_slice.mem_address(),
+    //         &dst_slice.key(),
+    //         op,
+    //         context,
+    //     )
+    // }
+
+    // unsafe fn inject_atomic_slice_async<T: AsFiType>(
+    //     &self,
+    //     buf: &[T],
+    //     dst_slice: &RemoteMemAddrSliceMut<T>,
+    //     op: crate::enums::AtomicOp,
+    // ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+    //     assert!(dst_slice.mem_size() == std::mem::size_of_val(buf));
+    //     self.inject_atomic_async(buf, dst_slice.mem_address(), &dst_slice.key(), op)
+    // }
+
+    // unsafe fn atomicv_slice_async<T: AsFiType>(
+    //     &self,
+    //     ioc: &[crate::iovec::Ioc<T>],
+    //     desc: Option<&[MemoryRegionDesc<'_>]>,
+    //     dst_slice: &RemoteMemAddrSliceMut<T>,
+    //     op: crate::enums::AtomicOp,
+    //     context: &mut Context,
+    // ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+    //     // assert!(dst_slice.mem_len() == crate::iovec::Ioc::total_len(ioc));
+    //     self.atomicv_async(
+    //         ioc,
+    //         desc,
+    //         dst_slice.mem_address(),
+    //         &dst_slice.key(),
+    //         op,
+    //         context,
+    //     )
+    // }
 
     unsafe fn atomicmsg_slice_async<T: AsFiType + 'static>(
         &self,
