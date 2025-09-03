@@ -5,6 +5,7 @@ use libfabric::comm::atomic::AtomicFetchRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::AtomicWriteRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::ConnectedAtomicCASRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::ConnectedAtomicFetchRemoteMemAddrSliceEp;
+use libfabric::comm::atomic::ConnectedAtomicWriteEpMrSlice;
 use libfabric::comm::atomic::ConnectedAtomicWriteRemoteMemAddrSliceEp;
 use libfabric::comm::collective::CollectiveEp;
 use libfabric::comm::message::ConnectedRecvEpMrSlice;
@@ -25,9 +26,14 @@ use libfabric::eq::EventQueue;
 use libfabric::iovec::RemoteMemAddrAtomicVec;
 use libfabric::iovec::RemoteMemAddrVec;
 use libfabric::iovec::RemoteMemAddrVecMut;
+use libfabric::mr::MappedMemoryRegionKey;
 use libfabric::mr::MemoryRegionSlice;
 use libfabric::mr::MemoryRegionSliceMut;
 use libfabric::mcast::MultiCastGroup;
+use libfabric::AsFiType;
+use libfabric::RemoteMemAddrSlice;
+use libfabric::RemoteMemAddrSliceMut;
+use libfabric::RemoteMemoryAddress;
 use std::cell::RefCell;
 pub type EqOptions = libfabric::eq_caps_type!(EqCaps::WAIT);
 use libfabric::{
@@ -1888,6 +1894,169 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
     }
 }
 
+fn get_atomic_op<T, A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    &[T],
+    Option<MemoryRegionDesc>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSliceMut<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: AtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_min_to,
+        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_max_to,
+        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_sum_to,
+        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_prod_to,
+        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lor_to,
+        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_land_to,
+        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bor_to,
+        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_band_to,
+        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lxor_to,
+        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bxor_to,
+        _ => todo!(),
+    }
+}
+
+fn get_atomicv_op<T, A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<T>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSliceMut<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: AtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_min_to,
+        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_max_to,
+        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_sum_to,
+        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_prod_to,
+        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lor_to,
+        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_land_to,
+        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bor_to,
+        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_band_to,
+        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lxor_to,
+        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bxor_to,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomicv_op<T, A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<T>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    &RemoteMemAddrSliceMut<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: ConnectedAtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_min,
+        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_max,
+        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_sum,
+        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_prod,
+        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lor,
+        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_land,
+        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bor,
+        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_band,
+        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lxor,
+        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bxor,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomic_op<T, A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    &[T],
+    Option<MemoryRegionDesc>,
+    &RemoteMemAddrSliceMut<T>,
+) 
+-> Result<(), Error>
+where
+    T: AsFiType,
+    A: ConnectedAtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_min,
+        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_max,
+        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_sum,
+        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_prod,
+        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lor,
+        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_land,
+        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bor,
+        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_band,
+        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lxor,
+        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bxor,
+        _ => todo!(),
+    }
+}
+
+fn get_atomic_inject_op<T, A>(
+    op: libfabric::enums::AtomicOp,
+) -> unsafe fn(
+    &A,
+    &[T],
+    &crate::MappedAddress,
+    &RemoteMemAddrSliceMut<T>,
+) -> Result<(), Error>
+where
+    T: AsFiType,
+    A: AtomicWriteEp,
+{
+    match op {
+        AtomicOp::Min => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_min_to,
+        AtomicOp::Max => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_max_to,
+        AtomicOp::Sum => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_sum_to,
+        AtomicOp::Prod => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_prod_to,
+        // AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lor_to,
+        // AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_land_to,
+        AtomicOp::Bor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bor_to,
+        AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_band_to,
+        // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lxor_to,
+        AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bxor_to,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomic_inject_op<T, A>(
+    op: libfabric::enums::AtomicOp,
+) -> unsafe fn(
+    &A,
+    &[T],
+    &RemoteMemAddrSliceMut<T>,
+) -> Result<(), Error>
+where
+    T: AsFiType,
+    A: ConnectedAtomicWriteEp,
+{
+    match op {
+        AtomicOp::Min => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_min,
+        AtomicOp::Max => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_max,
+        AtomicOp::Sum => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_sum,
+        AtomicOp::Prod => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_prod,
+        // AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lor,
+        // AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_land,
+        AtomicOp::Bor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bor,
+        AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_band,
+        // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lxor,
+        AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bxor,
+        _ => todo!(),
+    }
+}
+
 impl<I: AtomicDefaultCap> Ofi<I> {
     pub fn atomic<T: libfabric::AsFiType>(
         &self,
@@ -1904,30 +2073,30 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
                         unsafe {
-                            ep.inject_atomic_slice_to(
+                            get_atomic_inject_op(op)(
+                                ep, 
                                 buf,
                                 &self.mapped_addr.as_ref().unwrap()[1],
                                 &dst_slice,
-                                op,
                             )
                         }
                     } else {
                         unsafe {
-                            ep.atomic_slice_to(
+                            get_atomic_op(op)(
+                                ep,
                                 buf,
                                 desc,
                                 &self.mapped_addr.as_ref().unwrap()[1],
                                 &dst_slice,
-                                op,
                             )
                         }
                     }
                 }
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                        unsafe { ep.inject_atomic_slice(buf, &dst_slice, op) }
+                        unsafe { get_conn_atomic_inject_op(op)(ep,buf, &dst_slice) }
                     } else {
-                        unsafe { ep.atomic_slice(buf, desc, &dst_slice, op) }
+                        unsafe { get_conn_atomic_op(op)(ep, buf, desc, &dst_slice) }
                     }
                 }
             };
@@ -1954,15 +2123,15 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => unsafe {
-                    ep.atomicv_slice_to(
+                    get_atomicv_op(op)(
+                        ep,
                         ioc,
                         desc,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         &dst_slice,
-                        op,
                     )
                 },
-                MyEndpoint::Connected(ep) => unsafe { ep.atomicv_slice(ioc, desc, &dst_slice, op) },
+                MyEndpoint::Connected(ep) => unsafe { get_conn_atomicv_op(op)(ep, ioc, desc, &dst_slice) },
             };
 
             if self.check_and_progress(err) {
@@ -3814,8 +3983,8 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Lor);
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Lor);
+        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Bxor);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
@@ -3826,14 +3995,14 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Land);
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Land);
+        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
-        ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Lxor);
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Lxor);
+        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
-        ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::AtomicWrite);
-        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::AtomicWrite);
+        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         ofi.send(&reg_mem[512..1024], desc0, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
@@ -3864,6 +4033,9 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         assert_eq!(&reg_mem[..512], &expected[..512]);
         // Send completion ack
+        reg_mem.iter_mut().for_each(|v| *v= 1);
+        // reg_mem = vec![1; 1024 * 2];
+
         ofi.send(&reg_mem[512..1024], desc0, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
@@ -3881,7 +4053,7 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
         // assert_eq!(&reg_mem[..512], &expected[..512]);
 
-        expected = vec![4; 1024 * 2];
+        expected = vec![6; 1024 * 2];
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();

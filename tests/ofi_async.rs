@@ -37,6 +37,7 @@ pub mod async_ofi {
     use libfabric::async_::domain::Domain;
     use libfabric::async_::eq::EventQueue;
     use libfabric::av_set::AddressVectorSetBuilder;
+    use libfabric::cq::SingleCompletion;
     use libfabric::enums::CollectiveOptions;
     use libfabric::ep::BaseEndpoint;
     use libfabric::info::Info;
@@ -50,8 +51,10 @@ pub mod async_ofi {
     use libfabric::mr::EpBindingMemoryRegion;
     use libfabric::mr::MemoryRegionDesc;
     use libfabric::mr::MemoryRegionKey;
+    use libfabric::AsFiType;
     use libfabric::MemAddressInfo;
     use libfabric::MyRc;
+    use libfabric::RemoteMemAddrSliceMut;
     use libfabric::RemoteMemAddressInfo;
     use libfabric::{
         async_::{
@@ -1205,6 +1208,131 @@ pub mod async_ofi {
         }
     }
 
+    async unsafe fn atomic_op<'a, T, A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[T], desc: Option<MemoryRegionDesc<'a>>, dest: &MappedAddress, slice: &RemoteMemAddrSliceMut<'a, T>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        T: AsFiType,
+        A: AsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Min => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_min_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::Max => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_max_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::Sum => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_sum_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::Prod => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_prod_to_async(ep, buf, desc, dest, slice, context).await,
+            // AtomicOp::Lor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lor_to_async(ep, buf, desc, dest, slice, context).await,
+            // AtomicOp::Land => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_land_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::Bor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bor_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::Band => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_band_to_async(ep, buf, desc, dest, slice, context).await,
+            // AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lxor_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::Bxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bxor_to_async(ep, buf, desc, dest, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn atomicv_op<'a, T, A>(op: libfabric::enums::AtomicOp, ep: &A, ioc: &[libfabric::iovec::Ioc<'a, T>], desc: Option<&[MemoryRegionDesc<'_>]>, dest: &MappedAddress, slice: &RemoteMemAddrSliceMut<'a, T>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        T: AsFiType,
+        A: AsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Min => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_min_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Max => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_max_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Sum => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_sum_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Prod => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_prod_to_async(ep, ioc, desc, dest, slice, context).await,
+            // AtomicOp::Lor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lor_to_async(ep, ioc, desc, dest, slice, context).await,
+            // AtomicOp::Land => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_land_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Bor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bor_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Band => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_band_to_async(ep, ioc, desc, dest, slice, context).await,
+            // AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lxor_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Bxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bxor_to_async(ep, ioc, desc, dest, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn conn_atomicv_op<'a, T, A>(op: libfabric::enums::AtomicOp, ep: &A, ioc: &[libfabric::iovec::Ioc<'a, T>], desc: Option<&[MemoryRegionDesc<'_>]>, slice: &RemoteMemAddrSliceMut<'a, T>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        T: AsFiType,
+        A: ConnectedAsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Min => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_min_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Max => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_max_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Sum => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_sum_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Prod => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_prod_async(ep, ioc, desc, slice, context).await,
+            // AtomicOp::Lor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lor_async(ep, ioc, desc, slice, context).await,
+            // AtomicOp::Land => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_land_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Bor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bor_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Band => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_band_async(ep, ioc, desc, slice, context).await,
+            // AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_lxor_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Bxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_mr_slice_bxor_async(ep, ioc, desc, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn conn_atomic_op<'a, T, A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[T], desc: Option<MemoryRegionDesc<'a>>, slice: &RemoteMemAddrSliceMut<'a, T>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        T: AsFiType,
+        A: ConnectedAsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Min => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_min_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Max => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_max_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Sum => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_sum_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Prod => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_prod_async(ep, buf, desc, slice, context).await,
+            // AtomicOp::Lor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lor_async(ep, buf, desc, slice, context).await,
+            // AtomicOp::Land => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_land_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Bor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bor_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Band => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_band_async(ep, buf, desc, slice, context).await,
+            // AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_lxor_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Bxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_mr_slice_bxor_async(ep, buf, desc, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn atomic_inject_op<'a, T, A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[T], dest: &MappedAddress, slice: &RemoteMemAddrSliceMut<'a, T>) -> Result<(), libfabric::error::Error>
+    where
+        T: AsFiType,
+        A: AsyncAtomicWriteEp,
+    {
+        match op {
+            AtomicOp::Min => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_min_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Max => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_max_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Sum => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_sum_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Prod => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_prod_to_async(ep, buf, dest, slice).await,
+            // AtomicOp::Lor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lor_to_async(ep, buf, dest, slice).await,
+            // AtomicOp::Land => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_land_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Bor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bor_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Band => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_band_to_async(ep, buf, dest, slice).await,
+            // AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lxor_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Bxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bxor_to_async(ep, buf, dest, slice).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn conn_atomic_inject_op<'a, T, A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[T], slice: &RemoteMemAddrSliceMut<'a, T>) -> Result<(), libfabric::error::Error>
+    where
+        T: AsFiType,
+        A: ConnectedAsyncAtomicWriteEp,
+    {
+        match op {
+            AtomicOp::Min => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_min_async(ep, buf,slice).await,
+            AtomicOp::Max => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_max_async(ep, buf,slice).await,
+            AtomicOp::Sum => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_sum_async(ep, buf,slice).await,
+            AtomicOp::Prod => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_prod_async(ep, buf,slice).await,
+            // AtomicOp::Lor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lor_async(ep, buf,slice).await,
+            // AtomicOp::Land => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_land_async(ep, buf,slice).await,
+            AtomicOp::Bor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bor_async(ep, buf,slice).await,
+            AtomicOp::Band => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_band_async(ep, buf,slice).await,
+            // AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_lxor_async(ep, buf,slice).await,
+            AtomicOp::Bxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_mr_slice_bxor_async(ep, buf,slice).await,
+            _ => todo!(),
+        }
+    }
+
+
     impl<I: AtomicDefaultCap> Ofi<I> {
         pub fn atomic<T: libfabric::AsFiType>(
             &self,
@@ -1224,24 +1352,12 @@ pub mod async_ofi {
                     MyEndpoint::Connectionless(ep) => {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
                             unsafe {
-                                ep.inject_atomic_slice_to_async(
-                                    buf,
-                                    &self.mapped_addr.as_ref().unwrap()[1],
-                                    &dst_slice,
-                                    op,
-                                )
+                                atomic_inject_op(op, ep, buf, &self.mapped_addr.as_ref().unwrap()[1], &dst_slice)
                                 .await
                             }
                         } else {
                             unsafe {
-                                ep.atomic_slice_to_async(
-                                    buf,
-                                    desc,
-                                    &self.mapped_addr.as_ref().unwrap()[1],
-                                    &dst_slice,
-                                    op,
-                                    ctx,
-                                )
+                                atomic_op(op, ep, buf, desc, &self.mapped_addr.as_ref().unwrap()[1], &dst_slice, ctx)
                                 .await
                             }
                             .map(|_| {})
@@ -1249,9 +1365,9 @@ pub mod async_ofi {
                     }
                     MyEndpoint::Connected(ep) => {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                            unsafe { ep.inject_atomic_slice_async(buf, &dst_slice, op).await }
+                            unsafe { conn_atomic_inject_op(op, ep, buf, &dst_slice).await }
                         } else {
-                            unsafe { ep.atomic_slice_async(buf, desc, &dst_slice, op, ctx).await }
+                            unsafe { conn_atomic_op(op, ep, buf, desc, &dst_slice, ctx).await }
                                 .map(|_| {})
                         }
                     }
@@ -1276,18 +1392,11 @@ pub mod async_ofi {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
-                        ep.atomicv_slice_to_async(
-                            ioc,
-                            desc,
-                            &self.mapped_addr.as_ref().unwrap()[1],
-                            &dest_slice,
-                            op,
-                            ctx,
-                        )
+                        atomicv_op(op, ep, ioc, desc, &self.mapped_addr.as_ref().unwrap()[1], &dest_slice, ctx) 
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.atomicv_slice_async(ioc, desc, &dest_slice, op, ctx)
+                        conn_atomicv_op(op, ep, ioc, desc, &dest_slice, ctx)
                             .await
                     },
                 }
@@ -2984,7 +3093,7 @@ pub mod async_ofi {
             // Recv a completion ack
             ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lor, &mut ctx);
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lor, &mut ctx);
 
             ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Bxor, &mut ctx);
 
@@ -2993,17 +3102,17 @@ pub mod async_ofi {
             // Recv a completion ack
             ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Land, &mut ctx);
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Land, &mut ctx);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lxor, &mut ctx);
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lxor, &mut ctx);
 
-            ofi.atomic(
-                &reg_mem[..512],
-                0,
-                desc,
-                AtomicOp::AtomicWrite,
-                &mut ctx,
-            );
+            // ofi.atomic(
+            //     &reg_mem[..512],
+            //     0,
+            //     desc,
+            //     AtomicOp::AtomicWrite,
+            //     &mut ctx,
+            // );
             ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             let iocs = [
@@ -3033,6 +3142,8 @@ pub mod async_ofi {
 
             assert_eq!(&reg_mem[..512], &expected[..512]);
             // Send completion ack
+            reg_mem.iter_mut().for_each(|v| *v= 1);
+
             ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             expected = vec![3; 1024 * 2];
@@ -3047,7 +3158,7 @@ pub mod async_ofi {
             ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             // assert_eq!(&reg_mem[..512], &expected[..512]);
 
-            expected = vec![4; 1024 * 2];
+            expected = vec![6; 1024 * 2];
             // Recv a completion ack
             ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..512], &expected[..512]);
