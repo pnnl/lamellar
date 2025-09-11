@@ -1226,6 +1226,19 @@ pub mod async_ofi {
             AtomicOp::Band => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_band_mr_slice_to_async(ep, buf, desc, dest, slice, context).await,
             // AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice_to_async(ep, buf, desc, dest, slice, context).await,
             AtomicOp::Bxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_bxor_mr_slice_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::AtomicWrite => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_write_mr_slice_to_async(ep, buf, desc, dest, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn atomic_bool_op<A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[bool], desc: Option<MemoryRegionDesc<'_>>, dest: &MappedAddress, slice: &RemoteMemAddrSliceMut<'_, bool>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        A: AsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Lor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_lor_mr_slice_to_async(ep, buf, desc, dest, slice, context).await,
+            AtomicOp::Land => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_land_mr_slice_to_async(ep, buf, desc, dest, slice, context).await,
             _ => todo!(),
         }
     }
@@ -1247,6 +1260,20 @@ pub mod async_ofi {
             AtomicOp::Band => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_band_mr_slice_to_async(ep, ioc, desc, dest, slice, context).await,
             // AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice_to_async(ep, ioc, desc, dest, slice, context).await,
             AtomicOp::Bxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_bxor_mr_slice_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::AtomicWrite => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_write_mr_slice_to_async(ep, ioc, desc, dest, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn atomicv_bool_op<A>(op: libfabric::enums::AtomicOp, ep: &A, ioc: &[libfabric::iovec::Ioc<'_, bool>], desc: Option<&[MemoryRegionDesc<'_>]>, dest: &MappedAddress, slice: &RemoteMemAddrSliceMut<'_, bool>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        A: AsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Lor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_lor_mr_slice_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Land => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_land_mr_slice_to_async(ep, ioc, desc, dest, slice, context).await,
+            AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice_to_async(ep, ioc, desc, dest, slice, context).await,
             _ => todo!(),
         }
     }
@@ -1268,6 +1295,20 @@ pub mod async_ofi {
             AtomicOp::Band => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_band_mr_slice_async(ep, ioc, desc, slice, context).await,
             // AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice_async(ep, ioc, desc, slice, context).await,
             AtomicOp::Bxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_bxor_mr_slice_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::AtomicWrite => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_write_mr_slice_async(ep, ioc, desc, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn conn_atomicv_bool_op<A>(op: libfabric::enums::AtomicOp, ep: &A, ioc: &[libfabric::iovec::Ioc<'_, bool>], desc: Option<&[MemoryRegionDesc<'_>]>, slice: &RemoteMemAddrSliceMut<'_, bool>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        A: ConnectedAsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Lor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_lor_mr_slice_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Land => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_land_mr_slice_async(ep, ioc, desc, slice, context).await,
+            AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice_async(ep, ioc, desc, slice, context).await,
             _ => todo!(),
         }
     }
@@ -1289,6 +1330,20 @@ pub mod async_ofi {
             AtomicOp::Band => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_band_mr_slice_async(ep, buf, desc, slice, context).await,
             // AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice_async(ep, buf, desc, slice, context).await,
             AtomicOp::Bxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_bxor_mr_slice_async(ep, buf, desc, slice, context).await,
+            AtomicOp::AtomicWrite => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_write_mr_slice_async(ep, buf, desc, slice, context).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn conn_atomic_bool_op<A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[bool], desc: Option<MemoryRegionDesc<'_>>, slice: &RemoteMemAddrSliceMut<'_, bool>, context: &mut Context) -> Result<SingleCompletion, libfabric::error::Error>
+    where
+        A: ConnectedAsyncAtomicWriteEp, 
+    {
+
+        match op {
+            AtomicOp::Lor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_lor_mr_slice_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Land => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_land_mr_slice_async(ep, buf, desc, slice, context).await,
+            AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice_async(ep, buf, desc, slice, context).await,
             _ => todo!(),
         }
     }
@@ -1309,6 +1364,19 @@ pub mod async_ofi {
             AtomicOp::Band => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_band_mr_slice_to_async(ep, buf, dest, slice).await,
             // AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice_to_async(ep, buf, dest, slice).await,
             AtomicOp::Bxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_bxor_mr_slice_to_async(ep, buf, dest, slice).await,
+            AtomicOp::AtomicWrite => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_write_mr_slice_to_async(ep, buf, dest, slice).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn atomic_inject_bool_op<A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[bool], dest: &MappedAddress, slice: &RemoteMemAddrSliceMut<'_, bool>) -> Result<(), libfabric::error::Error>
+    where
+        A: AsyncAtomicWriteEp,
+    {
+        match op {
+            AtomicOp::Lor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lor_mr_slice_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Land => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_land_mr_slice_to_async(ep, buf, dest, slice).await,
+            AtomicOp::Lxor => AsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice_to_async(ep, buf, dest, slice).await,
             _ => todo!(),
         }
     }
@@ -1329,6 +1397,19 @@ pub mod async_ofi {
             AtomicOp::Band => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_band_mr_slice_async(ep, buf,slice).await,
             // AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice_async(ep, buf,slice).await,
             AtomicOp::Bxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_bxor_mr_slice_async(ep, buf,slice).await,
+            AtomicOp::AtomicWrite => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_write_mr_slice_async(ep, buf,slice).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn conn_atomic_inject_bool_op<A>(op: libfabric::enums::AtomicOp, ep: &A, buf: &[bool], slice: &RemoteMemAddrSliceMut<'_, bool>) -> Result<(), libfabric::error::Error>
+    where
+        A: ConnectedAsyncAtomicWriteEp,
+    {
+        match op {
+            AtomicOp::Lor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lor_mr_slice_async(ep, buf,slice).await,
+            AtomicOp::Land => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_land_mr_slice_async(ep, buf,slice).await,
+            AtomicOp::Lxor => ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice_async(ep, buf,slice).await,
             _ => todo!(),
         }
     }
@@ -1360,6 +1441,32 @@ pub mod async_ofi {
             FetchAtomicOp::Band => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_band_mr_slice_from_async(ep, buf, desc, res, res_desc, dest, slice, ctx).await,
             // FetchAtomicOp::Lxor => AsyncAtomicFetchRemoteMemAddrSliceEp::atommr_slice_ic_lxor_to(ep, buf, desc, res, res_desc, dest, slice),
             FetchAtomicOp::Bxor => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bxor_mr_slice_from_async(ep, buf, desc, res, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::AtomicWrite => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_write_mr_slice_from_async(ep, buf, desc, res, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::AtomicRead => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_read_mr_slice_from_async(ep, buf, desc, res, res_desc, dest, slice, ctx).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn get_atomic_fetch_bool_op<A>(
+        op: libfabric::enums::FetchAtomicOp,
+        ep: &A,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest: &MappedAddress,
+        slice: &RemoteMemAddrSlice<'_, bool>,
+        ctx: &mut Context
+    ) 
+    -> Result<SingleCompletion, Error>
+    where
+        A: AsyncAtomicFetchEp, 
+    {
+
+        match op {
+            FetchAtomicOp::Lor => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lor_mr_slice_from_async(ep, buf, desc, res, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::Land => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_land_mr_slice_from_async(ep, buf, desc, res, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::Lxor => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lxor_mr_slice_from_async(ep, buf, desc, res, res_desc, dest, slice, ctx).await,
             _ => todo!(),
         }
     }
@@ -1389,6 +1496,8 @@ pub mod async_ofi {
             FetchAtomicOp::Bor => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bor_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
             FetchAtomicOp::Band => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_band_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
             FetchAtomicOp::Bxor => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bxor_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::AtomicWrite => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_write_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::AtomicRead => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_read_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
             _ => todo!(),
         }
     }
@@ -1417,6 +1526,8 @@ pub mod async_ofi {
             FetchAtomicOp::Bor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bor_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
             FetchAtomicOp::Band => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_band_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
             FetchAtomicOp::Bxor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bxor_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
+            FetchAtomicOp::AtomicWrite => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_write_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
+            FetchAtomicOp::AtomicRead => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_read_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
             _ => todo!(),
         }
     }
@@ -1445,6 +1556,78 @@ pub mod async_ofi {
             FetchAtomicOp::Bor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bor_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
             FetchAtomicOp::Band => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_band_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
             FetchAtomicOp::Bxor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bxor_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
+            FetchAtomicOp::AtomicWrite => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_write_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
+            FetchAtomicOp::AtomicRead => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_read_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn get_atomicv_fetch_bool_op<A>(
+        op: libfabric::enums::FetchAtomicOp,
+        ep: &A,
+        ioc: &[libfabric::iovec::Ioc<'_, bool>], 
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resioc: &mut [libfabric::iovec::IocMut<'_,bool>], 
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest: &MappedAddress,
+        slice: &RemoteMemAddrSlice<'_, bool>,
+        ctx: &mut Context
+    ) 
+    -> Result<SingleCompletion, Error>
+    where
+        A: AsyncAtomicFetchEp, 
+    {
+
+        match op {
+            FetchAtomicOp::Lor => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lor_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::Land => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_land_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
+            FetchAtomicOp::Lxor => AsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lxor_mr_slice_from_async(ep, ioc, desc, resioc, res_desc, dest, slice, ctx).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn get_conn_atomic_fetch_bool_op<A>(
+        op: libfabric::enums::FetchAtomicOp,
+        ep: &A,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        slice: &RemoteMemAddrSlice<'_, bool>,
+        ctx: &mut Context
+    ) 
+    -> Result<SingleCompletion, Error>
+    where
+        A: ConnectedAsyncAtomicFetchEp, 
+    {
+
+        match op {
+            FetchAtomicOp::Lor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lor_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
+            FetchAtomicOp::Land => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_land_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
+            FetchAtomicOp::Lxor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lxor_mr_slice_async(ep, buf, desc, res, res_desc, slice, ctx).await,
+            _ => todo!(),
+        }
+    }
+
+    async unsafe fn get_conn_atomicv_fetch_bool_op<A>(
+        op: libfabric::enums::FetchAtomicOp,
+        ep: &A,
+        ioc: &[libfabric::iovec::Ioc<'_, bool>], 
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resioc: &mut [libfabric::iovec::IocMut<'_, bool>], 
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        slice: &RemoteMemAddrSlice<'_, bool>,
+        ctx: &mut Context
+    ) 
+    -> Result<SingleCompletion, Error>
+    where
+        A: ConnectedAsyncAtomicFetchEp, 
+    {
+
+        match op {
+            FetchAtomicOp::Lor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lor_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
+            FetchAtomicOp::Land => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_land_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
+            FetchAtomicOp::Lxor => ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lxor_mr_slice_async(ep, ioc, desc, resioc, res_desc, slice, ctx).await,
             _ => todo!(),
         }
     }
@@ -1610,6 +1793,48 @@ pub mod async_ofi {
             .unwrap()
         }
 
+        pub fn atomic_bool(
+            &self,
+            buf: &[bool],
+            dest_addr: usize,
+            desc: Option<MemoryRegionDesc>,
+            op: AtomicOp,
+            ctx: &mut Context,
+        ) {
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
+
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
+            async_std::task::block_on(async {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => {
+                        if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                            unsafe {
+                                atomic_inject_bool_op(op, ep, buf, &self.mapped_addr.as_ref().unwrap()[1], &dst_slice)
+                                .await
+                            }
+                        } else {
+                            unsafe {
+                                atomic_bool_op(op, ep, buf, desc, &self.mapped_addr.as_ref().unwrap()[1], &dst_slice, ctx)
+                                .await
+                            }
+                            .map(|_| {})
+                        }
+                    }
+                    MyEndpoint::Connected(ep) => {
+                        if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                            unsafe { conn_atomic_inject_bool_op(op, ep, buf, &dst_slice).await }
+                        } else {
+                            unsafe { conn_atomic_bool_op(op, ep, buf, desc, &dst_slice, ctx).await }
+                                .map(|_| {})
+                        }
+                    }
+                }
+            })
+            .unwrap()
+        }
+
         pub fn atomicv<T: libfabric::AsFiType>(
             &self,
             ioc: &[libfabric::iovec::Ioc<T>],
@@ -1631,6 +1856,34 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         conn_atomicv_op(op, ep, ioc, desc, &dest_slice, ctx)
+                            .await
+                    },
+                }
+            })
+            .unwrap();
+        }
+
+        pub fn atomicv_bool(
+            &self,
+            ioc: &[libfabric::iovec::Ioc<bool>],
+            dest_addr: usize,
+            desc: Option<&[MemoryRegionDesc]>,
+            op: AtomicOp,
+            ctx: &mut Context,
+        ) {
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dest_slice = remote_mem_info
+                .slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
+            async_std::task::block_on(async {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => unsafe {
+                        atomicv_bool_op(op, ep, ioc, desc, &self.mapped_addr.as_ref().unwrap()[1], &dest_slice, ctx) 
+                        .await
+                    },
+                    MyEndpoint::Connected(ep) => unsafe {
+                        conn_atomicv_bool_op(op, ep, ioc, desc, &dest_slice, ctx)
                             .await
                     },
                 }
@@ -1722,6 +1975,76 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         get_conn_atomicv_fetch_op(op,ep,ioc, desc, res_ioc, res_desc, &src_slice, ctx)
+                        .await
+                    },
+                }
+            })
+            .unwrap();
+        }
+
+
+        pub fn fetch_atomic_bool(
+            &self,
+            buf: &[bool],
+            res: &mut [bool],
+            dest_addr: usize,
+            desc: Option<MemoryRegionDesc>,
+            res_desc: Option<MemoryRegionDesc>,
+            op: FetchAtomicOp,
+            ctx: &mut Context,
+        ) {
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
+            async_std::task::block_on(async {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => unsafe {
+                        get_atomic_fetch_bool_op(
+                            op,
+                            ep,
+                            buf,
+                            desc,
+                            res,
+                            res_desc,
+                            &self.mapped_addr.as_ref().unwrap()[1],
+                            &src_slice,
+                            ctx,
+                        )
+                        .await
+                    },
+                    MyEndpoint::Connected(ep) => unsafe {
+                        get_conn_atomic_fetch_bool_op(op, ep, buf, desc, res, res_desc, &src_slice, ctx)
+                            .await
+                    },
+                }
+            })
+            .unwrap();
+        }
+
+        pub fn fetch_atomicv_bool(
+            &self,
+            ioc: &[libfabric::iovec::Ioc<'_, bool>],
+            res_ioc: &mut [libfabric::iovec::IocMut<'_, bool>],
+            dest_addr: usize,
+            desc: Option<&[MemoryRegionDesc]>,
+            res_desc: Option<&[MemoryRegionDesc]>,
+            op: FetchAtomicOp,
+            ctx: &mut Context,
+        ) {
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice: RemoteMemAddrSlice<'_, bool> = remote_mem_info
+                .slice(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
+            // let key = &remote_mem_info.key();
+            // let base_addr = remote_mem_info.mem_address();
+            let _ = async_std::task::block_on(async {
+                match &self.ep {
+                    MyEndpoint::Connectionless(ep) => unsafe {
+                        get_atomicv_fetch_bool_op(op,ep,ioc,desc,res_ioc,res_desc,&self.mapped_addr.as_ref().unwrap()[1],&src_slice,ctx)
+                        .await
+                    },
+                    MyEndpoint::Connected(ep) => unsafe {
+                        get_conn_atomicv_fetch_bool_op(op,ep,ioc, desc, res_ioc, res_desc, &src_slice, ctx)
                         .await
                     },
                 }
@@ -3315,13 +3638,13 @@ pub mod async_ofi {
 
             // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lxor, &mut ctx);
 
-            // ofi.atomic(
-            //     &reg_mem[..512],
-            //     0,
-            //     desc,
-            //     AtomicOp::AtomicWrite,
-            //     &mut ctx,
-            // );
+            ofi.atomic(
+                &reg_mem[..512],
+                0,
+                desc,
+                AtomicOp::AtomicWrite,
+                &mut ctx,
+            );
             ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
             let iocs = [
@@ -3362,12 +3685,12 @@ pub mod async_ofi {
             assert_eq!(&reg_mem[..512], &expected[..512]);
             ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
 
-            // expected = vec![2;1024*2];
+            expected = vec![2;1024*2];
             // Recv a completion ack
             ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
-            // assert_eq!(&reg_mem[..512], &expected[..512]);
+            assert_eq!(&reg_mem[..512], &expected[..512]);
 
-            expected = vec![6; 1024 * 2];
+            expected = vec![4; 1024 * 2];
             // Recv a completion ack
             ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
             assert_eq!(&reg_mem[..512], &expected[..512]);
@@ -3585,36 +3908,36 @@ pub mod async_ofi {
 
             assert_eq!(mem1, &expected);
 
-            // expected = vec![0; 256];
-            // ofi.fetch_atomic(
-            //     &mem0,
-            //     mem1,
-            //     0,
-            //     desc0,
-            //     desc1.clone(),
-            //     FetchAtomicOp::AtomicWrite,
-            //     &mut ctx,
-            // );
+            expected = vec![2; 256];
+            ofi.fetch_atomic(
+                &mem0,
+                mem1,
+                0,
+                desc0,
+                desc1.clone(),
+                FetchAtomicOp::AtomicWrite,
+                &mut ctx,
+            );
 
-            // assert_eq!(mem1, &expected);
+            assert_eq!(mem1, &expected);
 
             // Send a done ack
             ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
 
             ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
 
-            // expected = vec![2; 256];
-            // ofi.fetch_atomic(
-            //     &mem0,
-            //     mem1,
-            //     0,
-            //     desc0,
-            //     desc1.clone(),
-            //     FetchAtomicOp::AtomicRead,
-            //     &mut ctx,
-            // );
+            expected = vec![2; 256];
+            ofi.fetch_atomic(
+                &mem0,
+                mem1,
+                0,
+                desc0,
+                desc1.clone(),
+                FetchAtomicOp::AtomicRead,
+                &mut ctx,
+            );
 
-            // assert_eq!(mem1, &expected);
+            assert_eq!(mem1, &expected);
 
             expected = vec![2; 256];
             let (read_mem, write_mem) = op_mem.split_at_mut(256);

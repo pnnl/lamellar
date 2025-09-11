@@ -208,7 +208,7 @@ pub trait AtomicWriteEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    atomic_min_to, atomic_max_to, atomic_sum_to,  atomic_prod_to, atomic_bor_to, atomic_band_to, atomic_bxor_to
+    atomic_min_to, atomic_max_to, atomic_sum_to,  atomic_prod_to, atomic_bor_to, atomic_band_to, atomic_bxor_to, atomic_write_to
     );
 
     gen_atomic_op_decl!((), (
@@ -231,7 +231,7 @@ pub trait AtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    atomic_min_to_with_context, atomic_max_to_with_context, atomic_sum_to_with_context,  atomic_prod_to_with_context, atomic_bor_to_with_context, atomic_band_to_with_context, atomic_bxor_to_with_context
+    atomic_min_to_with_context, atomic_max_to_with_context, atomic_sum_to_with_context,  atomic_prod_to_with_context, atomic_bor_to_with_context, atomic_band_to_with_context, atomic_bxor_to_with_context, atomic_write_to_with_context
     );
 
     gen_atomic_op_decl!((), (
@@ -255,7 +255,7 @@ pub trait AtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-    atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered 
+    atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered, atomic_write_to_triggered
     );
 
     gen_atomic_op_decl!((), (
@@ -278,7 +278,7 @@ pub trait AtomicWriteEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    atomicv_min_to, atomicv_max_to, atomicv_sum_to,  atomicv_prod_to, atomicv_bor_to, atomicv_band_to, atomicv_bxor_to
+    atomicv_min_to, atomicv_max_to, atomicv_sum_to,  atomicv_prod_to, atomicv_bor_to, atomicv_band_to, atomicv_bxor_to, atomicv_write_to
     );
 
     gen_atomic_op_decl!((), (
@@ -301,7 +301,7 @@ pub trait AtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    atomicv_min_to_with_context, atomicv_max_to_with_context, atomicv_sum_to_with_context,  atomicv_prod_to_with_context, atomicv_bor_to_with_context, atomicv_band_to_with_context, atomicv_bxor_to_with_context
+    atomicv_min_to_with_context, atomicv_max_to_with_context, atomicv_sum_to_with_context,  atomicv_prod_to_with_context, atomicv_bor_to_with_context, atomicv_band_to_with_context, atomicv_bxor_to_with_context, atomicv_write_to_with_context
     );
 
     gen_atomic_op_decl!((), (
@@ -325,7 +325,7 @@ pub trait AtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ), 
-    atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered,  atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered
+    atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered,  atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered, atomicv_write_to_triggered
     );
 
     gen_atomic_op_decl!((), (
@@ -355,7 +355,7 @@ pub trait AtomicWriteEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    atomic_inject_min_to, atomic_inject_max_to, atomic_inject_sum_to,  atomic_inject_prod_to, atomic_inject_bor_to, atomic_inject_band_to, atomic_inject_bxor_to
+    atomic_inject_min_to, atomic_inject_max_to, atomic_inject_sum_to,  atomic_inject_prod_to, atomic_inject_bor_to, atomic_inject_band_to, atomic_inject_bxor_to, atomic_inject_write_to
     );
 
     gen_atomic_op_decl!((), (
@@ -458,7 +458,7 @@ pub trait ConnectedAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context, atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context
+    atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context, atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context, atomic_write_with_context
     );
     gen_atomic_op_decl!((), (
         self,
@@ -476,7 +476,7 @@ pub trait ConnectedAtomicWriteEp {
         desc: Option<MemoryRegionDesc<'_>>,
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
-    ),atomic_min, atomic_max, atomic_sum, atomic_prod, atomic_bor, atomic_band, atomic_bxor
+    ),atomic_min, atomic_max, atomic_sum, atomic_prod, atomic_bor, atomic_band, atomic_bxor, atomic_write
     );
 
     gen_atomic_op_decl!((), (
@@ -497,7 +497,7 @@ pub trait ConnectedAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ), 
-    atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered, atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered
+    atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered, atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered, atomic_write_triggered
     );
 
     gen_atomic_op_decl!((), (
@@ -518,7 +518,7 @@ pub trait ConnectedAtomicWriteEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    atomicv_min, atomicv_max, atomicv_sum, atomicv_prod, atomicv_bor, atomicv_band, atomicv_bxor
+    atomicv_min, atomicv_max, atomicv_sum, atomicv_prod, atomicv_bor, atomicv_band, atomicv_bxor, atomicv_write
     );
 
     gen_atomic_op_decl!((), (
@@ -539,7 +539,7 @@ pub trait ConnectedAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    atomicv_min_with_context, atomicv_max_with_context, atomicv_sum_with_context, atomicv_prod_with_context, atomicv_bor_with_context, atomicv_band_with_context, atomicv_bxor_with_context
+    atomicv_min_with_context, atomicv_max_with_context, atomicv_sum_with_context, atomicv_prod_with_context, atomicv_bor_with_context, atomicv_band_with_context, atomicv_bxor_with_context, atomicv_write_with_context
     );
 
     gen_atomic_op_decl!((), (
@@ -561,7 +561,7 @@ pub trait ConnectedAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-    atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered, atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered
+    atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered, atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered, atomicv_write_triggered
     );
 
     gen_atomic_op_decl!((), (
@@ -587,7 +587,7 @@ pub trait ConnectedAtomicWriteEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    atomic_inject_min, atomic_inject_max, atomic_inject_sum, atomic_inject_prod, atomic_inject_bor, atomic_inject_band, atomic_inject_bxor
+    atomic_inject_min, atomic_inject_max, atomic_inject_sum, atomic_inject_prod, atomic_inject_bor, atomic_inject_band, atomic_inject_bxor, atomic_inject_write
     );
 
     gen_atomic_op_decl!((), (
@@ -608,7 +608,7 @@ pub trait ConnectedAtomicWriteEpMrSlice: ConnectedAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey
     ),
         (mr_slice.as_slice(), Some(mr_slice.desc()), mem_addr, mapped_key),
-        atomic_min, atomic_max, atomic_sum,  atomic_prod, atomic_bor, atomic_band, atomic_bxor,, atomic_mr_min, atomic_mr_max, atomic_mr_sum,  atomic_mr_prod, atomic_mr_bor, atomic_mr_band, atomic_mr_bxor
+        atomic_min, atomic_max, atomic_sum,  atomic_prod, atomic_bor, atomic_band, atomic_bxor, atomic_write,, atomic_mr_min, atomic_mr_max, atomic_mr_sum,  atomic_mr_prod, atomic_mr_bor, atomic_mr_band, atomic_mr_bxor, atomic_mr_write
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -619,7 +619,7 @@ pub trait ConnectedAtomicWriteEpMrSlice: ConnectedAtomicWriteEp {
         context: &mut Context
     ),
         (mr_slice.as_slice(), Some(mr_slice.desc()), mem_addr, mapped_key, context),
-        atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context,  atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context,, atomic_mr_min_with_context, atomic_mr_max_with_context, atomic_mr_sum_with_context,  atomic_mr_prod_with_context, atomic_mr_bor_with_context, atomic_mr_band_with_context, atomic_mr_bxor_with_context
+        atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context,  atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context, atomic_write_with_context,, atomic_mr_min_with_context, atomic_mr_max_with_context, atomic_mr_sum_with_context,  atomic_mr_prod_with_context, atomic_mr_bor_with_context, atomic_mr_band_with_context, atomic_mr_bxor_with_context, atomic_mr_write_with_context
     );
 
 
@@ -631,7 +631,7 @@ pub trait ConnectedAtomicWriteEpMrSlice: ConnectedAtomicWriteEp {
         context: &mut TriggeredContext
     ),
         (mr_slice.as_slice(), Some(mr_slice.desc()), mem_addr, mapped_key, context),
-        atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered,  atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered,, atomic_mr_min_triggered, atomic_mr_max_triggered, atomic_mr_sum_triggered,  atomic_mr_prod_triggered, atomic_mr_bor_triggered, atomic_mr_band_triggered, atomic_mr_bxor_triggered
+        atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered,  atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered, atomic_write_triggered,, atomic_mr_min_triggered, atomic_mr_max_triggered, atomic_mr_sum_triggered,  atomic_mr_prod_triggered, atomic_mr_bor_triggered, atomic_mr_band_triggered, atomic_mr_bxor_triggered, atomic_mr_write_triggered
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -662,7 +662,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomic_min_to, atomic_max_to, atomic_sum_to,  atomic_prod_to, atomic_bor_to, atomic_band_to, atomic_bxor_to,, atomic_min_mr_slice_to, atomic_max_mr_slice_to, atomic_sum_mr_slice_to,  atomic_prod_mr_slice_to, atomic_bor_mr_slice_to, atomic_band_mr_slice_to, atomic_bxor_mr_slice_to
+        atomic_min_to, atomic_max_to, atomic_sum_to,  atomic_prod_to, atomic_bor_to, atomic_band_to, atomic_bxor_to, atomic_write_to,, atomic_min_mr_slice_to, atomic_max_mr_slice_to, atomic_sum_mr_slice_to,  atomic_prod_mr_slice_to, atomic_bor_mr_slice_to, atomic_band_mr_slice_to, atomic_bxor_mr_slice_to, atomic_write_mr_slice_to
     );
 
     gen_atomic_mr_op_def!((), (
@@ -697,7 +697,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomic_min_to_with_context, atomic_max_to_with_context, atomic_sum_to_with_context,  atomic_prod_to_with_context, atomic_bor_to_with_context, atomic_band_to_with_context, atomic_bxor_to_with_context,, atomic_min_mr_slice_to_with_context, atomic_max_mr_slice_to_with_context, atomic_sum_mr_slice_to_with_context,  atomic_prod_mr_slice_to_with_context, atomic_bor_mr_slice_to_with_context, atomic_band_mr_slice_to_with_context, atomic_bxor_mr_slice_to_with_context
+        atomic_min_to_with_context, atomic_max_to_with_context, atomic_sum_to_with_context,  atomic_prod_to_with_context, atomic_bor_to_with_context, atomic_band_to_with_context, atomic_bxor_to_with_context, atomic_write_to_with_context,, atomic_min_mr_slice_to_with_context, atomic_max_mr_slice_to_with_context, atomic_sum_mr_slice_to_with_context,  atomic_prod_mr_slice_to_with_context, atomic_bor_mr_slice_to_with_context, atomic_band_mr_slice_to_with_context, atomic_bxor_mr_slice_to_with_context, atomic_write_mr_slice_to_with_context
     );
 
     gen_atomic_mr_op_def!((), (
@@ -735,7 +735,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered,, atomic_min_mr_slice_to_triggered, atomic_max_mr_slice_to_triggered, atomic_sum_mr_slice_to_triggered,  atomic_prod_mr_slice_to_triggered, atomic_bor_mr_slice_to_triggered, atomic_band_mr_slice_to_triggered, atomic_bxor_mr_slice_to_triggered
+        atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered,  atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered, atomic_write_to_triggered,, atomic_min_mr_slice_to_triggered, atomic_max_mr_slice_to_triggered, atomic_sum_mr_slice_to_triggered,  atomic_prod_mr_slice_to_triggered, atomic_bor_mr_slice_to_triggered, atomic_band_mr_slice_to_triggered, atomic_bxor_mr_slice_to_triggered, atomic_write_mr_slice_to_triggered
     );
 
     gen_atomic_mr_op_def!((), (
@@ -771,7 +771,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomicv_min_to, atomicv_max_to, atomicv_sum_to,  atomicv_prod_to, atomicv_bor_to, atomicv_band_to, atomicv_bxor_to,, atomicv_min_mr_slice_to, atomicv_max_mr_slice_to, atomicv_sum_mr_slice_to,  atomicv_prod_mr_slice_to, atomicv_bor_mr_slice_to, atomicv_band_mr_slice_to, atomicv_bxor_mr_slice_to
+        atomicv_min_to, atomicv_max_to, atomicv_sum_to,  atomicv_prod_to, atomicv_bor_to, atomicv_band_to, atomicv_bxor_to, atomicv_write_to,, atomicv_min_mr_slice_to, atomicv_max_mr_slice_to, atomicv_sum_mr_slice_to,  atomicv_prod_mr_slice_to, atomicv_bor_mr_slice_to, atomicv_band_mr_slice_to, atomicv_bxor_mr_slice_to, atomicv_write_mr_slice_to
     );
 
     gen_atomic_mr_op_def!((), (
@@ -807,7 +807,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomicv_min_to_with_context, atomicv_max_to_with_context, atomicv_sum_to_with_context,  atomicv_prod_to_with_context, atomicv_bor_to_with_context, atomicv_band_to_with_context, atomicv_bxor_to_with_context,, atomicv_min_mr_slice_to_with_context, atomicv_max_mr_slice_to_with_context, atomicv_sum_mr_slice_to_with_context,  atomicv_prod_mr_slice_to_with_context, atomicv_bor_mr_slice_to_with_context, atomicv_band_mr_slice_to_with_context, atomicv_bxor_mr_slice_to_with_context
+        atomicv_min_to_with_context, atomicv_max_to_with_context, atomicv_sum_to_with_context,  atomicv_prod_to_with_context, atomicv_bor_to_with_context, atomicv_band_to_with_context, atomicv_bxor_to_with_context, atomicv_write_to_with_context,, atomicv_min_mr_slice_to_with_context, atomicv_max_mr_slice_to_with_context, atomicv_sum_mr_slice_to_with_context,  atomicv_prod_mr_slice_to_with_context, atomicv_bor_mr_slice_to_with_context, atomicv_band_mr_slice_to_with_context, atomicv_bxor_mr_slice_to_with_context, atomicv_write_mr_slice_to_with_context
     );
 
     gen_atomic_mr_op_def!((), (
@@ -845,7 +845,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered,  atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered,, atomicv_min_mr_slice_to_triggered, atomicv_max_mr_slice_to_triggered, atomicv_sum_mr_slice_to_triggered,  atomicv_prod_mr_slice_to_triggered, atomicv_bor_mr_slice_to_triggered, atomicv_band_mr_slice_to_triggered, atomicv_bxor_mr_slice_to_triggered
+        atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered,  atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered, atomicv_write_to_triggered,, atomicv_min_mr_slice_to_triggered, atomicv_max_mr_slice_to_triggered, atomicv_sum_mr_slice_to_triggered,  atomicv_prod_mr_slice_to_triggered, atomicv_bor_mr_slice_to_triggered, atomicv_band_mr_slice_to_triggered, atomicv_bxor_mr_slice_to_triggered, atomicv_write_mr_slice_to_triggered
     );
 
     gen_atomic_mr_op_def!((), (
@@ -888,7 +888,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomic_inject_min_to, atomic_inject_max_to, atomic_inject_sum_to,  atomic_inject_prod_to, atomic_inject_bor_to, atomic_inject_band_to, atomic_inject_bxor_to,, atomic_inject_min_mr_slice_to, atomic_inject_max_mr_slice_to, atomic_inject_sum_mr_slice_to,  atomic_inject_prod_mr_slice_to, atomic_inject_bor_mr_slice_to, atomic_inject_band_mr_slice_to, atomic_inject_bxor_mr_slice_to
+        atomic_inject_min_to, atomic_inject_max_to, atomic_inject_sum_to,  atomic_inject_prod_to, atomic_inject_bor_to, atomic_inject_band_to, atomic_inject_bxor_to, atomic_inject_write_to,, atomic_inject_min_mr_slice_to, atomic_inject_max_mr_slice_to, atomic_inject_sum_mr_slice_to,  atomic_inject_prod_mr_slice_to, atomic_inject_bor_mr_slice_to, atomic_inject_band_mr_slice_to, atomic_inject_bxor_mr_slice_to, atomic_inject_write_mr_slice_to
     );
 
     gen_atomic_mr_op_def!((), (
@@ -920,7 +920,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomic_min, atomic_max, atomic_sum,  atomic_prod, atomic_bor, atomic_band, atomic_bxor,, atomic_min_mr_slice, atomic_max_mr_slice, atomic_sum_mr_slice,  atomic_prod_mr_slice, atomic_bor_mr_slice, atomic_band_mr_slice, atomic_bxor_mr_slice
+        atomic_min, atomic_max, atomic_sum,  atomic_prod, atomic_bor, atomic_band, atomic_bxor, atomic_write,, atomic_min_mr_slice, atomic_max_mr_slice, atomic_sum_mr_slice,  atomic_prod_mr_slice, atomic_bor_mr_slice, atomic_band_mr_slice, atomic_bxor_mr_slice, atomic_write_mr_slice
     );
 
     gen_atomic_mr_op_def!((), (
@@ -951,7 +951,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context,  atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context,, atomic_min_mr_slice_with_context, atomic_max_mr_slice_with_context, atomic_sum_mr_slice_with_context,  atomic_prod_mr_slice_with_context, atomic_bor_mr_slice_with_context, atomic_band_mr_slice_with_context, atomic_bxor_mr_slice_with_context
+        atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context,  atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context, atomic_write_with_context,, atomic_min_mr_slice_with_context, atomic_max_mr_slice_with_context, atomic_sum_mr_slice_with_context,  atomic_prod_mr_slice_with_context, atomic_bor_mr_slice_with_context, atomic_band_mr_slice_with_context, atomic_bxor_mr_slice_with_context, atomic_write_mr_slice_with_context
     );
 
     gen_atomic_mr_op_def!((), (
@@ -985,7 +985,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered,  atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered,, atomic_min_mr_slice_triggered, atomic_max_mr_slice_triggered, atomic_sum_mr_slice_triggered,  atomic_prod_mr_slice_triggered, atomic_bor_mr_slice_triggered, atomic_band_mr_slice_triggered, atomic_bxor_mr_slice_triggered
+        atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered,  atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered, atomic_write_triggered,, atomic_min_mr_slice_triggered, atomic_max_mr_slice_triggered, atomic_sum_mr_slice_triggered,  atomic_prod_mr_slice_triggered, atomic_bor_mr_slice_triggered, atomic_band_mr_slice_triggered, atomic_bxor_mr_slice_triggered, atomic_write_mr_slice_triggered
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1017,7 +1017,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomicv_min, atomicv_max, atomicv_sum,  atomicv_prod, atomicv_bor, atomicv_band, atomicv_bxor,, atomicv_min_mr_slice, atomicv_max_mr_slice, atomicv_sum_mr_slice,  atomicv_prod_mr_slice, atomicv_bor_mr_slice, atomicv_band_mr_slice, atomicv_bxor_mr_slice
+        atomicv_min, atomicv_max, atomicv_sum,  atomicv_prod, atomicv_bor, atomicv_band, atomicv_bxor, atomicv_write,, atomicv_min_mr_slice, atomicv_max_mr_slice, atomicv_sum_mr_slice,  atomicv_prod_mr_slice, atomicv_bor_mr_slice, atomicv_band_mr_slice, atomicv_bxor_mr_slice, atomicv_write_mr_slice
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1049,7 +1049,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomicv_min_with_context, atomicv_max_with_context, atomicv_sum_with_context,  atomicv_prod_with_context, atomicv_bor_with_context, atomicv_band_with_context, atomicv_bxor_with_context,, atomicv_min_mr_slice_with_context, atomicv_max_mr_slice_with_context, atomicv_sum_mr_slice_with_context,  atomicv_prod_mr_slice_with_context, atomicv_bor_mr_slice_with_context, atomicv_band_mr_slice_with_context, atomicv_bxor_mr_slice_with_context
+        atomicv_min_with_context, atomicv_max_with_context, atomicv_sum_with_context,  atomicv_prod_with_context, atomicv_bor_with_context, atomicv_band_with_context, atomicv_bxor_with_context, atomicv_write_with_context,, atomicv_min_mr_slice_with_context, atomicv_max_mr_slice_with_context, atomicv_sum_mr_slice_with_context,  atomicv_prod_mr_slice_with_context, atomicv_bor_mr_slice_with_context, atomicv_band_mr_slice_with_context, atomicv_bxor_mr_slice_with_context, atomicv_write_mr_slice_with_context
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1083,7 +1083,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered,  atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered,, atomicv_min_tmr_slice_riggered, atomicv_max_tmr_slice_riggered, atomicv_sum_tmr_slice_riggered,  atomicv_prod_mr_slice_triggered, atomicv_bor_tmr_slice_riggered, atomicv_band_mr_slice_triggered, atomicv_bxor_mr_slice_triggered
+        atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered,  atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered, atomicv_write_triggered,, atomicv_min_tmr_slice_riggered, atomicv_max_tmr_slice_riggered, atomicv_sum_tmr_slice_riggered,  atomicv_prod_mr_slice_triggered, atomicv_bor_tmr_slice_riggered, atomicv_band_mr_slice_triggered, atomicv_bxor_mr_slice_triggered, atomicv_write_mr_slice_triggered
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1122,7 +1122,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomic_inject_min, atomic_inject_max, atomic_inject_sum,  atomic_inject_prod, atomic_inject_bor, atomic_inject_band, atomic_inject_bxor,, atomic_inject_min_mr_slice, atomic_inject_max_mr_slice, atomic_inject_sum_mr_slice,  atomic_inject_prod_mr_slice, atomic_inject_bor_mr_slice, atomic_inject_band_mr_slice, atomic_inject_bxor_mr_slice
+        atomic_inject_min, atomic_inject_max, atomic_inject_sum,  atomic_inject_prod, atomic_inject_bor, atomic_inject_band, atomic_inject_bxor, atomic_inject_write,, atomic_inject_min_mr_slice, atomic_inject_max_mr_slice, atomic_inject_sum_mr_slice,  atomic_inject_prod_mr_slice, atomic_inject_bor_mr_slice, atomic_inject_band_mr_slice, atomic_inject_bxor_mr_slice, atomic_inject_write_mr_slice
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1150,8 +1150,8 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, None), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_min_to, atomic_max_to, atomic_sum_to, atomic_prod_to, atomic_bor_to, atomic_band_to, atomic_bxor_to
+        atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, None), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
+        atomic_min_to, atomic_max_to, atomic_sum_to, atomic_prod_to, atomic_bor_to, atomic_band_to, atomic_bxor_to, atomic_write_to
     );
     
     gen_atomic_op_def!((), ( 
@@ -1176,8 +1176,8 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-        atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_min_to_with_context, atomic_max_to_with_context, atomic_sum_to_with_context, atomic_prod_to_with_context, atomic_bor_to_with_context, atomic_band_to_with_context, atomic_bxor_to_with_context
+        atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_min_to_with_context, atomic_max_to_with_context, atomic_sum_to_with_context, atomic_prod_to_with_context, atomic_bor_to_with_context, atomic_band_to_with_context, atomic_bxor_to_with_context, atomic_write_to_with_context
     );
     
     gen_atomic_op_def!((), ( 
@@ -1203,8 +1203,8 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-        atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())),  AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
-        atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered, atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered
+        atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())),  AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
+        atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered, atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered, atomic_write_to_triggered
     );
 
     gen_atomic_op_def!((), ( 
@@ -1228,8 +1228,8 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, None), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
-        atomicv_min_to, atomicv_max_to, atomicv_sum_to, atomicv_prod_to, atomicv_bor_to, atomicv_band_to, atomicv_bxor_to
+        atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, None), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
+        atomicv_min_to, atomicv_max_to, atomicv_sum_to, atomicv_prod_to, atomicv_bor_to, atomicv_band_to, atomicv_bxor_to, atomicv_write_to
     );
 
     gen_atomic_op_def!((), ( 
@@ -1253,8 +1253,8 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context
     ),
-        atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
-        atomicv_min_to_with_context, atomicv_max_to_with_context, atomicv_sum_to_with_context, atomicv_prod_to_with_context, atomicv_bor_to_with_context, atomicv_band_to_with_context, atomicv_bxor_to_with_context
+        atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
+        atomicv_min_to_with_context, atomicv_max_to_with_context, atomicv_sum_to_with_context, atomicv_prod_to_with_context, atomicv_bor_to_with_context, atomicv_band_to_with_context, atomicv_bxor_to_with_context, atomicv_write_to_with_context
     );
 
     gen_atomic_op_def!((), ( 
@@ -1279,8 +1279,8 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut TriggeredContext
     ),
-        atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
-        atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered, atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered
+        atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite ,,
+        atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered, atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered, atomicv_write_to_triggered
     );
 
     gen_atomic_op_def!((), ( 
@@ -1312,8 +1312,8 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        inject_atomic_impl(buf, Some(dest_addr), mem_addr, mapped_key), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
-        atomic_inject_min_to, atomic_inject_max_to, atomic_inject_sum_to, atomic_inject_prod_to, atomic_inject_bor_to, atomic_inject_band_to, atomic_inject_bxor_to
+        inject_atomic_impl(buf, Some(dest_addr), mem_addr, mapped_key), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
+        atomic_inject_min_to, atomic_inject_max_to, atomic_inject_sum_to, atomic_inject_prod_to, atomic_inject_bor_to, atomic_inject_band_to, atomic_inject_bxor_to, atomic_inject_write_to
     );
 
     gen_atomic_op_def!((), ( 
@@ -1336,8 +1336,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        atomic_impl(buf, desc, None, mem_addr, mapped_key, None), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_min, atomic_max, atomic_sum, atomic_prod, atomic_bor, atomic_band, atomic_bxor
+        atomic_impl(buf, desc, None, mem_addr, mapped_key, None), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_min, atomic_max, atomic_sum, atomic_prod, atomic_bor, atomic_band, atomic_bxor, atomic_write
     );
     
     gen_atomic_op_def!((), ( 
@@ -1360,8 +1360,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-        atomic_impl(buf, desc, None, mem_addr, mapped_key, Some(context.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context, atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context
+        atomic_impl(buf, desc, None, mem_addr, mapped_key, Some(context.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context, atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context, atomic_write_with_context
     );
     
     gen_atomic_op_def!((), ( 
@@ -1392,8 +1392,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
             mapped_key,
             Some(context.inner_mut())
         ),
-        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered, atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered, atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered, atomic_write_triggered
     );
 
     gen_atomic_op_def!((), ( 
@@ -1424,8 +1424,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey
     ), 
         atomicv_impl(ioc, desc, None, mem_addr, mapped_key, None),
-        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomicv_min, atomicv_max, atomicv_sum, atomicv_prod, atomicv_bor, atomicv_band, atomicv_bxor
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomicv_min, atomicv_max, atomicv_sum, atomicv_prod, atomicv_bor, atomicv_band, atomicv_bxor, atomicv_write
     );
 
     gen_atomic_op_def!((), ( 
@@ -1449,8 +1449,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         context: &mut Context
     ), 
         atomicv_impl(ioc, desc, None, mem_addr, mapped_key, Some(context.inner_mut())),
-        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomicv_min_with_context, atomicv_max_with_context, atomicv_sum_with_context, atomicv_prod_with_context, atomicv_bor_with_context, atomicv_band_with_context, atomicv_bxor_with_context
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomicv_min_with_context, atomicv_max_with_context, atomicv_sum_with_context, atomicv_prod_with_context, atomicv_bor_with_context, atomicv_band_with_context, atomicv_bxor_with_context, atomicv_write_with_context
     );
 
     gen_atomic_op_def!((), ( 
@@ -1475,8 +1475,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         context: &mut TriggeredContext
     ), 
         atomicv_impl(ioc, desc, None, mem_addr, mapped_key, Some(context.inner_mut())),
-        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered, atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered, atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered, atomicv_write_triggered
     );
 
     gen_atomic_op_def!((), ( 
@@ -1507,8 +1507,8 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey
     ),
         inject_atomic_impl(buf, None, mem_addr, mapped_key),
-        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_inject_min, atomic_inject_max, atomic_inject_sum, atomic_inject_prod, atomic_inject_bor, atomic_inject_band, atomic_inject_bxor
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_inject_min, atomic_inject_max, atomic_inject_sum, atomic_inject_prod, atomic_inject_bor, atomic_inject_band, atomic_inject_bxor, atomic_inject_write
     );
 
     gen_atomic_op_def!((), ( 
@@ -1649,7 +1649,20 @@ pub trait AtomicFetchEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    fetch_atomic_min_from, fetch_atomic_max_from, fetch_atomic_sum_from, fetch_atomic_prod_from, fetch_atomic_bor_from, fetch_atomic_band_from, fetch_atomic_bxor_from
+    fetch_atomic_min_from, fetch_atomic_max_from, fetch_atomic_sum_from, fetch_atomic_prod_from, fetch_atomic_bor_from, fetch_atomic_band_from, fetch_atomic_bxor_from, fetch_atomic_write_from, fetch_atomic_read_from
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+    fetch_atomic_lor_from, fetch_atomic_land_from, fetch_atomic_lxor_from
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1663,7 +1676,22 @@ pub trait AtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    fetch_atomic_min_from_with_context, fetch_atomic_max_from_with_context, fetch_atomic_sum_from_with_context, fetch_atomic_prod_from_with_context, fetch_atomic_bor_from_with_context, fetch_atomic_band_from_with_context, fetch_atomic_bxor_from_with_context
+    fetch_atomic_min_from_with_context, fetch_atomic_max_from_with_context, fetch_atomic_sum_from_with_context, fetch_atomic_prod_from_with_context, fetch_atomic_bor_from_with_context, fetch_atomic_band_from_with_context, fetch_atomic_bxor_from_with_context, fetch_atomic_write_from_with_context, fetch_atomic_read_from_with_context
+    );
+
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+    fetch_atomic_lor_from_with_context, fetch_atomic_land_from_with_context, fetch_atomic_lxor_from_with_context
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1677,7 +1705,21 @@ pub trait AtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-    fetch_atomic_min_from_triggered, fetch_atomic_max_from_triggered, fetch_atomic_sum_from_triggered, fetch_atomic_prod_from_triggered, fetch_atomic_bor_from_triggered, fetch_atomic_band_from_triggered, fetch_atomic_bxor_from_triggered
+    fetch_atomic_min_from_triggered, fetch_atomic_max_from_triggered, fetch_atomic_sum_from_triggered, fetch_atomic_prod_from_triggered, fetch_atomic_bor_from_triggered, fetch_atomic_band_from_triggered, fetch_atomic_bxor_from_triggered, fetch_atomic_write_from_triggered, fetch_atomic_read_from_triggered
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+    fetch_atomic_lor_from_triggered, fetch_atomic_land_from_triggered, fetch_atomic_lxor_from_triggered
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1690,7 +1732,20 @@ pub trait AtomicFetchEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    fetch_atomicv_min_from, fetch_atomicv_max_from, fetch_atomicv_sum_from, fetch_atomicv_prod_from, fetch_atomicv_bor_from, fetch_atomicv_band_from, fetch_atomicv_bxor_from
+    fetch_atomicv_min_from, fetch_atomicv_max_from, fetch_atomicv_sum_from, fetch_atomicv_prod_from, fetch_atomicv_bor_from, fetch_atomicv_band_from, fetch_atomicv_bxor_from, fetch_atomicv_write_from, fetch_atomicv_read_from
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+    fetch_atomicv_lor_from, fetch_atomicv_land_from, fetch_atomicv_lxor_from
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1704,7 +1759,22 @@ pub trait AtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    fetch_atomicv_min_from_with_context, fetch_atomicv_max_from_with_context, fetch_atomicv_sum_from_with_context, fetch_atomicv_prod_from_with_context, fetch_atomicv_bor_from_with_context, fetch_atomicv_band_from_with_context, fetch_atomicv_bxor_from_with_context
+    fetch_atomicv_min_from_with_context, fetch_atomicv_max_from_with_context, fetch_atomicv_sum_from_with_context, fetch_atomicv_prod_from_with_context, fetch_atomicv_bor_from_with_context, fetch_atomicv_band_from_with_context, fetch_atomicv_bxor_from_with_context, fetch_atomicv_write_from_with_context, fetch_atomicv_read_from_with_context
+    );
+
+
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+    fetch_atomicv_lor_from_with_context, fetch_atomicv_land_from_with_context, fetch_atomicv_lxor_from_with_context
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1718,7 +1788,21 @@ pub trait AtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-    fetch_atomicv_min_from_triggered, fetch_atomicv_max_from_triggered, fetch_atomicv_sum_from_triggered, fetch_atomicv_prod_from_triggered, fetch_atomicv_bor_from_triggered, fetch_atomicv_band_from_triggered, fetch_atomicv_bxor_from_triggered
+    fetch_atomicv_min_from_triggered, fetch_atomicv_max_from_triggered, fetch_atomicv_sum_from_triggered, fetch_atomicv_prod_from_triggered, fetch_atomicv_bor_from_triggered, fetch_atomicv_band_from_triggered, fetch_atomicv_bxor_from_triggered, fetch_atomicv_write_from_triggered, fetch_atomicv_read_from_triggered
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+    fetch_atomicv_lor_from_triggered, fetch_atomicv_land_from_triggered, fetch_atomicv_lxor_from_triggered
     );
 
     unsafe fn fetch_atomicmsg_from<T: AsFiType>(
@@ -1740,7 +1824,19 @@ pub trait ConnectedAtomicFetchEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    fetch_atomic_min, fetch_atomic_max, fetch_atomic_sum, fetch_atomic_prod, fetch_atomic_bor, fetch_atomic_band, fetch_atomic_bxor
+    fetch_atomic_min, fetch_atomic_max, fetch_atomic_sum, fetch_atomic_prod, fetch_atomic_bor, fetch_atomic_band, fetch_atomic_bxor, fetch_atomic_write, fetch_atomic_read
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+    fetch_atomic_lor, fetch_atomic_land, fetch_atomic_lxor
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1753,7 +1849,20 @@ pub trait ConnectedAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    fetch_atomic_min_with_context, fetch_atomic_max_with_context, fetch_atomic_sum_with_context, fetch_atomic_prod_with_context, fetch_atomic_bor_with_context, fetch_atomic_band_with_context, fetch_atomic_bxor_with_context
+    fetch_atomic_min_with_context, fetch_atomic_max_with_context, fetch_atomic_sum_with_context, fetch_atomic_prod_with_context, fetch_atomic_bor_with_context, fetch_atomic_band_with_context, fetch_atomic_bxor_with_context, fetch_atomic_write_with_context, fetch_atomic_read_with_context
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+    fetch_atomic_lor_with_context, fetch_atomic_land_with_context, fetch_atomic_lxor_with_context
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1766,7 +1875,20 @@ pub trait ConnectedAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-    fetch_atomic_min_triggered, fetch_atomic_max_triggered, fetch_atomic_sum_triggered, fetch_atomic_prod_triggered, fetch_atomic_bor_triggered, fetch_atomic_band_triggered, fetch_atomic_bxor_triggered
+    fetch_atomic_min_triggered, fetch_atomic_max_triggered, fetch_atomic_sum_triggered, fetch_atomic_prod_triggered, fetch_atomic_bor_triggered, fetch_atomic_band_triggered, fetch_atomic_bxor_triggered, fetch_atomic_write_triggered, fetch_atomic_read_triggered
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+    fetch_atomic_lor_triggered, fetch_atomic_land_triggered, fetch_atomic_lxor_triggered
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1778,7 +1900,19 @@ pub trait ConnectedAtomicFetchEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-    fetch_atomicv_min, fetch_atomicv_max, fetch_atomicv_sum, fetch_atomicv_prod, fetch_atomicv_bor, fetch_atomicv_band, fetch_atomicv_bxor
+    fetch_atomicv_min, fetch_atomicv_max, fetch_atomicv_sum, fetch_atomicv_prod, fetch_atomicv_bor, fetch_atomicv_band, fetch_atomicv_bxor, fetch_atomicv_write, fetch_atomicv_read
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+    fetch_atomicv_lor, fetch_atomicv_land, fetch_atomicv_lxor
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1791,7 +1925,21 @@ pub trait ConnectedAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-    fetch_atomicv_min_with_context, fetch_atomicv_max_with_context, fetch_atomicv_sum_with_context, fetch_atomicv_prod_with_context, fetch_atomicv_bor_with_context, fetch_atomicv_band_with_context, fetch_atomicv_bxor_with_context
+    fetch_atomicv_min_with_context, fetch_atomicv_max_with_context, fetch_atomicv_sum_with_context, fetch_atomicv_prod_with_context, fetch_atomicv_bor_with_context, fetch_atomicv_band_with_context, fetch_atomicv_bxor_with_context, fetch_atomicv_write_with_context, fetch_atomicv_read_with_context
+    );
+
+
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+    fetch_atomicv_lor_with_context, fetch_atomicv_land_with_context, fetch_atomicv_lxor_with_context
     );
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -1804,7 +1952,20 @@ pub trait ConnectedAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-    fetch_atomicv_min_triggered, fetch_atomicv_max_triggered, fetch_atomicv_sum_triggered, fetch_atomicv_prod_triggered, fetch_atomicv_bor_triggered, fetch_atomicv_band_triggered, fetch_atomicv_bxor_triggered
+    fetch_atomicv_min_triggered, fetch_atomicv_max_triggered, fetch_atomicv_sum_triggered, fetch_atomicv_prod_triggered, fetch_atomicv_bor_triggered, fetch_atomicv_band_triggered, fetch_atomicv_bxor_triggered, fetch_atomicv_write_triggered, fetch_atomicv_read_triggered
+    );
+
+    gen_atomic_op_decl!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+    fetch_atomicv_lor_triggered, fetch_atomicv_land_triggered, fetch_atomicv_lxor_triggered
     );
 
     unsafe fn fetch_atomicmsg<T: AsFiType>(
@@ -1828,8 +1989,21 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min_from, fetch_atomic_max_from, fetch_atomic_sum_from, fetch_atomic_prod_from, fetch_atomic_bor_from, fetch_atomic_band_from, fetch_atomic_bxor_from
+        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min_from, fetch_atomic_max_from, fetch_atomic_sum_from, fetch_atomic_prod_from, fetch_atomic_bor_from, fetch_atomic_band_from, fetch_atomic_bxor_from, fetch_atomic_write_from, fetch_atomic_read_from
+    );
+    gen_atomic_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Lxor, crate::enums::FetchAtomicOp::Land,,
+        fetch_atomic_lor_from, fetch_atomic_land_from, fetch_atomic_lxor_from
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1843,8 +2017,23 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min_from_with_context, fetch_atomic_max_from_with_context, fetch_atomic_sum_from_with_context, fetch_atomic_prod_from_with_context, fetch_atomic_bor_from_with_context, fetch_atomic_band_from_with_context, fetch_atomic_bxor_from_with_context
+        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min_from_with_context, fetch_atomic_max_from_with_context, fetch_atomic_sum_from_with_context, fetch_atomic_prod_from_with_context, fetch_atomic_bor_from_with_context, fetch_atomic_band_from_with_context, fetch_atomic_bxor_from_with_context, fetch_atomic_write_from_with_context, fetch_atomic_read_from_with_context
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Lxor, crate::enums::FetchAtomicOp::Land,,
+        fetch_atomic_lor_from_with_context, fetch_atomic_land_from_with_context, fetch_atomic_lxor_from_with_context
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1858,8 +2047,23 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min_from_triggered, fetch_atomic_max_from_triggered, fetch_atomic_sum_from_triggered, fetch_atomic_prod_from_triggered, fetch_atomic_bor_from_triggered, fetch_atomic_band_from_triggered, fetch_atomic_bxor_from_triggered
+        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min_from_triggered, fetch_atomic_max_from_triggered, fetch_atomic_sum_from_triggered, fetch_atomic_prod_from_triggered, fetch_atomic_bor_from_triggered, fetch_atomic_band_from_triggered, fetch_atomic_bxor_from_triggered, fetch_atomic_write_from_triggered, fetch_atomic_read_from_triggered
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+        fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomic_lor_from_triggered, fetch_atomic_land_from_triggered, fetch_atomic_lxor_from_triggered
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1872,8 +2076,22 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min_from, fetch_atomicv_max_from, fetch_atomicv_sum_from, fetch_atomicv_prod_from, fetch_atomicv_bor_from, fetch_atomicv_band_from, fetch_atomicv_bxor_from
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min_from, fetch_atomicv_max_from, fetch_atomicv_sum_from, fetch_atomicv_prod_from, fetch_atomicv_bor_from, fetch_atomicv_band_from, fetch_atomicv_bxor_from, fetch_atomicv_write_from, fetch_atomicv_read_from
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomicv_lor_from, fetch_atomicv_land_from, fetch_atomicv_lxor_from
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1887,8 +2105,23 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min_from_with_context, fetch_atomicv_max_from_with_context, fetch_atomicv_sum_from_with_context, fetch_atomicv_prod_from_with_context, fetch_atomicv_bor_from_with_context, fetch_atomicv_band_from_with_context, fetch_atomicv_bxor_from_with_context
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min_from_with_context, fetch_atomicv_max_from_with_context, fetch_atomicv_sum_from_with_context, fetch_atomicv_prod_from_with_context, fetch_atomicv_bor_from_with_context, fetch_atomicv_band_from_with_context, fetch_atomicv_bxor_from_with_context, fetch_atomicv_write_from_with_context, fetch_atomicv_read_from_with_context
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomicv_lor_from_with_context, fetch_atomicv_land_from_with_context, fetch_atomicv_lxor_from_with_context
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1902,8 +2135,23 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min_from_triggered, fetch_atomicv_max_from_triggered, fetch_atomicv_sum_from_triggered, fetch_atomicv_prod_from_triggered, fetch_atomicv_bor_from_triggered, fetch_atomicv_band_from_triggered, fetch_atomicv_bxor_from_triggered
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min_from_triggered, fetch_atomicv_max_from_triggered, fetch_atomicv_sum_from_triggered, fetch_atomicv_prod_from_triggered, fetch_atomicv_bor_from_triggered, fetch_atomicv_band_from_triggered, fetch_atomicv_bxor_from_triggered, fetch_atomicv_write_from_triggered, fetch_atomicv_read_from_triggered
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomicv_lor_from_triggered, fetch_atomicv_land_from_triggered, fetch_atomicv_lxor_from_triggered
     );
 
     unsafe fn fetch_atomicmsg_from<T: AsFiType>(
@@ -1927,8 +2175,21 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min, fetch_atomic_max, fetch_atomic_sum, fetch_atomic_prod, fetch_atomic_bor, fetch_atomic_band, fetch_atomic_bxor
+        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min, fetch_atomic_max, fetch_atomic_sum, fetch_atomic_prod, fetch_atomic_bor, fetch_atomic_band, fetch_atomic_bxor, fetch_atomic_write, fetch_atomic_read
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomic_lor, fetch_atomic_land, fetch_atomic_lxor
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1941,8 +2202,22 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min_with_context, fetch_atomic_max_with_context, fetch_atomic_sum_with_context, fetch_atomic_prod_with_context, fetch_atomic_bor_with_context, fetch_atomic_band_with_context, fetch_atomic_bxor_with_context
+        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min_with_context, fetch_atomic_max_with_context, fetch_atomic_sum_with_context, fetch_atomic_prod_with_context, fetch_atomic_bor_with_context, fetch_atomic_band_with_context, fetch_atomic_bxor_with_context, fetch_atomic_write_with_context, fetch_atomic_read_with_context
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomic_lor_with_context, fetch_atomic_land_with_context, fetch_atomic_lxor_with_context
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1955,8 +2230,22 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min_triggered, fetch_atomic_max_triggered, fetch_atomic_sum_triggered, fetch_atomic_prod_triggered, fetch_atomic_bor_triggered, fetch_atomic_band_triggered, fetch_atomic_bxor_triggered
+        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min_triggered, fetch_atomic_max_triggered, fetch_atomic_sum_triggered, fetch_atomic_prod_triggered, fetch_atomic_bor_triggered, fetch_atomic_band_triggered, fetch_atomic_bxor_triggered, fetch_atomic_write_triggered, fetch_atomic_read_triggered
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+        fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomic_lor_triggered, fetch_atomic_land_triggered, fetch_atomic_lxor_triggered
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1968,8 +2257,21 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     ),
-        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min, fetch_atomicv_max, fetch_atomicv_sum, fetch_atomicv_prod, fetch_atomicv_bor, fetch_atomicv_band, fetch_atomicv_bxor
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min, fetch_atomicv_max, fetch_atomicv_sum, fetch_atomicv_prod, fetch_atomicv_bor, fetch_atomicv_band, fetch_atomicv_bxor, fetch_atomicv_write, fetch_atomicv_read
+    );
+
+    gen_atomic_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey
+    ),
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomicv_lor, fetch_atomicv_land, fetch_atomicv_lxor
     );
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -1982,10 +2284,24 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     ),
-        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min_with_context, fetch_atomicv_max_with_context, fetch_atomicv_sum_with_context, fetch_atomicv_prod_with_context, fetch_atomicv_bor_with_context, fetch_atomicv_band_with_context, fetch_atomicv_bxor_with_context
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min_with_context, fetch_atomicv_max_with_context, fetch_atomicv_sum_with_context, fetch_atomicv_prod_with_context, fetch_atomicv_bor_with_context, fetch_atomicv_band_with_context, fetch_atomicv_bxor_with_context, fetch_atomicv_write_with_context, fetch_atomicv_read_with_context
     );
 
+    gen_atomic_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context
+    ),
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomicv_lor_with_context, fetch_atomicv_land_with_context, fetch_atomicv_lxor_with_context
+    );
+    
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -1996,8 +2312,22 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut TriggeredContext
     ),
-        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min_triggered, fetch_atomicv_max_triggered, fetch_atomicv_sum_triggered, fetch_atomicv_prod_triggered, fetch_atomicv_bor_triggered, fetch_atomicv_band_triggered, fetch_atomicv_bxor_triggered
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min_triggered, fetch_atomicv_max_triggered, fetch_atomicv_sum_triggered, fetch_atomicv_prod_triggered, fetch_atomicv_bor_triggered, fetch_atomicv_band_triggered, fetch_atomicv_bxor_triggered, fetch_atomicv_write_triggered, fetch_atomicv_read_triggered
+    );
+  
+    gen_atomic_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<bool>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext
+    ),
+        fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
+        fetch_atomicv_lor_triggered, fetch_atomicv_land_triggered, fetch_atomicv_lxor_triggered
     );
 
     unsafe fn fetch_atomicmsg<T: AsFiType>(
@@ -2156,6 +2486,50 @@ pub trait AtomicFetchEpMrSlice: AtomicFetchEp {
         let result_desc = res_slice.desc();
 
         self.fetch_atomic_bxor_from(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_write_mr_slice_from<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_write_from(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_read_mr_slice_from<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_read_from(
             mr_slice.as_slice(),
             Some(mr_slice.desc()),
             res_slice.as_mut_slice(),
@@ -2335,6 +2709,54 @@ pub trait AtomicFetchEpMrSlice: AtomicFetchEp {
     }
 
     #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_write_mr_slice_from_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_write_from_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_read_mr_slice_from_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_read_from_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_min_mr_slice_from_triggered<T: AsFiType>(
         &self,
         mr_slice: &MemoryRegionSlice,
@@ -2501,6 +2923,54 @@ pub trait AtomicFetchEpMrSlice: AtomicFetchEp {
             context,
         )
     }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_write_mr_slice_from_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_write_from_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_read_mr_slice_from_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_read_from_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            dest_addr,
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
 }
 
 impl<EP: AtomicFetchEp> AtomicFetchEpMrSlice for EP {}
@@ -2637,6 +3107,46 @@ pub trait ConnectedAtomicFetchEpMrSlice: ConnectedAtomicFetchEp {
         let result_desc = res_slice.desc();
 
         self.fetch_atomic_bxor(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_write<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_write(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_read<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_read(
             mr_slice.as_slice(),
             Some(mr_slice.desc()),
             res_slice.as_mut_slice(),
@@ -2801,6 +3311,50 @@ pub trait ConnectedAtomicFetchEpMrSlice: ConnectedAtomicFetchEp {
     }
 
     #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_write_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_write_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_read_with_context<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_read_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_mr_min_triggered<T: AsFiType>(
         &self,
         mr_slice: &MemoryRegionSlice,
@@ -2953,6 +3507,50 @@ pub trait ConnectedAtomicFetchEpMrSlice: ConnectedAtomicFetchEp {
             context,
         )
     }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_write_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_write_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fetch_atomic_mr_read_triggered<T: AsFiType>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        res_slice: &mut MemoryRegionSliceMut,
+        mem_addr: RemoteMemoryAddress<T>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let result_desc = res_slice.desc();
+
+        self.fetch_atomic_read_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            res_slice.as_mut_slice(),
+            Some(result_desc),
+            mem_addr,
+            mapped_key,
+            context,
+        )
+    }
 }
 
 impl<EP: ConnectedAtomicFetchEp> ConnectedAtomicFetchEpMrSlice for EP {}
@@ -2976,8 +3574,30 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             src_slice.mem_address(),
             src_slice.key()
         ),
-        fetch_atomic_min_from, fetch_atomic_max_from, fetch_atomic_sum_from, fetch_atomic_prod_from, fetch_atomic_bor_from, fetch_atomic_band_from, fetch_atomic_bxor_from,,
-        fetch_atomic_min_mr_slice_from, fetch_atomic_max_mr_slice_from, fetch_atomic_sum_mr_slice_from, fetch_atomic_prod_mr_slice_from, fetch_atomic_bor_mr_slice_from, fetch_atomic_band_mr_slice_from, fetch_atomic_bxor_mr_slice_from
+        fetch_atomic_min_from, fetch_atomic_max_from, fetch_atomic_sum_from, fetch_atomic_prod_from, fetch_atomic_bor_from, fetch_atomic_band_from, fetch_atomic_bxor_from, fetch_atomic_write_from, fetch_atomic_read_from,,
+        fetch_atomic_min_mr_slice_from, fetch_atomic_max_mr_slice_from, fetch_atomic_sum_mr_slice_from, fetch_atomic_prod_mr_slice_from, fetch_atomic_bor_mr_slice_from, fetch_atomic_band_mr_slice_from, fetch_atomic_bxor_mr_slice_from, fetch_atomic_write_mr_slice_from, fetch_atomic_read_mr_slice_from
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice<bool>
+    ),
+        (   
+            buf,
+            desc,
+            res,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            src_slice.key()
+        ),
+        fetch_atomic_lor_from, fetch_atomic_land_from, fetch_atomic_lxor_from,,
+        fetch_atomic_lor_mr_slice_from, fetch_atomic_land_mr_slice_from, fetch_atomic_lxor_mr_slice_from
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3000,8 +3620,34 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomic_min_from_with_context, fetch_atomic_max_from_with_context, fetch_atomic_sum_from_with_context, fetch_atomic_prod_from_with_context, fetch_atomic_bor_from_with_context, fetch_atomic_band_from_with_context, fetch_atomic_bxor_from_with_context,,
-        fetch_atomic_min_mr_slice_from_with_context, fetch_atomic_max_mr_slice_from_with_context, fetch_atomic_sum_mr_slice_from_with_context, fetch_atomic_pro_mr_slice_from_with_contextd, fetch_atomic_bor_mr_slice_from_with_context, fetch_atomic_ban_mr_slice_from_with_context, fetch_atomic_bxo_mr_slice_from_with_context
+        fetch_atomic_min_from_with_context, fetch_atomic_max_from_with_context, fetch_atomic_sum_from_with_context, fetch_atomic_prod_from_with_context, fetch_atomic_bor_from_with_context, fetch_atomic_band_from_with_context, fetch_atomic_bxor_from_with_context, fetch_atomic_write_from_with_context, fetch_atomic_read_from_with_context,,
+        fetch_atomic_min_mr_slice_from_with_context, fetch_atomic_max_mr_slice_from_with_context, fetch_atomic_sum_mr_slice_from_with_context, fetch_atomic_prod_mr_slice_from_with_contextd, fetch_atomic_bor_mr_slice_from_with_context, fetch_atomic_band_mr_slice_from_with_context, fetch_atomic_bxor_mr_slice_from_with_context, fetch_atomic_write_mr_slice_from_with_context, fetch_atomic_read_mr_slice_from_with_context
+    );
+
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut Context
+    ),
+        (   
+            buf,
+            desc,
+            res,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+
+        ),
+        fetch_atomic_lor_from_with_context, fetch_atomic_land_from_with_context, fetch_atomic_lxor_from_with_context,,
+        fetch_atomic_lor_mr_slice_from_with_context, fetch_atomic_land_mr_slice_from_with_context, fetch_atomic_lxor_mr_slice_from_with_context
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3024,8 +3670,32 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomic_min_from_triggered, fetch_atomic_max_from_triggered, fetch_atomic_sum_from_triggered, fetch_atomic_prod_from_triggered, fetch_atomic_bor_from_triggered, fetch_atomic_band_from_triggered, fetch_atomic_bxor_from_triggered,,
-        fetch_atomic_min_mr_slice_from_triggered, fetch_atomic_max_mr_slice_from_triggered, fetch_atomic_sum_mr_slice_from_triggered, fetch_atomic_pro_mr_slice_from_triggered, fetch_atomic_bor_mr_slice_from_triggered, fetch_atomic_ban_mr_slice_from_triggered, fetch_atomic_bxo_mr_slice_from_triggered
+        fetch_atomic_min_from_triggered, fetch_atomic_max_from_triggered, fetch_atomic_sum_from_triggered, fetch_atomic_prod_from_triggered, fetch_atomic_bor_from_triggered, fetch_atomic_band_from_triggered, fetch_atomic_bxor_from_triggered, fetch_atomic_write_from_triggered, fetch_atomic_read_from_triggered,,
+        fetch_atomic_min_mr_slice_from_triggered, fetch_atomic_max_mr_slice_from_triggered, fetch_atomic_sum_mr_slice_from_triggered, fetch_atomic_prod_mr_slice_from_triggered, fetch_atomic_bor_mr_slice_from_triggered, fetch_atomic_band_mr_slice_from_triggered, fetch_atomic_bxor_mr_slice_from_triggered, fetch_atomic_write_mr_slice_from_triggered, fetch_atomic_read_mr_slice_from_triggered
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut TriggeredContext
+    ),
+        (   
+            buf,
+            desc,
+            res,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+        ),
+        fetch_atomic_lor_from_triggered, fetch_atomic_land_from_triggered, fetch_atomic_lxor_from_triggered,,
+        fetch_atomic_lor_mr_slice_from_triggered, fetch_atomic_land_mr_slice_from_triggered, fetch_atomic_lxor_mr_slice_from_triggered
     );
 
 
@@ -3049,8 +3719,32 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomicv_min_from_triggered, fetch_atomicv_max_from_triggered, fetch_atomicv_sum_from_triggered, fetch_atomicv_prod_from_triggered, fetch_atomicv_bor_from_triggered, fetch_atomicv_band_from_triggered, fetch_atomicv_bxor_from_triggered,,
-        fetch_atomicv_min_mr_slice_from_triggered, fetch_atomicv_max_mr_slice_from_triggered, fetch_atomicv_sum_mr_slice_from_triggered, fetch_atomicv_pro_mr_slice_from_triggered, fetch_atomicv_bor_mr_slice_from_triggered, fetch_atomicv_ban_mr_slice_from_triggered, fetch_atomicv_bxo_mr_slice_from_triggered
+        fetch_atomicv_min_from_triggered, fetch_atomicv_max_from_triggered, fetch_atomicv_sum_from_triggered, fetch_atomicv_prod_from_triggered, fetch_atomicv_bor_from_triggered, fetch_atomicv_band_from_triggered, fetch_atomicv_bxor_from_triggered, fetch_atomicv_write_from_triggered, fetch_atomicv_read_from_triggered,,
+        fetch_atomicv_min_mr_slice_from_triggered, fetch_atomicv_max_mr_slice_from_triggered, fetch_atomicv_sum_mr_slice_from_triggered, fetch_atomicv_prod_mr_slice_from_triggered, fetch_atomicv_bor_mr_slice_from_triggered, fetch_atomicv_band_mr_slice_from_triggered, fetch_atomicv_bxor_mr_slice_from_triggered, fetch_atomicv_write_mr_slice_from_triggered, fetch_atomicv_read_mr_slice_from_triggered
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut TriggeredContext
+    ),
+        (   
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+        ),
+        fetch_atomicv_lor_from_triggered, fetch_atomicv_land_from_triggered, fetch_atomicv_lxor_from_triggered,,
+        fetch_atomicv_lor_mr_slice_from_triggered, fetch_atomicv_land_mr_slice_from_triggered, fetch_atomicv_lxor_mr_slice_from_triggered
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3071,8 +3765,30 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             src_slice.mem_address(),
             src_slice.key()
         ),
-        fetch_atomicv_min_from, fetch_atomicv_max_from, fetch_atomicv_sum_from, fetch_atomicv_prod_from, fetch_atomicv_bor_from, fetch_atomicv_band_from, fetch_atomicv_bxor_from,,
-        fetch_atomicv_min_mr_slice_from, fetch_atomicv_max_mr_slice_from, fetch_atomicv_sum_mr_slice_from, fetch_atomicv_prod_mr_slice_from, fetch_atomicv_bor_mr_slice_from, fetch_atomicv_band_mr_slice_from, fetch_atomicv_bxor_mr_slice_from
+        fetch_atomicv_min_from, fetch_atomicv_max_from, fetch_atomicv_sum_from, fetch_atomicv_prod_from, fetch_atomicv_bor_from, fetch_atomicv_band_from, fetch_atomicv_bxor_from, fetch_atomicv_write_from, fetch_atomicv_read_from,,
+        fetch_atomicv_min_mr_slice_from, fetch_atomicv_max_mr_slice_from, fetch_atomicv_sum_mr_slice_from, fetch_atomicv_prod_mr_slice_from, fetch_atomicv_bor_mr_slice_from, fetch_atomicv_band_mr_slice_from, fetch_atomicv_bxor_mr_slice_from, fetch_atomicv_write_mr_slice_from, fetch_atomicv_read_mr_slice_from
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice<bool>
+    ),
+        (   
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            src_slice.key()
+        ),
+        fetch_atomicv_lor_from, fetch_atomicv_land_from, fetch_atomicv_lxor_from,,
+        fetch_atomicv_lor_mr_slice_from, fetch_atomicv_land_mr_slice_from, fetch_atomicv_lxor_mr_slice_from
     );
 
 
@@ -3096,8 +3812,32 @@ pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomicv_min_from_with_context, fetch_atomicv_max_from_with_context, fetch_atomicv_sum_from_with_context, fetch_atomicv_prod_from_with_context, fetch_atomicv_bor_from_with_context, fetch_atomicv_band_from_with_context, fetch_atomicv_bxor_from_with_context,,
-        fetch_atomicv_min_mr_slice_from_with_context, fetch_atomicv_max_mr_slice_from_with_context, fetch_atomicv_sum_mr_slice_from_with_context, fetch_atomicv_pro_mr_slice_from_with_context, fetch_atomicv_bor_mr_slice_from_with_context, fetch_atomicv_ban_mr_slice_from_with_context, fetch_atomicv_bxo_mr_slice_from_with_context
+        fetch_atomicv_min_from_with_context, fetch_atomicv_max_from_with_context, fetch_atomicv_sum_from_with_context, fetch_atomicv_prod_from_with_context, fetch_atomicv_bor_from_with_context, fetch_atomicv_band_from_with_context, fetch_atomicv_bxor_from_with_context, fetch_atomicv_write_from_with_context, fetch_atomicv_read_from_with_context,,
+        fetch_atomicv_min_mr_slice_from_with_context, fetch_atomicv_max_mr_slice_from_with_context, fetch_atomicv_sum_mr_slice_from_with_context, fetch_atomicv_prod_mr_slice_from_with_context, fetch_atomicv_bor_mr_slice_from_with_context, fetch_atomicv_band_mr_slice_from_with_context, fetch_atomicv_bxor_mr_slice_from_with_context, fetch_atomicv_write_mr_slice_from_with_context, fetch_atomicv_read_mr_slice_from_with_context
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut Context
+    ),
+        (   
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            dest_addr,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+        ),
+        fetch_atomicv_lor_from_with_context, fetch_atomicv_land_from_with_context, fetch_atomicv_lxor_from_with_context,,
+        fetch_atomicv_lor_mr_slice_from_with_context, fetch_atomicv_land_mr_slice_from_with_context, fetch_atomicv_lxor_mr_slice_from_with_context
     );
 
     // #[allow(clippy::too_many_arguments)]
@@ -3181,8 +3921,28 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             src_slice.mem_address(),
             src_slice.key()
         ),
-        fetch_atomic_min, fetch_atomic_max, fetch_atomic_sum, fetch_atomic_prod, fetch_atomic_bor, fetch_atomic_band, fetch_atomic_bxor,,
-        fetch_atomic_min_mr_slice, fetch_atomic_max_mr_slice, fetch_atomic_sum_mr_slice, fetch_atomic_prod_mr_slice, fetch_atomic_bor_mr_slice, fetch_atomic_band_mr_slice, fetch_atomic_bxor_mr_slice
+        fetch_atomic_min, fetch_atomic_max, fetch_atomic_sum, fetch_atomic_prod, fetch_atomic_bor, fetch_atomic_band, fetch_atomic_bxor, fetch_atomic_write, fetch_atomic_read,,
+        fetch_atomic_min_mr_slice, fetch_atomic_max_mr_slice, fetch_atomic_sum_mr_slice, fetch_atomic_prod_mr_slice, fetch_atomic_bor_mr_slice, fetch_atomic_band_mr_slice, fetch_atomic_bxor_mr_slice, fetch_atomic_write_mr_slice, fetch_atomic_read_mr_slice
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        src_slice: &RemoteMemAddrSlice<bool>
+    ),
+        (   
+            buf,
+            desc,
+            res,
+            res_desc,
+            src_slice.mem_address(),
+            src_slice.key()
+        ),
+        fetch_atomic_lor, fetch_atomic_land, fetch_atomic_lxor,,
+        fetch_atomic_lor_mr_slice, fetch_atomic_land_mr_slice, fetch_atomic_lxor_mr_slice
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3203,8 +3963,30 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomic_min_with_context, fetch_atomic_max_with_context, fetch_atomic_sum_with_context, fetch_atomic_prod_with_context, fetch_atomic_bor_with_context, fetch_atomic_band_with_context, fetch_atomic_bxor_with_context,,
-        fetch_atomic_min_mr_slice_with_context, fetch_atomic_max_mr_slice_with_context, fetch_atomic_sum_mr_slice_with_context, fetch_atomic_prod_mr_slice_with_context, fetch_atomic_bor_mr_slice_with_context, fetch_atomic_band_mr_slice_with_context, fetch_atomic_bxor_mr_slice_with_context
+        fetch_atomic_min_with_context, fetch_atomic_max_with_context, fetch_atomic_sum_with_context, fetch_atomic_prod_with_context, fetch_atomic_bor_with_context, fetch_atomic_band_with_context, fetch_atomic_bxor_with_context, fetch_atomic_write_with_context, fetch_atomic_read_with_context,,
+        fetch_atomic_min_mr_slice_with_context, fetch_atomic_max_mr_slice_with_context, fetch_atomic_sum_mr_slice_with_context, fetch_atomic_prod_mr_slice_with_context, fetch_atomic_bor_mr_slice_with_context, fetch_atomic_band_mr_slice_with_context, fetch_atomic_bxor_mr_slice_with_context, fetch_atomic_write_mr_slice_with_context, fetch_atomic_read_mr_slice_with_context
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut Context
+    ),
+        (   
+            buf,
+            desc,
+            res,
+            res_desc,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+        ),
+        fetch_atomic_lor_with_context, fetch_atomic_land_with_context, fetch_atomic_lxor_with_context,,
+        fetch_atomic_lor_mr_slice_with_context, fetch_atomic_land_mr_slice_with_context, fetch_atomic_lxor_mr_slice_with_context
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3225,8 +4007,30 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomic_min_triggered, fetch_atomic_max_triggered, fetch_atomic_sum_triggered, fetch_atomic_prod_triggered, fetch_atomic_bor_triggered, fetch_atomic_band_triggered, fetch_atomic_bxor_triggered,,
-        fetch_atomic_min_mr_slice_triggered, fetch_atomic_max_mr_slice_triggered, fetch_atomic_sum_mr_slice_triggered, fetch_atomic_prod_mr_slice_triggered, fetch_atomic_bor_mr_slice_triggered, fetch_atomic_band_mr_slice_triggered, fetch_atomic_bxor_mr_slice_triggered
+        fetch_atomic_min_triggered, fetch_atomic_max_triggered, fetch_atomic_sum_triggered, fetch_atomic_prod_triggered, fetch_atomic_bor_triggered, fetch_atomic_band_triggered, fetch_atomic_bxor_triggered, fetch_atomic_write_triggered, fetch_atomic_read_triggered,,
+        fetch_atomic_min_mr_slice_triggered, fetch_atomic_max_mr_slice_triggered, fetch_atomic_sum_mr_slice_triggered, fetch_atomic_prod_mr_slice_triggered, fetch_atomic_bor_mr_slice_triggered, fetch_atomic_band_mr_slice_triggered, fetch_atomic_bxor_mr_slice_triggered, fetch_atomic_write_mr_slice_triggered, fetch_atomic_read_mr_slice_triggered
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        buf: &[bool],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [bool],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut TriggeredContext
+    ),
+        (   
+            buf,
+            desc,
+            res,
+            res_desc,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+        ),
+        fetch_atomic_lor_triggered, fetch_atomic_land_triggered, fetch_atomic_lxor_triggered,,
+        fetch_atomic_lor_mr_slice_triggered, fetch_atomic_land_mr_slice_triggered, fetch_atomic_lxor_mr_slice_triggered
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3245,8 +4049,28 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             src_slice.mem_address(),
             src_slice.key()
         ),
-        fetch_atomicv_min, fetch_atomicv_max, fetch_atomicv_sum, fetch_atomicv_prod, fetch_atomicv_bor, fetch_atomicv_band, fetch_atomicv_bxor,,
-        fetch_atomicv_min_mr_slice, fetch_atomicv_max_mr_slice, fetch_atomicv_sum_mr_slice, fetch_atomicv_prod_mr_slice, fetch_atomicv_bor_mr_slice, fetch_atomicv_band_mr_slice, fetch_atomicv_bxor_mr_slice
+        fetch_atomicv_min, fetch_atomicv_max, fetch_atomicv_sum, fetch_atomicv_prod, fetch_atomicv_bor, fetch_atomicv_band, fetch_atomicv_bxor, fetch_atomicv_write, fetch_atomicv_read,,
+        fetch_atomicv_min_mr_slice, fetch_atomicv_max_mr_slice, fetch_atomicv_sum_mr_slice, fetch_atomicv_prod_mr_slice, fetch_atomicv_bor_mr_slice, fetch_atomicv_band_mr_slice, fetch_atomicv_bxor_mr_slice, fetch_atomicv_write_mr_slice, fetch_atomicv_read_mr_slice
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_slice: &RemoteMemAddrSlice<bool>
+    ), 
+        (
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            src_slice.mem_address(),
+            src_slice.key()
+        ),
+        fetch_atomicv_lor, fetch_atomicv_land, fetch_atomicv_lxor,,
+        fetch_atomicv_lor_mr_slice, fetch_atomicv_land_mr_slice, fetch_atomicv_lxor_mr_slice
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3267,8 +4091,30 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomicv_min_with_context, fetch_atomicv_max_with_context, fetch_atomicv_sum_with_context, fetch_atomicv_prod_with_context, fetch_atomicv_bor_with_context, fetch_atomicv_band_with_context, fetch_atomicv_bxor_with_context,,
-        fetch_atomicv_min_mr_slice_with_context, fetch_atomicv_max_mr_slice_with_context, fetch_atomicv_sum_mr_slice_with_context, fetch_atomicv_prod_mr_slice_with_context, fetch_atomicv_bor_mr_slice_with_context, fetch_atomicv_band_mr_slice_with_context, fetch_atomicv_bxor_mr_slice_with_context
+        fetch_atomicv_min_with_context, fetch_atomicv_max_with_context, fetch_atomicv_sum_with_context, fetch_atomicv_prod_with_context, fetch_atomicv_bor_with_context, fetch_atomicv_band_with_context, fetch_atomicv_bxor_with_context, fetch_atomicv_write_with_context, fetch_atomicv_read_with_context,,
+        fetch_atomicv_min_mr_slice_with_context, fetch_atomicv_max_mr_slice_with_context, fetch_atomicv_sum_mr_slice_with_context, fetch_atomicv_prod_mr_slice_with_context, fetch_atomicv_bor_mr_slice_with_context, fetch_atomicv_band_mr_slice_with_context, fetch_atomicv_bxor_mr_slice_with_context, fetch_atomicv_write_mr_slice_with_context, fetch_atomicv_read_mr_slice_with_context
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut Context
+    ), 
+        (
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+        ),
+        fetch_atomicv_lor_with_context, fetch_atomicv_land_with_context, fetch_atomicv_lxor_with_context,,
+        fetch_atomicv_lor_mr_slice_with_context, fetch_atomicv_land_mr_slice_with_context, fetch_atomicv_lxor_mr_slice_with_context
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -3289,8 +4135,30 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
             src_slice.key(),
             context
         ),
-        fetch_atomicv_min_triggered, fetch_atomicv_max_triggered, fetch_atomicv_sum_triggered, fetch_atomicv_prod_triggered, fetch_atomicv_bor_triggered, fetch_atomicv_band_triggered, fetch_atomicv_bxor_triggered,,
-        fetch_atomicv_min_mr_slice_triggered, fetch_atomicv_max_mr_slice_triggered, fetch_atomicv_sum_mr_slice_triggered, fetch_atomicv_prod_mr_slice_triggered, fetch_atomicv_bor_mr_slice_triggered, fetch_atomicv_band_mr_slice_triggered, fetch_atomicv_bxor_mr_slice_triggered
+        fetch_atomicv_min_triggered, fetch_atomicv_max_triggered, fetch_atomicv_sum_triggered, fetch_atomicv_prod_triggered, fetch_atomicv_bor_triggered, fetch_atomicv_band_triggered, fetch_atomicv_bxor_triggered, fetch_atomicv_write_triggered, fetch_atomicv_read_triggered,,
+        fetch_atomicv_min_mr_slice_triggered, fetch_atomicv_max_mr_slice_triggered, fetch_atomicv_sum_mr_slice_triggered, fetch_atomicv_prod_mr_slice_triggered, fetch_atomicv_bor_mr_slice_triggered, fetch_atomicv_band_mr_slice_triggered, fetch_atomicv_bxor_mr_slice_triggered, fetch_atomicv_write_mr_slice_triggered, fetch_atomicv_read_mr_slice_triggered
+    );
+
+    gen_atomic_mr_op_def!((), (
+        self,
+        ioc: &[crate::iovec::Ioc<bool>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<bool>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        src_slice: &RemoteMemAddrSlice<bool>,
+        context: &mut TriggeredContext
+    ), 
+        (
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            src_slice.mem_address(),
+            src_slice.key(),
+            context
+        ),
+        fetch_atomicv_lor_triggered, fetch_atomicv_land_triggered, fetch_atomicv_lxor_triggered,,
+        fetch_atomicv_lor_mr_slice_triggered, fetch_atomicv_land_mr_slice_triggered, fetch_atomicv_lxor_mr_slice_triggered
     );
 
     unsafe fn fetch_atomicmsg_slice<T: AsFiType>(

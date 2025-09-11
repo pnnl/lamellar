@@ -1915,6 +1915,27 @@ where
         AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_band_mr_slice_to,
         // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice_to,
         AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_bxor_mr_slice_to,
+        AtomicOp::AtomicWrite => AtomicWriteRemoteMemAddrSliceEp::atomic_write_mr_slice_to,
+        _ => todo!(),
+    }
+}
+
+fn get_atomic_bool_op<A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    &[bool],
+    Option<MemoryRegionDesc>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSliceMut<bool>,
+) 
+-> Result<(), Error>
+where
+    A: AtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_lor_mr_slice_to,
+        AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_land_mr_slice_to,
+        AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice_to,
         _ => todo!(),
     }
 }
@@ -1943,6 +1964,45 @@ where
         AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomicv_band_mr_slice_to,
         // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice_to,
         AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_bxor_mr_slice_to,
+        AtomicOp::AtomicWrite => AtomicWriteRemoteMemAddrSliceEp::atomicv_write_mr_slice_to,
+        _ => todo!(),
+    }
+}
+fn get_atomicv_bool_op<A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<bool>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSliceMut<bool>,
+) 
+-> Result<(), Error>
+where
+    A: AtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomicv_lor_mr_slice_to,
+        AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomicv_land_mr_slice_to,
+        AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice_to,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomicv_bool_op<A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<bool>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    &RemoteMemAddrSliceMut<bool>,
+) 
+-> Result<(), Error>
+where
+    A: ConnectedAtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_lor_mr_slice,
+        AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_land_mr_slice,
+        AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice,
         _ => todo!(),
     }
 }
@@ -1970,6 +2030,7 @@ where
         AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_band_mr_slice,
         // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_lxor_mr_slice,
         AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_bxor_mr_slice,
+        AtomicOp::AtomicWrite => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomicv_write_mr_slice,
         _ => todo!(),
     }
 }
@@ -1997,6 +2058,26 @@ where
         AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_band_mr_slice,
         // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice,
         AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_bxor_mr_slice,
+        AtomicOp::AtomicWrite => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_write_mr_slice,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomic_bool_op<A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
+    &A,
+    &[bool],
+    Option<MemoryRegionDesc>,
+    &RemoteMemAddrSliceMut<bool>,
+) 
+-> Result<(), Error>
+where
+    A: ConnectedAtomicWriteEp, 
+{
+
+    match op {
+        AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_lor_mr_slice,
+        AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_land_mr_slice,
+        AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_lxor_mr_slice,
         _ => todo!(),
     }
 }
@@ -2024,6 +2105,26 @@ where
         AtomicOp::Band => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_band_mr_slice_to,
         // AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice_to,
         AtomicOp::Bxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_bxor_mr_slice_to,
+        AtomicOp::AtomicWrite => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_write_mr_slice_to,
+        _ => todo!(),
+    }
+}
+
+fn get_atomic_inject_bool_op<A>(
+    op: libfabric::enums::AtomicOp,
+) -> unsafe fn(
+    &A,
+    &[bool],
+    &crate::MappedAddress,
+    &RemoteMemAddrSliceMut<bool>,
+) -> Result<(), Error>
+where
+    A: AtomicWriteEp,
+{
+    match op {
+        AtomicOp::Lor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_lor_mr_slice_to,
+        AtomicOp::Land => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_land_mr_slice_to,
+        AtomicOp::Lxor => AtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice_to,
         _ => todo!(),
     }
 }
@@ -2050,6 +2151,25 @@ where
         AtomicOp::Band => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_band_mr_slice,
         // AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice,
         AtomicOp::Bxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_bxor_mr_slice,
+        AtomicOp::AtomicWrite => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_write_mr_slice,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomic_inject_bool_op<A>(
+    op: libfabric::enums::AtomicOp,
+) -> unsafe fn(
+    &A,
+    &[bool],
+    &RemoteMemAddrSliceMut<bool>,
+) -> Result<(), Error>
+where
+    A: ConnectedAtomicWriteEp,
+{
+    match op {
+        AtomicOp::Lor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lor_mr_slice,
+        AtomicOp::Land => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_land_mr_slice,
+        AtomicOp::Lxor => ConnectedAtomicWriteRemoteMemAddrSliceEp::atomic_inject_lxor_mr_slice,
         _ => todo!(),
     }
 }
@@ -2076,8 +2196,32 @@ where
         FetchAtomicOp::Prod => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_prod_mr_slice_from,
         FetchAtomicOp::Bor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bor_mr_slice_from,
         FetchAtomicOp::Band => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_band_mr_slice_from,
-        // FetchAtomicOp::Lxor => AtomicFetchRemoteMemAddrSliceEp::atomic_mr_slice_lxor_to,
         FetchAtomicOp::Bxor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bxor_mr_slice_from,
+        FetchAtomicOp::AtomicWrite => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_write_mr_slice_from,
+        FetchAtomicOp::AtomicRead => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_read_mr_slice_from,
+        // FetchAtomicOp::Lxor => AtomicFetchRemoteMemAddrSliceEp::atomic_mr_slice_lxor_to,
+        _ => todo!(),
+    }
+}
+
+fn get_atomic_fetch_bool_op<A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    &[bool],
+    Option<MemoryRegionDesc>,
+    &mut [bool],
+    Option<MemoryRegionDesc>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSlice<bool>,
+) 
+-> Result<(), Error>
+where
+    A: AtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Lor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lor_mr_slice_from,
+        FetchAtomicOp::Lxor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lxor_mr_slice_from,
+        FetchAtomicOp::Land => AtomicFetchRemoteMemAddrSliceEp::fetch_atomic_land_mr_slice_from,
         _ => todo!(),
     }
 }
@@ -2105,6 +2249,30 @@ where
         FetchAtomicOp::Bor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bor_mr_slice_from,
         FetchAtomicOp::Band => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_band_mr_slice_from,
         FetchAtomicOp::Bxor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bxor_mr_slice_from,
+        FetchAtomicOp::AtomicWrite => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_write_mr_slice_from,
+        FetchAtomicOp::AtomicRead => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_read_mr_slice_from,
+        _ => todo!(),
+    }
+}
+
+fn get_atomicv_fetch_bool_op<A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<bool>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    resioc: &mut [libfabric::iovec::IocMut<bool>], 
+    res_desc: Option<&[MemoryRegionDesc<'_>]>,
+    &crate::MappedAddress,
+    &RemoteMemAddrSlice<bool>,
+) 
+-> Result<(), Error>
+where
+    A: AtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Lor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lor_mr_slice_from,
+        FetchAtomicOp::Land => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_land_mr_slice_from,
+        FetchAtomicOp::Lxor => AtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lxor_mr_slice_from,
         _ => todo!(),
     }
 }
@@ -2131,6 +2299,8 @@ where
         FetchAtomicOp::Bor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bor_mr_slice,
         FetchAtomicOp::Band => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_band_mr_slice,
         FetchAtomicOp::Bxor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_bxor_mr_slice,
+        FetchAtomicOp::AtomicWrite => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_write_mr_slice,
+        FetchAtomicOp::AtomicRead => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_read_mr_slice,
         _ => todo!(),
     }
 }
@@ -2157,6 +2327,50 @@ where
         FetchAtomicOp::Bor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bor_mr_slice,
         FetchAtomicOp::Band => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_band_mr_slice,
         FetchAtomicOp::Bxor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_bxor_mr_slice,
+        FetchAtomicOp::AtomicWrite => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_write_mr_slice,
+        FetchAtomicOp::AtomicRead => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_read_mr_slice,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomic_fetch_bool_op<A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    &[bool],
+    Option<MemoryRegionDesc>,
+    &mut [bool],
+    Option<MemoryRegionDesc>,
+    &RemoteMemAddrSlice<bool>,
+) 
+-> Result<(), Error>
+where
+    A: ConnectedAtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Lor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lor_mr_slice,
+        FetchAtomicOp::Land => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_land_mr_slice,
+        FetchAtomicOp::Lxor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomic_lxor_mr_slice,
+        _ => todo!(),
+    }
+}
+
+fn get_conn_atomicv_fetch_bool_op<A>(op: libfabric::enums::FetchAtomicOp) -> unsafe fn(
+    &A,
+    ioc: &[libfabric::iovec::Ioc<bool>], 
+    desc: Option<&[MemoryRegionDesc<'_>]>,
+    resioc: &mut [libfabric::iovec::IocMut<bool>], 
+    res_desc: Option<&[MemoryRegionDesc<'_>]>,
+    slice: &RemoteMemAddrSlice<bool>,
+) 
+-> Result<(), Error>
+where
+    A: ConnectedAtomicFetchEp, 
+{
+
+    match op {
+        FetchAtomicOp::Lor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lor_mr_slice,
+        FetchAtomicOp::Land => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_land_mr_slice,
+        FetchAtomicOp::Lxor => ConnectedAtomicFetchRemoteMemAddrSliceEp::fetch_atomicv_lxor_mr_slice,
         _ => todo!(),
     }
 }
@@ -2356,6 +2570,88 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         }
     }
 
+    pub fn atomic_bool(
+        &self,
+        buf: &[bool],
+        dest_addr: usize,
+        desc: Option<MemoryRegionDesc>,
+        op: AtomicOp,
+    ) {
+        let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
+
+        loop {
+            let err = match &self.ep {
+                MyEndpoint::Connectionless(ep) => {
+                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                        unsafe {
+                            get_atomic_inject_bool_op(op)(
+                                ep, 
+                                buf,
+                                &self.mapped_addr.as_ref().unwrap()[1],
+                                &dst_slice,
+                            )
+                        }
+                    } else {
+                        unsafe {
+                            get_atomic_bool_op(op)(
+                                ep,
+                                buf,
+                                desc,
+                                &self.mapped_addr.as_ref().unwrap()[1],
+                                &dst_slice,
+                            )
+                        }
+                    }
+                }
+                MyEndpoint::Connected(ep) => {
+                    if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                        unsafe { get_conn_atomic_inject_bool_op(op)(ep,buf, &dst_slice) }
+                    } else {
+                        unsafe { get_conn_atomic_bool_op(op)(ep, buf, desc, &dst_slice) }
+                    }
+                }
+            };
+
+            if self.check_and_progress(err) {
+                break;
+            }
+        }
+    }
+
+    pub fn atomicv_bool(
+        &self,
+        ioc: &[libfabric::iovec::Ioc<bool>],
+        dest_addr: usize,
+        desc: Option<&[MemoryRegionDesc]>,
+        op: AtomicOp,
+    ) {
+        let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let ioc_len = ioc.iter().fold(0, |acc, x| acc + x.len());
+        let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + ioc_len);
+        // let base_mem_addr = remote_mem_info.borrow().mem_address();
+        // let key = remote_mem_info.borrow().key();
+
+        loop {
+            let err = match &self.ep {
+                MyEndpoint::Connectionless(ep) => unsafe {
+                    get_atomicv_bool_op(op)(
+                        ep,
+                        ioc,
+                        desc,
+                        &self.mapped_addr.as_ref().unwrap()[1],
+                        &dst_slice,
+                    )
+                },
+                MyEndpoint::Connected(ep) => unsafe { get_conn_atomicv_bool_op(op)(ep, ioc, desc, &dst_slice) },
+            };
+
+            if self.check_and_progress(err) {
+                break;
+            }
+        }
+    }
+
     pub fn atomicmsg<T: libfabric::AsFiType>(
         &self,
         msg: &Either<MsgAtomic<T>, MsgAtomicConnected<T>>,
@@ -2447,6 +2743,91 @@ impl<I: AtomicDefaultCap> Ofi<I> {
                 },
                 MyEndpoint::Connected(ep) => unsafe {
                     get_conn_atomicv_fetch_op(op)
+                    (
+                       ep, 
+                       ioc, 
+                       desc, 
+                       res_ioc, 
+                       res_desc, 
+                       &src_slice
+                    )
+                },
+            };
+
+            if self.check_and_progress(err) {
+                break;
+            }
+        }
+    }
+
+    pub fn fetch_atomic_bool(
+        &self,
+        buf: &[bool],
+        res: &mut [bool],
+        dest_addr: usize,
+        desc: Option<MemoryRegionDesc>,
+        res_desc: Option<MemoryRegionDesc>,
+        op: FetchAtomicOp,
+    ) {
+        let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
+
+        // let base_mem_addr = remote_mem_info.borrow().mem_address();
+        // let key = remote_mem_info.borrow().key();
+        loop {
+            let err = match &self.ep {
+                MyEndpoint::Connectionless(ep) => unsafe {
+                    get_atomic_fetch_bool_op(op)(
+                        ep,
+                        buf,
+                        desc,
+                        res,
+                        res_desc,
+                        &self.mapped_addr.as_ref().unwrap()[1],
+                        &src_slice,
+                    )
+                },
+                MyEndpoint::Connected(ep) => unsafe {
+                    get_conn_atomic_fetch_bool_op(op)(ep,buf, desc, res, res_desc, &src_slice)
+                },
+            };
+
+            if self.check_and_progress(err) {
+                break;
+            }
+        }
+    }
+
+    pub fn fetch_atomicv_bool(
+        &self,
+        ioc: &[libfabric::iovec::Ioc<bool>],
+        res_ioc: &mut [libfabric::iovec::IocMut<bool>],
+        dest_addr: usize,
+        desc: Option<&[MemoryRegionDesc]>,
+        res_desc: Option<&[MemoryRegionDesc]>,
+        op: FetchAtomicOp,
+    ) {
+        let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+        let src_slice = remote_mem_info
+            .slice(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
+        // let base_mem_addr = remote_mem_info.borrow().mem_address();
+        // let key = remote_mem_info.borrow().key();
+        loop {
+            let err = match &self.ep {
+                MyEndpoint::Connectionless(ep) => unsafe {
+                    get_atomicv_fetch_bool_op(op)
+                    (
+                        ep,
+                        ioc,
+                        desc,
+                        res_ioc,
+                        res_desc,
+                        &self.mapped_addr.as_ref().unwrap()[1],
+                        &src_slice,
+                    )
+                },
+                MyEndpoint::Connected(ep) => unsafe {
+                    get_conn_atomicv_fetch_bool_op(op)
                     (
                        ep, 
                        ioc, 
@@ -4181,6 +4562,35 @@ fn atomic(server: bool, name: &str, connected: bool) {
             }
         },
     };
+
+    let mut bool_reg_mem: Vec<_> = if server {
+        vec![true; 1024 * 2]
+    } else {
+        vec![false; 1024 * 2]
+    };
+
+    let bool_mr = MemoryRegionBuilder::new(&bool_reg_mem, libfabric::enums::HmemIface::System)
+        .access_recv()
+        .access_send()
+        .access_write()
+        .access_read()
+        .access_remote_write()
+        .access_remote_read()
+        .build(&ofi.domain)
+        .unwrap();
+
+    let bool_mr = match bool_mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+            libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                enable_ep_mr(&ofi.ep, ep_binding_memory_region)
+            }
+            libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                rma_event_memory_region.enable().unwrap()
+            }
+        },
+    };
+
     let descs = [mr.descriptor(), mr.descriptor()];
     let desc0 = Some(mr.descriptor());
     // let mapped_addr = ofi.mapped_addr.clone();
@@ -4211,11 +4621,15 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Lor);
-        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        ofi.atomic_bool(&bool_reg_mem[..512], 0, desc0, AtomicOp::Lor);
+        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
         ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Bxor);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+        ofi.atomic_bool(&bool_reg_mem[..512], 0, desc0, AtomicOp::Land);
+        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
         ofi.send(&reg_mem[512..1024], desc0, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
@@ -4223,14 +4637,11 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Land);
-        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-
         // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Lxor);
         // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
-        // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::AtomicWrite);
-        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::AtomicWrite);
+        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         ofi.send(&reg_mem[512..1024], desc0, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
@@ -4267,7 +4678,7 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.send(&reg_mem[512..1024], desc0, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
-        expected = vec![3; 1024 * 2];
+        expected = vec![1; 1024 * 2];
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
@@ -4275,13 +4686,13 @@ fn atomic(server: bool, name: &str, connected: bool) {
         ofi.send(&reg_mem[512..1024], desc0, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
-        // expected = vec![2;1024*2];
+        expected = vec![2;1024*2];
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
-        // assert_eq!(&reg_mem[..512], &expected[..512]);
+        assert_eq!(&reg_mem[..512], &expected[..512]);
 
-        expected = vec![6; 1024 * 2];
+        expected = vec![4; 1024 * 2];
         // Recv a completion ack
         ofi.recv(&mut reg_mem[512..1024], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
@@ -4347,6 +4758,35 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
             }
         },
     };
+    
+    let mut bool_reg_mem: Vec<_> = if server {
+        vec![true; 1024 * 2]
+    } else {
+        vec![false; 1024 * 2]
+    };
+
+    let bool_mr = MemoryRegionBuilder::new(&bool_reg_mem, libfabric::enums::HmemIface::System)
+        .access_recv()
+        .access_send()
+        .access_write()
+        .access_read()
+        .access_remote_write()
+        .access_remote_read()
+        .build(&ofi.domain)
+        .unwrap();
+
+    let bool_mr = match bool_mr {
+        libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+            libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                enable_ep_mr(&ofi.ep, ep_binding_memory_region)
+            }
+            libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                rma_event_memory_region.enable().unwrap()
+            }
+        },
+    };
+
 
     let desc0 = Some(mr.descriptor());
     let desc1 = Some(mr.descriptor());
@@ -4357,6 +4797,7 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         let mut expected: Vec<u64> = vec![1; 256];
         let (op_mem, ack_mem) = reg_mem.split_at_mut(512);
         let (mem0, mem1) = op_mem.split_at_mut(256);
+        let (bool_mem0, bool_mem1) = bool_reg_mem.split_at_mut(256);
         ofi.fetch_atomic(
             mem0,
             mem1,
@@ -4436,19 +4877,19 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut ack_mem[..512], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        expected = vec![2; 256];
-        // ofi.fetch_atomic(
-        //     mem0,
-        //     mem1,
+        // let bool_expected = vec![true; 256];
+        // ofi.fetch_atomic_bool(
+        //     &bool_mem0[..256],
+        //     &mut bool_mem1[..256],
         //     0,
         //     desc0,
         //     desc1,
         //     FetchAtomicOp::Lor,
         // );
         // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        // assert_eq!(mem1, &expected);
+        // assert_eq!(bool_mem1, &bool_expected);
 
-        // expected = vec![1; 256];
+        expected = vec![2; 256];
         ofi.fetch_atomic(
             mem0,
             mem1,
@@ -4492,17 +4933,17 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         assert_eq!(mem1, &expected);
 
-        // expected = vec![2; 256];
-        // ofi.fetch_atomic(
-        //     mem0,
-        //     mem1,
-        //     0,
-        //     desc0,
-        //     desc1,
-        //     FetchAtomicOp::AtomicWrite,
-        // );
-        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        // assert_eq!(mem1, &expected);
+        expected = vec![2; 256];
+        ofi.fetch_atomic(
+            mem0,
+            mem1,
+            0,
+            desc0,
+            desc1,
+            FetchAtomicOp::AtomicWrite,
+        );
+        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        assert_eq!(mem1, &expected);
 
         // Send a done ack
         ofi.send(&ack_mem[..512], desc0, None, false);
@@ -4512,17 +4953,17 @@ fn fetch_atomic(server: bool, name: &str, connected: bool) {
         ofi.recv(&mut ack_mem[..512], desc0, false);
         ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        // expected = vec![2; 256];
-        // ofi.fetch_atomic(
-        //     mem0,
-        //     mem1,
-        //     0,
-        //     desc0,
-        //     desc1,
-        //     FetchAtomicOp::AtomicRead,
-        // );
-        // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
-        // assert_eq!(mem1, &expected);
+        expected = vec![2; 256];
+        ofi.fetch_atomic(
+            mem0,
+            mem1,
+            0,
+            desc0,
+            desc1,
+            FetchAtomicOp::AtomicRead,
+        );
+        ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        assert_eq!(mem1, &expected);
 
         expected = vec![2; 256];
         let (read_mem, write_mem) = op_mem.split_at_mut(256);

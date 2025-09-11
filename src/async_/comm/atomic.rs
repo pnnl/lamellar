@@ -183,7 +183,7 @@ pub trait AsyncAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async
+    atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async, atomic_write_to_async
     );
 
     gen_atomic_op_decl!((), (
@@ -231,7 +231,7 @@ pub trait AsyncAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async,  atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async
+    atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async,  atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async, atomicv_write_to_async
     );
 
     gen_atomic_op_decl!((), (
@@ -260,7 +260,7 @@ pub trait AsyncAtomicWriteEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     )-> (),
-    atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async
+    atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async, atomic_inject_write_to_async
     );
 
     gen_atomic_op_decl!((), (
@@ -283,7 +283,7 @@ pub trait ConnectedAsyncAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    atomic_min_async, atomic_max_async, atomic_sum_async, atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async
+    atomic_min_async, atomic_max_async, atomic_sum_async, atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async, atomic_write_async
     );
     gen_atomic_op_decl!((), (
         self,
@@ -326,7 +326,7 @@ pub trait ConnectedAsyncAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    atomicv_min_async, atomicv_max_async, atomicv_sum_async, atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async
+    atomicv_min_async, atomicv_max_async, atomicv_sum_async, atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async, atomicv_write_async
     );
 
     gen_atomic_op_decl!((), (
@@ -374,7 +374,7 @@ pub trait ConnectedAsyncAtomicWriteEp {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     )-> (),
-    atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async, atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async
+    atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async, atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async, atomic_inject_write_async
     );
 
     gen_atomic_op_decl!((), (
@@ -426,7 +426,7 @@ pub trait AsyncAtomicWriteEpMrSlice : AsyncAtomicWriteEp {
         context: &mut Context
     ) -> SingleCompletion,
         (mr_slice.as_slice(), Some(mr_slice.desc()), dest_addr, mem_addr, mapped_key, context),
-        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async,, atomic_mr_min_to_async, atomic_mr_max_to_async, atomic_mr_sum_to_async,  atomic_mr_prod_to_async, atomic_mr_bor_to_async, atomic_mr_band_to_async, atomic_mr_bxor_to_async
+        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async, atomic_write_to_async,, atomic_mr_min_to_async, atomic_mr_max_to_async, atomic_mr_sum_to_async,  atomic_mr_prod_to_async, atomic_mr_bor_to_async, atomic_mr_band_to_async, atomic_mr_bxor_to_async, atomic_mr_write_to_async
     );
 
     // gen_atomic_mr_op_def!((<T: AsFiType, RT: AsFiType>), (
@@ -449,7 +449,7 @@ pub trait AsyncAtomicWriteEpMrSlice : AsyncAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey
     ) -> (),
         (mr_slice.as_slice(), dest_addr, mem_addr, mapped_key),
-        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async,, atomic_mr_inject_min_to_async, atomic_mr_inject_max_to_async, atomic_mr_inject_sum_to_async,  atomic_mr_inject_prod_to_async, atomic_mr_inject_bor_to_async, atomic_mr_inject_band_to_async, atomic_mr_inject_bxor_to_async
+        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async, atomic_inject_write_to_async,, atomic_mr_inject_min_to_async, atomic_mr_inject_max_to_async, atomic_mr_inject_sum_to_async,  atomic_mr_inject_prod_to_async, atomic_mr_inject_bor_to_async, atomic_mr_inject_band_to_async, atomic_mr_inject_bxor_to_async, atomic_mr_inject_write_to_async
     );
     // #[allow(clippy::too_many_arguments)]
     // unsafe fn atomic_mr_slice_to_async<T: AsFiType, RT: AsFiType>(
@@ -521,7 +521,7 @@ pub trait ConnectedAsyncAtomicWriteEpMrSlice: ConnectedAsyncAtomicWriteEp {
         context: &mut Context
     ) -> SingleCompletion,
         (mr_slice.as_slice(), Some(mr_slice.desc()), mem_addr, mapped_key, context),
-        atomic_min_async, atomic_max_async, atomic_sum_async,  atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async,, atomic_mr_min_async, atomic_mr_max_async, atomic_mr_sum_async,  atomic_mr_prod_async, atomic_mr_bor_async, atomic_mr_band_async, atomic_mr_bxor_async
+        atomic_min_async, atomic_max_async, atomic_sum_async,  atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async, atomic_write_async,, atomic_mr_min_async, atomic_mr_max_async, atomic_mr_sum_async,  atomic_mr_prod_async, atomic_mr_bor_async, atomic_mr_band_async, atomic_mr_bxor_async, atomic_mr_write_async
     );
 
 
@@ -543,7 +543,7 @@ pub trait ConnectedAsyncAtomicWriteEpMrSlice: ConnectedAsyncAtomicWriteEp {
         mapped_key: &MappedMemoryRegionKey
     ) -> (),
         (mr_slice.as_slice(), mem_addr, mapped_key),
-        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async,  atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async,, atomic_mr_inject_min, atomic_mr_inject_max, atomic_mr_inject_sum,  atomic_mr_inject_prod, atomic_mr_inject_bor, atomic_mr_inject_band, atomic_mr_inject_bxor
+        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async,  atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async, atomic_inject_write_async,, atomic_mr_inject_min, atomic_mr_inject_max, atomic_mr_inject_sum,  atomic_mr_inject_prod, atomic_mr_inject_bor, atomic_mr_inject_band, atomic_mr_inject_bxor, atomic_mr_inject_write
     );
 }
 
@@ -571,8 +571,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-        atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async, atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async
+        atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async, atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async, atomic_write_to_async
     );
     
     gen_atomic_op_def!((), ( 
@@ -598,7 +598,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     //     mapped_key: &MappedMemoryRegionKey,
     //     context: &mut TriggeredContext
     // ),
-    //     atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context),  AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
+    //     atomic_async_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, context),  AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
     //     atomic_min_to_triggered, atomic_max_to_triggered, atomic_sum_to_triggered, atomic_prod_to_triggered, atomic_bor_to_triggered, atomic_band_to_triggered, atomic_bxor_to_triggered
     // );
 
@@ -625,8 +625,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
         mapped_key: &MappedMemoryRegionKey,
         ctx: &mut Context
     )-> SingleCompletion,
-        atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
-        atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async, atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async
+        atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
+        atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async, atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async, atomicv_write_to_async
     );
 
     gen_atomic_op_def!((), ( 
@@ -651,7 +651,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     //     mapped_key: &MappedMemoryRegionKey,
     //     ctx: &mut TriggeredContext
     // ),
-    //     atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
+    //     atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
     //     atomicv_min_to_triggered, atomicv_max_to_triggered, atomicv_sum_to_triggered, atomicv_prod_to_triggered, atomicv_bor_to_triggered, atomicv_band_to_triggered, atomicv_bxor_to_triggered
     // );
 
@@ -675,8 +675,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
         mem_addr: RemoteMemoryAddress<RT>,
         mapped_key: &MappedMemoryRegionKey
     )-> (),
-        inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,,
-        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async, atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async
+        inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
+        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async, atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async, atomic_inject_write_to_async
     );
 
     gen_atomic_op_def!((), ( 
@@ -764,8 +764,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )->SingleCompletion,
-        atomic_async_impl(buf, desc, None, mem_addr, mapped_key, context), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_min_async, atomic_max_async, atomic_sum_async, atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async
+        atomic_async_impl(buf, desc, None, mem_addr, mapped_key, context), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_min_async, atomic_max_async, atomic_sum_async, atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async, atomic_write_async
     );
     
     gen_atomic_op_def!((), ( 
@@ -796,7 +796,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     //         mapped_key,
     //         Some(context.inner_mut())
     //     ),
-    //     AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+    //     AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
     //     atomic_min_triggered, atomic_max_triggered, atomic_sum_triggered, atomic_prod_triggered, atomic_bor_triggered, atomic_band_triggered, atomic_bxor_triggered
     // );
 
@@ -829,8 +829,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
         context: &mut Context
     )->SingleCompletion, 
         atomicv_async_impl(ioc, desc, None, mem_addr, mapped_key, context),
-        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomicv_min_async, atomicv_max_async, atomicv_sum_async, atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomicv_min_async, atomicv_max_async, atomicv_sum_async, atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async, atomicv_write_async
     );
 
     gen_atomic_op_def!((), ( 
@@ -855,7 +855,7 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     //     context: &mut TriggeredContext
     // )->SingleCompletion,
     //     atomicv_impl(ioc, desc, None, mem_addr, mapped_key, Some(context.inner_mut())),
-    //     AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
+    //     AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
     //     atomicv_min_triggered, atomicv_max_triggered, atomicv_sum_triggered, atomicv_prod_triggered, atomicv_bor_triggered, atomicv_band_triggered, atomicv_bxor_triggered
     // );
 
@@ -879,8 +879,8 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
         mapped_key: &MappedMemoryRegionKey
     )->(),
         inject_atomic_async_impl(buf, None, mem_addr, mapped_key),
-        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor,, 
-        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async, atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async
+        AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
+        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async, atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async, atomic_inject_write_async
     );
 
     gen_atomic_op_def!((), ( 
@@ -920,7 +920,7 @@ pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async,, atomic_min_mr_slice_to_async, atomic_max_mr_slice_to_async, atomic_sum_mr_slice_to_async,  atomic_prod_mr_slice_to_async, atomic_bor_mr_slice_to_async, atomic_band_mr_slice_to_async, atomic_bxor_mr_slice_to_async
+        atomic_min_to_async, atomic_max_to_async, atomic_sum_to_async,  atomic_prod_to_async, atomic_bor_to_async, atomic_band_to_async, atomic_bxor_to_async, atomic_write_to_async,, atomic_min_mr_slice_to_async, atomic_max_mr_slice_to_async, atomic_sum_mr_slice_to_async,  atomic_prod_mr_slice_to_async, atomic_bor_mr_slice_to_async, atomic_band_mr_slice_to_async, atomic_bxor_mr_slice_to_async, atomic_write_mr_slice_to_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -996,7 +996,7 @@ pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
             dest_slice.key(),
             context
         ),
-        atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async,  atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async,, atomicv_min_mr_slice_to_async, atomicv_max_mr_slice_to_async, atomicv_sum_mr_slice_to_async,  atomicv_prod_mr_slice_to_async, atomicv_bor_mr_slice_to_async, atomicv_band_mr_slice_to_async, atomicv_bxor_mr_slice_to_async
+        atomicv_min_to_async, atomicv_max_to_async, atomicv_sum_to_async,  atomicv_prod_to_async, atomicv_bor_to_async, atomicv_band_to_async, atomicv_bxor_to_async, atomicv_write_to_async,, atomicv_min_mr_slice_to_async, atomicv_max_mr_slice_to_async, atomicv_sum_mr_slice_to_async,  atomicv_prod_mr_slice_to_async, atomicv_bor_mr_slice_to_async, atomicv_band_mr_slice_to_async, atomicv_bxor_mr_slice_to_async, atomicv_write_mr_slice_to_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1068,7 +1068,7 @@ pub trait AsyncAtomicWriteRemoteMemAddrSliceEp: AsyncAtomicWriteEp {
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async,, atomic_inject_min_mr_slice_to_async, atomic_inject_max_mr_slice_to_async, atomic_inject_sum_mr_slice_to_async,  atomic_inject_prod_mr_slice_to_async, atomic_inject_bor_mr_slice_to_async, atomic_inject_band_mr_slice_to_async, atomic_inject_bxor_mr_slice_to_async
+        atomic_inject_min_to_async, atomic_inject_max_to_async, atomic_inject_sum_to_async,  atomic_inject_prod_to_async, atomic_inject_bor_to_async, atomic_inject_band_to_async, atomic_inject_bxor_to_async, atomic_inject_write_to_async,, atomic_inject_min_mr_slice_to_async, atomic_inject_max_mr_slice_to_async, atomic_inject_sum_mr_slice_to_async,  atomic_inject_prod_mr_slice_to_async, atomic_inject_bor_mr_slice_to_async, atomic_inject_band_mr_slice_to_async, atomic_inject_bxor_mr_slice_to_async, atomic_inject_write_mr_slice_to_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1174,7 +1174,7 @@ pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWri
             dest_slice.key(),
             context
         ),
-        atomic_min_async, atomic_max_async, atomic_sum_async,  atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async,, atomic_min_mr_slice_async, atomic_max_mr_slice_async, atomic_sum_mr_slice_async,  atomic_prod_mr_slice_async, atomic_bor_mr_slice_async, atomic_band_mr_slice_async, atomic_bxor_mr_slice_async
+        atomic_min_async, atomic_max_async, atomic_sum_async,  atomic_prod_async, atomic_bor_async, atomic_band_async, atomic_bxor_async, atomic_write_async,, atomic_min_mr_slice_async, atomic_max_mr_slice_async, atomic_sum_mr_slice_async,  atomic_prod_mr_slice_async, atomic_bor_mr_slice_async, atomic_band_mr_slice_async, atomic_bxor_mr_slice_async, atomic_write_mr_slice_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1246,7 +1246,7 @@ pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWri
             dest_slice.key(),
             context
         ),
-        atomicv_min_async, atomicv_max_async, atomicv_sum_async,  atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async,, atomicv_min_mr_slice_async, atomicv_max_mr_slice_async, atomicv_sum_mr_slice_async,  atomicv_prod_mr_slice_async, atomicv_bor_mr_slice_async, atomicv_band_mr_slice_async, atomicv_bxor_mr_slice_async
+        atomicv_min_async, atomicv_max_async, atomicv_sum_async,  atomicv_prod_async, atomicv_bor_async, atomicv_band_async, atomicv_bxor_async, atomicv_write_async,, atomicv_min_mr_slice_async, atomicv_max_mr_slice_async, atomicv_sum_mr_slice_async,  atomicv_prod_mr_slice_async, atomicv_bor_mr_slice_async, atomicv_band_mr_slice_async, atomicv_bxor_mr_slice_async, atomicv_write_mr_slice_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1276,7 +1276,7 @@ pub trait ConnectedAsyncAtomicWriteRemoteMemAddrSliceEp: ConnectedAsyncAtomicWri
             dest_slice.mem_address(),
             dest_slice.key()
         ),
-        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async,  atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async,, atomic_inject_min_mr_slice_async, atomic_inject_max_mr_slice_async, atomic_inject_sum_mr_slice_async,  atomic_inject_prod_mr_slice_async, atomic_inject_bor_mr_slice_async, atomic_inject_band_mr_slice_async, atomic_inject_bxor_mr_slice_async
+        atomic_inject_min_async, atomic_inject_max_async, atomic_inject_sum_async,  atomic_inject_prod_async, atomic_inject_bor_async, atomic_inject_band_async, atomic_inject_bxor_async, atomic_inject_write_async,, atomic_inject_min_mr_slice_async, atomic_inject_max_mr_slice_async, atomic_inject_sum_mr_slice_async,  atomic_inject_prod_mr_slice_async, atomic_inject_bor_mr_slice_async, atomic_inject_band_mr_slice_async, atomic_inject_bxor_mr_slice_async, atomic_inject_write_mr_slice_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1457,7 +1457,7 @@ pub trait AsyncAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async
+    fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async, fetch_atomic_write_from_async, fetch_atomic_read_from_async
     );
 
     gen_atomic_op_decl!((), (
@@ -1484,7 +1484,7 @@ pub trait AsyncAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    fetch_atomicv_min_from_async, fetch_atomicv_max_from_async, fetch_atomicv_sum_from_async, fetch_atomicv_prod_from_async, fetch_atomicv_bor_from_async, fetch_atomicv_band_from_async, fetch_atomicv_bxor_from_async
+    fetch_atomicv_min_from_async, fetch_atomicv_max_from_async, fetch_atomicv_sum_from_async, fetch_atomicv_prod_from_async, fetch_atomicv_bor_from_async, fetch_atomicv_band_from_async, fetch_atomicv_bxor_from_async, fetch_atomicv_write_from_async, fetch_atomicv_read_from_async
     );
 
     gen_atomic_op_decl!((), (
@@ -1521,7 +1521,7 @@ pub trait ConnectedAsyncAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async
+    fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async, fetch_atomic_write_async, fetch_atomic_read_async
     );
 
     gen_atomic_op_decl!((), (
@@ -1547,7 +1547,7 @@ pub trait ConnectedAsyncAtomicFetchEp {
         mapped_key: &MappedMemoryRegionKey,
         context: &mut Context
     )-> SingleCompletion,
-    fetch_atomicv_min_async, fetch_atomicv_max_async, fetch_atomicv_sum_async, fetch_atomicv_prod_async, fetch_atomicv_bor_async, fetch_atomicv_band_async, fetch_atomicv_bxor_async
+    fetch_atomicv_min_async, fetch_atomicv_max_async, fetch_atomicv_sum_async, fetch_atomicv_prod_async, fetch_atomicv_bor_async, fetch_atomicv_band_async, fetch_atomicv_bxor_async, fetch_atomicv_write_async, fetch_atomicv_read_async
     );
 
     gen_atomic_op_decl!((), (
@@ -1632,8 +1632,8 @@ macro_rules! gen_conn_atomic_fetch_mr {
 
 pub trait AsyncAtomicFetchEpMrSlice: AsyncAtomicFetchEp {
     gen_atomic_fetch_mr!(
-        fetch_atomic_min_mr_slice_from_async, fetch_atomic_max_mr_slice_from_async, fetch_atomic_sum_mr_slice_from_async, fetch_atomic_prod_mr_slice_from_async, fetch_atomic_bor_mr_slice_from_async, fetch_atomic_band_mr_slice_from_async, fetch_atomic_bxor_mr_slice_from_async,, 
-        fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async
+        fetch_atomic_min_mr_slice_from_async, fetch_atomic_max_mr_slice_from_async, fetch_atomic_sum_mr_slice_from_async, fetch_atomic_prod_mr_slice_from_async, fetch_atomic_bor_mr_slice_from_async, fetch_atomic_band_mr_slice_from_async, fetch_atomic_bxor_mr_slice_from_async, fetch_atomic_write_mr_slice_from_async, fetch_atomic_read_mr_slice_from_async,, 
+        fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async, fetch_atomic_write_from_async, fetch_atomic_read_from_async
     );
 }
 
@@ -1641,8 +1641,8 @@ impl<EP: AsyncAtomicFetchEp> AsyncAtomicFetchEpMrSlice for EP {}
 
 pub trait ConnectedAsyncAtomicFetchEpMrSlice: ConnectedAsyncAtomicFetchEp {
     gen_conn_atomic_fetch_mr!(
-        fetch_atomic_min_mr_slice_async, fetch_atomic_max_mr_slice_async, fetch_atomic_sum_mr_slice_async, fetch_atomic_prod_mr_slice_async, fetch_atomic_bor_mr_slice_async, fetch_atomic_band_mr_slice_async, fetch_atomic_bxor_mr_slice_async,, 
-        fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async
+        fetch_atomic_min_mr_slice_async, fetch_atomic_max_mr_slice_async, fetch_atomic_sum_mr_slice_async, fetch_atomic_prod_mr_slice_async, fetch_atomic_bor_mr_slice_async, fetch_atomic_band_mr_slice_async, fetch_atomic_bxor_mr_slice_async, fetch_atomic_write_mr_slice_async, fetch_atomic_read_mr_slice_async,, 
+        fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async, fetch_atomic_write_async, fetch_atomic_read_async
     );
 }
 
@@ -1673,8 +1673,8 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
         context: &mut Context
     )->SingleCompletion,
         fetch_atomic_async_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, context),
-        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async
+        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async, fetch_atomic_write_from_async, fetch_atomic_read_from_async
     );
 
     gen_atomic_op_def!((), (
@@ -1705,8 +1705,8 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
         context: &mut Context
     )->SingleCompletion,
         fetch_atomicv_async_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, context),
-        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min_from_async, fetch_atomicv_max_from_async, fetch_atomicv_sum_from_async, fetch_atomicv_prod_from_async, fetch_atomicv_bor_from_async, fetch_atomicv_band_from_async, fetch_atomicv_bxor_from_async
+        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min_from_async, fetch_atomicv_max_from_async, fetch_atomicv_sum_from_async, fetch_atomicv_prod_from_async, fetch_atomicv_bor_from_async, fetch_atomicv_band_from_async, fetch_atomicv_bxor_from_async, fetch_atomicv_write_from_async, fetch_atomicv_read_from_async
     );
 
     gen_atomic_op_def!((), (
@@ -1748,8 +1748,8 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
         context: &mut Context
     )->SingleCompletion,
         fetch_atomic_async_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, context),
-        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async
+        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async, fetch_atomic_write_async, fetch_atomic_read_async
     );
 
     gen_atomic_op_def!((), (
@@ -1780,8 +1780,8 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
     )->SingleCompletion,
         fetch_atomicv_async_impl(
             ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, context),
-        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor,,
-        fetch_atomicv_min_async, fetch_atomicv_max_async, fetch_atomicv_sum_async, fetch_atomicv_prod_async, fetch_atomicv_bor_async, fetch_atomicv_band_async, fetch_atomicv_bxor_async
+        crate::enums::FetchAtomicOp::Min, crate::enums::FetchAtomicOp::Max, crate::enums::FetchAtomicOp::Sum, crate::enums::FetchAtomicOp::Prod, crate::enums::FetchAtomicOp::Bor, crate::enums::FetchAtomicOp::Band, crate::enums::FetchAtomicOp::Bxor, crate::enums::FetchAtomicOp::AtomicWrite, crate::enums::FetchAtomicOp::AtomicRead,,
+        fetch_atomicv_min_async, fetch_atomicv_max_async, fetch_atomicv_sum_async, fetch_atomicv_prod_async, fetch_atomicv_bor_async, fetch_atomicv_band_async, fetch_atomicv_bxor_async, fetch_atomicv_write_async, fetch_atomicv_read_async
     );
 
     gen_atomic_op_def!((), (
@@ -1833,8 +1833,8 @@ pub trait AsyncAtomicFetchRemoteMemAddrSliceEp: AsyncAtomicFetchEp {
             &src_slice.key(),
             context
         ),
-        fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async,,
-        fetch_atomic_min_mr_slice_from_async, fetch_atomic_max_mr_slice_from_async, fetch_atomic_sum_mr_slice_from_async, fetch_atomic_prod_mr_slice_from_async, fetch_atomic_bor_mr_slice_from_async, fetch_atomic_band_mr_slice_from_async, fetch_atomic_bxor_mr_slice_from_async
+        fetch_atomic_min_from_async, fetch_atomic_max_from_async, fetch_atomic_sum_from_async, fetch_atomic_prod_from_async, fetch_atomic_bor_from_async, fetch_atomic_band_from_async, fetch_atomic_bxor_from_async, fetch_atomic_write_from_async, fetch_atomic_read_from_async,,
+        fetch_atomic_min_mr_slice_from_async, fetch_atomic_max_mr_slice_from_async, fetch_atomic_sum_mr_slice_from_async, fetch_atomic_prod_mr_slice_from_async, fetch_atomic_bor_mr_slice_from_async, fetch_atomic_band_mr_slice_from_async, fetch_atomic_bxor_mr_slice_from_async, fetch_atomic_write_mr_slice_from_async, fetch_atomic_read_mr_slice_from_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1881,8 +1881,8 @@ pub trait AsyncAtomicFetchRemoteMemAddrSliceEp: AsyncAtomicFetchEp {
             &src_slice.key(),
             context
         ),
-        fetch_atomicv_min_from_async, fetch_atomicv_max_from_async, fetch_atomicv_sum_from_async, fetch_atomicv_prod_from_async, fetch_atomicv_bor_from_async, fetch_atomicv_band_from_async, fetch_atomicv_bxor_from_async,,
-        fetch_atomicv_min_mr_slice_from_async, fetch_atomicv_max_mr_slice_from_async, fetch_atomicv_sum_mr_slice_from_async, fetch_atomicv_prod_mr_slice_from_async, fetch_atomicv_bor_mr_slice_from_async, fetch_atomicv_band_mr_slice_from_async, fetch_atomicv_bxor_mr_slice_from_async
+        fetch_atomicv_min_from_async, fetch_atomicv_max_from_async, fetch_atomicv_sum_from_async, fetch_atomicv_prod_from_async, fetch_atomicv_bor_from_async, fetch_atomicv_band_from_async, fetch_atomicv_bxor_from_async, fetch_atomicv_write_from_async, fetch_atomicv_read_from_async,,
+        fetch_atomicv_min_mr_slice_from_async, fetch_atomicv_max_mr_slice_from_async, fetch_atomicv_sum_mr_slice_from_async, fetch_atomicv_prod_mr_slice_from_async, fetch_atomicv_bor_mr_slice_from_async, fetch_atomicv_band_mr_slice_from_async, fetch_atomicv_bxor_mr_slice_from_async, fetch_atomicv_write_mr_slice_from_async, fetch_atomicv_read_mr_slice_from_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1906,7 +1906,7 @@ pub trait AsyncAtomicFetchRemoteMemAddrSliceEp: AsyncAtomicFetchEp {
             context
         ),
         fetch_atomicv_lor_from_async, fetch_atomicv_land_from_async, fetch_atomicv_lxor_from_async,,
-        fetch_atomicvmr_slice_lor_from_async, fetch_atomicv_land_mr_slice_from_async, fetch_atomicv_lxor_mr_slice_from_async
+        fetch_atomicv_lor_mr_slice_from_async, fetch_atomicv_land_mr_slice_from_async, fetch_atomicv_lxor_mr_slice_from_async
     );
 
     unsafe fn fetch_atomicmsg_slice_from_async<T: AsFiType + 'static>(
@@ -1941,8 +1941,8 @@ pub trait ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp: ConnectedAsyncAtomicFet
             &src_slice.key(),
             context
         ),
-        fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async,,
-        fetch_atomic_min_mr_slice_async, fetch_atomic_max_mr_slice_async, fetch_atomic_sum_mr_slice_async, fetch_atomic_prod_mr_slice_async, fetch_atomic_bor_mr_slice_async, fetch_atomic_band_mr_slice_async, fetch_atomic_bxor_mr_slice_async
+        fetch_atomic_min_async, fetch_atomic_max_async, fetch_atomic_sum_async, fetch_atomic_prod_async, fetch_atomic_bor_async, fetch_atomic_band_async, fetch_atomic_bxor_async, fetch_atomic_write_async, fetch_atomic_read_async,,
+        fetch_atomic_min_mr_slice_async, fetch_atomic_max_mr_slice_async, fetch_atomic_sum_mr_slice_async, fetch_atomic_prod_mr_slice_async, fetch_atomic_bor_mr_slice_async, fetch_atomic_band_mr_slice_async, fetch_atomic_bxor_mr_slice_async, fetch_atomic_write_mr_slice_async, fetch_atomic_read_mr_slice_async
     );
 
     gen_atomic_mr_op_def!((), (
@@ -1964,7 +1964,7 @@ pub trait ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp: ConnectedAsyncAtomicFet
             context
         ),
         fetch_atomic_lor_async, fetch_atomic_land_async, fetch_atomic_lxor_async,,
-        fetch_atomicmr_slice_lor_async, fetch_atomic_land_mr_slice_async, fetch_atomic_lxor_mr_slice_async
+        fetch_atomic_lor_mr_slice_async, fetch_atomic_land_mr_slice_async, fetch_atomic_lxor_mr_slice_async
     );
 
     gen_atomic_mr_op_def!((<T: AsFiType>), (
@@ -1985,8 +1985,8 @@ pub trait ConnectedAsyncAtomicFetchRemoteMemAddrSliceEp: ConnectedAsyncAtomicFet
             &src_slice.key(),
             context
         ),
-        fetch_atomicv_min_async, fetch_atomicv_max_async, fetch_atomicv_sum_async, fetch_atomicv_prod_async, fetch_atomicv_bor_async, fetch_atomicv_band_async, fetch_atomicv_bxor_async,,
-        fetch_atomicv_min_mr_slice_async, fetch_atomicv_max_mr_slice_async, fetch_atomicv_sum_mr_slice_async, fetch_atomicv_prod_mr_slice_async, fetch_atomicv_bor_mr_slice_async, fetch_atomicv_band_mr_slice_async, fetch_atomicv_bxor_mr_slice_async
+        fetch_atomicv_min_async, fetch_atomicv_max_async, fetch_atomicv_sum_async, fetch_atomicv_prod_async, fetch_atomicv_bor_async, fetch_atomicv_band_async, fetch_atomicv_bxor_async, fetch_atomicv_write_async, fetch_atomicv_read_async,,
+        fetch_atomicv_min_mr_slice_async, fetch_atomicv_max_mr_slice_async, fetch_atomicv_sum_mr_slice_async, fetch_atomicv_prod_mr_slice_async, fetch_atomicv_bor_mr_slice_async, fetch_atomicv_band_mr_slice_async, fetch_atomicv_bxor_mr_slice_async, fetch_atomicv_write_mr_slice_async, fetch_atomicv_read_mr_slice_async
     );
 
     gen_atomic_mr_op_def!((), (
