@@ -28,6 +28,7 @@ use crate::xcontext::RxContextBase;
 use crate::xcontext::RxContextImplBase;
 use crate::xcontext::TxContextBase;
 use crate::xcontext::TxContextImplBase;
+use crate::AsFiOrBoolType;
 use crate::AsFiType;
 use crate::Context;
 use crate::RemoteMemAddrSlice;
@@ -37,7 +38,7 @@ use crate::FI_ADDR_UNSPEC;
 
 pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
-    fn atomic_impl<T: AsFiType, RT: AsFiType>(
+    fn atomic_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         desc: Option<MemoryRegionDesc<'_>>,
@@ -57,7 +58,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
                 raw_addr,
                 mem_addr.into(),
                 mapped_key.key(),
-                T::as_fi_datatype(),
+                T::as_fi_or_bool_datatype(),
                 op.as_raw(),
                 ctx,
             )
@@ -66,7 +67,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn atomicv_impl<T: AsFiType, RT: AsFiType>(
+    fn atomicv_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
@@ -86,7 +87,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
                 raw_addr,
                 mem_addr.into(),
                 mapped_key.key(),
-                T::as_fi_datatype(),
+                T::as_fi_or_bool_datatype(),
                 op.as_raw(),
                 ctx,
             )
@@ -115,7 +116,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn inject_atomic_impl<T: AsFiType, RT: AsFiType>(
+    fn inject_atomic_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         dest_addr: Option<&crate::MappedAddress>,
@@ -136,7 +137,7 @@ pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
                 raw_addr,
                 mem_addr.into(),
                 mapped_key.key(),
-                T::as_fi_datatype(),
+                T::as_fi_or_bool_datatype(),
                 op.as_raw(),
             )
         };
@@ -1545,7 +1546,7 @@ impl<E: AtomicWriteEpImpl> AtomicWriteEpImpl for EndpointBase<E, Connectionless>
 
 pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
-    fn fetch_atomic_impl<T: AsFiType, RT: AsFiType>(
+    fn fetch_atomic_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         desc: Option<MemoryRegionDesc<'_>>,
@@ -1569,7 +1570,7 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
                 raw_addr,
                 mem_addr.into(),
                 mapped_key.key(),
-                T::as_fi_datatype(),
+                T::as_fi_or_bool_datatype(),
                 op.as_raw(),
                 ctx,
             )
@@ -1578,7 +1579,7 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn fetch_atomicv_impl<T: AsFiType, RT: AsFiType>(
+    fn fetch_atomicv_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
@@ -1603,7 +1604,7 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
                 raw_addr,
                 mem_addr.into(),
                 mapped_key.key(),
-                T::as_fi_datatype(),
+                T::as_fi_or_bool_datatype(),
                 op.as_raw(),
                 ctx,
             )
@@ -3326,7 +3327,7 @@ impl<E: AtomicFetchEpImpl> AtomicFetchEpImpl for EndpointBase<E, Connectionless>
 
 pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     #[allow(clippy::too_many_arguments)]
-    unsafe fn compare_atomic_impl<T: AsFiType, RT: AsFiType>(
+    unsafe fn compare_atomic_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         desc: Option<MemoryRegionDesc<'_>>,
@@ -3354,7 +3355,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
                 raw_addr,
                 mem_addr.into(),
                 mapped_key.key(),
-                T::as_fi_datatype(),
+                T::as_fi_or_bool_datatype(),
                 op.as_raw(),
                 ctx,
             )
@@ -3363,7 +3364,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    unsafe fn compare_atomicv_impl<T: AsFiType, RT: AsFiType>(
+    unsafe fn compare_atomicv_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         ioc: &[crate::iovec::Ioc<T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
@@ -3393,7 +3394,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
                 raw_addr,
                 mem_addr.into(),
                 mapped_key.key(),
-                T::as_fi_datatype(),
+                T::as_fi_or_bool_datatype(),
                 op.as_raw(),
                 ctx,
             )

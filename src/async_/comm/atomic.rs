@@ -15,13 +15,13 @@ use crate::{
     async_::ep::AsyncTxEp, comm::atomic::AtomicWriteEpImpl, cq::SingleCompletion,
     mr::MappedMemoryRegionKey, AsFiType, Context,
 };
-use crate::{RemoteMemAddrSlice, RemoteMemAddrSliceMut, RemoteMemoryAddress};
+use crate::{AsFiOrBoolType, RemoteMemAddrSlice, RemoteMemAddrSliceMut, RemoteMemoryAddress};
 
 use super::while_try_again;
 
 pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     #[allow(clippy::too_many_arguments)]
-    async fn atomic_async_impl<T: AsFiType, RT: AsFiType>(
+    async fn atomic_async_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         desc: Option<MemoryRegionDesc<'_>>,
@@ -48,7 +48,7 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn inject_atomic_async_impl<T: AsFiType, RT: AsFiType>(
+    async fn inject_atomic_async_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         dest_addr: Option<&crate::MappedAddress>,
@@ -64,7 +64,7 @@ pub(crate) trait AsyncAtomicWriteEpImpl: AtomicWriteEpImpl + AsyncTxEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn atomicv_async_impl<T: AsFiType, RT: AsFiType>(
+    async fn atomicv_async_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         ioc: &[crate::iovec::Ioc<'_, T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
@@ -1354,7 +1354,7 @@ impl<EP: ConnectedAsyncAtomicWriteEp> ConnectedAsyncAtomicWriteRemoteMemAddrSlic
 
 pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
     #[allow(clippy::too_many_arguments)]
-    async fn fetch_atomic_async_impl<T: AsFiType, RT: AsFiType>(
+    async fn fetch_atomic_async_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         desc: Option<MemoryRegionDesc<'_>>,
@@ -1385,7 +1385,7 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn fetch_atomicv_async_impl<T: AsFiType, RT: AsFiType>(
+    async fn fetch_atomicv_async_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         ioc: &[crate::iovec::Ioc<'_, T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,
@@ -2026,7 +2026,7 @@ impl<EP: ConnectedAsyncAtomicFetchEp> ConnectedAsyncAtomicFetchRemoteMemAddrSlic
 
 pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
     #[allow(clippy::too_many_arguments)]
-    async unsafe fn compare_atomic_async_impl<T: AsFiType, RT: AsFiType>(
+    async unsafe fn compare_atomic_async_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         buf: &[T],
         desc: Option<MemoryRegionDesc<'_>>,
@@ -2061,7 +2061,7 @@ pub(crate) trait AsyncAtomicCASImpl: AtomicCASImpl + AsyncTxEp {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async unsafe fn compare_atomicv_async_impl<T: AsFiType, RT: AsFiType>(
+    async unsafe fn compare_atomicv_async_impl<T: AsFiOrBoolType, RT: AsFiOrBoolType>(
         &self,
         ioc: &[crate::iovec::Ioc<'_, T>],
         desc: Option<&[MemoryRegionDesc<'_>]>,

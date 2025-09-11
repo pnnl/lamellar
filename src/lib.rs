@@ -1283,8 +1283,26 @@ macro_rules!  async_eq_caps_type{
     };
 }
 
-pub trait AsFiType: Copy {
+pub trait AsFiType: AsFiOrBoolType {
     fn as_fi_datatype() -> libfabric_sys::fi_datatype;
+}
+
+pub trait AsFiBoolType: AsFiOrBoolType{
+    fn as_fi_bool_datatype() -> libfabric_sys::fi_datatype;
+}
+
+pub trait AsFiOrBoolType: Copy {
+    fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype;
+}
+
+macro_rules! impl_as_fi_or_bool_type {
+    ($(($rtype: ty, $fitype: path)),*) => {
+        $(impl AsFiOrBoolType for $rtype {
+            fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype {
+                $fitype
+            }
+        })*
+    };
 }
 
 macro_rules! impl_as_fi_type {
@@ -1297,7 +1315,13 @@ macro_rules! impl_as_fi_type {
     };
 }
 
-impl_as_fi_type!(
+impl AsFiBoolType for bool {
+    fn as_fi_bool_datatype() -> libfabric_sys::fi_datatype {
+        return bool::as_fi_or_bool_datatype()
+    }
+} 
+
+impl_as_fi_or_bool_type!(
     ((), libfabric_sys::fi_datatype_FI_VOID),
     (bool, libfabric_sys::fi_datatype_FI_INT8),
     (i8, libfabric_sys::fi_datatype_FI_INT8),
@@ -1314,8 +1338,24 @@ impl_as_fi_type!(
     (f64, libfabric_sys::fi_datatype_FI_DOUBLE)
 );
 
-impl AsFiType for usize {
-    fn as_fi_datatype() -> libfabric_sys::fi_datatype {
+impl_as_fi_type!(
+    ((), libfabric_sys::fi_datatype_FI_VOID),
+    (i8, libfabric_sys::fi_datatype_FI_INT8),
+    (i16, libfabric_sys::fi_datatype_FI_INT16),
+    (i32, libfabric_sys::fi_datatype_FI_INT32),
+    (i64, libfabric_sys::fi_datatype_FI_INT64),
+    (i128, libfabric_sys::fi_datatype_FI_INT128),
+    (u8, libfabric_sys::fi_datatype_FI_UINT8),
+    (u16, libfabric_sys::fi_datatype_FI_UINT16),
+    (u32, libfabric_sys::fi_datatype_FI_UINT32),
+    (u64, libfabric_sys::fi_datatype_FI_UINT64),
+    (u128, libfabric_sys::fi_datatype_FI_UINT128),
+    (f32, libfabric_sys::fi_datatype_FI_FLOAT),
+    (f64, libfabric_sys::fi_datatype_FI_DOUBLE)
+);
+
+impl AsFiOrBoolType for usize {
+    fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype {
         if std::mem::size_of::<usize>() == 8 {
             libfabric_sys::fi_datatype_FI_UINT64
         } else if std::mem::size_of::<usize>() == 4 {
@@ -1330,8 +1370,8 @@ impl AsFiType for usize {
     }
 }
 
-impl AsFiType for isize {
-    fn as_fi_datatype() -> libfabric_sys::fi_datatype {
+impl AsFiOrBoolType for isize {
+    fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype {
         if std::mem::size_of::<isize>() == 8 {
             libfabric_sys::fi_datatype_FI_INT64
         } else if std::mem::size_of::<isize>() == 4 {

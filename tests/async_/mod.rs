@@ -547,7 +547,7 @@ pub async fn ft_server_connect<
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
             };
             let pending_ep = match ep {
-                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => {
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(_ep) => {
                     panic!("This should be a server")
                 }
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => ep,
@@ -2411,7 +2411,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
 
             let pending_ep = match ep {
                 libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => ep,
-                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(ep) => {
+                libfabric::conn_ep::EnabledConnectionOrientedEndpoint::AcceptPending(_ep) => {
                     panic!("This should be a client")
                 }
             };

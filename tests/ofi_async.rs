@@ -37,10 +37,6 @@ pub mod async_ofi {
     use libfabric::async_::domain::Domain;
     use libfabric::async_::eq::EventQueue;
     use libfabric::av_set::AddressVectorSetBuilder;
-    use libfabric::comm::atomic::AtomicFetchEp;
-    use libfabric::comm::atomic::AtomicFetchRemoteMemAddrSliceEp;
-    use libfabric::comm::atomic::ConnectedAtomicFetchEp;
-    use libfabric::comm::atomic::ConnectedAtomicFetchRemoteMemAddrSliceEp;
     use libfabric::cq::SingleCompletion;
     use libfabric::enums::CollectiveOptions;
     use libfabric::ep::BaseEndpoint;

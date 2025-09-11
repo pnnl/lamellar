@@ -684,7 +684,7 @@ impl<EQ: ?Sized + ReadEq> AddressVectorImplBase<EQ> {
         flags: u64,
         ctx: Option<&mut T>,
     ) -> Result<Vec<libfabric_sys::fi_addr_t>, crate::error::Error> {
-        // [TODO] //[TODO] Handle flags, handle context, handle async
+        // [TODO] //[TODO] Handle flags, handle context
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len());
         let mut serialized: Vec<u8> = Vec::with_capacity(total_size);

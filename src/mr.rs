@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::Range, ptr::null};
+use std::{marker::PhantomData, ptr::null};
 
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -755,6 +755,7 @@ impl MemoryRegionDesc<'_> {
         self.c_desc
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_raw(c_desc: *mut std::ffi::c_void) -> Self {
         MemoryRegionDesc { c_desc, phantom: PhantomData }
     }
@@ -1269,7 +1270,7 @@ impl<'a> MemoryRegionBuilder<'a> {
 //================== Memory Region tests ==================//
 #[cfg(test)]
 mod tests {
-    use crate::{enums::MrAccess, info::Info, mr::MemoryRegionSlice};
+    use crate::{enums::MrAccess, info::Info};
 
     use super::{MaybeDisabledMemoryRegion, MemoryRegionBuilder};
 

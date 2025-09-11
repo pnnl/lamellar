@@ -1236,6 +1236,7 @@ impl AVSetOptions {
         Self { c_flags: 0 }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
