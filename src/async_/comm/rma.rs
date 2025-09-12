@@ -527,7 +527,7 @@ pub(crate) trait AsyncWriteEpImpl: AsyncTxEp + WriteEpImpl {
     }
 }
 
-pub trait AsyncWriteEp: WriteEp {
+pub trait AsyncWriteEp {
     /// Async version of [crate::comm::rma::WriteEp::write_to]
     /// # Safety
     /// See [crate::comm::rma::WriteEp::write_to]

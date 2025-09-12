@@ -365,7 +365,7 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     }
 }
 
-pub trait AsyncTagSendEp: TagSendEp {
+pub trait AsyncTagSendEp {
     fn tsend_to_async<T>(
         &self,
         buf: &[T],
@@ -416,7 +416,7 @@ pub trait AsyncTagSendEp: TagSendEp {
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
 
-pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
+pub trait ConnectedAsyncTagSendEp {
     fn tsend_async<T>(
         &self,
         buf: &[T],

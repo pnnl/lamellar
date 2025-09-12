@@ -7,9 +7,9 @@ use prefix::{call, define_test, HintsCaps};
 pub mod async_;
 pub mod sync_; // Public to supress lint warnings (unused function) // Public to supress lint warnings (unused function)
 
-#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
-use async_ as prefix;
-#[cfg(not(any(feature = "use-async-std", feature = "use-tokio")))]
+// #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
+// use async_ as prefix;
+// #[cfg(not(any(feature = "use-async-std", feature = "use-tokio")))]
 use sync_ as prefix;
 
 define_test!(pp_server_rma, async_pp_server_rma, {

@@ -154,19 +154,6 @@ pub trait IsSyncSend: Send + Sync {}
 #[cfg(feature = "threading-fid")]
 impl<I> IsSyncSend for Ofi<I> {}
 
-impl<I> Drop for Ofi<I> {
-    fn drop(&mut self) {
-        match self.info_entry.ep_attr().type_() {
-            EndpointType::Msg => match &self.ep {
-                MyEndpoint::Connected(ep) => {
-                    ep.shutdown().unwrap();
-                }
-                MyEndpoint::Connectionless(_) => todo!(),
-            },
-            EndpointType::Unspec | EndpointType::Dgram | EndpointType::Rdm => {}
-        }
-    }
-}
 
 macro_rules!  post{
     ($post_fn:ident, $prog_fn:ident, $cq:expr, $ep:ident, $( $x:expr),* ) => {
@@ -3161,6 +3148,7 @@ fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
             }
         },
     };
+    
 
     let desc0 = Some(mr.descriptor());
     let desc = [mr.descriptor(), mr.descriptor()];
@@ -3203,6 +3191,7 @@ fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
         ofi.send_mr(&m1, None, false);
         ofi.cq_type.tx_cq().sread(1, -1).unwrap();
     } else {
+        
         let expected: Vec<_> = (0..1024 * 2)
             .map(|v: usize| (v % 256) as u8)
             .collect();

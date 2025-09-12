@@ -7,7 +7,7 @@ use crate::{
         UninitUnconnected,
     },
     eq::{ConnectedEvent, Event, EventQueueBase},
-    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, Fid},
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, Fid},
     utils::check_error,
 };
 
@@ -35,7 +35,7 @@ pub type ConnectedEndpointBase<EP> = EndpointBase<EP, Connected>;
 pub type ConnectedEndpoint<T> =
     ConnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
 
-impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
+impl<EP: AsTypedFid<EpRawFid>> ConnectedEp for ConnectedEndpointBase<EP> {}
 
 impl<EP> UnconnectedEndpoint<EP> {
     pub async fn connect_async(
@@ -96,7 +96,13 @@ impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn A
         let err =
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
-        if self.inner.has_conn_req {
+
+        let has_conn_req = match self.inner.eptype {
+            crate::ep::EpType::Connected(has_conn_req) => has_conn_req,
+            crate::ep::EpType::Connectionless => panic!("Trying to create unconnected ep from connectionless impl"),
+        };
+
+        if has_conn_req {
             Ok(EnabledConnectionOrientedEndpoint::AcceptPending(
                 AcceptPendingEndpoint {
                     inner: self.inner.clone(),

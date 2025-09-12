@@ -3,8 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     cq::ReadCq,
     ep::{
-        Address, Connected, EndpointBase, EndpointImplBase, PendingAccept, Unconnected,
-        UninitUnconnected,
+        Address, Connected, EndpointBase, EndpointImplBase, PendingAccept, SyncEp, Unconnected, UninitUnconnected
     },
     eq::{ConnectedEvent, EventQueueBase, ReadEq},
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid},
@@ -30,12 +29,12 @@ pub type UnconnectedEndpoint<T> =
 pub type AcceptPendingEndpoint<T> =
     AcceptPendingEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
 
-pub enum EnabledConnectionOrientedEndpoint<EP> {
+pub enum EnabledConnectionOrientedEndpoint<EP: AsTypedFid<EpRawFid>> {
     Unconnected(UnconnectedEndpointBase<EP>),
     AcceptPending(AcceptPendingEndpointBase<EP>),
 }
 
-impl<EP> EnabledConnectionOrientedEndpoint<EP> {
+impl<EP: AsTypedFid<EpRawFid>> EnabledConnectionOrientedEndpoint<EP> {
     pub(crate) fn inner(&self) -> MyRc<EP> {
         match self {
             EnabledConnectionOrientedEndpoint::Unconnected(ep) => ep.inner.clone(),
@@ -76,7 +75,12 @@ impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
 
-        if self.inner.has_conn_req {
+        let has_conn_req = match self.inner.eptype {
+            crate::ep::EpType::Connected(has_conn_req) => has_conn_req,
+            crate::ep::EpType::Connectionless => panic!("Trying to create unconnected ep from connectionless impl"),
+        };
+        
+        if has_conn_req {
             Ok(EnabledConnectionOrientedEndpoint::AcceptPending(
                 AcceptPendingEndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
                     inner: self.inner.clone(),
@@ -187,7 +191,7 @@ impl<EP: AsTypedFid<EpRawFid>> UnconnectedEndpointBase<EP> {
 //     inner: EnabledConnectionOrientedEndpoint<EP>,
 // }
 
-pub struct ConnectionPendingEndpointBase<EP> {
+pub struct ConnectionPendingEndpointBase<EP: AsTypedFid<EpRawFid>> {
     pub(crate) inner: EnabledConnectionOrientedEndpoint<EP>,
 }
 
@@ -224,8 +228,8 @@ pub trait ConnectedEp {}
 pub type ConnectedEndpointBase<EP> = EndpointBase<EP, Connected>;
 
 pub type ConnectedEndpoint<T> = ConnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
-
-impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
+impl<EP: AsTypedFid<EpRawFid>> ConnectedEp for ConnectedEndpointBase<EP> {}
+impl<T> SyncEp for ConnectedEndpoint<T>{}
 
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
     /// Shuts down the connection associated with the endpoint.

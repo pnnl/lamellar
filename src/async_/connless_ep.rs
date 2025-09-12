@@ -4,7 +4,7 @@ use crate::{
     av::{AddressVectorBase, NoBlock},
     ep::{Connectionless, EndpointBase, EndpointImplBase, UninitConnectionless},
     eq::ReadEq,
-    fid::{AsRawTypedFid, AsTypedFid},
+    fid::{AsRawTypedFid, AsTypedFid, EpRawFid},
     utils::check_error,
 };
 
@@ -20,7 +20,7 @@ pub type UninitConnectionlessEndpoint<E> =
     UninitConnectionlessEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>>;
 
 pub trait ConnlessEp {}
-impl<EP> ConnlessEp for ConnectionlessEndpointBase<EP> {}
+impl<EP: AsTypedFid<EpRawFid>> ConnlessEp for ConnectionlessEndpointBase<EP> {}
 
 impl<E> UninitConnectionlessEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
     pub fn enable<EQ: ?Sized + ReadEq + 'static>(

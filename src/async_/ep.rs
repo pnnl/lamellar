@@ -16,7 +16,7 @@ use crate::{
         UninitUnconnected,
     },
     eq::{Event, EventQueueBase, ReadEq},
-    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, Fid, RawFid},
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, Fid, RawFid},
     info::InfoEntry,
     utils::check_error,
     Context, MyRc, SyncSend,
@@ -582,14 +582,14 @@ impl<'a, E> EndpointBuilder<'a, E> {
     }
 }
 
-pub trait AsyncCmEp {
+pub trait AsyncCmEp: AsTypedFid<EpRawFid> {
     fn retrieve_eq(&self) -> &MyRc<impl AsyncReadEq + ?Sized>;
 }
-pub trait AsyncTxEp {
+pub trait AsyncTxEp: AsTypedFid<EpRawFid> {
     fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>;
 }
 
-pub trait AsyncRxEp {
+pub trait AsyncRxEp: AsTypedFid<EpRawFid> {
     fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized>;
 }
 

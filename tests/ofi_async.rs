@@ -2,6 +2,7 @@
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_ofi {
     use std::cell::RefCell;
+    use std::net::Shutdown;
     pub type EqOptions = libfabric::async_eq_caps_type!(EqCaps::WAIT);
 
     use libfabric::async_::av::AddressVector;
@@ -39,6 +40,7 @@ pub mod async_ofi {
     use libfabric::av_set::AddressVectorSetBuilder;
     use libfabric::cq::SingleCompletion;
     use libfabric::enums::CollectiveOptions;
+    use libfabric::ep::ActiveEndpoint;
     use libfabric::ep::BaseEndpoint;
     use libfabric::info::Info;
     use libfabric::infocapsoptions::InfoCaps;
@@ -664,7 +666,7 @@ pub mod async_ofi {
             ctx: &mut Context,
         ) {
             async_std::task::block_on(async {
-                match &self.ep {
+                let err = match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
                             if data.is_some() {
@@ -716,9 +718,9 @@ pub mod async_ofi {
                             .map(|_| {})
                         }
                     }
-                }
+                };
             })
-            .unwrap()
+            
         }
 
         // pub fn sendrecv_deadlock<T:Copy>(
@@ -2370,6 +2372,7 @@ pub mod async_ofi {
             ];
             ofi.sendv(&iov, Some(&desc), &mut ctx);
         } else {
+
             let expected: Vec<_> = (0..1024 * 2)
                 .into_iter()
                 .map(|v: usize| (v % 256) as u8)

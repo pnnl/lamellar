@@ -979,6 +979,9 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                                     return std::task::Poll::Pending;
                                 }
                             }
+                            else {
+                                return std::task::Poll::Ready(Err(Error::from_err_code(error.c_err)));
+                            }
                         } else {
                             // println!("Will continue");
                             #[cfg(feature = "use-tokio")]

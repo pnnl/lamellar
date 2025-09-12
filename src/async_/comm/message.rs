@@ -78,7 +78,7 @@ pub(crate) trait AsyncRecvEpImpl: AsyncRxEp + RecvEpImpl {
     }
 }
 
-pub trait AsyncRecvEp: RecvEp {
+pub trait AsyncRecvEp {
     fn recv_from_async<T>(
         &self,
         buf: &mut [T],
@@ -129,7 +129,7 @@ pub trait AsyncRecvEpMrSlice: AsyncRecvEp {
 
 impl<EP: AsyncRecvEp> AsyncRecvEpMrSlice for EP {}
 
-pub trait ConnectedAsyncRecvEp: ConnectedRecvEp {
+pub trait ConnectedAsyncRecvEp {
     fn recv_async<T>(
         &self,
         buf: &mut [T],
@@ -332,7 +332,7 @@ pub(crate) trait AsyncSendEpImpl: AsyncTxEp + SendEpImpl {
     }
 }
 
-pub trait AsyncSendEp: SendEp {
+pub trait AsyncSendEp {
     fn send_to_async<T>(
         &self,
         buf: &[T],
@@ -378,7 +378,7 @@ pub trait AsyncSendEp: SendEp {
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
 
-pub trait ConnectedAsyncSendEp: ConnectedSendEp {
+pub trait ConnectedAsyncSendEp {
     fn send_async<T>(
         &self,
         buf: &[T],

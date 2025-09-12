@@ -9,6 +9,7 @@ use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
 use crate::ep::EpState;
+use crate::ep::SyncEp;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::fid::AsTypedFid;
@@ -429,7 +430,7 @@ pub trait TagRecvEpMrSlice: TagRecvEp {
 impl<EP: ConnectedTagRecvEp> ConnectedTagRecvEpMrSlice for EP {}
 impl<EP: TagRecvEp> TagRecvEpMrSlice for EP {}
 
-impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
+impl<EP: TagRecvEpImpl + ConnlessEp+ SyncEp> TagRecvEp for EP {
     #[inline]
     fn trecv_from<T>(
         &self,
@@ -614,7 +615,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     }
 }
 
-impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
+impl<EP: TagRecvEpImpl + ConnectedEp + SyncEp> ConnectedTagRecvEp for EP {
     #[inline]
     fn trecv<T>(
         &self,
@@ -1246,7 +1247,7 @@ pub trait TagSendEpMrSlice: TagSendEp {
 impl<EP: ConnectedTagSendEp> ConnectedTagSendEpMrSlice for EP {}
 impl<EP: TagSendEp> TagSendEpMrSlice for EP {}
 
-impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
+impl<EP: TagSendEpImpl + ConnlessEp + SyncEp> TagSendEp for EP {
     #[inline]
     fn tsend_to<T>(
         &self,
@@ -1412,7 +1413,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     }
 }
 
-impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
+impl<EP: TagSendEpImpl + ConnectedEp + SyncEp> ConnectedTagSendEp for EP {
     #[inline]
     fn tsend<T>(
         &self,

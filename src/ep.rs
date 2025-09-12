@@ -1,6 +1,5 @@
 use std::{
-    marker::PhantomData,
-    os::fd::{AsFd, BorrowedFd},
+    any::TypeId, marker::PhantomData, os::fd::{AsFd, BorrowedFd}
 };
 
 use libfabric_sys::{
@@ -74,6 +73,14 @@ pub(crate) enum EpCq<CQ: ?Sized> {
     Shared(MyRc<CQ>),
 }
 
+pub(crate) enum EpType {
+    Connected(bool),
+    Connectionless
+}
+
+pub(crate) trait SyncEp {}
+
+
 pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     #[cfg(not(feature = "threading-completion"))]
     pub(crate) c_ep: OwnedEpFid,
@@ -85,14 +92,29 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     _bound_av: MyOnceCell<MyRc<dyn AddressVectorImplT>>,
     _domain_rc: MyRc<dyn DomainImplT>,
     phantom: PhantomData<fn() -> T>, // fn() -> T because we only need to track the Endpoint capabilities requested but avoid requiring caps to implement Sync+Send
-    pub(crate) has_conn_req: bool,
+    pub(crate) eptype: EpType,
 }
+
+impl<T, EQ: ?Sized, CQ: ?Sized> Drop for EndpointImplBase<T, EQ, CQ> {
+    fn drop(&mut self) {
+        match self.eptype {
+            EpType::Connected(_) => {
+                println!("Shutting down connection");
+                let ep = self.c_ep.as_typed_fid_mut().as_raw_typed_fid();
+                let err = unsafe{libfabric_sys::inlined_fi_shutdown(ep, 0)};
+                check_error(err as isize).unwrap();
+            },
+            EpType::Connectionless => {},
+        }
+    }
+}
+
 
 // pub type Endpoint<T, STATE: EpState> =
 //     EndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>, STATE>;
 
 /// A trait representing the state of an endpoint.
-pub trait EpState: SyncSend {}
+pub trait EpState: SyncSend +'static {} 
 pub struct Connected;
 pub struct Unconnected;
 pub struct PendingAccept;
@@ -114,7 +136,7 @@ impl EpState for UninitUnconnected {}
 impl EpState for Connectionless {}
 impl EpState for UninitConnectionless {}
 
-pub struct EndpointBase<EP, STATE: EpState> {
+pub struct EndpointBase<EP: AsTypedFid<EpRawFid>, STATE: EpState> {
     pub(crate) inner: MyRc<EP>,
     pub(crate) phantom: PhantomData<STATE>,
 }
@@ -422,7 +444,7 @@ impl<T: BaseEndpoint<EpRawFid> + ActiveEndpoint, STATE: EpState> ActiveEndpoint
 }
 // impl<T: ActiveEndpoint, STATE: EpState> SyncSend for EndpointBase<T, STATE> {}
 
-impl<E: AsFd, STATE: EpState> AsFd for EndpointBase<E, STATE> {
+impl<E: AsFd + AsTypedFid<EpRawFid>, STATE: EpState> AsFd for EndpointBase<E, STATE> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
@@ -1015,6 +1037,11 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
                 (-err).try_into().unwrap(),
             ))
         } else {
+            let eptype = match  info.ep_attr().type_ {
+                EndpointType::Unspec => todo!(),
+                EndpointType::Msg => EpType::Connected(!unsafe { *info.info.0 }.handle.is_null()),
+                EndpointType::Dgram | EndpointType::Rdm  => EpType::Connectionless,
+            };
             Ok(Self {
                 #[cfg(not(any(feature = "threading-domain", feature = "threading-completion")))]
                 c_ep: OwnedEpFid::from(c_ep),
@@ -1028,7 +1055,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
                 eq: MyOnceCell::new(),
                 _domain_rc: domain.clone(),
                 phantom: PhantomData,
-                has_conn_req: !unsafe { *info.info.0 }.handle.is_null(),
+                eptype,
             })
         }
     }
