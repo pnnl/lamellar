@@ -11,7 +11,7 @@ use crate::msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTagged
 use crate::utils::Either;
 use crate::Context;
 use crate::{
-    async_::{cq::AsyncReadCq, eq::AsyncReadEq},
+    async_::{cq::AsyncCq, eq::AsyncReadEq},
     cq::SingleCompletion,
     enums::{TaggedRecvMsgOptions, TaggedSendMsgOptions},
     ep::EndpointBase,
@@ -178,7 +178,7 @@ impl<EP: ConnectedAsyncTagRecvEp> ConnectedAsyncTagRecvEpMrSlice for EP {}
 
 // impl<E: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
 // impl<E:, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
-impl<EP: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncTagRecvEpImpl
+impl<EP: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncTagRecvEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -524,7 +524,7 @@ pub trait ConnectedAsyncTagSendEpMrSlice: ConnectedAsyncTagSendEp {
 impl<EP: ConnectedAsyncTagSendEp> ConnectedAsyncTagSendEpMrSlice for EP {}
 
 // impl<E: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
-impl<EP: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncTagSendEpImpl
+impl<EP: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncTagSendEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }

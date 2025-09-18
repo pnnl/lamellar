@@ -1,7 +1,11 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::atomic::Ordering, task::ready};
 
 use crate::{
-    async_::cq::AsyncReadCq, cq::{ReadCq, WaitObjectRetrieve}, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid}, Context, MyRc, MyRefCell, SyncSend
+    cq::{ReadCq, WaitObjectRetrieve},
+    eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
+    error::{Error, ErrorKind},
+    fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid},
+    Context, MyRc, MyRefCell, SyncSend,
 };
 #[cfg(feature = "use-async-std")]
 use async_io::Async;

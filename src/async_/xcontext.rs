@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use super::{
-    cq::AsyncReadCq,
+    cq::AsyncCq,
     ep::{AsyncRxEp, AsyncTxEp},
     eq::AsyncReadEq,
 };
@@ -18,15 +18,15 @@ use crate::{
 };
 
 pub(crate) type TxContextImplBase<I, STATE, CQ> = XContextBaseImpl<Transmit, I, STATE, CQ>;
-pub(crate) type TxContextImpl<I, STATE> = XContextBaseImpl<Transmit, I, STATE, dyn AsyncReadCq>;
+pub(crate) type TxContextImpl<I, STATE> = XContextBaseImpl<Transmit, I, STATE, dyn AsyncCq>;
 
-pub type TxContext<EP, STATE> = TxContextBase<EP, STATE, dyn AsyncReadCq>;
+pub type TxContext<EP, STATE> = TxContextBase<EP, STATE, dyn AsyncCq>;
 pub type ConnectedTxContext<EP> = TxContext<EP, Connected>;
 pub type ConnlessTxContext<EP> = TxContext<EP, Connectionless>;
 
 impl<I: 'static, STATE: EpState> TxContextImpl<I, STATE> {
     pub(crate) fn new(
-        parent_ep: &MyRc<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>>,
+        parent_ep: &MyRc<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>>,
         index: i32,
         attr: TxAttr,
         context: *mut std::ffi::c_void,
@@ -73,7 +73,7 @@ impl<I: 'static, STATE: EpState> TxContextImpl<I, STATE> {
 
 impl<I: 'static, STATE: EpState> TxContext<I, STATE> {
     pub(crate) fn new(
-        ep: &EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+        ep: &EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>, STATE>,
         index: i32,
         attr: TxAttr,
         context: Option<&mut Context>,
@@ -92,19 +92,19 @@ impl<I: 'static, STATE: EpState> TxContext<I, STATE> {
 }
 
 impl<I, STATE: EpState> AsyncTxEp for TxContext<I, STATE> {
-    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncCq + ?Sized> {
         self.inner.inner.cq.get().unwrap()
     }
 }
 
 impl<I, STATE: EpState> AsyncRxEp for RxContext<I, STATE> {
-    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncCq + ?Sized> {
         self.inner.inner.cq.get().unwrap()
     }
 }
 
 pub struct TxIncompleteBindCq<'a, I, STATE: EpState> {
-    pub(crate) ep: &'a TxContextImplBase<I, STATE, dyn AsyncReadCq>,
+    pub(crate) ep: &'a TxContextImplBase<I, STATE, dyn AsyncCq>,
     pub(crate) flags: u64,
 }
 
@@ -117,7 +117,7 @@ impl<EP, STATE: EpState> TxContextImpl<EP, STATE> {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: AsyncReadCq + AsRawFid + 'static>(
+    pub(crate) fn bind_cq_<T: AsyncCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
@@ -144,7 +144,7 @@ impl<EP, STATE: EpState> TxContextImpl<EP, STATE> {
 }
 
 impl<EP, STATE: EpState> AsyncTxEp for TxContextImpl<EP, STATE> {
-    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
+    fn retrieve_tx_cq(&self) -> &MyRc<impl AsyncCq + ?Sized> {
         self.cq.get().unwrap()
     }
 }
@@ -173,7 +173,7 @@ impl<'a, I, STATE: EpState> TxIncompleteBindCq<'a, I, STATE> {
         }
     }
 
-    pub fn cq<T: AsyncReadCq + AsRawFid + 'static>(
+    pub fn cq<T: AsyncCq + AsRawFid + 'static>(
         &mut self,
         cq: &crate::cq::CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {
@@ -213,12 +213,12 @@ impl<'a, I: 'static, STATE: EpState> TxIncompleteBindCntr<'a, I, STATE> {
     }
 }
 
-pub type RxContext<EP, STATE> = RxContextBase<EP, STATE, dyn AsyncReadCq>;
-pub(crate) type RxContextImpl<I, STATE> = XContextBaseImpl<Receive, I, STATE, dyn AsyncReadCq>;
+pub type RxContext<EP, STATE> = RxContextBase<EP, STATE, dyn AsyncCq>;
+pub(crate) type RxContextImpl<I, STATE> = XContextBaseImpl<Receive, I, STATE, dyn AsyncCq>;
 
 impl<I: 'static, STATE: EpState> RxContextImpl<I, STATE> {
     pub(crate) fn new(
-        parent_ep: &MyRc<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>>,
+        parent_ep: &MyRc<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>>,
         index: i32,
         attr: RxAttr,
         context: *mut std::ffi::c_void,
@@ -272,7 +272,7 @@ impl<EP, STATE: EpState> RxContextImpl<EP, STATE> {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cq_<T: AsyncReadCq + AsRawFid + 'static>(
+    pub(crate) fn bind_cq_<T: AsyncCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
         flags: u64,
@@ -300,7 +300,7 @@ impl<EP, STATE: EpState> RxContextImpl<EP, STATE> {
 
 impl<I: 'static, STATE: EpState> RxContext<I, STATE> {
     pub(crate) fn new(
-        ep: &EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+        ep: &EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>, STATE>,
         index: i32,
         attr: RxAttr,
         context: Option<&mut Context>,
@@ -329,7 +329,7 @@ impl<EP, STATE: EpState> RxContext<EP, STATE> {
 }
 
 impl<EP, STATE: EpState> AsyncRxEp for RxContextImpl<EP, STATE> {
-    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncReadCq + ?Sized> {
+    fn retrieve_rx_cq(&self) -> &MyRc<impl AsyncCq + ?Sized> {
         self.cq.get().unwrap()
     }
 }
@@ -337,13 +337,13 @@ impl<EP, STATE: EpState> AsyncRxEp for RxContextImpl<EP, STATE> {
 pub struct RxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) rx_attr: RxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>, STATE>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
 impl<'a, STATE: EpState> RxContextBuilder<'a, (), STATE> {
     pub fn new<I>(
-        ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+        ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>, STATE>,
         index: i32,
     ) -> RxContextBuilder<'a, I, STATE> {
         RxContextBuilder::<I, STATE> {
@@ -414,13 +414,13 @@ impl<'a, I: 'static, STATE: EpState> RxContextBuilder<'a, I, STATE> {
 pub struct TxContextBuilder<'a, I, STATE: EpState> {
     pub(crate) tx_attr: TxAttr,
     pub(crate) index: i32,
-    pub(crate) ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+    pub(crate) ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>, STATE>,
     pub(crate) ctx: Option<&'a mut Context>,
 }
 
 impl<'a, STATE: EpState> TxContextBuilder<'a, (), STATE> {
     pub fn new<I>(
-        ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncReadCq>, STATE>,
+        ep: &'a EndpointBase<EndpointImplBase<I, dyn AsyncReadEq, dyn AsyncCq>, STATE>,
         index: i32,
     ) -> TxContextBuilder<'a, I, STATE> {
         TxContextBuilder::<I, STATE> {
@@ -511,7 +511,7 @@ impl<'a, EP, STATE: EpState> RxIncompleteBindCq<'a, EP, STATE> {
         }
     }
 
-    pub fn cq<T: AsyncReadCq + 'static + AsRawFid>(
+    pub fn cq<T: AsyncCq + 'static + AsRawFid>(
         &self,
         cq: &crate::cq::CompletionQueue<T>,
     ) -> Result<(), crate::error::Error> {

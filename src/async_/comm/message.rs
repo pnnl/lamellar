@@ -12,7 +12,7 @@ use crate::mr::{MemoryRegionDesc, MemoryRegionSlice, MemoryRegionSliceMut};
 use crate::utils::Either;
 use crate::Context;
 use crate::{
-    async_::{cq::AsyncReadCq, eq::AsyncReadEq},
+    async_::{cq::AsyncCq, eq::AsyncReadEq},
     cq::SingleCompletion,
     enums::{RecvMsgOptions, SendMsgOptions},
     ep::EndpointBase,
@@ -165,7 +165,7 @@ impl<EP: ConnectedAsyncRecvEp> ConnectedAsyncRecvEpMrSlice for EP {}
 impl<E: AsyncRecvEpImpl> AsyncRecvEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncRecvEpImpl> AsyncRecvEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<EP: MsgCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncRecvEpImpl
+impl<EP: MsgCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncRecvEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -605,7 +605,7 @@ impl<EP: AsyncSendEpImpl + ConnectedEp> ConnectedAsyncSendEp for EP {
     }
 }
 
-impl<EP: MsgCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncSendEpImpl
+impl<EP: MsgCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncSendEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }

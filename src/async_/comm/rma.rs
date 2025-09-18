@@ -10,7 +10,7 @@ use crate::mr::{MemoryRegionDesc, MemoryRegionSlice, MemoryRegionSliceMut};
 use crate::msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut};
 use crate::utils::Either;
 use crate::{
-    async_::{cq::AsyncReadCq, eq::AsyncReadEq},
+    async_::{cq::AsyncCq, eq::AsyncReadEq},
     cq::SingleCompletion,
     enums::{ReadMsgOptions, WriteMsgOptions},
     ep::EndpointBase,
@@ -311,7 +311,7 @@ pub trait ConnectedAsyncReadRemoteMemAddrSliceEp: ConnectedAsyncReadEp {
 }
 
 // impl<E: ReadMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E> {
-impl<EP: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncReadEpImpl
+impl<EP: RmaCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncReadEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -1059,7 +1059,7 @@ pub trait ConnectedAsyncWriteEpMrSlice: ConnectedAsyncWriteEp {
 impl<EP: ConnectedAsyncWriteEp> ConnectedAsyncWriteEpMrSlice for EP {}
 
 // impl<E: WriteMod, EQ: ?Sized + AsyncReadEq,  CQ: AsyncReadCq  + ? Sized> EndpointBase<E> {
-impl<EP: RmaCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncWriteEpImpl
+impl<EP: RmaCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncWriteEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }

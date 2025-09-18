@@ -35,6 +35,7 @@ pub mod async_ofi {
     use libfabric::async_::comm::tagged::AsyncTagSendEp;
     use libfabric::async_::comm::tagged::ConnectedAsyncTagRecvEp;
     use libfabric::async_::comm::tagged::ConnectedAsyncTagSendEp;
+    use libfabric::async_::cq::AsyncWaitCq;
     use libfabric::async_::domain::Domain;
     use libfabric::async_::eq::EventQueue;
     use libfabric::av_set::AddressVectorSetBuilder;

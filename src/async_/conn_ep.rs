@@ -11,29 +11,29 @@ use crate::{
     utils::check_error,
 };
 
-use super::{cq::AsyncReadCq, eq::AsyncReadEq};
+use super::{cq::AsyncCq, eq::AsyncReadEq};
 
 pub type UninitUnconnectedEndpointBase<EP> = EndpointBase<EP, UninitUnconnected>;
 
 pub type UninitUnconnectedEndpoint<T> =
-    UninitUnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    UninitUnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 
 pub type UnconnectedEndpointBase<EP> = EndpointBase<EP, Unconnected>;
 
 pub type UnconnectedEndpoint<T> =
-    UnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    UnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 
 pub type AcceptPendingEndpointBase<EP> = EndpointBase<EP, PendingAccept>;
 
 pub type AcceptPendingEndpoint<T> =
-    AcceptPendingEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    AcceptPendingEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 
 pub trait ConnectedEp {}
 
 pub type ConnectedEndpointBase<EP> = EndpointBase<EP, Connected>;
 
 pub type ConnectedEndpoint<T> =
-    ConnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    ConnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEp for ConnectedEndpointBase<EP> {}
 
@@ -84,12 +84,12 @@ impl<EP> AcceptPendingEndpoint<EP> {
     }
 }
 
-impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
+impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncCq>> {
     pub fn enable<EQ: AsyncReadEq + 'static>(
         self,
         eq: &EventQueueBase<EQ>,
     ) -> Result<
-        EnabledConnectionOrientedEndpoint<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>>,
+        EnabledConnectionOrientedEndpoint<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncCq>>,
         crate::error::Error,
     > {
         self.bind_eq(eq)?;
@@ -121,7 +121,7 @@ impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn A
 }
 
 pub type ConnectionPendingEndpoint<T> =
-    ConnectionPendingEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    ConnectionPendingEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 impl<E> ConnectionPendingEndpoint<E> {
     /// Completes the connection process using the provided `ConnectedEvent` and returns a [ConnectedEndpoint] ready for use.
     /// This method asserts that the event's fid matches the endpoint's fid.

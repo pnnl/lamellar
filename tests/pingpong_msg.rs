@@ -4,7 +4,7 @@ pub mod sync_; // Public to supress lint warnings (unused function)
 pub mod async_; // Public to supress lint warnings (unused function)
 pub mod common; // Public to supress lint warnings (unused function)
 
-#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
+// #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 // use async_ as prefix;
 use libfabric::info::Info;
 use prefix::{call, define_test, EndpointCaps, HintsCaps};

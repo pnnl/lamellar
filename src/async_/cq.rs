@@ -55,7 +55,12 @@ use super::AsyncFid;
 
 pub type CompletionQueue<T> = CompletionQueueBase<T>;
 
-pub trait AsyncReadCq: ReadCq {
+pub trait AsyncWaitCq {
+    fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a>;
+    fn progress(&self) -> Result<(), Error>;
+}
+
+pub trait AsyncCq: ReadCq {
     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a>;
     // fn read_async(&self, count: usize,  ctx: &mut Context) -> CqAsyncReadOwned;
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a>;
@@ -280,7 +285,7 @@ impl WaitCq for AsyncCompletionQueueImpl {
     }
 }
 
-impl AsyncReadCq for AsyncCompletionQueueImpl {
+impl AsyncCq for AsyncCompletionQueueImpl {
     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
     //     CqAsyncRead {
     //         num_entries: count,
@@ -318,27 +323,26 @@ impl AsyncFid for AsyncCompletionQueueImpl {
     }
 }
 
-// impl AsyncReadCq for CompletionQueue<AsyncCompletionQueueImpl> {
-//     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
-//     //     self.inner.read_in_async(buf, count)
-//     // }
+impl AsyncWaitCq for CompletionQueue<AsyncCompletionQueueImpl> {
 
-//     // fn read_async(&self, count: usize, context: &mut Context) -> CqAsyncReadOwned {
-//     //     self.inner.read_async(count, context)
-//     // }
-
-//     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
-//         self.inner.wait_for_ctx_async(ctx)
-//     }
-
-//     fn get(&self) -> &dyn ReadCq {
-//         &*self.inner
-//     }
-
-//     // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
-//     //     self.inner.read_async(count).await
-//     // }
-// }
+    fn progress(&self) -> Result<(), Error> {
+        if let Err(err) = self.inner.read(0) {
+            if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
+                Err(err)
+            }
+            else {
+                Ok(())
+            }
+        }
+        else {
+            Ok(())
+        }
+    }
+    
+    fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
+        self.inner.wait_for_ctx_async(ctx)
+    }
+}
 
 impl AsyncCompletionQueueImpl {
     pub(crate) fn new_blocking<EQ: ?Sized + 'static + SyncSend>(

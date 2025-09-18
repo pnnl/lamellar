@@ -1,5 +1,5 @@
 use crate::enums::AtomicOp;
-use crate::async_::cq::AsyncReadCq;
+use crate::async_::cq::AsyncCq;
 use crate::async_::eq::AsyncReadEq;
 use crate::async_::xcontext::{TxContext, TxContextImpl};
 // use crate::async_::xcontext::{TxContext, TxContextImpl};
@@ -552,7 +552,7 @@ impl<EP: ConnectedAsyncAtomicWriteEp> ConnectedAsyncAtomicWriteEpMrSlice for EP 
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicWriteEpImpl> AsyncAtomicWriteEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<EP: AtomicCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
+impl<EP: AtomicCap + WriteMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized>
     AsyncAtomicWriteEpImpl for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -1651,7 +1651,7 @@ impl<EP: ConnectedAsyncAtomicFetchEp> ConnectedAsyncAtomicFetchEpMrSlice for EP 
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicFetchEpImpl> AsyncAtomicFetchEpImpl for EndpointBase<E, Connectionless> {}
 
-impl<EP: AtomicCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
+impl<EP: AtomicCap + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized>
     AsyncAtomicFetchEpImpl for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -2430,7 +2430,7 @@ impl<EP: ConnectedAsyncAtomicCASEp> ConnectedAsyncAtomicCASEpMrSlice for EP {}
 impl<E: AsyncAtomicCASImpl> AsyncAtomicCASImpl for EndpointBase<E, Connected> {}
 impl<E: AsyncAtomicCASImpl> AsyncAtomicCASImpl for EndpointBase<E, Connectionless> {}
 
-impl<EP: AtomicCap + WriteMod + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized>
+impl<EP: AtomicCap + WriteMod + ReadMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized>
     AsyncAtomicCASImpl for EndpointImplBase<EP, EQ, CQ>
 {
 }

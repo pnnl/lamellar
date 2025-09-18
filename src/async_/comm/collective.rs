@@ -1,6 +1,6 @@
 use crate::{
     async_::{
-        cq::AsyncReadCq,
+        cq::AsyncCq,
         ep::{AsyncCmEp, AsyncTxEp},
         eq::AsyncReadEq,
     },
@@ -439,7 +439,7 @@ pub trait AsyncCollectiveEp: CollectiveEp + AsyncTxEp + AsyncCmEp + SyncSend {
 
 // impl<E, EQ: ?Sized + AsyncReadEq,  CQ: ?Sized + AsyncReadCq> EndpointBase<E, EQ, CQ> {
 
-impl<EP: CollCap, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncReadCq> AsyncCollectiveEpImpl
+impl<EP: CollCap, EQ: ?Sized + AsyncReadEq, CQ: ?Sized + AsyncCq> AsyncCollectiveEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
