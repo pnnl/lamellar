@@ -8,7 +8,7 @@ use crate::{
     enums::{Mode, TrafficClass, TransferOptions},
     ep::{
         ActiveEndpoint, BaseEndpoint, Connected, Connectionless, EndpointBase, EndpointImplBase,
-        EpState, SyncEp,
+        EpState,
     },
     eq::ReadEq,
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid, BorrowedTypedFid, EpRawFid, OwnedEpFid},
@@ -112,7 +112,6 @@ pub struct TxContextBase<I, STATE: EpState, CQ: ?Sized> {
 ///
 /// Corresponds to `fi_tx_context`
 pub type TxContext<EP, STATE> = TxContextBase<EP, STATE, dyn ReadCq>;
-impl<EP, STATE: EpState> SyncEp for TxContext<EP,STATE> {}
 
 /// Represents a connected context for transmitting data.
 ///
@@ -563,7 +562,6 @@ pub struct RxContextBase<I, STATE: EpState, CQ: ?Sized> {
 
 /// Represents a context for receiving data.
 pub type RxContext<I, STATE> = RxContextBase<I, STATE, dyn ReadCq>;
-impl<EP, STATE: EpState> SyncEp for RxContext<EP,STATE> {}
 
 /// Represents a connected context for receiving data.
 pub type ConnectedRxContext<I> = RxContext<I, Connected>;

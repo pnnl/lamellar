@@ -1,5 +1,6 @@
 use crate::cq::ReadCq;
 use crate::cq::SingleCompletion;
+use crate::cq::SyncCq;
 use crate::cq::WaitCq;
 use crate::domain::{DomainBase, DomainImplBase};
 use crate::fid::AsTypedFid;
@@ -243,6 +244,7 @@ pub struct AsyncCompletionQueueImpl {
     pub(crate) pending_entries: AtomicUsize,
 }
 impl SyncSend for AsyncCompletionQueueImpl {}
+// impl SyncCq for AsyncCompletionQueueImpl{}
 
 impl WaitCq for AsyncCompletionQueueImpl {
     fn sread_with_cond(
@@ -316,27 +318,27 @@ impl AsyncFid for AsyncCompletionQueueImpl {
     }
 }
 
-impl AsyncReadCq for CompletionQueue<AsyncCompletionQueueImpl> {
-    // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
-    //     self.inner.read_in_async(buf, count)
-    // }
+// impl AsyncReadCq for CompletionQueue<AsyncCompletionQueueImpl> {
+//     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
+//     //     self.inner.read_in_async(buf, count)
+//     // }
 
-    // fn read_async(&self, count: usize, context: &mut Context) -> CqAsyncReadOwned {
-    //     self.inner.read_async(count, context)
-    // }
+//     // fn read_async(&self, count: usize, context: &mut Context) -> CqAsyncReadOwned {
+//     //     self.inner.read_async(count, context)
+//     // }
 
-    fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
-        self.inner.wait_for_ctx_async(ctx)
-    }
+//     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
+//         self.inner.wait_for_ctx_async(ctx)
+//     }
 
-    fn get(&self) -> &dyn ReadCq {
-        &*self.inner
-    }
+//     fn get(&self) -> &dyn ReadCq {
+//         &*self.inner
+//     }
 
-    // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
-    //     self.inner.read_async(count).await
-    // }
-}
+//     // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
+//     //     self.inner.read_async(count).await
+//     // }
+// }
 
 impl AsyncCompletionQueueImpl {
     pub(crate) fn new_blocking<EQ: ?Sized + 'static + SyncSend>(

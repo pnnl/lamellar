@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     cq::ReadCq,
     ep::{
-        Address, Connected, EndpointBase, EndpointImplBase, PendingAccept, SyncEp, Unconnected, UninitUnconnected
+        Address, Connected, EndpointBase, EndpointImplBase, PendingAccept, Unconnected, UninitUnconnected
     },
     eq::{ConnectedEvent, EventQueueBase, ReadEq},
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid},
@@ -229,7 +229,6 @@ pub type ConnectedEndpointBase<EP> = EndpointBase<EP, Connected>;
 
 pub type ConnectedEndpoint<T> = ConnectedEndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>>;
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEp for ConnectedEndpointBase<EP> {}
-impl<T> SyncEp for ConnectedEndpoint<T>{}
 
 impl<EP: AsTypedFid<EpRawFid>> ConnectedEndpointBase<EP> {
     /// Shuts down the connection associated with the endpoint.

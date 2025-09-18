@@ -1,4 +1,3 @@
-use crate::ep::SyncEp;
 use crate::mr::MemoryRegionSlice;
 use crate::mr::MemoryRegionSliceMut;
 use crate::RemoteMemoryAddress;
@@ -734,7 +733,7 @@ pub trait ConnectedReadRemoteMemAddrSliceEp: ConnectedReadEp {
     }
 }
 
-impl<EP: ReadEpImpl + ConnlessEp + SyncEp> ReadEp for EP {
+impl<EP: ReadEpImpl + ConnlessEp> ReadEp for EP {
     unsafe fn read_from<T: Copy, RT: Copy>(
         &self,
         buf: &mut [T],
@@ -838,7 +837,7 @@ impl<EP: ReadEpImpl + ConnlessEp + SyncEp> ReadEp for EP {
 
 impl<EP: ReadEp> ReadRemoteMemAddrSliceEp for EP {}
 
-impl<EP: ReadEpImpl + ConnectedEp + SyncEp> ConnectedReadEp for EP {
+impl<EP: ReadEpImpl + ConnectedEp> ConnectedReadEp for EP {
     unsafe fn read<T: Copy, RT: Copy>(
         &self,
         buf: &mut [T],
@@ -2223,7 +2222,7 @@ pub trait ConnectedWriteRemoteMemAddrSliceEp: ConnectedWriteEp {
     }
 }
 
-impl<EP: WriteEpImpl + ConnlessEp + SyncEp> WriteEp for EP {
+impl<EP: WriteEpImpl + ConnlessEp> WriteEp for EP {
     #[inline]
     unsafe fn write_to<T: Copy, RT: Copy>(
         &self,

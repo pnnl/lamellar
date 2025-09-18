@@ -78,9 +78,6 @@ pub(crate) enum EpType {
     Connectionless
 }
 
-pub(crate) trait SyncEp {}
-
-
 pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     #[cfg(not(feature = "threading-completion"))]
     pub(crate) c_ep: OwnedEpFid,

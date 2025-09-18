@@ -43,6 +43,7 @@ macro_rules! read_cq_entry {
 }
 
 pub trait EntryFormat: Clone {}
+pub trait SyncCq {}
 
 impl EntryFormat for libfabric_sys::fi_cq_entry {}
 impl EntryFormat for libfabric_sys::fi_cq_msg_entry {}
@@ -158,6 +159,8 @@ pub struct CompletionQueueImpl<const WAIT: bool, const RETRIEVE: bool, const FD:
     pub(crate) wait_obj: Option<libfabric_sys::fi_wait_obj>,
     pub(crate) _domain_rc: MyRc<dyn DomainImplT>,
 }
+
+impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncCq for CompletionQueueImpl<WAIT, RETRIEVE, FD>{}
 
 /// Owned wrapper around a libfabric `fid_cq`.
 ///
@@ -660,7 +663,7 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool>
 
 impl<T: ReadCq> SyncSend for CompletionQueue<T> {}
 
-impl<T: ReadCq> ReadCq for CompletionQueue<T> {
+impl<T: ReadCq + SyncCq> ReadCq for CompletionQueue<T> {
     fn read(&self, count: usize) -> Result<Completion, crate::error::Error> {
         self.inner.read(count)
     }
@@ -681,7 +684,7 @@ impl<T: ReadCq> ReadCq for CompletionQueue<T> {
     }
 }
 
-impl<T: WaitCq> WaitCq for CompletionQueue<T> {
+impl<T: WaitCq + SyncCq> WaitCq for CompletionQueue<T> {
     fn sread_with_cond(
         &self,
         count: usize,
@@ -1431,8 +1434,6 @@ impl Default for CompletionError {
         Self::new()
     }
 }
-
-//================== Async Stuff ============================//
 
 //================== CompletionQueue Tests ==================//
 

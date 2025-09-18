@@ -3,7 +3,7 @@ use crate::{
     connless_ep::ConnlessEp,
     cq::ReadCq,
     enums::{RecvMsgOptions, SendMsgOptions},
-    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState, SyncEp},
+    ep::{Connected, Connectionless, EndpointBase, EndpointImplBase, EpState},
     eq::ReadEq,
     fid::{AsRawTypedFid, AsTypedFid, EpRawFid},
     infocapsoptions::{MsgCap, RecvMod, SendMod},
@@ -147,7 +147,7 @@ pub trait ConnectedRecvEp {
     ) -> Result<(), crate::error::Error>;
 }
 
-impl<EP: RecvEpImpl + ConnectedEp + SyncEp> ConnectedRecvEp for EP {
+impl<EP: RecvEpImpl + ConnectedEp> ConnectedRecvEp for EP {
     #[inline]
     fn recv<T>(
         &self,
@@ -292,7 +292,7 @@ pub trait RecvEp {
     ) -> Result<(), crate::error::Error>;
 }
 
-impl<EP: RecvEpImpl + ConnlessEp + SyncEp> RecvEp for EP {
+impl<EP: RecvEpImpl + ConnlessEp> RecvEp for EP {
     #[inline]
     fn recv_from_any<T>(
         &self,
@@ -1051,7 +1051,7 @@ pub trait SendEpMrSlice: SendEp {
 impl<EP: ConnectedSendEp> ConnectedSendEpMrSlice for EP {}
 impl<EP: SendEp> SendEpMrSlice for EP {}
 
-impl<EP: SendEpImpl + ConnlessEp + SyncEp> SendEp for EP {
+impl<EP: SendEpImpl + ConnlessEp> SendEp for EP {
     #[inline]
     fn sendv_to(
         &self,
@@ -1192,7 +1192,7 @@ impl<EP: SendEpImpl + ConnlessEp + SyncEp> SendEp for EP {
     }
 }
 
-impl<EP: SendEpImpl + ConnectedEp + SyncEp> ConnectedSendEp for EP {
+impl<EP: SendEpImpl + ConnectedEp> ConnectedSendEp for EP {
     #[inline]
     fn sendv(
         &self,

@@ -10,7 +10,6 @@ use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
 use crate::ep::EndpointImplBase;
 use crate::ep::EpState;
-use crate::ep::SyncEp;
 use crate::eq::ReadEq;
 use crate::fid::AsRawTypedFid;
 use crate::fid::AsTypedFid;
@@ -1142,7 +1141,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
 
 impl<EP: AtomicWriteEp> AtomicWriteRemoteMemAddrSliceEp for EP {}
 
-impl<EP: AtomicWriteEpImpl + ConnlessEp + SyncEp> AtomicWriteEp for EP {
+impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -1329,7 +1328,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp + SyncEp> AtomicWriteEp for EP {
     );
 }
 
-impl<EP: AtomicWriteEpImpl + ConnectedEp + SyncEp> ConnectedAtomicWriteEp for EP {
+impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -1979,7 +1978,7 @@ pub trait ConnectedAtomicFetchEp {
 }
 
 // Implementations for the new per-op trait methods
-impl<EP: AtomicFetchEpImpl + ConnlessEp + SyncEp> AtomicFetchEp for EP {
+impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -2166,7 +2165,7 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp + SyncEp> AtomicFetchEp for EP {
     }
 }
 
-impl<EP: AtomicFetchEpImpl + ConnectedEp + SyncEp> ConnectedAtomicFetchEp for EP {
+impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -5598,7 +5597,7 @@ pub trait ConnectedAtomicCASEp {
     ) -> Result<(), crate::error::Error>;
 }
 
-impl<EP: AtomicCASImpl + ConnlessEp + SyncEp> AtomicCASEp for EP {
+impl<EP: AtomicCASImpl + ConnlessEp> AtomicCASEp for EP {
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), 
     (
             self,
@@ -5799,7 +5798,7 @@ impl<EP: AtomicCASImpl + ConnlessEp + SyncEp> AtomicCASEp for EP {
     }
 }
 
-impl<EP: AtomicCASImpl + ConnectedEp + SyncEp> ConnectedAtomicCASEp for EP {
+impl<EP: AtomicCASImpl + ConnectedEp> ConnectedAtomicCASEp for EP {
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), 
     (
             self,
