@@ -454,6 +454,9 @@ impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
     }
 }
 
+// pub trait AsyncWaitEq{
+
+// }
 pub trait AsyncReadEq: ReadEq + AsyncFid {
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a>;
     fn async_event_wait<'a>(
@@ -521,32 +524,32 @@ impl AsyncReadEq for AsyncEventQueueImpl<false> {
     }
 }
 
-impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a> {
-        self.inner.read_in_async(buf, event)
-    }
+// impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
+//     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a> {
+//         self.inner.read_in_async(buf, event)
+//     }
 
-    fn async_event_wait<'a>(
-        &'a self,
-        event_type: libfabric_sys::_bindgen_ty_18,
-        req_fid: Fid,
-        ctx: Option<&'a mut crate::Context>,
-        cq: Option<Box<&'a dyn ReadCq>>,
-    ) -> AsyncEventEq<'a> {
-        self.inner.async_event_wait(event_type, req_fid, ctx, cq)
-    }
-}
+//     fn async_event_wait<'a>(
+//         &'a self,
+//         event_type: libfabric_sys::_bindgen_ty_18,
+//         req_fid: Fid,
+//         ctx: Option<&'a mut crate::Context>,
+//         cq: Option<Box<&'a dyn ReadCq>>,
+//     ) -> AsyncEventEq<'a> {
+//         self.inner.async_event_wait(event_type, req_fid, ctx, cq)
+//     }
+// }
 
-impl<EQ: AsyncReadEq> EventQueue<EQ> {
-    pub async fn read_async(&self) -> Result<Event, crate::error::Error> {
-        let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
-        let mut event = 0;
-        let len = self.inner.read_in_async(&mut buf, &mut event).await?;
-        Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(
-            len, &buf, &event,
-        ))
-    }
-}
+// impl<EQ: AsyncReadEq> EventQueue<EQ> {
+//     pub async fn read_async(&self) -> Result<Event, crate::error::Error> {
+//         let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
+//         let mut event = 0;
+//         let len = self.inner.read_in_async(&mut buf, &mut event).await?;
+//         Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(
+//             len, &buf, &event,
+//         ))
+//     }
+// }
 
 pub struct AsyncEventQueueImpl<const WRITE: bool> {
     pub(crate) base: Async<EventQueueImpl<WRITE, true, true, true>>,

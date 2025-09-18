@@ -15,7 +15,7 @@ use crate::{
         IncompleteBindCntr, PassiveEndpointBase, PassiveEndpointImplBase, UninitConnectionless,
         UninitUnconnected,
     },
-    eq::{Event, EventQueueBase, ReadEq},
+    eq::{ConnReqEvent, Event, EventQueueBase, ReadEq},
     fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, Fid, RawFid},
     info::InfoEntry,
     utils::check_error,
@@ -35,7 +35,7 @@ impl ConnectionListener {
         }
     }
 
-    pub async fn next(&self) -> Result<Event, crate::error::Error> {
+    pub async fn next(&self) -> Result<ConnReqEvent, crate::error::Error> {
         let res = self
             .eq
             .async_event_wait(
@@ -45,7 +45,13 @@ impl ConnectionListener {
                 None,
             )
             .await?;
-        Ok(res)
+        let conn_req: ConnReqEvent = match res {
+            Event::ConnReq(eq_entry) => eq_entry,
+            _ => panic!("Unexpected event received from connection listener")
+        };
+
+        
+        Ok(conn_req)
     }
 }
 pub enum Endpoint<EP> {

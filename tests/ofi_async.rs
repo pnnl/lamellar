@@ -222,14 +222,12 @@ pub mod async_ofi {
                             .build_passive(&fabric)
                             .unwrap();
                         pep.bind(&eq, 0).unwrap();
-                        let event = async_std::task::block_on(async {
+                        async_std::task::block_on(async {
                             pep.listen_async().unwrap().next().await
                         })
-                        .unwrap();
-                        match event {
-                            libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
-                            _ => panic!("Unexpected event"),
-                        }
+                        .unwrap()
+                        .info()
+                        .unwrap()
                     } else {
                         info_entry
                     }
