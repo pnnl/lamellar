@@ -1,7 +1,7 @@
 use crate::async_::ep::{AsyncRxEp, AsyncTxEp};
 use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 // use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
-use crate::comm::tagged::{ConnectedTagSendEp, TagRecvEpImpl, TagSendEp, TagSendEpImpl};
+use crate::comm::tagged::{TagRecvEpImpl, TagSendEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::ep::{Connected, Connectionless, EndpointImplBase, EpState};

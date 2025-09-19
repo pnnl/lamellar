@@ -1,14 +1,11 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::atomic::Ordering, task::ready};
 
 use crate::{
-    cq::{ReadCq, WaitObjectRetrieve},
-    eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
-    error::{Error, ErrorKind},
-    fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid},
-    Context, MyRc, MyRefCell, SyncSend,
+    async_::{conn_ep::ConnectionPendingEndpoint, ep::PassiveEndpoint}, cq::{ReadCq, WaitObjectRetrieve}, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{AsRawFid, AsTypedFid, BorrowedTypedFid, EqRawFid, Fid}, Context, MyRc, MyRefCell, SyncSend
 };
 #[cfg(feature = "use-async-std")]
 use async_io::Async;
+use libfabric_sys::{FI_CONNECTED, FI_CONNREQ};
 use std::sync::atomic::AtomicUsize;
 #[cfg(feature = "use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
@@ -454,9 +451,53 @@ impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
     }
 }
 
-// pub trait AsyncWaitEq{
+pub trait AsyncWaitEq{
+    fn async_wait_conn_req<'a, T>(
+        &'a self,
+        req_fid: &PassiveEndpoint<T>,
+    ) -> AsyncEventEq<'a> ;
+    
+    fn async_wait_conn_established<'a, E>(
+        &'a self,
+        req_fid: &ConnectionPendingEndpoint<E>,
+    ) -> AsyncEventEq<'a> ;
+}
 
-// }
+impl AsyncWaitEq for EventQueue<AsyncEventQueueImpl<true>>
+{
+    fn async_wait_conn_req<'a, T>(
+        &'a self,
+        req_fid: &PassiveEndpoint<T>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNREQ, Fid(req_fid.as_typed_fid().as_raw_fid() as usize), EqType::Write(&self.inner), None, None)
+    }
+
+    fn async_wait_conn_established<'a, E>(
+        &'a self,
+        req_fid: &ConnectionPendingEndpoint<E>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNECTED, Fid(req_fid.inner.inner().as_typed_fid().as_raw_fid() as usize), EqType::Write(&self.inner), None, None)
+    }
+}
+
+impl AsyncWaitEq for EventQueue<AsyncEventQueueImpl<false>>
+{
+    fn async_wait_conn_req<'a, T>(
+        &'a self,
+        req_fid: &PassiveEndpoint<T>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNREQ, Fid(req_fid.as_typed_fid().as_raw_fid() as usize), EqType::NoWrite(&self.inner), None, None)
+    }
+
+    fn async_wait_conn_established<'a, E>(
+        &'a self,
+        req_fid: &ConnectionPendingEndpoint<E>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNECTED, Fid(req_fid.inner.inner().as_typed_fid().as_raw_fid() as usize), EqType::NoWrite(&self.inner), None, None)
+    }
+}
+
+
 pub trait AsyncReadEq: ReadEq + AsyncFid {
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a>;
     fn async_event_wait<'a>(
@@ -787,6 +828,9 @@ impl<'a> Future for AsyncEventEq<'a> {
                     0
                 }
                 Some(ctx) => {
+                    if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, &ev.req_fid) {
+                        return std::task::Poll::Ready(entry);
+                    }
                     if ctx.ready() {
                         let state = ctx.state().take();
                         ctx.reset();

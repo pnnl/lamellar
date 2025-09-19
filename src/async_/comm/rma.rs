@@ -1,7 +1,7 @@
 use crate::async_::ep::AsyncTxEp;
 use crate::async_::xcontext::{TxContext, TxContextImpl};
 // use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
-use crate::comm::rma::{ConnectedWriteEp, ReadEpImpl, WriteEp, WriteEpImpl};
+use crate::comm::rma::{ConnectedWriteEp, ReadEpImpl, WriteEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::ep::{Connected, Connectionless, EndpointImplBase, EpState};

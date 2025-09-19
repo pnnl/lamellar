@@ -1,5 +1,5 @@
 use std::{
-    any::TypeId, marker::PhantomData, os::fd::{AsFd, BorrowedFd}
+    marker::PhantomData, os::fd::{AsFd, BorrowedFd}
 };
 
 use libfabric_sys::{
@@ -7,7 +7,7 @@ use libfabric_sys::{
     inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG,
 };
 
-use crate::{av::AVSyncMode, connless_ep::UninitConnectionlessEndpoint, eq::ConnReqEvent};
+use crate::{av::AVSyncMode, connless_ep::UninitConnectionlessEndpoint, eq::ConnReqEvent, fid::RawFid};
 use crate::{
     av::{AddressVector, AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
     cntr::{Counter, ReadCntr},
@@ -777,13 +777,13 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
 
     pub fn reject<T0>(
         &self,
-        fid: &impl AsRawFid,
+        fid: RawFid,
         params: Option<&[T0]>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_reject(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
-                fid.as_raw_fid(),
+                fid,
                 params.map_or_else(std::ptr::null, |v| v.as_ptr().cast()),
                 params.map_or(0, |v| v.len()),
             )
@@ -819,7 +819,7 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointBase<E, EQ> {
     ///
     /// Corresponds to `fi_reject` in libfabric.
     pub fn reject(&self, event: ConnReqEvent) -> Result<(), crate::error::Error> {
-        self.inner.reject::<()>(&event.fid(), None)
+        self.inner.reject::<()>(event.info_handle(), None)
     }
 
     /// Rejects an incoming connection request and sends back the provided params.
@@ -830,7 +830,7 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointBase<E, EQ> {
         event: ConnReqEvent,
         params: &[T0],
     ) -> Result<(), crate::error::Error> {
-        self.inner.reject(&event.fid(), Some(params))
+        self.inner.reject(event.info_handle(), Some(params))
     }
 
     /// Sets the backlog size for incoming connection requests.
@@ -1036,7 +1036,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
         } else {
             let eptype = match  info.ep_attr().type_ {
                 EndpointType::Unspec => todo!(),
-                EndpointType::Msg => EpType::Connected(!unsafe { *info.info.0 }.handle.is_null()),
+                EndpointType::Msg => EpType::Connected(info.handle().is_some()),
                 EndpointType::Dgram | EndpointType::Rdm  => EpType::Connectionless,
             };
             Ok(Self {

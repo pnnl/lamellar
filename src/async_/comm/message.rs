@@ -2,7 +2,7 @@ use crate::async_::ep::{AsyncRxEp, AsyncTxEp};
 use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 // use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 use crate::comm::message::{
-    ConnectedRecvEp, ConnectedSendEp, RecvEp, RecvEpImpl, SendEp, SendEpImpl,
+    RecvEpImpl, SendEpImpl,
 };
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;

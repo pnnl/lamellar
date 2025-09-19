@@ -653,8 +653,9 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
 }
 
 impl<T: SyncSend> SyncSend for EventQueue<T> {}
+pub(crate) trait SyncEq {}
 
-impl<T: ReadEq> ReadEq for EventQueue<T> {
+impl<T: ReadEq + SyncEq> ReadEq for EventQueue<T> {
     fn read(&self) -> Result<Event, crate::error::Error> {
         self.inner.read()
     }
@@ -676,35 +677,13 @@ impl<T: ReadEq> ReadEq for EventQueue<T> {
     }
 }
 
-impl<T: ReadEq> EventQueue<T> {
-    pub fn read(&self) -> Result<Event, crate::error::Error> {
-        self.inner.read()
-    }
-
-    pub fn peek(&self) -> Result<Event, crate::error::Error> {
-        self.inner.peek()
-    }
-
-    pub fn readerr(&self) -> Result<EventError, crate::error::Error> {
-        self.inner.readerr()
-    }
-
-    pub fn peekerr(&self) -> Result<EventError, crate::error::Error> {
-        self.inner.peekerr()
-    }
-
-    pub fn strerror(&self, entry: &EventError) -> &str {
-        self.inner.strerror(entry)
-    }
-}
-
 impl<T: WriteEq> WriteEq for EventQueue<T> {
     fn write(&self, event: Event) -> Result<(), crate::error::Error> {
         self.inner.write(event)
     }
 }
 
-impl<T: WaitEq> WaitEq for EventQueue<T> {
+impl<T: WaitEq + SyncEq> WaitEq for EventQueue<T> {
     fn sread(&self, timeout: i32) -> Result<Event, crate::error::Error> {
         self.inner.sread(timeout)
     }
@@ -787,6 +766,9 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
     }
 }
 
+impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncEq
+    for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>{}
+
 // impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawTypedFid
 //     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
 // {
@@ -822,6 +804,7 @@ impl<const WRITE: bool> AsRawFd for EventQueueImpl<WRITE, true, true, true> {
         }
     }
 }
+
 
 // impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> BindImpl for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
 // impl<T: ReadEq + 'static> crate::Bind for EventQueue<T> {
@@ -1182,6 +1165,10 @@ impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
         } else {
             Err(crate::error::Error::caps_error())
         }
+    }
+
+    pub(crate) fn info_handle(&self) -> libfabric_sys::fid_t {
+        unsafe { (*self.c_entry.info).handle}
     }
 
     //[TODO] Should returen the proper type of info entry

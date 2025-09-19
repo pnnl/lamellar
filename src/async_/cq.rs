@@ -1,6 +1,5 @@
 use crate::cq::ReadCq;
 use crate::cq::SingleCompletion;
-use crate::cq::SyncCq;
 use crate::cq::WaitCq;
 use crate::domain::{DomainBase, DomainImplBase};
 use crate::fid::AsTypedFid;

@@ -521,6 +521,7 @@ pub struct InfoEntry<T> {
     ctx_id: AtomicUsize,
     caps: InfoCapsImpl,
     mode: crate::enums::Mode,
+    handle: Option<usize>,
     src_address: Option<Address>,
     dest_address: Option<Address>,
     fabric_attr: crate::fabric::FabricAttr,
@@ -570,10 +571,12 @@ impl<T> InfoEntry<T> {
         } else {
             None
         };
+        let handle = if unsafe {(*c_info).handle.is_null()} {None} else {unsafe{Some((*c_info).handle as usize)}};
         Self {
             ctx_id: AtomicUsize::new(0),
             caps: InfoCapsImpl::from(caps),
             mode,
+            handle,
             src_address,
             dest_address,
             fabric_attr,
@@ -660,6 +663,10 @@ impl<T> InfoEntry<T> {
     /// Returns the mode of the `Info`
     pub fn mode(&self) -> &crate::enums::Mode {
         &self.mode
+    }
+
+    pub fn handle(&self) -> Option<&usize> {
+        self.handle.as_ref()
     }
 
     /// Returns the domain attributes of the `Info`
