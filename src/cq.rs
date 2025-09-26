@@ -17,9 +17,9 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 macro_rules! read_cq_entry_ {
     ($read_fn: expr, $cq: expr, $count: expr, $entries: expr, $( $x:ident),*) => {
         {
-            let capacity = $entries.capacity();
-            if $count > capacity {
-                $entries.reserve($count - capacity);
+            let len = $entries.len();
+            if $count > len {
+                $entries.reserve($count - len);
             }
             let err = unsafe{ $read_fn($cq, $entries.as_mut_ptr().cast(), $count, $($x,)*)};
             if err >= 0 {
