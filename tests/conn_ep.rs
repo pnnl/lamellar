@@ -4,16 +4,16 @@ pub mod sync_;
 pub mod sync_conn_ep {
     use libfabric::infocapsoptions::InfoCaps;
 
-    use crate::sync_::handshake;
+    use crate::sync_::{handshake, DEFAULT_BUF_SIZE};
 
     #[test]
     fn handshake_connected0() {
-        handshake(true, "handshake_connected0", Some(InfoCaps::new().msg()));
+        handshake(None, true, "handshake_connected0", Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE);
     }
 
     #[test]
     fn handshake_connected1() {
-        handshake(false, "handshake_connected0", Some(InfoCaps::new().msg()));
+        handshake(None, false, "handshake_connected0", Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE);
     }
 }
 

@@ -3256,6 +3256,164 @@
 // //     fab.close().unwrap();
 // // }
 
+
+impl<I: MsgDefaultCap + 'static> Ofi<I> {
+    pub fn pingpong(&self, warmup: usize, iters: usize, server: bool, size: usize) {
+        self.sync().unwrap();
+        let mut now = Instant::now();
+        if !server {
+            for i in 0..warmup + iters {
+                if i == warmup {
+                    now = Instant::now(); // Start timer
+                }
+
+                self.send(0..size, None, false);
+                if size > self.info_entry.tx_attr().inject_size() {
+                    self.spin_wait_tx(1);
+                    // self.cq_type.tx_cq().sread(1, -1).unwrap();
+                }
+                self.recv(0..size, false);
+                self.spin_wait_rx(1);
+                // self.cq_type.rx_cq().sread(1, -1).unwrap();
+            }
+        } else {
+            for i in 0..warmup + iters {
+                if i == warmup {
+                    now = Instant::now(); // Start timer
+                }
+
+                self.recv(0..size, false);
+                self.spin_wait_rx(1);
+                
+                // self.cq_type.rx_cq().sread(1, -1).unwrap();
+                self.send(0..size, None, false);
+                if size > self.info_entry.tx_attr().inject_size() {
+                    self.spin_wait_tx(1);
+                    // self.cq_type.tx_cq().sread(1, -1).unwrap();
+                }
+            }
+        }
+
+        let elapsed = now.elapsed();
+
+        if size == 1 {
+            println!("bytes iters total time MB/sec usec/xfer Mxfers/sec",);
+        }
+
+        let bytes = iters * size * 2;
+        let usec_per_xfer = elapsed.as_micros() as f64 / iters as f64 / 2_f64;
+        println!(
+            "{} {} {} {} s {} {} {}",
+            size,
+            iters,
+            bytes,
+            elapsed.as_secs(),
+            bytes as f64 / elapsed.as_micros() as f64,
+            usec_per_xfer,
+            1.0 / usec_per_xfer
+        );
+    }
+}
+
+impl<I: MsgDefaultCap + TagDefaultCap + 'static> Ofi<I> {
+    pub fn pingpong_tagged(&self, warmup: usize, iters: usize, server: bool, size: usize) {
+        self.sync().unwrap();
+        let mut now = Instant::now();
+        if !server {
+            for i in 0..warmup + iters {
+                if i == warmup {
+                    now = Instant::now(); // Start timer
+                }
+
+                self.tsend(0..size, 0, None, false);
+                if size > self.info_entry.tx_attr().inject_size() {
+                    self.cq_type.tx_cq().sread(1, -1).unwrap();
+                }
+                self.trecv(0..size, 0, false);
+                self.cq_type.rx_cq().sread(1, -1).unwrap();
+            }
+        } else {
+            for i in 0..warmup + iters {
+                if i == warmup {
+                    now = Instant::now(); // Start timer
+                }
+
+                self.trecv(0..size, 0, false);
+                self.cq_type.rx_cq().sread(1, -1).unwrap();
+                self.tsend(0..size, 0, None, false);
+                if size > self.info_entry.tx_attr().inject_size() {
+                    self.cq_type.tx_cq().sread(1, -1).unwrap();
+                }
+            }
+        }
+
+        let elapsed = now.elapsed();
+
+        if size == 1 {
+            println!("bytes iters total time MB/sec usec/xfer Mxfers/sec",);
+        }
+
+        let bytes = iters * size * 2;
+        let usec_per_xfer = elapsed.as_micros() as f64 / iters as f64 / 2_f64;
+        println!(
+            "{} {} {} {} s {} {} {}",
+            size,
+            iters,
+            bytes,
+            elapsed.as_secs(),
+            bytes as f64 / elapsed.as_micros() as f64,
+            usec_per_xfer,
+            1.0 / usec_per_xfer
+        );
+    }
+}
+
+impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
+    pub fn pingpong_rma(&self, warmup: usize, iters: usize, server: bool, size: usize, window_size: usize) {
+        self.sync().unwrap();
+        let mut j = 0;
+        let mut now = Instant::now();
+
+        for i in 0..warmup + iters {
+            if i == warmup {
+                now = Instant::now(); // Start timer
+            }
+
+            self.write(0..size, 0, None);
+                        
+            // j += 1;
+            // if j == window_size  {
+                if size > self.info_entry.tx_attr().inject_size() {
+                    self.cq_type.tx_cq().sread(1, -1).unwrap();
+                }
+                // j = 0;
+            // }
+        }
+        // if size > self.info_entry.tx_attr().inject_size() {
+        //     self.cq_type.tx_cq().sread(1, -1).unwrap();
+        // }
+        
+        let elapsed = now.elapsed();
+
+        if size == 1 {
+            println!("bytes iters total time MB/sec usec/xfer Mxfers/sec",);
+        }
+
+        let bytes = iters * size * 2;
+        let usec_per_xfer = elapsed.as_micros() as f64 / iters as f64 / 2_f64;
+        println!(
+            "{} {} {} {} s {} {} {}",
+            size,
+            iters,
+            bytes,
+            elapsed.as_secs(),
+            bytes as f64 / elapsed.as_micros() as f64,
+            usec_per_xfer,
+            1.0 / usec_per_xfer
+        );
+    }
+}
+
 // #[allow(clippy::too_many_arguments)]
 // pub fn pingpong<CNTR: WaitCntr, M: MsgDefaultCap, T: TagDefaultCap>(
 //     inject_size: usize,
@@ -3578,6 +3736,8 @@
 // use common::gen_info;
 
 use libfabric::av::NoBlockAddressVector;
+use libfabric::cntr::Counter;
+use libfabric::cntr::CounterBuilder;
 use libfabric::comm::atomic::AtomicCASRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::AtomicFetchRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::AtomicWriteRemoteMemAddrSliceEp;
@@ -3605,7 +3765,10 @@ use libfabric::AsFiType;
 use libfabric::RemoteMemAddrSlice;
 use libfabric::RemoteMemAddrSliceMut;
 use std::cell::RefCell;
+use std::ops::Range;
+use std::time::Instant;
 pub type EqOptions = libfabric::eq_caps_type!(EqCaps::WAIT);
+
 use libfabric::{
     av::AddressVectorBuilder,
     comm::{
@@ -3648,10 +3811,11 @@ use libfabric::{
         ConnectedRxContext, ConnectedTxContext, ConnlessRxContext, ConnlessTxContext,
         RxContextBuilder, TxContextBuilder,
     },
-    Context, CqCaps, EqCaps, MappedAddress, MemAddressInfo, MyRc, RemoteMemAddressInfo,
+    Context, CqCaps, EqCaps, CntrCaps, MappedAddress, MemAddressInfo, MyRc, RemoteMemAddressInfo,
 };
 pub type SpinCq = libfabric::cq_caps_type!(CqCaps::WAIT);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::WAIT);
+pub type DefaultCntr = libfabric::cntr_caps_type!(CntrCaps::WAIT);
 
 pub enum CqType {
     Separate((CompletionQueue<SpinCq>, CompletionQueue<SpinCq>)),
@@ -3701,7 +3865,7 @@ pub enum MyRxContext<I> {
 
 pub struct Ofi<I> {
     pub info_entry: InfoEntry<I>,
-    pub mr: Option<MemoryRegion>,
+    pub mr: RefCell<Option<MemoryRegion>>,
     // pub remote_key: Option<MappedMemoryRegionKey>,
     // pub remote_mem_addr: Option<(u64, u64)>,
     pub remote_mem_info: Option<RefCell<RemoteMemAddressInfo>>,
@@ -3710,10 +3874,13 @@ pub struct Ofi<I> {
     pub ep: MyEndpoint<I>,
     pub tx_context: MyTxContext<I>,
     pub rx_context: MyRxContext<I>,
-    pub reg_mem: Vec<u8>,
+    pub reg_mem: RefCell<Vec<u8>>,
     pub mapped_addr: Option<Vec<MyRc<MappedAddress>>>,
     pub av: Option<NoBlockAddressVector>,
     pub eq: EventQueue<EqOptions>,
+    pub ctx: RefCell<libfabric::Context>,
+    // pub tx_cntr: Counter<DefaultCntr>,
+    // pub rx_cntr: Counter<DefaultCntr>,
     // pub tx_pending_cnt: AtomicUsize,
     // pub tx_complete_cnt: AtomicUsize,
     // pub rx_pending_cnt: AtomicUsize,
@@ -3743,7 +3910,7 @@ pub fn ft_progress(cq: &impl ReadCq) {
     let ret = cq.read(0);
     match ret {
         Ok(_) => {
-            panic!("Should not read anything")
+            // panic!("Should not read anything")
         }
         Err(ref err) => {
             if !matches!(err.kind, libfabric::error::ErrorKind::TryAgain) {
@@ -3760,14 +3927,15 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         shared_cqs: bool,
         server: bool,
         name: &str,
+        buf_size: usize,
     ) -> Result<Self, Error> {
-        if server {
-            unsafe { std::env::set_var(name, "1") };
-        } else {
-            while std::env::var(name).is_err() {
-                std::thread::yield_now();
-            }
-        }
+        // if server {
+        //     unsafe { std::env::set_var(name, "1") };
+        // } else {
+        //     while std::env::var(name).is_err() {
+        //         std::thread::yield_now();
+        //     }
+        // }
 
         let format = if info_entry.caps().is_tagged() {
             CqFormat::Tagged
@@ -3797,7 +3965,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         // let mut tx_complete_cnt: usize = 0;
         // let mut rx_pending_cnt: usize = 0;
         // let mut rx_complete_cnt: usize = 0;
-        let mut reg_mem = vec![0u8; 1024 * 1024];
+        let mut reg_mem = vec![0u8; buf_size];
 
         let (info_entry, ep, tx_context, rx_context, mapped_addr, av, eq) = {
             let (info_entry, eq) = if matches!(ep_type, EndpointType::Msg) {
@@ -3842,6 +4010,15 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     .build_with_shared_cq(&domain, scq, false)
                     .unwrap(),
             };
+            // let tx_cntr = CounterBuilder::new()
+            //     .events(libfabric::enums::CounterEvents::Comp)
+            //     .build(&domain);
+
+            
+            // let rx_cntr = CounterBuilder::new()
+            //     .events(libfabric::enums::CounterEvents::Comp)
+            //     .build(&domain);
+
 
             match ep {
                 Endpoint::Connectionless(ep) => {
@@ -3874,6 +4051,8 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         .access_write()
                         .access_send()
                         .access_recv()
+                        .access_remote_read()
+                        .access_remote_write()
                         .build(&domain)?;
                         let mr = match mr {
                             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
@@ -4044,6 +4223,8 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         .access_write()
                         .access_send()
                         .access_recv()
+                        .access_remote_read()
+                        .access_remote_write()
                         .build(&domain)?;
                         let mr = match mr {
                             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
@@ -4078,20 +4259,21 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         if server {
             unsafe { std::env::remove_var(name) };
         }
-
+        let ctx=   RefCell::new(info_entry.allocate_context());
         Ok(Self {
             info_entry,
             mapped_addr,
-            mr,
+            mr: RefCell::new(mr),
             remote_mem_info: None,
             cq_type,
             domain,
             ep,
             tx_context,
             rx_context,
-            reg_mem,
+            reg_mem: RefCell::new(reg_mem),
             av,
             eq,
+            ctx,
             // tx_pending_cnt,
             // tx_complete_cnt,
             // rx_pending_cnt,
@@ -4123,10 +4305,35 @@ impl<I> Ofi<I> {
 }
 
 
+
+impl<I> Ofi<I> {
+    pub fn spin_wait_tx(&self, to_wait: usize)  {
+        for _ in 0..to_wait {
+            loop {
+                if let Ok(_) = self.cq_type.tx_cq().read(1) {
+                    break
+                }
+            }
+        }
+    } 
+    
+    pub fn spin_wait_rx(&self, to_wait: usize)  {
+        for _ in 0..to_wait {
+            loop {
+                if let Ok(_) = self.cq_type.rx_cq().read(1) {
+                    break
+                }
+            }
+        }
+    } 
+}
+
 pub fn handshake<I: Caps + MsgDefaultCap + 'static>(
+    user_ip: Option<&str>,
     server: bool,
     name: &str,
     caps: Option<I>,
+    buf_size: usize
 ) -> Ofi<I> {
     let caps = caps.unwrap();
     let ep_type: EndpointType = EndpointType::Msg;
@@ -4135,17 +4342,22 @@ pub fn handshake<I: Caps + MsgDefaultCap + 'static>(
         .expect("Failed to execute hostname")
         .stdout;
     let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
-    let ip = "172.17.110.".to_string() + &hostname;
+    let mut ip = "172.17.110.".to_string() + &hostname;
+    if let Some(user_ip) = user_ip {
+        ip = user_ip.to_string();
+    }
 
-    let info = gen_info(ep_type, caps, false, server, &ip, name);
+    let info = gen_info(ep_type, caps, false, server, &ip, name, buf_size);
     info
 }
 
 
 pub fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
+    user_ip: Option<&str>,
     server: bool,
     name: &str,
     caps: Option<I>,
+    buf_size: usize,
 ) -> Ofi<I> {
     let caps = caps.unwrap();
     let ep_type = EndpointType::Rdm;
@@ -4154,7 +4366,10 @@ pub fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
         .expect("Failed to execute hostname")
         .stdout;
     let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
-    let ip = "172.17.110.".to_string() + &hostname;
+    let mut ip = "172.17.110.".to_string() + &hostname;
+    if let Some(user_ip) = user_ip {
+        ip = user_ip.to_string();
+    }
 
     let info = gen_info(
         ep_type,
@@ -4162,7 +4377,8 @@ pub fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
         false,
         server,
         ip.strip_suffix("\n").unwrap_or(&ip),
-        name
+        name,
+        buf_size
     );
 
     info
@@ -4550,13 +4766,16 @@ fn conn_trecvmsg(
 
 
 impl<I: MsgDefaultCap + 'static> Ofi<I> {
-    pub fn send<T>(
+    pub fn send(
         &self,
-        buf: &[T],
-        desc: Option<MemoryRegionDesc<'_>>,
+        range: Range<usize>,
         data: Option<u64>,
         use_context: bool,
     ) {
+        let borrow = &self.reg_mem.borrow();
+        let buf = &borrow[range];
+        let mr = self.mr.borrow();
+        let desc = mr.as_ref().map_or(None, |mr| Some(mr.descriptor()));
         loop {
             let err = if !use_context {
                 match &self.ep {
@@ -4642,13 +4861,17 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         }
     }
 
-    pub fn send_with_context<T>(
+    pub fn send_with_context(
         &self,
-        buf: &[T],
-        desc: Option<MemoryRegionDesc<'_>>,
+        range: Range<usize>,
         data: Option<u64>,
-        context: &mut Context,
     ) {
+        let borrow = &self.reg_mem.borrow();
+        let buf = &borrow[range];
+        let mr = self.mr.borrow();
+
+        let desc = mr.as_ref().map_or(None, |mr| Some(mr.descriptor()));
+        let mut context = self.ctx.borrow_mut();
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -4668,14 +4891,14 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                             desc,
                             data,
                             &self.mapped_addr.as_ref().unwrap()[1],
-                            context,
+                            &mut context,
                         )
                     } else {
                         ep.send_to_with_context(
                             buf,
                             desc,
                             &self.mapped_addr.as_ref().unwrap()[1],
-                            context,
+                            &mut context,
                         )
                     }
                 }
@@ -4687,9 +4910,9 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                             ep.inject(buf)
                         }
                     } else if let Some(data) = data {
-                        ep.senddata_with_context(buf, desc, data, context)
+                        ep.senddata_with_context(buf, desc, data, &mut context)
                     } else {
-                        ep.send_with_context(buf, desc, context)
+                        ep.send_with_context(buf, desc, &mut context)
                     }
                 }
             };
@@ -4746,7 +4969,12 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         }
     }
 
-    pub fn recv<T>(&self, buf: &mut [T], desc: Option<MemoryRegionDesc>, use_context: bool) {
+    pub fn recv(&self, range: Range<usize>, use_context: bool) {
+        let borrow = &mut self.reg_mem.borrow_mut();
+        let buf = &mut borrow[range];
+        let mr = self.mr.borrow();
+
+        let desc = mr.as_ref().map_or(None, |mr| Some(mr.descriptor()));
         loop {
             let err = if !use_context {
                 match &self.ep {
@@ -4896,89 +5124,57 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             MyEndpoint::Connectionless(ref ep) => ep.getname(),
         };
 
-        let mut address_bytes = epname.unwrap().as_bytes().to_vec();
+        let address_bytes = epname.unwrap().as_bytes().to_vec();
+        self.reg_mem.borrow_mut().copy_from_slice(&address_bytes);
 
-        let mr = MemoryRegionBuilder::new(&address_bytes, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .build(&self.domain)
-            .unwrap();
-
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&self.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-
-        let desc = Some(mr.descriptor());
-
-        self.send(&address_bytes, desc, None, false);
-        self.recv(&mut address_bytes, desc, false);
+        self.send(0..address_bytes.len(), None, false);
+        self.recv(0..address_bytes.len(), false);
         self.cq_type.rx_cq().sread(1, -1).unwrap();
 
-        unsafe { Address::from_bytes(&address_bytes) }
+        unsafe { Address::from_bytes(&self.reg_mem.borrow()[0..address_bytes.len()]) }
     }
 
-    pub fn exchange_keys<T: Copy>(&mut self, key: &MemoryRegionKey, mem_slice: &[T]) {
-        let mem_info = libfabric::MemAddressInfo::from_slice(mem_slice, 0, key, &self.info_entry);
-        let mut mem_bytes = mem_info.to_bytes().to_vec();
+    pub fn exchange_keys(&mut self) {
+        let mr = self.mr.borrow();
+        let key = mr.as_ref().unwrap().key().unwrap();
+        let mem_info = libfabric::MemAddressInfo::from_slice(&self.reg_mem.borrow(), 0, &key, &self.info_entry);
+        let mem_bytes = mem_info.to_bytes();
+        println!("Local addr: {:?}, size: {}", self.reg_mem.borrow().as_ptr(), self.reg_mem.borrow().len());
 
-        let mr = MemoryRegionBuilder::new(&mem_bytes, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .build(&self.domain)
-            .unwrap();
-
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&self.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-
-        let desc = Some(mr.descriptor());
+        self.reg_mem.borrow_mut()[..mem_bytes.len()].copy_from_slice(mem_bytes);
+        
         self.send(
-            &mem_bytes,
-            desc,
+            0..mem_bytes.len(),
             None,
             false,
         );
         self.recv(
-        &mut mem_bytes,
-            desc,
+            mem_bytes.len()..2*mem_bytes.len(),
             false,
         );
-
+        
         self.cq_type.rx_cq().sread(1, -1).unwrap();
-        let mem_info = unsafe { MemAddressInfo::from_bytes(&mem_bytes) };
+        let mem_info = unsafe { MemAddressInfo::from_bytes(&self.reg_mem.borrow()[mem_bytes.len()..2*mem_bytes.len()]) };
         let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
+        println!("Remote addr: {:?}, size: {}", remote_mem_info.mem_address().as_ptr(), remote_mem_info.mem_len());
+
         self.remote_mem_info = Some(RefCell::new(remote_mem_info));
     }
 }
 
 
 impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
-    pub fn write<T: Copy>(
+    pub fn write(
         &self,
-        buf: &[T],
+        range: Range<usize>,
         dest_addr: usize,
-        desc: Option<MemoryRegionDesc>,
         data: Option<u64>,
     ) {
         let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let buf = &self.reg_mem.borrow()[range];
         let write_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
-
+        let borrow = self.mr.borrow();
+        let desc = borrow.as_ref().map_or(None, |mr| Some(mr.descriptor()));
         loop {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
@@ -5027,11 +5223,13 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                         if let Some(data) = data {
                             unsafe { ep.inject_writedata_slice(buf, data, &write_slice) }
                         } else {
+
                             unsafe { ep.inject_write_slice(buf, &write_slice) }
                         }
                     } else if let Some(data) = data {
                         unsafe { ep.writedata_slice(buf, desc, data, &write_slice) }
                     } else {
+
                         unsafe { ep.write_slice(buf, desc, &write_slice) }
                     }
                 }
@@ -5043,7 +5241,14 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn read<T: Copy>(&self, buf: &mut [T], dest_addr: usize, desc: Option<MemoryRegionDesc>) {
+    pub fn read(
+        &self, 
+        range: Range<usize>, 
+        dest_addr: usize, 
+    ) {
+        let buf = &mut self.reg_mem.borrow_mut()[range];
+        let borrow = self.mr.borrow();
+        let desc = borrow.as_ref().map_or(None, |mr| Some(mr.descriptor()));
         let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
         let read_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
 
@@ -5158,14 +5363,16 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
 
 
 impl<I: TagDefaultCap> Ofi<I> {
-    pub fn tsend<T>(
+    pub fn tsend(
         &self,
-        buf: &[T],
-        desc: Option<MemoryRegionDesc>,
+        range: Range<usize>,
         tag: u64,
         data: Option<u64>,
         use_context: bool,
     ) {
+        let buf = &self.reg_mem.borrow()[range];
+        let borrow = self.mr.borrow();
+        let desc = borrow.as_ref().map_or(None, |mr| Some(mr.descriptor()));
         loop {
             let err = if !use_context {
                 match &self.ep {
@@ -5345,13 +5552,15 @@ impl<I: TagDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn trecv<T>(
+    pub fn trecv(
         &self,
-        buf: &mut [T],
-        desc: Option<MemoryRegionDesc>,
+        range: Range<usize>,
         tag: u64,
         use_context: bool,
     ) {
+        let buf = &mut self.reg_mem.borrow_mut()[range];
+        let borrow = self.mr.borrow();
+        let desc = borrow.as_ref().map_or(None, |mr| Some(mr.descriptor()));
         loop {
             let err = if !use_context {
                 match &self.ep {
@@ -5513,6 +5722,7 @@ pub trait IsSyncSend: Send + Sync {}
 
 #[cfg(feature = "threading-fid")]
 impl<I> IsSyncSend for Ofi<I> {}
+pub const DEFAULT_BUF_SIZE: usize = 1024*1024;
 
 fn get_atomic_op<T, A>(op: libfabric::enums::AtomicOp) -> unsafe fn(
     &A,
@@ -6111,15 +6321,17 @@ where
 
 
 impl<I: AtomicDefaultCap> Ofi<I> {
-    pub fn atomic<T: libfabric::AsFiType>(
+    pub fn atomic(
         &self,
-        buf: &[T],
+        range: Range<usize>,
         dest_addr: usize,
-        desc: Option<MemoryRegionDesc>,
         op: AtomicOp,
     ) {
+        let buf = &self.reg_mem.borrow()[range];
         let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
         let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
+        let borrow = self.mr.borrow();
+        let desc = borrow.as_ref().map_or(None, |mr| Some(mr.descriptor()));
 
         loop {
             let err = match &self.ep {
@@ -6298,16 +6510,20 @@ impl<I: AtomicDefaultCap> Ofi<I> {
         }
     }
 
-    pub fn fetch_atomic<T: libfabric::AsFiType>(
+    pub fn fetch_atomic(
         &self,
-        buf: &[T],
-        res: &mut [T],
+        src_range: Range<usize>,
+        res_range: Range<usize>,
         dest_addr: usize,
         desc: Option<MemoryRegionDesc>,
         res_desc: Option<MemoryRegionDesc>,
         op: FetchAtomicOp,
     ) {
         let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+        let mut borrow = self.reg_mem.borrow_mut();
+        let (split_0, split_1) = borrow.split_at_mut(src_range.end);
+        let buf = &split_0[src_range.clone()];
+        let res = &mut split_1[res_range.start - src_range.end..res_range.end - src_range.end];
         let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
 
         // let base_mem_addr = remote_mem_info.borrow().mem_address();
@@ -6621,10 +6837,21 @@ impl<I: AtomicDefaultCap> Ofi<I> {
 
 impl<I: CollCap> Ofi<I> {}
 
+impl<I: MsgDefaultCap + 'static> Ofi<I> {
+    pub fn sync(&self) -> Result<(), Error> {
+        self.send(0..1, None, false);
+        self.recv(0..1, false);
+        self.cq_type.rx_cq().sread(1, -1)?;
+        Ok(())
+    }
+}
+
+
+// impl<I: MsgDefaultCap + 'static> 
 
 
 
-pub fn gen_info<I: Caps + MsgDefaultCap + 'static>(ep_type: EndpointType, caps: I, shared_cq: bool, server: bool, ip: &str, name: &str) -> Ofi<I> {
+pub fn gen_info<I: Caps + MsgDefaultCap + 'static>(ep_type: EndpointType, caps: I, shared_cq: bool, server: bool, ip: &str, name: &str, buf_size: usize) -> Ofi<I> {
     Ofi::new(
             {
                 let info = Info::new(&libfabric::info::libfabric_version())
@@ -6675,6 +6902,7 @@ pub fn gen_info<I: Caps + MsgDefaultCap + 'static>(ep_type: EndpointType, caps: 
             shared_cq,
             server,
             name,
+            buf_size
         )
         .unwrap()
 }

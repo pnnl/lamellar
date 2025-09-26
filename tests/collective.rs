@@ -3,45 +3,26 @@ pub mod sync_;
 pub mod sync_collective {
     use libfabric::{av_set::AddressVectorSetBuilder, comm::collective::CollectiveEp, cq::{ReadCq, WaitCq}, enums::CollectiveOptions, eq::{Event, ReadEq}, infocapsoptions::{CollCap, InfoCaps}, mcast::MultiCastGroup, mr::{MemoryRegion, MemoryRegionBuilder}};
 
-    use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, MyEndpoint, Ofi};
+    use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, MyEndpoint, Ofi, DEFAULT_BUF_SIZE};
 
 
     fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, MultiCastGroup) {
         let mut ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().collective()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().collective()), DEFAULT_BUF_SIZE)
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().collective()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().collective()), DEFAULT_BUF_SIZE)
         };
 
-        let reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
-        } else {
-            vec![1; 1024 * 2]
-        };
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .build(&ofi.domain)
-            .unwrap();
+        ofi.exchange_keys();
 
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-
-        let key = mr.key().unwrap();
-        ofi.exchange_keys(&key, &reg_mem[..]);
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
 
         let mut avset = if server {
             AddressVectorSetBuilder::new_from_range(

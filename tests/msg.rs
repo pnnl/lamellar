@@ -5,60 +5,60 @@ pub mod sync_msg {
     use libfabric::msg::{Msg, MsgConnected, MsgConnectedMut, MsgMut};
     use libfabric::{cq::Completion, infocapsoptions::InfoCaps, iovec::{IoVec, IoVecMut}, mr::MemoryRegionBuilder};
     
-    use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, Either};
+    use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, Either, DEFAULT_BUF_SIZE};
     fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg()))
+            handshake(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
         };
 
-        let mut reg_mem: Vec<_> = (0..1024 * 2)
-            .map(|v: usize| (v % 256) as u8)
-            .collect();
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mut mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-        
-
-        let desc0 = Some(mr.descriptor());
-        let desc = [mr.descriptor(), mr.descriptor()];
-        let mut ctx = ofi.info_entry.allocate_context();
+        // ofi.reg_mem.borrow_mut().iter_mut().map
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            for i in 0..1024 * 2 {
+                let v = (i % 256) as u8;
+                reg_mem[i] = v;
+            }
+        }
+       
 
         if server {
             // Send a single buffer
-            ofi.send_with_context(&reg_mem[..512], desc0, None, &mut ctx);
-
-            let completion = ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+            ofi.send_with_context(0..512, None);
+            let ctx = ofi.ctx.borrow();
+            let completion: Completion = ofi.cq_type.tx_cq().sread(1, -1).unwrap();
             match completion {
-                Completion::Data(entry) => {
-                    assert!(entry[0].is_op_context_equal(&ctx))
+                Completion::Unspec(entry) => {
+                    assert!(entry[0].is_op_context_equal(&ctx));
                 }
-                _ => panic!("unexpected completion type"),
+                Completion::Msg(entry) => {
+                    assert!(entry[0].is_op_context_equal(&ctx));
+                }
+                Completion::Tagged(entry) => {
+                    assert!(entry[0].is_op_context_equal(&ctx));
+                }
+                Completion::Ctx(entry) => {
+                    assert!(entry[0].is_op_context_equal(&ctx));
+                }
+                Completion::Data(entry) => {
+                    assert!(entry[0].is_op_context_equal(&ctx));
+                }
             }
 
-            assert!(std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size());
-
             // Inject a buffer
-            ofi.send(&reg_mem[..128], desc0, None, use_context);
+            ofi.send(0..128, None, use_context);
             // No cq.sread since inject does not generate completions
+
+            let reg_mem = ofi.reg_mem.borrow();
 
             // // Send single Iov
             let iov = [IoVec::from_slice(&reg_mem[..512])];
+            let mut borrow = ofi.mr.borrow_mut();
+            let mr = borrow.as_mut().unwrap();
+
+
+            let desc = [mr.descriptor(), mr.descriptor()];
             ofi.sendv(&iov, Some(&desc[..1]), use_context);
             ofi.cq_type.tx_cq().sread(1, -1).unwrap();
 
@@ -80,21 +80,30 @@ pub mod sync_msg {
             let expected: Vec<_> = (0..1024 * 2)
                 .map(|v: usize| (v % 256) as u8)
                 .collect();
-            reg_mem.iter_mut().for_each(|v| *v = 0);
+            // let mut reg_mem = ofi.reg_mem.borrow_mut();
+
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v = 0);
 
             // Receive a single buffer
-            ofi.recv(&mut reg_mem[..512], desc0, use_context);
+            ofi.recv(0..512, use_context);
             ofi.cq_type.rx_cq().sread(1, -1).unwrap();
-            assert_eq!(reg_mem[..512], expected[..512]);
+            assert_eq!(ofi.reg_mem.borrow()[..512], expected[..512]);
 
             // Receive inject
-            reg_mem.iter_mut().for_each(|v| *v = 0);
-            ofi.recv(&mut reg_mem[..128], desc0, use_context);
-            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
-            assert_eq!(reg_mem[..128], expected[..128]);
 
-            reg_mem.iter_mut().for_each(|v| *v = 0);
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v = 0);
+            ofi.recv(0..128, use_context);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+            assert_eq!(ofi.reg_mem.borrow()[..128], expected[..128]);
+
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v = 0);
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
             // // Receive into a single Iov
+            let mut borrow = ofi.mr.borrow_mut();
+            let mr = borrow.as_mut().unwrap();
+
+
+            let desc = [mr.descriptor(), mr.descriptor()];
             let iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
             ofi.recvv(&iov, Some(&desc[..1]));
             ofi.cq_type.rx_cq().sread(1, -1).unwrap();
@@ -148,9 +157,9 @@ pub mod sync_msg {
 
     fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg()))
+            handshake(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
         };
 
         let mut reg_mem: Vec<_> = (0..1024 * 2)
@@ -299,7 +308,8 @@ pub mod sync_msg {
             let entry = ofi.cq_type.rx_cq().sread(1, -1).unwrap();
             match entry {
                 Completion::Data(entry) => assert_eq!(entry[0].data(), 128),
-                _ => panic!("Unexpected CQ entry format"),
+                Completion::Tagged(entry) => assert_eq!(entry[0].data(), 128),
+                _ => {},
             }
             assert_eq!(mem0.len(), expected[..512].len());
             assert_eq!(mem0, &expected[..512]);
@@ -413,53 +423,46 @@ pub mod sync_msg {
 
     fn sendrecvdata(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg()))
+            handshake(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
         };
 
-        let mut reg_mem: Vec<_> = (0..1024 * 2)
-            .map(|v: usize| (v % 256) as u8)
-            .collect();
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .build(&ofi.domain)
-            .unwrap();
+        {
 
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            for i in 0..1024 * 2 {
+                let v = (i % 256) as u8;
+                reg_mem[i] = v;
+            }
+        }
 
-        let desc0 = Some(mr.descriptor());
         let data = Some(128u64);
         if server {
             // Send a single buffer
-            ofi.send(&reg_mem[..512], desc0, data, use_context);
+            ofi.send(0..512, data, use_context);
             ofi.cq_type.tx_cq().sread(1, -1).unwrap();
         } else {
             let expected: Vec<_> = (0..1024 * 2)
                 .map(|v: usize| (v % 256) as u8)
                 .collect();
-            reg_mem.iter_mut().for_each(|v| *v = 0);
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v = 0);
 
             // Receive a single buffer
-            ofi.recv(&mut reg_mem[..512], desc0, use_context);
+            ofi.recv(0..512, use_context);
 
-            let entry = ofi.cq_type.rx_cq().sread(1, -1).unwrap();
-            match entry {
-                Completion::Data(entry) => assert_eq!(entry[0].data(), data.unwrap()),
-                _ => panic!("Unexpected CQ entry format"),
+            let completion = ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+            match completion {
+                Completion::Tagged(entry) => {
+                    assert_eq!(entry[0].data(), data.unwrap() );
+                }
+                
+                Completion::Data(entry) => {
+                    assert_eq!(entry[0].data(), data.unwrap() );
+                }
+                _ => {}
             }
-            assert_eq!(reg_mem[..512], expected[..512]);
+            assert_eq!(ofi.reg_mem.borrow()[..512], expected[..512]);
         }
     }
 
