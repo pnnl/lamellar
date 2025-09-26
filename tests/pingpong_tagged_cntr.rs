@@ -1,23 +1,28 @@
-// pub mod common; // Public to supress lint warnings (unused function)
-
-// use libfabric::info::Info;
-// use prefix::{call, define_test, HintsCaps};
-
 // #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
-// pub mod async_;
+// pub mod async_; // Public to supress lint warnings (unused function)
+// pub mod common;
 // pub mod sync_; // Public to supress lint warnings (unused function) // Public to supress lint warnings (unused function)
 
 // // #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 // // use async_ as prefix;
+// use libfabric::info::Info;
+// use prefix::{call, define_test, HintsCaps};
 // // #[cfg(not(any(feature = "use-async-std", feature = "use-tokio")))]
 // use sync_ as prefix;
 
-// define_test!(pp_server_rma, async_pp_server_rma, {
+// // To run the following tests do:
+// // 1. export FI_LOG_LEVEL="info" .
+// // 2. Run the server (e.g. cargo test pp_server_msg -- --ignored --nocapture)
+// //    There will be a large number of info printed. What we need is the last line with: listening on: fi_sockaddr_in:// <ip:port>
+// // 3. Copy the ip, port of the previous step
+// // 4. On the client (e.g. pp_client_msg) change  ft_client_connect node(<ip>) and service(<port>) to service and port of the copied ones
+// // 5. Run client (e.g. cargo test pp_client_msg -- --ignored --nocapture)
+
+// define_test!(pp_server_rdm_tagged, asyn_pp_server_rdm_tagged, {
 //     let mut gl_ctx = prefix::TestsGlobalCtx::new();
 
 //     let info = Info::new(&libfabric::info::libfabric_version())
 //         .enter_hints()
-//         .mode(libfabric::enums::Mode::new().context())
 //         .enter_ep_attr()
 //         .type_(libfabric::enums::EndpointType::Rdm)
 //         .leave_ep_attr()
@@ -31,7 +36,6 @@
 //                 .endpoint()
 //                 .raw(),
 //         )
-//         .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled)
 //         .leave_domain_attr()
 //         .enter_tx_attr()
 //         .traffic_class(libfabric::enums::TrafficClass::LowLatency)
@@ -39,12 +43,12 @@
 //         .addr_format(libfabric::enums::AddressFormat::Unspec);
 
 //     let hintscaps = if true {
-//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma()))
+//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))
 //     } else {
-//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma()))
+//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
 //     };
 
-//     let (infocap, ep, domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
+//     let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
 //         prefix::ft_init_fabric,
 //         hintscaps,
 //         &mut gl_ctx,
@@ -55,31 +59,18 @@
 
 //     match infocap {
 //         prefix::InfoWithCaps::Msg(entry) => {
-//             let remote = call!(
-//                 prefix::ft_exchange_keys,
-//                 &entry,
-//                 &mut gl_ctx,
-//                 &cq_type,
-//                 &tx_cntr,
-//                 &rx_cntr,
-//                 &domain,
-//                 &ep,
-//                 &mr
-//             );
-
 //             let test_sizes = gl_ctx.test_sizes.clone();
+//             let inject_size = entry.tx_attr().inject_size();
 //             for msg_size in test_sizes {
 //                 call!(
-//                     prefix::pingpong_rma,
-//                     &entry,
+//                     prefix::pingpong,
+//                     inject_size,
 //                     &mut gl_ctx,
 //                     &cq_type,
 //                     &tx_cntr,
 //                     &rx_cntr,
 //                     &ep,
 //                     &mr,
-//                     prefix::RmaOp::RMA_WRITE,
-//                     &remote,
 //                     100,
 //                     10,
 //                     msg_size,
@@ -99,31 +90,18 @@
 //             );
 //         }
 //         prefix::InfoWithCaps::Tagged(entry) => {
-//             let remote = call!(
-//                 prefix::ft_exchange_keys,
-//                 &entry,
-//                 &mut gl_ctx,
-//                 &cq_type,
-//                 &tx_cntr,
-//                 &rx_cntr,
-//                 &domain,
-//                 &ep,
-//                 &mr
-//             );
-
 //             let test_sizes = gl_ctx.test_sizes.clone();
+//             let inject_size = entry.tx_attr().inject_size();
 //             for msg_size in test_sizes {
 //                 call!(
-//                     prefix::pingpong_rma,
-//                     &entry,
+//                     prefix::pingpong,
+//                     inject_size,
 //                     &mut gl_ctx,
 //                     &cq_type,
 //                     &tx_cntr,
 //                     &rx_cntr,
 //                     &ep,
 //                     &mr,
-//                     prefix::RmaOp::RMA_WRITE,
-//                     &remote,
 //                     100,
 //                     10,
 //                     msg_size,
@@ -145,7 +123,7 @@
 //     }
 // });
 
-// define_test!(pp_client_rma, async_pp_client_rma, {
+// define_test!(pp_client_rdm_tagged, async_pp_client_rdm_tagged, {
 //     let hostname = std::process::Command::new("hostname")
 //         .output()
 //         .expect("Failed to execute hostname")
@@ -156,7 +134,6 @@
 
 //     let info = Info::new(&libfabric::info::libfabric_version())
 //         .enter_hints()
-//         .mode(libfabric::enums::Mode::new().context())
 //         .enter_ep_attr()
 //         .type_(libfabric::enums::EndpointType::Rdm)
 //         .leave_ep_attr()
@@ -170,7 +147,6 @@
 //                 .endpoint()
 //                 .raw(),
 //         )
-//         .resource_mgmt(libfabric::enums::ResourceMgmt::Enabled)
 //         .leave_domain_attr()
 //         .enter_tx_attr()
 //         .traffic_class(libfabric::enums::TrafficClass::LowLatency)
@@ -178,12 +154,12 @@
 //         .addr_format(libfabric::enums::AddressFormat::Unspec);
 
 //     let hintscaps = if true {
-//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg().rma()))
+//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))
 //     } else {
-//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged().rma()))
+//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
 //     };
 
-//     let (infocap, ep, domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
+//     let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
 //         prefix::ft_init_fabric,
 //         hintscaps,
 //         &mut gl_ctx,
@@ -194,31 +170,18 @@
 
 //     match infocap {
 //         prefix::InfoWithCaps::Msg(entry) => {
-//             let remote = call!(
-//                 prefix::ft_exchange_keys,
-//                 &entry,
-//                 &mut gl_ctx,
-//                 &cq_type,
-//                 &tx_cntr,
-//                 &rx_cntr,
-//                 &domain,
-//                 &ep,
-//                 &mr
-//             );
-
 //             let test_sizes = gl_ctx.test_sizes.clone();
+//             let inject_size = entry.tx_attr().inject_size();
 //             for msg_size in test_sizes {
 //                 call!(
-//                     prefix::pingpong_rma,
-//                     &entry,
+//                     prefix::pingpong,
+//                     inject_size,
 //                     &mut gl_ctx,
 //                     &cq_type,
 //                     &tx_cntr,
 //                     &rx_cntr,
 //                     &ep,
 //                     &mr,
-//                     prefix::RmaOp::RMA_WRITE,
-//                     &remote,
 //                     100,
 //                     10,
 //                     msg_size,
@@ -238,30 +201,18 @@
 //             );
 //         }
 //         prefix::InfoWithCaps::Tagged(entry) => {
-//             let remote = call!(
-//                 prefix::ft_exchange_keys,
-//                 &entry,
-//                 &mut gl_ctx,
-//                 &cq_type,
-//                 &tx_cntr,
-//                 &rx_cntr,
-//                 &domain,
-//                 &ep,
-//                 &mr
-//             );
 //             let test_sizes = gl_ctx.test_sizes.clone();
+//             let inject_size = entry.tx_attr().inject_size();
 //             for msg_size in test_sizes {
 //                 call!(
-//                     prefix::pingpong_rma,
-//                     &entry,
+//                     prefix::pingpong,
+//                     inject_size,
 //                     &mut gl_ctx,
 //                     &cq_type,
 //                     &tx_cntr,
 //                     &rx_cntr,
 //                     &ep,
 //                     &mr,
-//                     prefix::RmaOp::RMA_WRITE,
-//                     &remote,
 //                     100,
 //                     10,
 //                     msg_size,
@@ -279,65 +230,86 @@
 //                 &rx_cntr,
 //                 &mr
 //             );
-//             // drop(domain);
 //         }
 //     }
 // });
 
-
 use libfabric::infocapsoptions::InfoCaps;
 
-use crate::{pp_sizes::{TEST_SIZES, WINDOW_SIZE}, sync_::{handshake, handshake_connectionless}};
+use crate::{pp_sizes::TEST_SIZES, sync_::{handshake, handshake_connectionless, CntrsCompMeth, CqsCompMeth, Ofi, TestConfigBuilder}};
 mod sync_;
 mod pp_sizes;
 
 #[test]
-fn connected_pp_server_rma() {
+fn connected_pp_server_tagged_cntr() {
 
-    let caps = InfoCaps::new().msg().rma();
-    let mut info = handshake(Some("172.17.110.4"), true, "connected_pp_rma", Some(caps), 1 << 23);
-    info.exchange_keys();
+    let caps = InfoCaps::new().msg().tagged();
+    let mut config = TestConfigBuilder::new(None, None, true, caps, libfabric::enums::EndpointType::Msg);
+    config.buf_size = 1 << 23;
+    config.use_cntrs_for_completion = CntrsCompMeth::Spin;
+    config.use_cqs_for_completion = CqsCompMeth::None;
+
+    let config = config.build(|_| true);
+
+    let info = Ofi::new(config).unwrap();
+
 
     for size in TEST_SIZES {
-        info.pingpong_rma(10, 100, true, size, WINDOW_SIZE);
+        info.pingpong_tagged(10, 100, true, size);
     }
 }
 
 #[test]
-fn connected_pp_client_rma() {
+fn connected_pp_client_tagged_cntr() {
 
-    let caps = InfoCaps::new().msg().rma();
-    let mut info = handshake(Some("172.17.110.4"), false, "connected_pp_rma", Some(caps), 1 << 23);
-    info.exchange_keys();
+    let caps = InfoCaps::new().msg().tagged();
+    let mut config = TestConfigBuilder::new(Some("172.17.110.4"), None, false, caps, libfabric::enums::EndpointType::Msg);
+    config.buf_size = 1 << 23;
+    config.use_cntrs_for_completion = CntrsCompMeth::Spin;
+    config.use_cqs_for_completion = CqsCompMeth::None;
+
+    let config = config.build(|_| true);
+
+    let info = Ofi::new(config).unwrap();
 
     for size in TEST_SIZES {
-        info.pingpong_rma(10, 100, false, size, WINDOW_SIZE);
+        info.pingpong_tagged(10, 100, false, size);
     }
 
 }
 
 
 #[test]
-fn pp_server_rma() {
+fn pp_server_tagged_cntr() {
 
-    let caps = InfoCaps::new().msg().rma();
-    let mut info = handshake_connectionless(Some("172.17.110.4"), true, "pp_rma", Some(caps), 1 << 23);
-    info.exchange_keys();
+    let caps = InfoCaps::new().msg().tagged();
+    let mut config = TestConfigBuilder::new(None, None, true, caps, libfabric::enums::EndpointType::Rdm);
+    config.buf_size = 1 << 23;
+    config.use_cntrs_for_completion = CntrsCompMeth::Spin;
+    config.use_cqs_for_completion = CqsCompMeth::None;
+
+    let config = config.build(|_| true);
+    let info = Ofi::new(config).unwrap();
 
     for size in TEST_SIZES {
-        info.pingpong_rma(10, 100, true, size, WINDOW_SIZE);
+        info.pingpong_tagged(10, 100, true, size);
     }
 
 }
 
 #[test]
-fn pp_client_rma() {
+fn pp_client_tagged_cntr() {
 
-    let caps = InfoCaps::new().msg().rma();
-    let mut info = handshake_connectionless(Some("172.17.110.4"), false, "pp_rma", Some(caps), 1 << 23);
-    info.exchange_keys();
+    let caps = InfoCaps::new().msg().tagged();
+    let mut config = TestConfigBuilder::new(Some("172.17.110.4"), None, false, caps, libfabric::enums::EndpointType::Rdm);
+    config.buf_size = 1 << 23;
+    config.use_cntrs_for_completion = CntrsCompMeth::Spin;
+    config.use_cqs_for_completion = CqsCompMeth::None;
+
+    let config = config.build(|_| true);
+    let info = Ofi::new(config).unwrap();
 
     for size in TEST_SIZES {
-        info.pingpong_rma(10, 100, false, size, WINDOW_SIZE);
+        info.pingpong_tagged(10, 100, false, size);
     }
 }

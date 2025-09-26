@@ -8,9 +8,9 @@ pub mod sync_collective {
 
     fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, MultiCastGroup) {
         let mut ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().collective()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().collective()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().collective()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().collective()))
         };
 
         ofi.exchange_keys();

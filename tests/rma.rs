@@ -7,9 +7,9 @@ pub mod sync_rma {
     
     fn writeread(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().rma()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().rma()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().rma()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().rma()))
         };
 
         ofi.exchange_keys();
@@ -161,9 +161,9 @@ pub mod sync_rma {
 
     fn writereadmsg(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().rma()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().rma()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().rma()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().rma()))
         };
 
         ofi.exchange_keys();

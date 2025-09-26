@@ -23,13 +23,7 @@
 // };
 // use libfabric::{enums, MemAddressInfo, RemoteMemAddressInfo};
 // use std::time::Instant;
-// pub enum CompMeth {
-//     Spin,
-//     Sread,
-//     WaitSet,
-//     WaitFd,
-//     Yield,
-// }
+
 
 // pub type EventQueueOptions = libfabric::eq_caps_type!(EqCaps::WAIT);
 // pub type DefaultCntr = libfabric::cntr_caps_type!(CntrCaps::WAIT);
@@ -3269,11 +3263,11 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
 
                 self.send(0..size, None, false);
                 if size > self.info_entry.tx_attr().inject_size() {
-                    self.spin_wait_tx(1);
+                    self.wait_tx(1);
                     // self.cq_type.tx_cq().sread(1, -1).unwrap();
                 }
                 self.recv(0..size, false);
-                self.spin_wait_rx(1);
+                self.wait_rx(1);
                 // self.cq_type.rx_cq().sread(1, -1).unwrap();
             }
         } else {
@@ -3283,12 +3277,12 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 }
 
                 self.recv(0..size, false);
-                self.spin_wait_rx(1);
+                self.wait_rx(1);
                 
                 // self.cq_type.rx_cq().sread(1, -1).unwrap();
                 self.send(0..size, None, false);
                 if size > self.info_entry.tx_attr().inject_size() {
-                    self.spin_wait_tx(1);
+                    self.wait_tx(1);
                     // self.cq_type.tx_cq().sread(1, -1).unwrap();
                 }
             }
@@ -3327,10 +3321,10 @@ impl<I: MsgDefaultCap + TagDefaultCap + 'static> Ofi<I> {
 
                 self.tsend(0..size, 0, None, false);
                 if size > self.info_entry.tx_attr().inject_size() {
-                    self.cq_type.tx_cq().sread(1, -1).unwrap();
+                    self.wait_tx(1);
                 }
                 self.trecv(0..size, 0, false);
-                self.cq_type.rx_cq().sread(1, -1).unwrap();
+                self.wait_rx(1);
             }
         } else {
             for i in 0..warmup + iters {
@@ -3339,10 +3333,10 @@ impl<I: MsgDefaultCap + TagDefaultCap + 'static> Ofi<I> {
                 }
 
                 self.trecv(0..size, 0, false);
-                self.cq_type.rx_cq().sread(1, -1).unwrap();
+                self.wait_rx(1);
                 self.tsend(0..size, 0, None, false);
                 if size > self.info_entry.tx_attr().inject_size() {
-                    self.cq_type.tx_cq().sread(1, -1).unwrap();
+                    self.wait_tx(1);
                 }
             }
         }
@@ -3384,7 +3378,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
             // j += 1;
             // if j == window_size  {
                 if size > self.info_entry.tx_attr().inject_size() {
-                    self.cq_type.tx_cq().sread(1, -1).unwrap();
+                    self.wait_tx(1);
                 }
                 // j = 0;
             // }
@@ -3738,6 +3732,8 @@ impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
 use libfabric::av::NoBlockAddressVector;
 use libfabric::cntr::Counter;
 use libfabric::cntr::CounterBuilder;
+use libfabric::cntr::ReadCntr;
+use libfabric::cntr::WaitCntr;
 use libfabric::comm::atomic::AtomicCASRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::AtomicFetchRemoteMemAddrSliceEp;
 use libfabric::comm::atomic::AtomicWriteRemoteMemAddrSliceEp;
@@ -3759,6 +3755,8 @@ use libfabric::comm::tagged::TagSendEpMrSlice;
 use libfabric::eq::Event;
 use libfabric::eq::EventQueue;
 use libfabric::eq::ReadEq;
+use libfabric::info::InfoBuilder;
+use libfabric::infocapsoptions::InfoCaps;
 use libfabric::mr::MemoryRegionSlice;
 use libfabric::mr::MemoryRegionSliceMut;
 use libfabric::AsFiType;
@@ -3766,6 +3764,7 @@ use libfabric::RemoteMemAddrSlice;
 use libfabric::RemoteMemAddrSliceMut;
 use std::cell::RefCell;
 use std::ops::Range;
+use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 pub type EqOptions = libfabric::eq_caps_type!(EqCaps::WAIT);
 
@@ -3879,12 +3878,16 @@ pub struct Ofi<I> {
     pub av: Option<NoBlockAddressVector>,
     pub eq: EventQueue<EqOptions>,
     pub ctx: RefCell<libfabric::Context>,
-    // pub tx_cntr: Counter<DefaultCntr>,
-    // pub rx_cntr: Counter<DefaultCntr>,
-    // pub tx_pending_cnt: AtomicUsize,
-    // pub tx_complete_cnt: AtomicUsize,
-    // pub rx_pending_cnt: AtomicUsize,
-    // pub rx_complete_cnt: AtomicUsize,
+    pub use_shared_cqs: bool,
+    pub use_cntrs_for_completion: CntrsCompMeth,
+    pub use_cqs_for_completion: CqsCompMeth,
+    pub server: bool,
+    pub tx_cntr: Option<Counter<DefaultCntr>>,
+    pub rx_cntr: Option<Counter<DefaultCntr>>,
+    pub tx_pending_cnt: RefCell<usize>,
+    pub tx_complete_cnt: RefCell<usize>,
+    pub rx_pending_cnt: RefCell<usize>,
+    pub rx_complete_cnt: RefCell<usize>,
 }
 
 
@@ -3923,19 +3926,16 @@ pub fn ft_progress(cq: &impl ReadCq) {
 
 impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
     pub fn new(
-        info_entry: InfoEntry<I>,
-        shared_cqs: bool,
-        server: bool,
-        name: &str,
-        buf_size: usize,
+        config: TestConfig<I>,
     ) -> Result<Self, Error> {
-        // if server {
-        //     unsafe { std::env::set_var(name, "1") };
-        // } else {
-        //     while std::env::var(name).is_err() {
-        //         std::thread::yield_now();
-        //     }
-        // }
+        if config.server && !config.name.is_empty(){
+            unsafe { std::env::set_var(&config.name, "1") };
+        } else if !config.server && !config.name.is_empty() {
+            while std::env::var(&config.name).is_err() {
+                std::thread::yield_now();
+            }
+        }
+        let info_entry = config.info_entry;
 
         let format = if info_entry.caps().is_tagged() {
             CqFormat::Tagged
@@ -3961,16 +3961,16 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
         let cq_type;
         let mr;
 
-        // let mut tx_pending_cnt: usize = 0;
-        // let mut tx_complete_cnt: usize = 0;
-        // let mut rx_pending_cnt: usize = 0;
-        // let mut rx_complete_cnt: usize = 0;
-        let mut reg_mem = vec![0u8; buf_size];
-
-        let (info_entry, ep, tx_context, rx_context, mapped_addr, av, eq) = {
+        let mut tx_pending_cnt: usize = 0;
+        let mut tx_complete_cnt: usize = 0;
+        let mut rx_pending_cnt: usize = 0;
+        let mut rx_complete_cnt: usize = 0;
+        let mut reg_mem = vec![0u8; config.buf_size];
+        let selective_comp = matches!(config.use_cqs_for_completion, CqsCompMeth::None);
+        let (info_entry, ep, tx_context, rx_context, mapped_addr, av, eq, tx_cntr, rx_cntr) = {
             let (info_entry, eq) = if matches!(ep_type, EndpointType::Msg) {
                 let eq = EventQueueBuilder::new(&fabric).build().unwrap();
-                if server {
+                if config.server {
                     let pep = EndpointBuilder::new(&info_entry)
                         .build_passive(&fabric)
                         .unwrap();
@@ -3990,7 +3990,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
             domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
 
-            cq_type = if shared_cqs {
+            cq_type = if config.use_shared_cqs {
                 CqType::Shared(shared_cq_builder.build(&domain).unwrap())
             } else {
                 CqType::Separate((
@@ -4003,22 +4003,28 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
             let ep = match cq_type {
                 CqType::Separate((ref tx_cq, ref rx_cq)) => ep_builder
-                    .build_with_separate_cqs(&domain, tx_cq, false, rx_cq, false)
+                    .build_with_separate_cqs(&domain, tx_cq, selective_comp, rx_cq, selective_comp)
                     .unwrap(),
 
                 CqType::Shared(ref scq) => ep_builder
-                    .build_with_shared_cq(&domain, scq, false)
+                    .build_with_shared_cq(&domain, scq, selective_comp)
                     .unwrap(),
             };
-            // let tx_cntr = CounterBuilder::new()
-            //     .events(libfabric::enums::CounterEvents::Comp)
-            //     .build(&domain);
-
+            let (tx_cntr, rx_cntr) = if matches!(config.use_cntrs_for_completion, CntrsCompMeth::None) {
+                (None,None)
+            }
+            else {
+                (
+                    Some(CounterBuilder::new()
+                        .build(&domain)
+                        .unwrap())
+                    ,
+                    Some(CounterBuilder::new()
+                        .build(&domain)
+                        .unwrap())
+                )
+            };
             
-            // let rx_cntr = CounterBuilder::new()
-            //     .events(libfabric::enums::CounterEvents::Comp)
-            //     .build(&domain);
-
 
             match ep {
                 Endpoint::Connectionless(ep) => {
@@ -4035,6 +4041,19 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             .unwrap(),
                     };
                     ep.bind_eq(&eq)?;
+                    if !matches!(config.use_cntrs_for_completion, CntrsCompMeth::None) {
+                        ep.bind_cntr()
+                            .send()
+                            .write()
+                            .cntr(&tx_cntr.as_ref().unwrap())
+                            .unwrap();
+                        
+                        ep.bind_cntr()
+                            .recv()
+                            .read()
+                            .cntr(&rx_cntr.as_ref().unwrap())
+                            .unwrap();
+                    }
                     let ep = ep.enable(&av).unwrap();
                     let tx_context = TxContextBuilder::new(&ep, 0).build();
 
@@ -4107,8 +4126,16 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             None,
                             &mapped_addresses[1]
                         );
-                        cq_type.tx_cq().sread(1, -1).unwrap();
 
+                        if !matches!(config.use_cqs_for_completion, CqsCompMeth::None) {
+                            cq_type.tx_cq().sread(1, -1).unwrap();
+                        }
+                        else if !matches!(config.use_cntrs_for_completion, CntrsCompMeth::None){
+                            tx_cntr.as_ref().unwrap().wait(1, -1).unwrap();
+                        }
+                        else {
+                            panic!("One of Completion Queues or Counters needs to be enabled");
+                        }
                         // ep.recv(std::slice::from_mut(&mut ack), &mut default_desc()).unwrap();
                         post!(
                             recv_from_any,
@@ -4118,7 +4145,20 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             std::slice::from_mut(&mut reg_mem[0]),
                             None
                         );
-                        cq_type.rx_cq().sread(1, -1).unwrap();
+
+                        if !matches!(config.use_cqs_for_completion, CqsCompMeth::None) {
+                            cq_type.rx_cq().sread(1, -1).unwrap();
+                        }
+                        else if !matches!(config.use_cntrs_for_completion, CntrsCompMeth::None){
+                            rx_cntr.as_ref().unwrap().wait(1, -1).unwrap();
+                        }
+                        else {
+                            panic!("One of Completion Queues or Counters needs to be enabled");
+                        }
+                        tx_pending_cnt += 1;
+                        rx_pending_cnt += 1;
+                        tx_complete_cnt += 1;
+                        rx_complete_cnt += 1;
                         mapped_addresses
                     } else {
                         let epname = ep.getname().unwrap();
@@ -4134,7 +4174,17 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             &mut reg_mem[..addrlen],
                             mr_desc
                         );
-                        cq_type.rx_cq().sread(1, -1).unwrap();
+
+                        if !matches!(config.use_cqs_for_completion, CqsCompMeth::None) {
+                            cq_type.rx_cq().sread(1, -1).unwrap();
+                        }
+                        else if !matches!(config.use_cntrs_for_completion, CntrsCompMeth::None){
+                            rx_cntr.as_ref().unwrap().wait(1, -1).unwrap();
+                        }
+                        else {
+                            panic!("One of Completion Queues or Counters needs to be enabled");
+                        }
+                        // cq_type.rx_cq().sread(1, -1).unwrap();
                         // ep.recv(&mut reg_mem, &mut mr_desc).unwrap();
                         let remote_address = unsafe { Address::from_bytes(&reg_mem) };
                         let all_addresses = [epname, remote_address];
@@ -4164,8 +4214,20 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             mr_desc,
                             &mapped_addresses[1]
                         );
-                        cq_type.tx_cq().sread(1, -1).unwrap();
-
+                        if !matches!(config.use_cqs_for_completion, CqsCompMeth::None) {
+                            cq_type.tx_cq().sread(1, -1).unwrap();
+                        }
+                        else if !matches!(config.use_cntrs_for_completion, CntrsCompMeth::None){
+                            tx_cntr.as_ref().unwrap().wait(1, -1).unwrap();
+                        }
+                        else {
+                            panic!("One of Completion Queues or Counters needs to be enabled");
+                        }
+                        // cq_type.tx_cq().sread(1, -1).unwrap();
+                        tx_pending_cnt += 1;
+                        rx_pending_cnt += 1;
+                        tx_complete_cnt += 1;
+                        rx_complete_cnt += 1;
                         mapped_addresses
                     };
                     (
@@ -4176,10 +4238,25 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         Some(mapped_addresses),
                         Some(av),
                         eq,
+                        tx_cntr,
+                        rx_cntr
                     )
                 }
                 Endpoint::ConnectionOriented(ep) => {
                     let eq = eq.unwrap();
+                    if !matches!(config.use_cntrs_for_completion, CntrsCompMeth::None) {
+                        ep.bind_cntr()
+                            .send()
+                            .write()
+                            .cntr(&tx_cntr.as_ref().unwrap())
+                            .unwrap();
+                        
+                        ep.bind_cntr()
+                            .recv()
+                            .read()
+                            .cntr(&rx_cntr.as_ref().unwrap())
+                            .unwrap();
+                    }
                     let ep = ep.enable(&eq).unwrap();
 
                     let connection_pending = match ep {
@@ -4252,12 +4329,15 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         None,
                         None,
                         eq,
+                        tx_cntr,
+                        rx_cntr
                     )
                 }
             }
         };
-        if server {
-            unsafe { std::env::remove_var(name) };
+        if config.server && !config.name.is_empty() {
+
+            unsafe { std::env::remove_var(&config.name) };
         }
         let ctx=   RefCell::new(info_entry.allocate_context());
         Ok(Self {
@@ -4274,10 +4354,16 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
             av,
             eq,
             ctx,
-            // tx_pending_cnt,
-            // tx_complete_cnt,
-            // rx_pending_cnt,
-            // rx_complete_cnt,
+            use_cntrs_for_completion: config.use_cntrs_for_completion,
+            use_cqs_for_completion: config.use_cqs_for_completion,
+            use_shared_cqs: config.use_shared_cqs,
+            server: config.server,
+            tx_cntr,
+            rx_cntr,
+            tx_pending_cnt: RefCell::new(tx_pending_cnt),
+            tx_complete_cnt: RefCell::new(tx_complete_cnt),
+            rx_pending_cnt: RefCell::new(rx_pending_cnt),
+            rx_complete_cnt: RefCell::new(rx_complete_cnt),
         })
     }
 }
@@ -4307,7 +4393,39 @@ impl<I> Ofi<I> {
 
 
 impl<I> Ofi<I> {
-    pub fn spin_wait_tx(&self, to_wait: usize)  {
+    pub fn wait_tx(&self, to_wait: usize) {
+        match self.use_cqs_for_completion {
+            CqsCompMeth::None => {},
+            CqsCompMeth::Spin => self.spin_wait_cq_tx(to_wait),
+            CqsCompMeth::Sread | CqsCompMeth::Yield | CqsCompMeth::WaitFd | CqsCompMeth::WaitSet => {self.cq_type.tx_cq().sread(to_wait, -1).unwrap();},
+        }
+
+        match self.use_cntrs_for_completion {
+            CntrsCompMeth::None => {},
+            CntrsCompMeth::Spin => self.spin_wait_cntr_tx(to_wait),
+            CntrsCompMeth::Sread => todo!(),
+            CntrsCompMeth::Yield => todo!(),
+        }
+        *self.tx_complete_cnt.borrow_mut() += to_wait;
+    }
+
+    pub fn wait_rx(&self, to_wait: usize) {
+        match self.use_cqs_for_completion {
+            CqsCompMeth::None => {},
+            CqsCompMeth::Spin => self.spin_wait_cq_rx(to_wait),
+            CqsCompMeth::Sread | CqsCompMeth::Yield | CqsCompMeth::WaitFd | CqsCompMeth::WaitSet => {self.cq_type.rx_cq().sread(to_wait, -1).unwrap();},
+        }
+
+        match self.use_cntrs_for_completion {
+            CntrsCompMeth::None => {},
+            CntrsCompMeth::Spin => self.spin_wait_cntr_rx(to_wait),
+            CntrsCompMeth::Sread | CntrsCompMeth::Yield => {self.rx_cntr.as_ref().unwrap().wait((*self.tx_complete_cnt.borrow() + to_wait) as u64, -1).unwrap();},
+        }
+
+        *self.rx_complete_cnt.borrow_mut() += to_wait;
+    }
+
+    pub fn spin_wait_cq_tx(&self, to_wait: usize)  {
         for _ in 0..to_wait {
             loop {
                 if let Ok(_) = self.cq_type.tx_cq().read(1) {
@@ -4316,8 +4434,15 @@ impl<I> Ofi<I> {
             }
         }
     } 
+
+    pub fn spin_wait_cntr_tx(&self, to_wait: usize)  {
+        let mut cnt = self.tx_cntr.as_ref().unwrap().read();
+        while *self.tx_complete_cnt.borrow() + to_wait > cnt as usize {
+            cnt = self.tx_cntr.as_ref().unwrap().read();
+        }
+    } 
     
-    pub fn spin_wait_rx(&self, to_wait: usize)  {
+    pub fn spin_wait_cq_rx(&self, to_wait: usize)  {
         for _ in 0..to_wait {
             loop {
                 if let Ok(_) = self.cq_type.rx_cq().read(1) {
@@ -4326,14 +4451,138 @@ impl<I> Ofi<I> {
             }
         }
     } 
+
+    pub fn spin_wait_cntr_rx(&self, to_wait: usize)  {
+        let mut cnt = self.rx_cntr.as_ref().unwrap().read();
+        while *self.rx_complete_cnt.borrow() + to_wait > cnt as usize {
+            cnt = self.rx_cntr.as_ref().unwrap().read();
+        }
+    } 
+    
 }
+
+pub enum CqsCompMeth {
+    None,
+    Spin,
+    Sread,
+    WaitSet,
+    WaitFd,
+    Yield,
+}
+
+pub enum CntrsCompMeth {
+    None,
+    Spin,
+    Sread,
+    Yield,
+}
+
+
+pub struct TestConfigBuilder<I> {
+    info_builder: InfoBuilder<I>,
+    pub use_shared_cqs: bool,
+    pub use_cntrs_for_completion: CntrsCompMeth,
+    pub use_cqs_for_completion: CqsCompMeth,
+    pub buf_size: usize,
+    pub name: String,
+    server: bool,
+}
+
+pub struct TestConfig<I> {
+    info_entry: InfoEntry<I>,
+    use_shared_cqs: bool,
+    use_cntrs_for_completion: CntrsCompMeth,
+    use_cqs_for_completion: CqsCompMeth,
+    buf_size: usize,
+    server: bool,
+    name: String,
+}
+
+impl<I: Caps> TestConfigBuilder<I> {
+    pub fn new(node: Option<&str>, service: Option<&str>, server: bool, caps: I, eptype: EndpointType) -> Self {
+        let info_builder = Info::new(&libfabric::info::libfabric_version())
+                    .enter_hints()
+                    .enter_ep_attr()
+                        .type_(eptype)
+                    // .tx_ctx_cnt(1)
+                    // .rx_ctx_cnt(1)
+                    .leave_ep_attr()
+                    .enter_domain_attr()
+                    .mr_mode(
+                        libfabric::enums::MrMode::new()
+                            .prov_key()
+                            .allocated()
+                            .virt_addr()
+                            .local()
+                            .endpoint()
+                            .raw(),
+                    )
+                    .leave_domain_attr()
+                    .enter_tx_attr()
+                    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
+                    // .op_flags(libfabric::enums::TransferOptions::new().delivery_complete())
+                    .leave_tx_attr()
+                    .enter_rx_attr()
+                    // .caps(RxCaps::new().recv().collective())
+                    .leave_rx_attr()
+                    .addr_format(libfabric::enums::AddressFormat::Unspec)
+                    .caps(caps)
+                    .leave_hints();
+        
+        let info_builder = if server {
+            info_builder.source(libfabric::info::ServiceAddress::Service(service.unwrap_or("9222").to_owned()))
+        }
+        else {
+            info_builder
+                .node(node.expect("Error: No server IP specified"))
+                .service(service.unwrap_or("9222"))
+        };
+
+        Self {
+            info_builder,
+            use_shared_cqs: false,
+            use_cntrs_for_completion: CntrsCompMeth::None,
+            use_cqs_for_completion: CqsCompMeth::Spin,
+            buf_size: 1024* 1024 * 2,
+            server,
+            name: "".to_string(),
+        }
+    }
+
+    pub fn modify_info<F>(self, mut closure: F)  -> Self where F: FnMut(InfoBuilder<I>) -> InfoBuilder<I> {
+        let new_info = closure(self.info_builder);
+        
+        Self {
+            info_builder: new_info,
+            ..self
+        }
+    }
+
+
+    pub fn build<F>(self, filter: F) -> TestConfig<I> where F: Fn(&InfoEntry<I>) -> bool {
+        let info = self.info_builder.get().unwrap();
+        let info_entry = info.into_iter().find(filter).unwrap();
+        if matches!(self.use_cntrs_for_completion, CntrsCompMeth::None) && matches!(self.use_cqs_for_completion, CqsCompMeth::None) {
+            panic!("Either Counters or Completions Queues need to be chosen");
+        }
+        TestConfig {
+            info_entry,
+            use_shared_cqs:  self.use_shared_cqs,
+            use_cntrs_for_completion:  self.use_cntrs_for_completion,
+            use_cqs_for_completion:  self.use_cqs_for_completion,
+            buf_size: self.buf_size,
+            server: self.server,
+            name: self.name,
+        }
+    }
+}
+
 
 pub fn handshake<I: Caps + MsgDefaultCap + 'static>(
     user_ip: Option<&str>,
     server: bool,
     name: &str,
     caps: Option<I>,
-    buf_size: usize
 ) -> Ofi<I> {
     let caps = caps.unwrap();
     let ep_type: EndpointType = EndpointType::Msg;
@@ -4346,8 +4595,14 @@ pub fn handshake<I: Caps + MsgDefaultCap + 'static>(
     if let Some(user_ip) = user_ip {
         ip = user_ip.to_string();
     }
+    
+    let mut configbuilder = TestConfigBuilder::new(Some(&ip), None, server, caps, ep_type);
+    configbuilder.name = name.to_string();
 
-    let info = gen_info(ep_type, caps, false, server, &ip, name, buf_size);
+    let config = configbuilder.build(|_| true);
+
+
+    let info = Ofi::new(config).unwrap();
     info
 }
 
@@ -4357,7 +4612,6 @@ pub fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
     server: bool,
     name: &str,
     caps: Option<I>,
-    buf_size: usize,
 ) -> Ofi<I> {
     let caps = caps.unwrap();
     let ep_type = EndpointType::Rdm;
@@ -4371,16 +4625,13 @@ pub fn handshake_connectionless<I: MsgDefaultCap + Caps + 'static>(
         ip = user_ip.to_string();
     }
 
-    let info = gen_info(
-        ep_type,
-        caps,
-        false,
-        server,
-        ip.strip_suffix("\n").unwrap_or(&ip),
-        name,
-        buf_size
-    );
+    let mut configbuilder = TestConfigBuilder::new(Some(&ip), None, server, caps, ep_type);
+    configbuilder.name = name.to_string();
 
+    let config = configbuilder.build(|_| true);
+
+
+    let info = Ofi::new(config).unwrap();
     info
 }
 
@@ -4401,7 +4652,9 @@ fn conn_send<T>(
     desc: Option<MemoryRegionDesc>,
     data: Option<u64>,
     max_inject_size: usize,
+     tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
+    *tx_complete_cnt.borrow_mut() +=1;
     if buf.len() <= max_inject_size {
         if let Some(data) = data {
             sender.injectdata(buf, data)
@@ -4421,8 +4674,10 @@ fn conn_send_mr(
     mr_slice: &MemoryRegionSlice,
     data: Option<u64>,
     max_inject_size: usize,
+    tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
     if mr_slice.as_slice().len() <= max_inject_size {
+        *tx_complete_cnt.borrow_mut() +=1;
         if data.is_some() {
             sender.injectdata_mr_slice(mr_slice, data.unwrap())
         } else {
@@ -4444,8 +4699,10 @@ fn connless_send<T>(
     data: Option<u64>,
     addr: &MyRc<MappedAddress>,
     max_inject_size: usize,
+    tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
+        *tx_complete_cnt.borrow_mut() +=1;
         if let Some(data) = data {
             sender.injectdata_to(buf, data, addr.as_ref())
         } else {
@@ -4464,8 +4721,10 @@ fn connless_send_mr(
     data: Option<u64>,
     addr: &MyRc<MappedAddress>,
     max_inject_size: usize,
+    tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
     if mr_slice.as_slice().len() <= max_inject_size {
+        *tx_complete_cnt.borrow_mut() +=1;
         if data.is_some() {
             sender.injectdata_mr_slice_to(mr_slice, data.unwrap(), addr.as_ref())
         } else {
@@ -4569,8 +4828,10 @@ fn conn_tsend<T>(
     tag: u64,
     data: Option<u64>,
     max_inject_size: usize,
+     tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
+        *tx_complete_cnt.borrow_mut() += 1;
         if let Some(data) = data {
             sender.tinjectdata(buf, data, tag)
         } else {
@@ -4589,8 +4850,11 @@ fn conn_tsend_mr(
     tag: u64,
     data: Option<u64>,
     max_inject_size: usize,
+     tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
     if mr_slice.as_slice().len() <= max_inject_size {
+        *tx_complete_cnt.borrow_mut() += 1;
+
         if data.is_some() {
             sender.tinjectdata_mr_slice(mr_slice, data.unwrap(), tag)
         } else {
@@ -4613,8 +4877,11 @@ fn connless_tsend<T>(
     data: Option<u64>,
     addr: &MyRc<MappedAddress>,
     max_inject_size: usize,
+     tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
     if buf.len() <= max_inject_size {
+        *tx_complete_cnt.borrow_mut() += 1;
+
         if let Some(data) = data {
             sender.tinjectdata_to(buf, data, addr.as_ref(), tag)
         } else {
@@ -4635,8 +4902,11 @@ fn connless_tsend_mr(
     data: Option<u64>,
     addr: &MyRc<MappedAddress>,
     max_inject_size: usize,
+     tx_complete_cnt: &RefCell<usize>,
 ) -> Result<(), libfabric::error::Error> {
     if mr_slice.as_slice().len() <= max_inject_size {
+        *tx_complete_cnt.borrow_mut() += 1;
+
         if data.is_some() {
             sender.tinjectdata_mr_slice_to(mr_slice, data.unwrap(), addr.as_ref(), tag)
         } else {
@@ -4786,9 +5056,10 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt
                     ),
                     MyEndpoint::Connected(ep) => {
-                        conn_send(ep, buf, desc, data, self.info_entry.tx_attr().inject_size())
+                        conn_send(ep, buf, desc, data, self.info_entry.tx_attr().inject_size(), &self.tx_complete_cnt)
                     }
                 }
             } else {
@@ -4800,6 +5071,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                     MyTxContext::Connected(tx_context) => conn_send(
                         tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
@@ -4807,6 +5079,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                         desc,
                         data,
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                 }
             };
@@ -4815,6 +5088,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn send_mr(
@@ -4832,9 +5106,10 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                     MyEndpoint::Connected(ep) => {
-                        conn_send_mr(ep, mr_slice, data, self.info_entry.tx_attr().inject_size())
+                        conn_send_mr(ep, mr_slice, data, self.info_entry.tx_attr().inject_size(),&self.tx_complete_cnt)
                     }
                 }
             } else {
@@ -4845,12 +5120,14 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                     MyTxContext::Connected(tx_context) => conn_send_mr(
                         tx_context.as_ref().expect("Tx/Rx Contexts not supported"),
                         mr_slice,
                         data,
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                 }
             };
@@ -4858,7 +5135,9 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             if self.check_and_progress(err) {
                 break;
             }
+
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn send_with_context(
@@ -4876,6 +5155,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             let err = match &self.ep {
                 MyEndpoint::Connectionless(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                        *self.tx_complete_cnt.borrow_mut() +=1;
                         if let Some(data) = data {
                             ep.injectdata_to(
                                 buf,
@@ -4904,6 +5184,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 }
                 MyEndpoint::Connected(ep) => {
                     if buf.len() <= self.info_entry.tx_attr().inject_size() {
+                        *self.tx_complete_cnt.borrow_mut() +=1;
                         if let Some(data) = data {
                             ep.injectdata(buf, data)
                         } else {
@@ -4921,6 +5202,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn sendv(&self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, use_context: bool) {
@@ -4930,7 +5212,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                     MyEndpoint::Connectionless(ep) => {
                         connless_sendv(ep, iov, desc, &self.mapped_addr.as_ref().unwrap()[1])
                     }
-                    MyEndpoint::Connected(ep) => conn_sendv(ep, iov, desc),
+                    MyEndpoint::Connected(ep) => conn_sendv(ep, iov, desc,),
                 }
             } else {
                 match &self.tx_context {
@@ -4952,6 +5234,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn recvv(&self, iov: &[IoVecMut], desc: Option<&[MemoryRegionDesc]>) {
@@ -4967,6 +5250,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn recv(&self, range: Range<usize>, use_context: bool) {
@@ -5003,6 +5287,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn recv_mr(&self, mr_slice: &mut MemoryRegionSliceMut, use_context: bool) {
@@ -5032,6 +5317,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn sendmsg(&self, msg: &Either<Msg, MsgConnected>, use_context: bool) {
@@ -5076,6 +5362,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn recvmsg(&self, msg: &Either<MsgMut, MsgConnectedMut>, use_context: bool) {
@@ -5116,6 +5403,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn exchange_addresses(&mut self) -> Address {
@@ -5129,8 +5417,8 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
 
         self.send(0..address_bytes.len(), None, false);
         self.recv(0..address_bytes.len(), false);
-        self.cq_type.rx_cq().sread(1, -1).unwrap();
-
+        self.wait_rx(1);
+        
         unsafe { Address::from_bytes(&self.reg_mem.borrow()[0..address_bytes.len()]) }
     }
 
@@ -5153,7 +5441,8 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
             false,
         );
         
-        self.cq_type.rx_cq().sread(1, -1).unwrap();
+        // self.cq_type.rx_cq().sread(1, -1).unwrap();
+        self.wait_rx(1);
         let mem_info = unsafe { MemAddressInfo::from_bytes(&self.reg_mem.borrow()[mem_bytes.len()..2*mem_bytes.len()]) };
         let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
         println!("Remote addr: {:?}, size: {}", remote_mem_info.mem_address().as_ptr(), remote_mem_info.mem_len());
@@ -5239,6 +5528,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn read(
@@ -5269,6 +5559,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn writev(&self, iov: &[IoVec], dest_addr: usize, desc: Option<&[MemoryRegionDesc]>) {
@@ -5293,6 +5584,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn readv(&self, iov: &[IoVecMut], dest_addr: usize, desc: Option<&[MemoryRegionDesc]>) {
@@ -5317,6 +5609,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     // [TODO] Enabling .remote_cq_data causes the buffer not being written correctly
@@ -5338,6 +5631,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn readmsg(&self, msg: &Either<MsgRmaMut, MsgRmaConnectedMut>) {
@@ -5357,6 +5651,7 @@ impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 }
 
@@ -5384,6 +5679,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                     MyEndpoint::Connected(ep) => conn_tsend(
                         ep,
@@ -5392,6 +5688,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         tag,
                         data,
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                 }
             } else {
@@ -5404,6 +5701,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                     MyTxContext::Connected(tx_context) => conn_tsend(
                         tx_context.as_ref().unwrap(),
@@ -5412,6 +5710,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         tag,
                         data,
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                 }
             };
@@ -5420,6 +5719,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn tsend_mr(
@@ -5439,6 +5739,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                     MyEndpoint::Connected(ep) => conn_tsend_mr(
                         ep,
@@ -5446,6 +5747,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         tag,
                         data,
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                 }
             } else {
@@ -5457,6 +5759,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         data,
                         &self.mapped_addr.as_ref().unwrap()[1],
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                     MyTxContext::Connected(tx_context) => conn_tsend_mr(
                         tx_context.as_ref().unwrap(),
@@ -5464,6 +5767,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                         tag,
                         data,
                         self.info_entry.tx_attr().inject_size(),
+                        &self.tx_complete_cnt,
                     ),
                 }
             };
@@ -5472,6 +5776,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn tsendv(
@@ -5508,6 +5813,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn trecvv(
@@ -5550,6 +5856,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn trecv(
@@ -5594,6 +5901,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn trecv_mr(
@@ -5629,6 +5937,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn tsendmsg(&self, msg: &Either<MsgTagged, MsgTaggedConnected>, use_context: bool) {
@@ -5673,6 +5982,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.tx_pending_cnt.borrow_mut() += 1;
     }
 
     pub fn trecvmsg(&self, msg: &Either<MsgTaggedMut, MsgTaggedConnectedMut>, use_context: bool) {
@@ -5713,6 +6023,7 @@ impl<I: TagDefaultCap> Ofi<I> {
                 break;
             }
         }
+        *self.rx_pending_cnt.borrow_mut() += 1;
     }
 }
 
@@ -6841,68 +7152,7 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
     pub fn sync(&self) -> Result<(), Error> {
         self.send(0..1, None, false);
         self.recv(0..1, false);
-        self.cq_type.rx_cq().sread(1, -1)?;
+        self.wait_rx(1);
         Ok(())
     }
-}
-
-
-// impl<I: MsgDefaultCap + 'static> 
-
-
-
-pub fn gen_info<I: Caps + MsgDefaultCap + 'static>(ep_type: EndpointType, caps: I, shared_cq: bool, server: bool, ip: &str, name: &str, buf_size: usize) -> Ofi<I> {
-    Ofi::new(
-            {
-                let info = Info::new(&libfabric::info::libfabric_version())
-                    .enter_hints()
-                    .enter_ep_attr()
-                    // .tx_ctx_cnt(1)
-                    // .rx_ctx_cnt(1)
-                    .type_(ep_type)
-                    .leave_ep_attr()
-                    .enter_domain_attr()
-                    .mr_mode(
-                        libfabric::enums::MrMode::new()
-                            .prov_key()
-                            .allocated()
-                            .virt_addr()
-                            .local()
-                            .endpoint()
-                            .raw(),
-                    )
-                    .leave_domain_attr()
-                    .enter_tx_attr()
-                    .traffic_class(libfabric::enums::TrafficClass::LowLatency)
-                    // .op_flags(libfabric::enums::TransferOptions::new().delivery_complete())
-                    .leave_tx_attr()
-                    .enter_rx_attr()
-                    // .caps(RxCaps::new().recv().collective())
-                    .leave_rx_attr()
-                    .addr_format(libfabric::enums::AddressFormat::Unspec)
-                    .caps(caps)
-                    .leave_hints();
-                if server {
-                    info.source(libfabric::info::ServiceAddress::Service("9222".to_owned()))
-                        .get()
-                        .unwrap()
-                        .into_iter()
-                        .next()
-                        .unwrap()
-                } else {
-                    info.node(ip.strip_suffix("\n").unwrap_or(&ip))
-                        .service("9222")
-                        .get()
-                        .unwrap()
-                        .into_iter()
-                        .next()
-                        .unwrap()
-                }
-            },
-            shared_cq,
-            server,
-            name,
-            buf_size
-        )
-        .unwrap()
 }

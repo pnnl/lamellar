@@ -9,8 +9,7 @@ pub mod sync_connless_ep {
             None,
             true,
             "handshake_connectionless0",
-            Some(InfoCaps::new().msg()),
-            DEFAULT_BUF_SIZE
+            Some(InfoCaps::new().msg())
         );
     }
 
@@ -20,8 +19,7 @@ pub mod sync_connless_ep {
             None,
             false,
             "handshake_connectionless0",
-            Some(InfoCaps::new().msg()),
-            DEFAULT_BUF_SIZE
+            Some(InfoCaps::new().msg())
         );
     }
 

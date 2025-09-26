@@ -8,9 +8,9 @@ pub mod sync_atomic {
 
     fn atomic(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
         ofi.exchange_keys();
@@ -168,9 +168,9 @@ pub mod sync_atomic {
 
     fn atomicmsg(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
         ofi.exchange_keys();

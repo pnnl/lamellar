@@ -7,9 +7,9 @@ pub mod sync_tagged {
 
     fn tsendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().tagged()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().tagged()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().tagged()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().tagged()))
         };
 
 
@@ -206,9 +206,9 @@ pub mod sync_tagged {
 
     fn tsendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().tagged()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().tagged()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().tagged()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().tagged()))
         };
 
         let mut reg_mem: Vec<_> = (0..1024 * 2)

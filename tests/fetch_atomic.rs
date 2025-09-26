@@ -14,9 +14,9 @@ pub mod sync_fetch_atomic {
 
     fn fetch_atomic(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
         ofi.exchange_keys();
@@ -312,9 +312,9 @@ pub mod sync_fetch_atomic {
 
     fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
         ofi.exchange_keys();

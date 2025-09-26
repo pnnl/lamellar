@@ -8,9 +8,9 @@ pub mod sync_msg {
     use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, Either, DEFAULT_BUF_SIZE};
     fn sendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()))
         };
 
         // ofi.reg_mem.borrow_mut().iter_mut().map
@@ -157,9 +157,9 @@ pub mod sync_msg {
 
     fn sendrecvmsg(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()))
         };
 
         let mut reg_mem: Vec<_> = (0..1024 * 2)
@@ -423,9 +423,9 @@ pub mod sync_msg {
 
     fn sendrecvdata(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
-            handshake(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
+            handshake(None, server, name, Some(InfoCaps::new().msg()))
         } else {
-            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE)
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg()))
         };
 
         {

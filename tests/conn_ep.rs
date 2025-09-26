@@ -8,12 +8,12 @@ pub mod sync_conn_ep {
 
     #[test]
     fn handshake_connected0() {
-        handshake(None, true, "handshake_connected0", Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE);
+        handshake(None, true, "handshake_connected0", Some(InfoCaps::new().msg()));
     }
 
     #[test]
     fn handshake_connected1() {
-        handshake(None, false, "handshake_connected0", Some(InfoCaps::new().msg()), DEFAULT_BUF_SIZE);
+        handshake(None, false, "handshake_connected0", Some(InfoCaps::new().msg()));
     }
 }
 

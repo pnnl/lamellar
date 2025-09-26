@@ -1,12 +1,17 @@
+// use libfabric::{enums::EndpointType, infocapsoptions::InfoCaps};
+
+// use crate::sync_::{gen_info, Ofi};
+
+// pub mod sync_; // Public to supress lint warnings (unused function)
+
 // #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 // pub mod async_; // Public to supress lint warnings (unused function)
-// pub mod common;
-// pub mod sync_; // Public to supress lint warnings (unused function) // Public to supress lint warnings (unused function)
+// pub mod common; // Public to supress lint warnings (unused function)
 
 // // #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 // // use async_ as prefix;
 // use libfabric::info::Info;
-// use prefix::{call, define_test, HintsCaps};
+// use prefix::{call, define_test, EndpointCaps, HintsCaps};
 // // #[cfg(not(any(feature = "use-async-std", feature = "use-tokio")))]
 // use sync_ as prefix;
 
@@ -18,13 +23,17 @@
 // // 4. On the client (e.g. pp_client_msg) change  ft_client_connect node(<ip>) and service(<port>) to service and port of the copied ones
 // // 5. Run client (e.g. cargo test pp_client_msg -- --ignored --nocapture)
 
-// define_test!(pp_server_rdm_tagged, asyn_pp_server_rdm_tagged, {
-//     let mut gl_ctx = prefix::TestsGlobalCtx::new();
-
+// define_test!(pp_server_msg, async_pp_server_msg, {
+//     let hostname = std::process::Command::new("hostname")
+//         .output()
+//         .expect("Failed to execute hostname")
+//         .stdout;
+//     let hostname = String::from_utf8(hostname[2..].to_vec()).unwrap();
+//     let ip = "172.17.110.".to_string() + &hostname;
 //     let info = Info::new(&libfabric::info::libfabric_version())
 //         .enter_hints()
 //         .enter_ep_attr()
-//         .type_(libfabric::enums::EndpointType::Rdm)
+//         .type_(libfabric::enums::EndpointType::Msg)
 //         .leave_ep_attr()
 //         .enter_domain_attr()
 //         .mr_mode(
@@ -43,20 +52,23 @@
 //         .addr_format(libfabric::enums::AddressFormat::Unspec);
 
 //     let hintscaps = if true {
-//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))
+//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg().clone()))
 //     } else {
-//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
+//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged().clone()))
 //     };
 
-//     let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
-//         prefix::ft_init_fabric,
+//     // match hintscaps {
+//     // HintsCaps::Msg(hints) => {
+//     let (infocap, fab, eq, pep) = prefix::start_server(
 //         hintscaps,
-//         &mut gl_ctx,
-//         "".to_owned(),
+//         ip.strip_suffix("\n").unwrap_or(&ip).to_owned(),
 //         "9222".to_owned(),
-//         true
 //     );
 
+//     let mut gl_ctx = prefix::TestsGlobalCtx::new();
+
+//     let (cq_type, tx_cntr, rx_cntr, ep, mr) =
+//         call!(prefix::ft_server_connect, &pep, &mut gl_ctx, &eq, &fab);
 //     match infocap {
 //         prefix::InfoWithCaps::Msg(entry) => {
 //             let test_sizes = gl_ctx.test_sizes.clone();
@@ -88,6 +100,16 @@
 //                 &rx_cntr,
 //                 &mr
 //             );
+
+//             match ep {
+//                 EndpointCaps::ConnectedMsg(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 EndpointCaps::ConnectedTagged(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 _ => {}
+//             }
 //         }
 //         prefix::InfoWithCaps::Tagged(entry) => {
 //             let test_sizes = gl_ctx.test_sizes.clone();
@@ -119,11 +141,22 @@
 //                 &rx_cntr,
 //                 &mr
 //             );
+
+//             match ep {
+//                 EndpointCaps::ConnectedMsg(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 EndpointCaps::ConnectedTagged(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 _ => {}
+//             }
 //         }
 //     }
+//     // common::close_all_pep(fab, domain, eq, rx_cq, tx_cq, ep, pep, mr);
 // });
 
-// define_test!(pp_client_rdm_tagged, async_pp_client_rdm_tagged, {
+// define_test!(pp_client_msg, async_pp_client_msg, {
 //     let hostname = std::process::Command::new("hostname")
 //         .output()
 //         .expect("Failed to execute hostname")
@@ -135,7 +168,7 @@
 //     let info = Info::new(&libfabric::info::libfabric_version())
 //         .enter_hints()
 //         .enter_ep_attr()
-//         .type_(libfabric::enums::EndpointType::Rdm)
+//         .type_(libfabric::enums::EndpointType::Msg)
 //         .leave_ep_attr()
 //         .enter_domain_attr()
 //         .mr_mode(
@@ -154,18 +187,20 @@
 //         .addr_format(libfabric::enums::AddressFormat::Unspec);
 
 //     let hintscaps = if true {
-//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg()))
+//         HintsCaps::Msg(info.caps(libfabric::infocapsoptions::InfoCaps::new().msg().clone()))
 //     } else {
-//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged()))
+//         HintsCaps::Tagged(info.caps(libfabric::infocapsoptions::InfoCaps::new().tagged().clone()))
 //     };
 
-//     let (infocap, ep, _domain, cq_type, tx_cntr, rx_cntr, mr, _av) = call!(
-//         prefix::ft_init_fabric,
+//     // match hintscaps {
+//     // HintsCaps::Msg(hints) => {
+
+//     let (infocap, cq_type, tx_cntr, rx_cntr, ep, mr) = call!(
+//         prefix::ft_client_connect,
 //         hintscaps,
 //         &mut gl_ctx,
 //         ip.strip_suffix("\n").unwrap_or(&ip).to_owned(),
-//         "9222".to_owned(),
-//         false
+//         "9222".to_owned()
 //     );
 
 //     match infocap {
@@ -199,6 +234,15 @@
 //                 &rx_cntr,
 //                 &mr
 //             );
+//             match ep {
+//                 EndpointCaps::ConnectedMsg(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 EndpointCaps::ConnectedTagged(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 _ => {}
+//             }
 //         }
 //         prefix::InfoWithCaps::Tagged(entry) => {
 //             let test_sizes = gl_ctx.test_sizes.clone();
@@ -230,59 +274,95 @@
 //                 &rx_cntr,
 //                 &mr
 //             );
+//             match ep {
+//                 EndpointCaps::ConnectedMsg(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 EndpointCaps::ConnectedTagged(ep) => {
+//                     ep.shutdown().unwrap();
+//                 }
+//                 _ => {}
+//             }
 //         }
 //     }
 // });
 
+// impl<I: > Ofi<I> {
+//     fn pingpong
+// }
+
 use libfabric::infocapsoptions::InfoCaps;
 
-use crate::{pp_sizes::TEST_SIZES, sync_::{handshake, handshake_connectionless}};
-mod sync_;
-mod pp_sizes;
+use crate::{pp_sizes::TEST_SIZES, sync_::{handshake, handshake_connectionless, CntrsCompMeth, CqsCompMeth, Ofi, TestConfigBuilder}};
+pub mod sync_;
+pub mod pp_sizes;
 
 #[test]
-fn connected_pp_server_tagged() {
+fn connected_pp_server_msg_cq() {
 
-    let caps = InfoCaps::new().msg().tagged();
-    let info = handshake(Some("172.17.110.4"), true, "conn_pp_tagged", Some(caps), 1 << 23);
+    let caps = InfoCaps::new().msg();
+    let mut config = TestConfigBuilder::new(None, None, true, caps, libfabric::enums::EndpointType::Msg);
+    config.buf_size = 1 << 23;
+
+    let config = config.build(|_| true);
+    let info = Ofi::new(config).unwrap();
+
 
     for size in TEST_SIZES {
-        info.pingpong_tagged(10, 100, true, size);
+        info.pingpong(10, 100, true, size);
     }
 }
 
 #[test]
-fn connected_pp_client_tagged() {
+fn connected_pp_client_msg_cq() {
 
-    let caps = InfoCaps::new().msg().tagged();
-    let info = handshake(Some("172.17.110.4"), false, "conn_pp_tagged", Some(caps), 1 << 23);
-
+    let caps = InfoCaps::new().msg();
+    // let info = handshake(Some("172.17.110.4"), false, "pp_msg", Some(caps), 1 << 23);
+    let mut config = TestConfigBuilder::new(Some("172.17.110.4"), None, false, caps, libfabric::enums::EndpointType::Msg);
+    config.buf_size = 1 << 23;
+    
+    let config = config.build(|_| true);
+    let info = Ofi::new(config).unwrap();
+    
     for size in TEST_SIZES {
-        info.pingpong_tagged(10, 100, false, size);
+        info.pingpong(10, 100, false, size);
     }
 
 }
 
 
 #[test]
-fn pp_server_tagged() {
+fn pp_server_msg_cq() {
 
-    let caps = InfoCaps::new().msg().tagged();
-    let info = handshake_connectionless(Some("172.17.110.4"), true, "pp_tagged", Some(caps), 1 << 23);
+    let caps = InfoCaps::new().msg();
+    let mut config = TestConfigBuilder::new(None, None, true, caps, libfabric::enums::EndpointType::Rdm);
+    config.buf_size = 1 << 23;
+
+
+    let config = config.build(|_| true);
+    let info = Ofi::new(config).unwrap();
+    // let info = handshake_connectionless(Some("172.17.110.4"), true, "pp_msg", Some(caps), 1 << 23);
 
     for size in TEST_SIZES {
-        info.pingpong_tagged(10, 100, true, size);
+        info.pingpong(10, 100, true, size);
     }
 
 }
 
 #[test]
-fn pp_client_tagged() {
+fn pp_client_msg_cq() {
 
-    let caps = InfoCaps::new().msg().tagged();
-    let info = handshake_connectionless(Some("172.17.110.4"), false, "pp_tagged", Some(caps), 1 << 23);
+    let caps = InfoCaps::new().msg();
+    let mut config = TestConfigBuilder::new(Some("172.17.110.4"), None, false, caps, libfabric::enums::EndpointType::Rdm);
+    config.buf_size = 1 << 23;
+
+
+    let config = config.build(|_| true);
+    let info = Ofi::new(config).unwrap();
+    // let info = handshake_connectionless(Some("172.17.110.4"),false, "pp_msg", Some(caps), 1 << 23);
 
     for size in TEST_SIZES {
-        info.pingpong_tagged(10, 100, false, size);
+        info.pingpong(10, 100, false, size);
     }
 }
+
