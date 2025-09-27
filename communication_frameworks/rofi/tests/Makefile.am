@@ -1,6 +1,6 @@
 AM_CFLAGS = -I$(top_srcdir)/src/include
 
-check_PROGRAMS = rofi_init rofi_iput rofi_put rofi_iget rofi_get rofi_pp rofi_alloc rofi_sub_alloc rofi_iput_bw rofi_put_bw rofi_iget_bw rofi_get_bw rofi_multimr rofi_sharray rofi_barrier rofi_index_gather rofi_index_gather_buffered
+check_PROGRAMS = rofi_init rofi_iput rofi_put rofi_iget rofi_get rofi_pp rofi_alloc rofi_sub_alloc rofi_iput_bw rofi_put_bw rofi_iget_bw rofi_get_bw rofi_multimr rofi_sharray rofi_barrier rofi_index_gather rofi_index_gather_buffered rofi_randperf 
 TESTS = $(check_PROGRAMS)
 
 rofi_init_SOURCES      = init.c utils.c utils.h
@@ -78,5 +78,9 @@ rofi_index_gather_LDADD        = ../src/librofi.la -lm
 rofi_index_gather_buffered_SOURCES      = index_gather_buffered.c
 rofi_index_gather_buffered_LDADD        = ../src/librofi.la -lm
 rofi_index_gather_buffered_LDFLAGS      = $(linker_flags)
+
+rofi_randperf_SOURCES      = randperf.c utils.c utils.h
+rofi_randperf_LDADD        = ../src/librofi.la -lm
+rofi_randperf_LDFLAGS      = $(linker_flags)
 
 AM_LDFLAGS = $(LDFLAGS) 
