@@ -3,14 +3,11 @@
 pub mod sync_;
 
 pub mod sync_fetch_atomic {
-    use core::borrow;
-
-    use libfabric::cq::ReadCq;
     use libfabric::iovec::RemoteMemAddrAtomicVec;
     use libfabric::msg::{MsgFetchAtomic, MsgFetchAtomicConnected};
-    use libfabric::{cq::WaitCq, enums::FetchAtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, IocMut}, mr::MemoryRegionBuilder};
+    use libfabric::{cq::WaitCq, enums::FetchAtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, IocMut}};
 
-    use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, Either, DEFAULT_BUF_SIZE};
+    use crate::sync_::tests::{handshake, handshake_connectionless, Either};
 
     fn fetch_atomic(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
@@ -349,8 +346,8 @@ pub mod sync_fetch_atomic {
                 IocMut::from_slice(write_mems.1),
             ];
             let ack_range = 512_usize..512+512;
-            let read_range = 0_usize..256;
-            let write_range = 256_usize..512;
+            // let read_range = 0_usize..256;
+            // let write_range = 256_usize..512;
 
             let borrow = ofi.mr.borrow();
             let mr = borrow.as_ref().unwrap();
@@ -435,139 +432,119 @@ pub mod async_fetch_atomic {
     use libfabric::enums::FetchAtomicOp;
     use libfabric::infocapsoptions::InfoCaps;
     use libfabric::iovec::{Ioc, IocMut, RemoteMemAddrAtomicVec};
-    use libfabric::mr::MemoryRegionBuilder;
     use libfabric::msg::{MsgFetchAtomic, MsgFetchAtomicConnected};
 
-    use crate::async_::{enable_ep_mr, handshake, handshake_connectionless, Either};
+    use crate::async_::{handshake, handshake_connectionless, Either};
 
 
     fn fetch_atomic(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
-        let mut reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
-        } else {
-            vec![1; 1024 * 2]
-        };
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .build(&ofi.domain)
-            .unwrap();
+        ofi.exchange_keys();
 
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
 
         let desc0 = Some(mr.descriptor());
         let desc1 = Some(mr.descriptor());
-        // let mapped_addr = ofi.mapped_addr.clone();
-        let key = mr.key().unwrap();
-        ofi.exchange_keys(&key, &reg_mem[..]);
-        let mut ctx = ofi.info_entry.allocate_context();
+
         if server {
             let mut expected: Vec<_> = vec![1; 256];
-            let (op_mem, ack_mem) = reg_mem.split_at_mut(512);
-            let (mem0, mem1) = op_mem.split_at_mut(256);
+            let mem0_range = 0_usize..256;
+            let mem1_range = 256_usize..512;
+            let ack_range = 512_usize..512+512;
+
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Min,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected[..256]);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected[..256]);
 
             expected = vec![1; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Max,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             expected = vec![2; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Sum,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             expected = vec![4; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Prod,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             expected = vec![8; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Bor,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             expected = vec![10; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Band,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
+            ofi.send(ack_range.clone(), None);
 
             // Send a done ack
 
-            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
+            ofi.recv(ack_range.clone());
 
             expected = vec![2; 256];
             // ofi.fetch_atomic(
@@ -584,83 +561,81 @@ pub mod async_fetch_atomic {
 
             // expected = vec![1; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Bxor,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
+            ofi.send(ack_range.clone(), None);
 
             // Send a done ack
 
-            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
+            ofi.recv(ack_range.clone());
 
             expected = vec![0; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Bor,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             expected = vec![2; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::Band,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             expected = vec![2; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
                 desc1.clone(),
                 FetchAtomicOp::AtomicWrite,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
+            ofi.send(ack_range.clone(), None);
 
-            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
+            ofi.recv(ack_range.clone());
 
             expected = vec![2; 256];
             ofi.fetch_atomic(
-                &mem0,
-                mem1,
+                mem0_range.clone(),
+                mem1_range.clone(),
                 0,
                 desc0,
-                desc1.clone(),
+                desc1,
                 FetchAtomicOp::AtomicRead,
-                &mut ctx,
             );
 
-            assert_eq!(mem1, &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[mem1_range.clone()], &expected);
+
 
             expected = vec![2; 256];
-            let (read_mem, write_mem) = op_mem.split_at_mut(256);
+            let mut borrow = ofi.reg_mem.borrow_mut();
+            let (read_mem, write_mem) = borrow.split_at_mut(256);
+
             let iocs = [
                 Ioc::from_slice(&read_mem[..128]),
                 Ioc::from_slice(&read_mem[128..256]),
@@ -668,10 +643,10 @@ pub mod async_fetch_atomic {
             let write_mems = write_mem.split_at_mut(128);
             let mut res_iocs = [
                 IocMut::from_slice(write_mems.0),
-                IocMut::from_slice(write_mems.1),
+                IocMut::from_slice(&mut write_mems.1[..128]),
             ];
 
-            let desc0 = Some(mr.descriptor());
+
             let descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
             ofi.fetch_atomicv(
@@ -681,47 +656,48 @@ pub mod async_fetch_atomic {
                 Some(&descs),
                 Some(&res_descs),
                 FetchAtomicOp::Prod,
-                &mut ctx,
             );
 
-            assert_eq!(write_mem, &expected);
+            assert_eq!(&write_mem[..256], &expected);
+            drop(borrow);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
+            ofi.send(ack_range.clone(), None);
 
             // Recv a completion ack
-            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
+            ofi.recv(ack_range);
         } else {
             let mut expected = vec![2u8; 256];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..256], &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[..256], &expected);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
+            ofi.send(512..1024, None);
 
             expected = vec![0; 256];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..256], &expected);
-            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
+            assert_eq!(&ofi.reg_mem.borrow()[..256], &expected);
+
+            ofi.send(512..1024, None);
 
             expected = vec![2; 256];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..256], &expected);
-            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
+            assert_eq!(&ofi.reg_mem.borrow()[..256], &expected);
+            ofi.send(512..1024, None);
 
             expected = vec![4; 256];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..256], &expected);
-            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
+            assert_eq!(&ofi.reg_mem.borrow()[..256], &expected);
+            ofi.send(512..1024, None);
         }
     }
 
@@ -749,48 +725,30 @@ pub mod async_fetch_atomic {
 
     fn fetch_atomicmsg(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
-        let mut reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
+        ofi.exchange_keys();
+
+        if server {
+            ofi.reg_mem.borrow_mut().fill(2);
         } else {
-            vec![1; 1024 * 2]
+            ofi.reg_mem.borrow_mut().fill(1);
         };
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .build(&ofi.domain)
-            .unwrap();
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
+
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+
         let mapped_addr = ofi.mapped_addr.clone();
-        let key = mr.key().unwrap();
-        ofi.exchange_keys(&key, &reg_mem[..]);
+
         let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
-        let (dst_slice0, dst_slice1) = remote_mem_info.slice::<u8>(..256).split_at(128);
-        // let base_addr = remote_mem_info.mem_address();
-        // let key = &remote_mem_info.key();
-        let mut ctx = ofi.info_entry.allocate_context();
+        let dst_slice = remote_mem_info.slice(..256);
+        let (dst_slice0, dst_slice1) = dst_slice.split_at(128);
 
         if server {
             let expected = vec![1u8; 256];
-            let (op_mem, ack_mem) = reg_mem.split_at_mut(512);
+            let (op_mem, _) = reg_mem.split_at_mut(512);
 
             let (read_mem, write_mem) = op_mem.split_at_mut(256);
             let iocs = [
@@ -802,13 +760,18 @@ pub mod async_fetch_atomic {
                 IocMut::from_slice(write_mems.0),
                 IocMut::from_slice(write_mems.1),
             ];
+            let ack_range = 512_usize..512+512;
+            // let read_range = 0_usize..256;
+            // let write_range = 256_usize..512;
 
-            let desc0 = Some(mr.descriptor());
+            let borrow = ofi.mr.borrow();
+            let mr = borrow.as_ref().unwrap();
             let descs = [mr.descriptor(), mr.descriptor()];
             let res_descs = [mr.descriptor(), mr.descriptor()];
             let mut rma_iocs = RemoteMemAddrAtomicVec::new();
             rma_iocs.push(dst_slice0);
             rma_iocs.push(dst_slice1);
+            let mut ctx = ofi.ctx.borrow_mut();
 
             let mut msg = if connected {
                 Either::Right(MsgFetchAtomicConnected::from_ioc_slice(
@@ -834,23 +797,25 @@ pub mod async_fetch_atomic {
             ofi.fetch_atomicmsg(&mut msg, &mut res_iocs, Some(&res_descs));
 
             assert_eq!(write_mem, &expected);
+            drop(reg_mem);
+            drop(ctx);
 
             // Send a done ack
-            ofi.send(&ack_mem[..512], desc0, None, &mut ctx);
+            ofi.send(ack_range.clone(), None);
 
             // Recv a completion ack
-            ofi.recv(&mut ack_mem[..512], desc0.clone(), &mut ctx);
+            ofi.recv(ack_range);
         } else {
-            let desc0 = Some(mr.descriptor());
             let expected = vec![2u8; 256];
+            drop(reg_mem);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc0.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..256], &expected);
+            assert_eq!(&ofi.reg_mem.borrow()[..256], &expected);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc0, None, &mut ctx);
+            ofi.send(512..1024, None);
         }
     }
 

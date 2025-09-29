@@ -1,17 +1,22 @@
 pub mod sync_;
 #[cfg(test)]
 pub mod sync_atomic {
-    use libfabric::{cq::{ReadCq, WaitCq}, enums::AtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, RemoteMemAddrAtomicVec}, mr::MemoryRegionBuilder, msg::{MsgAtomic, MsgAtomicConnected}};
+    use libfabric::{cq::{ReadCq, WaitCq}, enums::AtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, RemoteMemAddrAtomicVec}, msg::{MsgAtomic, MsgAtomicConnected}};
 
-    use crate::sync_::{handshake, handshake_connectionless, Either, DEFAULT_BUF_SIZE};
+    use crate::sync_::tests::{handshake, handshake_connectionless, Either};
+
+
+    // use crate::sync_::{handshake, handshake_connectionless, Either};
 
 
     fn atomic(server: bool, name: &str, connected: bool) {
+        println!("Staring atomic");
         let mut ofi = if connected {
             handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
             handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
+
 
         ofi.exchange_keys();
         
@@ -274,98 +279,83 @@ pub mod sync_atomic {
 pub mod async_;
 
 pub mod async_atomic {
-    use libfabric::{enums::AtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, RemoteMemAddrAtomicVec}, mr::MemoryRegionBuilder, msg::{MsgAtomic, MsgAtomicConnected}};
+    use libfabric::{enums::AtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, RemoteMemAddrAtomicVec}, msg::{MsgAtomic, MsgAtomicConnected}};
 
-    use crate::async_::{enable_ep_mr, handshake, handshake_connectionless, Either};
+    use crate::async_::{handshake, handshake_connectionless, Either};
 
 
     fn atomic(server: bool, name: &str, connected: bool) {
+
         let mut ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
-        let mut reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
-        } else {
-            vec![1; 1024 * 2]
-        };
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .build(&ofi.domain)
-            .unwrap();
+        ofi.exchange_keys();
 
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-        let desc = Some(mr.descriptor());
-        let descs = [mr.descriptor(), mr.descriptor()];
-        // let mapped_addr = ofi.mapped_addr.clone();
-        let key = mr.key().unwrap();
-        ofi.exchange_keys(&key, &reg_mem[..]);
-        let mut ctx = ofi.info_entry.allocate_context();
+
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
 
         if server {
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Min, &mut ctx);
+            ofi.atomic(0..512, 0, AtomicOp::Min);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Max, &mut ctx);
+            ofi.atomic(0..512, 0, AtomicOp::Max);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Sum, &mut ctx);
+            ofi.atomic(0..512, 0, AtomicOp::Sum);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Prod, &mut ctx);
+            ofi.atomic(0..512, 0, AtomicOp::Prod);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Bor, &mut ctx);
+            ofi.atomic(0..512, 0, AtomicOp::Bor);
 
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Band, &mut ctx);
+            ofi.atomic(0..512, 0, AtomicOp::Band);
 
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
-
-            // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
-
-            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lor, &mut ctx);
-
-            ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Bxor, &mut ctx);
-
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            ofi.send(512..1024, None);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Land, &mut ctx);
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lor);
 
-            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lxor, &mut ctx);
+            ofi.atomic(0..512, 0, AtomicOp::Bxor);
+
+            ofi.send(512..1024, None);
+
+            // Recv a completion ack
+            ofi.recv(512..1024);
+
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Land);
+
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lxor);
 
             ofi.atomic(
-                &reg_mem[..512],
+                0..512,
                 0,
-                desc,
                 AtomicOp::AtomicWrite,
-                &mut ctx,
             );
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            ofi.send(512..1024, None);
+
+            let reg_mem = ofi.reg_mem.borrow();
 
             let iocs = [
                 Ioc::from_slice(&reg_mem[..256]),
                 Ioc::from_slice(&reg_mem[256..512]),
             ];
 
-            ofi.atomicv(&iocs, 0, Some(&descs), AtomicOp::Prod, &mut ctx);
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            let borrow = ofi.mr.borrow();
+            let mr = borrow.as_ref().unwrap();
+
+            let descs = [mr.descriptor(), mr.descriptor()];
+
+            ofi.atomicv(&iocs, 0, Some(&descs), AtomicOp::Prod);
+            ofi.send(512..1024, None);
             // match err {
             //     Err(e) => {
             //         if matches!(e.kind, libfabric::error::ErrorKind::ErrorAvailable) {
@@ -375,40 +365,41 @@ pub mod async_atomic {
             //     }
             //     Ok(_) => {}
             // }
+            drop(reg_mem);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
+            ofi.recv(512..1024);
         } else {
             let mut expected = vec![2u8; 1024 * 2];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..512], &expected[..512]);
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
             // Send completion ack
-            reg_mem.iter_mut().for_each(|v| *v= 1);
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v= 1);
 
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            ofi.send(512..1024, None);
 
             expected = vec![3; 1024 * 2];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..512], &expected[..512]);
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            ofi.send(512..1024, None);
 
             expected = vec![2;1024*2];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
-            assert_eq!(&reg_mem[..512], &expected[..512]);
+            ofi.recv(512..1024);
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
 
             expected = vec![4; 1024 * 2];
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
-            assert_eq!(&reg_mem[..512], &expected[..512]);
+            ofi.recv(512..1024);
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
 
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            ofi.send(512..1024, None);
         }
     }
 
@@ -436,48 +427,37 @@ pub mod async_atomic {
 
     fn atomicmsg(server: bool, name: &str, connected: bool) {
         let mut ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().atomic()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
         };
 
-        let mut reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
-        } else {
-            vec![1; 1024 * 2]
-        };
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .build(&ofi.domain)
-            .unwrap();
+        ofi.exchange_keys();
 
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-        let desc = Some(mr.descriptor());
+
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
+
         let descs = [mr.descriptor(), mr.descriptor()];
         let mapped_addr = ofi.mapped_addr.clone();
-        let key = mr.key().unwrap();
-        ofi.exchange_keys(&key, &reg_mem[..]);
-        let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
-        let (dst_slice0, dst_slice1) = remote_mem_info.slice::<u8>(..512).split_at(256);
 
-        let mut ctx = ofi.info_entry.allocate_context();
+        let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+        let dst_slice = remote_mem_info.slice(..512);
+        let (dst_slice0, dst_slice1) = dst_slice.split_at(256 * std::mem::size_of::<u8>());
 
         if server {
+            let mut ctx = ofi.info_entry.allocate_context();
+
+            let reg_mem = ofi.reg_mem.borrow();
             let iocs = [
                 Ioc::from_slice(&reg_mem[..256]),
                 Ioc::from_slice(&reg_mem[256..512]),
@@ -509,19 +489,20 @@ pub mod async_atomic {
 
             ofi.atomicmsg(&mut msg);
 
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            ofi.send(512..1024, None);
+            drop(reg_mem);
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
+            ofi.recv(512..1024);
         } else {
             let expected = vec![3u8; 1024 * 2];
 
             // Recv a completion ack
-            ofi.recv(&mut reg_mem[512..1024], desc.clone(), &mut ctx);
+            ofi.recv(512..1024);
 
-            assert_eq!(&reg_mem[..512], &expected[..512]);
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
             // Send completion ack
-            ofi.send(&reg_mem[512..1024], desc, None, &mut ctx);
+            ofi.send(512..1024, None);
         }
     }
 

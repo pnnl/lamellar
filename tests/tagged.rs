@@ -3,7 +3,7 @@ pub mod sync_;
 pub mod sync_tagged {
     use libfabric::{cq::{Completion, WaitCq}, infocapsoptions::InfoCaps, iovec::{IoVec, IoVecMut}, mr::MemoryRegionBuilder, msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut}};
 
-    use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, Either, DEFAULT_BUF_SIZE};
+    use crate::sync_::tests::{enable_ep_mr, handshake, handshake_connectionless, Either};
 
     fn tsendrecv(server: bool, name: &str, connected: bool, use_context: bool) {
         let ofi = if connected {
@@ -524,85 +524,94 @@ pub mod async_tagged {
 
     fn tsendrecv(server: bool, name: &str, connected: bool) {
         let ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().tagged()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().tagged()))
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().tagged()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().tagged()))
         };
 
-        let mut reg_mem: Vec<_> = (0..1024 * 2)
-            .into_iter()
-            .map(|v: usize| (v % 256) as u8)
-            .collect();
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .build(&ofi.domain)
-            .unwrap();
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            for i in 0..1024 * 2 {
+                let v = (i % 256) as u8;
+                reg_mem[i] = v;
+            }
+        }
 
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-
-        let desc = [mr.descriptor(), mr.descriptor()];
-        let desc0 = Some(mr.descriptor());
         let data = Some(128u64);
-        let mut ctx = ofi.info_entry.allocate_context();
 
         if server {
             // Send a single buffer
-            ofi.tsend(&reg_mem[..512], desc0, 10, data, &mut ctx);
+            ofi.tsend(0..512, 10, data);
             // match entry {
             //     Completion::Tagged(entry) => {assert_eq!(entry[0].data(), data.unwrap()); assert_eq!(entry[0].tag(), 10)},
             //     _ => panic!("Unexpected CQ entry format"),
             // }
 
             assert!(
-                std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size()
+                std::mem::size_of_val(&ofi.reg_mem.borrow()[0..128]) <= ofi.info_entry.tx_attr().inject_size()
             );
 
             // Inject a buffer
-            ofi.tsend(&reg_mem[..128], desc0, 1, data, &mut ctx);
+            ofi.tsend(0..128, 1, data);
             // No cq.sread since inject does not generate completions
 
-            // // Send single Iov
+            let reg_mem = ofi.reg_mem.borrow();
+            let borrow = ofi.mr.borrow();
+            let mr = borrow.as_ref();
+
+            let desc:Option<[libfabric::mr::MemoryRegionDesc<'_>; 2]>  = if mr.is_none() {
+                None
+            }
+            else {
+                Some([mr.unwrap().descriptor(), mr.unwrap().descriptor()])
+            };
+            let desc_ref: Option<&[libfabric::mr::MemoryRegionDesc<'_>]> = desc.as_ref().map(|d| &d[..]);
+            // Send single Iov
             let iov = [IoVec::from_slice(&reg_mem[..512])];
-            ofi.tsendv(&iov, Some(&desc[..1]), 2, &mut ctx);
+            ofi.tsendv(&iov, desc_ref, 2);
 
             // Send multi Iov
             let iov = [
                 IoVec::from_slice(&reg_mem[..512]),
                 IoVec::from_slice(&reg_mem[512..1024]),
             ];
-            ofi.tsendv(&iov, Some(&desc), 3, &mut ctx);
+            ofi.tsendv(&iov, desc_ref, 3);
         } else {
             let expected: Vec<_> = (0..1024 * 2)
                 .into_iter()
                 .map(|v: usize| (v % 256) as u8)
                 .collect();
-            reg_mem.iter_mut().for_each(|v| *v = 0);
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v = 0);
 
             // Receive a single buffer
-            ofi.trecv(&mut reg_mem[..512], desc0.clone(), 10, &mut ctx);
+            ofi.trecv(0..512, 10);
 
-            assert_eq!(reg_mem[..512], expected[..512]);
+            assert_eq!(ofi.reg_mem.borrow()[..512], expected[..512]);
 
             // Receive inject
-            reg_mem.iter_mut().for_each(|v| *v = 0);
-            ofi.trecv(&mut reg_mem[..128], desc0.clone(), 1, &mut ctx);
-            assert_eq!(reg_mem[..128], expected[..128]);
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v = 0);
+            ofi.trecv(0..128, 1);
+            assert_eq!(ofi.reg_mem.borrow()[..128], expected[..128]);
 
-            reg_mem.iter_mut().for_each(|v| *v = 0);
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v = 0);
             // // Receive into a single Iov
-            let mut iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
-            ofi.trecvv(&mut iov, Some(&desc[..1]), 2, &mut ctx);
+            
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            let mut borrow = ofi.mr.borrow_mut();
+            let mr: Option<&mut libfabric::mr::MemoryRegion> = borrow.as_mut();
+
+
+            let desc:Option<[libfabric::mr::MemoryRegionDesc<'_>; 2]>  = if mr.is_none() {
+                None
+            }
+            else {
+                Some([mr.as_ref().unwrap().descriptor(), mr.as_ref().unwrap().descriptor()])
+            };
+
+            let desc_ref = desc.as_ref().map(|d| &d[..]);
+            let iov = [IoVecMut::from_slice(&mut reg_mem[..512])];
+
+            ofi.trecvv(&iov, desc_ref, 2);
             assert_eq!(reg_mem[..512], expected[..512]);
 
             reg_mem.iter_mut().for_each(|v| *v = 0);
@@ -610,7 +619,7 @@ pub mod async_tagged {
             // // Receive into multiple Iovs
             let (mem0, mem1) = reg_mem[..1024].split_at_mut(512);
             let iov = [IoVecMut::from_slice(mem0), IoVecMut::from_slice(mem1)];
-            ofi.trecvv(&iov, Some(&desc), 3, &mut ctx);
+            ofi.trecvv(&iov, desc_ref, 3);
 
             assert_eq!(mem0, &expected[..512]);
             assert_eq!(mem1, &expected[512..1024]);
@@ -640,9 +649,9 @@ pub mod async_tagged {
 
     fn tsendrecvmsg(server: bool, name: &str, connected: bool) {
         let ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().tagged()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().tagged()))
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().tagged()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().tagged()))
         };
 
         let mut reg_mem: Vec<_> = (0..1024 * 2)

@@ -1,7 +1,7 @@
 pub mod sync_;
 pub mod sync_connless_ep {
     use libfabric::infocapsoptions::InfoCaps;
-    use crate::sync_::{handshake_connectionless, DEFAULT_BUF_SIZE};
+    use crate::sync_::tests::handshake_connectionless;
 
     #[test]
     fn handshake_connectionless0() {
@@ -33,6 +33,7 @@ pub mod async_connless_ep {
     #[test]
     fn async_handshake_connectionless0() {
         handshake_connectionless(
+            None, 
             true,
             "handshake_connectionless0",
             Some(InfoCaps::new().msg()),
@@ -42,6 +43,7 @@ pub mod async_connless_ep {
     #[test]
     fn async_handshake_connectionless1() {
         handshake_connectionless(
+            None, 
             false,
             "handshake_connectionless0",
             Some(InfoCaps::new().msg()),

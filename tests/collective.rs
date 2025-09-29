@@ -3,7 +3,7 @@ pub mod sync_;
 pub mod sync_collective {
     use libfabric::{av_set::AddressVectorSetBuilder, comm::collective::CollectiveEp, cq::{ReadCq, WaitCq}, enums::CollectiveOptions, eq::{Event, ReadEq}, infocapsoptions::{CollCap, InfoCaps}, mcast::MultiCastGroup, mr::{MemoryRegion, MemoryRegionBuilder}};
 
-    use crate::sync_::{enable_ep_mr, handshake, handshake_connectionless, MyEndpoint, Ofi, DEFAULT_BUF_SIZE};
+    use crate::sync_::tests::{enable_ep_mr, handshake, handshake_connectionless, MyEndpoint, Ofi};
 
 
     fn collective(server: bool, name: &str, connected: bool) -> (Ofi<impl CollCap>, MultiCastGroup) {
@@ -110,46 +110,31 @@ pub mod sync_collective {
 
     fn broadcast(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let mut reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
-        } else {
-            vec![1; 1024 * 2]
-        };
+        
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+
 
         let expected = if server {
-            reg_mem.clone()
+            ofi.reg_mem.borrow().clone()
         } else {
-            reg_mem.iter().map(|v| v + 1).collect()
+            ofi.reg_mem.borrow().iter().map(|v| v + 1).collect()
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
 
         match &ofi.ep {
             MyEndpoint::Connected(_) => todo!(),
             MyEndpoint::Connectionless(ep) => {
                 ep.broadcast(
-                    &mut reg_mem[..],
+                    &mut ofi.reg_mem.borrow_mut()[..],
                     Some(&mr.descriptor()),
                     &mc,
                     &ofi.mapped_addr.as_ref().unwrap()[0],
@@ -159,7 +144,7 @@ pub mod sync_collective {
                 ofi.cq_type.tx_cq().sread(1, -1).unwrap();
                 // ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-                assert_eq!(reg_mem, expected);
+                assert_eq!(&ofi.reg_mem.borrow()[..], expected);
             }
         }
     }
@@ -176,36 +161,27 @@ pub mod sync_collective {
 
     fn alltoall(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![1; 1024 * 2])
+        let expected = if server {
+            vec![1; 1024 * 2]
         } else {
-            (vec![1; 1024 * 2], vec![2; 1024 * 2])
+            vec![2; 1024 * 2]
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
 
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-        let half = reg_mem.len() / 2;
+        let half = ofi.reg_mem.borrow().len() / 2;
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
         let (send_buf, recv_buf) = reg_mem.split_at_mut(half);
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         match &ofi.ep {
             MyEndpoint::Connected(_) => todo!(),
             MyEndpoint::Connectionless(ep) => {
@@ -221,7 +197,7 @@ pub mod sync_collective {
                 ofi.cq_type.tx_cq().sread(1, -1).unwrap();
                 // ofi.cq_type.rx_cq().sread(1, -1).unwrap();
 
-                assert_eq!(reg_mem, expected);
+                assert_eq!(&reg_mem[..], expected);
             }
         }
     }
@@ -238,36 +214,28 @@ pub mod sync_collective {
 
     fn allreduce(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![3; 1024])
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+        
+        let expected = if server {
+            vec![3; 1024]
         } else {
-            (vec![1; 1024 * 2], vec![3; 1024])
+            vec![3; 1024]
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
 
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
         let half = reg_mem.len() / 2;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(half);
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         match &ofi.ep {
             MyEndpoint::Connected(_) => todo!(),
             MyEndpoint::Connectionless(ep) => {
@@ -301,34 +269,21 @@ pub mod sync_collective {
 
     fn allgather(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1536], [vec![2; 512], vec![1; 512]].concat())
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1536], [vec![2; 512], vec![1; 512]].concat())
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            [vec![2; 512], vec![1; 512]].concat()
+        } else {
+            [vec![2; 512], vec![1; 512]].concat()
         };
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         // let quart = reg_mem.len()/4;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(512);
         match &ofi.ep {
@@ -362,35 +317,22 @@ pub mod sync_collective {
 
     fn reduce_scatter(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![3; 1024])
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![3; 1024])
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            vec![3; 1024]
+        } else {
+            vec![3; 1024]
         };
-        // let quart = reg_mem.len()/4;
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
         match &ofi.ep {
             MyEndpoint::Connected(_) => todo!(),
@@ -424,34 +366,21 @@ pub mod sync_collective {
 
     fn reduce(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![3; 1024])
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![1; 1024])
+            reg_mem.fill(1);
         };
-
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            vec![3; 1024]
+        } else {
+            vec![1; 1024]
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         // let quart = reg_mem.len()/4;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
         match &ofi.ep {
@@ -487,34 +416,22 @@ pub mod sync_collective {
 
     fn scatter(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![2; 512])
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![2; 512])
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            vec![2; 512]
+        } else {
+            vec![2; 512]
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         // let quart = reg_mem.len()/4;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
         match &ofi.ep {
@@ -549,34 +466,22 @@ pub mod sync_collective {
 
     fn gather(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], [vec![2; 512], vec![1; 512]].concat())
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![1; 512])
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            [vec![2; 512], vec![1; 512]].concat()
+        } else {
+            vec![1; 512]
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         // let quart = reg_mem.len()/4;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(512);
         match &ofi.ep {
@@ -624,40 +529,21 @@ pub mod async_collective {
         connected: bool,
     ) -> (Ofi<impl CollCap>, MultiCastGroup) {
         let mut ofi = if connected {
-            handshake(server, name, Some(InfoCaps::new().msg().collective()))
+            handshake(None, server, name, Some(InfoCaps::new().msg().collective()))
         } else {
-            handshake_connectionless(server, name, Some(InfoCaps::new().msg().collective()))
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().collective()))
         };
 
-        let reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
-        } else {
-            vec![1; 1024 * 2]
-        };
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .build(&ofi.domain)
-            .unwrap();
+        ofi.exchange_keys();
 
-        let mr = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
-
-        let key = mr.key().unwrap();
-        ofi.exchange_keys(&key, &reg_mem[..]);
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
 
         let mut avset = if server {
             AddressVectorSetBuilder::new_from_range(
@@ -740,10 +626,12 @@ pub mod async_collective {
 
     fn broadcast(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let mut reg_mem: Vec<_> = if server {
-            vec![2; 1024 * 2]
+        
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            vec![1; 1024 * 2]
+            reg_mem.fill(1);
         };
 
         let expected = if server {
@@ -751,29 +639,10 @@ pub mod async_collective {
         } else {
             reg_mem.iter().map(|v| v + 1).collect()
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
-        };
         let mut ctx = ofi.info_entry.allocate_context();
         async_std::task::block_on(async {
             match &ofi.ep {
@@ -792,7 +661,7 @@ pub mod async_collective {
                 }
             }
         });
-        assert_eq!(reg_mem, expected);
+        assert_eq!(&reg_mem[..], expected);
     }
 
     #[test]
@@ -807,34 +676,23 @@ pub mod async_collective {
 
     fn alltoall(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![1; 1024 * 2])
+        
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![2; 1024 * 2])
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            vec![1; 1024 * 2]
+        } else {
+            vec![2; 1024 * 2]
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         let half = reg_mem.len() / 2;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(half);
         let mut ctx = ofi.info_entry.allocate_context();
@@ -856,7 +714,7 @@ pub mod async_collective {
                 }
             }
         });
-        assert_eq!(reg_mem, expected);
+        assert_eq!(&reg_mem[..], expected);
     }
 
     #[test]
@@ -871,34 +729,23 @@ pub mod async_collective {
 
     fn allreduce(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![3; 1024 * 1])
+                
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![3; 1024 * 1])
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            vec![3; 1024 * 1]
+        } else {
+            vec![3; 1024 * 1]
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         let half = reg_mem.len() / 2;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(half);
         let mut ctx = ofi.info_entry.allocate_context();
@@ -936,34 +783,22 @@ pub mod async_collective {
 
     fn allgather(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1536], [vec![2; 512], vec![1; 512]].concat())
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1536], [vec![2; 512], vec![1; 512]].concat())
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            [vec![2; 512], vec![1; 512]].concat()
+        } else {
+            [vec![2; 512], vec![1; 512]].concat()
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         // let quart = reg_mem.len()/4;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(512);
         let mut ctx = ofi.info_entry.allocate_context();
@@ -1000,34 +835,22 @@ pub mod async_collective {
 
     fn reduce_scatter(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![3; 1024])
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![3; 1024])
+            reg_mem.fill(1);
         };
-
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        
+        let expected = if server {
+            vec![3; 1024]
+        } else {
+            vec![3; 1024]
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         // let quart = reg_mem.len()/4;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
         let mut ctx = ofi.info_entry.allocate_context();
@@ -1065,34 +888,22 @@ pub mod async_collective {
 
     fn reduce(server: bool, name: &str, connected: bool) {
         let (ofi, mc) = collective(server, name, connected);
-        let (mut reg_mem, expected) = if server {
-            (vec![2; 1024 * 2], vec![3; 1024])
+        let mut reg_mem = ofi.reg_mem.borrow_mut();
+        if server {
+            reg_mem.fill(2);
         } else {
-            (vec![1; 1024 * 2], vec![1; 1024])
+            reg_mem.fill(1);
         };
 
-        let mr = MemoryRegionBuilder::new(&reg_mem, libfabric::enums::HmemIface::System)
-            .access_recv()
-            .access_send()
-            .access_write()
-            .access_read()
-            .access_remote_write()
-            .access_remote_read()
-            .access_collective()
-            .build(&ofi.domain)
-            .unwrap();
-
-        let mr: MemoryRegion = match mr {
-            libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
-                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
-                }
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
-                    rma_event_memory_region.enable().unwrap()
-                }
-            },
+        let expected = if server {
+            vec![3; 1024]
+        } else {
+            vec![1; 1024]
         };
+        
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
         // let quart = reg_mem.len()/4;
         let (send_buf, recv_buf) = reg_mem.split_at_mut(1024);
         let mut ctx = ofi.info_entry.allocate_context();

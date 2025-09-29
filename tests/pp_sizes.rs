@@ -47,3 +47,5 @@ pub const TEST_SIZES: [usize; 46] = [
             1 << 23,
         ];
 pub const WINDOW_SIZE: usize = 64;
+
+pub const IP : Option<&str> = None;

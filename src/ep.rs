@@ -31,7 +31,7 @@ use crate::{
 use crate::fid::EpCompletionOwnedTypedFid;
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// A unmapped network address.
 ///
 /// This struct encapsulates a raw byte representation of a network address.
@@ -97,7 +97,6 @@ impl<T, EQ: ?Sized, CQ: ?Sized> Drop for EndpointImplBase<T, EQ, CQ> {
         match self.eptype {
             EpType::Connected(_) => {
                 let ep = self.c_ep.as_typed_fid_mut().as_raw_typed_fid();
-                println!("{:?}", ep);
                 let err = unsafe{libfabric_sys::inlined_fi_shutdown(ep, 0)};
                 check_error(err as isize).unwrap();
             },
