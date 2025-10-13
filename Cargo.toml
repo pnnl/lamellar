@@ -1,0 +1,15 @@
+[package]
+name = "prrte-sys"
+version = "0.1.0"
+edition = "2021"
+links = "prrte"
+build = "build.rs"
+
+[dependencies]
+pmix-sys = {version = "0.1.0", path="/qfs/people/thom895/rofi/pmix-sys"}
+libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "threading"]}
+hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"]}
+
+[build-dependencies]
+autotools = "0.2"
+bindgen = "0.72.1"
