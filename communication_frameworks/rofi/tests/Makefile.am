@@ -1,6 +1,6 @@
 AM_CFLAGS = -I$(top_srcdir)/src/include
 
-check_PROGRAMS = rofi_init rofi_iput rofi_put rofi_iget rofi_get rofi_pp rofi_alloc rofi_sub_alloc rofi_iput_bw rofi_put_bw rofi_iget_bw rofi_get_bw rofi_multimr rofi_sharray rofi_barrier 
+check_PROGRAMS = rofi_init rofi_iput rofi_put rofi_iget rofi_get rofi_pp rofi_alloc rofi_sub_alloc rofi_iput_bw rofi_put_bw rofi_iget_bw rofi_get_bw rofi_multimr rofi_sharray rofi_barrier rofi_add_u32
 TESTS = $(check_PROGRAMS)
 
 rofi_init_SOURCES      = init.c utils.c utils.h
@@ -70,5 +70,9 @@ rofi_sharray_LDADD        = ../src/librofi.la
 rofi_barrier_SOURCES      = barrier.c utils.c utils.h
 rofi_barrier_LDFLAGS      = $(linker_flags)
 rofi_barrier_LDADD        = ../src/librofi.la -lm
+
+rofi_add_u32_SOURCES      = add_u32.c utils.c utils.h
+rofi_add_u32_LDFLAGS      = $(linker_flags)
+rofi_add_u32_LDADD        = ../src/librofi.la -lm
 
 AM_LDFLAGS = $(LDFLAGS) 

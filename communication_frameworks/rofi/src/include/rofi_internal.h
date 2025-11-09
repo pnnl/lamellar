@@ -108,5 +108,5 @@ int rofi_sub_release_internal(void *, uint64_t *, uint64_t);
 int rofi_wait_internal(void);
 void *rofi_get_remote_addr_internal(void *, unsigned int);
 void *rofi_get_local_addr_from_remote_addr_internal(void *, unsigned int);
-
+size_t rofi_atomic_add_u32_internal(uint32_t*, uint32_t, unsigned int);
 #endif

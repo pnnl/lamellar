@@ -24,4 +24,5 @@ void rofi_barrier(void);
 int rofi_wait(void);
 void *rofi_get_remote_addr(void *, unsigned int);
 void *rofi_get_local_addr_from_remote_addr(void *, unsigned int);
+ssize_t rofi_atomic_add_u32(uint32_t *, uint32_t, unsigned int);
 #endif
