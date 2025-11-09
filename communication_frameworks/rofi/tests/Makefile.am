@@ -87,4 +87,8 @@ rofi_add_u32_SOURCES      = add_u32.c utils.c utils.h
 rofi_add_u32_LDFLAGS      = $(linker_flags)
 rofi_add_u32_LDADD        = ../src/librofi.la -lm
 
+rofi_add_u32_SOURCES      = add_u32.c utils.c utils.h
+rofi_add_u32_LDFLAGS      = $(linker_flags)
+rofi_add_u32_LDADD        = ../src/librofi.la -lm
+
 AM_LDFLAGS = $(LDFLAGS) 
