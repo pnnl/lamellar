@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <rdma/fi_atomic.h>
 
 #include <rofi.h>
 #include <rofi_atomic.h>
@@ -218,6 +219,39 @@ int rofi_recv_internal(void *buf, size_t size, unsigned long flags) {
         return -1;
     }
     return 0;
+}
+
+size_t rofi_atomic_add_u32_internal(uint32_t* addr, uint32_t value, unsigned int id) {
+    rofi_mr_desc *el = mr_get(&rofi, addr);
+    struct fi_rma_iov rma_iov;
+
+    if (!el) {
+        ERR_MSG("MR not found for address %p on node %u", addr, id);
+        return UINT32_MAX;
+    }
+    DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx for dst address %p", el->start, el->start + el->size, el->mr_key, addr);
+
+    rma_iov.addr = (uint64_t)(addr - (uint32_t*) el->start + el->iov[id].addr);
+    if(rma_iov.addr == 0) {
+        ERR_MSG("\t No address found for address %p on node %u", addr, id);
+        return UINT32_MAX;
+    }
+
+    rma_iov.key = el->iov[id].key;
+    if (rma_iov.key == 0) {
+        ERR_MSG("\t No Key found for address %p on node %u", addr, id);
+        return -1;
+    }
+
+    DEBUG_MSG("\t Atomic add %u to address 0x%lx at node %u with key 0x%lx", value, rma_iov.addr, id, rma_iov.key);
+
+    DEBUG_MSG("fi_atomic args: ep=%p, value=%u, remote_addr=%" PRIx64 ", key=%" PRIx64 ", fi_addr=%" PRIx64,
+          rofi.ep, value, rma_iov.addr, rma_iov.key, (uint64_t)rofi.remote_addrs[id]);
+    ssize_t ret = fi_atomic(rofi.ep, (const void*) &value, 1, NULL, 
+                                rofi.remote_addrs[id], rma_iov.addr, rma_iov.key,
+                                FI_UINT32, FI_SUM, NULL);
+
+    return ret;
 }
 
 rofi_names_t *rofi_parse_names_internal(char *names_list) {

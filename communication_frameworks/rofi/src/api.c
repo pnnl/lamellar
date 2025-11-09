@@ -500,3 +500,38 @@ void *rofi_get_local_addr_from_remote_addr(void *addr, unsigned int id) {
     DEBUG_MSG("Translating address %p on node %lu...", addr, id);
     return rofi_get_local_addr_from_remote_addr_internal(addr, id);
 }
+
+/**
+ * @brief ROFI Atomic Add
+ *
+ * This function atomically adds \p value to the value at address \p addr on node \p id.
+ * The function returns the old value at that address before the addition.
+ *
+ * @param addr The address to add to
+ * @param value The value to add
+ * @param id The ID of the remote node
+ * @return Error value, or 0 for success
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+ssize_t rofi_atomic_add_u32(uint32_t* addr, uint32_t value, unsigned int id) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+
+    DEBUG_MSG("rofi->info: %p, provider: %s, caps: 0x%lx\n",
+       rofi.info, rofi.info->fabric_attr->prov_name, rofi.info->caps);
+    DEBUG_MSG("caps: 0x%lx, FI_ATOMIC: 0x%lx\n", rofi.info->caps, (uint64_t)FI_ATOMIC);
+
+    if (!(rofi.info->caps & FI_ATOMIC)) {
+        ERR_MSG("Atomic operations are not supported by the provider.");
+        return UINT32_MAX;
+    }
+
+    if (addr == NULL || id >= rofi.desc.nodes) {
+        ERR_MSG("Invalid argument.");
+        return UINT32_MAX;
+    }
+
+    DEBUG_MSG("Atomic add u32 %p %u %u", addr, value, id);
+    return rofi_atomic_add_u32_internal(addr, value, id);
+}
