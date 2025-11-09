@@ -28,7 +28,7 @@ int main(void) {
     }
     rofi_barrier();
 
-     if(id) {
+    if(id) {
         ssize_t res = rofi_atomic_add_u32(ptr, 1UL, 0);
         printf("ID: %lu/%lu added 1: %ld\n", id, size, res);
         if (res) {
@@ -36,7 +36,9 @@ int main(void) {
             return -1;
         }
     }
+
     rofi_barrier();
+    
     if(id == 0) {
         printf("ID: %lu/%lu Results: ptr: %p, value: %lu (assert %lu)\n", id, size, ptr, *ptr, size-1);
         rofi_verify(!(*ptr == (size-1)));

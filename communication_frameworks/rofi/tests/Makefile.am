@@ -71,10 +71,6 @@ rofi_barrier_SOURCES      = barrier.c utils.c utils.h
 rofi_barrier_LDFLAGS      = $(linker_flags)
 rofi_barrier_LDADD        = ../src/librofi.la -lm
 
-rofi_add_u32_SOURCES      = add_u32.c utils.c utils.h
-rofi_add_u32_LDFLAGS      = $(linker_flags)
-rofi_add_u32_LDADD        = ../src/librofi.la -lm
-
 rofi_index_gather_SOURCES      = index_gather.c
 rofi_index_gather_LDFLAGS      = $(linker_flags)
 rofi_index_gather_LDADD        = ../src/librofi.la -lm
@@ -86,10 +82,6 @@ rofi_index_gather_buffered_LDFLAGS      = $(linker_flags)
 rofi_randperf_SOURCES      = randperf.c utils.c utils.h
 rofi_randperf_LDADD        = ../src/librofi.la -lm
 rofi_randperf_LDFLAGS      = $(linker_flags)
-
-rofi_add_u32_SOURCES      = add_u32.c utils.c utils.h
-rofi_add_u32_LDFLAGS      = $(linker_flags)
-rofi_add_u32_LDADD        = ../src/librofi.la -lm
 
 rofi_add_u32_SOURCES      = add_u32.c utils.c utils.h
 rofi_add_u32_LDFLAGS      = $(linker_flags)
