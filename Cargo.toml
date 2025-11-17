@@ -11,5 +11,5 @@ libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "thread
 hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"]}
 
 [build-dependencies]
-autotools = "0.2"
+prrte-src = {version="*", path="/people/thom895/rofi/prrte-src"}
 bindgen = "0.72.1"
