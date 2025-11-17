@@ -11,5 +11,5 @@ libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "thread
 
 
 [build-dependencies]
-autotools = "0.2"
+openpmix-src = {version="*", path="/people/thom895/rofi/openpmix-src"}
 bindgen = "0.72.1"
