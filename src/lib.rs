@@ -47,6 +47,24 @@ impl Artifacts {
     }
 }
 
+fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+            copy_rec(&src_path, &dst_path)?;
+        }
+    } else {
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(src, dst)?;
+    }
+    Ok(())
+}
+
 impl Build {
     pub fn new() -> Build {
         Build {
@@ -63,7 +81,12 @@ impl Build {
         let libhwloc_dir = std::env::var("DEP_HWLOC_ROOT").expect("Couldn't find libhwloc");
         let libpmix_dir = std::env::var("DEP_PMIX_ROOT").expect("Couldn't find libpmix");
 
-        let prrte_path = std::fs::canonicalize(std::path::PathBuf::from("prrte")).unwrap();
+        let dest = out_dir.join("src");
+        let src = source_dir();
+
+        copy_rec(&src, &dest).expect("Failed to copy source_dir() to OUT_DIR/src");
+
+        let prrte_path = std::fs::canonicalize(dest).unwrap();
         std::process::Command::new("./autogen.pl")
                 .current_dir(prrte_path.as_path())
                 .status()
