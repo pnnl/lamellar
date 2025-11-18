@@ -16,7 +16,7 @@ use crate::{
     },
     Context, MyOnceCell, MyRc,
 };
-
+use crate::ep::ActiveEndpoint;
 pub(crate) type TxContextImplBase<I, STATE, CQ> = XContextBaseImpl<Transmit, I, STATE, CQ>;
 pub(crate) type TxContextImpl<I, STATE> = XContextBaseImpl<Transmit, I, STATE, dyn AsyncCq>;
 

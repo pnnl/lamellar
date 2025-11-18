@@ -5,6 +5,7 @@ use crate::cq::ReadCq;
 use crate::enums::AtomicFetchMsgOptions;
 use crate::enums::AtomicMsgOptions;
 use crate::enums::AtomicOp;
+use crate::enums::FetchAtomicOp;
 use crate::ep::Connected;
 use crate::ep::Connectionless;
 use crate::ep::EndpointBase;
@@ -200,6 +201,16 @@ macro_rules! gen_atomic_op_def {
 
 
 pub trait AtomicWriteEp {
+    unsafe fn atomic_to<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -221,6 +232,17 @@ pub trait AtomicWriteEp {
     ),
     atomic_lor_to, atomic_land_to, atomic_lxor_to
     );
+
+    unsafe fn atomic_to_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -246,6 +268,18 @@ pub trait AtomicWriteEp {
     atomic_lor_to_with_context, atomic_land_to_with_context, atomic_lxor_to_with_context
     );
 
+
+    unsafe fn atomic_to_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -270,6 +304,16 @@ pub trait AtomicWriteEp {
     atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered
     );
 
+    unsafe fn atomicv_to<T: AsFiType, RT: AsFiType>(
+        self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -291,6 +335,19 @@ pub trait AtomicWriteEp {
     ),
     atomicv_lor_to, atomicv_land_to, atomicv_lxor_to
     );
+
+    unsafe fn atomicv_to_with_context<T: AsFiType, RT: AsFiType>(
+        self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
+    
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -315,6 +372,18 @@ pub trait AtomicWriteEp {
     ),
     atomicv_lor_to_with_context, atomicv_land_to_with_context, atomicv_lxor_to_with_context
     );
+
+
+    unsafe fn atomicv_to_triggered<T: AsFiType, RT: AsFiType>(
+        self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -346,6 +415,15 @@ pub trait AtomicWriteEp {
         msg: &crate::msg::MsgAtomic<T>,
         options: AtomicMsgOptions,
     ) -> Result<(), crate::error::Error>;
+
+    unsafe fn atomic_inject_to<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: crate::enums::AtomicOp,
+    )-> Result<(), crate::error::Error>;
 
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
@@ -450,6 +528,16 @@ pub trait AtomicWriteEpMrSlice: AtomicWriteEp {
 impl<EP: AtomicWriteEp> AtomicWriteEpMrSlice for EP {}
 
 pub trait ConnectedAtomicWriteEp {
+    unsafe fn atomic_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        ctx: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -470,6 +558,17 @@ pub trait ConnectedAtomicWriteEp {
     ),
     atomic_lor_with_context, atomic_land_with_context, atomic_lxor_with_context
     );
+
+    unsafe fn atomic<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -488,6 +587,16 @@ pub trait ConnectedAtomicWriteEp {
     ),
     atomic_lor, atomic_land, atomic_lxor
     );
+
+    unsafe fn atomic_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -511,6 +620,15 @@ pub trait ConnectedAtomicWriteEp {
     atomic_lor_triggered, atomic_land_triggered, atomic_lxor_triggered
     );
 
+    unsafe fn atomicv<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -530,6 +648,17 @@ pub trait ConnectedAtomicWriteEp {
     ),
     atomicv_lor, atomicv_land, atomicv_lxor
     );
+
+
+    unsafe fn atomicv_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -552,6 +681,17 @@ pub trait ConnectedAtomicWriteEp {
     ),
     atomicv_lor_with_context, atomicv_land_with_context, atomicv_lxor_with_context
     );
+
+    unsafe fn atomicv_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -580,6 +720,16 @@ pub trait ConnectedAtomicWriteEp {
         msg: &crate::msg::MsgAtomicConnected<T>,
         options: AtomicMsgOptions,
     ) -> Result<(), crate::error::Error>;
+
+
+    unsafe fn atomic_inject<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>;
+
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1142,6 +1292,19 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
 impl<EP: AtomicWriteEp> AtomicWriteRemoteMemAddrSliceEp for EP {}
 
 impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
+    unsafe fn atomic_to<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, None, op)
+    }
+
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -1165,6 +1328,19 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, None), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
         atomic_lor_to, atomic_land_to, atomic_lxor_to
     );
+
+    unsafe fn atomic_to_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
 
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
@@ -1194,6 +1370,19 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     );
 
 
+    unsafe fn atomic_to_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomic_impl(buf, desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -1220,6 +1409,19 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered
     );
 
+
+    unsafe fn atomicv_to<T: AsFiType, RT: AsFiType>(
+        self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, None, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -1244,6 +1446,20 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         atomicv_lor_to, atomicv_land_to, atomicv_lxor_to
     );
 
+
+    unsafe fn atomicv_to_with_context<T: AsFiType, RT: AsFiType>(
+        self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        ctx: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut()), op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -1255,7 +1471,7 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
     ),
         atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,,
         atomicv_min_to_with_context, atomicv_max_to_with_context, atomicv_sum_to_with_context, atomicv_prod_to_with_context, atomicv_bor_to_with_context, atomicv_band_to_with_context, atomicv_bxor_to_with_context, atomicv_write_to_with_context
-    );
+    );    
 
     gen_atomic_op_def!((), ( 
         self,
@@ -1269,6 +1485,20 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut())), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,,
         atomicv_lor_to_with_context, atomicv_land_to_with_context, atomicv_lxor_to_with_context
     );
+
+
+    unsafe fn atomicv_to_triggered<T: AsFiType, RT: AsFiType>(
+        self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        ctx: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomicv_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, Some(ctx.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
@@ -1305,6 +1535,17 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
         self.atomicmsg_impl(Either::Left(msg), options)
     }
 
+    unsafe fn atomic_inject_to<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.inject_atomic_impl(buf, Some(dest_addr), mem_addr, mapped_key, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -1329,6 +1570,18 @@ impl<EP: AtomicWriteEpImpl + ConnlessEp> AtomicWriteEp for EP {
 }
 
 impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
+    unsafe fn atomic<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>
+    {
+        self.atomic_impl(buf, desc, None, mem_addr, mapped_key, None, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -1363,6 +1616,19 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         atomic_impl(buf, desc, None, mem_addr, mapped_key, Some(context.inner_mut())), AtomicOp::Min, AtomicOp::Max, AtomicOp::Sum, AtomicOp::Prod, AtomicOp::Bor, AtomicOp::Band, AtomicOp::Bxor, AtomicOp::AtomicWrite,, 
         atomic_min_with_context, atomic_max_with_context, atomic_sum_with_context, atomic_prod_with_context, atomic_bor_with_context, atomic_band_with_context, atomic_bxor_with_context, atomic_write_with_context
     );
+
+    unsafe fn atomic_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        ctx: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>
+    {
+        self.atomic_impl(buf, desc, None, mem_addr, mapped_key, Some(ctx.inner_mut()), op)
+    }
     
     gen_atomic_op_def!((), ( 
         self,
@@ -1375,6 +1641,20 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         atomic_impl(buf, desc, None, mem_addr, mapped_key, Some(context.inner_mut())), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
         atomic_lor_with_context, atomic_land_with_context, atomic_lxor_with_context
     );
+
+
+    unsafe fn atomic_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        ctx: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error>
+    {
+        self.atomic_impl(buf, desc, None, mem_addr, mapped_key, Some(ctx.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
@@ -1416,6 +1696,17 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         atomic_lor_triggered, atomic_land_triggered, atomic_lxor_triggered
     );
 
+    unsafe fn atomicv<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomicv_impl(ioc, desc, None, mem_addr, mapped_key, None, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -1439,6 +1730,18 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
         atomicv_lor, atomicv_land, atomicv_lxor
     );
+
+    unsafe fn atomicv_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomicv_impl(ioc, desc, None, mem_addr, mapped_key, None, op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
@@ -1465,6 +1768,18 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
         atomicv_lor_with_context, atomicv_land_with_context, atomicv_lxor_with_context
     );
+
+    unsafe fn atomicv_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.atomicv_impl(ioc, desc, None, mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
@@ -1498,6 +1813,17 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         options: AtomicMsgOptions,
     ) -> Result<(), crate::error::Error> {
         self.atomicmsg_impl(Either::Right(msg), options)
+    }
+
+
+    unsafe fn atomic_inject<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> Result<(), crate::error::Error> {
+        self.inject_atomic_impl(buf, None, mem_addr, mapped_key, op)
     }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
@@ -1639,6 +1965,18 @@ pub(crate) trait AtomicFetchEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
 }
 
 pub trait AtomicFetchEp {
+    unsafe fn fetch_atomic_from<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1664,6 +2002,20 @@ pub trait AtomicFetchEp {
     ),
     fetch_atomic_lor_from, fetch_atomic_land_from, fetch_atomic_lxor_from
     );
+
+    unsafe fn fetch_atomic_from_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1694,6 +2046,19 @@ pub trait AtomicFetchEp {
     fetch_atomic_lor_from_with_context, fetch_atomic_land_from_with_context, fetch_atomic_lxor_from_with_context
     );
 
+    unsafe fn fetch_atomic_from_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1722,6 +2087,18 @@ pub trait AtomicFetchEp {
     fetch_atomic_lor_from_triggered, fetch_atomic_land_from_triggered, fetch_atomic_lxor_from_triggered
     );
 
+    unsafe fn fetch_atomicv_from<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -1747,6 +2124,19 @@ pub trait AtomicFetchEp {
     ),
     fetch_atomicv_lor_from, fetch_atomicv_land_from, fetch_atomicv_lxor_from
     );
+
+    unsafe fn fetch_atomicv_from_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1776,6 +2166,19 @@ pub trait AtomicFetchEp {
     ),
     fetch_atomicv_lor_from_with_context, fetch_atomicv_land_from_with_context, fetch_atomicv_lxor_from_with_context
     );
+
+    unsafe fn fetch_atomicv_from_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1815,6 +2218,17 @@ pub trait AtomicFetchEp {
 }
 
 pub trait ConnectedAtomicFetchEp {
+    unsafe fn fetch_atomic<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1838,6 +2252,18 @@ pub trait ConnectedAtomicFetchEp {
     ),
     fetch_atomic_lor, fetch_atomic_land, fetch_atomic_lxor
     );
+
+    unsafe fn fetch_atomic_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1865,6 +2291,18 @@ pub trait ConnectedAtomicFetchEp {
     fetch_atomic_lor_with_context, fetch_atomic_land_with_context, fetch_atomic_lxor_with_context
     );
 
+    unsafe fn fetch_atomic_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1891,6 +2329,17 @@ pub trait ConnectedAtomicFetchEp {
     fetch_atomic_lor_triggered, fetch_atomic_land_triggered, fetch_atomic_lxor_triggered
     );
 
+    unsafe fn fetch_atomicv<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -1914,6 +2363,19 @@ pub trait ConnectedAtomicFetchEp {
     ),
     fetch_atomicv_lor, fetch_atomicv_land, fetch_atomicv_lxor
     );
+
+    unsafe fn fetch_atomicv_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
+
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1941,6 +2403,18 @@ pub trait ConnectedAtomicFetchEp {
     ),
     fetch_atomicv_lor_with_context, fetch_atomicv_land_with_context, fetch_atomicv_lxor_with_context
     );
+
+    unsafe fn fetch_atomicv_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1979,6 +2453,20 @@ pub trait ConnectedAtomicFetchEp {
 
 // Implementations for the new per-op trait methods
 impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
+    unsafe fn fetch_atomic_from<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, None, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -2005,6 +2493,21 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Lxor, crate::enums::FetchAtomicOp::Land,,
         fetch_atomic_lor_from, fetch_atomic_land_from, fetch_atomic_lxor_from
     );
+
+    unsafe fn fetch_atomic_from_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -2036,6 +2539,21 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         fetch_atomic_lor_from_with_context, fetch_atomic_land_from_with_context, fetch_atomic_lxor_from_with_context
     );
 
+    unsafe fn fetch_atomic_from_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomic_impl(buf, desc, res, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -2066,6 +2584,20 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         fetch_atomic_lor_from_triggered, fetch_atomic_land_from_triggered, fetch_atomic_lxor_from_triggered
     );
 
+    unsafe fn fetch_atomicv_from<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, None, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -2093,6 +2625,21 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
         fetch_atomicv_lor_from, fetch_atomicv_land_from, fetch_atomicv_lxor_from
     );
+
+    unsafe fn fetch_atomicv_from_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -2123,6 +2670,21 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
         fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut())), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
         fetch_atomicv_lor_from_with_context, fetch_atomicv_land_from_with_context, fetch_atomicv_lxor_from_with_context
     );
+
+    unsafe fn fetch_atomicv_from_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_impl(ioc, desc, resultv, res_desc, Some(dest_addr), mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -2166,6 +2728,19 @@ impl<EP: AtomicFetchEpImpl + ConnlessEp> AtomicFetchEp for EP {
 }
 
 impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
+    unsafe fn fetch_atomic<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, None, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -2191,6 +2766,20 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
         fetch_atomic_lor, fetch_atomic_land, fetch_atomic_lxor
     );
+
+    unsafe fn fetch_atomic_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -2220,6 +2809,20 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         fetch_atomic_lor_with_context, fetch_atomic_land_with_context, fetch_atomic_lxor_with_context
     );
 
+    unsafe fn fetch_atomic_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomic_impl(buf, desc, res, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -2248,6 +2851,19 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         fetch_atomic_lor_triggered, fetch_atomic_land_triggered, fetch_atomic_lxor_triggered
     );
 
+    unsafe fn fetch_atomicv<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, None, op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -2273,6 +2889,20 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, None), crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
         fetch_atomicv_lor, fetch_atomicv_land, fetch_atomicv_lxor
     );
+
+    unsafe fn fetch_atomicv_with_context<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -2302,6 +2932,20 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
         fetch_atomicv_lor_with_context, fetch_atomicv_land_with_context, fetch_atomicv_lxor_with_context
     );
     
+    unsafe fn fetch_atomicv_triggered<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut TriggeredContext,
+        op: FetchAtomicOp,
+    ) -> Result<(), crate::error::Error> {
+        self.fetch_atomicv_impl(ioc, desc, resultv, res_desc, None, mem_addr, mapped_key, Some(context.inner_mut()), op)
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -4304,6 +4948,7 @@ pub(crate) trait AtomicCASImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
 }
 
 pub trait AtomicCASEp {
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), 
     (
         self,

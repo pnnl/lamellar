@@ -210,7 +210,7 @@ impl MulticastGroupImpl {
         addr: MulticastAddressSource,
         avset: &MyRc<AddressVectorSetImpl>,
     ) -> Self {
-        let oc_set: std::cell::OnceCell<std::rc::Rc<AddressVectorSetImpl>> = MyOnceCell::new();
+        let oc_set = MyOnceCell::new();
         if let Err(_err) = oc_set.set(avset.clone()) {
             panic!("Could not set multicast group")
         }

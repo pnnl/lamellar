@@ -184,6 +184,7 @@ pub(crate) struct MemoryRegionImpl {
 ///
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
 /// are also dropped.
+#[derive(Clone)]
 pub struct MemoryRegion {
     pub(crate) inner: MyRc<MemoryRegionImpl>,
     // pub(crate) backing_buffers_ranges : Vec<(usize, usize)>, 

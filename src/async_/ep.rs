@@ -6,6 +6,7 @@ use super::{
     cq::{AsyncCq, CompletionQueue},
     eq::AsyncReadEq,
 };
+use crate::av::AVSyncMode;
 use crate::{
     av::{AddressVectorBase, NoBlock},
     cq::ReadCq,
@@ -332,9 +333,9 @@ impl<EP>
         self.inner.bind_cntr()
     }
 
-    pub(crate) fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+    pub(crate) fn bind_av<Mode: AVSyncMode,EQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<NoBlock, EQ>,
+        av: &AddressVectorBase<Mode, EQ>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_av(av)
     }

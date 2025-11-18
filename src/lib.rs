@@ -174,6 +174,10 @@ impl<T: Copy> RemoteMemoryAddress<T> {
         unsafe { self.raw_mem_addr.offset_from(origin.raw_mem_addr) }
     }
 
+    pub unsafe fn as_type<U: Copy>(&self) -> RemoteMemoryAddress<U> {
+        RemoteMemoryAddress::new(self.raw_mem_addr as *const U)
+    }
+
     pub fn as_ptr(&self) -> *const T {
         self.raw_mem_addr
     }
@@ -264,6 +268,10 @@ impl MemAddressInfo {
 
     pub fn to_bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    pub fn to_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes
     }
 
     pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
@@ -473,15 +481,15 @@ impl<T: Copy> RemoteMemAddrSliceMut<'_, T> {
 }
 
 #[derive(Clone)]
-pub struct RemoteMemAddressInfo {
-    mem_address: RemoteMemoryAddress,
+pub struct RemoteMemAddressInfo<T = u8> {
+    mem_address: RemoteMemoryAddress<T>,
     len: usize,
     key: MappedMemoryRegionKey,
 }
 
-impl RemoteMemAddressInfo {
+impl<T: Copy> RemoteMemAddressInfo<T> {
     pub(crate) fn new(
-        mem_address: RemoteMemoryAddress,
+        mem_address: RemoteMemoryAddress<T>,
         len: usize,
         key: MappedMemoryRegionKey,
     ) -> Self {
@@ -492,7 +500,7 @@ impl RemoteMemAddressInfo {
         }
     }
 
-    pub fn mem_address(&self) -> RemoteMemoryAddress {
+    pub fn mem_address(&self) -> RemoteMemoryAddress<T> {
         self.mem_address
     }
 
@@ -504,7 +512,13 @@ impl RemoteMemAddressInfo {
         self.key.clone()
     }
 
-    pub fn slice<T: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, T> {
+    pub fn contains(&self, addr: &usize) -> bool {
+        let start = self.mem_address.raw_mem_addr as usize;
+        let end = start + self.len;
+        *addr >= start && *addr < end
+    }
+
+    pub fn slice<U: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, U> {
         let (start, end) = range.bounds(self.len);
         assert!(
             start < end,
@@ -514,8 +528,8 @@ impl RemoteMemAddressInfo {
         );
         let len = end - start;
         let (start, end) = (
-            start * std::mem::size_of::<T>(),
-            end * std::mem::size_of::<T>(),
+            start * std::mem::size_of::<U>(),
+            end * std::mem::size_of::<U>(),
         );
         // Ensure that the slice is within bounds
         assert!(
@@ -533,14 +547,30 @@ impl RemoteMemAddressInfo {
         )
     }
 
-    pub unsafe fn slice_unchecked<T: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, T> {
+    pub unsafe fn sub_region(&self, range: impl MemoryRange) -> Self {
+        let (start, end) = range.bounds(self.len);
+
+        let len = end - start;
+        let (start, end) = (
+            start * std::mem::size_of::<T>(),
+            end * std::mem::size_of::<T>(),
+        );
+
+        Self {
+            mem_address: unsafe { self.mem_address.add(start) },
+            len,
+            key: self.key.clone(),
+        }
+    }
+
+    pub unsafe fn slice_unchecked<U: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, U> {
         let (start, end) = range.bounds(self.len);
         let len = end - start;
-        let start = start * std::mem::size_of::<T>();
+        let start = start * std::mem::size_of::<U>();
         RemoteMemAddrSlice::new(self.mem_address.add(start), len, self.key.clone())
     }
-    
-    pub fn slice_mut<T: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, T> {
+
+    pub fn slice_mut<U: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, U> {
         let (start, end) = range.bounds(self.len);
         assert!(
             start < end,
@@ -550,8 +580,8 @@ impl RemoteMemAddressInfo {
         );
         let len = end - start;
         let (start, end) = (
-            start * std::mem::size_of::<T>(),
-            end * std::mem::size_of::<T>(),
+            start * std::mem::size_of::<U>(),
+            end * std::mem::size_of::<U>(),
         );
         assert!(
             start < self.len,
@@ -568,10 +598,10 @@ impl RemoteMemAddressInfo {
         )
     }
 
-    pub unsafe fn slice_mut_unchecked<T: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, T> {
+    pub unsafe fn slice_mut_unchecked<U: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, U> {
         let (start, end) = range.bounds(self.len);
         let len = end - start;
-        let start = start * std::mem::size_of::<T>();
+        let start = start * std::mem::size_of::<U>();
         RemoteMemAddrSliceMut::new(
             unsafe { self.mem_address.add(start) },
             len,
@@ -1366,6 +1396,38 @@ impl AsFiOrBoolType for usize {
             libfabric_sys::fi_datatype_FI_UINT8
         } else {
             panic!("Unhandled usize datatype size")
+        }
+    }
+}
+
+impl AsFiType for usize {
+    fn as_fi_datatype() -> libfabric_sys::fi_datatype {
+        if std::mem::size_of::<usize>() == 8 {
+            libfabric_sys::fi_datatype_FI_UINT64
+        } else if std::mem::size_of::<usize>() == 4 {
+            libfabric_sys::fi_datatype_FI_UINT32
+        } else if std::mem::size_of::<usize>() == 2 {
+            libfabric_sys::fi_datatype_FI_UINT16
+        } else if std::mem::size_of::<usize>() == 1 {
+            libfabric_sys::fi_datatype_FI_UINT8
+        } else {
+            panic!("Unhandled usize datatype size")
+        }
+    }
+}
+
+impl AsFiType for isize {
+    fn as_fi_datatype() -> libfabric_sys::fi_datatype {
+        if std::mem::size_of::<isize>() == 8 {
+            libfabric_sys::fi_datatype_FI_INT64
+        } else if std::mem::size_of::<isize>() == 4 {
+            libfabric_sys::fi_datatype_FI_INT32
+        } else if std::mem::size_of::<isize>() == 2 {
+            libfabric_sys::fi_datatype_FI_INT16
+        } else if std::mem::size_of::<isize>() == 1 {
+            libfabric_sys::fi_datatype_FI_INT8
+        } else {
+            panic!("Unhandled isize datatype size")
         }
     }
 }
