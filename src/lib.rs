@@ -140,8 +140,8 @@ pub struct RemoteMemoryAddress<T = u8> {
     raw_mem_addr: *const T,
 }
 
-unsafe impl Send for RemoteMemoryAddress {}
-unsafe impl Sync for RemoteMemoryAddress {}
+unsafe impl<T> Send for RemoteMemoryAddress<T> {}
+unsafe impl<T> Sync for RemoteMemoryAddress<T> {}
 
 impl<T: Copy> RemoteMemoryAddress<T> {
     pub(crate) fn new(raw_mem_addr: *const T) -> Self {

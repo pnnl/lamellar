@@ -174,6 +174,17 @@ macro_rules! gen_atomic_op_def {
 
 
 pub trait AsyncAtomicWriteEp {
+    unsafe fn atomic_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -222,6 +233,17 @@ pub trait AsyncAtomicWriteEp {
     // atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered
     // );
 
+    unsafe fn atomicv_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -252,6 +274,14 @@ pub trait AsyncAtomicWriteEp {
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
+    unsafe fn atomic_inject_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -275,6 +305,16 @@ pub trait AsyncAtomicWriteEp {
 }
 
 pub trait ConnectedAsyncAtomicWriteEp {
+    unsafe fn atomic_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -317,6 +357,17 @@ pub trait ConnectedAsyncAtomicWriteEp {
     // ), 
     // atomic_lor_triggered, atomic_land_triggered, atomic_lxor_triggered
     // );
+
+
+    unsafe fn atomicv_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -367,6 +418,13 @@ pub trait ConnectedAsyncAtomicWriteEp {
         options: AtomicMsgOptions,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
+    unsafe fn atomic_inject_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -562,6 +620,27 @@ impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl for TxConte
 impl<I: AtomicCap + WriteMod, STATE: EpState> AsyncAtomicWriteEpImpl for TxContext<I, STATE> {}
 
 impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
+    unsafe fn atomic_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomic_async_impl(
+            buf,
+            desc,
+            Some(dest_addr),
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -615,6 +694,26 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     //     atomic_lor_to_triggered, atomic_land_to_triggered, atomic_lxor_to_triggered
     // );
 
+    unsafe fn atomicv_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomicv_async_impl(
+            ioc,
+            desc,
+            Some(dest_addr),
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
@@ -667,6 +766,17 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
     //     atomicv_async_impl(ioc, desc, Some(dest_addr), mem_addr, mapped_key, ctx), AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,,
     //     atomicv_lor_to_triggered, atomicv_land_to_triggered, atomicv_lxor_to_triggered
     // );
+
+    unsafe fn atomic_inject_to_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.inject_atomic_async_impl(buf, Some(dest_addr), mem_addr, mapped_key, op)
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
@@ -756,6 +866,27 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnlessEp> AsyncAtomicWriteEp for EP {
 }
 
 impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for EP {
+
+    unsafe fn atomic_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomic_async_impl(
+            buf,
+            desc,
+            None,
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         buf: &[T],
@@ -820,6 +951,26 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     //     atomic_lor_triggered, atomic_land_triggered, atomic_lxor_triggered
     // );
 
+    unsafe fn atomicv_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.atomicv_async_impl(
+            ioc,
+            desc,
+            None,
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -871,6 +1022,16 @@ impl<EP: AsyncAtomicWriteEpImpl + ConnectedEp> ConnectedAsyncAtomicWriteEp for E
     //     AtomicOp::Lor, AtomicOp::Land, AtomicOp::Lxor,, 
     //     atomicv_lor_triggered, atomicv_land_triggered, atomicv_lxor_triggered
     // );
+    unsafe fn atomic_inject_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        op: AtomicOp
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.inject_atomic_async_impl(buf, None, mem_addr, mapped_key, op)
+    }
+
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
         self,
@@ -1446,6 +1607,19 @@ pub(crate) trait AsyncAtomicFetchEpImpl: AtomicFetchEpImpl + AsyncTxEp {
 }
 
 pub trait AsyncAtomicFetchEp {
+    unsafe fn fetch_atomic_from_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1473,6 +1647,20 @@ pub trait AsyncAtomicFetchEp {
     )-> SingleCompletion,
     fetch_atomic_lor_from_async, fetch_atomic_land_from_async, fetch_atomic_lxor_from_async
     );
+
+    unsafe fn fetch_atomicv_from_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         ioc: &[crate::iovec::Ioc<T>],
@@ -1511,6 +1699,18 @@ pub trait AsyncAtomicFetchEp {
 }
 
 pub trait ConnectedAsyncAtomicFetchEp {
+    unsafe fn fetch_atomic_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
+
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1536,6 +1736,18 @@ pub trait ConnectedAsyncAtomicFetchEp {
     )-> SingleCompletion,
     fetch_atomic_lor_async, fetch_atomic_land_async, fetch_atomic_lxor_async
     );
+
+    unsafe fn fetch_atomicv_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
     gen_atomic_op_decl!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1661,6 +1873,32 @@ impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl for TxContex
 impl<I: AtomicCap + ReadMod, STATE: EpState> AsyncAtomicFetchEpImpl for TxContext<I, STATE> {}
 
 impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
+
+    unsafe fn fetch_atomic_from_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.fetch_atomic_async_impl(
+            buf,
+            desc,
+            res,
+            res_desc,
+            Some(dest_addr),
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1692,6 +1930,31 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
         crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
         fetch_atomic_lor_from_async, fetch_atomic_land_from_async, fetch_atomic_lxor_from_async
     );
+
+    unsafe fn fetch_atomicv_from_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        dest_addr: &crate::MappedAddress,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.fetch_atomicv_async_impl(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            Some(dest_addr),
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
@@ -1737,6 +2000,30 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnlessEp> AsyncAtomicFetchEp for EP {
 }
 
 impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for EP {
+    unsafe fn fetch_atomic_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        buf: &[T],
+        desc: Option<MemoryRegionDesc<'_>>,
+        res: &mut [T],
+        res_desc: Option<MemoryRegionDesc<'_>>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.fetch_atomic_async_impl(
+            buf,
+            desc,
+            res,
+            res_desc,
+            None,
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
+
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
         buf: &[T],
@@ -1766,6 +2053,30 @@ impl<EP: AsyncAtomicFetchEpImpl + ConnectedEp> ConnectedAsyncAtomicFetchEp for E
         crate::enums::FetchAtomicOp::Lor, crate::enums::FetchAtomicOp::Land, crate::enums::FetchAtomicOp::Lxor,,
         fetch_atomic_lor_async, fetch_atomic_land_async, fetch_atomic_lxor_async
     );
+
+    unsafe fn fetch_atomicv_async<T: AsFiType, RT: AsFiType>(
+        &self,
+        ioc: &[crate::iovec::Ioc<T>],
+        desc: Option<&[MemoryRegionDesc<'_>]>,
+        resultv: &mut [crate::iovec::IocMut<T>],
+        res_desc: Option<&[MemoryRegionDesc<'_>]>,
+        mem_addr: RemoteMemoryAddress<RT>,
+        mapped_key: &MappedMemoryRegionKey,
+        context: &mut Context,
+        op: crate::enums::FetchAtomicOp,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.fetch_atomicv_async_impl(
+            ioc,
+            desc,
+            resultv,
+            res_desc,
+            None,
+            mem_addr,
+            mapped_key,
+            context,
+            op,
+        )
+    }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), (
         self,
