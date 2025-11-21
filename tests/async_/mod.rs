@@ -376,6 +376,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                     let ep = match ep {
                         libfabric::conn_ep::EnabledConnectionOrientedEndpoint::Unconnected(ep) => {
                             async_std::task::block_on(async {
+                                println!("Connecting {}", config.server);
                                 ep.connect_async(info_entry.dest_addr().unwrap()).await
                             })
                             .unwrap()

@@ -1697,24 +1697,36 @@ impl<I: MsgDefaultCap + 'static> Ofi<I> {
         let mem_info = libfabric::MemAddressInfo::from_slice(&self.reg_mem.borrow(), 0, &key, &self.info_entry);
         let mem_bytes = mem_info.to_bytes();
         println!("Local addr: {:?}, size: {}", self.reg_mem.borrow().as_ptr(), self.reg_mem.borrow().len());
-
-        self.reg_mem.borrow_mut()[..mem_bytes.len()].copy_from_slice(mem_bytes);
-        
+        let len = mem_bytes.len();
+        println!("Mem info bytes len: {}", len);
+        self.reg_mem.borrow_mut()[..len].copy_from_slice(mem_bytes);
+        println!("Sending : {:?}", &self.reg_mem.borrow()[..len]);
         self.send(
-            0..mem_bytes.len(),
+            0..len,
             None,
             false,
         );
         self.recv(
-            mem_bytes.len()..2*mem_bytes.len(),
+            len..2*len,
             false,
         );
         
         // self.cq_type.rx_cq().sread(1, -1).unwrap();
         self.wait_rx(1);
-        let mem_info = unsafe { MemAddressInfo::from_bytes(&self.reg_mem.borrow()[mem_bytes.len()..2*mem_bytes.len()]) };
+        let mem_info = unsafe { MemAddressInfo::from_bytes(&self.reg_mem.borrow()[len..2*len]) };
         let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
+        println!("Received : {:?}", &self.reg_mem.borrow()[len..2*len]);
         println!("Remote addr: {:?}, size: {}", remote_mem_info.mem_address().as_ptr(), remote_mem_info.mem_len());
+        self.send(
+            0..len,
+            None,
+            false,
+        );
+        self.recv(
+            len..2*len,
+            false,
+        );
+        self.wait_rx(1);
 
         self.remote_mem_info = Some(RefCell::new(remote_mem_info));
     }
