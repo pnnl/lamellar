@@ -213,6 +213,20 @@ impl<EP, STATE: EpState> TxContextImpl<EP, STATE> {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
+    pub(crate) fn enable(&self) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn bind_cq_<T: ReadCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
@@ -268,6 +282,11 @@ impl<I, STATE: EpState> TxContext<I, STATE> {
     /// Binds a [Counter] to the context.
     pub fn bind_cntr(&self) -> TxIncompleteBindCntr<I, STATE> {
         self.inner.inner.bind_cntr()
+    }
+
+    /// Enables the transmission context.
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
+        self.inner.inner.enable()
     }
 }
 
@@ -657,6 +676,20 @@ impl<I, STATE: EpState> RxContextImpl<I, STATE> {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
+    pub(crate) fn enable(&self) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn bind_cq_<T: ReadCq + AsRawFid + 'static>(
         &self,
         res: &MyRc<T>,
@@ -719,6 +752,11 @@ impl<I, STATE: EpState> RxContextBase<I, STATE, dyn ReadCq> {
     /// Binds a [Counter] to the context
     pub fn bind_cntr(&self) -> RxIncompleteBindCntr<I, STATE> {
         self.inner.inner.bind_cntr()
+    }
+
+    /// Enables the receive context.
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
+        self.inner.inner.enable()
     }
 }
 

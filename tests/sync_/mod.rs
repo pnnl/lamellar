@@ -456,7 +456,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         }
                         // cq_type.rx_cq().sread(1, -1).unwrap();
                         // ep.recv(&mut reg_mem, &mut mr_desc).unwrap();
-                        let remote_address = unsafe { Address::from_bytes(&reg_mem) };
+                        let remote_address = unsafe { Address::from_bytes(&reg_mem[..addrlen]) };
                         let all_addresses = [epname, remote_address];
                         let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = {
                             let pending = av

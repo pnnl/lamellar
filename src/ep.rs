@@ -491,7 +491,7 @@ impl ScalableEndpoint<()> {
 impl SyncSend for ScalableEndpointImpl {}
 
 impl ScalableEndpointImpl {
-    pub fn new<E, EQ: ?Sized + 'static + SyncSend>(
+    fn new<E, EQ: ?Sized + 'static + SyncSend>(
         domain: &MyRc<crate::domain::DomainImplBase<EQ>>,
         info: &InfoEntry<E>,
         context: *mut std::ffi::c_void,
@@ -543,6 +543,14 @@ impl ScalableEndpointImpl {
         check_error(err.try_into().unwrap())
     }
 
+    fn enable(&self) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
     // pub(crate) fn bind_av(&self, av: &MyRc<AddressVectorImpl>) -> Result<(), crate::error::Error> {
 
     //     self.bind(&av, 0)
@@ -569,10 +577,13 @@ impl ScalableEndpointImpl {
 }
 
 impl<E> ScalableEndpoint<E> {
-    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub fn bind_av<Mode: AVSyncMode, AVEQ: ?Sized + ReadEq + 'static>(&self, av: &AddressVectorBase<Mode, AVEQ>) -> Result<(), crate::error::Error> {
         self.inner.bind(&av.inner, 0)
     }
 
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
+        self.inner.enable()
+    }
     // pub fn alias(&self, flags: u64) -> Result<ScalableEndpoint<E>, crate::error::Error> {
     //     Ok(Self {
     //         inner: MyRc::new(self.inner.alias(flags)?),
