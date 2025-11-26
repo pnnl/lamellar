@@ -355,19 +355,19 @@ impl MultiCastGroup {
 }
 
 impl AsTypedFid<McRawFid> for MultiCastGroup {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<McRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, McRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<McRawFid> {
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<'_, McRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
 
 impl AsTypedFid<McRawFid> for MulticastGroupImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<McRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, McRawFid> {
         self.c_mc.get().unwrap().as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<McRawFid> {
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<'_, McRawFid> {
         self.c_mc.get().unwrap().as_typed_fid_mut()
     }
 }

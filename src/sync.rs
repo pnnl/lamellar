@@ -85,7 +85,7 @@ impl WaitSetImpl {
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+    pub(crate) fn wait_object(&self) -> Result<WaitObjType2<'_>, crate::error::Error> {
         let mut res: libfabric_sys::fi_wait_obj = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_control(
@@ -184,7 +184,7 @@ impl WaitSet {
     /// Returns the wait object associated with the WaitSet.
     ///
     /// Corresponds to `fi_control` with FI_GETWAITOBJ command.
-    pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+    pub fn wait_object(&self) -> Result<WaitObjType2<'_>, crate::error::Error> {
         self.inner.wait_object()
     }
 }
@@ -214,21 +214,21 @@ impl WaitSet {
 // }
 
 impl AsTypedFid<WaitRawFid> for WaitSetImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<WaitRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, WaitRawFid> {
         self.c_wait.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<WaitRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, WaitRawFid> {
         self.c_wait.as_typed_fid_mut()
     }
 }
 
 impl AsTypedFid<WaitRawFid> for WaitSet {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<WaitRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, WaitRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<WaitRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, WaitRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -389,7 +389,7 @@ impl PollSetImpl {
         check_error(err.try_into().unwrap())
     }
 
-    pub(crate) fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+    pub(crate) fn wait_object(&self) -> Result<WaitObjType2<'_>, crate::error::Error> {
         let mut res: libfabric_sys::fi_wait_obj = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_control(
@@ -502,7 +502,7 @@ impl PollSet {
     /// Returns the wait object associated with the PollSet.
     ///
     /// Corresponds to a `fi_control` function with `FI_GETWAITOBJ` command.
-    pub fn wait_object(&self) -> Result<WaitObjType2, crate::error::Error> {
+    pub fn wait_object(&self) -> Result<WaitObjType2<'_>, crate::error::Error> {
         self.inner.wait_object()
     }
 }
@@ -532,19 +532,19 @@ impl PollSet {
 // }
 
 impl AsTypedFid<PollRawFid> for PollSetImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<PollRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, PollRawFid> {
         self.c_poll.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PollRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, PollRawFid> {
         self.c_poll.as_typed_fid_mut()
     }
 }
 
 impl AsTypedFid<PollRawFid> for PollSet {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<PollRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, PollRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PollRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, PollRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }

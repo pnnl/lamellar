@@ -97,7 +97,7 @@ impl OwnedMemoryRegionKey {
         }
     }
 
-    fn as_borrowed(&self) -> MemoryRegionKey {
+    fn as_borrowed(&self) -> MemoryRegionKey<'_> {
         MemoryRegionKey { key: self }
     }
 
@@ -367,7 +367,7 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
+    pub(crate) fn key(&self) -> Result<MemoryRegionKey<'_>, crate::error::Error> {
         let key = self.key.as_ref();
         match key {
             Ok(key) => Ok(key.as_borrowed()),
@@ -477,7 +477,7 @@ impl MemoryRegionImpl {
     // }
 
 
-    pub(crate) fn descriptor(&self) -> MemoryRegionDesc {
+    pub(crate) fn descriptor(&self) -> MemoryRegionDesc<'_> {
         self.mr_desc.as_borrowed()
     }
 }
@@ -557,7 +557,7 @@ impl MemoryRegion {
     /// This call will automatically request a 'raw' key if the provider requires it.
     ///
     /// Corresponds to calling `fi_mr_raw_attr` or `fi_mr_key` depending on the requirements of the respective [Domain](crate::domain::Domain).
-    pub fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
+    pub fn key(&self) -> Result<MemoryRegionKey<'_>, crate::error::Error> {
         self.inner.key()
     }
 
@@ -676,7 +676,7 @@ impl<'a> MemoryRegionSlice<'a> {
         unsafe {std::slice::from_raw_parts(self.mem_base as *const u8, self.mem_len)}
     }
 
-    pub(crate) fn desc(&self) -> MemoryRegionDesc {
+    pub(crate) fn desc(&self) -> MemoryRegionDesc<'_> {
         self.mr_desc
     }
 }
@@ -781,21 +781,21 @@ impl OwnedMemoryRegionDesc {
 }
 
 impl AsTypedFid<MrRawFid> for MemoryRegion {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, MrRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, MrRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
 
 impl AsTypedFid<MrRawFid> for MemoryRegionImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, MrRawFid> {
         self.c_mr.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, MrRawFid> {
         self.c_mr.as_typed_fid_mut()
     }
 }

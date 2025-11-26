@@ -507,8 +507,8 @@ pub trait AsRawFid {
 }
 
 pub trait AsTypedFid<FID: AsRawFid> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<FID>;
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<FID>;
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FID>;
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, FID>;
 }
 
 pub trait AsRawTypedFid {

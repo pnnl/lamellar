@@ -712,7 +712,7 @@ pub struct InfoIterator<'a, T> {
 }
 
 impl<T> Info<T> {
-    pub fn iter(&self) -> InfoIterator<T> {
+    pub fn iter(&self) -> InfoIterator<'_, T> {
         InfoIterator {
             info: self,
             index: 0,

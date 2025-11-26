@@ -65,40 +65,40 @@ impl<T, I, STATE: EpState, CQ: ReadCq> BaseEndpoint<EpRawFid>
 }
 
 impl<I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for TxContextBase<I, STATE, CQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
 
 impl<I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for RxContextBase<I, STATE, CQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
 
 impl<T, I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBase<T, I, STATE, CQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
 
 impl<T, I, STATE: EpState, CQ: ?Sized> AsTypedFid<EpRawFid> for XContextBaseImpl<T, I, STATE, CQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.c_ep.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.c_ep.as_typed_fid_mut()
     }
 }
@@ -205,11 +205,11 @@ impl<I: 'static, STATE: EpState, CQ: ?Sized> TxContextImplBase<I, STATE, CQ> {
 }
 
 impl<EP, STATE: EpState> TxContextImpl<EP, STATE> {
-    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq<EP, STATE> {
+    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq<'_, EP, STATE> {
         TxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr<EP, STATE> {
+    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr<'_, EP, STATE> {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -275,12 +275,12 @@ impl<I: 'static, STATE: EpState> TxContext<I, STATE> {
 
 impl<I, STATE: EpState> TxContext<I, STATE> {
     /// Binds a [crate::cq::CompletionQueue] to the context.
-    pub fn bind_cq(&self) -> TxIncompleteBindCq<I, STATE> {
+    pub fn bind_cq(&self) -> TxIncompleteBindCq<'_, I, STATE> {
         self.inner.inner.bind_cq()
     }
 
     /// Binds a [Counter] to the context.
-    pub fn bind_cntr(&self) -> TxIncompleteBindCntr<I, STATE> {
+    pub fn bind_cntr(&self) -> TxIncompleteBindCntr<'_, I, STATE> {
         self.inner.inner.bind_cntr()
     }
 
@@ -668,11 +668,11 @@ impl<I: 'static, STATE: EpState, CQ: ?Sized> RxContextImplBase<I, STATE, CQ> {
 }
 
 impl<I, STATE: EpState> RxContextImpl<I, STATE> {
-    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq<I, STATE> {
+    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq<'_, I, STATE> {
         RxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr<I, STATE> {
+    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr<'_, I, STATE> {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -745,12 +745,12 @@ impl<I: 'static, STATE: EpState> RxContext<I, STATE> {
 
 impl<I, STATE: EpState> RxContextBase<I, STATE, dyn ReadCq> {
     /// Binds a completion queue to the receive context.
-    pub fn bind_cq(&self) -> RxIncompleteBindCq<I, STATE> {
+    pub fn bind_cq(&self) -> RxIncompleteBindCq<'_, I, STATE> {
         self.inner.inner.bind_cq()
     }
 
     /// Binds a [Counter] to the context
-    pub fn bind_cntr(&self) -> RxIncompleteBindCntr<I, STATE> {
+    pub fn bind_cntr(&self) -> RxIncompleteBindCntr<'_, I, STATE> {
         self.inner.inner.bind_cntr()
     }
 

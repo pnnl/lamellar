@@ -267,12 +267,12 @@ impl<'a, Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static> AddressVectorSetBuilde
 
 impl AsTypedFid<AVSetRawFid> for AddressVectorSet {
     #[inline]
-    fn as_typed_fid(&self) -> BorrowedTypedFid<AVSetRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, AVSetRawFid> {
         self.inner.as_typed_fid()
     }
 
     #[inline]
-    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<AVSetRawFid> {
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<'_, AVSetRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -429,11 +429,11 @@ impl AddressVectorSetImpl {
 
 impl AsTypedFid<AVSetRawFid> for AddressVectorSetImpl {
     #[inline]
-    fn as_typed_fid(&self) -> BorrowedTypedFid<AVSetRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, AVSetRawFid> {
         self.c_set.as_typed_fid()
     }
     #[inline]
-    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<AVSetRawFid> {
+    fn as_typed_fid_mut(&self) -> MutBorrowedTypedFid<'_, AVSetRawFid> {
         self.c_set.as_typed_fid_mut()
     }
 }

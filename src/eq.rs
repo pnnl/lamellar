@@ -739,10 +739,10 @@ impl<T: AsRawFid> AsRawFid for EventQueueBase<T> {
 // }
 
 impl<T: AsTypedFid<EqRawFid>> AsTypedFid<EqRawFid> for EventQueueBase<T> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EqRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EqRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -758,10 +758,10 @@ impl<T: AsRawTypedFid<Output = EqRawFid>> AsRawTypedFid for EventQueueBase<T> {
 impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsTypedFid<EqRawFid>
     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
 {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EqRawFid> {
         self.c_eq.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EqRawFid> {
         self.c_eq.as_typed_fid_mut()
     }
 }

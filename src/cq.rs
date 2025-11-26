@@ -733,10 +733,10 @@ impl<'a, T: WaitObjectRetrieve<'a>> CompletionQueue<T> {
 impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsTypedFid<CqRawFid>
     for CompletionQueueImpl<WAIT, RETRIEVE, FD>
 {
-    fn as_typed_fid(&self) -> crate::fid::BorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid(&self) -> crate::fid::BorrowedTypedFid<'_, CqRawFid> {
         self.c_cq.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, CqRawFid> {
         self.c_cq.as_typed_fid_mut()
     }
 }
@@ -762,11 +762,11 @@ impl<T: AsRawFid> AsRawFid for CompletionQueue<T> {
 }
 
 impl<T: AsTypedFid<CqRawFid>> AsTypedFid<CqRawFid> for CompletionQueue<T> {
-    fn as_typed_fid(&self) -> crate::fid::BorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid(&self) -> crate::fid::BorrowedTypedFid<'_, CqRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, CqRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }

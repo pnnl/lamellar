@@ -137,10 +137,10 @@ impl Fabric {
 // }
 
 impl AsTypedFid<FabricRawFid> for FabricImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<FabricRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FabricRawFid> {
         self.c_fabric.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<FabricRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, FabricRawFid> {
         self.c_fabric.as_typed_fid_mut()
     }
 }
@@ -166,11 +166,11 @@ impl AsTypedFid<FabricRawFid> for FabricImpl {
 // }
 
 impl AsTypedFid<FabricRawFid> for Fabric {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<FabricRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, FabricRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<FabricRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, FabricRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }

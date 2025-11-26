@@ -77,7 +77,7 @@ impl Profile {
     /// Queries the variables of the profile.
     ///
     /// Corresponds to a `fi_profile_query_vars` function.
-    pub fn query_vars(&self) -> Result<Vec<ProfileDesc>, crate::error::Error> {
+    pub fn query_vars(&self) -> Result<Vec<ProfileDesc<'_>>, crate::error::Error> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_profile_query_vars(
@@ -113,7 +113,7 @@ impl Profile {
     /// Queries the events of the profile.
     ///
     /// Corresponds to a `fi_profile_query_events` function.
-    pub fn query_events(&self) -> Result<Vec<ProfileDesc>, crate::error::Error> {
+    pub fn query_events(&self) -> Result<Vec<ProfileDesc<'_>>, crate::error::Error> {
         let mut count: usize = 0;
         let err = unsafe {
             libfabric_sys::inlined_fi_profile_query_events(
@@ -198,11 +198,11 @@ impl Profile {
 }
 
 impl AsTypedFid<ProfileRawFid> for Profile {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<ProfileRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, ProfileRawFid> {
         self.c_profile.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<ProfileRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, ProfileRawFid> {
         self.c_profile.as_typed_fid_mut()
     }
 }

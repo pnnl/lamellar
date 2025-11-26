@@ -9,7 +9,7 @@ use libfabric_sys::{
 
 use crate::{av::AVSyncMode, connless_ep::UninitConnectionlessEndpoint, eq::ConnReqEvent, fid::RawFid};
 use crate::{
-    av::{AddressVector, AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
+    av::{AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
     cntr::{Counter, ReadCntr},
     conn_ep::UninitUnconnectedEndpoint,
     cq::{CompletionQueue, ReadCq},
@@ -393,7 +393,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
     }
 
     /// Retrieves a file descriptor that can be used to wait for events on the endpoint.
-    fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
+    fn wait_fd(&self) -> Result<BorrowedFd<'_>, crate::error::Error> {
         let mut fd = 0;
 
         let err = unsafe {
@@ -615,19 +615,19 @@ impl<E> ScalableEndpoint<E> {
 // }
 
 impl AsTypedFid<EpRawFid> for ScalableEndpointImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.c_sep.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.c_sep.as_typed_fid_mut()
     }
 }
 
 impl<E> AsTypedFid<EpRawFid> for ScalableEndpoint<E> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -882,19 +882,19 @@ impl<E, EQ: ?Sized + ReadEq> BaseEndpoint<PepRawFid> for PassiveEndpointImplBase
 // }
 
 impl<E, EQ: ?Sized + ReadEq> AsTypedFid<PepRawFid> for PassiveEndpointImplBase<E, EQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, PepRawFid> {
         self.c_pep.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, PepRawFid> {
         self.c_pep.as_typed_fid_mut()
     }
 }
 
 impl<E, EQ: ?Sized + ReadEq> AsTypedFid<PepRawFid> for PassiveEndpointBase<E, EQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, PepRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, PepRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -1282,7 +1282,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn ReadEq, CQ> {
 }
 
 impl<EP, EQ: ?Sized + 'static + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<EP, EQ, CQ> {
-    pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<EP, EQ, CQ> {
+    pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, EQ, CQ> {
         IncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -1367,7 +1367,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
     /// Use the returned `IncompleteBindCntr` to specify which operations to bind the counter to.
     ///
     /// Corresponds to `fi_ep_bind` in libfabric.
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, dyn ReadEq, dyn ReadCq> {
         self.inner.bind_cntr()
     }
 
@@ -1436,7 +1436,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
     /// Use the returned `IncompleteBindCntr` to specify which operations to bind the counter
     /// to.
     /// Corresponds to `fi_ep_bind` in libfabric.
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, dyn ReadEq, dyn ReadCq> {
         self.inner.bind_cntr()
     }
 
@@ -1472,11 +1472,11 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
 // }
 
 impl<E: AsTypedFid<EpRawFid>, STATE: EpState> AsTypedFid<EpRawFid> for EndpointBase<E, STATE> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -1506,10 +1506,10 @@ impl<E: AsTypedFid<EpRawFid>, STATE: EpState> AsTypedFid<EpRawFid> for EndpointB
 impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsTypedFid<EpRawFid>
     for EndpointImplBase<EP, EQ, CQ>
 {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.c_ep.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.c_ep.as_typed_fid_mut()
     }
 }

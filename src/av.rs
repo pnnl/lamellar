@@ -592,11 +592,11 @@ impl AuthKey {
 
 impl<Mode: AVSyncMode, EQ: ?Sized + ReadEq> AsTypedFid<AvRawFid> for AddressVectorBase<Mode, EQ> {
     #[inline]
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AvRawFid> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, AvRawFid> {
         self.inner.as_typed_fid()
     }
     #[inline]
-    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<AvRawFid> {
+    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<'_, AvRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -1089,11 +1089,11 @@ impl Default for AddressVectorAttr {
 
 impl<EQ: ?Sized + ReadEq> AsTypedFid<AvRawFid> for AddressVectorImplBase<EQ> {
     #[inline]
-    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<AvRawFid> {
+    fn as_typed_fid(&self) -> fid::BorrowedTypedFid<'_, AvRawFid> {
         self.c_av.as_typed_fid()
     }
     #[inline]
-    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<AvRawFid> {
+    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<'_, AvRawFid> {
         self.c_av.as_typed_fid_mut()
     }
 }
