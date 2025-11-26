@@ -800,7 +800,12 @@ impl<I: Caps> TestConfigBuilder<I> {
                     .leave_hints();
         
         let info_builder = if server {
-            info_builder.source(libfabric::info::ServiceAddress::Service(service.unwrap_or("9222").to_owned()))
+            if node.is_none() {
+                info_builder.source(libfabric::info::ServiceAddress::Service(service.unwrap_or("9222").to_owned()))
+            }
+            else {                
+                info_builder.source(libfabric::info::ServiceAddress::NodeAndService(node.unwrap().to_string(), service.unwrap_or("9222").to_owned()))
+            }
         }
         else {
             info_builder
