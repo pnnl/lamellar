@@ -140,6 +140,7 @@ impl Pmi for PmiX {
             check_error!(unsafe {
                 pmix_sys::PMIx_Put(pmix_sys::PMIX_GLOBAL as u8, kvs_key, &mut val)
             });
+            check_error!(unsafe { pmix_sys::PMIx_Commit() });
             // check_error!(unsafe { pmix_sys::PMIx_Commit() });
         } else {
             self.put_singleton(key, value)?;
@@ -149,7 +150,7 @@ impl Pmi for PmiX {
 
     fn exchange(&self) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
-            check_error!(unsafe { pmix_sys::PMIx_Commit() });
+            // check_error!(unsafe { pmix_sys::PMIx_Progress() });
             self.barrier(true)?;
         }
 
