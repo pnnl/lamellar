@@ -873,7 +873,10 @@ impl EpBindingMemoryRegion {
     /// Enables a memory region for use.
     ///
     /// Corresponds to `fi_mr_enable`
-    pub fn enable<EP: ActiveEndpoint + 'static, STATE: EpState>(self, ep: &crate::ep::EndpointBase<EP, STATE>) -> Result<MemoryRegion, crate::error::Error> {
+    pub fn enable<EP: ActiveEndpoint + 'static, STATE: EpState>(
+        self,
+        ep: &crate::ep::EndpointBase<EP, STATE>,
+    ) -> Result<MemoryRegion, crate::error::Error> {
         self.bind_ep(ep)?;
         self.mr.inner.enable()?;
         Ok(self.mr)
@@ -908,10 +911,9 @@ pub enum MaybeDisabledMemoryRegion {
     Disabled(DisabledMemoryRegion),
 }
 
-
 pub enum DisabledMemoryRegion {
     EpBind(EpBindingMemoryRegion),
-    RmaEvent(RmaEventMemoryRegion)
+    RmaEvent(RmaEventMemoryRegion),
 }
 
 pub(crate) enum MRBackingBuf<'a> {
@@ -1106,9 +1108,9 @@ impl<'a> MemoryRegionBuilder<'a> {
         let mr = MemoryRegion::from_attr(domain, self.mr_attr, self.flags)?;
 
         if domain.mr_mode().is_endpoint() {
-            Ok(MaybeDisabledMemoryRegion::Disabled(DisabledMemoryRegion::EpBind(EpBindingMemoryRegion {
-                mr,
-            })))
+            Ok(MaybeDisabledMemoryRegion::Disabled(
+                DisabledMemoryRegion::EpBind(EpBindingMemoryRegion { mr }),
+            ))
         } else {
             Ok(MaybeDisabledMemoryRegion::Enabled(mr))
         }
@@ -1261,8 +1263,10 @@ mod tests {
                         MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
                             super::DisabledMemoryRegion::EpBind(_disabled_mr) => todo!(), //disabled_mr.enable(ep),
-                            super::DisabledMemoryRegion::RmaEvent(disabled_mr) => disabled_mr.enable().unwrap(),
-                        }
+                            super::DisabledMemoryRegion::RmaEvent(disabled_mr) => {
+                                disabled_mr.enable().unwrap()
+                            }
+                        },
                     };
                     let _desc = mr.descriptor();
                     // mr.close().unwrap();

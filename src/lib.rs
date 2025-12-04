@@ -94,7 +94,7 @@ impl std::fmt::Debug for TableMappedAddress {
     }
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct UnspecMappedAddress {
     raw_mapped_addr: libfabric_sys::fi_addr_t,
 }

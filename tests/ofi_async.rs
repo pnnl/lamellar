@@ -196,32 +196,29 @@ pub mod async_ofi {
             // let mut rx_pending_cnt: usize = 0;
             // let mut rx_complete_cnt: usize = 0;
             let mut reg_mem = vec![0u8; 1024 * 1024];
-            
-            let (info_entry, ep, mapped_addr) = 
-            {
+
+            let (info_entry, ep, mapped_addr) = {
                 let eq = EventQueueBuilder::new(&fabric).build().unwrap();
-                let info_entry = 
-                    if matches!(ep_type, EndpointType::Msg) {
-                        if server {
-                            let pep = EndpointBuilder::new(&info_entry)
-                                .build_passive(&fabric)
-                                .unwrap();
-                            pep.bind(&eq, 0).unwrap();
-                            let event = async_std::task::block_on(async {
-                                pep.listen_async().unwrap().next().await
-                            })
+                let info_entry = if matches!(ep_type, EndpointType::Msg) {
+                    if server {
+                        let pep = EndpointBuilder::new(&info_entry)
+                            .build_passive(&fabric)
                             .unwrap();
-                            match event {
-                                libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
-                                _ => panic!("Unexpected event"),
-                            }
-                        } else {
-                            info_entry
+                        pep.bind(&eq, 0).unwrap();
+                        let event = async_std::task::block_on(async {
+                            pep.listen_async().unwrap().next().await
+                        })
+                        .unwrap();
+                        match event {
+                            libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
+                            _ => panic!("Unexpected event"),
                         }
-                    }
-                    else {
+                    } else {
                         info_entry
-                    };
+                    }
+                } else {
+                    info_entry
+                };
 
                 domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
 
@@ -236,12 +233,10 @@ pub mod async_ofi {
                 };
 
                 let ep = match &cq_type {
-                    CqType::Separate((tx_cq, rx_cq)) => {
-                        ep_builder.build_with_separate_cqs(&domain, tx_cq, rx_cq).unwrap()
-                    } ,
-                    CqType::Shared(scq) => {
-                        ep_builder.build_with_shared_cq(&domain, scq).unwrap()
-                    }
+                    CqType::Separate((tx_cq, rx_cq)) => ep_builder
+                        .build_with_separate_cqs(&domain, tx_cq, rx_cq)
+                        .unwrap(),
+                    CqType::Shared(scq) => ep_builder.build_with_shared_cq(&domain, scq).unwrap(),
                 };
                 match ep {
                     Endpoint::Connectionless(ep) => {
@@ -273,8 +268,12 @@ pub mod async_ofi {
                                 libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                                 libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                                     match disabled_mr {
-                                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => ep_binding_memory_region.enable(&ep).unwrap(),
-                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::EpBind(
+                                            ep_binding_memory_region,
+                                        ) => ep_binding_memory_region.enable(&ep).unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                            rma_event_memory_region,
+                                        ) => rma_event_memory_region.enable().unwrap(),
                                     }
                                 }
                             };
@@ -356,7 +355,7 @@ pub mod async_ofi {
                             MyEndpoint::Connectionless(ep),
                             Some(mapped_address),
                         )
-                    },
+                    }
                     Endpoint::ConnectionOriented(ep) => {
                         let ep = ep.enable(&eq).unwrap();
                         let ep = if !server {
@@ -384,8 +383,12 @@ pub mod async_ofi {
                                 libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                                 libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                                     match disabled_mr {
-                                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => ep_binding_memory_region.enable(&ep).unwrap(),
-                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::EpBind(
+                                            ep_binding_memory_region,
+                                        ) => ep_binding_memory_region.enable(&ep).unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                            rma_event_memory_region,
+                                        ) => rma_event_memory_region.enable().unwrap(),
                                     }
                                 }
                             };
@@ -421,7 +424,7 @@ pub mod async_ofi {
     }
 
     impl<I: TagDefaultCap> Ofi<I> {
-        pub fn tsend<T:Copy>(
+        pub fn tsend<T: Copy>(
             &self,
             buf: &[T],
             desc: Option<&MemoryRegionDesc>,
@@ -536,7 +539,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn trecv<T:Copy>(
+        pub fn trecv<T: Copy>(
             &self,
             buf: &mut [T],
             desc: Option<&MemoryRegionDesc>,
@@ -602,7 +605,7 @@ pub mod async_ofi {
     }
 
     impl<I: MsgDefaultCap + 'static> Ofi<I> {
-        pub fn send<T:Copy>(
+        pub fn send<T: Copy>(
             &self,
             buf: &[T],
             desc: Option<&MemoryRegionDesc>,
@@ -667,7 +670,7 @@ pub mod async_ofi {
             .unwrap()
         }
 
-        pub fn sendrecv_deadlock<T:Copy>(
+        pub fn sendrecv_deadlock<T: Copy>(
             &self,
             buf: &mut [T],
             desc: Option<&MemoryRegionDesc>,
@@ -729,19 +732,25 @@ pub mod async_ofi {
                             .map(|_| {})
                         }
                     }
-                }.unwrap();
+                }
+                .unwrap();
             };
             let mut buf = buf.to_vec();
 
-            let recv_fu = 
-            async {
+            let recv_fu = async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
-                        ep.recv_from_async(&mut buf, desc, self.mapped_addr.as_ref().unwrap(), recv_ctx)
-                            .await
+                        ep.recv_from_async(
+                            &mut buf,
+                            desc,
+                            self.mapped_addr.as_ref().unwrap(),
+                            recv_ctx,
+                        )
+                        .await
                     }
-                    MyEndpoint::Connected(ep) => {ep.recv_async(&mut buf, desc, recv_ctx).await}
-                }.unwrap();
+                    MyEndpoint::Connected(ep) => ep.recv_async(&mut buf, desc, recv_ctx).await,
+                }
+                .unwrap();
             };
 
             async_std::task::block_on(async {
@@ -749,12 +758,7 @@ pub mod async_ofi {
             });
         }
 
-        pub fn sendv(
-            &self,
-            iov: &[IoVec],
-            desc: Option<&[MemoryRegionDesc]>,
-            ctx: &mut Context,
-        ) {
+        pub fn sendv(&self, iov: &[IoVec], desc: Option<&[MemoryRegionDesc]>, ctx: &mut Context) {
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
@@ -785,7 +789,7 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn recv<T:Copy>(
+        pub fn recv<T: Copy>(
             &self,
             buf: &mut [T],
             desc: Option<&MemoryRegionDesc>,
@@ -842,7 +846,8 @@ pub mod async_ofi {
         }
 
         pub fn exchange_keys<T: Copy>(&mut self, key: &MemoryRegionKey, mem_slice: &[T]) {
-            let mem_info = libfabric::MemAddressInfo::from_slice(mem_slice, 0, key, &self.info_entry);
+            let mem_info =
+                libfabric::MemAddressInfo::from_slice(mem_slice, 0, key, &self.info_entry);
             let mut mem_bytes = mem_info.to_bytes().to_vec();
             // let mut len = unsafe {
             //     std::slice::from_raw_parts(
@@ -877,25 +882,20 @@ pub mod async_ofi {
                 libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                 libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                     match disabled_mr {
-                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                            enable_ep_mr(&self.ep, ep_binding_memory_region)
+                        }
+                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                            rma_event_memory_region.enable().unwrap()
+                        }
                     }
                 }
             };
             let mut ctx = self.info_entry.allocate_context();
 
             let desc = Some(mr.descriptor());
-            self.send(
-                &mem_bytes,
-                desc.as_ref(),
-                None,
-                &mut ctx,
-            );
-            self.recv(
-                &mut mem_bytes,
-                desc.as_ref(),
-                &mut ctx,
-            );
+            self.send(&mem_bytes, desc.as_ref(), None, &mut ctx);
+            self.recv(&mut mem_bytes, desc.as_ref(), &mut ctx);
 
             let mem_info = unsafe { MemAddressInfo::from_bytes(&mem_bytes) };
             let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
@@ -904,7 +904,7 @@ pub mod async_ofi {
     }
 
     impl<I: MsgDefaultCap + RmaDefaultCap> Ofi<I> {
-        pub fn write<T:Copy>(
+        pub fn write<T: Copy>(
             &self,
             buf: &[T],
             dest_addr: usize,
@@ -912,8 +912,8 @@ pub mod async_ofi {
             data: Option<u64>,
             ctx: &mut Context,
         ) {
-            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
-            let dest_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len() );
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dest_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => {
@@ -924,7 +924,7 @@ pub mod async_ofi {
                                         buf,
                                         data.unwrap(),
                                         self.mapped_addr.as_ref().unwrap(),
-                                        &dest_slice
+                                        &dest_slice,
                                     )
                                     .await
                                 }
@@ -970,21 +970,11 @@ pub mod async_ofi {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
                             if data.is_some() {
                                 unsafe {
-                                    ep.inject_writedata_slice_async(
-                                        buf,
-                                        data.unwrap(),
-                                        &dest_slice,
-                                    )
-                                    .await
+                                    ep.inject_writedata_slice_async(buf, data.unwrap(), &dest_slice)
+                                        .await
                                 }
                             } else {
-                                unsafe {
-                                    ep.inject_write_slice_async(
-                                        buf,
-                                        &dest_slice,
-                                    )
-                                    .await
-                                }
+                                unsafe { ep.inject_write_slice_async(buf, &dest_slice).await }
                             }
                         } else {
                             if data.is_some() {
@@ -999,15 +989,7 @@ pub mod async_ofi {
                                     .await
                                 }
                             } else {
-                                unsafe {
-                                    ep.write_slice_async(
-                                        buf,
-                                        desc,
-                                        &dest_slice,
-                                        ctx,
-                                    )
-                                    .await
-                                }
+                                unsafe { ep.write_slice_async(buf, desc, &dest_slice, ctx).await }
                             }
                             .map(|_| {})
                         }
@@ -1017,15 +999,15 @@ pub mod async_ofi {
             .unwrap();
         }
 
-        pub fn read<T:Copy>(
+        pub fn read<T: Copy>(
             &self,
             buf: &mut [T],
             dest_addr: usize,
             desc: Option<&MemoryRegionDesc>,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len() );
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
 
             async_std::task::block_on(async {
                 match &self.ep {
@@ -1043,13 +1025,7 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         {
-                            ep.read_slice_async(
-                                buf,
-                                desc,
-                                &src_slice,
-                                ctx,
-                            )
-                            .await
+                            ep.read_slice_async(buf, desc, &src_slice, ctx).await
                         }
                     },
                 }
@@ -1064,8 +1040,9 @@ pub mod async_ofi {
             desc: Option<&[MemoryRegionDesc]>,
             ctx: &mut Context,
         ) {
-            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
-            let dst_slice = remote_mem_info.slice_mut::<u8>(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info
+                .slice_mut::<u8>(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| acc + x.len()));
             async_std::task::block_on(async {
                 match &self.ep {
                     MyEndpoint::Connectionless(ep) => unsafe {
@@ -1082,13 +1059,7 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         {
-                            ep.writev_slice_async(
-                                iov,
-                                desc,
-                                &dst_slice,
-                                ctx,
-                            )
-                            .await
+                            ep.writev_slice_async(iov, desc, &dst_slice, ctx).await
                         }
                     },
                 }
@@ -1103,9 +1074,10 @@ pub mod async_ofi {
             desc: Option<&[MemoryRegionDesc]>,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let src_slice = remote_mem_info.slice::<u8>(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| {acc + x.len()}) );
-            
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice = remote_mem_info
+                .slice::<u8>(dest_addr..dest_addr + iov.iter().fold(0, |acc, x| acc + x.len()));
+
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
@@ -1124,13 +1096,7 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         {
-                            ep.readv_slice_async(
-                                iov,
-                                desc,
-                                &src_slice,
-                                ctx,
-                            )
-                            .await
+                            ep.readv_slice_async(iov, desc, &src_slice, ctx).await
                         }
                     },
                 }
@@ -1198,8 +1164,8 @@ pub mod async_ofi {
             op: AtomicOp,
             ctx: &mut Context,
         ) {
-            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
-            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len() );
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
 
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
@@ -1233,26 +1199,10 @@ pub mod async_ofi {
                     }
                     MyEndpoint::Connected(ep) => {
                         if buf.len() <= self.info_entry.tx_attr().inject_size() {
-                            unsafe {
-                                ep.inject_atomic_slice_async(
-                                    buf,
-                                    &dst_slice,
-                                    op,
-                                )
-                                .await
-                            }
+                            unsafe { ep.inject_atomic_slice_async(buf, &dst_slice, op).await }
                         } else {
-                            unsafe {
-                                ep.atomic_slice_async(
-                                    buf,
-                                    desc,
-                                    &dst_slice,
-                                    op,
-                                    ctx,
-                                )
-                                .await
-                            }
-                            .map(|_| {})
+                            unsafe { ep.atomic_slice_async(buf, desc, &dst_slice, op, ctx).await }
+                                .map(|_| {})
                         }
                     }
                 }
@@ -1268,8 +1218,9 @@ pub mod async_ofi {
             op: AtomicOp,
             ctx: &mut Context,
         ) {
-            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
-            let dest_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| {acc + x.len()}) );
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dest_slice = remote_mem_info
+                .slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
@@ -1286,14 +1237,8 @@ pub mod async_ofi {
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.atomicv_slice_async(
-                            ioc,
-                            desc,
-                            &dest_slice,
-                            op,
-                            ctx,
-                        )
-                        .await
+                        ep.atomicv_slice_async(ioc, desc, &dest_slice, op, ctx)
+                            .await
                     },
                 }
             })
@@ -1330,8 +1275,8 @@ pub mod async_ofi {
             op: FetchAtomicOp,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len() );
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + buf.len());
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
@@ -1350,16 +1295,8 @@ pub mod async_ofi {
                         .await
                     },
                     MyEndpoint::Connected(ep) => unsafe {
-                        ep.fetch_atomic_slice_async(
-                            buf,
-                            desc,
-                            res,
-                            res_desc,
-                            &src_slice,
-                            op,
-                            ctx,
-                        )
-                        .await
+                        ep.fetch_atomic_slice_async(buf, desc, res, res_desc, &src_slice, op, ctx)
+                            .await
                     },
                 }
             })
@@ -1376,8 +1313,9 @@ pub mod async_ofi {
             op: FetchAtomicOp,
             ctx: &mut Context,
         ) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow();
-            let src_slice = remote_mem_info.slice(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| {acc + x.len()}) );
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow();
+            let src_slice = remote_mem_info
+                .slice(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
@@ -1397,13 +1335,7 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         ep.fetch_atomicv_slice_async(
-                            ioc,
-                            desc,
-                            res_ioc,
-                            res_desc,
-                            &src_slice,
-                            op,
-                            ctx,
+                            ioc, desc, res_ioc, res_desc, &src_slice, op, ctx,
                         )
                         .await
                     },
@@ -1451,8 +1383,8 @@ pub mod async_ofi {
             op: CompareAtomicOp,
             ctx: &mut Context,
         ) {
-            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
-            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len() );
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + buf.len());
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
@@ -1474,15 +1406,7 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         ep.compare_atomic_slice_async(
-                            buf,
-                            desc,
-                            comp,
-                            comp_desc,
-                            res,
-                            res_desc,
-                            &dst_slice,
-                            op,
-                            ctx,
+                            buf, desc, comp, comp_desc, res, res_desc, &dst_slice, op, ctx,
                         )
                         .await
                     },
@@ -1503,8 +1427,9 @@ pub mod async_ofi {
             op: CompareAtomicOp,
             ctx: &mut Context,
         ) {
-            let mut remote_mem_info =  self.remote_mem_info.as_ref().unwrap().borrow_mut();
-            let dst_slice = remote_mem_info.slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| {acc + x.len()}) );
+            let mut remote_mem_info = self.remote_mem_info.as_ref().unwrap().borrow_mut();
+            let dst_slice = remote_mem_info
+                .slice_mut(dest_addr..dest_addr + ioc.iter().fold(0, |acc, x| acc + x.len()));
             // let key = &remote_mem_info.key();
             // let base_addr = remote_mem_info.mem_address();
             async_std::task::block_on(async {
@@ -1526,15 +1451,7 @@ pub mod async_ofi {
                     },
                     MyEndpoint::Connected(ep) => unsafe {
                         ep.compare_atomicv_slice_async(
-                            ioc,
-                            desc,
-                            comp_ioc,
-                            comp_desc,
-                            res_ioc,
-                            res_desc,
-                            &dst_slice,
-                            op,
-                            ctx,
+                            ioc, desc, comp_ioc, comp_desc, res_ioc, res_desc, &dst_slice, op, ctx,
                         )
                         .await
                     },
@@ -1727,12 +1644,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc = [mr.descriptor(), mr.descriptor()];
@@ -1813,12 +1732,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc = [mr.descriptor(), mr.descriptor()];
@@ -1834,7 +1755,13 @@ pub mod async_ofi {
             //     std::mem::size_of_val(&reg_mem[..128]) <= ofi.info_entry.tx_attr().inject_size()
             // );
 
-            ofi.sendrecv_deadlock(&mut reg_mem[..512], desc0.as_ref(), None, &mut send_ctx, &mut recv_ctx);
+            ofi.sendrecv_deadlock(
+                &mut reg_mem[..512],
+                desc0.as_ref(),
+                None,
+                &mut send_ctx,
+                &mut recv_ctx,
+            );
             // Inject a buffer
             // ofi.send(&reg_mem[..128], desc0.as_ref(), None, &mut ctx);
             // // No cq.sread since inject does not generate completions
@@ -1850,7 +1777,13 @@ pub mod async_ofi {
             // ];
             // ofi.sendv(&iov, Some(&desc), &mut ctx);
         } else {
-            ofi.sendrecv_deadlock(&mut reg_mem[..512], desc0.as_ref(), None, &mut send_ctx, &mut recv_ctx);
+            ofi.sendrecv_deadlock(
+                &mut reg_mem[..512],
+                desc0.as_ref(),
+                None,
+                &mut send_ctx,
+                &mut recv_ctx,
+            );
         }
     }
 
@@ -1903,12 +1836,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc0 = Some(mr.descriptor());
@@ -1976,12 +1911,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc = [mr.descriptor(), mr.descriptor()];
@@ -2089,12 +2026,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc = Some(mr.descriptor());
@@ -2330,12 +2269,14 @@ pub mod async_ofi {
             .unwrap();
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc = Some(mr.descriptor());
@@ -2608,12 +2549,14 @@ pub mod async_ofi {
             .unwrap();
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc = Some(mr.descriptor());
@@ -2728,12 +2671,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
         let desc = Some(mr.descriptor());
         let descs = [mr.descriptor(), mr.descriptor()];
@@ -2743,7 +2688,6 @@ pub mod async_ofi {
         ofi.exchange_keys(&key, &reg_mem[..]);
         let expected: Vec<u8> = (0..1024).map(|v: usize| (v % 256) as u8).collect();
 
-        
         let mut ctx = ofi.info_entry.allocate_context();
         if server {
             let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
@@ -2751,7 +2695,6 @@ pub mod async_ofi {
             let iov = IoVec::from_slice(&reg_mem[..128]);
             let mut rma_iov = RemoteMemAddrVec::new();
             rma_iov.push(rma_addr);
-
 
             let mut msg = if connected {
                 Either::Right(MsgRmaConnected::from_iov(
@@ -2902,7 +2845,6 @@ pub mod async_ofi {
             rma_iov.push(rma_addr0);
             rma_iov.push(rma_addr1);
 
-
             let mut msg = if connected {
                 Either::Right(MsgRmaConnectedMut::from_iov_slice(
                     &mut iovs,
@@ -2975,12 +2917,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
         let desc = Some(mr.descriptor());
         let descs = [mr.descriptor(), mr.descriptor()];
@@ -3125,12 +3069,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc0 = Some(mr.descriptor());
@@ -3428,12 +3374,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
         let desc = Some(mr.descriptor());
         let comp_desc = Some(mr.descriptor());
@@ -3644,12 +3592,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
         let desc = Some(mr.descriptor());
         let descs = [mr.descriptor(), mr.descriptor()];
@@ -3753,12 +3703,14 @@ pub mod async_ofi {
             .unwrap();
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
         let mapped_addr = ofi.mapped_addr.clone();
         let key = mr.key().unwrap();
@@ -3790,7 +3742,6 @@ pub mod async_ofi {
             let mut rma_iocs = RemoteMemAddrAtomicVec::new();
             rma_iocs.push(dst_slice0);
             rma_iocs.push(dst_slice1);
-
 
             let mut msg = if connected {
                 Either::Right(MsgFetchAtomicConnected::from_ioc_slice(
@@ -3881,12 +3832,14 @@ pub mod async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         let desc = Some(mr.descriptor());

@@ -363,13 +363,15 @@ pub fn ft_alloc_active_res<E, EQ: AsyncReadEq + 'static>(
     Option<AddressVector>,
 ) {
     let (cq_type, tx_cntr, rx_cntr, rma_cntr, av) = ft_alloc_ep_res(info, gl_ctx, domain, eq);
-     let ep = 
-            match &cq_type {
-                CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
-                    EpCqType::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq),
-                    EpCqType::Separate(tx_cq,rx_cq) => EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, rx_cq),
-                },
-            }.unwrap();
+    let ep = match &cq_type {
+        CqType::WaitFd(eq_cq_opt) => match eq_cq_opt {
+            EpCqType::Shared(scq) => EndpointBuilder::new(info).build_with_shared_cq(domain, scq),
+            EpCqType::Separate(tx_cq, rx_cq) => {
+                EndpointBuilder::new(info).build_with_separate_cqs(domain, tx_cq, rx_cq)
+            }
+        },
+    }
+    .unwrap();
     (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, av)
 }
 
@@ -382,7 +384,6 @@ pub fn ft_prepare_ep<CNTR: WaitCntr + 'static, I, E>(
     rx_cntr: &Option<Counter<CNTR>>,
     rma_cntr: &Option<Counter<CNTR>>,
 ) {
-
     match ep {
         Endpoint::Connectionless(ep) => {
             let mut bind_cntr = ep.bind_cntr();
@@ -560,8 +561,7 @@ pub async fn ft_server_connect<
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, mut ep, _) =
                 ft_alloc_active_res(&new_info, gl_ctx, &domain, eq);
             let mr = ft_enable_ep_recv(
-                &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr,
-                &rma_cntr,
+                &new_info, gl_ctx, &mut ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
             );
             let ep = match ep {
                 Endpoint::Connectionless(_) => panic!("Expected Connected Endpoint"),
@@ -750,9 +750,7 @@ pub fn ft_enable_ep_recv<CNTR: WaitCntr + 'static, E, T: 'static>(
     rma_cntr: &Option<Counter<CNTR>>,
 ) -> Option<MemoryRegion> {
     let mr = {
-        ft_prepare_ep(
-            info, gl_ctx, ep, tx_cntr, rx_cntr, rma_cntr,
-        );
+        ft_prepare_ep(info, gl_ctx, ep, tx_cntr, rx_cntr, rma_cntr);
         ft_alloc_msgs(info, gl_ctx, domain, ep)
     };
     // match cq_type {
@@ -800,9 +798,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
             let (_fabric, eq, domain) = ft_open_fabric_res(&entry);
             let (cq_type, tx_cntr, rx_cntr, rma_ctr, ep, av) =
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
-            let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_ctr,
-            );
+            let mr = ft_enable_ep_recv(&entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_ctr);
             let mut ep = EndpointCaps::ConnlessMsg(match ep {
                 Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
@@ -845,9 +841,7 @@ pub async fn ft_init_fabric<M: MsgDefaultCap + 'static, T: TagDefaultCap + 'stat
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
             // let mut ep = EndpointCaps::Tagged(ep);
 
-            let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_ctr,
-            );
+            let mr = ft_enable_ep_recv(&entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_ctr);
             let mut ep = EndpointCaps::ConnlessTagged(match ep {
                 Endpoint::Connectionless(ep) => ep.enable(av.as_ref().unwrap()).unwrap(),
                 Endpoint::ConnectionOriented(_) => panic!("Unexpected Ep type"),
@@ -989,7 +983,7 @@ pub fn ft_post_rma_inject<CQ: ReadCq>(
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
     match rma_op {
         RmaOp::RMA_WRITE => {
-            let addr = unsafe {remote.mem_address().add(offset)};
+            let addr = unsafe { remote.mem_address().add(offset) };
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1011,7 +1005,7 @@ pub fn ft_post_rma_inject<CQ: ReadCq>(
         }
 
         RmaOp::RMA_WRITEDATA => {
-            let addr = unsafe {remote.mem_address().add(offset)};
+            let addr = unsafe { remote.mem_address().add(offset) };
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1057,7 +1051,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
     let fi_addr = gl_ctx.remote_address.as_ref().unwrap();
     match rma_op {
         RmaOp::RMA_WRITE => {
-            let addr = unsafe {remote.mem_address().add(offset)};
+            let addr = unsafe { remote.mem_address().add(offset) };
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1077,7 +1071,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
         }
 
         RmaOp::RMA_WRITEDATA => {
-            let addr = unsafe {remote.mem_address().add(offset)};
+            let addr = unsafe { remote.mem_address().add(offset) };
             let key = remote.key();
             let buf =
                 &gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -1099,7 +1093,7 @@ pub async fn ft_post_rma<CQ: ReadCq, E: RmaDefaultCap>(
         }
 
         RmaOp::RMA_READ => {
-            let addr = unsafe {remote.mem_address().add(offset)};
+            let addr = unsafe { remote.mem_address().add(offset) };
             let key = remote.key();
             let buf =
                 &mut gl_ctx.buf[gl_ctx.tx_buf_index + offset..gl_ctx.tx_buf_index + offset + size];
@@ -2179,14 +2173,16 @@ pub fn ft_reg_mr<I, E: 'static>(
 
     let mr = match mr {
         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => 
-            match disabled_mr {
-                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => match ep {
-                        Endpoint::Connectionless(ep) => ep_binding_memory_region.enable(ep),
-                        Endpoint::ConnectionOriented(ep) => ep_binding_memory_region.enable(ep),
-                }.unwrap(),
-                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+        libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+            libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => match ep {
+                Endpoint::Connectionless(ep) => ep_binding_memory_region.enable(ep),
+                Endpoint::ConnectionOriented(ep) => ep_binding_memory_region.enable(ep),
             }
+            .unwrap(),
+            libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                rma_event_memory_region.enable().unwrap()
+            }
+        },
     };
 
     if info.domain_attr().mr_mode().is_endpoint() {
@@ -2263,13 +2259,16 @@ pub async fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefault
     //         .copy_from_slice(&key_bytes)
     // };
 
-    let mem_info = MemAddressInfo::from_slice(&gl_ctx.buf[..], gl_ctx.rx_buf_index, &mr.as_ref().unwrap().key().unwrap(), info);
+    let mem_info = MemAddressInfo::from_slice(
+        &gl_ctx.buf[..],
+        gl_ctx.rx_buf_index,
+        &mr.as_ref().unwrap().key().unwrap(),
+        info,
+    );
     let mem_info_bytes = mem_info.to_bytes();
 
-
-    gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + mem_info_bytes.len()].copy_from_slice(
-        mem_info_bytes
-    );
+    gl_ctx.buf[gl_ctx.tx_buf_index..gl_ctx.tx_buf_index + mem_info_bytes.len()]
+        .copy_from_slice(mem_info_bytes);
 
     ft_tx(
         gl_ctx,
@@ -2282,12 +2281,14 @@ pub async fn ft_exchange_keys<CNTR: WaitCntr, E, M: MsgDefaultCap, T: TagDefault
     .await;
     ft_get_rx_comp(gl_ctx, rx_cntr, cq_type, gl_ctx.rx_seq);
 
-    let mem_info = unsafe { MemAddressInfo::from_bytes(&gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + mem_info_bytes.len()]) };
-
-    let peer_info =  {
-        mem_info.into_remote_info(domain).unwrap()
+    let mem_info = unsafe {
+        MemAddressInfo::from_bytes(
+            &gl_ctx.buf[gl_ctx.rx_buf_index..gl_ctx.rx_buf_index + mem_info_bytes.len()],
+        )
     };
-    
+
+    let peer_info = { mem_info.into_remote_info(domain).unwrap() };
+
     match cq_type {
         // CqType::Spin(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
         // CqType::Sread(rx_cq) => ft_post_rx(gl_ctx, ep, gl_ctx.rx_size, NO_CQ_DATA, mr, rx_cq),
@@ -2385,9 +2386,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) =
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
 
-            let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
-            );
+            let mr = ft_enable_ep_recv(&entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr);
 
             let ep = match ep {
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
@@ -2414,9 +2413,7 @@ pub async fn ft_client_connect<M: MsgDefaultCap + 'static, T: TagDefaultCap + 's
             let (cq_type, tx_cntr, rx_cntr, rma_cntr, ep, _) =
                 ft_alloc_active_res(&entry, gl_ctx, &domain, &eq);
 
-            let mr = ft_enable_ep_recv(
-                &entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr,
-            );
+            let mr = ft_enable_ep_recv(&entry, gl_ctx, &ep, &domain, &tx_cntr, &rx_cntr, &rma_cntr);
             let ep = match ep {
                 Endpoint::ConnectionOriented(ep) => ep.enable(&eq).unwrap(),
                 _ => panic!("Unexpected Endpoint Type"),

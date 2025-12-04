@@ -27,9 +27,9 @@ use crate::xcontext::TxContextBase;
 use crate::xcontext::TxContextImplBase;
 use crate::AsFiType;
 use crate::Context;
-use crate::RemoteMemoryAddress;
 use crate::RemoteMemAddrSlice;
 use crate::RemoteMemAddrSliceMut;
+use crate::RemoteMemoryAddress;
 use crate::FI_ADDR_UNSPEC;
 
 pub(crate) trait AtomicWriteEpImpl: AsTypedFid<EpRawFid> + AtomicValidEp {
@@ -338,7 +338,6 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
         op: crate::enums::AtomicOp,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
-
         assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
         self.atomic_to_triggered(
             buf,
@@ -350,7 +349,7 @@ pub trait AtomicWriteRemoteMemAddrSliceEp: AtomicWriteEp {
             context,
         )
     }
-    
+
     #[allow(clippy::too_many_arguments)]
     unsafe fn atomicv_slice_to<T: AsFiType>(
         &self,
@@ -451,13 +450,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
-        self.atomic(
-            buf,
-            desc,
-            dest_slice.mem_address(),
-            &dest_slice.key(),
-            op,
-        )
+        self.atomic(buf, desc, dest_slice.mem_address(), &dest_slice.key(), op)
     }
 
     unsafe fn atomic_slice_with_context<T: AsFiType>(
@@ -506,13 +499,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         // assert!(dest_slice.mem_len() == ioc.iter().map(|i| i.len()).sum::<usize>());
-        self.atomicv(
-            ioc,
-            desc,
-            dest_slice.mem_address(),
-            &dest_slice.key(),
-            op,
-        )
+        self.atomicv(ioc, desc, dest_slice.mem_address(), &dest_slice.key(), op)
     }
 
     unsafe fn atomicv_slice_with_context<T: AsFiType>(
@@ -569,12 +556,7 @@ pub trait ConnectedAtomicWriteRemoteMemAddrSliceEp: ConnectedAtomicWriteEp {
         op: crate::enums::AtomicOp,
     ) -> Result<(), crate::error::Error> {
         assert!(dest_slice.mem_size() == std::mem::size_of_val(buf));
-        self.inject_atomic(
-            buf,
-            dest_slice.mem_address(),
-            &dest_slice.key(),
-            op,
-        )
+        self.inject_atomic(buf, dest_slice.mem_address(), &dest_slice.key(), op)
     }
 }
 
@@ -1436,7 +1418,6 @@ impl<EP: AtomicFetchEpImpl + ConnectedEp> ConnectedAtomicFetchEp for EP {
     }
 }
 
-
 pub trait AtomicFetchRemoteMemAddrSliceEp: AtomicFetchEp {
     #[allow(clippy::too_many_arguments)]
     unsafe fn fetch_atomic_slice_from<T: AsFiType>(
@@ -1760,7 +1741,6 @@ pub trait ConnectedAtomicFetchRemoteMemAddrSliceEp: ConnectedAtomicFetchEp {
 }
 
 impl<EP: ConnectedAtomicFetchEp> ConnectedAtomicFetchRemoteMemAddrSliceEp for EP {}
-
 
 impl<EP: AtomicCap + ReadMod, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AtomicFetchEpImpl
     for EndpointImplBase<EP, EQ, CQ>

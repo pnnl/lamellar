@@ -3,7 +3,8 @@ use std::marker::PhantomData;
 use crate::{
     ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected, UninitUnconnected},
     eq::{Event, EventQueueBase},
-    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, Fid}, utils::check_error,
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, Fid},
+    utils::check_error,
 };
 
 use super::{cq::AsyncReadCq, eq::AsyncReadEq};
@@ -90,16 +91,23 @@ impl<EP> UnconnectedEndpoint<EP> {
     }
 }
 
-
 impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
-    pub fn enable<EQ: AsyncReadEq + 'static>(self, eq: &EventQueueBase<EQ>) -> Result<UnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>>, crate::error::Error> {
+    pub fn enable<EQ: AsyncReadEq + 'static>(
+        self,
+        eq: &EventQueueBase<EQ>,
+    ) -> Result<
+        UnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>>,
+        crate::error::Error,
+    > {
         self.bind_eq(eq)?;
         let err =
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
-        Ok(UnconnectedEndpointBase::<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
-            inner: self.inner.clone(),
-            phantom: PhantomData,
-        })
+        Ok(
+            UnconnectedEndpointBase::<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
+                inner: self.inner.clone(),
+                phantom: PhantomData,
+            },
+        )
     }
 }

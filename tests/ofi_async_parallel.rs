@@ -190,232 +190,241 @@ pub mod parallel_async_ofi {
             let mut reg_mem = vec![0u8; 1024 * 1024];
             let eq = EventQueueBuilder::new(&fabric).build().unwrap();
 
-            let (info_entry, ep, mapped_addr) =  {
-                    let info_entry = if matches!(ep_type, EndpointType::Msg) && server {                    
-                        let pep = EndpointBuilder::new(&info_entry)
-                            .build_passive(&fabric)
-                            .unwrap();
-                        pep.bind(&eq, 0).unwrap();
-                        // println!("Listening!");
-                        let listener = pep.listen_async().unwrap();
-                        // println!("Awaiting!");
-                        let event =
-                            async_std::task::block_on(async { listener.next().await }).unwrap();
-                        // println!("Done!");
+            let (info_entry, ep, mapped_addr) = {
+                let info_entry = if matches!(ep_type, EndpointType::Msg) && server {
+                    let pep = EndpointBuilder::new(&info_entry)
+                        .build_passive(&fabric)
+                        .unwrap();
+                    pep.bind(&eq, 0).unwrap();
+                    // println!("Listening!");
+                    let listener = pep.listen_async().unwrap();
+                    // println!("Awaiting!");
+                    let event = async_std::task::block_on(async { listener.next().await }).unwrap();
+                    // println!("Done!");
 
-                        match event {
-                            libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
-                            _ => panic!("Unexpected event"),
-                        }
-                    } else {
-                        info_entry
-                    };
-
-                    domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
-
-                    cq_type = if shared_cqs {
-                        CqType::Shared(shared_cq_builder.build(&domain).unwrap())
-                    } else {
-                        CqType::Separate((
-                            tx_cq_builder.build(&domain).unwrap(),
-                            rx_cq_builder.build(&domain).unwrap(),
-                        ))
-                    };
-
-                    let ep_builder = EndpointBuilder::new(&info_entry);
-                    let ep = match &cq_type {
-                        CqType::Separate((tx_cq, rx_cq)) => ep_builder.build_with_separate_cqs(&domain, tx_cq, rx_cq),
-                        CqType::Shared(scq) => ep_builder.build_with_shared_cq(&domain, scq),
-                    }.unwrap();
-
-                    match ep {
-                        Endpoint::Connectionless(ep) => {
-                            let av = match info_entry.domain_attr().av_type() {
-                                libfabric::enums::AddressVectorType::Unspec => {
-                                    AddressVectorBuilder::new(&eq)
-                                }
-                                _ => AddressVectorBuilder::new(&eq)
-                                    .type_(*info_entry.domain_attr().av_type()),
-                            }
-                            .build(&domain)
-                            .unwrap();
-                            let ep = ep.enable(&av).unwrap();
-
-                            mr = if info_entry.domain_attr().mr_mode().is_local()
-                                || info_entry.caps().is_rma()
-                            {
-                                let mr = MemoryRegionBuilder::new(
-                                    &mut reg_mem,
-                                    libfabric::enums::HmemIface::System,
-                                )
-                                .access_read()
-                                .access_write()
-                                .access_send()
-                                .access_recv()
-                                .build(&domain)?;
-                                let mr = match mr {
-                                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                                        match disabled_mr {
-                                            libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => ep_binding_memory_region.enable(&ep).unwrap(),
-                                            libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
-                                        }
-                                    }
-                                };
-                                Some(mr)
-                            } else {
-                                None
-                            };
-
-                            let mapped_address = if let Some(dest_addr) = info_entry.dest_addr() {
-                                let mapped_address = av
-                                    .insert(std::slice::from_ref(dest_addr).into(), AVOptions::new())
-                                    .unwrap()
-                                    .pop()
-                                    .unwrap()
-                                    .unwrap();
-                                let epname = ep.getname().unwrap();
-                                let epname_bytes = epname.as_bytes();
-                                let addrlen = epname_bytes.len();
-                                reg_mem[..addrlen].copy_from_slice(epname_bytes);
-
-                                let mut ctx = info_entry.allocate_context();
-                                async_std::task::block_on(async {
-                                    post_async!(
-                                        send_to_async,
-                                        ft_progress,
-                                        cq_type.tx_cq(),
-                                        ep,
-                                        &reg_mem[..addrlen],
-                                        None,
-                                        &mapped_address,
-                                        &mut ctx
-                                    )
-                                });
-
-                                async_std::task::block_on(async {
-                                    post_async!(
-                                        recv_from_any_async,
-                                        ft_progress,
-                                        cq_type.rx_cq(),
-                                        ep,
-                                        std::slice::from_mut(&mut reg_mem[0]),
-                                        None,
-                                        &mut ctx
-                                    )
-                                });
-
-                                MyRc::new(mapped_address)
-                            } else {
-                                let epname = ep.getname().unwrap();
-                                let addrlen = epname.as_bytes().len();
-
-                                let mr_desc = if let Some(ref mr) = mr {
-                                    Some(mr.descriptor())
-                                } else {
-                                    None
-                                };
-                                let mut ctx = info_entry.allocate_context();
-
-                                async_std::task::block_on(async {
-                                    post_async!(
-                                        recv_from_any_async,
-                                        ft_progress,
-                                        cq_type.rx_cq(),
-                                        ep,
-                                        &mut reg_mem[..addrlen],
-                                        mr_desc.as_ref(),
-                                        &mut ctx
-                                    )
-                                });
-
-                                let remote_address = unsafe { Address::from_bytes(&reg_mem) };
-                                let mapped_address = av
-                                    .insert(
-                                        std::slice::from_ref(&remote_address).into(),
-                                        AVOptions::new(),
-                                    )
-                                    .unwrap()
-                                    .pop()
-                                    .unwrap()
-                                    .unwrap();
-
-                                async_std::task::block_on(async {
-                                    post_async!(
-                                        send_to_async,
-                                        ft_progress,
-                                        cq_type.tx_cq(),
-                                        ep,
-                                        &std::slice::from_ref(&reg_mem[0]),
-                                        mr_desc.as_ref(),
-                                        &mapped_address,
-                                        &mut ctx
-                                    )
-                                });
-
-                                MyRc::new(mapped_address)
-                            };
-                            (
-                                info_entry,
-                                Arc::new(MyEndpoint::Connectionless(Arc::new(ep))),
-                                Some(mapped_address),
-                            )
-                        },
-                        Endpoint::ConnectionOriented(ep) => {
-                            let ep = ep.enable(&eq).unwrap();
-
-                            let ep = if !server {
-                                let err = async_std::task::block_on(async {
-                                    ep.connect_async(info_entry.dest_addr().unwrap()).await
-                                });
-                                match err {
-                                    Ok(ep) => ep,
-                                    Err(error) => match error.kind {
-                                        ErrorKind::ErrorInEventQueue(q_error) => {
-                                            panic!("{:?}", q_error.error())
-                                        }
-                                        _ => panic!("Other error"),
-                                    },
-                                }
-                            } else {
-                                async_std::task::block_on(async { ep.accept_async().await }).unwrap()
-                            };
-
-                            mr = if info_entry.domain_attr().mr_mode().is_local()
-                                || info_entry.caps().is_rma()
-                            {
-                                let mr = MemoryRegionBuilder::new(
-                                    &mut reg_mem,
-                                    libfabric::enums::HmemIface::System,
-                                )
-                                .access_read()
-                                .access_write()
-                                .access_send()
-                                .access_recv()
-                                .build(&domain)?;
-                                let mr = match mr {
-                                    libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-                                    libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                                        match disabled_mr {
-                                            libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => ep_binding_memory_region.enable(&ep).unwrap(),
-                                            libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
-                                        }
-                                    }
-                                };
-                                Some(mr)
-                            } else {
-                                None
-                            };
-
-                            (
-                                info_entry,
-                                Arc::new(MyEndpoint::Connected(Arc::new(ep))),
-                                None,
-                            )
-                        }
+                    match event {
+                        libfabric::eq::Event::ConnReq(entry) => entry.info().unwrap(),
+                        _ => panic!("Unexpected event"),
                     }
-
+                } else {
+                    info_entry
                 };
+
+                domain = DomainBuilder::new(&fabric, &info_entry).build().unwrap();
+
+                cq_type = if shared_cqs {
+                    CqType::Shared(shared_cq_builder.build(&domain).unwrap())
+                } else {
+                    CqType::Separate((
+                        tx_cq_builder.build(&domain).unwrap(),
+                        rx_cq_builder.build(&domain).unwrap(),
+                    ))
+                };
+
+                let ep_builder = EndpointBuilder::new(&info_entry);
+                let ep = match &cq_type {
+                    CqType::Separate((tx_cq, rx_cq)) => {
+                        ep_builder.build_with_separate_cqs(&domain, tx_cq, rx_cq)
+                    }
+                    CqType::Shared(scq) => ep_builder.build_with_shared_cq(&domain, scq),
+                }
+                .unwrap();
+
+                match ep {
+                    Endpoint::Connectionless(ep) => {
+                        let av = match info_entry.domain_attr().av_type() {
+                            libfabric::enums::AddressVectorType::Unspec => {
+                                AddressVectorBuilder::new(&eq)
+                            }
+                            _ => AddressVectorBuilder::new(&eq)
+                                .type_(*info_entry.domain_attr().av_type()),
+                        }
+                        .build(&domain)
+                        .unwrap();
+                        let ep = ep.enable(&av).unwrap();
+
+                        mr = if info_entry.domain_attr().mr_mode().is_local()
+                            || info_entry.caps().is_rma()
+                        {
+                            let mr = MemoryRegionBuilder::new(
+                                &mut reg_mem,
+                                libfabric::enums::HmemIface::System,
+                            )
+                            .access_read()
+                            .access_write()
+                            .access_send()
+                            .access_recv()
+                            .build(&domain)?;
+                            let mr = match mr {
+                                libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                                libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                                    match disabled_mr {
+                                        libfabric::mr::DisabledMemoryRegion::EpBind(
+                                            ep_binding_memory_region,
+                                        ) => ep_binding_memory_region.enable(&ep).unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                            rma_event_memory_region,
+                                        ) => rma_event_memory_region.enable().unwrap(),
+                                    }
+                                }
+                            };
+                            Some(mr)
+                        } else {
+                            None
+                        };
+
+                        let mapped_address = if let Some(dest_addr) = info_entry.dest_addr() {
+                            let mapped_address = av
+                                .insert(std::slice::from_ref(dest_addr).into(), AVOptions::new())
+                                .unwrap()
+                                .pop()
+                                .unwrap()
+                                .unwrap();
+                            let epname = ep.getname().unwrap();
+                            let epname_bytes = epname.as_bytes();
+                            let addrlen = epname_bytes.len();
+                            reg_mem[..addrlen].copy_from_slice(epname_bytes);
+
+                            let mut ctx = info_entry.allocate_context();
+                            async_std::task::block_on(async {
+                                post_async!(
+                                    send_to_async,
+                                    ft_progress,
+                                    cq_type.tx_cq(),
+                                    ep,
+                                    &reg_mem[..addrlen],
+                                    None,
+                                    &mapped_address,
+                                    &mut ctx
+                                )
+                            });
+
+                            async_std::task::block_on(async {
+                                post_async!(
+                                    recv_from_any_async,
+                                    ft_progress,
+                                    cq_type.rx_cq(),
+                                    ep,
+                                    std::slice::from_mut(&mut reg_mem[0]),
+                                    None,
+                                    &mut ctx
+                                )
+                            });
+
+                            MyRc::new(mapped_address)
+                        } else {
+                            let epname = ep.getname().unwrap();
+                            let addrlen = epname.as_bytes().len();
+
+                            let mr_desc = if let Some(ref mr) = mr {
+                                Some(mr.descriptor())
+                            } else {
+                                None
+                            };
+                            let mut ctx = info_entry.allocate_context();
+
+                            async_std::task::block_on(async {
+                                post_async!(
+                                    recv_from_any_async,
+                                    ft_progress,
+                                    cq_type.rx_cq(),
+                                    ep,
+                                    &mut reg_mem[..addrlen],
+                                    mr_desc.as_ref(),
+                                    &mut ctx
+                                )
+                            });
+
+                            let remote_address = unsafe { Address::from_bytes(&reg_mem) };
+                            let mapped_address = av
+                                .insert(
+                                    std::slice::from_ref(&remote_address).into(),
+                                    AVOptions::new(),
+                                )
+                                .unwrap()
+                                .pop()
+                                .unwrap()
+                                .unwrap();
+
+                            async_std::task::block_on(async {
+                                post_async!(
+                                    send_to_async,
+                                    ft_progress,
+                                    cq_type.tx_cq(),
+                                    ep,
+                                    &std::slice::from_ref(&reg_mem[0]),
+                                    mr_desc.as_ref(),
+                                    &mapped_address,
+                                    &mut ctx
+                                )
+                            });
+
+                            MyRc::new(mapped_address)
+                        };
+                        (
+                            info_entry,
+                            Arc::new(MyEndpoint::Connectionless(Arc::new(ep))),
+                            Some(mapped_address),
+                        )
+                    }
+                    Endpoint::ConnectionOriented(ep) => {
+                        let ep = ep.enable(&eq).unwrap();
+
+                        let ep = if !server {
+                            let err = async_std::task::block_on(async {
+                                ep.connect_async(info_entry.dest_addr().unwrap()).await
+                            });
+                            match err {
+                                Ok(ep) => ep,
+                                Err(error) => match error.kind {
+                                    ErrorKind::ErrorInEventQueue(q_error) => {
+                                        panic!("{:?}", q_error.error())
+                                    }
+                                    _ => panic!("Other error"),
+                                },
+                            }
+                        } else {
+                            async_std::task::block_on(async { ep.accept_async().await }).unwrap()
+                        };
+
+                        mr = if info_entry.domain_attr().mr_mode().is_local()
+                            || info_entry.caps().is_rma()
+                        {
+                            let mr = MemoryRegionBuilder::new(
+                                &mut reg_mem,
+                                libfabric::enums::HmemIface::System,
+                            )
+                            .access_read()
+                            .access_write()
+                            .access_send()
+                            .access_recv()
+                            .build(&domain)?;
+                            let mr = match mr {
+                                libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
+                                libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
+                                    match disabled_mr {
+                                        libfabric::mr::DisabledMemoryRegion::EpBind(
+                                            ep_binding_memory_region,
+                                        ) => ep_binding_memory_region.enable(&ep).unwrap(),
+                                        libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                            rma_event_memory_region,
+                                        ) => rma_event_memory_region.enable().unwrap(),
+                                    }
+                                }
+                            };
+                            Some(mr)
+                        } else {
+                            None
+                        };
+
+                        (
+                            info_entry,
+                            Arc::new(MyEndpoint::Connected(Arc::new(ep))),
+                            None,
+                        )
+                    }
+                }
+            };
             if server {
                 unsafe { std::env::remove_var(name) };
             }
@@ -456,8 +465,12 @@ pub mod parallel_async_ofi {
                         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                             match disabled_mr {
-                                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                libfabric::mr::DisabledMemoryRegion::EpBind(
+                                    ep_binding_memory_region,
+                                ) => enable_ep_mr(&self.ep, ep_binding_memory_region),
+                                libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                    rma_event_memory_region,
+                                ) => rma_event_memory_region.enable().unwrap(),
                             }
                         }
                     };
@@ -613,8 +626,12 @@ pub mod parallel_async_ofi {
                         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                             match disabled_mr {
-                                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                libfabric::mr::DisabledMemoryRegion::EpBind(
+                                    ep_binding_memory_region,
+                                ) => enable_ep_mr(&self.ep, ep_binding_memory_region),
+                                libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                    rma_event_memory_region,
+                                ) => rma_event_memory_region.enable().unwrap(),
                             }
                         }
                     };
@@ -730,8 +747,12 @@ pub mod parallel_async_ofi {
                         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                             match disabled_mr {
-                                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                libfabric::mr::DisabledMemoryRegion::EpBind(
+                                    ep_binding_memory_region,
+                                ) => enable_ep_mr(&self.ep, ep_binding_memory_region),
+                                libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                    rma_event_memory_region,
+                                ) => rma_event_memory_region.enable().unwrap(),
                             }
                         }
                     };
@@ -892,8 +913,12 @@ pub mod parallel_async_ofi {
                         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                             match disabled_mr {
-                                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                libfabric::mr::DisabledMemoryRegion::EpBind(
+                                    ep_binding_memory_region,
+                                ) => enable_ep_mr(&self.ep, ep_binding_memory_region),
+                                libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                    rma_event_memory_region,
+                                ) => rma_event_memory_region.enable().unwrap(),
                             }
                         }
                     };
@@ -998,9 +1023,10 @@ pub mod parallel_async_ofi {
             &mut self,
             server: bool,
             key: &MemoryRegionKey,
-            mem_slice: &[T]
+            mem_slice: &[T],
         ) {
-            let mem_info = libfabric::MemAddressInfo::from_slice(mem_slice, 0, key, &self.info_entry);
+            let mem_info =
+                libfabric::MemAddressInfo::from_slice(mem_slice, 0, key, &self.info_entry);
             let mut mem_bytes = mem_info.to_bytes().to_vec();
             // let mut len = unsafe {
             //     std::slice::from_raw_parts(
@@ -1035,8 +1061,12 @@ pub mod parallel_async_ofi {
                 libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                 libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                     match disabled_mr {
-                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                        libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                            enable_ep_mr(&self.ep, ep_binding_memory_region)
+                        }
+                        libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                            rma_event_memory_region.enable().unwrap()
+                        }
                     }
                 }
             };
@@ -1046,12 +1076,7 @@ pub mod parallel_async_ofi {
             if server {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.send_async(
-                            &mem_bytes,
-                            desc.as_ref(),
-                            &mut ctx,
-                        )
-                        .await
+                        ep.send_async(&mem_bytes, desc.as_ref(), &mut ctx).await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
@@ -1068,17 +1093,12 @@ pub mod parallel_async_ofi {
 
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.recv_async(
-                            &mut mem_bytes,
-                            desc.as_ref(),
-                            &mut ctx,
-                        )
-                        .await
+                        ep.recv_async(&mut mem_bytes, desc.as_ref(), &mut ctx).await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.recv_from_async(
-                        &mut mem_bytes,
+                            &mut mem_bytes,
                             desc.as_ref(),
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
@@ -1090,17 +1110,12 @@ pub mod parallel_async_ofi {
             } else {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.recv_async(
-                        &mut mem_bytes,
-                            desc.as_ref(),
-                            &mut ctx,
-                        )
-                        .await
+                        ep.recv_async(&mut mem_bytes, desc.as_ref(), &mut ctx).await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.recv_from_async(
-                        &mut mem_bytes,
+                            &mut mem_bytes,
                             desc.as_ref(),
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
@@ -1112,12 +1127,8 @@ pub mod parallel_async_ofi {
 
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.send_async(
-                            mem_info.to_bytes(),
-                            desc.as_ref(),
-                            &mut ctx,
-                        )
-                        .await
+                        ep.send_async(mem_info.to_bytes(), desc.as_ref(), &mut ctx)
+                            .await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
@@ -1135,7 +1146,7 @@ pub mod parallel_async_ofi {
 
             let mem_info = unsafe { MemAddressInfo::from_bytes(&mem_bytes) };
             let remote_mem_info = mem_info.into_remote_info(&self.domain).unwrap();
-            
+
             // let remote_key = unsafe {
             //     MappedMemoryRegionKey::from_raw(
             //         &reg_mem[key_bytes.len() + 2 * std::mem::size_of::<usize>()
@@ -1166,7 +1177,7 @@ pub mod parallel_async_ofi {
 
     impl<I: MsgDefaultCap + RmaDefaultCap + 'static> Ofi<I> {
         pub fn write(&mut self, buf: &[u8], dest_addr: usize, data: Option<u64>) {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
             let key = remote_mem_info.key();
             let base_addr = remote_mem_info.mem_address();
             let handles: Vec<_> = (0..100)
@@ -1190,8 +1201,12 @@ pub mod parallel_async_ofi {
                         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                             match disabled_mr {
-                                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                libfabric::mr::DisabledMemoryRegion::EpBind(
+                                    ep_binding_memory_region,
+                                ) => enable_ep_mr(&self.ep, ep_binding_memory_region),
+                                libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                    rma_event_memory_region,
+                                ) => rma_event_memory_region.enable().unwrap(),
                             }
                         }
                     };
@@ -1325,7 +1340,7 @@ pub mod parallel_async_ofi {
         }
         // }
         pub fn read(&mut self, buf: &mut [u8], dest_addr: usize) -> Vec<Vec<u8>> {
-            let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+            let remote_mem_info = self.remote_mem_info.as_ref().unwrap();
             let key = &remote_mem_info.key();
             let base_addr = remote_mem_info.mem_address();
             let handles: Vec<_> = (0..100)
@@ -1349,8 +1364,12 @@ pub mod parallel_async_ofi {
                         libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
                         libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
                             match disabled_mr {
-                                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&self.ep, ep_binding_memory_region),
-                                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+                                libfabric::mr::DisabledMemoryRegion::EpBind(
+                                    ep_binding_memory_region,
+                                ) => enable_ep_mr(&self.ep, ep_binding_memory_region),
+                                libfabric::mr::DisabledMemoryRegion::RmaEvent(
+                                    rma_event_memory_region,
+                                ) => rma_event_memory_region.enable().unwrap(),
                             }
                         }
                     };
@@ -1398,9 +1417,9 @@ pub mod parallel_async_ofi {
     }
 
     //     pub fn writev(&mut self, iov: &[IoVec], dest_addr: u64, desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1440,9 +1459,9 @@ pub mod parallel_async_ofi {
     //     }
 
     //     pub fn readv(&mut self, iov: &[IoVecMut], dest_addr: u64, desc: &mut [MemoryRegionDesc], ctx: &mut Context) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1556,9 +1575,9 @@ pub mod parallel_async_ofi {
     //         op: AtomicOp,
     //         ctx: &mut Context
     //     ) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => {
@@ -1632,9 +1651,9 @@ pub mod parallel_async_ofi {
     //         op: AtomicOp,
     //         ctx: &mut Context
     //     ) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1712,9 +1731,9 @@ pub mod parallel_async_ofi {
     //         op: FetchAtomicOp,
     //         ctx: &mut Context
     //     ) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1769,9 +1788,9 @@ pub mod parallel_async_ofi {
     //         op: FetchAtomicOp,
     //         ctx: &mut Context
     //     ) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1865,9 +1884,9 @@ pub mod parallel_async_ofi {
     //         op: CompareAtomicOp,
     //         ctx: &mut Context
     //     ) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -1927,9 +1946,9 @@ pub mod parallel_async_ofi {
     //         op: CompareAtomicOp,
     //         ctx: &mut Context
     //     ) {
-//                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
-            // let key = &remote_mem_info.key();
-            // let base_addr = remote_mem_info.mem_address();
+    //                     let remote_mem_info =  self.remote_mem_info.as_ref().unwrap();
+    // let key = &remote_mem_info.key();
+    // let base_addr = remote_mem_info.mem_address();
     //         loop {
     //             let err = match &self.ep {
     //                 MyEndpoint::Connectionless(ep) => unsafe {
@@ -2171,12 +2190,14 @@ pub mod parallel_async_ofi {
 
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
         let mr = Arc::new(mr);
         if server {
@@ -2891,12 +2912,14 @@ pub mod parallel_async_ofi {
             .unwrap();
         let mr = match mr {
             libfabric::mr::MaybeDisabledMemoryRegion::Enabled(mr) => mr,
-            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => {
-                match disabled_mr {
-                    libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => enable_ep_mr(&ofi.ep, ep_binding_memory_region),
-                    libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => rma_event_memory_region.enable().unwrap(),
+            libfabric::mr::MaybeDisabledMemoryRegion::Disabled(disabled_mr) => match disabled_mr {
+                libfabric::mr::DisabledMemoryRegion::EpBind(ep_binding_memory_region) => {
+                    enable_ep_mr(&ofi.ep, ep_binding_memory_region)
                 }
-            }
+                libfabric::mr::DisabledMemoryRegion::RmaEvent(rma_event_memory_region) => {
+                    rma_event_memory_region.enable().unwrap()
+                }
+            },
         };
 
         // let mapped_addr = ofi.mapped_addr.clone();

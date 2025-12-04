@@ -23,20 +23,28 @@ pub type UnconnectedEndpoint<T> =
 // {
 // }
 
-    // pub fn bind_eq<T: ReadEq + 'static>(
-    //     &self,
-    //     eq: &EventQueueBase<T>,
-    // ) -> Result<(), crate::error::Error> {
+// pub fn bind_eq<T: ReadEq + 'static>(
+//     &self,
+//     eq: &EventQueueBase<T>,
+// ) -> Result<(), crate::error::Error> {
 impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
-    pub fn enable<EQ: ReadEq + 'static>(self, eq: &EventQueueBase<EQ>) -> Result<UnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>, crate::error::Error> {
+    pub fn enable<EQ: ReadEq + 'static>(
+        self,
+        eq: &EventQueueBase<EQ>,
+    ) -> Result<
+        UnconnectedEndpointBase<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>>,
+        crate::error::Error,
+    > {
         self.bind_eq(eq)?;
         let err =
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
-        Ok(UnconnectedEndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
-            inner: self.inner.clone(),
-            phantom: PhantomData,
-        })
+        Ok(
+            UnconnectedEndpointBase::<EndpointImplBase<E, dyn ReadEq, dyn ReadCq>> {
+                inner: self.inner.clone(),
+                phantom: PhantomData,
+            },
+        )
     }
 }
 

@@ -1963,19 +1963,16 @@ pub enum Endpoint<EP> {
 }
 
 impl<EP> Endpoint<EP> {
-
     pub fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
         selective: bool,
     ) -> Result<(), crate::error::Error> {
         match self {
-            Endpoint::Connectionless(endpoint_base) => {
-                endpoint_base.bind_shared_cq(cq, selective)
-            },
+            Endpoint::Connectionless(endpoint_base) => endpoint_base.bind_shared_cq(cq, selective),
             Endpoint::ConnectionOriented(endpoint_base) => {
                 endpoint_base.bind_shared_cq(cq, selective)
-            },
+            }
         }
     }
 
@@ -1989,10 +1986,10 @@ impl<EP> Endpoint<EP> {
         match self {
             Endpoint::Connectionless(endpoint_base) => {
                 endpoint_base.bind_separate_cqs(tx_cq, tx_selective, rx_cq, rx_selective)
-            },
+            }
             Endpoint::ConnectionOriented(endpoint_base) => {
                 endpoint_base.bind_separate_cqs(tx_cq, tx_selective, rx_cq, rx_selective)
-            },
+            }
         }
     }
 }
@@ -2009,13 +2006,25 @@ impl<'a, E> EndpointBuilder<'a, E> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
             EndpointType::Msg => {
-                let conn_ep =  UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
-                conn_ep.bind_separate_cqs(tx_cq, tx_selective_completion, rx_cq, rx_selective_completion)?;
+                let conn_ep =
+                    UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                conn_ep.bind_separate_cqs(
+                    tx_cq,
+                    tx_selective_completion,
+                    rx_cq,
+                    rx_selective_completion,
+                )?;
                 Ok(Endpoint::ConnectionOriented(conn_ep))
             }
             EndpointType::Dgram | EndpointType::Rdm => {
-                let connless_ep =  UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
-                connless_ep.bind_separate_cqs(tx_cq, tx_selective_completion, rx_cq, rx_selective_completion)?;
+                let connless_ep =
+                    UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                connless_ep.bind_separate_cqs(
+                    tx_cq,
+                    tx_selective_completion,
+                    rx_cq,
+                    rx_selective_completion,
+                )?;
                 Ok(Endpoint::Connectionless(connless_ep))
             }
         }
@@ -2030,12 +2039,14 @@ impl<'a, E> EndpointBuilder<'a, E> {
         match self.info.ep_attr().type_() {
             EndpointType::Unspec => panic!("Should not be reachable."),
             EndpointType::Msg => {
-                let conn_ep =  UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                let conn_ep =
+                    UninitUnconnectedEndpoint::new(domain, self.info, self.flags, self.ctx)?;
                 conn_ep.bind_shared_cq(cq, selective_completion)?;
                 Ok(Endpoint::ConnectionOriented(conn_ep))
             }
             EndpointType::Dgram | EndpointType::Rdm => {
-                let connless_ep = UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
+                let connless_ep =
+                    UninitConnectionlessEndpoint::new(domain, self.info, self.flags, self.ctx)?;
                 connless_ep.bind_shared_cq(cq, selective_completion)?;
                 Ok(Endpoint::Connectionless(connless_ep))
             }
