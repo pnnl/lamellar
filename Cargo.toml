@@ -24,5 +24,5 @@ threading-domain = ["thread-safe"]
 threading-endpoint = ["thread-safe", "threading-fid"]
 threading-fid = ["thread-safe"]
 threading-thread-safe = ["thread-safe"]
-
 thread-safe = ["parking_lot"] # Not to be set by the user
+shared = ["libfabric-sys/shared"]
