@@ -886,7 +886,7 @@ impl FabricInfo {
 
         #[cfg(feature = "thread-safe")]
         {
-            let mut threading;
+            let threading;
             #[cfg(feature = "threading-domain")]
             {
                 threading = Threading::Domain;

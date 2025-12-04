@@ -1058,13 +1058,13 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
 }
 
 impl AsTypedFid<CqRawFid> for AsyncCompletionQueueImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, CqRawFid> {
         match &self.base {
             AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref().as_typed_fid(),
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => cq.as_typed_fid(),
         }
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, CqRawFid> {
         match &self.base {
             AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
                 async_cq.get_ref().as_typed_fid_mut()

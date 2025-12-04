@@ -16,7 +16,6 @@ use crate::{
     },
     Context, MyOnceCell, MyRc,
 };
-use crate::ep::ActiveEndpoint;
 pub(crate) type TxContextImplBase<I, STATE, CQ> = XContextBaseImpl<Transmit, I, STATE, CQ>;
 pub(crate) type TxContextImpl<I, STATE> = XContextBaseImpl<Transmit, I, STATE, dyn AsyncCq>;
 
@@ -109,11 +108,11 @@ pub struct TxIncompleteBindCq<'a, I, STATE: EpState> {
 }
 
 impl<EP, STATE: EpState> TxContextImpl<EP, STATE> {
-    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq<EP, STATE> {
+    pub(crate) fn bind_cq(&self) -> TxIncompleteBindCq<'_, EP, STATE> {
         TxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr<EP, STATE> {
+    pub(crate) fn bind_cntr(&self) -> TxIncompleteBindCntr<'_, EP, STATE> {
         TxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -150,11 +149,11 @@ impl<EP, STATE: EpState> AsyncTxEp for TxContextImpl<EP, STATE> {
 }
 
 impl<EP, STATE: EpState> TxContext<EP, STATE> {
-    pub fn bind_cq(&self) -> TxIncompleteBindCq<EP, STATE> {
+    pub fn bind_cq(&self) -> TxIncompleteBindCq<'_, EP, STATE> {
         self.inner.inner.bind_cq()
     }
 
-    pub fn bind_cntr(&self) -> TxIncompleteBindCntr<EP, STATE> {
+    pub fn bind_cntr(&self) -> TxIncompleteBindCntr<'_, EP, STATE> {
         self.inner.inner.bind_cntr()
     }
 }
@@ -264,11 +263,11 @@ impl<I: 'static, STATE: EpState> RxContextImpl<I, STATE> {
 }
 
 impl<EP, STATE: EpState> RxContextImpl<EP, STATE> {
-    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq<EP, STATE> {
+    pub(crate) fn bind_cq(&self) -> RxIncompleteBindCq<'_, EP, STATE> {
         RxIncompleteBindCq { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr<EP, STATE> {
+    pub(crate) fn bind_cntr(&self) -> RxIncompleteBindCntr<'_, EP, STATE> {
         RxIncompleteBindCntr { ep: self, flags: 0 }
     }
 
@@ -319,11 +318,11 @@ impl<I: 'static, STATE: EpState> RxContext<I, STATE> {
 }
 
 impl<EP, STATE: EpState> RxContext<EP, STATE> {
-    pub fn bind_cq(&self) -> RxIncompleteBindCq<EP, STATE> {
+    pub fn bind_cq(&self) -> RxIncompleteBindCq<'_, EP, STATE> {
         self.inner.inner.bind_cq()
     }
 
-    pub fn bind_cntr(&self) -> RxIncompleteBindCntr<EP, STATE> {
+    pub fn bind_cntr(&self) -> RxIncompleteBindCntr<'_, EP, STATE> {
         self.inner.inner.bind_cntr()
     }
 }

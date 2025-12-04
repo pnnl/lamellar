@@ -1099,10 +1099,10 @@ impl<'a> Future for AsyncEventEq<'a> {
 // }
 
 impl<const WRITE: bool> AsTypedFid<EqRawFid> for AsyncEventQueueImpl<WRITE> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EqRawFid> {
         self.base.get_ref().as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EqRawFid> {
         self.base.get_ref().as_typed_fid_mut()
     }
 }

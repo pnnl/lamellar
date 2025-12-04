@@ -8,7 +8,7 @@ use super::{
 };
 use crate::av::AVSyncMode;
 use crate::{
-    av::{AddressVectorBase, NoBlock},
+    av::{AddressVectorBase},
     cq::ReadCq,
     enums::EndpointType,
     ep::{
@@ -291,7 +291,7 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn AsyncReadEq, CQ> {
 }
 
 impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncCq>, UninitUnconnected> {
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn AsyncReadEq, dyn AsyncCq> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, dyn AsyncReadEq, dyn AsyncCq> {
         self.inner.bind_cntr()
     }
 
@@ -329,7 +329,7 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncCq>, Uninit
 impl<EP>
     EndpointBase<EndpointImplBase<EP, dyn AsyncReadEq, dyn AsyncCq>, UninitConnectionless>
 {
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn AsyncReadEq, dyn AsyncCq> {
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, dyn AsyncReadEq, dyn AsyncCq> {
         self.inner.bind_cntr()
     }
 

@@ -1740,7 +1740,7 @@ impl<EP: AtomicWriteEpImpl + ConnectedEp> ConnectedAtomicWriteEp for EP {
         context: &mut Context,
         op: AtomicOp
     ) -> Result<(), crate::error::Error> {
-        self.atomicv_impl(ioc, desc, None, mem_addr, mapped_key, None, op)
+        self.atomicv_impl(ioc, desc, None, mem_addr, mapped_key, Some(context.inner_mut()), op)
     }
 
     gen_atomic_op_def!((<T: AsFiType, RT: AsFiType>), ( 
