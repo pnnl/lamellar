@@ -2,10 +2,14 @@
 name = "pmix-sys"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+links = "pmix"
+build = "build.rs"
 
 [dependencies]
+hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"]}
+libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "threading"]}
+
 
 [build-dependencies]
-bindgen = "0.72.0"
+openpmix-src = {version="*", path="../openpmix-src"}
+bindgen = "0.72.1"
