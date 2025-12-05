@@ -71,7 +71,7 @@ pub(crate) trait EncDec: Pmi {
     }
 }
 
-pub trait Pmi {
+pub trait Pmi: Sync + Send {
     fn rank(&self) -> usize;
     fn ranks(&self) -> &[usize];
     fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError>;
@@ -87,7 +87,7 @@ impl PmiBuilder {
     pub fn init() -> Result<impl Pmi, PmiError> {
         #[cfg(not(any(feature = "with-pmi2", feature = "with-pmix")))]
         return crate::pmi1::Pmi1::new();
-        #[cfg(not(feature = "with-pmix"))]
+        #[cfg(all(not(feature="with-pmix"), feature="with-pmi2"))] 
         return crate::pmi2::Pmi2::new();
         #[cfg(feature = "with-pmix")]
         return crate::pmix::PmiX::new();

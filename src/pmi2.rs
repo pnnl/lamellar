@@ -1,4 +1,5 @@
 use std::{cell::RefCell, collections::HashMap, thread::panicking};
+use std::sync::RwLock;
 
 use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
@@ -13,7 +14,7 @@ pub struct Pmi2 {
     my_rank: usize,
     ranks: Vec<usize>,
     finalize: bool,
-    singleton_kvs: RefCell<HashMap<String, Vec<u8>>>,
+    singleton_kvs: RwLock<HashMap<String, Vec<u8> >>
 }
 
 impl Pmi2 {
@@ -37,12 +38,13 @@ impl Pmi2 {
             my_rank: rank as usize,
             ranks: (0..size as usize).collect(),
             finalize,
-            singleton_kvs: RefCell::new(HashMap::new()),
+            singleton_kvs: RwLock::new(HashMap::new())
         })
     }
 
     fn get_singleton(&self, key: &str) -> Result<Vec<u8>, PmiError> {
-        if let Some(data) = self.singleton_kvs.borrow().get(key) {
+       
+        if let Some(data) = self.singleton_kvs.read().unwrap().get(key) {
             Ok(data.clone())
         } else {
             Err(PmiError {
@@ -52,10 +54,9 @@ impl Pmi2 {
         }
     }
 
-    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError> {
-        self.singleton_kvs
-            .borrow_mut()
-            .insert(key.to_owned(), value.to_vec());
+    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError>{
+        
+        self.singleton_kvs.write().unwrap().insert(key.to_owned(), value.to_vec());
 
         Ok(())
     }

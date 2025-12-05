@@ -1,8 +1,6 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-    thread::panicking,
-};
+use std::{collections::HashMap, thread::panicking};
+use std::sync::RwLock;
+
 
 use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
@@ -18,7 +16,7 @@ pub struct PmiX {
     ranks: Vec<usize>,
     nspace: pmix_sys::pmix_nspace_t,
     finalize: bool,
-    singleton_kvs: Arc<RwLock<HashMap<String, Vec<u8>>>>,
+    singleton_kvs: RwLock<HashMap<String, Vec<u8>>>,
 }
 
 impl EncDec for PmiX {}
@@ -53,7 +51,7 @@ impl PmiX {
             ranks: (0..size as usize).collect(),
             nspace: proc.nspace,
             finalize,
-            singleton_kvs: Arc::new(RwLock::new(HashMap::new())),
+            singleton_kvs: RwLock::new(HashMap::new()),
         })
     }
 
@@ -68,11 +66,8 @@ impl PmiX {
         }
     }
 
-    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError> {
-        self.singleton_kvs
-            .write()
-            .unwrap()
-            .insert(key.to_owned(), value.to_vec());
+    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError>{
+        self.singleton_kvs.write().unwrap().insert(key.to_owned(), value.to_vec());
         Ok(())
     }
 }
