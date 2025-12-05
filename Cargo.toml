@@ -9,10 +9,5 @@ links = "ofi"
 [dependencies]
 
 [build-dependencies]
-autotools = "0.2"
-bindgen = "0.70"
-cc = "1.1"
-regex = "1.11"
-
-[features]
-shared = []
+bindgen = "0.72"
+libfabric-src = {path="/qfs/people/thom895/rofi/libfabric-src", version = "0.1"}
