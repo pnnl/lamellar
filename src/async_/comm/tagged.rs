@@ -1,17 +1,17 @@
 use crate::async_::ep::{AsyncRxEp, AsyncTxEp};
 use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
 // use crate::async_::xcontext::{RxContext, RxContextImpl, TxContext, TxContextImpl};
-use crate::comm::tagged::{ConnectedTagSendEp, TagRecvEpImpl, TagSendEp, TagSendEpImpl};
+use crate::comm::tagged::{TagRecvEpImpl, TagSendEpImpl};
 use crate::conn_ep::ConnectedEp;
 use crate::connless_ep::ConnlessEp;
 use crate::ep::{Connected, Connectionless, EndpointImplBase, EpState};
 use crate::infocapsoptions::{RecvMod, SendMod, TagCap};
-use crate::mr::MemoryRegionDesc;
+use crate::mr::{MemoryRegionDesc, MemoryRegionSlice, MemoryRegionSliceMut};
 use crate::msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut};
 use crate::utils::Either;
 use crate::Context;
 use crate::{
-    async_::{cq::AsyncReadCq, eq::AsyncReadEq},
+    async_::{cq::AsyncCq, eq::AsyncReadEq},
     cq::SingleCompletion,
     enums::{TaggedRecvMsgOptions, TaggedSendMsgOptions},
     ep::EndpointBase,
@@ -24,7 +24,7 @@ pub(crate) trait AsyncTagRecvEpImpl: AsyncRxEp + TagRecvEpImpl {
     async fn trecv_async_impl<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ignore: Option<u64>,
@@ -94,7 +94,7 @@ pub trait AsyncTagRecvEp {
     fn trecv_from_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -118,11 +118,28 @@ pub trait AsyncTagRecvEp {
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
+
+pub trait AsyncTagRecvEpMrSlice: AsyncTagRecvEp {
+    fn trecv_mr_slice_from_async<'a, T>(
+        &self,
+        mr_slice: &'a mut MemoryRegionSliceMut<'a>,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        ignore: Option<u64>,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        let desc = mr_slice.desc();
+        self.trecv_from_async(mr_slice.as_mut_slice(), Some(desc), mapped_addr, tag, ignore, ctx)
+    }
+}
+
+impl<EP: AsyncTagRecvEp>  AsyncTagRecvEpMrSlice for EP{}
+
 pub trait ConnectedAsyncTagRecvEp {
     fn trecv_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         ctx: &mut Context,
@@ -144,9 +161,24 @@ pub trait ConnectedAsyncTagRecvEp {
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 }
 
+pub trait ConnectedAsyncTagRecvEpMrSlice: ConnectedAsyncTagRecvEp {
+    fn trecv_mr_slice_async<T>(
+        &self,
+        mr_slice: &mut MemoryRegionSliceMut,
+        tag: u64,
+        ignore: Option<u64>,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        let desc = mr_slice.desc();
+        self.trecv_async(mr_slice.as_mut_slice(), Some(desc), tag, ignore, ctx)
+    }
+}
+
+impl<EP: ConnectedAsyncTagRecvEp> ConnectedAsyncTagRecvEpMrSlice for EP {}
+
 // impl<E: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
 // impl<E:, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
-impl<EP: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncTagRecvEpImpl
+impl<EP: TagCap + RecvMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncTagRecvEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -163,7 +195,7 @@ impl<EP: AsyncTagRecvEpImpl> AsyncTagRecvEp for EP {
     async fn trecv_from_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -202,7 +234,7 @@ impl<EP: AsyncTagRecvEpImpl + ConnectedEp> ConnectedAsyncTagRecvEp for EP {
     async fn trecv_async<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         ctx: &mut Context,
@@ -238,7 +270,7 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     async fn tsend_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ctx: &mut Context,
@@ -304,7 +336,7 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     async fn tsenddata_async_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
@@ -333,11 +365,11 @@ pub(crate) trait AsyncTagSendEpImpl: AsyncTxEp + TagSendEpImpl {
     }
 }
 
-pub trait AsyncTagSendEp: TagSendEp {
+pub trait AsyncTagSendEp {
     fn tsend_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ctx: &mut Context,
@@ -368,7 +400,7 @@ pub trait AsyncTagSendEp: TagSendEp {
     fn tsenddata_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -384,11 +416,11 @@ pub trait AsyncTagSendEp: TagSendEp {
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
 
-pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
+pub trait ConnectedAsyncTagSendEp {
     fn tsend_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
@@ -415,7 +447,7 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
     fn tsenddata_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         ctx: &mut Context,
@@ -428,8 +460,71 @@ pub trait ConnectedAsyncTagSendEp: ConnectedTagSendEp {
     ) -> impl std::future::Future<Output = Result<(), crate::error::Error>>;
 }
 
+pub trait AsyncTagSendEpMrSlice: AsyncTagSendEp {
+    fn tsend_mr_slice_to_async<T>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.tsend_to_async(mr_slice.as_slice() , Some(mr_slice.desc()), mapped_addr, tag, ctx)
+    }
+
+    fn tinject_mr_slice_to_async<T>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.tinject_to_async(mr_slice.as_slice() , mapped_addr, tag)
+    }
+
+    fn tinjectdata_mr_slice_to_async<T>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        data: u64,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.tinjectdata_to_async(mr_slice.as_slice() , data, mapped_addr, tag)
+    }
+}
+
+impl<EP: AsyncTagSendEp> AsyncTagSendEpMrSlice for EP {}
+
+pub trait ConnectedAsyncTagSendEpMrSlice: ConnectedAsyncTagSendEp {
+    fn tsend_mr_slice_async<T>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        tag: u64,
+        ctx: &mut Context,
+    ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
+        self.tsend_async(mr_slice.as_slice() , Some(mr_slice.desc()), tag, ctx)
+    }
+
+    fn tinject_mr_slice_async<T>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.tinject_async(mr_slice.as_slice() , tag)
+    }
+
+    fn tinjectdata_mr_slice_async<T>(
+        &self,
+        mr_slice: &MemoryRegionSlice,
+        data: u64,
+        tag: u64,
+    ) -> impl std::future::Future<Output = Result<(), crate::error::Error>> {
+        self.tinjectdata_async(mr_slice.as_slice() , data, tag)
+    }
+}
+
+impl<EP: ConnectedAsyncTagSendEp> ConnectedAsyncTagSendEpMrSlice for EP {}
+
 // impl<E: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ? Sized> EndpointBase<E> {
-impl<EP: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncReadCq + ?Sized> AsyncTagSendEpImpl
+impl<EP: TagCap + SendMod, EQ: ?Sized + AsyncReadEq, CQ: AsyncCq + ?Sized> AsyncTagSendEpImpl
     for EndpointImplBase<EP, EQ, CQ>
 {
 }
@@ -446,7 +541,7 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
     async fn tsend_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ctx: &mut Context,
@@ -491,7 +586,7 @@ impl<EP: AsyncTagSendEpImpl + TagSendEpImpl + ConnlessEp> AsyncTagSendEp for EP 
     async fn tsenddata_to_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -519,7 +614,7 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     async fn tsend_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -555,7 +650,7 @@ impl<EP: AsyncTagSendEpImpl + ConnectedEp> ConnectedAsyncTagSendEp for EP {
     async fn tsenddata_async<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         ctx: &mut Context,

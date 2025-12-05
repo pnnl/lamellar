@@ -17,8 +17,8 @@ async-io = { version = "2.3.2", optional = true }
 parking_lot = { version = "0.12.1", optional = true }
 [features]
 async-cqs-spin = []
-use-async-std = ["async-std", "async-io"]
-use-tokio = ["tokio"]
+use-async-std = ["async-std", "async-io", "async-cqs-spin"]
+use-tokio = ["tokio", "async-cqs-spin"]
 threading-completion = ["thread-safe"]
 threading-domain = ["thread-safe"]
 threading-endpoint = ["thread-safe", "threading-fid"]

@@ -1,8 +1,7 @@
 use crate::cq::ReadCq;
+use crate::cq::SingleCompletion;
 use crate::cq::WaitCq;
-use crate::cq::{CompletionEntry, SingleCompletion};
 use crate::domain::{DomainBase, DomainImplBase};
-use crate::error::ErrorKind;
 use crate::fid::AsTypedFid;
 use crate::fid::BorrowedTypedFid;
 use crate::fid::CqRawFid;
@@ -11,7 +10,6 @@ use crate::SyncSend;
 use crate::{
     cq::{
         Completion, CompletionError, CompletionQueueAttr, CompletionQueueBase, CompletionQueueImpl,
-        CtxEntry, DataEntry, MsgEntry, TaggedEntry,
     },
     error::Error,
     MappedAddress,
@@ -21,47 +19,51 @@ use crate::{Context, MyRc};
 use async_io::{Async, Readable};
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-use std::time::Instant;
 use std::{future::Future, task::ready};
 #[cfg(feature = "use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
 
 use super::AsyncFid;
-macro_rules! alloc_cq_entry {
-    ($format: expr, $count: expr) => {
-        match $format {
-            Completion::Ctx(_) => {
-                let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
-                Completion::Ctx(entries)
-            }
-            Completion::Data(_) => {
-                let entries: Vec<CompletionEntry<DataEntry>> = Vec::with_capacity($count);
-                Completion::Data(entries)
-            }
-            Completion::Tagged(_) => {
-                let entries: Vec<CompletionEntry<TaggedEntry>> = Vec::with_capacity($count);
-                Completion::Tagged(entries)
-            }
-            Completion::Msg(_) => {
-                let entries: Vec<CompletionEntry<MsgEntry>> = Vec::with_capacity($count);
-                Completion::Msg(entries)
-            }
-            Completion::Unspec(_) => {
-                let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
+// macro_rules! alloc_cq_entry {
+//     ($format: expr, $count: expr) => {
+//         match $format {
+//             Completion::Ctx(_) => {
+//                 let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
+//                 Completion::Ctx(entries)
+//             }
+//             Completion::Data(_) => {
+//                 let entries: Vec<CompletionEntry<DataEntry>> = Vec::with_capacity($count);
+//                 Completion::Data(entries)
+//             }
+//             Completion::Tagged(_) => {
+//                 let entries: Vec<CompletionEntry<TaggedEntry>> = Vec::with_capacity($count);
+//                 Completion::Tagged(entries)
+//             }
+//             Completion::Msg(_) => {
+//                 let entries: Vec<CompletionEntry<MsgEntry>> = Vec::with_capacity($count);
+//                 Completion::Msg(entries)
+//             }
+//             Completion::Unspec(_) => {
+//                 let entries: Vec<CompletionEntry<CtxEntry>> = Vec::with_capacity($count);
 
-                Completion::Unspec(entries)
-            }
-        }
-    };
-}
+//                 Completion::Unspec(entries)
+//             }
+//         }
+//     };
+// }
 
 pub type CompletionQueue<T> = CompletionQueueBase<T>;
 
-pub trait AsyncReadCq: ReadCq {
+pub trait AsyncWaitCq {
+    fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a>;
+    fn progress(&self) -> Result<(), Error>;
+}
+
+pub trait AsyncCq: ReadCq {
     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a>;
     // fn read_async(&self, count: usize,  ctx: &mut Context) -> CqAsyncReadOwned;
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a>;
+    fn get(&self) -> &dyn ReadCq;
 }
 
 impl CompletionQueue<AsyncCompletionQueueImpl> {
@@ -242,9 +244,11 @@ enum AsyncCompletionQueueImplBase {
 
 pub struct AsyncCompletionQueueImpl {
     base: AsyncCompletionQueueImplBase,
+    #[allow(dead_code)]
     pub(crate) pending_entries: AtomicUsize,
 }
 impl SyncSend for AsyncCompletionQueueImpl {}
+// impl SyncCq for AsyncCompletionQueueImpl{}
 
 impl WaitCq for AsyncCompletionQueueImpl {
     fn sread_with_cond(
@@ -280,7 +284,7 @@ impl WaitCq for AsyncCompletionQueueImpl {
     }
 }
 
-impl AsyncReadCq for AsyncCompletionQueueImpl {
+impl AsyncCq for AsyncCompletionQueueImpl {
     // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
     //     CqAsyncRead {
     //         num_entries: count,
@@ -296,6 +300,10 @@ impl AsyncReadCq for AsyncCompletionQueueImpl {
 
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
         AsyncTransferCq::new(self, ctx)
+    }
+
+    fn get(&self) -> &dyn ReadCq {
+        self
     }
 }
 
@@ -314,22 +322,25 @@ impl AsyncFid for AsyncCompletionQueueImpl {
     }
 }
 
-impl AsyncReadCq for CompletionQueue<AsyncCompletionQueueImpl> {
-    // fn read_in_async<'a>(&'a self, buf: &'a mut Completion, count: usize) -> CqAsyncRead<'a> {
-    //     self.inner.read_in_async(buf, count)
-    // }
+impl AsyncWaitCq for CompletionQueue<AsyncCompletionQueueImpl> {
 
-    // fn read_async(&self, count: usize, context: &mut Context) -> CqAsyncReadOwned {
-    //     self.inner.read_async(count, context)
-    // }
-
+    fn progress(&self) -> Result<(), Error> {
+        if let Err(err) = self.inner.read(0) {
+            if !matches!(err.kind, crate::error::ErrorKind::TryAgain) {
+                Err(err)
+            }
+            else {
+                Ok(())
+            }
+        }
+        else {
+            Ok(())
+        }
+    }
+    
     fn wait_for_ctx_async<'a>(&'a self, ctx: &'a mut Context) -> AsyncTransferCq<'a> {
         self.inner.wait_for_ctx_async(ctx)
     }
-
-    // pub async fn read_async(&self, count: usize) -> Result<Completion, crate::error::Error>  {
-    //     self.inner.read_async(count).await
-    // }
 }
 
 impl AsyncCompletionQueueImpl {
@@ -376,18 +387,13 @@ impl AsyncCompletionQueueImpl {
 
 pub struct AsyncTransferCq<'a> {
     fut: Pin<Box<CqAsyncReadOwned<'a>>>,
-    waiting: bool,
-    last_poll: Option<std::time::Instant>,
 }
 
 impl<'a> AsyncTransferCq<'a> {
     #[allow(dead_code)]
     pub(crate) fn new(cq: &'a AsyncCompletionQueueImpl, ctx: &'a mut Context) -> Self {
-        // println!("Issued : {} {:x}", ctx.0.id(), ctx.inner() as usize);
         Self {
             fut: Box::pin(CqAsyncReadOwned::new(cq, ctx)),
-            waiting: false,
-            last_poll: None,
         }
     }
 }
@@ -978,6 +984,9 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                                     return std::task::Poll::Pending;
                                 }
                             }
+                            else {
+                                return std::task::Poll::Ready(Err(Error::from_err_code(error.c_err)));
+                            }
                         } else {
                             // println!("Will continue");
                             #[cfg(feature = "use-tokio")]
@@ -1049,13 +1058,13 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
 }
 
 impl AsTypedFid<CqRawFid> for AsyncCompletionQueueImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, CqRawFid> {
         match &self.base {
             AsyncCompletionQueueImplBase::BlockingCq(async_cq) => async_cq.get_ref().as_typed_fid(),
             AsyncCompletionQueueImplBase::SpinningCQ(cq) => cq.as_typed_fid(),
         }
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<CqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, CqRawFid> {
         match &self.base {
             AsyncCompletionQueueImplBase::BlockingCq(async_cq) => {
                 async_cq.get_ref().as_typed_fid_mut()

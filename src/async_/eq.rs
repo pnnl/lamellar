@@ -1,14 +1,11 @@
 use std::{collections::HashMap, future::Future, pin::Pin, sync::atomic::Ordering, task::ready};
 
 use crate::{
-    cq::WaitObjectRetrieve,
-    eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq},
-    error::{Error, ErrorKind},
-    fid::{AsTypedFid, BorrowedTypedFid, EqRawFid, Fid},
-    Context, MyRc, MyRefCell, SyncSend,
+    async_::{conn_ep::ConnectionPendingEndpoint, ep::PassiveEndpoint}, cq::{ReadCq, WaitObjectRetrieve}, eq::{Event, EventError, EventQueueAttr, EventQueueBase, EventQueueImpl, ReadEq, WriteEq}, error::{Error, ErrorKind}, fid::{AsRawFid, AsTypedFid, BorrowedTypedFid, EqRawFid, Fid}, Context, MyRc, MyRefCell, SyncSend
 };
 #[cfg(feature = "use-async-std")]
 use async_io::Async;
+use libfabric_sys::{FI_CONNECTED, FI_CONNREQ};
 use std::sync::atomic::AtomicUsize;
 #[cfg(feature = "use-tokio")]
 use tokio::io::unix::AsyncFd as Async;
@@ -454,6 +451,53 @@ impl<const WRITE: bool> EventQueue<AsyncEventQueueImpl<WRITE>> {
     }
 }
 
+pub trait AsyncWaitEq{
+    fn async_wait_conn_req<'a, T>(
+        &'a self,
+        req_fid: &PassiveEndpoint<T>,
+    ) -> AsyncEventEq<'a> ;
+    
+    fn async_wait_conn_established<'a, E>(
+        &'a self,
+        req_fid: &ConnectionPendingEndpoint<E>,
+    ) -> AsyncEventEq<'a> ;
+}
+
+impl AsyncWaitEq for EventQueue<AsyncEventQueueImpl<true>>
+{
+    fn async_wait_conn_req<'a, T>(
+        &'a self,
+        req_fid: &PassiveEndpoint<T>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNREQ, Fid(req_fid.as_typed_fid().as_raw_fid() as usize), EqType::Write(&self.inner), None, None)
+    }
+
+    fn async_wait_conn_established<'a, E>(
+        &'a self,
+        req_fid: &ConnectionPendingEndpoint<E>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNECTED, Fid(req_fid.inner.inner().as_typed_fid().as_raw_fid() as usize), EqType::Write(&self.inner), None, None)
+    }
+}
+
+impl AsyncWaitEq for EventQueue<AsyncEventQueueImpl<false>>
+{
+    fn async_wait_conn_req<'a, T>(
+        &'a self,
+        req_fid: &PassiveEndpoint<T>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNREQ, Fid(req_fid.as_typed_fid().as_raw_fid() as usize), EqType::NoWrite(&self.inner), None, None)
+    }
+
+    fn async_wait_conn_established<'a, E>(
+        &'a self,
+        req_fid: &ConnectionPendingEndpoint<E>,
+    ) -> AsyncEventEq<'a>  {
+        AsyncEventEq::new(FI_CONNECTED, Fid(req_fid.inner.inner().as_typed_fid().as_raw_fid() as usize), EqType::NoWrite(&self.inner), None, None)
+    }
+}
+
+
 pub trait AsyncReadEq: ReadEq + AsyncFid {
     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a>;
     fn async_event_wait<'a>(
@@ -461,6 +505,7 @@ pub trait AsyncReadEq: ReadEq + AsyncFid {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> AsyncEventEq<'a>;
 }
 
@@ -498,8 +543,9 @@ impl AsyncReadEq for AsyncEventQueueImpl<true> {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> AsyncEventEq<'a> {
-        AsyncEventEq::new(event_type, req_fid, EqType::Write(self), ctx)
+        AsyncEventEq::new(event_type, req_fid, EqType::Write(self), ctx, cq)
     }
 }
 
@@ -513,36 +559,38 @@ impl AsyncReadEq for AsyncEventQueueImpl<false> {
         event_type: libfabric_sys::_bindgen_ty_18,
         req_fid: Fid,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> AsyncEventEq<'a> {
-        AsyncEventEq::new(event_type, req_fid, EqType::NoWrite(self), ctx)
+        AsyncEventEq::new(event_type, req_fid, EqType::NoWrite(self), ctx, cq)
     }
 }
 
-impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
-    fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a> {
-        self.inner.read_in_async(buf, event)
-    }
+// impl<EQ: AsyncReadEq> AsyncReadEq for EventQueue<EQ> {
+//     fn read_in_async<'a>(&'a self, buf: &'a mut [u8], event: &'a mut u32) -> EqAsyncRead<'a> {
+//         self.inner.read_in_async(buf, event)
+//     }
 
-    fn async_event_wait<'a>(
-        &'a self,
-        event_type: libfabric_sys::_bindgen_ty_18,
-        req_fid: Fid,
-        ctx: Option<&'a mut crate::Context>,
-    ) -> AsyncEventEq<'a> {
-        self.inner.async_event_wait(event_type, req_fid, ctx)
-    }
-}
+//     fn async_event_wait<'a>(
+//         &'a self,
+//         event_type: libfabric_sys::_bindgen_ty_18,
+//         req_fid: Fid,
+//         ctx: Option<&'a mut crate::Context>,
+//         cq: Option<Box<&'a dyn ReadCq>>,
+//     ) -> AsyncEventEq<'a> {
+//         self.inner.async_event_wait(event_type, req_fid, ctx, cq)
+//     }
+// }
 
-impl<EQ: AsyncReadEq> EventQueue<EQ> {
-    pub async fn read_async(&self) -> Result<Event, crate::error::Error> {
-        let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
-        let mut event = 0;
-        let len = self.inner.read_in_async(&mut buf, &mut event).await?;
-        Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(
-            len, &buf, &event,
-        ))
-    }
-}
+// impl<EQ: AsyncReadEq> EventQueue<EQ> {
+//     pub async fn read_async(&self) -> Result<Event, crate::error::Error> {
+//         let mut buf = vec![0; std::mem::size_of::<libfabric_sys::fi_eq_err_entry>()];
+//         let mut event = 0;
+//         let len = self.inner.read_in_async(&mut buf, &mut event).await?;
+//         Ok(EventQueueImpl::<true, true, true, true>::read_eq_entry(
+//             len, &buf, &event,
+//         ))
+//     }
+// }
 
 pub struct AsyncEventQueueImpl<const WRITE: bool> {
     pub(crate) base: Async<EventQueueImpl<WRITE, true, true, true>>,
@@ -734,6 +782,7 @@ pub struct AsyncEventEq<'a> {
     pub(crate) ctx: Option<&'a mut crate::Context>,
     event_type: libfabric_sys::_bindgen_ty_18,
     fut: Pin<Box<EqAsyncReadOwned<'a>>>,
+    cq: Option<Box<&'a dyn ReadCq>>,
 }
 
 impl<'a> AsyncEventEq<'a> {
@@ -742,12 +791,14 @@ impl<'a> AsyncEventEq<'a> {
         req_fid: Fid,
         eq: EqType<'a>,
         ctx: Option<&'a mut crate::Context>,
+        cq: Option<Box<&'a dyn ReadCq>>,
     ) -> Self {
         Self {
             event_type,
             fut: Box::pin(EqAsyncReadOwned::new(eq)),
             req_fid,
             ctx,
+            cq,
         }
     }
 }
@@ -777,6 +828,9 @@ impl<'a> Future for AsyncEventEq<'a> {
                     0
                 }
                 Some(ctx) => {
+                    if let Some(entry) = ev.fut.eq.remove_cm_entry(ev.event_type, &ev.req_fid) {
+                        return std::task::Poll::Ready(entry);
+                    }
                     if ctx.ready() {
                         let state = ctx.state().take();
                         ctx.reset();
@@ -799,7 +853,25 @@ impl<'a> Future for AsyncEventEq<'a> {
                 }
             };
 
-            let res = match ready!(ev.fut.as_mut().poll(cx)) {
+            let ready = ev.fut.as_mut().poll(cx);
+            let res = match ready {
+                std::task::Poll::Ready(res) => res,
+                std::task::Poll::Pending => {
+                    if let Some(cq) = &ev.cq {
+                        cx.waker().wake_by_ref();
+                        let cq_read = cq.read(0);
+                        if let Err(error) = cq_read {
+                            if !matches!(error.kind, ErrorKind::TryAgain) {
+                                return std::task::Poll::Ready(Err::<Event, Error>(error));
+                            }
+                        }
+                        return std::task::Poll::Pending;
+                    } else {
+                        return std::task::Poll::Pending;
+                    }
+                }
+            };
+            let res = match res {
                 // Ok(len) => len,
                 Err(error) => {
                     if matches!(error.kind, ErrorKind::ErrorInEventQueue(_)) {
@@ -1027,10 +1099,10 @@ impl<'a> Future for AsyncEventEq<'a> {
 // }
 
 impl<const WRITE: bool> AsTypedFid<EqRawFid> for AsyncEventQueueImpl<WRITE> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EqRawFid> {
         self.base.get_ref().as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EqRawFid> {
         self.base.get_ref().as_typed_fid_mut()
     }
 }

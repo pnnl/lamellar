@@ -86,7 +86,7 @@ pub(crate) enum TriggeredContextType<'a, 'b> {
 
 pub struct TriggeredContext<'a, 'b>(pub(crate) TriggeredContextType<'a, 'b>);
 
-impl<'a, 'b> TriggeredContext<'a, 'b> {
+impl TriggeredContext<'_, '_> {
     pub(crate) fn inner_mut(&mut self) -> *mut std::ffi::c_void {
         match &mut self.0 {
             TriggeredContextType::TriggeredContext1(ctx) => ctx.get_mut() as *mut std::ffi::c_void,
@@ -103,6 +103,7 @@ impl<'a, 'b> TriggeredContext<'a, 'b> {
     }
 }
 
+#[derive(Clone)]
 pub struct TriggerThreshold<'a> {
     pub(crate) c_thold: libfabric_sys::fi_trigger_threshold,
     phantom: PhantomData<&'a ()>,
@@ -175,6 +176,7 @@ pub enum TriggerVal {
 //     }
 // }
 
+#[derive(Clone)]
 pub struct TriggerXpu {
     hmem_iface: HmemIface,
     trigger_vars: Vec<libfabric_sys::fi_trigger_var>,

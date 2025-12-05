@@ -1,4 +1,3 @@
-//================== Domain (fi_domain) ==================//
 
 use std::os::fd::{AsFd, BorrowedFd};
 
@@ -14,6 +13,8 @@ use crate::{
     Context, MyRc, SyncSend,
 };
 
+//================== Public Counter ==================//
+
 /// Owned wrapper around a libfabric `fi_cntr`.
 ///
 /// This type wraps an instance of a `fi_cntr`, monitoring its lifetime and closing it when it goes out of scope.
@@ -27,12 +28,7 @@ pub struct Counter<CNTR> {
     pub(crate) inner: MyRc<CNTR>,
 }
 
-pub struct CounterImpl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
-    pub(crate) c_cntr: OwnedCntrFid,
-    wait_obj: Option<libfabric_sys::fi_wait_obj>,
-    _domain_rc: MyRc<dyn DomainImplT>,
-}
-
+/// A trait that provides the default operations of a Counter.
 pub trait ReadCntr: AsTypedFid<CntrRawFid> + SyncSend {
     fn fid(&self) -> &OwnedCntrFid;
 
@@ -79,9 +75,9 @@ pub trait ReadCntr: AsTypedFid<CntrRawFid> + SyncSend {
     }
 }
 
+/// A trait that provides the wait operation of a Counter configured with the ability to block/wait.
 pub trait WaitCntr: AsTypedFid<CntrRawFid> + ReadCntr {
     fn wait(&self, threshold: u64, timeout: i32) -> Result<(), crate::error::Error> {
-        // [TODO]
         let err = unsafe {
             libfabric_sys::inlined_fi_cntr_wait(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
@@ -94,132 +90,6 @@ pub trait WaitCntr: AsTypedFid<CntrRawFid> + ReadCntr {
     }
 }
 
-impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> ReadCntr
-    for CounterImpl<WAIT, RETRIEVE, FD>
-{
-    fn fid(&self) -> &OwnedCntrFid {
-        &self.c_cntr
-    }
-}
-
-impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncSend
-    for CounterImpl<WAIT, RETRIEVE, FD>
-{
-}
-
-impl<const RETRIEVE: bool, const FD: bool> WaitCntr for CounterImpl<true, RETRIEVE, FD> {}
-
-impl<'a, const FD: bool> WaitObjectRetrieve<'a> for CounterImpl<true, true, FD> {
-    fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
-        if let Some(wait) = self.wait_obj {
-            if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
-                let mut fd: i32 = 0;
-                let err = unsafe {
-                    libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid_mut().as_raw_fid(),
-                        libfabric_sys::FI_GETWAIT as i32,
-                        (&mut fd as *mut i32).cast(),
-                    )
-                };
-                if err < 0 {
-                    Err(crate::error::Error::from_err_code(
-                        (-err).try_into().unwrap(),
-                    ))
-                } else {
-                    Ok(WaitObjType::Fd(unsafe { BorrowedFd::borrow_raw(fd) }))
-                }
-            } else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND {
-                let mut mutex_cond = libfabric_sys::fi_mutex_cond {
-                    mutex: std::ptr::null_mut(),
-                    cond: std::ptr::null_mut(),
-                };
-
-                let err = unsafe {
-                    libfabric_sys::inlined_fi_control(
-                        self.as_typed_fid_mut().as_raw_fid(),
-                        libfabric_sys::FI_GETWAIT as i32,
-                        (&mut mutex_cond as *mut libfabric_sys::fi_mutex_cond).cast(),
-                    )
-                };
-                if err < 0 {
-                    Err(crate::error::Error::from_err_code(
-                        (-err).try_into().unwrap(),
-                    ))
-                } else {
-                    Ok(WaitObjType::MutexCond(mutex_cond))
-                }
-            } else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC {
-                Ok(WaitObjType::Unspec)
-            } else {
-                panic!("Could not retrieve wait object")
-            }
-        } else {
-            panic!("Should not be reachable! Could not retrieve wait object")
-        }
-    }
-}
-
-impl<CNTR: ReadCntr> ReadCntr for Counter<CNTR> {
-    fn fid(&self) -> &OwnedCntrFid {
-        self.inner.fid()
-    }
-}
-impl<CNTR: ReadCntr> SyncSend for Counter<CNTR> {}
-impl<CNTR: WaitCntr> WaitCntr for Counter<CNTR> {}
-
-impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> CounterImpl<WAIT, RETRIEVE, FD> {
-    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
-        domain: &MyRc<crate::domain::DomainImplBase<EQ>>,
-        mut attr: CounterAttr,
-        context: *mut std::ffi::c_void,
-    ) -> Result<Self, crate::error::Error> {
-        let mut c_cntr: CntrRawFid = std::ptr::null_mut();
-
-        let err = unsafe {
-            libfabric_sys::inlined_fi_cntr_open(
-                domain.as_typed_fid_mut().as_raw_typed_fid(),
-                attr.get_mut(),
-                &mut c_cntr,
-                context,
-            )
-        };
-
-        if err != 0 {
-            Err(crate::error::Error::from_err_code(
-                (-err).try_into().unwrap(),
-            ))
-        } else {
-            Ok(Self {
-                #[cfg(feature = "threading-domain")]
-                c_cntr: OwnedCntrFid::from(c_cntr, domain.c_domain.domain.clone()),
-                #[cfg(not(feature = "threading-domain"))]
-                c_cntr: OwnedCntrFid::from(c_cntr),
-                wait_obj: Some(attr.c_attr.wait_obj),
-                _domain_rc: domain.clone() as MyRc<dyn DomainImplT>,
-            })
-        }
-    }
-}
-
-impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool>
-    Counter<CounterImpl<WAIT, RETRIEVE, FD>>
-{
-    #[allow(dead_code)]
-
-    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
-        domain: &crate::domain::DomainBase<EQ>,
-        attr: CounterAttr,
-        context: Option<&mut crate::Context>,
-    ) -> Result<Self, crate::error::Error> {
-        let c_void = match context {
-            Some(ctx) => ctx.inner_mut(),
-            None => std::ptr::null_mut(),
-        };
-        Ok(Self {
-            inner: MyRc::new(CounterImpl::new(&domain.inner, attr, c_void)?),
-        })
-    }
-}
 
 //================== Counter Builder ==================//
 /// Builder for the [`Counter`] type.
@@ -232,7 +102,7 @@ pub struct CounterBuilder<'a, const WAIT: bool, const RETRIEVE: bool, const FD: 
     ctx: Option<&'a mut Context>,
 }
 
-impl<'a> CounterBuilder<'a, true, false, false> {
+impl CounterBuilder<'_, true, false, false> {
     /// Initiates the creation of new [Counter] on `domain`.
     ///
     /// The initial configuration is what would be set if no `fi_cntr_attr` or `context` was provided to
@@ -245,7 +115,7 @@ impl<'a> CounterBuilder<'a, true, false, false> {
     }
 }
 
-impl<'a> Default for CounterBuilder<'a, true, false, false> {
+impl Default for CounterBuilder<'_, true, false, false> {
     fn default() -> Self {
         Self::new()
     }
@@ -348,13 +218,107 @@ impl<'a, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
     }
 }
 
-//================== Trait impls ==================//
 
-// impl<T: AsFid> AsFid for Counter<T> {
-//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-//         self.inner.as_fid()
-//     }
-// }
+//================== Trait Impls ==================//
+
+impl<T: AsTypedFid<CntrRawFid>> AsTypedFid<CntrRawFid> for Counter<T> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, CntrRawFid> {
+        self.inner.as_typed_fid()
+    }
+
+    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<'_, CntrRawFid> {
+        self.inner.as_typed_fid_mut()
+    }
+}
+
+
+impl<T: AsFd> AsFd for Counter<T> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_fd()
+    }
+}
+
+impl<CNTR: ReadCntr> ReadCntr for Counter<CNTR> {
+    fn fid(&self) -> &OwnedCntrFid {
+        self.inner.fid()
+    }
+}
+impl<CNTR: ReadCntr> SyncSend for Counter<CNTR> {}
+impl<CNTR: WaitCntr> WaitCntr for Counter<CNTR> {}
+
+//================== Private Impls ==================//
+
+pub struct CounterImpl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> {
+    pub(crate) c_cntr: OwnedCntrFid,
+    wait_obj: Option<libfabric_sys::fi_wait_obj>,
+    _domain_rc: MyRc<dyn DomainImplT>,
+}
+
+impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> CounterImpl<WAIT, RETRIEVE, FD> {
+    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
+        domain: &MyRc<crate::domain::DomainImplBase<EQ>>,
+        mut attr: CounterAttr,
+        context: *mut std::ffi::c_void,
+    ) -> Result<Self, crate::error::Error> {
+        let mut c_cntr: CntrRawFid = std::ptr::null_mut();
+
+        let err = unsafe {
+            libfabric_sys::inlined_fi_cntr_open(
+                domain.as_typed_fid_mut().as_raw_typed_fid(),
+                attr.get_mut(),
+                &mut c_cntr,
+                context,
+            )
+        };
+
+        if err != 0 {
+            Err(crate::error::Error::from_err_code(
+                (-err).try_into().unwrap(),
+            ))
+        } else {
+            Ok(Self {
+                #[cfg(feature = "threading-domain")]
+                c_cntr: OwnedCntrFid::from(c_cntr, domain.c_domain.domain.clone()),
+                #[cfg(not(feature = "threading-domain"))]
+                c_cntr: OwnedCntrFid::from(c_cntr),
+                wait_obj: Some(attr.c_attr.wait_obj),
+                _domain_rc: domain.clone() as MyRc<dyn DomainImplT>,
+            })
+        }
+    }
+}
+
+impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool>
+    Counter<CounterImpl<WAIT, RETRIEVE, FD>>
+{
+    #[allow(dead_code)]
+    pub(crate) fn new<EQ: ?Sized + 'static + SyncSend>(
+        domain: &crate::domain::DomainBase<EQ>,
+        attr: CounterAttr,
+        context: Option<&mut crate::Context>,
+    ) -> Result<Self, crate::error::Error> {
+        let c_void = match context {
+            Some(ctx) => ctx.inner_mut(),
+            None => std::ptr::null_mut(),
+        };
+        Ok(Self {
+            inner: MyRc::new(CounterImpl::new(&domain.inner, attr, c_void)?),
+        })
+    }
+}
+
+impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> ReadCntr
+    for CounterImpl<WAIT, RETRIEVE, FD>
+{
+    fn fid(&self) -> &OwnedCntrFid {
+        &self.c_cntr
+    }
+}
+
+impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncSend
+    for CounterImpl<WAIT, RETRIEVE, FD>
+{
+}
 
 impl<T: AsRawFid> AsRawFid for Counter<T> {
     fn as_raw_fid(&self) -> RawFid {
@@ -370,21 +334,58 @@ impl<T: AsRawTypedFid<Output = CntrRawFid>> AsRawTypedFid for Counter<T> {
     }
 }
 
-// impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsFid
-//     for CounterImpl<WAIT, RETRIEVE, FD>
-// {
-//     fn as_fid(&self) -> fid::BorrowedFid<'_> {
-//         self.c_cntr.as_fid()
-//     }
-// }
 
-// impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawFid
-//     for CounterImpl<WAIT, RETRIEVE, FD>
-// {
-//     fn as_raw_fid(&self) -> RawFid {
-//         self.c_cntr.as_raw_fid()
-//     }
-// }
+impl<const RETRIEVE: bool, const FD: bool> WaitCntr for CounterImpl<true, RETRIEVE, FD> {}
+
+impl<'a, const FD: bool> WaitObjectRetrieve<'a> for CounterImpl<true, true, FD> {
+    fn wait_object(&self) -> Result<WaitObjType<'a>, crate::error::Error> {
+        if let Some(wait) = self.wait_obj {
+            if wait == libfabric_sys::fi_wait_obj_FI_WAIT_FD {
+                let mut fd: i32 = 0;
+                let err = unsafe {
+                    libfabric_sys::inlined_fi_control(
+                        self.as_typed_fid_mut().as_raw_fid(),
+                        libfabric_sys::FI_GETWAIT as i32,
+                        (&mut fd as *mut i32).cast(),
+                    )
+                };
+                if err < 0 {
+                    Err(crate::error::Error::from_err_code(
+                        (-err).try_into().unwrap(),
+                    ))
+                } else {
+                    Ok(WaitObjType::Fd(unsafe { BorrowedFd::borrow_raw(fd) }))
+                }
+            } else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_MUTEX_COND {
+                let mut mutex_cond = libfabric_sys::fi_mutex_cond {
+                    mutex: std::ptr::null_mut(),
+                    cond: std::ptr::null_mut(),
+                };
+
+                let err = unsafe {
+                    libfabric_sys::inlined_fi_control(
+                        self.as_typed_fid_mut().as_raw_fid(),
+                        libfabric_sys::FI_GETWAIT as i32,
+                        (&mut mutex_cond as *mut libfabric_sys::fi_mutex_cond).cast(),
+                    )
+                };
+                if err < 0 {
+                    Err(crate::error::Error::from_err_code(
+                        (-err).try_into().unwrap(),
+                    ))
+                } else {
+                    Ok(WaitObjType::MutexCond(mutex_cond))
+                }
+            } else if wait == libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC {
+                Ok(WaitObjType::Unspec)
+            } else {
+                panic!("Could not retrieve wait object")
+            }
+        } else {
+            panic!("Should not be reachable! Could not retrieve wait object")
+        }
+    }
+}
 
 impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsTypedFid<CntrRawFid>
     for CounterImpl<WAIT, RETRIEVE, FD>
@@ -398,26 +399,6 @@ impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsTypedFid<CntrRawF
     }
 }
 
-impl<T: AsTypedFid<CntrRawFid>> AsTypedFid<CntrRawFid> for Counter<T> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, CntrRawFid> {
-        self.inner.as_typed_fid()
-    }
-
-    fn as_typed_fid_mut(&self) -> fid::MutBorrowedTypedFid<'_, CntrRawFid> {
-        self.inner.as_typed_fid_mut()
-    }
-}
-
-// impl<const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawTypedFid
-//     for CounterImpl<WAIT, RETRIEVE, FD>
-// {
-//     type Output = CntrRawFid;
-
-//     fn as_raw_typed_fid(&self) -> Self::Output {
-//         self.c_cntr.as_raw_typed_fid()
-//     }
-// }
-
 impl AsFd for CounterImpl<true, true, true> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         if let WaitObjType::Fd(fd) = self.wait_object().unwrap() {
@@ -427,24 +408,11 @@ impl AsFd for CounterImpl<true, true, true> {
         }
     }
 }
-
-impl<T: AsFd> AsFd for Counter<T> {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.inner.as_fd()
-    }
-}
-
-// impl<T: ReadCntr + 'static> crate::Bind for Counter<T> {
-//     fn inner(&self) -> MyRc<dyn AsRawFid> {
-//         self.inner.clone()
-//     }
-// }
-
 //================== Attribute objects ==================//
 
 #[derive(Clone, Copy)]
 pub(crate) struct CounterAttr {
-    pub(crate) c_attr: libfabric_sys::fi_cntr_attr,
+    c_attr: libfabric_sys::fi_cntr_attr,
 }
 
 impl CounterAttr {
@@ -459,13 +427,13 @@ impl CounterAttr {
         Self { c_attr }
     }
 
-    pub(crate) fn events(&mut self, events: crate::enums::CounterEvents) -> &mut Self {
+    fn events(&mut self, events: crate::enums::CounterEvents) -> &mut Self {
         self.c_attr.events = events.as_raw();
 
         self
     }
 
-    pub(crate) fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
+    fn wait_obj(&mut self, wait_obj: crate::enums::WaitObj) -> &mut Self {
         if let crate::enums::WaitObj::Set(wait_set) = wait_obj {
             self.c_attr.wait_set = wait_set.as_raw_typed_fid();
         }
@@ -473,18 +441,12 @@ impl CounterAttr {
         self
     }
 
-    // pub(crate) fn flags(&mut self, flags: u64) -> &mut Self {
-    //     self.c_attr.flags = flags;
-
-    //     self
-    // }
-
     #[allow(dead_code)]
-    pub(crate) fn get(&self) -> *const libfabric_sys::fi_cntr_attr {
+    fn get(&self) -> *const libfabric_sys::fi_cntr_attr {
         &self.c_attr
     }
 
-    pub(crate) fn get_mut(&mut self) -> *mut libfabric_sys::fi_cntr_attr {
+    fn get_mut(&mut self) -> *mut libfabric_sys::fi_cntr_attr {
         &mut self.c_attr
     }
 }

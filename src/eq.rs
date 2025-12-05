@@ -1,5 +1,8 @@
-use crate::fid::{AsTypedFid, BorrowedTypedFid};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
+use crate::fid::{AsTypedFid, AvRawFid, BorrowedTypedFid, EpRawFid, MrRawFid};
+use std::{
+    marker::PhantomData,
+    os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd},
+};
 
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -17,18 +20,30 @@ use crate::{
 };
 use libfabric_sys::{fi_mutex_cond, FI_AFFINITY, FI_CONNECTED, FI_CONNREQ, FI_SHUTDOWN, FI_WRITE};
 
+/// Represents a connection request event.
 pub type ConnReqEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNREQ }>;
+/// Represents a connected event.
 pub type ConnectedEvent = EventQueueCmEntry<{ libfabric_sys::FI_CONNECTED }>;
+/// Represents a shutdown event.
 pub type ShutdownEvent = EventQueueCmEntry<{ libfabric_sys::FI_SHUTDOWN }>;
+/// Represents a memory region completion event.
+pub type MrCompleteEvent = EventQueueEntry<MrRawFid>;
+/// Represents an address vector completion event.
+pub type AVCompleteEvent = EventQueueEntry<AvRawFid>;
+/// Represents a join completion event.
+pub type JoinCompleteEvent = EventQueueEntry<EpRawFid>;
 
+/// An enumeration of the possible event types returned by an [EventQueue]
+///
+/// Each entry corresponds to a specific type of event that can occur within the event queue.
 pub enum Event {
     // Notify(EventQueueEntry<T, NotifyEventFid>),
     ConnReq(ConnReqEvent),
     Connected(ConnectedEvent),
     Shutdown(ShutdownEvent),
-    MrComplete(EventQueueEntry<RawFid>),
-    AVComplete(EventQueueEntry<RawFid>),
-    JoinComplete(EventQueueEntry<RawFid>),
+    MrComplete(MrCompleteEvent),
+    AVComplete(AVCompleteEvent),
+    JoinComplete(JoinCompleteEvent),
 }
 
 // [TODO]
@@ -125,7 +140,11 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
 {
 }
 
+/// A trait that provides the capabilities of a default [EventQueue]
 pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
+    /// Reads an event from the event queue in a user provided buffer and event
+    ///
+    /// Corresponds to `libfabric_sys::fi_eq_read`
     fn read_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_read(
@@ -144,6 +163,9 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
         Ok(ret as usize)
     }
 
+    /// Peeks an event from the event queue in a user provided buffer and event
+    ///
+    /// Corresponds to `libfabric_sys::fi_eq_read` with FI_PEEK flag
     fn peek_in(&self, buff: &mut [u8], event: &mut u32) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_read(
@@ -164,6 +186,9 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
         }
     }
 
+    /// Reads an error event from the event queue in a user provided buffer
+    ///
+    /// Corresponds to `libfabric_sys::fi_eq_readerr`
     fn readerr_in(&self, buff: &mut [u8]) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_readerr(
@@ -182,6 +207,9 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
         }
     }
 
+    /// Peeks an error event from the event queue in a user provided buffer
+    ///
+    /// Corresponds to `libfabric_sys::fi_eq_readerr` with FI_PEEK flag
     fn peekerr_in(&self, buff: &mut [u8]) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_readerr(
@@ -200,6 +228,7 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
         }
     }
 
+    /// Corresponds to `libfabric_sys::fi_eq_strerror`
     fn strerror(&self, entry: &EventError) -> &str {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_strerror(
@@ -214,14 +243,19 @@ pub trait ReadEq: AsTypedFid<EqRawFid> + SyncSend {
         unsafe { std::ffi::CStr::from_ptr(ret).to_str().unwrap() }
     }
 
+    /// Reads an event from the event queue and returns it
     fn read(&self) -> Result<Event, crate::error::Error>;
+    /// Peeks an event from the event queue and returns it
     fn peek(&self) -> Result<Event, crate::error::Error>;
+    /// Reads an error event from the event queue and returns it
     fn readerr(&self) -> Result<EventError, crate::error::Error>;
-
+    /// Peeks an error event from the event queue and returns it without removing it from the queue
     fn peekerr(&self) -> Result<EventError, crate::error::Error>;
 }
 
+/// A trait that provides the operations of an [EventQueue] configured with wait capabilities
 pub trait WaitEq: ReadEq {
+    /// Blocks until it reads an event from the event queue into a user-provided buffer
     fn sread_in(
         &self,
         buff: &mut [u8],
@@ -248,6 +282,7 @@ pub trait WaitEq: ReadEq {
         }
     }
 
+    /// Blocks until it peeks an event from the event queue into a user-provided buffer
     fn speek_in(
         &self,
         buff: &mut [u8],
@@ -274,11 +309,15 @@ pub trait WaitEq: ReadEq {
         }
     }
 
+    /// Blocks until it reads an event from the event queue and returns it
     fn sread(&self, timeout: i32) -> Result<Event, crate::error::Error>;
+    /// Blocks until it peeks an event from the event queue and returns it
     fn speek(&self, timeout: i32) -> Result<Event, crate::error::Error>;
 }
 
+/// A trait that provides the operations of an [EventQueue] configured with write capabilities
 pub trait WriteEq: AsTypedFid<EqRawFid> {
+    /// Writes raw data to the event queue
     fn write_raw(&self, buff: &[u8], event: u32, flags: u64) -> Result<usize, crate::error::Error> {
         let ret = unsafe {
             libfabric_sys::inlined_fi_eq_write(
@@ -298,6 +337,7 @@ pub trait WriteEq: AsTypedFid<EqRawFid> {
         }
     }
 
+    /// Writes an event to the event queue
     fn write(&self, event: Event) -> Result<(), crate::error::Error> {
         let event_val = event.as_raw();
         let (event_entry, event_entry_size) = event.get_entry();
@@ -458,6 +498,15 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> 
 
 pub type EventQueue<T> = EventQueueBase<T>;
 
+/// Owned wrapper around a libfabric `fid_eq`.
+///
+/// This type wraps an instance of a `fid_eq`, monitoring its lifetime and closing it when it goes out of scope.
+/// To be able to check its configuration at compile this object is extended with a `T:`[`EqConfig`] (e.g. [Options]) that provides this information.
+///
+/// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_eq.3.html).
+///
+/// Note that other objects that rely on a EventQueue (e.g., an [crate::ep::Endpoint] bound to it) will extend its lifetime until they
+/// are also dropped.
 pub struct EventQueueBase<EQ: ?Sized> {
     pub(crate) inner: MyRc<EQ>,
 }
@@ -563,19 +612,19 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
             }
 
             if event == &libfabric_sys::FI_MR_COMPLETE {
-                Event::MrComplete(EventQueueEntry::<RawFid> {
+                Event::MrComplete(MrCompleteEvent {
                     c_entry,
-                    event_fid: c_entry.fid,
+                    phantom: PhantomData,
                 })
             } else if event == &libfabric_sys::FI_AV_COMPLETE {
-                Event::AVComplete(EventQueueEntry::<RawFid> {
+                Event::AVComplete(AVCompleteEvent {
                     c_entry,
-                    event_fid: c_entry.fid,
+                    phantom: PhantomData,
                 })
             } else if event == &libfabric_sys::FI_JOIN_COMPLETE {
-                Event::JoinComplete(EventQueueEntry::<RawFid> {
+                Event::JoinComplete(JoinCompleteEvent {
                     c_entry,
-                    event_fid: c_entry.fid,
+                    phantom: PhantomData,
                 })
             } else {
                 panic!("Unexpected value for Event")
@@ -604,8 +653,9 @@ impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
 }
 
 impl<T: SyncSend> SyncSend for EventQueue<T> {}
+pub(crate) trait SyncEq {}
 
-impl<T: ReadEq> ReadEq for EventQueue<T> {
+impl<T: ReadEq + SyncEq> ReadEq for EventQueue<T> {
     fn read(&self) -> Result<Event, crate::error::Error> {
         self.inner.read()
     }
@@ -627,35 +677,13 @@ impl<T: ReadEq> ReadEq for EventQueue<T> {
     }
 }
 
-impl<T: ReadEq> EventQueue<T> {
-    pub fn read(&self) -> Result<Event, crate::error::Error> {
-        self.inner.read()
-    }
-
-    pub fn peek(&self) -> Result<Event, crate::error::Error> {
-        self.inner.peek()
-    }
-
-    pub fn readerr(&self) -> Result<EventError, crate::error::Error> {
-        self.inner.readerr()
-    }
-
-    pub fn peekerr(&self) -> Result<EventError, crate::error::Error> {
-        self.inner.peekerr()
-    }
-
-    pub fn strerror(&self, entry: &EventError) -> &str {
-        self.inner.strerror(entry)
-    }
-}
-
 impl<T: WriteEq> WriteEq for EventQueue<T> {
     fn write(&self, event: Event) -> Result<(), crate::error::Error> {
         self.inner.write(event)
     }
 }
 
-impl<T: WaitEq> WaitEq for EventQueue<T> {
+impl<T: WaitEq + SyncEq> WaitEq for EventQueue<T> {
     fn sread(&self, timeout: i32) -> Result<Event, crate::error::Error> {
         self.inner.sread(timeout)
     }
@@ -711,10 +739,10 @@ impl<T: AsRawFid> AsRawFid for EventQueueBase<T> {
 // }
 
 impl<T: AsTypedFid<EqRawFid>> AsTypedFid<EqRawFid> for EventQueueBase<T> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EqRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EqRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -730,13 +758,16 @@ impl<T: AsRawTypedFid<Output = EqRawFid>> AsRawTypedFid for EventQueueBase<T> {
 impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsTypedFid<EqRawFid>
     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
 {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EqRawFid> {
         self.c_eq.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EqRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EqRawFid> {
         self.c_eq.as_typed_fid_mut()
     }
 }
+
+impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> SyncEq
+    for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>{}
 
 // impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> AsRawTypedFid
 //     for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>
@@ -774,6 +805,7 @@ impl<const WRITE: bool> AsRawFd for EventQueueImpl<WRITE, true, true, true> {
     }
 }
 
+
 // impl<const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool> BindImpl for EventQueueImpl<WRITE, WAIT, RETRIEVE, FD> {}
 // impl<T: ReadEq + 'static> crate::Bind for EventQueue<T> {
 //     fn inner(&self) -> MyRc<dyn AsRawFid> {
@@ -783,6 +815,7 @@ impl<const WRITE: bool> AsRawFd for EventQueueImpl<WRITE, true, true, true> {
 
 //================== EventQueue Attribute(fi_eq_attr) ==================//
 
+/// Builder for creating an [EventQueue].
 pub struct EventQueueBuilder<
     'a,
     const WRITE: bool,
@@ -808,11 +841,13 @@ impl<'a> EventQueueBuilder<'a, false, true, false, false> {
 impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bool>
     EventQueueBuilder<'a, WRITE, WAIT, RETRIEVE, FD>
 {
+    /// Sets the size of the event queue
     pub fn size(mut self, size: usize) -> Self {
         self.eq_attr.size(size);
         self
     }
 
+    /// Enables write operations on the event queue
     pub fn write(mut self) -> EventQueueBuilder<'a, true, WAIT, RETRIEVE, FD> {
         self.eq_attr.write();
 
@@ -823,6 +858,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
         }
     }
 
+    /// Disables waiting on the event queue
     pub fn wait_none(mut self) -> EventQueueBuilder<'a, WRITE, false, false, false> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::None);
 
@@ -833,6 +869,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
         }
     }
 
+    /// Enables waiting on the event queue using a file descriptor
     pub fn wait_fd(mut self) -> EventQueueBuilder<'a, WRITE, true, true, true> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::Fd);
 
@@ -843,6 +880,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
         }
     }
 
+    /// Enables waiting on the event queue using a wait set
     pub fn wait_set(
         mut self,
         set: &crate::sync::WaitSet,
@@ -856,6 +894,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
         }
     }
 
+    /// Enables waiting on the event queue using a mutex condition variable
     pub fn wait_mutex(mut self) -> EventQueueBuilder<'a, WRITE, true, true, false> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::MutexCond);
 
@@ -866,6 +905,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
         }
     }
 
+    /// Enables waiting on the event queue using a yield operation
     pub fn wait_yield(mut self) -> EventQueueBuilder<'a, WRITE, true, false, false> {
         self.eq_attr.wait_obj(crate::enums::WaitObj::Yield);
 
@@ -876,11 +916,13 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
         }
     }
 
+    /// Sets the signaling vector for the event queue
     pub fn signaling_vector(mut self, signaling_vector: i32) -> Self {
         self.eq_attr.signaling_vector(signaling_vector);
         self
     }
 
+    /// Sets the context for the event queue
     pub fn context(self, ctx: &'a mut Context) -> EventQueueBuilder<'a, WRITE, WAIT, RETRIEVE, FD> {
         EventQueueBuilder {
             eq_attr: self.eq_attr,
@@ -889,6 +931,7 @@ impl<'a, const WRITE: bool, const WAIT: bool, const RETRIEVE: bool, const FD: bo
         }
     }
 
+    /// Builds the event queue.
     pub fn build(
         self,
     ) -> Result<EventQueue<EventQueueImpl<WRITE, WAIT, RETRIEVE, FD>>, crate::error::Error> {
@@ -960,6 +1003,7 @@ impl Default for EventQueueAttr {
 //================== EqErrEntry (fi_eq_err_entry) ==================//
 #[repr(C)]
 #[derive(Debug)]
+/// Wrapper around a libfabric `fi_eq_err_entry`.
 pub struct EventError {
     pub(crate) c_err: libfabric_sys::fi_eq_err_entry,
 }
@@ -998,14 +1042,17 @@ impl EventError {
     //     unsafe { BorrowedFid::borrow_raw(self.c_err.fid) }
     // }
 
+    /// Returns the data associated with the error entry.
     pub fn data(&self) -> u64 {
         self.c_err.data
     }
 
+    /// Returns the error code associated with the error entry.
     pub fn error(&self) -> crate::error::Error {
         crate::error::Error::from_err_code(self.c_err.err as u32)
     }
 
+    /// Returns the provider-specific error number associated with the error entry.
     pub fn prov_errno(&self) -> i32 {
         self.c_err.prov_errno
     }
@@ -1023,7 +1070,7 @@ impl Default for EventError {
 #[derive(Clone)]
 pub struct EventQueueEntry<F> {
     pub(crate) c_entry: libfabric_sys::fi_eq_entry,
-    event_fid: F,
+    phantom: PhantomData<F>,
 }
 
 impl<F: AsRawFid> EventQueueEntry<F> {
@@ -1038,13 +1085,18 @@ impl<F: AsRawFid> EventQueueEntry<F> {
             data: 0,
         };
 
-        Self { c_entry, event_fid }
+        Self {
+            c_entry,
+            phantom: PhantomData,
+        }
     }
 
-    pub fn fid(&mut self) -> &F {
-        &self.event_fid
+    /// Returns a reference to the raw event queue identifier.
+    pub fn fid(&self) -> &RawFid {
+        &self.c_entry.fid
     }
 
+    /// Sets the context for the event queue entry.
     pub fn set_context<T>(&mut self, context: &mut Context) -> &mut Self {
         let context_writable: *mut *mut std::ffi::c_void = &mut (self.c_entry.context);
         let context_writable_usize: *mut usize = context_writable as *mut usize;
@@ -1052,20 +1104,24 @@ impl<F: AsRawFid> EventQueueEntry<F> {
         self
     }
 
+    /// Sets the data for the event queue entry.
     pub fn set_data(&mut self, data: u64) -> &mut Self {
         self.c_entry.data = data;
         self
     }
 
+    /// Returns the data associated with the event queue entry.
     pub fn data(&self) -> u64 {
         self.c_entry.data
     }
 
+    /// Returns a reference to the context associated with the event queue entry.
     pub fn context<T>(&self) -> &T {
         let context_ptr: *mut *mut T = &mut (self.c_entry.context as *mut T);
         unsafe { std::mem::transmute_copy::<T, &T>(&*(context_ptr as *const T)) }
     }
 
+    /// Checks if the context associated with the event queue entry is equal to the given context.
     pub fn is_context_equal(&self, ctx: &Context) -> bool {
         std::ptr::eq(self.c_entry.context, ctx.inner())
     }
@@ -1100,8 +1156,9 @@ impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
         self.c_entry.fid
     }
 
+    //[TODO] Should returen the proper type of info entry
+    /// Returns a reference to the info entry associated with the event queue entry.
     pub fn info<E: Caps>(&self) -> Result<InfoEntry<E>, crate::error::Error> {
-        //[TODO] Should returen the proper type of info entry
         let caps = E::bitfield();
         if caps & unsafe { (*self.c_entry.info).caps } == caps {
             Ok(InfoEntry::<E>::new(self.c_entry.info))
@@ -1109,17 +1166,29 @@ impl<const ETYPE: libfabric_sys::_bindgen_ty_18> EventQueueCmEntry<ETYPE> {
             Err(crate::error::Error::caps_error())
         }
     }
+
+    pub(crate) fn info_handle(&self) -> libfabric_sys::fid_t {
+        unsafe { (*self.c_entry.info).handle}
+    }
+
+    //[TODO] Should returen the proper type of info entry
+    /// Returns a new InfoEntry with the capabilities requested, if possible
     pub fn info_from_caps<E: Caps>(
         &self,
         _caps: &InfoHints<E>,
     ) -> Result<InfoEntry<E>, crate::error::Error> {
-        //[TODO] Should returen the proper type of info entry
         let caps = E::bitfield();
         if caps & unsafe { (*self.c_entry.info).caps } == caps {
             Ok(InfoEntry::<E>::new(self.c_entry.info))
         } else {
             Err(crate::error::Error::caps_error())
         }
+    }
+}
+
+impl<const ETYPE: libfabric_sys::_bindgen_ty_18> Drop for EventQueueCmEntry<ETYPE> {
+    fn drop(&mut self) {
+        unsafe { libfabric_sys::fi_freeinfo(self.c_entry.info) }
     }
 }
 

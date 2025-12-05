@@ -1,6 +1,6 @@
 use super::eq::{AsyncReadEq, EventQueue};
 use crate::{
-    av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase},
+    av::{AddressVectorAttr, AddressVectorBase, AddressVectorImplBase, NoBlock},
     domain::DomainBase,
     enums::AVOptions,
     ep::Address,
@@ -18,7 +18,6 @@ impl AsyncAddressVectorImpl {
         flags: u64,
         ctx: &mut Context,
     ) -> Result<(Event, Vec<u64>), crate::error::Error> {
-        // [TODO] //[TODO] as_raw_typed_fid flags, as_raw_typed_fid context, as_raw_typed_fid async
         let mut fi_addresses = vec![0u64; addr.len()];
         let total_size = addr.iter().fold(0, |acc, addr| acc + addr.as_bytes().len());
         let mut serialized: Vec<u8> = Vec::with_capacity(total_size);
@@ -53,8 +52,10 @@ impl AsyncAddressVectorImpl {
                     libfabric_sys::FI_AV_COMPLETE,
                     Fid(self.as_typed_fid().as_raw_fid() as usize),
                     Some(ctx),
+                    None,
                 )
                 .await?;
+
             if let Event::AVComplete(ref entry) = res {
                 fi_addresses.truncate(entry.data() as usize);
             }
@@ -63,7 +64,7 @@ impl AsyncAddressVectorImpl {
     }
 }
 
-pub type AddressVector = AddressVectorBase<dyn AsyncReadEq>;
+pub type AddressVector = AddressVectorBase<NoBlock, dyn AsyncReadEq>;
 
 impl AddressVector {
     pub async fn insert_async(

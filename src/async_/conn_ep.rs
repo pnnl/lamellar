@@ -1,113 +1,147 @@
 use std::marker::PhantomData;
 
 use crate::{
-    ep::{Address, Connected, EndpointBase, EndpointImplBase, Unconnected, UninitUnconnected},
-    eq::{Event, EventQueueBase},
-    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, Fid},
+    conn_ep::{ConnectionPendingEndpointBase, EnabledConnectionOrientedEndpoint},
+    ep::{
+        Address, Connected, EndpointBase, EndpointImplBase, PendingAccept, Unconnected,
+        UninitUnconnected,
+    },
+    eq::{ConnectedEvent, Event, EventQueueBase},
+    fid::{AsRawFid, AsRawTypedFid, AsTypedFid, EpRawFid, Fid},
     utils::check_error,
 };
 
-use super::{cq::AsyncReadCq, eq::AsyncReadEq};
+use super::{cq::AsyncCq, eq::AsyncReadEq};
 
 pub type UninitUnconnectedEndpointBase<EP> = EndpointBase<EP, UninitUnconnected>;
 
 pub type UninitUnconnectedEndpoint<T> =
-    UninitUnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    UninitUnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 
 pub type UnconnectedEndpointBase<EP> = EndpointBase<EP, Unconnected>;
 
 pub type UnconnectedEndpoint<T> =
-    UnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    UnconnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
+
+pub type AcceptPendingEndpointBase<EP> = EndpointBase<EP, PendingAccept>;
+
+pub type AcceptPendingEndpoint<T> =
+    AcceptPendingEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 
 pub trait ConnectedEp {}
 
 pub type ConnectedEndpointBase<EP> = EndpointBase<EP, Connected>;
 
 pub type ConnectedEndpoint<T> =
-    ConnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncReadCq>>;
+    ConnectedEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
 
-impl<EP> ConnectedEp for ConnectedEndpointBase<EP> {}
+impl<EP: AsTypedFid<EpRawFid>> ConnectedEp for ConnectedEndpointBase<EP> {}
 
 impl<EP> UnconnectedEndpoint<EP> {
     pub async fn connect_async(
-        &self,
+        self,
         addr: &Address,
     ) -> Result<ConnectedEndpoint<EP>, crate::error::Error> {
-        self.connect(addr)?;
+        let inner = self.inner.clone();
 
-        let eq = self
-            .inner
-            .eq
-            .get()
-            .expect("Endpoint not bound to an EventQueue");
+        let eq = inner.eq.get().expect("Endpoint not bound to an EventQueue");
+
+        let fid = Fid(self.as_typed_fid().as_raw_fid() as usize);
+        let pending = self.connect(addr)?;
+
         let res = eq
-            .async_event_wait(
-                libfabric_sys::FI_CONNECTED,
-                Fid(self.as_typed_fid().as_raw_fid() as usize),
-                None,
-            )
+            .async_event_wait(libfabric_sys::FI_CONNECTED, fid, None, None)
             .await?;
 
-        match res {
-            Event::Connected(event) => {
-                assert_eq!(event.fid(), self.as_typed_fid().as_raw_fid())
-            }
+        let event = match res {
+            Event::Connected(event) => event,
             _ => panic!("Unexpected Event Type"),
-        }
+        };
 
-        Ok(ConnectedEndpoint {
-            inner: self.inner.clone(),
-            phantom: PhantomData,
-        })
-    }
-
-    pub async fn accept_async(&self) -> Result<ConnectedEndpoint<EP>, crate::error::Error> {
-        self.accept()?;
-
-        let eq = self
-            .inner
-            .eq
-            .get()
-            .expect("Endpoint not bound to an EventQueue");
-        let res = eq
-            .async_event_wait(
-                libfabric_sys::FI_CONNECTED,
-                Fid(self.as_typed_fid().as_raw_fid() as usize),
-                None,
-            )
-            .await?;
-
-        match res {
-            Event::Connected(event) => {
-                assert_eq!(event.fid(), self.as_typed_fid().as_raw_fid())
-            }
-            _ => panic!("Unexpected Event Type"),
-        }
-
-        Ok(ConnectedEndpoint {
-            inner: self.inner.clone(),
-            phantom: PhantomData,
-        })
+        Ok(pending.connect_complete(event))
     }
 }
 
-impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
+impl<EP> AcceptPendingEndpoint<EP> {
+    pub async fn accept_async(self) -> Result<ConnectedEndpoint<EP>, crate::error::Error> {
+        let inner = self.inner.clone();
+
+        let eq = inner.eq.get().expect("Endpoint not bound to an EventQueue");
+
+        let fid = Fid(self.as_typed_fid().as_raw_fid() as usize);
+        let pending = self.accept()?;
+
+        let res = eq
+            .async_event_wait(libfabric_sys::FI_CONNECTED, fid, None, None)
+            .await?;
+
+        let event = match res {
+            Event::Connected(event) => event,
+            _ => panic!("Unexpected Event Type"),
+        };
+
+        Ok(pending.connect_complete(event))
+    }
+}
+
+impl<E> UninitUnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncCq>> {
     pub fn enable<EQ: AsyncReadEq + 'static>(
         self,
         eq: &EventQueueBase<EQ>,
     ) -> Result<
-        UnconnectedEndpointBase<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>>,
+        EnabledConnectionOrientedEndpoint<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncCq>>,
         crate::error::Error,
     > {
         self.bind_eq(eq)?;
         let err =
             unsafe { libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid()) };
         check_error(err.try_into().unwrap())?;
-        Ok(
-            UnconnectedEndpointBase::<EndpointImplBase<E, dyn AsyncReadEq, dyn AsyncReadCq>> {
-                inner: self.inner.clone(),
-                phantom: PhantomData,
-            },
-        )
+
+        let has_conn_req = match self.inner.eptype {
+            crate::ep::EpType::Connected(has_conn_req) => has_conn_req,
+            crate::ep::EpType::Connectionless => panic!("Trying to create unconnected ep from connectionless impl"),
+        };
+
+        if has_conn_req {
+            Ok(EnabledConnectionOrientedEndpoint::AcceptPending(
+                AcceptPendingEndpoint {
+                    inner: self.inner.clone(),
+                    phantom: PhantomData,
+                },
+            ))
+        } else {
+            Ok(EnabledConnectionOrientedEndpoint::Unconnected(
+                UnconnectedEndpoint {
+                    inner: self.inner.clone(),
+                    phantom: PhantomData,
+                },
+            ))
+        }
+    }
+}
+
+pub type ConnectionPendingEndpoint<T> =
+    ConnectionPendingEndpointBase<EndpointImplBase<T, dyn AsyncReadEq, dyn AsyncCq>>;
+impl<E> ConnectionPendingEndpoint<E> {
+    /// Completes the connection process using the provided `ConnectedEvent` and returns a [ConnectedEndpoint] ready for use.
+    /// This method asserts that the event's fid matches the endpoint's fid.
+    ///
+    /// # Panics
+    /// Panics if the event's fid does not match the endpoint's fid.
+    pub fn connect_complete(self, event: ConnectedEvent) -> ConnectedEndpoint<E> {
+        assert_eq!(event.fid(), self.inner.as_raw_typed_fid().as_raw_fid());
+
+        ConnectedEndpoint {
+            inner: self.inner.inner(),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Same as [connect_complete](Self::connect_complete) but does not check that the event's fid matches the endpoint's fid.
+    pub unsafe fn connect_complete_unchecked(self, _event: ConnectedEvent) -> ConnectedEndpoint<E> {
+        ConnectedEndpoint {
+            inner: self.inner.inner(),
+            phantom: PhantomData,
+        }
     }
 }

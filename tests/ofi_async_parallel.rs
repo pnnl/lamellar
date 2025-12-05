@@ -323,17 +323,17 @@ pub mod parallel_async_ofi {
                             };
                             let mut ctx = info_entry.allocate_context();
 
-                            async_std::task::block_on(async {
-                                post_async!(
-                                    recv_from_any_async,
-                                    ft_progress,
-                                    cq_type.rx_cq(),
-                                    ep,
-                                    &mut reg_mem[..addrlen],
-                                    mr_desc.as_ref(),
-                                    &mut ctx
-                                )
-                            });
+                                async_std::task::block_on(async {
+                                    post_async!(
+                                        recv_from_any_async,
+                                        ft_progress,
+                                        cq_type.rx_cq(),
+                                        ep,
+                                        &mut reg_mem[..addrlen],
+                                        mr_desc.clone(),
+                                        &mut ctx
+                                    )
+                                });
 
                             let remote_address = unsafe { Address::from_bytes(&reg_mem) };
                             let mapped_address = av
@@ -346,18 +346,18 @@ pub mod parallel_async_ofi {
                                 .unwrap()
                                 .unwrap();
 
-                            async_std::task::block_on(async {
-                                post_async!(
-                                    send_to_async,
-                                    ft_progress,
-                                    cq_type.tx_cq(),
-                                    ep,
-                                    &std::slice::from_ref(&reg_mem[0]),
-                                    mr_desc.as_ref(),
-                                    &mapped_address,
-                                    &mut ctx
-                                )
-                            });
+                                async_std::task::block_on(async {
+                                    post_async!(
+                                        send_to_async,
+                                        ft_progress,
+                                        cq_type.tx_cq(),
+                                        ep,
+                                        &std::slice::from_ref(&reg_mem[0]),
+                                        mr_desc,
+                                        &mapped_address,
+                                        &mut ctx
+                                    )
+                                });
 
                             MyRc::new(mapped_address)
                         };
@@ -503,7 +503,7 @@ pub mod parallel_async_ofi {
                                     if data.is_some() {
                                         ep.tsenddata_to_async(
                                             &reg_mem,
-                                            desc.as_ref(),
+                                            desc,
                                             data.unwrap(),
                                             mapped_addr.as_ref().as_ref().unwrap(),
                                             tag,
@@ -513,7 +513,7 @@ pub mod parallel_async_ofi {
                                     } else {
                                         ep.tsend_to_async(
                                             &reg_mem,
-                                            desc.as_ref(),
+                                            desc,
                                             mapped_addr.as_ref().as_ref().unwrap(),
                                             tag,
                                             &mut ctx,
@@ -534,14 +534,14 @@ pub mod parallel_async_ofi {
                                     if data.is_some() {
                                         ep.tsenddata_async(
                                             &reg_mem,
-                                            desc.as_ref(),
+                                            desc,
                                             data.unwrap(),
                                             tag,
                                             &mut ctx,
                                         )
                                         .await
                                     } else {
-                                        ep.tsend_async(&reg_mem, desc.as_ref(), tag, &mut ctx).await
+                                        ep.tsend_async(&reg_mem, desc, tag, &mut ctx).await
                                     }
                                     .map(|_| {})
                                 }
@@ -640,13 +640,13 @@ pub mod parallel_async_ofi {
                         let desc = Some(mr.descriptor());
                         match ep.as_ref() {
                             MyEndpoint::Connected(ep) => {
-                                ep.trecv_async(&mut reg_mem, desc.as_ref(), tag, None, &mut ctx)
+                                ep.trecv_async(&mut reg_mem, desc, tag, None, &mut ctx)
                                     .await
                             }
                             MyEndpoint::Connectionless(ep) => {
                                 ep.trecv_from_async(
                                     &mut reg_mem,
-                                    desc.as_ref(),
+                                    desc,
                                     mapped_addr.as_ref().as_ref().unwrap(),
                                     tag,
                                     None,
@@ -784,7 +784,7 @@ pub mod parallel_async_ofi {
                                         if data.is_some() {
                                             ep.senddata_to_async(
                                                 &reg_mem,
-                                                desc.as_ref(),
+                                                desc,
                                                 data.unwrap(),
                                                 mapped_addr.as_ref().as_ref().unwrap(),
                                                 &mut ctx,
@@ -793,7 +793,7 @@ pub mod parallel_async_ofi {
                                         } else {
                                             ep.send_to_async(
                                                 &reg_mem,
-                                                desc.as_ref(),
+                                                desc,
                                                 mapped_addr.as_ref().as_ref().unwrap(),
                                                 &mut ctx,
                                             )
@@ -813,13 +813,13 @@ pub mod parallel_async_ofi {
                                         if data.is_some() {
                                             ep.senddata_async(
                                                 &reg_mem,
-                                                desc.as_ref(),
+                                                desc,
                                                 data.unwrap(),
                                                 &mut ctx,
                                             )
                                             .await
                                         } else {
-                                            ep.send_async(&reg_mem, desc.as_ref(), &mut ctx).await
+                                            ep.send_async(&reg_mem, desc, &mut ctx).await
                                         }
                                         .map(|_| {})
                                     }
@@ -927,12 +927,12 @@ pub mod parallel_async_ofi {
                         let desc = Some(mr.descriptor());
                         match ep.as_ref() {
                             MyEndpoint::Connected(ep) => {
-                                ep.recv_async(&mut reg_mem, desc.as_ref(), &mut ctx).await
+                                ep.recv_async(&mut reg_mem, desc, &mut ctx).await
                             }
                             MyEndpoint::Connectionless(ep) => {
                                 ep.recv_from_async(
                                     &mut reg_mem,
-                                    desc.as_ref(),
+                                    desc,
                                     mapped_addr.as_ref().as_ref().unwrap(),
                                     &mut ctx,
                                 )
@@ -1076,13 +1076,18 @@ pub mod parallel_async_ofi {
             if server {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.send_async(&mem_bytes, desc.as_ref(), &mut ctx).await
+                        ep.send_async(
+                            &mem_bytes,
+                            desc,
+                            &mut ctx,
+                        )
+                        .await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.send_to_async(
                             &mem_bytes,
-                            desc.as_ref(),
+                            desc,
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
                         )
@@ -1093,13 +1098,18 @@ pub mod parallel_async_ofi {
 
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.recv_async(&mut mem_bytes, desc.as_ref(), &mut ctx).await
+                        ep.recv_async(
+                            &mut mem_bytes,
+                            desc,
+                            &mut ctx,
+                        )
+                        .await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.recv_from_async(
-                            &mut mem_bytes,
-                            desc.as_ref(),
+                        &mut mem_bytes,
+                            desc,
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
                         )
@@ -1110,13 +1120,18 @@ pub mod parallel_async_ofi {
             } else {
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.recv_async(&mut mem_bytes, desc.as_ref(), &mut ctx).await
+                        ep.recv_async(
+                        &mut mem_bytes,
+                            desc.clone(),
+                            &mut ctx,
+                        )
+                        .await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.recv_from_async(
-                            &mut mem_bytes,
-                            desc.as_ref(),
+                        &mut mem_bytes,
+                            desc.clone(),
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
                         )
@@ -1127,14 +1142,18 @@ pub mod parallel_async_ofi {
 
                 let _res = match self.ep.as_ref() {
                     MyEndpoint::Connected(ep) => async_std::task::block_on(async {
-                        ep.send_async(mem_info.to_bytes(), desc.as_ref(), &mut ctx)
-                            .await
+                        ep.send_async(
+                            mem_info.to_bytes(),
+                            desc,
+                            &mut ctx,
+                        )
+                        .await
                     })
                     .unwrap(),
                     MyEndpoint::Connectionless(ep) => async_std::task::block_on(async {
                         ep.send_to_async(
                             mem_info.to_bytes(),
-                            desc.as_ref(),
+                            desc,
                             self.mapped_addr.as_ref().unwrap(),
                             &mut ctx,
                         )
@@ -1245,7 +1264,7 @@ pub mod parallel_async_ofi {
                                             unsafe {
                                                 ep.writedata_to_async(
                                                     &reg_mem,
-                                                    desc.as_ref(),
+                                                    desc,
                                                     data.unwrap(),
                                                     mapped_addr.as_ref().as_ref().unwrap(),
                                                     base_addr.add(dest_addr),
@@ -1258,7 +1277,7 @@ pub mod parallel_async_ofi {
                                             unsafe {
                                                 ep.write_to_async(
                                                     &reg_mem,
-                                                    desc.as_ref(),
+                                                    desc,
                                                     mapped_addr.as_ref().as_ref().unwrap(),
                                                     base_addr.add(dest_addr),
                                                     &key,
@@ -1297,7 +1316,7 @@ pub mod parallel_async_ofi {
                                             unsafe {
                                                 ep.writedata_async(
                                                     &reg_mem,
-                                                    desc.as_ref(),
+                                                    desc,
                                                     data.unwrap(),
                                                     base_addr.add(dest_addr),
                                                     &key,
@@ -1309,7 +1328,7 @@ pub mod parallel_async_ofi {
                                             unsafe {
                                                 ep.write_async(
                                                     &reg_mem,
-                                                    desc.as_ref(),
+                                                    desc,
                                                     base_addr.add(dest_addr),
                                                     &key,
                                                     &mut ctx,
@@ -1381,7 +1400,7 @@ pub mod parallel_async_ofi {
                                 async_std::task::block_on(async {
                                     ep.read_from_async(
                                         &mut reg_mem,
-                                        desc.as_ref(),
+                                        desc,
                                         mapped_addr.as_ref().as_ref().unwrap(),
                                         base_addr.add(dest_addr),
                                         &key,
@@ -1394,7 +1413,7 @@ pub mod parallel_async_ofi {
                                 async_std::task::block_on(async {
                                     ep.read_async(
                                         &mut reg_mem,
-                                        desc.as_ref(),
+                                        desc,
                                         base_addr.add(dest_addr),
                                         &key,
                                         &mut ctx,
@@ -2049,7 +2068,6 @@ pub mod parallel_async_ofi {
                         .type_($ep_type)
                         .leave_ep_attr()
                         .enter_domain_attr()
-                        .threading(libfabric::enums::Threading::Safe)
                         .mr_mode(
                             libfabric::enums::MrMode::new()
                                 .prov_key()
@@ -2226,7 +2244,7 @@ pub mod parallel_async_ofi {
                             MyEndpoint::Connectionless(ep) => {
                                 ep.send_to_async(
                                     &reg_mem_0[..512],
-                                    Some(desc).as_ref(),
+                                    Some(desc),
                                     mapped_addr.as_ref().as_ref().unwrap(),
                                     &mut ctx,
                                 )

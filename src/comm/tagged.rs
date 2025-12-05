@@ -32,7 +32,7 @@ pub(crate) trait TagRecvEpImpl: AsTypedFid<EpRawFid> {
     fn trecv_impl<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         ignore: Option<u64>,
@@ -104,7 +104,7 @@ pub trait TagRecvEp {
     fn trecv_from<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -112,7 +112,7 @@ pub trait TagRecvEp {
     fn trecv_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -121,7 +121,7 @@ pub trait TagRecvEp {
     fn trecv_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -161,14 +161,14 @@ pub trait TagRecvEp {
     fn trecv_from_any<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecv_from_any_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -176,7 +176,7 @@ pub trait TagRecvEp {
     fn trecv_from_any_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -210,14 +210,14 @@ pub trait ConnectedTagRecvEp {
     fn trecv<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error>;
     fn trecv_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -225,7 +225,7 @@ pub trait ConnectedTagRecvEp {
     fn trecv_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -260,12 +260,181 @@ pub trait ConnectedTagRecvEp {
     ) -> Result<(), crate::error::Error>;
 }
 
+
+pub trait ConnectedTagRecvEpMrSlice: ConnectedTagRecvEp {
+    fn trecv_mr_slice(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        tag: u64,
+        ignore: Option<u64>,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            tag,
+            ignore
+        )
+    }
+
+    fn trecv_mr_slice_with_context(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        context: &mut Context,
+        tag: u64,
+        ignore: Option<u64>,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_with_context(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            tag,
+            ignore,
+            context,
+        )
+    }
+    fn trecv_mr_slice_triggered(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        context: &mut TriggeredContext,
+        tag: u64,
+        ignore: Option<u64>,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_triggered(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            tag,
+            ignore,
+            context,
+        )
+    }
+}
+
+pub trait TagRecvEpMrSlice: TagRecvEp {
+    fn trecv_mr_slice_from(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        ignore: Option<u64>,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_from(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            mapped_addr,
+            tag,
+            ignore,
+        )
+    }
+
+    fn trecv_mr_slice_from_with_context(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        ignore: Option<u64>,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_from_with_context(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            mapped_addr,
+            tag,
+            ignore,
+            context,
+        )
+    }
+
+    fn trecv_mr_slice_from_triggered(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        ignore: Option<u64>,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_from_triggered(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            mapped_addr,
+            tag,
+            ignore,
+            context,
+        )
+    }
+
+    fn trecv_mr_slice_from_any(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        tag: u64,
+        ignore: Option<u64>,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_from_any(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            tag,
+            ignore,
+        )
+    }
+
+    fn trecv_mr_slice_from_any_with_context(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        tag: u64,
+        ignore: Option<u64>,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_from_any_with_context(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            tag,
+            ignore,
+            context,
+        )
+    }
+
+    fn trecv_mr_slice_from_any_triggered(
+        &self,
+        mr_slice: &mut crate::mr::MemoryRegionSliceMut,
+        tag: u64,
+        ignore: Option<u64>,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        let desc = mr_slice.desc();
+        
+        self.trecv_from_any_triggered(
+            mr_slice.as_mut_slice(),
+            Some(desc),
+            tag,
+            ignore,
+            context,
+        )
+    }
+}
+
+impl<EP: ConnectedTagRecvEp> ConnectedTagRecvEpMrSlice for EP {}
+impl<EP: TagRecvEp> TagRecvEpMrSlice for EP {}
+
 impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     #[inline]
     fn trecv_from<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -277,7 +446,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_any<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
@@ -288,7 +457,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -308,7 +477,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_any_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -320,7 +489,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         ignore: Option<u64>,
@@ -340,7 +509,7 @@ impl<EP: TagRecvEpImpl + ConnlessEp> TagRecvEp for EP {
     fn trecv_from_any_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -450,7 +619,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecv<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
     ) -> Result<(), crate::error::Error> {
@@ -461,7 +630,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecv_with_context<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut Context,
@@ -473,7 +642,7 @@ impl<EP: TagRecvEpImpl + ConnectedEp> ConnectedTagRecvEp for EP {
     fn trecv_triggered<T>(
         &self,
         buf: &mut [T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         ignore: Option<u64>,
         context: &mut TriggeredContext,
@@ -549,7 +718,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
     fn tsend_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
         context: Option<*mut std::ffi::c_void>,
@@ -614,7 +783,7 @@ pub(crate) trait TagSendEpImpl: AsTypedFid<EpRawFid> {
     fn tsenddata_impl<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: Option<&MappedAddress>,
         tag: u64,
@@ -689,14 +858,14 @@ pub trait TagSendEp {
     fn tsend_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsend_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut Context,
@@ -704,7 +873,7 @@ pub trait TagSendEp {
     fn tsend_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut TriggeredContext,
@@ -740,7 +909,7 @@ pub trait TagSendEp {
     fn tsenddata_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -748,7 +917,7 @@ pub trait TagSendEp {
     fn tsenddata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -757,7 +926,7 @@ pub trait TagSendEp {
     fn tsenddata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -782,20 +951,20 @@ pub trait ConnectedTagSendEp {
     fn tsend<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsend_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
     fn tsend_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -827,14 +996,14 @@ pub trait ConnectedTagSendEp {
     fn tsenddata<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
     ) -> Result<(), crate::error::Error>;
     fn tsenddata_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut Context,
@@ -842,7 +1011,7 @@ pub trait ConnectedTagSendEp {
     fn tsenddata_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut TriggeredContext,
@@ -851,12 +1020,238 @@ pub trait ConnectedTagSendEp {
     fn tinjectdata<T>(&self, buf: &[T], data: u64, tag: u64) -> Result<(), crate::error::Error>;
 }
 
+pub trait ConnectedTagSendEpMrSlice: ConnectedTagSendEp {
+    fn tsend_mr_slice(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tsend(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            tag,
+        )
+    }
+
+    fn tsend_mr_slice_with_context(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        tag: u64,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.tsend_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            tag,
+            context,
+        )
+    }
+
+    fn tsend_mr_slice_triggered(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        tag: u64,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.tsend_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            tag,
+            context,
+        )
+    }
+    fn tinject_mr_slice(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tinject(mr_slice.as_slice(), tag)
+    }
+
+    fn tinjectdata_mr_slice(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tinjectdata(mr_slice.as_slice(), data, tag)
+    }
+
+    fn tsenddata_mr_slice(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tsenddata(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            data,
+            tag,
+        )
+    }
+
+    fn tsenddata_mr_slice_with_context(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        tag: u64,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.tsenddata_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            data,
+            tag,
+            context,
+        )
+    }
+
+    fn tsenddata_mr_slice_triggered(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        tag: u64,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.tsenddata_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            data,
+            tag,
+            context,
+        )
+    }
+}
+
+pub trait TagSendEpMrSlice: TagSendEp {
+    fn tsend_mr_slice_to(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tsend_to(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            mapped_addr,
+            tag,
+        )
+    }
+
+    fn tsend_mr_slice_to_with_context(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.tsend_to_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            mapped_addr,
+            tag,
+            context,
+        )
+    }
+
+    fn tsend_mr_slice_to_triggered(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.tsend_to_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            mapped_addr,
+            tag,
+            context,
+        )
+    }
+
+    fn tsenddata_mr_slice_to(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tsenddata_to(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            data,
+            mapped_addr,
+            tag,
+        )
+    }
+
+    fn tsenddata_mr_slice_to_with_context(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        context: &mut Context,
+    ) -> Result<(), crate::error::Error> {
+        self.tsenddata_to_with_context(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            data,
+            mapped_addr,
+            tag,
+            context,
+        )
+    }
+
+    fn tsenddata_mr_slice_to_triggered(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+        context: &mut TriggeredContext,
+    ) -> Result<(), crate::error::Error> {
+        self.tsenddata_to_triggered(
+            mr_slice.as_slice(),
+            Some(mr_slice.desc()),
+            data,
+            mapped_addr,
+            tag,
+            context,
+        )
+    }
+
+    fn tinject_mr_slice_to(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tinject_to(mr_slice.as_slice(), mapped_addr, tag)
+    }
+
+    fn tinjectdata_mr_slice_to(
+        &self,
+        mr_slice: &crate::mr::MemoryRegionSlice<'_>,
+        data: u64,
+        mapped_addr: &MappedAddress,
+        tag: u64,
+    ) -> Result<(), crate::error::Error> {
+        self.tinjectdata_to(mr_slice.as_slice(), data, mapped_addr, tag)
+    }
+}
+
+impl<EP: ConnectedTagSendEp> ConnectedTagSendEpMrSlice for EP {}
+impl<EP: TagSendEp> TagSendEpMrSlice for EP {}
+
 impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     #[inline]
     fn tsend_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
@@ -867,7 +1262,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsend_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut Context,
@@ -879,7 +1274,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsend_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         mapped_addr: &MappedAddress,
         tag: u64,
         context: &mut TriggeredContext,
@@ -938,7 +1333,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsenddata_to<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -950,7 +1345,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsenddata_to_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -970,7 +1365,7 @@ impl<EP: TagSendEpImpl + ConnlessEp> TagSendEp for EP {
     fn tsenddata_to_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         mapped_addr: &MappedAddress,
         tag: u64,
@@ -1022,7 +1417,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsend<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
         self.tsend_impl(buf, desc, None, tag, None)
@@ -1032,7 +1427,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsend_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -1043,7 +1438,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsend_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         tag: u64,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1086,7 +1481,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsenddata<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
     ) -> Result<(), crate::error::Error> {
@@ -1097,7 +1492,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsenddata_with_context<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut Context,
@@ -1109,7 +1504,7 @@ impl<EP: TagSendEpImpl + ConnectedEp> ConnectedTagSendEp for EP {
     fn tsenddata_triggered<T>(
         &self,
         buf: &[T],
-        desc: Option<&MemoryRegionDesc<'_>>,
+        desc: Option<MemoryRegionDesc<'_>>,
         data: u64,
         tag: u64,
         context: &mut TriggeredContext,

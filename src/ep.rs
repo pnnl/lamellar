@@ -1,6 +1,5 @@
 use std::{
-    marker::PhantomData,
-    os::fd::{AsFd, BorrowedFd},
+    marker::PhantomData, os::fd::{AsFd, BorrowedFd}
 };
 
 use libfabric_sys::{
@@ -8,9 +7,9 @@ use libfabric_sys::{
     inlined_fi_control, FI_BACKLOG, FI_GETOPSFLAG,
 };
 
-use crate::connless_ep::UninitConnectionlessEndpoint;
+use crate::{av::AVSyncMode, connless_ep::UninitConnectionlessEndpoint, eq::ConnReqEvent, fid::RawFid};
 use crate::{
-    av::{AddressVector, AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
+    av::{AddressVectorBase, AddressVectorImplBase, AddressVectorImplT},
     cntr::{Counter, ReadCntr},
     conn_ep::UninitUnconnectedEndpoint,
     cq::{CompletionQueue, ReadCq},
@@ -32,6 +31,10 @@ use crate::{
 use crate::fid::EpCompletionOwnedTypedFid;
 
 #[repr(C)]
+#[derive(Clone, Debug)]
+/// A unmapped network address.
+///
+/// This struct encapsulates a raw byte representation of a network address.
 pub struct Address {
     pub(crate) address: Vec<u8>,
 }
@@ -57,6 +60,9 @@ impl Address {
         }
     }
 
+    /// Returns the raw byte representation of the address.
+    ///
+    /// This can be used for low-level operations or interfacing with C libraries.
     pub fn as_bytes(&self) -> &[u8] {
         &self.address
     }
@@ -65,6 +71,11 @@ impl Address {
 pub(crate) enum EpCq<CQ: ?Sized> {
     Separate(MyRc<CQ>, MyRc<CQ>),
     Shared(MyRc<CQ>),
+}
+
+pub(crate) enum EpType {
+    Connected(bool),
+    Connectionless
 }
 
 pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
@@ -78,31 +89,50 @@ pub struct EndpointImplBase<T, EQ: ?Sized, CQ: ?Sized> {
     _bound_av: MyOnceCell<MyRc<dyn AddressVectorImplT>>,
     _domain_rc: MyRc<dyn DomainImplT>,
     phantom: PhantomData<fn() -> T>, // fn() -> T because we only need to track the Endpoint capabilities requested but avoid requiring caps to implement Sync+Send
+    pub(crate) eptype: EpType,
 }
+
+impl<T, EQ: ?Sized, CQ: ?Sized> Drop for EndpointImplBase<T, EQ, CQ> {
+    fn drop(&mut self) {
+        match self.eptype {
+            EpType::Connected(_) => {
+                let ep = self.c_ep.as_typed_fid_mut().as_raw_typed_fid();
+                let err = unsafe{libfabric_sys::inlined_fi_shutdown(ep, 0)};
+                check_error(err as isize).unwrap();
+            },
+            EpType::Connectionless => {},
+        }
+    }
+}
+
 
 // pub type Endpoint<T, STATE: EpState> =
 //     EndpointBase<EndpointImplBase<T, dyn ReadEq, dyn ReadCq>, STATE>;
 
-pub trait EpState: SyncSend {}
+/// A trait representing the state of an endpoint.
+pub trait EpState: SyncSend +'static {} 
 pub struct Connected;
 pub struct Unconnected;
+pub struct PendingAccept;
 pub struct UninitUnconnected;
 pub struct Connectionless;
 pub struct UninitConnectionless;
 
 impl SyncSend for Connected {}
+impl SyncSend for PendingAccept {}
 impl SyncSend for Unconnected {}
 impl SyncSend for UninitUnconnected {}
 impl SyncSend for Connectionless {}
 impl SyncSend for UninitConnectionless {}
 
 impl EpState for Connected {}
+impl EpState for PendingAccept {}
 impl EpState for Unconnected {}
 impl EpState for UninitUnconnected {}
 impl EpState for Connectionless {}
 impl EpState for UninitConnectionless {}
 
-pub struct EndpointBase<EP, STATE: EpState> {
+pub struct EndpointBase<EP: AsTypedFid<EpRawFid>, STATE: EpState> {
     pub(crate) inner: MyRc<EP>,
     pub(crate) phantom: PhantomData<STATE>,
 }
@@ -120,7 +150,9 @@ pub struct EndpointBase<EP, STATE: EpState> {
 //     }
 // }
 
+/// A trait that provides common operations for all endpoint types.
 pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
+    /// Retrieves the local address of the endpoint.
     fn getname(&self) -> Result<Address, crate::error::Error> {
         let mut len = 0;
         let err: i32 = unsafe {
@@ -153,6 +185,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         }
     }
 
+    /// Retrieves the endpoint type.
     fn buffered_limit(&self) -> Result<usize, crate::error::Error> {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
@@ -176,6 +209,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         }
     }
 
+    /// Retrieves the minimum buffered size for the endpoint.
     fn buffered_min(&self) -> Result<usize, crate::error::Error> {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
@@ -199,6 +233,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         }
     }
 
+    /// Retrieves the size of connection management data.
     fn cm_data_size(&self) -> Result<usize, crate::error::Error> {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
@@ -222,6 +257,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         }
     }
 
+    /// Retrieves the minimum multi-receive size for the endpoint.
     fn min_multi_recv(&self) -> Result<usize, crate::error::Error> {
         let mut res = 0_usize;
         let mut len = std::mem::size_of::<usize>();
@@ -245,6 +281,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         }
     }
 
+    /// Retrieves the peer-to-peer memory access capabilities of the endpoint.
     fn hmem_p2p(&self) -> Result<HmemP2p, crate::error::Error> {
         let mut res = 0_u32;
         let mut len = std::mem::size_of::<u32>();
@@ -268,6 +305,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         }
     }
 
+    /// Checks if CUDA API is permitted on the endpoint.
     fn cuda_api_permitted(&self) -> Result<bool, crate::error::Error> {
         let mut permitted = 0_u32;
         let mut len = std::mem::size_of::<u32>();
@@ -286,6 +324,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         Ok(permitted == 1)
     }
 
+    /// Retrieves the trigger settings for a specific heterogeneous memory interface.
     fn xpu_trigger(&self, iface: &HmemIface) -> Result<TriggerXpu, crate::error::Error> {
         let (dev_type, device) = match iface {
             HmemIface::Cuda(dev_id) => (
@@ -353,7 +392,8 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
         }
     }
 
-    fn wait_fd(&self) -> Result<BorrowedFd, crate::error::Error> {
+    /// Retrieves a file descriptor that can be used to wait for events on the endpoint.
+    fn wait_fd(&self) -> Result<BorrowedFd<'_>, crate::error::Error> {
         let mut fd = 0;
 
         let err = unsafe {
@@ -400,7 +440,7 @@ impl<T: BaseEndpoint<EpRawFid> + ActiveEndpoint, STATE: EpState> ActiveEndpoint
 }
 // impl<T: ActiveEndpoint, STATE: EpState> SyncSend for EndpointBase<T, STATE> {}
 
-impl<E: AsFd, STATE: EpState> AsFd for EndpointBase<E, STATE> {
+impl<E: AsFd + AsTypedFid<EpRawFid>, STATE: EpState> AsFd for EndpointBase<E, STATE> {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.inner.as_fd()
     }
@@ -421,6 +461,10 @@ pub(crate) struct ScalableEndpointImpl {
     _domain_rc: MyRc<dyn DomainImplT>,
 }
 
+/// A scalable endpoint that can manage multiple connections.
+///
+/// This endpoint type is suitable for applications that require high scalability and flexibility in managing connections.
+/// Corresponds to `fi_scalable_ep` in libfabric.
 pub struct ScalableEndpoint<E> {
     inner: MyRc<ScalableEndpointImpl>,
     phantom: PhantomData<fn() -> E>,
@@ -447,7 +491,7 @@ impl ScalableEndpoint<()> {
 impl SyncSend for ScalableEndpointImpl {}
 
 impl ScalableEndpointImpl {
-    pub fn new<E, EQ: ?Sized + 'static + SyncSend>(
+    fn new<E, EQ: ?Sized + 'static + SyncSend>(
         domain: &MyRc<crate::domain::DomainImplBase<EQ>>,
         info: &InfoEntry<E>,
         context: *mut std::ffi::c_void,
@@ -456,7 +500,7 @@ impl ScalableEndpointImpl {
         let err = unsafe {
             libfabric_sys::inlined_fi_scalable_ep(
                 domain.as_typed_fid_mut().as_raw_typed_fid(),
-                info.info.0,
+                info.info.as_raw(),
                 &mut c_sep,
                 context,
             )
@@ -499,6 +543,14 @@ impl ScalableEndpointImpl {
         check_error(err.try_into().unwrap())
     }
 
+    fn enable(&self) -> Result<(), crate::error::Error> {
+        let err = unsafe {
+            libfabric_sys::inlined_fi_enable(self.as_typed_fid_mut().as_raw_typed_fid())
+        };
+
+        check_error(err.try_into().unwrap())
+    }
+
     // pub(crate) fn bind_av(&self, av: &MyRc<AddressVectorImpl>) -> Result<(), crate::error::Error> {
 
     //     self.bind(&av, 0)
@@ -525,10 +577,13 @@ impl ScalableEndpointImpl {
 }
 
 impl<E> ScalableEndpoint<E> {
-    pub fn bind_av(&self, av: &AddressVector) -> Result<(), crate::error::Error> {
+    pub fn bind_av<Mode: AVSyncMode, AVEQ: ?Sized + ReadEq + 'static>(&self, av: &AddressVectorBase<Mode, AVEQ>) -> Result<(), crate::error::Error> {
         self.inner.bind(&av.inner, 0)
     }
 
+    pub fn enable(&self) -> Result<(), crate::error::Error> {
+        self.inner.enable()
+    }
     // pub fn alias(&self, flags: u64) -> Result<ScalableEndpoint<E>, crate::error::Error> {
     //     Ok(Self {
     //         inner: MyRc::new(self.inner.alias(flags)?),
@@ -560,19 +615,19 @@ impl<E> ScalableEndpoint<E> {
 // }
 
 impl AsTypedFid<EpRawFid> for ScalableEndpointImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.c_sep.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.c_sep.as_typed_fid_mut()
     }
 }
 
 impl<E> AsTypedFid<EpRawFid> for ScalableEndpoint<E> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -630,6 +685,9 @@ pub(crate) struct PassiveEndpointImplBase<E, EQ: ?Sized> {
 
 pub type PassiveEndpoint<E> = PassiveEndpointBase<E, dyn ReadEq>;
 
+/// A passive endpoint that listens for incoming connection requests.
+///
+/// Corresponds to `fi_passive_ep` in libfabric.
 pub struct PassiveEndpointBase<E, EQ: ?Sized> {
     pub(crate) inner: MyRc<PassiveEndpointImplBase<E, EQ>>,
 }
@@ -661,7 +719,7 @@ impl<EQ: ?Sized> PassiveEndpointImplBase<(), EQ> {
         let err = unsafe {
             libfabric_sys::inlined_fi_passive_ep(
                 fabric.as_typed_fid_mut().as_raw_typed_fid(),
-                info.info.0,
+                info.info.as_raw(),
                 &mut c_pep,
                 context,
             )
@@ -709,6 +767,7 @@ impl<E> PassiveEndpointImplBase<E, dyn ReadEq> {
 }
 
 impl<E> PassiveEndpointBase<E, dyn ReadEq> {
+    /// Binds a resource to the passive endpoint.
     pub fn bind<T: ReadEq + 'static>(
         &self,
         res: &EventQueueBase<T>,
@@ -728,21 +787,24 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
 
     pub fn reject<T0>(
         &self,
-        fid: &impl AsRawFid,
-        params: &[T0],
+        fid: RawFid,
+        params: Option<&[T0]>,
     ) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_reject(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
-                fid.as_raw_fid(),
-                params.as_ptr().cast(),
-                params.len(),
+                fid,
+                params.map_or_else(std::ptr::null, |v| v.as_ptr().cast()),
+                params.map_or(0, |v| v.len()),
             )
         };
 
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets the backlog size for incoming connection requests.
+    ///
+    /// Corresponds to `FI_BACKLOG` control operation in libfabric.
     pub fn set_backlog_size(&self, size: i32) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_control(
@@ -756,18 +818,34 @@ impl<E, EQ: ?Sized + ReadEq> PassiveEndpointImplBase<E, EQ> {
 }
 
 impl<E, EQ: ?Sized + ReadEq> PassiveEndpointBase<E, EQ> {
+    /// Starts listening for incoming connection requests.
+    ///
+    /// Corresponds to `fi_listen` in libfabric.
     pub fn listen(&self) -> Result<(), crate::error::Error> {
         self.inner.listen()
     }
 
-    pub fn reject<T0>(
-        &self,
-        fid: &impl AsRawFid,
-        params: &[T0],
-    ) -> Result<(), crate::error::Error> {
-        self.inner.reject(fid, params)
+    /// Rejects an incoming connection request.
+    ///
+    /// Corresponds to `fi_reject` in libfabric.
+    pub fn reject(&self, event: ConnReqEvent) -> Result<(), crate::error::Error> {
+        self.inner.reject::<()>(event.info_handle(), None)
     }
 
+    /// Rejects an incoming connection request and sends back the provided params.
+    ///
+    /// Corresponds to `fi_reject` in libfabric.
+    pub fn reject_with_params<T0>(
+        &self,
+        event: ConnReqEvent,
+        params: &[T0],
+    ) -> Result<(), crate::error::Error> {
+        self.inner.reject(event.info_handle(), Some(params))
+    }
+
+    /// Sets the backlog size for incoming connection requests.
+    ///
+    /// Corresponds to `FI_BACKLOG` control operation in libfabric.
     pub fn set_backlog_size(&self, size: i32) -> Result<(), crate::error::Error> {
         self.inner.set_backlog_size(size)
     }
@@ -804,19 +882,19 @@ impl<E, EQ: ?Sized + ReadEq> BaseEndpoint<PepRawFid> for PassiveEndpointImplBase
 // }
 
 impl<E, EQ: ?Sized + ReadEq> AsTypedFid<PepRawFid> for PassiveEndpointImplBase<E, EQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, PepRawFid> {
         self.c_pep.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, PepRawFid> {
         self.c_pep.as_typed_fid_mut()
     }
 }
 
 impl<E, EQ: ?Sized + ReadEq> AsTypedFid<PepRawFid> for PassiveEndpointBase<E, EQ> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, PepRawFid> {
         self.inner.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<PepRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, PepRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -896,8 +974,8 @@ pub struct IncompleteBindCntr<'a, EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> 
     pub(crate) flags: u64,
 }
 
-impl<'a, EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq>
-    IncompleteBindCntr<'a, EP, EQ, CQ>
+impl<EP, EQ: ?Sized + ReadEq + 'static, CQ: ?Sized + ReadCq>
+    IncompleteBindCntr<'_, EP, EQ, CQ>
 {
     pub fn read(&mut self) -> &mut Self {
         self.flags |= libfabric_sys::FI_READ as u64;
@@ -954,7 +1032,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
         let err = unsafe {
             libfabric_sys::inlined_fi_endpoint2(
                 domain.as_typed_fid_mut().as_raw_typed_fid(),
-                info.info.0,
+                info.info.as_raw(),
                 &mut c_ep,
                 flags,
                 context,
@@ -966,6 +1044,11 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
                 (-err).try_into().unwrap(),
             ))
         } else {
+            let eptype = match  info.ep_attr().type_ {
+                EndpointType::Unspec => todo!(),
+                EndpointType::Msg => EpType::Connected(info.handle().is_some()),
+                EndpointType::Dgram | EndpointType::Rdm  => EpType::Connectionless,
+            };
             Ok(Self {
                 #[cfg(not(any(feature = "threading-domain", feature = "threading-completion")))]
                 c_ep: OwnedEpFid::from(c_ep),
@@ -979,6 +1062,7 @@ impl<T, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<T, EQ, CQ> {
                 eq: MyOnceCell::new(),
                 _domain_rc: domain.clone(),
                 phantom: PhantomData,
+                eptype,
             })
         }
     }
@@ -1198,13 +1282,13 @@ impl<EP, CQ: ?Sized + ReadCq> EndpointImplBase<EP, dyn ReadEq, CQ> {
 }
 
 impl<EP, EQ: ?Sized + 'static + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<EP, EQ, CQ> {
-    pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<EP, EQ, CQ> {
+    pub(crate) fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, EQ, CQ> {
         IncompleteBindCntr { ep: self, flags: 0 }
     }
 
-    pub(crate) fn bind_av<AVEQ: ?Sized + ReadEq + 'static>(
+    pub(crate) fn bind_av<Mode: AVSyncMode, AVEQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<AVEQ>,
+        av: &AddressVectorBase<Mode, AVEQ>,
     ) -> Result<(), crate::error::Error> {
         self.bind_av_(&av.inner, 0)
     }
@@ -1238,6 +1322,11 @@ impl<EP, EQ: ?Sized + 'static + ReadEq, CQ: ?Sized + ReadCq> EndpointImplBase<EP
 }
 
 impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnectionless> {
+    /// Binds a completion queue to the endpoint for both transmit and receive operations.
+    ///
+    /// If `selective` is true, selective completion is enabled.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
@@ -1246,6 +1335,12 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
         self.inner.bind_shared_cq(&cq.inner, selective)
     }
 
+    /// Binds separate completion queues to the endpoint for transmit and receive operations.
+    ///
+    /// `tx_selective` enables selective completion for the transmit queue if true.
+    /// `rx_selective` enables selective completion for the receive queue if true.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub fn bind_separate_cqs<T: ReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
@@ -1257,6 +1352,9 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
             .bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
     }
 
+    /// Binds an event queue to the endpoint.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub fn bind_eq<T: ReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
@@ -1264,13 +1362,21 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
         self.inner.bind_eq(&eq.inner)
     }
 
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
+    /// Binds a counter to the endpoint for specified operations.
+    ///
+    /// Use the returned `IncompleteBindCntr` to specify which operations to bind the counter to.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, dyn ReadEq, dyn ReadCq> {
         self.inner.bind_cntr()
     }
 
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+    /// Binds an address vector to the endpoint.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
+    pub fn bind_av<Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<EQ>,
+        av: &AddressVectorBase<Mode, EQ>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_av(av)
     }
@@ -1285,6 +1391,11 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitConnec
 }
 
 impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconnected> {
+    /// Binds a completion queue to the endpoint for both transmit and receive operations.
+    ///
+    /// If `selective` is true, selective completion is enabled.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
@@ -1293,6 +1404,12 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
         self.inner.bind_shared_cq(&cq.inner, selective)
     }
 
+    /// Binds separate completion queues to the endpoint for transmit and receive operations.
+    ///
+    /// `tx_selective` enables selective completion for the transmit queue if true.
+    /// `rx_selective` enables selective completion for the receive queue if true.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub fn bind_separate_cqs<T: ReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
@@ -1304,6 +1421,9 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
             .bind_separate_cqs(&tx_cq.inner, tx_selective, &rx_cq.inner, rx_selective)
     }
 
+    /// Binds an event queue to the endpoint.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub(crate) fn bind_eq<T: ReadEq + 'static>(
         &self,
         eq: &EventQueueBase<T>,
@@ -1311,13 +1431,21 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
         self.inner.bind_eq(&eq.inner)
     }
 
-    pub fn bind_cntr(&self) -> IncompleteBindCntr<EP, dyn ReadEq, dyn ReadCq> {
+    /// Binds a counter to the endpoint for specified operations.
+    ///
+    /// Use the returned `IncompleteBindCntr` to specify which operations to bind the counter
+    /// to.
+    /// Corresponds to `fi_ep_bind` in libfabric.
+    pub fn bind_cntr(&self) -> IncompleteBindCntr<'_, EP, dyn ReadEq, dyn ReadCq> {
         self.inner.bind_cntr()
     }
 
-    pub fn bind_av<EQ: ?Sized + ReadEq + 'static>(
+    /// Binds an address vector to the endpoint.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.   
+    pub fn bind_av<Mode: AVSyncMode, EQ: ?Sized + ReadEq + 'static>(
         &self,
-        av: &AddressVectorBase<EQ>,
+        av: &AddressVectorBase<Mode, EQ>,
     ) -> Result<(), crate::error::Error> {
         self.inner.bind_av(av)
     }
@@ -1344,11 +1472,11 @@ impl<EP> EndpointBase<EndpointImplBase<EP, dyn ReadEq, dyn ReadCq>, UninitUnconn
 // }
 
 impl<E: AsTypedFid<EpRawFid>, STATE: EpState> AsTypedFid<EpRawFid> for EndpointBase<E, STATE> {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
@@ -1378,10 +1506,10 @@ impl<E: AsTypedFid<EpRawFid>, STATE: EpState> AsTypedFid<EpRawFid> for EndpointB
 impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsTypedFid<EpRawFid>
     for EndpointImplBase<EP, EQ, CQ>
 {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, EpRawFid> {
         self.c_ep.as_typed_fid()
     }
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<EpRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, EpRawFid> {
         self.c_ep.as_typed_fid_mut()
     }
 }
@@ -1394,9 +1522,14 @@ impl<EP, EQ: ?Sized + ReadEq, CQ: ?Sized + ReadCq> AsTypedFid<EpRawFid>
 //     }
 // }
 
+/// Trait for active endpoints (i.e. not passive), providing common operations.
 pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
+    /// Returns a reference to the underlying `OwnedEpFid`.
     fn fid(&self) -> &OwnedEpFid;
 
+    /// Cancels outstanding operations associated with the given context.
+    ///
+    /// Corresponds to `fi_cancel` in libfabric.
     fn cancel(&self, context: &mut Context) -> Result<(), crate::error::Error> {
         let err = unsafe {
             libfabric_sys::inlined_fi_cancel(
@@ -1437,6 +1570,9 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
         }
     }
 
+    /// Retrieves the current transmit options for the endpoint.
+    ///
+    /// Corresponds to `fi_control` with `FI_GETOPSFLAG` in libfabric.
     fn transmit_options(&self) -> Result<TransferOptions, crate::error::Error> {
         let mut ops = libfabric_sys::FI_TRANSMIT;
         let err = unsafe {
@@ -1456,6 +1592,9 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
         }
     }
 
+    /// Retrieves the current receive options for the endpoint.
+    ///
+    /// Corresponds to `fi_control` with `FI_GETOPSFLAG` in libfabric.
     fn receive_options(&self) -> Result<TransferOptions, crate::error::Error> {
         let mut ops = libfabric_sys::FI_RECV;
         let err = unsafe {
@@ -1476,7 +1615,11 @@ pub trait ActiveEndpoint: AsTypedFid<EpRawFid> + SyncSend {
     }
 }
 
+/// Trait for uninitialized endpoints, providing configuration options before activation.
 pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
+    /// Sets the transmit options for the endpoint.
+    ///
+    /// Corresponds to `fi_control` with `FI_SETOPSFLAG` in libfabric.
     fn set_transmit_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
         ops.transmit();
         let err = unsafe {
@@ -1490,6 +1633,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets the receive options for the endpoint.
+    ///
+    /// Corresponds to `fi_control` with `FI_SETOPSFLAG` in libfabric
     fn set_receive_options(&self, ops: TransferOptions) -> Result<(), crate::error::Error> {
         ops.recv();
         let err = unsafe {
@@ -1503,6 +1649,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets the buffered limit for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_BUFFERED_LIMIT` in lib
     fn set_buffered_limit(&self, size: usize) -> Result<(), crate::error::Error> {
         let mut res = size;
         let len = std::mem::size_of::<usize>();
@@ -1520,6 +1669,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets the minimum buffered size for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_BUFFERED_MIN` in lib
     fn set_buffered_min(&self, size: usize) -> Result<(), crate::error::Error> {
         let mut res = size;
         let len = std::mem::size_of::<usize>();
@@ -1537,6 +1689,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets the connection manager data size for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_CM_DATA_SIZE` in lib
     fn set_cm_data_size(&self, size: usize) -> Result<(), crate::error::Error> {
         let mut res = size;
         let len = std::mem::size_of::<usize>();
@@ -1554,6 +1709,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets the minimum multi-receive size for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_MIN_MULTI_RECV` in
     fn set_min_multi_recv(&self, size: usize) -> Result<(), crate::error::Error> {
         let mut res = size;
         let len = std::mem::size_of::<usize>();
@@ -1571,6 +1729,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets the memory peer-to-peer capabilities for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_FI_HMEM_P2
     fn set_hmem_p2p(&self, hmem: HmemP2p) -> Result<(), crate::error::Error> {
         let len = std::mem::size_of::<u32>();
 
@@ -1587,6 +1748,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets whether CUDA API usage is permitted for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_CUDA_API_PERMITTED`
     fn set_cuda_api_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1604,6 +1768,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets whether shared memory usage is permitted for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_SHARED_MEMORY_PERMITTED`
     fn set_shared_memory_permitted(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1621,6 +1788,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets whether maximum message size operations are permitted for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_MAX_MSG_SIZE`
     fn set_max_msg_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1638,6 +1808,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets whether maximum tagged message size operations are permitted for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_MAX_TAGGED_SIZE`
     fn set_max_tagged_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1655,6 +1828,9 @@ pub trait UninitEndpoint: AsTypedFid<EpRawFid> {
         check_error(err.try_into().unwrap())
     }
 
+    /// Sets whether maximum RMA size operations are permitted for the endpoint.
+    ///
+    /// Corresponds to `fi_setopt` with `FI_OPT_MAX_RMA_SIZE`
     fn set_max_rma_size(&self, permitted: bool) -> Result<(), crate::error::Error> {
         let mut val = if permitted { 1_u32 } else { 0_u32 };
         let len = std::mem::size_of::<u32>();
@@ -1939,6 +2115,7 @@ impl Default for EndpointAttr {
     }
 }
 
+/// Builder for creating endpoints with specific attributes and configurations.
 pub struct EndpointBuilder<'a, E> {
     ep_attr: EndpointAttr,
     flags: u64,
@@ -1963,6 +2140,10 @@ pub enum Endpoint<EP> {
 }
 
 impl<EP> Endpoint<EP> {
+    /// Binds a completion queue to the endpoint for both transmit and receive operations.
+    /// If `selective` is true, selective completion is enabled.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub fn bind_shared_cq<T: ReadCq + 'static>(
         &self,
         cq: &CompletionQueue<T>,
@@ -1976,6 +2157,11 @@ impl<EP> Endpoint<EP> {
         }
     }
 
+    /// Binds separate completion queues to the endpoint for transmit and receive operations.
+    /// `tx_selective` enables selective completion for the transmit queue if true.
+    /// `rx_selective` enables selective completion for the receive queue if true.
+    ///
+    /// Corresponds to `fi_ep_bind` in libfabric.
     pub fn bind_separate_cqs<T: ReadCq + 'static>(
         &self,
         tx_cq: &CompletionQueue<T>,
@@ -1994,7 +2180,12 @@ impl<EP> Endpoint<EP> {
     }
 }
 
-impl<'a, E> EndpointBuilder<'a, E> {
+impl<E> EndpointBuilder<'_, E> {
+    /// Builds an endpoint with separate completion queues for transmit and receive operations.
+    /// `tx_selective_completion` enables selective completion for the transmit queue if true.
+    /// `rx_selective_completion` enables selective completion for the receive queue if true.
+    ///
+    /// Corresponds to `fi_endpoint` and `fi_ep_bind` in libfabric.
     pub fn build_with_separate_cqs<EQ: ?Sized + 'static + SyncSend, CQ: ReadCq + 'static>(
         self,
         domain: &crate::domain::DomainBase<EQ>,
@@ -2030,6 +2221,10 @@ impl<'a, E> EndpointBuilder<'a, E> {
         }
     }
 
+    /// Builds an endpoint with a shared completion queue for both transmit and receive operations.
+    /// If `selective_completion` is true, selective completion is enabled.
+    ///
+    /// Corresponds to `fi_endpoint` and `fi_ep_bind` in libfabric.
     pub fn build_with_shared_cq<EQ: ?Sized + 'static + SyncSend, CQ: ReadCq + 'static>(
         self,
         domain: &crate::domain::DomainBase<EQ>,
@@ -2053,6 +2248,9 @@ impl<'a, E> EndpointBuilder<'a, E> {
         }
     }
 
+    /// Builds a scalable endpoint associated with the given domain.
+    ///
+    /// Corresponds to `fi_scalable_ep` in libfabric.
     pub fn build_scalable<EQ: ?Sized + 'static + SyncSend>(
         self,
         domain: &crate::domain::DomainBase<EQ>,
@@ -2060,6 +2258,9 @@ impl<'a, E> EndpointBuilder<'a, E> {
         ScalableEndpoint::new(domain, self.info, self.ctx)
     }
 
+    /// Builds a passive endpoint associated with the given fabric.
+    ///
+    /// Corresponds to `fi_passive_ep` in libfabric.
     pub fn build_passive(
         self,
         fabric: &crate::fabric::Fabric,
@@ -2073,61 +2274,73 @@ impl<'a, E> EndpointBuilder<'a, E> {
     //     Self { c_attr }
     // }
 
+    /// Sets flags for the endpoint.
     pub fn flags(mut self, flags: u64) -> Self {
         self.flags = flags;
         self
     }
 
+    /// Sets the type of the endpoint.
     pub fn ep_type(mut self, type_: crate::enums::EndpointType) -> Self {
         self.ep_attr.set_type(type_);
         self
     }
 
+    /// Sets the protocol for the endpoint.
     pub fn protocol(mut self, proto: crate::enums::Protocol) -> Self {
         self.ep_attr.set_protocol(proto);
         self
     }
 
+    /// Sets maximum msgage size for the endpoint.
     pub fn max_msg_size(mut self, size: usize) -> Self {
         self.ep_attr.set_max_msg_size(size);
         self
     }
 
+    /// Sets the message prefix size for the endpoint.
     pub fn msg_prefix_size(mut self, size: usize) -> Self {
         self.ep_attr.set_msg_prefix_size(size);
         self
     }
 
+    /// Sets the maximum order RAW size for the endpoint.
     pub fn max_order_raw_size(mut self, size: usize) -> Self {
         self.ep_attr.set_max_order_raw_size(size);
         self
     }
 
+    /// Sets the maximum order WAR size for the endpoint.
     pub fn max_order_war_size(mut self, size: usize) -> Self {
         self.ep_attr.set_max_order_war_size(size);
         self
     }
 
+    /// Sets the maximum order WAW size for the endpoint.
     pub fn max_order_waw_size(mut self, size: usize) -> Self {
         self.ep_attr.set_max_order_waw_size(size);
         self
     }
 
+    /// Sets the memory tag format for the endpoint.
     pub fn mem_tag_format(mut self, tag: u64) -> Self {
         self.ep_attr.set_mem_tag_format(tag);
         self
     }
 
+    /// Sets the transmit context count for the endpoint.
     pub fn tx_ctx_cnt(mut self, size: usize) -> Self {
         self.ep_attr.set_tx_ctx_cnt(size);
         self
     }
 
+    /// Sets the receive context count for the endpoint.
     pub fn rx_ctx_cnt(mut self, size: usize) -> Self {
         self.ep_attr.set_rx_ctx_cnt(size);
         self
     }
 
+    /// Sets the authentication key for the endpoint.
     pub fn auth_key(mut self, key: &mut [u8]) -> Self {
         self.ep_attr.set_auth_key(key);
         self

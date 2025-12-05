@@ -3,7 +3,7 @@ use std::os::fd::BorrowedFd;
 use libfabric_sys::{FI_RECV, FI_TRANSMIT};
 
 macro_rules! gen_enum {
-    ($name: ident, $type_: ty, $(($var: ident, $val: path)),*) => {
+    ($(#[$attr:meta])* $name: ident, $type_: ty, $(($var: ident, $val: expr)),*) => {
         #[derive(Clone, Copy, Debug)]
         pub enum $name {
             $($var,)*
@@ -29,6 +29,48 @@ macro_rules! gen_enum {
 }
 
 gen_enum!(
+    /// A traffic class for network packets.
+    Dscp,
+    u8,
+    (CS0 ,0),
+    (CS1 ,8),
+    (CS2 ,16),
+    (CS3 ,24),
+    (CS4 ,32),
+    (CS5 ,40),
+    (CS6 ,48),
+    (CS7 ,56),
+    (AF11, 10),
+    (AF12, 12),
+    (AF13, 14),
+    (AF21, 18),
+    (AF22, 20),
+    (AF23, 22),
+    (AF31, 26),
+    (AF32, 28),
+    (AF33, 30),
+    (AF41, 34),
+    (AF42, 36),
+    (AF43, 38),
+    (EF, 46),
+    (VoiceAdmit, 44),
+    (LowerEffort, 1)
+);
+
+impl From<TrafficClass> for Dscp {
+    fn from(tc: TrafficClass) -> Self {
+        unsafe { Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_get(tc.as_raw())) }
+    }
+}
+
+impl From<Dscp> for TrafficClass {
+    fn from(dscp: Dscp) -> Self {
+        unsafe { Self::from_raw(libfabric_sys::inlined_fi_tc_dscp_set(dscp.as_raw())) }
+    }
+}
+
+gen_enum!(
+    /// An enumeration of atomic operations.
     AtomicOp,
     u32,
     (Min, libfabric_sys::fi_op_FI_MIN),
@@ -44,6 +86,7 @@ gen_enum!(
     (AtomicWrite, libfabric_sys::fi_op_FI_ATOMIC_WRITE)
 );
 gen_enum!(
+    /// An enumeration of fetch-and-operate atomic operations.
     FetchAtomicOp,
     u32,
     (Min, libfabric_sys::fi_op_FI_MIN),
@@ -61,6 +104,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of compare-and-swap atomic operations.
     CompareAtomicOp,
     u32,
     (Cswap, libfabric_sys::fi_op_FI_CSWAP),
@@ -73,6 +117,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of collective atomic operations. Can be the operation of a reduce for example
     CollAtomicOp,
     u32,
     (Min, libfabric_sys::fi_op_FI_MIN),
@@ -90,6 +135,9 @@ gen_enum!(
     (Noop, libfabric_sys::fi_op_FI_NOOP)
 );
 
+/// A trait for atomic operations that can be converted to their raw representation.
+///
+/// Used as a bound for functions that accept atomic operations.
 pub trait AtomicOperation {
     fn as_raw(&self) -> u32;
 }
@@ -118,6 +166,7 @@ impl AtomicOperation for CompareAtomicOp {
 // }
 
 gen_enum!(
+    /// An enumeration of collective operations.
     CollectiveOp,
     u32,
     (Barrier, libfabric_sys::fi_collective_op_FI_BARRIER),
@@ -135,6 +184,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of completion queue formats.
     CqFormat,
     u32,
     (Unspec, libfabric_sys::fi_cq_format_FI_CQ_FORMAT_UNSPEC),
@@ -145,6 +195,8 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of primitive data types.
+    /// Corresponds to `fi_datatype` in libfabric.
     DataType,
     libfabric_sys::fi_datatype,
     (Int8, libfabric_sys::fi_datatype_FI_INT8),
@@ -169,7 +221,10 @@ gen_enum!(
     (Uint28, libfabric_sys::fi_datatype_FI_UINT128),
     (Void, libfabric_sys::fi_datatype_FI_VOID)
 );
+
 gen_enum!(
+    /// An enumeration of type.
+    /// Corresponds to `fi_type` in libfabric.
     Type,
     libfabric_sys::fi_type,
     (Info, libfabric_sys::fi_type_FI_TYPE_INFO),
@@ -208,12 +263,14 @@ gen_enum!(
     (CqErrEntry, libfabric_sys::fi_type_FI_TYPE_CQ_ERR_ENTRY)
 );
 
+/// A profile data type, which can be either a primitive data type or a defined type.
 pub enum ProfileDataType {
     Primitive(DataType),
     Defined(Type),
 }
 
 #[derive(Copy, Clone)]
+/// An enumeration of wait object types.
 pub enum WaitObj<'a> {
     None,
     Unspec,
@@ -224,7 +281,7 @@ pub enum WaitObj<'a> {
     PollFd,
 }
 
-impl<'a> WaitObj<'a> {
+impl WaitObj<'_> {
     pub(crate) fn as_raw(&self) -> u32 {
         match self {
             WaitObj::None => libfabric_sys::fi_wait_obj_FI_WAIT_NONE,
@@ -249,6 +306,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of wait conditions for completion queues.
     WaitCond,
     u32,
     (None, libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_NONE),
@@ -258,6 +316,7 @@ gen_enum!(
     )
 );
 
+/// An enumeration of memory registration interfaces.
 #[derive(Clone, Copy, Debug)]
 pub enum HmemIface {
     System,
@@ -305,6 +364,8 @@ impl HmemIface {
 }
 
 gen_enum!(
+    /// An enumeration of endpoint options.
+    /// Corresponds to `FI_OPT_` values in libfabric.
     EndpointOptName,
     libfabric_sys::_bindgen_ty_20,
     (MinMultiRecv, libfabric_sys::FI_OPT_MIN_MULTI_RECV),
@@ -321,12 +382,18 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of endpoint option levels.
+    ///
+    /// Corresponds to `FI_OPT_ENDPOINT` in libfabric.
     EndpointOptLevel,
     libfabric_sys::_bindgen_ty_19,
     (Endpoint, libfabric_sys::FI_OPT_ENDPOINT)
 );
 
 gen_enum!(
+    /// An enumeration of endpoint types.
+    ///
+    /// Corresponds to `fi_ep_type` in libfabric.
     EndpointType,
     libfabric_sys::fi_ep_type,
     (Unspec, libfabric_sys::fi_ep_type_FI_EP_UNSPEC),
@@ -336,6 +403,9 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of host memory peer-to-peer support levels.
+    ///
+    /// Corresponds to `FI_HMEM_P2P_` values in libfabric.
     HmemP2p,
     libfabric_sys::_bindgen_ty_21,
     (Enabled, libfabric_sys::FI_HMEM_P2P_ENABLED),
@@ -370,6 +440,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of address vector types.
     AddressVectorType,
     libfabric_sys::fi_av_type,
     (Unspec, libfabric_sys::fi_av_type_FI_AV_UNSPEC),
@@ -407,6 +478,9 @@ pub(crate) use gen_set_get_flag;
 use crate::trigger::{TriggerThreshold, TriggerXpu};
 
 #[derive(Clone, Copy, Debug)]
+/// Represents the mode flags for an endpoint, domain, or fabric.
+///
+/// Corresponds to `mode` field in different structs in libfabric.
 pub struct Mode {
     c_flags: u64,
 }
@@ -467,6 +541,9 @@ impl Default for Mode {
     }
 }
 
+///  Memory registration mode flags.
+///
+/// Corresponds to `FI_MR_` values in libfabric.
 #[derive(Clone, Copy, Debug)]
 pub struct MrMode {
     c_flags: u32,
@@ -519,6 +596,8 @@ impl Default for MrMode {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+/// Memory registration options.
 pub struct MrRegOpt {
     c_flags: u64,
 }
@@ -557,6 +636,8 @@ impl Default for MrRegOpt {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+/// Memory registration access flags.
 pub struct MrAccess {
     c_flags: u32,
 }
@@ -593,9 +674,15 @@ impl Default for MrAccess {
         Self::new()
     }
 }
-gen_enum!(UserId, u64, (AuthKey, libfabric_sys::FI_AUTH_KEY));
+gen_enum!(
+    /// An enumeration of authentication key types.
+    UserId,
+    u64,
+    (AuthKey, libfabric_sys::FI_AUTH_KEY)
+);
 
 gen_enum!(
+    /// An enumeration of progress modes.
     Progress,
     libfabric_sys::fi_progress,
     (Unspec, libfabric_sys::fi_progress_FI_PROGRESS_UNSPEC),
@@ -604,6 +691,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of threading models.
     Threading,
     libfabric_sys::fi_threading,
     (Unspec, libfabric_sys::fi_threading_FI_THREAD_UNSPEC),
@@ -615,6 +703,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of resource management modes.
     ResourceMgmt,
     libfabric_sys::fi_resource_mgmt,
     (Unspec, libfabric_sys::fi_resource_mgmt_FI_RM_UNSPEC),
@@ -623,6 +712,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of counter event types.
     CounterEvents,
     libfabric_sys::fi_cntr_events,
     (Comp, libfabric_sys::fi_cntr_events_FI_CNTR_EVENTS_COMP),
@@ -630,6 +720,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of traffic classes for network packets.
     TrafficClass,
     libfabric_sys::_bindgen_ty_5,
     (Unspec, libfabric_sys::FI_TC_UNSPEC),
@@ -644,6 +735,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of address formats.
     AddressFormat,
     libfabric_sys::_bindgen_ty_3,
     (Unspec, libfabric_sys::FI_FORMAT_UNSPEC),
@@ -665,12 +757,14 @@ gen_enum!(
     (Ucx, libfabric_sys::FI_ADDR_UCX)
 );
 
+#[derive(Clone)]
+/// An enumeration of trigger events.
 pub enum TriggerEvent<'a> {
     Threshold(TriggerThreshold<'a>),
     Xpu(TriggerXpu),
 }
 
-impl<'a> TriggerEvent<'a> {
+impl TriggerEvent<'_> {
     pub fn as_raw(
         &mut self,
     ) -> (
@@ -715,6 +809,8 @@ impl<'a> TriggerEvent<'a> {
 //     (Xpu, libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU)
 // );
 
+#[derive(Clone, Copy, Debug)]
+/// Address vector options.
 pub struct AVOptions {
     c_flags: u64,
 }
@@ -902,30 +998,39 @@ impl TferOptions<false, true, false, false, true, false> {
 }
 
 // pub type SendOptions = TferOptions<true, false, false, false, false>;
+/// Send message options
 pub type SendMsgOptions = TferOptions<true, true, false, false, false, false>;
 // pub type SendDataOptions = TferOptions<true, true, false, true, false>;
 // pub type TaggedSendOptions = TferOptions<true, false, false, false, true>;
+/// Tagged send message options
 pub type TaggedSendMsgOptions = TferOptions<true, true, false, false, true, false>;
 // pub type TaggedSendDataOptions = TferOptions<true, false, false, true, true>;
 
 // pub type WriteOptions = TferOptions<true, false, true, false, false>;
+/// Write message options
 pub type WriteMsgOptions = TferOptions<true, true, true, false, false, false>;
 // pub type WriteDataOptions = TferOptions<true, false, true, true, false>;
 
 // pub type RecvOptions = TferOptions<false, false, false, false, false>;
+/// Receive message options
 pub type RecvMsgOptions = TferOptions<false, true, false, false, false, false>;
 // pub type TaggedRecvOptions = TferOptions<false, false, false, false, true>;
+/// Tagged receive message options
 pub type TaggedRecvMsgOptions = TferOptions<false, true, false, false, true, false>;
 
 // pub type ReadOptions = TferOptions<false, false, true, false, false>;
+/// Read message options
 pub type ReadMsgOptions = TferOptions<false, true, true, false, false, false>;
 
 // pub type AtomicOptions = TferOptions<true, false, true, false, false, true>;
+/// Atomic message options
 pub type AtomicMsgOptions = TferOptions<true, true, false, false, false, true>;
 
 // pub type AtomicFetchOptions = TferOptions<true, false, true, false, false, true>;
+/// Atomic fetch message options
 pub type AtomicFetchMsgOptions = TferOptions<true, true, false, false, false, true>;
 
+/// Collective message options
 pub type CollectiveOptions = AtomicMsgOptions;
 
 #[derive(Clone, Copy, Debug)]
@@ -990,6 +1095,7 @@ impl Default for TransferOptions {
 }
 
 gen_enum!(
+    /// An enumeration of parameter types.
     ParamType,
     libfabric_sys::fi_param_type,
     (String, libfabric_sys::fi_param_type_FI_PARAM_STRING),
@@ -999,6 +1105,7 @@ gen_enum!(
 );
 
 gen_enum!(
+    /// An enumeration of protocol types.
     Protocol,
     libfabric_sys::_bindgen_ty_4,
     (Unspec, libfabric_sys::FI_PROTO_UNSPEC),
@@ -1048,9 +1155,16 @@ pub enum WaitObjType2<'a> {
     Unspec,
 }
 
+/// Domain capability flags.
 #[derive(Clone, Debug)]
 pub struct DomainCaps {
     c_flags: u64,
+}
+
+impl Default for DomainCaps {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DomainCaps {
@@ -1083,6 +1197,8 @@ impl From<DomainCaps> for u64 {
     }
 }
 
+/// Completion flags for operations.
+#[derive(Clone, Copy, Debug)]
 pub struct CompletionFlags {
     c_flags: u64,
 }
@@ -1109,6 +1225,8 @@ impl CompletionFlags {
     gen_get_flag!(is_claim, libfabric_sys::FI_CLAIM);
 }
 
+#[derive(Clone, Copy, Debug)]
+/// Address vector set options.
 pub struct AVSetOptions {
     c_flags: u64,
 }
@@ -1118,6 +1236,7 @@ impl AVSetOptions {
         Self { c_flags: 0 }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn as_raw(&self) -> u64 {
         self.c_flags
     }
@@ -1160,6 +1279,8 @@ impl Default for AVSetOptions {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+/// Options for joining a multicast group.
 pub struct JoinOptions {
     c_flags: u64,
 }

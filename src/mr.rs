@@ -15,39 +15,33 @@ use crate::{
 use crate::{
     ep::ActiveEndpoint,
     error::Error,
-    fid::{AsTypedFid, BorrowedTypedFid},
+    fid::{AsTypedFid, BorrowedTypedFid}, MemoryRange,
 };
 
+/// Represents a DMA buffer.
+///
+/// Corresponds to `libfabric_sys::fi_mr_dmabuf`.
 pub struct DmaBuf {
     c_dmabuf: libfabric_sys::fi_mr_dmabuf,
 }
-
-/// Represents a key needed to access a remote [MemoryRegion].
-///
-/// This enum encapsulates either a  'regular' key obtained from `fi_mr_key` or a 'raw' key obtained from `fir_mr_raw_attr`,
-/// depending on the requirements of the provider.
 pub(crate) enum OwnedMemoryRegionKey {
     Key(u64),
     RawKey((Vec<u8>, u64)),
 }
 
+/// Represents a key needed to access a remote [MemoryRegion].
 pub struct MemoryRegionKey<'a> {
     pub(crate) key: &'a OwnedMemoryRegionKey,
 }
 
-impl<'a> MemoryRegionKey<'a> {
+impl MemoryRegionKey<'_> {
+    /// Convert the memory region key to a byte representation.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.key.to_bytes()
     }
 }
 
 impl OwnedMemoryRegionKey {
-    // pub unsafe fn from_raw_parts(raw: *const u8, len: usize) -> Self {
-    //     let mut raw_key = vec![0u8; len];
-    //     raw_key.copy_from_slice(std::slice::from_raw_parts(raw, len));
-    //     Self::RawKey(raw_key)
-    // }
-
     /// Construct a new [OwnedMemoryRegionKey] from a slice of bytes, usually received
     /// from remote node using raw keys.
     ///
@@ -62,6 +56,7 @@ impl OwnedMemoryRegionKey {
         OwnedMemoryRegionKey::from_bytes_impl(raw, &*domain.inner)
     }
 
+    /// Convert the memory region key to a byte representation.
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             OwnedMemoryRegionKey::Key(key) => {
@@ -102,7 +97,7 @@ impl OwnedMemoryRegionKey {
         }
     }
 
-    fn as_borrowed(&self) -> MemoryRegionKey {
+    fn as_borrowed(&self) -> MemoryRegionKey<'_> {
         MemoryRegionKey { key: self }
     }
 
@@ -141,6 +136,8 @@ pub struct MappedMemoryRegionKey {
 }
 
 impl MappedMemoryRegionKey {
+    /// Construct a new [MappedMemoryRegionKey] from a slice of bytes, usually received
+    /// from a peer in the network
     pub unsafe fn from_raw<EQ: ?Sized + SyncSend + 'static>(
         raw: &[u8],
         domain: &crate::domain::DomainBase<EQ>,
@@ -186,10 +183,12 @@ pub(crate) struct MemoryRegionImpl {
 /// For more information see the libfabric [documentation](https://ofiwg.github.io/libfabric/v1.22.0/man/fi_mr.3.html).
 ///
 /// Note that other objects that rely on a MemoryRegion (e.g., [`MemoryRegionKey`]) will extend its lifetime until they
-/// are also dropped
+/// are also dropped.
 #[derive(Clone)]
 pub struct MemoryRegion {
     pub(crate) inner: MyRc<MemoryRegionImpl>,
+    // pub(crate) backing_buffers_ranges : Vec<(usize, usize)>, 
+    pub(crate) backing_buffer_range : (usize, usize), 
 }
 
 pub(crate) fn mr_key(
@@ -352,6 +351,7 @@ impl MemoryRegionImpl {
                 (-err).try_into().unwrap(),
             ))
         } else {
+
             let c_desc = unsafe { libfabric_sys::inlined_fi_mr_desc(c_mr) };
             Ok(Self {
                 #[cfg(feature = "threading-domain")]
@@ -367,7 +367,7 @@ impl MemoryRegionImpl {
         }
     }
 
-    pub(crate) fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
+    pub(crate) fn key(&self) -> Result<MemoryRegionKey<'_>, crate::error::Error> {
         let key = self.key.as_ref();
         match key {
             Ok(key) => Ok(key.as_borrowed()),
@@ -466,40 +466,23 @@ impl MemoryRegionImpl {
         }
     }
 
-    // pub(crate) fn raw_attr(&self, base_addr: &mut u64, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> { //[TODO] Return the key as it should be returned
-    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.as_raw_typed_fid(), base_addr, std::ptr::null_mut(), key_size, flags) };
 
-    //     if err != 0 {
-    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-    //     }
-    //     else {
-    //         Ok(())
-    //     }
+    // pub(crate) fn slice_mut(&mut self, range: impl RemoteMemRange)  -> MemoryRegionSliceMut<'_, u8> {
+    //     let owned_memory = self.owned_memory.as_mut().unwrap();
+    //     let owned_memory_len = owned_memory.len();
+    //     MemoryRegionSliceMut {
+    //         mr_desc: self.mr_desc.c_desc,
+    //         mem_slice: &mut owned_memory[range.bounds(owned_memory_len).0..range.bounds(owned_memory_len).1],
+    //     }   
     // }
 
-    // pub(crate) fn raw_attr_with_key(&self, base_addr: &mut u64, raw_key: &mut u8, key_size: &mut usize, flags: u64) -> Result<(), crate::error::Error> {
-    //     let err = unsafe { libfabric_sys::inlined_fi_mr_raw_attr(self.as_raw_typed_fid(), base_addr, raw_key, key_size, flags) };
 
-    //     if err != 0 {
-    //         Err(crate::error::Error::from_err_code((-err).try_into().unwrap()))
-    //     }
-    //     else {
-    //         Ok(())
-    //     }
-    // }
-
-    pub(crate) fn descriptor(&self) -> MemoryRegionDesc {
+    pub(crate) fn descriptor(&self) -> MemoryRegionDesc<'_> {
         self.mr_desc.as_borrowed()
     }
 }
 
 impl MemoryRegion {
-    #[allow(dead_code)]
-    pub(crate) fn from_impl(mr_impl: &MyRc<MemoryRegionImpl>) -> Self {
-        MemoryRegion {
-            inner: mr_impl.clone(),
-        }
-    }
 
     #[allow(dead_code)]
     fn from_buffer<T, EQ: 'static + SyncSend>(
@@ -524,6 +507,7 @@ impl MemoryRegion {
                 flags,
                 c_void,
             )?),
+            backing_buffer_range : (buf.as_ptr() as usize, std::mem::size_of_val(buf)),
         })
     }
 
@@ -532,9 +516,12 @@ impl MemoryRegion {
         attr: MemoryRegionAttr,
         flags: MrRegOpt,
     ) -> Result<Self, crate::error::Error> {
+        let backing_buffer_range = (unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_base as usize, unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_len); 
+
         // [TODO] Add context version
         Ok(Self {
             inner: MyRc::new(MemoryRegionImpl::from_attr(&domain.inner, attr, flags)?),
+            backing_buffer_range
         })
     }
 
@@ -561,6 +548,7 @@ impl MemoryRegion {
                 flags,
                 c_void,
             )?),
+            backing_buffer_range: (iov[0].get().iov_base as usize, iov[0].get().iov_len),
         })
     }
 
@@ -569,7 +557,7 @@ impl MemoryRegion {
     /// This call will automatically request a 'raw' key if the provider requires it.
     ///
     /// Corresponds to calling `fi_mr_raw_attr` or `fi_mr_key` depending on the requirements of the respective [Domain](crate::domain::Domain).
-    pub fn key(&self) -> Result<MemoryRegionKey, crate::error::Error> {
+    pub fn key(&self) -> Result<MemoryRegionKey<'_>, crate::error::Error> {
         self.inner.key()
     }
 
@@ -607,7 +595,134 @@ impl MemoryRegion {
     pub fn descriptor(&self) -> MemoryRegionDesc<'_> {
         self.inner.descriptor()
     }
+
+    /// #Safety
+    /// This method is unsafe as it creates a slice of a backing buffer without capturing a reference to it.
+    /// It's provided as an experimental method to ensure that the data reference have been registered
+    /// as part of a MemoryRegion.
+    // pub unsafe fn slice(&self, index: usize, range: impl MemoryRange)  -> MemoryRegionSlice<'_> {
+    pub unsafe fn slice(&self, range: impl MemoryRange)  -> MemoryRegionSlice<'_> {
+        let bounds = range.bounds(self.backing_buffer_range.1);
+        assert!(bounds.0 < bounds.1, "Invalid range");        
+        assert!(bounds.0 < self.backing_buffer_range.1, "Out of bounds access");        
+        assert!(bounds.1 - 1 < self.backing_buffer_range.1, "Out of bounds access");        
+        
+        MemoryRegionSlice {
+            mr_desc: self.descriptor(),
+            mem_base: bounds.0 + self.backing_buffer_range.0,
+            mem_len : bounds.1,
+            phantom: PhantomData,
+        }
+    }
+
+    /// #Safety
+    /// This method is unsafe as it creates a slice of a backing buffer without capturing a reference to it.
+    /// It's provided as an experimental method to ensure that the data reference have been registered
+    /// as part of a MemoryRegion.
+    // pub unsafe fn slice(&self, index: usize, range: impl MemoryRange)  -> MemoryRegionSlice<'_> {
+    pub unsafe fn slice_mut(&mut self, range: impl MemoryRange)  -> MemoryRegionSliceMut<'_> {
+        let bounds = range.bounds(self.backing_buffer_range.1);
+        assert!(bounds.0 < bounds.1, "Invalid range");        
+        assert!(bounds.0 < self.backing_buffer_range.1, "Out of bounds access");        
+        assert!(bounds.1 - 1 < self.backing_buffer_range.1, "Out of bounds access");        
+        
+        MemoryRegionSliceMut {
+            mr_desc: self.descriptor(),
+            mem_base: bounds.0 + self.backing_buffer_range.0,
+            mem_len : bounds.1,
+            phantom: PhantomData,
+        }
+    }
 }
+
+
+pub struct MemoryRegionSlice<'a> {
+    mr_desc: MemoryRegionDesc<'a>,
+    mem_base: usize,
+    mem_len: usize,
+    phantom: PhantomData<&'a ()>
+}
+
+pub struct MemoryRegionSliceMut<'a> {
+    mr_desc: MemoryRegionDesc<'a>,
+    mem_base: usize,
+    mem_len: usize,
+    phantom: PhantomData<&'a mut ()>
+}
+
+impl<'a> MemoryRegionSlice<'a> {
+    pub(crate) fn new(mem_base: usize, mem_len: usize, mr_desc: MemoryRegionDesc<'a>) -> Self {
+        Self {
+            mr_desc,
+            mem_base,
+            mem_len,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn split_at(&self, mid: usize) -> (Self, Self) {
+        let first_start  = self.mem_base;
+        assert!(mid <= self.mem_len, "Split index out of bounds");
+        let second_start = self.mem_base + mid;
+
+        let first = Self::new(first_start, mid, self.mr_desc.clone());
+        
+        let second = Self::new(second_start, self.mem_len - mid, self.mr_desc.clone());
+
+        (first, second)
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe {std::slice::from_raw_parts(self.mem_base as *const u8, self.mem_len)}
+    }
+
+    pub(crate) fn desc(&self) -> MemoryRegionDesc<'_> {
+        self.mr_desc
+    }
+}
+
+impl<'a> MemoryRegionSliceMut<'a> {
+    pub(crate) fn new(mem_base: usize, mem_len: usize, mr_desc: MemoryRegionDesc<'a>) -> Self {
+        Self {
+            mr_desc,
+            mem_base,
+            mem_len,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn split_at_mut(&'a mut self, mid: usize) -> (Self, Self) {
+        let first_start  = self.mem_base;
+        assert!(mid <= self.mem_len, "Split index out of bounds");
+        let second_start = self.mem_base + mid;
+
+        let first = Self::new(first_start, mid, self.mr_desc.clone());
+        
+        let second = Self::new(second_start, self.mem_len - mid, self.mr_desc.clone());
+
+        (first, second)
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe {std::slice::from_raw_parts_mut(self.mem_base as *mut u8, self.mem_len)}
+    }
+
+    // pub fn as_mut_slice_raw(&mut self) -> &'a mut [u8] {
+    //     unsafe {std::slice::from_raw_parts_mut(self.mem_base as *mut u8, self.mem_len)}
+    // }
+
+    pub(crate) fn desc(&self) -> MemoryRegionDesc<'a> {
+        self.mr_desc
+    }
+}
+
+// pub struct MemoryRegionSliceMut<'a, T> {
+//     mr_desc: MemoryRegionDesc<'a>,
+//     mem_slice: &'a mut [T],
+// }
+
+
+
 
 /// An opaque wrapper for the descriptor of a [MemoryRegion] as obtained from
 /// `fi_mr_desc`.
@@ -618,7 +733,7 @@ pub(crate) struct OwnedMemoryRegionDesc {
 }
 
 impl OwnedMemoryRegionDesc {
-    fn as_borrowed<'a>(&'a self) -> MemoryRegionDesc<'a> {
+    fn as_borrowed(&self) -> MemoryRegionDesc<'_> {
         MemoryRegionDesc {
             c_desc: self.c_desc,
             phantom: PhantomData,
@@ -627,7 +742,10 @@ impl OwnedMemoryRegionDesc {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
+/// Represents a descriptor for a memory region.
+///
+/// Its lifetime is bound to a [MemoryRegion].
 pub struct MemoryRegionDesc<'a> {
     c_desc: *mut std::ffi::c_void,
     phantom: PhantomData<&'a ()>,
@@ -636,6 +754,11 @@ pub struct MemoryRegionDesc<'a> {
 impl MemoryRegionDesc<'_> {
     pub(crate) fn as_raw(&self) -> *mut std::ffi::c_void {
         self.c_desc
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn from_raw(c_desc: *mut std::ffi::c_void) -> Self {
+        MemoryRegionDesc { c_desc, phantom: PhantomData }
     }
 }
 
@@ -658,21 +781,21 @@ impl OwnedMemoryRegionDesc {
 }
 
 impl AsTypedFid<MrRawFid> for MemoryRegion {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, MrRawFid> {
         self.inner.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, MrRawFid> {
         self.inner.as_typed_fid_mut()
     }
 }
 
 impl AsTypedFid<MrRawFid> for MemoryRegionImpl {
-    fn as_typed_fid(&self) -> BorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid(&self) -> BorrowedTypedFid<'_, MrRawFid> {
         self.c_mr.as_typed_fid()
     }
 
-    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<MrRawFid> {
+    fn as_typed_fid_mut(&self) -> crate::fid::MutBorrowedTypedFid<'_, MrRawFid> {
         self.c_mr.as_typed_fid_mut()
     }
 }
@@ -836,10 +959,12 @@ impl Default for MemoryRegionAttr {
     }
 }
 
+/// A memory region bound to an [crate::ep::Endpoint]
 pub struct EpBindingMemoryRegion {
     mr: MemoryRegion,
 }
 
+/// A memory region bound to a [MemoryRegion]
 pub struct RmaEventMemoryRegion {
     mr: MemoryRegion,
 }
@@ -911,6 +1036,7 @@ pub enum MaybeDisabledMemoryRegion {
     Disabled(DisabledMemoryRegion),
 }
 
+/// A disabled memory region that needs to be bound to an [crate::ep::Endpoint] or a [MemoryRegion].
 pub enum DisabledMemoryRegion {
     EpBind(EpBindingMemoryRegion),
     RmaEvent(RmaEventMemoryRegion),
@@ -972,6 +1098,7 @@ impl<'a> MemoryRegionBuilder<'a> {
     }
 
     /// Indicates that the MR may be used for collective operations.
+    /// [Self::access_send] or/and [Self::access_recv] should also be called.
     ///
     /// Corresponds to setting the respective bitflag of the `fi_mr_attr::access` field
     pub fn access_collective(mut self) -> Self {
@@ -1066,21 +1193,33 @@ impl<'a> MemoryRegionBuilder<'a> {
         self
     }
 
+    /// Indicates that the memory region is only accessible from the device.
+    ///
+    /// Corresponds to setting the `FI_HMEM_DEVICE_ONLY` flag
     pub fn hmem_device_only(mut self) -> Self {
         self.flags = self.flags.hmem_device_only();
         self
     }
 
+    /// Indicates that the memory region is allocated from host memory.
+    ///
+    /// Corresponds to setting the `FI_HMEM_HOST_ALLOC` flag
     pub fn hmem_host_alloc(mut self) -> Self {
         self.flags = self.flags.hmem_host_alloc();
         self
     }
 
+    /// Indicates that the memory region is used for RMA events.
+    ///
+    /// Corresponds to setting the `FI_RMA_EVENT` flag
     pub fn rma_event(mut self) -> Self {
         self.flags = self.flags.rma_event();
         self
     }
 
+    /// Indicates that the memory region is used for persistent memory.
+    ///
+    /// Corresponds to setting the `FI_RMA_PMEM` flag
     pub fn rma_pmem(mut self) -> Self {
         self.flags = self.flags.rma_pmem();
         self
@@ -1280,45 +1419,17 @@ mod tests {
         }
     }
 
-    pub struct MemoryRegionSlice<'a, DATA: Copy> {
-        pub slice: &'a mut [DATA],
-    }
-
-    impl<'a, DATA: Copy> MemoryRegionSlice<'a, DATA> {
-        pub fn split_at(
-            &'a mut self,
-            mid: usize,
-        ) -> (MemoryRegionSlice<'a, DATA>, MemoryRegionSlice<'a, DATA>) {
-            let (s0, s1) = self.slice.split_at_mut(mid);
-            (
-                MemoryRegionSlice::<'a, DATA> { slice: s0 },
-                MemoryRegionSlice::<'a, DATA> { slice: s1 },
-            )
-        }
-    }
-
-    impl<'a, DATA: Copy> MemoryRegionSlice<'a, DATA> {
-        pub fn slice<Idx>(&'a mut self, index: Idx) -> MemoryRegionSlice<'a, DATA>
-        where
-            Idx: std::slice::SliceIndex<[DATA], Output = [DATA]>,
-        {
-            MemoryRegionSlice::<'a, DATA> {
-                slice: &mut self.slice[index],
-            }
-        }
-    }
-
-    #[test]
-    fn try_wrapper() {
-        let mut vec = vec![0u8; 10];
-        let mut wrapped_vec = MemoryRegionSlice {
-            slice: &mut vec[..],
-        };
-        wrapped_vec.slice(0..4);
-        // let (w0, w1) = wrapped_vec.split_at(5);
-        // vec[0] = 1;
-        // let new_wrapped = wrapped_vec.slice();
-    }
+    // #[test]
+    // fn try_wrapper() {
+    //     let mut vec = vec![0u8; 10];
+    //     let mut wrapped_vec = MemoryRegionSlice {
+    //         slice: &mut vec[..],
+    //     };
+    //     wrapped_vec.slice(0..4);
+    //     // let (w0, w1) = wrapped_vec.split_at(5);
+    //     // vec[0] = 1;
+    //     // let new_wrapped = wrapped_vec.slice();
+    // }
 }
 
 #[cfg(test)]

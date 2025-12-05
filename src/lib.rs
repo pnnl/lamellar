@@ -1,11 +1,47 @@
 #![allow(warnings)]
 
+#[cfg(any(
+    all(
+        feature = "threading-thread-safe",
+        any(
+            feature = "threading-domain",
+            feature = "threading-fid",
+            feature = "threading-endpoint",
+            feature = "threading-completion"
+        )
+    ),
+    all(
+        feature = "threading-domain",
+        any(
+            feature = "threading-thread-safe",
+            feature = "threading-fid",
+            feature = "threading-endpoint",
+            feature = "threading-completion"
+        )
+    ),
+    all(
+        feature = "threading-fid",
+        any(
+            feature = "threading-thread-safe",
+            feature = "threading-domain",
+            feature = "threading-completion"
+        )
+    ),
+    all(
+        feature = "threading-endpoint",
+        any(
+            feature = "threading-thread-safe",
+            feature = "threading-domain",
+            feature = "threading-completion"
+        )
+    )
+))]
+compile_error!("threading features are mutually exclusive");
 #[cfg(all(feature = "use-tokio", feature = "use-async-std"))]
 compile_error!("Features \"use-tokio\", \"use-async-std\" are mutually exclusive");
 
 #[cfg(not(feature = "thread-safe"))]
 use std::cell::OnceCell;
-use std::hash::Hash;
 use std::ops::Range;
 use std::ops::RangeFrom;
 use std::ops::RangeFull;
@@ -48,9 +84,11 @@ pub type MyOnceCell<T> = OnceCell<T>;
 
 use std::sync::atomic;
 
-use av::{AddressVectorImplT, AddressVectorSetImpl};
+use av::AddressVectorImplT;
+use av_set::AddressVectorSetImpl;
 
 pub mod av;
+pub mod av_set;
 pub mod cntr;
 pub mod cntroptions;
 pub mod comm;
@@ -68,6 +106,7 @@ mod fid;
 pub mod info;
 pub mod infocapsoptions;
 pub mod iovec;
+pub mod mcast;
 pub mod mr;
 pub mod msg;
 pub mod nic;
@@ -118,8 +157,8 @@ pub struct RemoteMemoryAddress<T = u8> {
     raw_mem_addr: *const T,
 }
 
-unsafe impl Send for RemoteMemoryAddress {}
-unsafe impl Sync for RemoteMemoryAddress {}
+unsafe impl<T> Send for RemoteMemoryAddress<T> {}
+unsafe impl<T> Sync for RemoteMemoryAddress<T> {}
 
 impl<T: Copy> RemoteMemoryAddress<T> {
     pub(crate) fn new(raw_mem_addr: *const T) -> Self {
@@ -150,6 +189,10 @@ impl<T: Copy> RemoteMemoryAddress<T> {
 
     pub unsafe fn offset_from(&self, origin: &RemoteMemoryAddress<T>) -> isize {
         unsafe { self.raw_mem_addr.offset_from(origin.raw_mem_addr) }
+    }
+
+    pub unsafe fn as_type<U: Copy>(&self) -> RemoteMemoryAddress<U> {
+        RemoteMemoryAddress::new(self.raw_mem_addr as *const U)
     }
 
     pub fn as_ptr(&self) -> *const T {
@@ -235,7 +278,7 @@ impl MemAddressInfo {
         };
 
         let addr_size =
-            std::mem::size_of_val(slice_base) - offset as usize * std::mem::size_of::<T>();
+            std::mem::size_of_val(slice_base) - offset * std::mem::size_of::<T>();
         bytes.extend(unsafe {
             std::slice::from_raw_parts(
                 &addr_size as *const usize as *const u8,
@@ -305,30 +348,29 @@ impl MemAddressInfo {
     }
 }
 
-pub trait RemoteMemRange {
+pub trait MemoryRange {
     fn bounds(&self, len: usize) -> (usize, usize);
 }
 
-impl RemoteMemRange for Range<usize> {
+impl MemoryRange for Range<usize> {
     fn bounds(&self, _len: usize) -> (usize, usize) {
         (self.start, self.end)
     }
 }
 
-//rdfriese: should this be self.start + len?
-impl RemoteMemRange for RangeFrom<usize> {
+impl MemoryRange for RangeFrom<usize> {
     fn bounds(&self, len: usize) -> (usize, usize) {
         (self.start, len)
     }
 }
 
-impl RemoteMemRange for RangeFull {
+impl MemoryRange for RangeFull {
     fn bounds(&self, len: usize) -> (usize, usize) {
         (0, len)
     }
 }
 
-impl RemoteMemRange for RangeTo<usize> {
+impl MemoryRange for RangeTo<usize> {
     fn bounds(&self, _len: usize) -> (usize, usize) {
         (0, self.end)
     }
@@ -342,7 +384,7 @@ pub struct RemoteMemAddrSlice<'a, T> {
     phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, T: std::marker::Copy> RemoteMemAddrSlice<'a, T> {
+impl<T: std::marker::Copy> RemoteMemAddrSlice<'_, T> {
     pub(crate) fn new<TT: Copy>(
         mem_address: RemoteMemoryAddress<TT>,
         len: usize,
@@ -405,7 +447,7 @@ pub struct RemoteMemAddrSliceMut<'a, T> {
     phantom: std::marker::PhantomData<&'a mut ()>,
 }
 
-impl<'a, T: Copy> RemoteMemAddrSliceMut<'a, T> {
+impl<T: Copy> RemoteMemAddrSliceMut<'_, T> {
     pub(crate) fn new<TT: Copy>(
         mem_address: RemoteMemoryAddress<TT>,
         len: usize,
@@ -461,15 +503,15 @@ impl<'a, T: Copy> RemoteMemAddrSliceMut<'a, T> {
 }
 
 #[derive(Clone)]
-pub struct RemoteMemAddressInfo {
-    mem_address: RemoteMemoryAddress,
+pub struct RemoteMemAddressInfo<T = u8> {
+    mem_address: RemoteMemoryAddress<T>,
     len: usize,
     key: MappedMemoryRegionKey,
 }
 
-impl RemoteMemAddressInfo {
+impl<T: Copy> RemoteMemAddressInfo<T> {
     pub(crate) fn new(
-        mem_address: RemoteMemoryAddress,
+        mem_address: RemoteMemoryAddress<T>,
         len: usize,
         key: MappedMemoryRegionKey,
     ) -> Self {
@@ -480,7 +522,7 @@ impl RemoteMemAddressInfo {
         }
     }
 
-    pub fn mem_address(&self) -> RemoteMemoryAddress {
+    pub fn mem_address(&self) -> RemoteMemoryAddress<T> {
         self.mem_address
     }
 
@@ -492,7 +534,13 @@ impl RemoteMemAddressInfo {
         self.key.clone()
     }
 
-    pub fn slice<T: Copy>(&self, range: impl RemoteMemRange) -> RemoteMemAddrSlice<'_, T> {
+    pub fn contains(&self, addr: &usize) -> bool {
+        let start = self.mem_address.raw_mem_addr as usize;
+        let end = start + self.len;
+        *addr >= start && *addr < end
+    }
+
+    pub fn slice<U: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, U> {
         let (start, end) = range.bounds(self.len);
         assert!(
             start < end,
@@ -502,8 +550,8 @@ impl RemoteMemAddressInfo {
         );
         let len = end - start;
         let (start, end) = (
-            start * std::mem::size_of::<T>(),
-            end * std::mem::size_of::<T>(),
+            start * std::mem::size_of::<U>(),
+            end * std::mem::size_of::<U>(),
         );
         // Ensure that the slice is within bounds
         assert!(
@@ -521,20 +569,50 @@ impl RemoteMemAddressInfo {
         )
     }
 
-    pub unsafe fn slice_unchecked<T: Copy>(
-        &self,
-        range: impl RemoteMemRange,
-    ) -> RemoteMemAddrSlice<'_, T> {
+    pub unsafe fn sub_region(&self, range: impl MemoryRange) -> Self {
+        let (start, end) = range.bounds(self.len);
+        // We can create a zero-length sub-region.
+        assert!(
+            start <= end,
+            "Invalid range for remote memory sub-region: start: {}, end: {}",
+            start,
+            end
+        );
+        let len = end - start;
+        let (start, end) = (
+            start * std::mem::size_of::<T>(),
+            end * std::mem::size_of::<T>(),
+        );
+
+        // We can create a zero-length sub-region.
+        assert!(
+            start <= self.len,
+            "Out of bounds access to remote memory sub-region start:{}  len: {}",
+            start,
+            self.len
+        );
+        assert!(
+            end - 1 < self.len,
+            "Out of bounds access to remote memory sub-region start:{}  len: {}",
+            start,
+            self.len
+        );
+
+        Self {
+            mem_address: unsafe { self.mem_address.add(start) },
+            len,
+            key: self.key.clone(),
+        }
+    }
+
+    pub unsafe fn slice_unchecked<U: Copy>(&self, range: impl MemoryRange) -> RemoteMemAddrSlice<'_, U> {
         let (start, end) = range.bounds(self.len);
         let len = end - start;
-        let start = start * std::mem::size_of::<T>();
+        let start = start * std::mem::size_of::<U>();
         RemoteMemAddrSlice::new(self.mem_address.add(start), len, self.key.clone())
     }
 
-    pub fn slice_mut<T: Copy>(
-        &mut self,
-        range: impl RemoteMemRange,
-    ) -> RemoteMemAddrSliceMut<'_, T> {
+    pub fn slice_mut<U: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, U> {
         let (start, end) = range.bounds(self.len);
         assert!(
             start < end,
@@ -544,8 +622,8 @@ impl RemoteMemAddressInfo {
         );
         let len = end - start;
         let (start, end) = (
-            start * std::mem::size_of::<T>(),
-            end * std::mem::size_of::<T>(),
+            start * std::mem::size_of::<U>(),
+            end * std::mem::size_of::<U>(),
         );
         assert!(
             start < self.len,
@@ -562,60 +640,15 @@ impl RemoteMemAddressInfo {
         )
     }
 
-    pub unsafe fn slice_mut_unchecked<T: Copy>(
-        &mut self,
-        range: impl RemoteMemRange,
-    ) -> RemoteMemAddrSliceMut<'_, T> {
+    pub unsafe fn slice_mut_unchecked<U: Copy>(&mut self, range: impl MemoryRange) -> RemoteMemAddrSliceMut<'_, U> {
         let (start, end) = range.bounds(self.len);
         let len = end - start;
-        let start = start * std::mem::size_of::<T>();
+        let start = start * std::mem::size_of::<U>();
         RemoteMemAddrSliceMut::new(
             unsafe { self.mem_address.add(start) },
             len,
             self.key.clone(),
         )
-    }
-
-    // SAFETY: using this function essentially creates mutable pointers to the same memory region.
-    // TODO: see if lamellar can manage this some other way...
-    pub unsafe fn sub_region(&self, range: impl RemoteMemRange) -> RemoteMemAddressInfo {
-        let (start, end) = range.bounds(self.len);
-        // We can create a zero-length sub-region.
-        assert!(
-            start <= end,
-            "Invalid range for remote memory sub-region: start: {}, end: {}",
-            start,
-            end
-        );
-        let len = end - start;
-        // println!("sub_region start: {} end: {} len: {} full_len: {}", start, end, len, self.len);
-        // Ensure that the sub-region is within bounds
-
-        // We can create a zero-length sub-region.
-        assert!(
-            start <= self.len,
-            "Out of bounds access to remote memory sub-region start:{}  len: {}",
-            start,
-            self.len
-        );
-        assert!(
-            end - 1 < self.len,
-            "Out of bounds access to remote memory sub-region start:{}  len: {}",
-            start,
-            self.len
-        );
-        RemoteMemAddressInfo::new(
-            unsafe { self.mem_address.add(start) },
-            len,
-            self.key.clone(),
-        )
-    }
-
-    pub fn contains(&self, addr: &usize) -> bool {
-        // let addr = addr.raw_mem_addr as usize;
-        let start = self.mem_address.raw_mem_addr as usize;
-        let end = start + self.len;
-        addr >= &start && addr < &end
     }
 }
 
@@ -708,7 +741,7 @@ impl MappedAddress {
         }
     }
 
-    pub(crate) fn raw_addr(&self) -> libfabric_sys::fi_addr_t {
+    pub fn raw_addr(&self) -> libfabric_sys::fi_addr_t {
         match self {
             Self::Map(t) => t.raw_mapped_addr,
             Self::Table(m) => m.raw_mapped_addr,
@@ -995,8 +1028,8 @@ impl ContextType {
 
     pub(crate) fn ready(&self) -> bool {
         match self {
-            ContextType::Context1(ctx) => ctx.ready.load(atomic::Ordering::Relaxed) == true,
-            ContextType::Context2(ctx) => ctx.ready.load(atomic::Ordering::Relaxed) == true,
+            ContextType::Context1(ctx) => ctx.ready.load(atomic::Ordering::Relaxed),
+            ContextType::Context2(ctx) => ctx.ready.load(atomic::Ordering::Relaxed),
         }
     }
 
@@ -1017,33 +1050,6 @@ impl ContextType {
         match self {
             ContextType::Context1(ctx) => &mut ctx.state,
             ContextType::Context2(ctx) => &mut ctx.state,
-        }
-    }
-
-    pub(crate) fn set_waker(&mut self, waker: std::task::Waker) {
-        match self {
-            ContextType::Context1(ctx) => {
-                ctx.waker.take(); // Clear any previous waker
-                ctx.waker.set(waker).unwrap(); // Set the new waker
-            }
-            ContextType::Context2(ctx) => {
-                ctx.waker.take(); // Clear any previous waker
-                ctx.waker.set(waker).unwrap(); // Set the new waker
-            }
-        }
-    }
-
-    pub(crate) fn get_waker(&mut self) -> MyOnceCell<std::task::Waker> {
-        match self {
-            ContextType::Context1(ctx) => ctx.waker.clone(),
-            ContextType::Context2(ctx) => ctx.waker.clone(),
-        }
-    }
-
-    pub(crate) fn get_type(&self) -> usize {
-        match self {
-            ContextType::Context1(_) => 1,
-            ContextType::Context2(_) => 2,
         }
     }
 }
@@ -1089,7 +1095,7 @@ impl Context {
 // }
 
 pub trait FdRetrievable {}
-pub trait Waitable {}
+pub trait Waitable: AsRawFid {}
 pub trait Writable {}
 pub trait WaitRetrievable {}
 
@@ -1146,6 +1152,8 @@ pub enum SyncCaps {
 
 pub use SyncCaps as CntrCaps;
 pub use SyncCaps as CqCaps;
+
+use crate::fid::AsRawFid;
 
 pub enum EqCaps {
     WAIT = 0,
@@ -1279,6 +1287,7 @@ macro_rules! cntr_caps_type_N {
     };
 }
 
+/// Convenience macro for creating information capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  info_caps_type{
     ($($opt: expr),*) => {
@@ -1286,6 +1295,7 @@ macro_rules!  info_caps_type{
     };
 }
 
+/// Convenience macro for creating completion queue capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  cq_caps_type{
     ($($opt: expr),*) => {
@@ -1293,6 +1303,7 @@ macro_rules!  cq_caps_type{
     };
 }
 
+/// Convenience macro for creating event queue capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  eq_caps_type{
     ($($opt: expr),*) => {
@@ -1300,6 +1311,7 @@ macro_rules!  eq_caps_type{
     };
 }
 
+/// Convenience macro for creating counter capabilities.
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  cntr_caps_type{
     ($($opt: expr),*) => {
@@ -1325,6 +1337,7 @@ macro_rules! async_eq_caps_type_N {
     };
 }
 
+/// Convenience macro for creating async completion queue capabilities.
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  async_cq_caps_type{
@@ -1333,6 +1346,7 @@ macro_rules!  async_cq_caps_type{
     };
 }
 
+/// Convenience macro for creating async event queue capabilities.
 #[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 #[macro_export] // MSG, RMA, TAG, ATOMIC, MCAST, NAMEDRXCTX, DRECV, VMSG, HMEM, COLL, XPU, SEND, RECV, WRITE, READ, RWRITE, RREAD
 macro_rules!  async_eq_caps_type{
@@ -1341,8 +1355,26 @@ macro_rules!  async_eq_caps_type{
     };
 }
 
-pub trait AsFiType: Copy {
+pub trait AsFiType: AsFiOrBoolType {
     fn as_fi_datatype() -> libfabric_sys::fi_datatype;
+}
+
+pub trait AsFiBoolType: AsFiOrBoolType{
+    fn as_fi_bool_datatype() -> libfabric_sys::fi_datatype;
+}
+
+pub trait AsFiOrBoolType: Copy {
+    fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype;
+}
+
+macro_rules! impl_as_fi_or_bool_type {
+    ($(($rtype: ty, $fitype: path)),*) => {
+        $(impl AsFiOrBoolType for $rtype {
+            fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype {
+                $fitype
+            }
+        })*
+    };
 }
 
 macro_rules! impl_as_fi_type {
@@ -1354,6 +1386,29 @@ macro_rules! impl_as_fi_type {
         })*
     };
 }
+
+impl AsFiBoolType for bool {
+    fn as_fi_bool_datatype() -> libfabric_sys::fi_datatype {
+        return bool::as_fi_or_bool_datatype()
+    }
+} 
+
+impl_as_fi_or_bool_type!(
+    ((), libfabric_sys::fi_datatype_FI_VOID),
+    (bool, libfabric_sys::fi_datatype_FI_INT8),
+    (i8, libfabric_sys::fi_datatype_FI_INT8),
+    (i16, libfabric_sys::fi_datatype_FI_INT16),
+    (i32, libfabric_sys::fi_datatype_FI_INT32),
+    (i64, libfabric_sys::fi_datatype_FI_INT64),
+    (i128, libfabric_sys::fi_datatype_FI_INT128),
+    (u8, libfabric_sys::fi_datatype_FI_UINT8),
+    (u16, libfabric_sys::fi_datatype_FI_UINT16),
+    (u32, libfabric_sys::fi_datatype_FI_UINT32),
+    (u64, libfabric_sys::fi_datatype_FI_UINT64),
+    (u128, libfabric_sys::fi_datatype_FI_UINT128),
+    (f32, libfabric_sys::fi_datatype_FI_FLOAT),
+    (f64, libfabric_sys::fi_datatype_FI_DOUBLE)
+);
 
 impl_as_fi_type!(
     ((), libfabric_sys::fi_datatype_FI_VOID),
@@ -1370,6 +1425,22 @@ impl_as_fi_type!(
     (f32, libfabric_sys::fi_datatype_FI_FLOAT),
     (f64, libfabric_sys::fi_datatype_FI_DOUBLE)
 );
+
+impl AsFiOrBoolType for usize {
+    fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype {
+        if std::mem::size_of::<usize>() == 8 {
+            libfabric_sys::fi_datatype_FI_UINT64
+        } else if std::mem::size_of::<usize>() == 4 {
+            libfabric_sys::fi_datatype_FI_UINT32
+        } else if std::mem::size_of::<usize>() == 2 {
+            libfabric_sys::fi_datatype_FI_UINT16
+        } else if std::mem::size_of::<usize>() == 1 {
+            libfabric_sys::fi_datatype_FI_UINT8
+        } else {
+            panic!("Unhandled usize datatype size")
+        }
+    }
+}
 
 impl AsFiType for usize {
     fn as_fi_datatype() -> libfabric_sys::fi_datatype {
@@ -1402,8 +1473,32 @@ impl AsFiType for isize {
         }
     }
 }
+
+impl AsFiOrBoolType for isize {
+    fn as_fi_or_bool_datatype() -> libfabric_sys::fi_datatype {
+        if std::mem::size_of::<isize>() == 8 {
+            libfabric_sys::fi_datatype_FI_INT64
+        } else if std::mem::size_of::<isize>() == 4 {
+            libfabric_sys::fi_datatype_FI_INT32
+        } else if std::mem::size_of::<isize>() == 2 {
+            libfabric_sys::fi_datatype_FI_INT16
+        } else if std::mem::size_of::<isize>() == 1 {
+            libfabric_sys::fi_datatype_FI_INT8
+        } else {
+            panic!("Unhandled isize datatype size")
+        }
+    }
+}
 #[cfg(feature = "thread-safe")]
 pub trait SyncSend: Sync + Send {}
 
 #[cfg(not(feature = "thread-safe"))]
 pub trait SyncSend {}
+
+#[test]
+fn tc_to_dscp() {
+    use crate::enums::Dscp;
+    use crate::enums::TrafficClass;
+    let dscp: Dscp = TrafficClass::Scavenger.into();
+    println!("{:?}", dscp);
+}
