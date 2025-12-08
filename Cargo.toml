@@ -5,11 +5,15 @@ edition = "2021"
 links = "pmix"
 build = "build.rs"
 
+
+[features]
+vendored = ["openpmix-src", "hwlocality-sys", "libevent-sys"]
+
 [dependencies]
-hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"]}
-libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "threading"]}
+hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"], optional = true}
+libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "threading"], optional = true}
 
 
 [build-dependencies]
-openpmix-src = {version="*", path="/people/thom895/rofi/openpmix-src"}
+openpmix-src = {version="*", path="/people/thom895/rofi/openpmix-src", optional = true}
 bindgen = "0.72.1"
