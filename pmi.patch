@@ -1,0 +1,33 @@
+diff --git a/src/pmi/src/pmi_v1.c b/src/pmi/src/pmi_v1.c
+index 802aa61e1d..850f82b6d6 100644
+--- a/src/pmi/src/pmi_v1.c
++++ b/src/pmi/src/pmi_v1.c
+@@ -16,9 +16,10 @@
+  */
+ /***************************************************************************/
+ 
++#include "pmi_config.h"
++
+ #ifndef DISABLE_PMI1
+ 
+-#include "pmi_config.h"
+ #include "mpl.h"
+ #include "uthash.h"
+ 
+diff --git a/src/pmi/src/pmi_v2.c b/src/pmi/src/pmi_v2.c
+index 9ad8625fda..bac30e77f7 100644
+--- a/src/pmi/src/pmi_v2.c
++++ b/src/pmi/src/pmi_v2.c
+@@ -3,9 +3,11 @@
+  *     See COPYRIGHT in top-level directory
+  */
+ 
++ 
++#include "pmi_config.h"
++
+ #ifndef DISABLE_PMI2
+ 
+-#include "pmi_config.h"
+ #include "mpl.h"
+ 
+ #include "pmi_util.h"
