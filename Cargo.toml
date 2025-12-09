@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pmi-sys = {path = "/people/thom895/rofi/pmi-sys", optional = true}
-pmi2-sys = {path = "/people/thom895/rofi/pmi2-sys", optional = true}
-pmix-sys = {version = "0.1.0", path = "/qfs/people/thom895/rofi/pmix-sys", optional = true}
+pmi-sys = {path = "/people/thom895/rofi/pmi-sys", optional = true, features = ["vendored"]}
+pmi2-sys = {path = "/people/thom895/rofi/pmi2-sys", optional = true, features = ["vendored"]}
+pmix-sys = {version = "0.1.0", path = "/qfs/people/thom895/rofi/pmix-sys", optional = true, features = ["vendored"]}
 
 
 [features]

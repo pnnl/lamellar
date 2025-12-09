@@ -159,7 +159,7 @@ impl PmiError {
                 pmi_sys::PMI_ERR_INVALID_NUM_PARSED => ErrorKind::InvalidNumParsed,
                 pmi_sys::PMI_ERR_INVALID_KEYVALP => ErrorKind::InvalidKeyValP,
                 pmi_sys::PMI_ERR_INVALID_SIZE => ErrorKind::InvalidSize,
-                pmi_sys::PMI_ERR_INVALID_KVS => ErrorKind::InvalidKVS,
+                // pmi_sys::PMI_ERR_INVALID_KVS => ErrorKind::InvalidKVS,
                 _ => ErrorKind::Other,
             }
         };
