@@ -112,7 +112,7 @@ impl Build {
 
         std::process::Command::new("patch")
             .current_dir(pmi_mpich_path.as_path())
-            .arg("-p1")
+            .arg("-p0")
             .arg("-i")
             .arg(src.join("..").join("pmi.patch").to_str().unwrap())
             .status()
