@@ -1,17 +1,31 @@
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "utils.h"
 #include <rofi.h>
 
-int main(void) {
+int main(int argc, char **argv) {
+    int repetitions = 1;
+    struct timespec tstart = {0}, tend = {0};
+    double elapsed_us = 0.0;
+
+    if (argc > 1) {
+        repetitions = atoi(argv[1]);
+        if (repetitions <= 0) {
+            fprintf(stderr, "Invalid number of repetitions. Must be a positive integer.\n");
+            return -1;
+        }
+    }
+
     rofi_init("verbs", NULL);
     uint32_t id = rofi_get_id();
     uint32_t size = rofi_get_size();
-    uint32_t value = 1;
 
-    if(id == 0) {
+    if (id == 0) {
         rofi_banner("Atomic Add U32 Test");
+        fprintf(stderr, "Atomic add test with %u processes, repeated %d times\n", size, repetitions);
     }
     rofi_barrier();
 
@@ -26,20 +40,33 @@ int main(void) {
         *ptr = 0;
         printf("ID: %u/%u, ptr: %p, value: %u\n", id, size, ptr, *ptr);
     }
+
     rofi_barrier();
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
 
-
-    ssize_t res = rofi_atomic_add_u32(ptr, 1UL, 0);
-    printf("ID: %lu/%lu added 1: %ld\n", id, size, res);
-    if (res) {
-        printf("Error in atomic add u32 (%ld)\n", res);
+    int err = 0;
+    for (int i = 0; i < repetitions; ++i) {
+        ssize_t res = rofi_atomic_add_u32(ptr, 1UL, 0);
+        if (res) {
+            fprintf(stderr, "ID: %u/%u Error in atomic add u32 (%ld)\n", id, size, res);
+            err = 1;
+            break;
+        }
     }
 
     rofi_barrier();
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+
+    elapsed_us = (tend.tv_sec - tstart.tv_sec) * 1e6 + (tend.tv_nsec - tstart.tv_nsec) / 1e3;
+    unsigned long expected = (unsigned long)size * (unsigned long)repetitions;
     
     if(id == 0) {
-        printf("ID: %lu/%lu Results: ptr: %p, value: %lu (assert %lu)\n", id, size, ptr, *ptr, size);
-        rofi_verify(!(*ptr == (size)));
+        printf("ID: %u/%u Results: ptr: %p, value: %u (assert %lu)\n", id, size, ptr, *ptr, expected);
+        fprintf(stderr, "Atomic add test completed %s (%u) in %10.2fus\n",
+                err ? "with errors" : "successfully", *ptr, elapsed_us);
+        fprintf(stdout, " %u %d %10.2f\n", size, repetitions, elapsed_us);
+        rofi_verify(!(*ptr == expected));
+
     }
 
     rofi_release(ptr);
