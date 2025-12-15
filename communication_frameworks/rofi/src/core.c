@@ -247,9 +247,22 @@ size_t rofi_atomic_add_u32_internal(uint32_t* addr, uint32_t value, unsigned int
 
     DEBUG_MSG("fi_atomic args: ep=%p, value=%u, remote_addr=%" PRIx64 ", key=%" PRIx64 ", fi_addr=%" PRIx64,
           rofi.ep, value, rma_iov.addr, rma_iov.key, (uint64_t)rofi.remote_addrs[id]);
-    ssize_t ret = fi_atomic(rofi.ep, (const void*) &value, 1, NULL, 
-                                rofi.remote_addrs[id], rma_iov.addr, rma_iov.key,
-                                FI_UINT32, FI_SUM, NULL);
+    pthread_mutex_lock(&rofi.lock);
+    rofi.pending_put_cntr = MAX(rofi.pending_put_cntr + 1, fi_cntr_read(rofi.put_cntr) + 1);
+    ssize_t ret = fi_atomic(rofi.ep, (const void *)&value, 1, NULL,
+                            rofi.remote_addrs[id], rma_iov.addr, rma_iov.key,
+                            FI_UINT32, FI_SUM, NULL);
+    while (ret) {
+        ret = rofi_transport_check_rma_err(&rofi, ret);
+        if (ret) {
+            pthread_mutex_unlock(&rofi.lock);
+            return ret;
+        }
+        ret = fi_atomic(rofi.ep, (const void *)&value, 1, NULL,
+                        rofi.remote_addrs[id], rma_iov.addr, rma_iov.key,
+                        FI_UINT32, FI_SUM, NULL);
+    }
+    pthread_mutex_unlock(&rofi.lock);
 
     return ret;
 }

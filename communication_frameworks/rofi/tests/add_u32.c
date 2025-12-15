@@ -5,7 +5,7 @@
 #include <rofi.h>
 
 int main(void) {
-    rofi_init(NULL, "verbs");
+    rofi_init("verbs", NULL);
     uint32_t id = rofi_get_id();
     uint32_t size = rofi_get_size();
     uint32_t value = 1;
@@ -28,20 +28,18 @@ int main(void) {
     }
     rofi_barrier();
 
-    if(id) {
-        ssize_t res = rofi_atomic_add_u32(ptr, 1UL, 0);
-        printf("ID: %lu/%lu added 1: %ld\n", id, size, res);
-        if (res) {
-            printf("Error in atomic add u32 (%ld)\n", res);
-            return -1;
-        }
+
+    ssize_t res = rofi_atomic_add_u32(ptr, 1UL, 0);
+    printf("ID: %lu/%lu added 1: %ld\n", id, size, res);
+    if (res) {
+        printf("Error in atomic add u32 (%ld)\n", res);
     }
 
     rofi_barrier();
     
     if(id == 0) {
-        printf("ID: %lu/%lu Results: ptr: %p, value: %lu (assert %lu)\n", id, size, ptr, *ptr, size-1);
-        rofi_verify(!(*ptr == (size-1)));
+        printf("ID: %lu/%lu Results: ptr: %p, value: %lu (assert %lu)\n", id, size, ptr, *ptr, size);
+        rofi_verify(!(*ptr == (size)));
     }
 
     rofi_release(ptr);
