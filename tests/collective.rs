@@ -532,8 +532,10 @@ pub mod sync_collective {
     // }
 }
 
-
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
+
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_collective {
     use libfabric::{async_::comm::collective::AsyncCollectiveEp, av_set::AddressVectorSetBuilder, enums::CollectiveOptions, infocapsoptions::{CollCap, InfoCaps}, mcast::MultiCastGroup, mr::{MemoryRegion, MemoryRegionBuilder}};
 

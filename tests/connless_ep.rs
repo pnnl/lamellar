@@ -25,7 +25,10 @@ pub mod sync_connless_ep {
 
 }
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
+
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_connless_ep {
     use libfabric::infocapsoptions::InfoCaps;
     use crate::async_::handshake_connectionless;

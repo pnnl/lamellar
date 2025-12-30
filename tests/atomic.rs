@@ -276,8 +276,10 @@ pub mod sync_atomic {
     }
 }
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_atomic {
     use libfabric::{enums::AtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, RemoteMemAddrAtomicVec}, msg::{MsgAtomic, MsgAtomicConnected}};
 

@@ -17,8 +17,10 @@ pub mod sync_conn_ep {
     }
 }
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
 #[cfg(test)]
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_conn_ep {
     use libfabric::infocapsoptions::InfoCaps;
 

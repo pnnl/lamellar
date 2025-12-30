@@ -426,8 +426,10 @@ pub mod sync_fetch_atomic {
     // }
 }
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_fetch_atomic {
     use libfabric::enums::FetchAtomicOp;
     use libfabric::infocapsoptions::InfoCaps;
