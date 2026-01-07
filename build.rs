@@ -20,21 +20,40 @@ fn env_inner(name: &str) -> Option<String> {
     }
 }
 
-fn find_pmix_normal() -> (std::path::PathBuf, std::path::PathBuf) {
+fn find_pmix_normal(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::PathBuf) {
     use std::path::PathBuf;
 
     let lib_dir = env_inner("PMIX_LIB_DIR").map(PathBuf::from);
     let include_dir = env_inner("PMIX_INCLUDE_DIR").map(PathBuf::from);
 
     if let (Some(lib_dir), Some(include_dir)) = (lib_dir, include_dir) {
-        return (lib_dir, include_dir);
+        match std::os::unix::fs::symlink(&lib_dir, out_path.join("lib")) {
+            Ok(_) => {}
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    std::fs::remove_file(out_path.join("lib")).unwrap();
+                    std::os::unix::fs::symlink(&lib_dir, out_path.join("lib")).unwrap();
+                }
+            }
+        }
+        match std::os::unix::fs::symlink(&include_dir, out_path.join("include")) {
+            Ok(_) => {}
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    std::fs::remove_file(out_path.join("include")).unwrap();
+                    std::os::unix::fs::symlink(&include_dir, out_path.join("include")).unwrap();
+                }
+            }
+        }
+        println!("cargo:root={}", out_path.display());
+        return (out_path.join("lib"), out_path.join("include"));
     }
     else {
         panic!("PMIX_LIB_DIR and PMIX_INCLUDE_DIR must be set to use a non-vendored PMI implementation");
     }
 }
 
-fn find_pmix() -> (std::path::PathBuf, std::path::PathBuf) {
+fn find_pmix(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::PathBuf) {
     #[cfg(feature = "vendored")]
     {
         if env_inner("PMIX_NO_VENDORED").map_or(true, |v| v == "0") {
@@ -52,7 +71,7 @@ fn find_pmix() -> (std::path::PathBuf, std::path::PathBuf) {
             );
         }
     }
-    find_pmix_normal()
+    find_pmix_normal(out_path)
 }
 
 
@@ -60,7 +79,7 @@ fn main(){
     let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     println!("cargo:rerun-if-changed={}", "build.rs");
-    let artifacts = find_pmix();
+    let artifacts = find_pmix(&out_path);
 
     // Generate the rust bindings
     let bindings = bindgen::Builder::default()
