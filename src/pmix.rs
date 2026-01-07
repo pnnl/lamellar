@@ -75,7 +75,7 @@ impl Pmi for PmiX {
         &self.ranks
     }
 
-    fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
+    fn get(&self, key: &str, _len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
         if self.ranks.len() > 1 {
             let proc = pmix_sys::pmix_proc {
                 nspace: self.nspace.clone(),
