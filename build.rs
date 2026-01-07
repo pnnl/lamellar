@@ -19,21 +19,40 @@ fn env_inner(name: &str) -> Option<String> {
     }
 }
 
-fn find_pmi2_normal() -> (std::path::PathBuf, std::path::PathBuf) {
+fn find_pmi2_normal(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::PathBuf) {
     use std::path::PathBuf;
 
     let lib_dir = env_inner("PMI2_LIB_DIR").map(PathBuf::from);
     let include_dir = env_inner("PMI2_INCLUDE_DIR").map(PathBuf::from);
 
     if let (Some(lib_dir), Some(include_dir)) = (lib_dir, include_dir) {
-        return (lib_dir, include_dir);
+        match std::os::unix::fs::symlink(&lib_dir, out_path.join("lib")) {
+            Ok(_) => {}
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    std::fs::remove_file(out_path.join("lib")).unwrap();
+                    std::os::unix::fs::symlink(&lib_dir, out_path.join("lib")).unwrap();
+                }
+            }
+        }
+        match std::os::unix::fs::symlink(&include_dir, out_path.join("include")) {
+            Ok(_) => {}
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    std::fs::remove_file(out_path.join("include")).unwrap();
+                    std::os::unix::fs::symlink(&include_dir, out_path.join("include")).unwrap();
+                }
+            }
+        }
+        println!("cargo:root={}", out_path.display());
+        return (out_path.join("lib"), out_path.join("include"));
     }
     else {
         panic!("PMI2_LIB_DIR and PMI2_INCLUDE_DIR must be set to use a non-vendored PMI implementation");
     }
 }
 
-fn find_pmi2() -> (std::path::PathBuf, std::path::PathBuf) {
+fn find_pmi2(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::PathBuf) {
     #[cfg(feature = "vendored")]
     {
         if env_inner("PMI2_NO_VENDORED").map_or(true, |v| v == "0") {
@@ -44,7 +63,7 @@ fn find_pmi2() -> (std::path::PathBuf, std::path::PathBuf) {
             );
         }
     }
-    find_pmi2_normal()
+    find_pmi2_normal(&out_path)
 }
 
 fn main(){
@@ -52,7 +71,7 @@ fn main(){
 
     println!("cargo:rerun-if-changed={}", "build.rs");
 
-    let artifacts = find_pmi2();
+    let artifacts = find_pmi2(&out_path);
 
     // Generate the rust bindings
     let bindings = bindgen::Builder::default()
