@@ -514,8 +514,10 @@ pub mod sync_tagged {
     // }
 }
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_tagged {
     use libfabric::{infocapsoptions::InfoCaps, iovec::{IoVec, IoVecMut}, mr::MemoryRegionBuilder, msg::{MsgTagged, MsgTaggedConnected, MsgTaggedConnectedMut, MsgTaggedMut}};
 

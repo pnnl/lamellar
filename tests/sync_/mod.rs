@@ -363,7 +363,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
 
                     let mapped_addresses = if let Some(dest_addr) = info_entry.dest_addr() {
                         let all_addresses = [ep.getname().unwrap(), dest_addr.clone()];
-                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = {
+                        let mapped_addresses: Vec<MyRc<MappedAddress>> = {
                             let pending = av
                                 .insert_no_block(all_addresses.as_ref().into(), AVOptions::new())
                                 .unwrap();
@@ -373,7 +373,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                                 pending
                                     .av_complete(av_complete)
                                     .into_iter()
-                                    .map(std::rc::Rc::new)
+                                    .map(MyRc::new)
                                     .collect()
                             } else {
                                 panic!("Unexpected event retrieved");
@@ -458,7 +458,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         // ep.recv(&mut reg_mem, &mut mr_desc).unwrap();
                         let remote_address = unsafe { Address::from_bytes(&reg_mem[..addrlen]) };
                         let all_addresses = [epname, remote_address];
-                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> = {
+                        let mapped_addresses: Vec<MyRc<MappedAddress>> = {
                             let pending = av
                                 .insert_no_block(all_addresses.as_ref().into(), AVOptions::new())
                                 .unwrap();
@@ -468,7 +468,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                                 pending
                                     .av_complete(av_complete)
                                     .into_iter()
-                                    .map(std::rc::Rc::new)
+                                    .map(MyRc::new)
                                     .collect()
                             } else {
                                 panic!("Unexpected event retrieved");

@@ -29,7 +29,7 @@ use libfabric::msg::{Msg, MsgAtomic, MsgAtomicConnected, MsgCompareAtomic, MsgCo
 use libfabric::{AsFiType, Context, EqCaps, MappedAddress, MemAddressInfo, MyRc, RemoteMemAddrSlice, RemoteMemAddrSliceMut, RemoteMemAddressInfo};
 
 
-pub type SpinCq = libfabric::async_cq_caps_type!(CqCaps::FD);
+pub type SpinCq = libfabric::async_cq_caps_type!(CqCaps::WAIT);
 pub type WaitableEq = libfabric::eq_caps_type!(EqCaps::FD);
 pub type EqOptions = libfabric::async_eq_caps_type!(EqCaps::WAIT);
 
@@ -279,7 +279,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         let all_addresses = [ep.getname().unwrap(), dest_addr.clone()];
 
                         let mut ctx = info_entry.allocate_context();
-                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> =
+                        let mapped_addresses: Vec<MyRc<MappedAddress>> =
                             async_std::task::block_on(async {
                                 av.insert_async(
                                     all_addresses.as_ref().into(),
@@ -291,7 +291,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             .unwrap()
                             .1
                             .into_iter()
-                            .map(|x| std::rc::Rc::new(x))
+                            .map(|x| MyRc::new(x))
                             .collect();
 
                         let epname = ep.getname().unwrap();
@@ -337,7 +337,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                         let remote_address = unsafe { Address::from_bytes(&reg_mem) };
                         let all_addresses = [epname, remote_address];
                         let mut ctx = info_entry.allocate_context();
-                        let mapped_addresses: Vec<std::rc::Rc<MappedAddress>> =
+                        let mapped_addresses: Vec<MyRc<MappedAddress>> =
                             async_std::task::block_on(async {
                                 av.insert_async(
                                     all_addresses.as_ref().into(),
@@ -349,7 +349,7 @@ impl<I: MsgDefaultCap + Caps + 'static> Ofi<I> {
                             .unwrap()
                             .1
                             .into_iter()
-                            .map(|x| std::rc::Rc::new(x))
+                            .map(|x| MyRc::new(x))
                             .collect();
 
                         async_std::task::block_on(ep.send_to_async(

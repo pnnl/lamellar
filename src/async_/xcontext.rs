@@ -1,3 +1,4 @@
+use crate::ep::ActiveEndpoint;
 use std::marker::PhantomData;
 
 use super::{

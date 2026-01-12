@@ -429,7 +429,9 @@ pub mod sync_rma {
     }    
 }
 
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_rma {
     use libfabric::{infocapsoptions::InfoCaps, iovec::{IoVec, IoVecMut, RemoteMemAddrVec, RemoteMemAddrVecMut}, msg::{MsgRma, MsgRmaConnected, MsgRmaConnectedMut, MsgRmaMut}};
 

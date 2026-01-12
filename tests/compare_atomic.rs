@@ -366,8 +366,10 @@ pub mod sync_compare_atomic {
     // }
 }
 
-
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_;
+
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
 pub mod async_compare_atomic {
     use libfabric::iovec::IocMut;
     use libfabric::iovec::Ioc;
