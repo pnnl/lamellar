@@ -1,4 +1,4 @@
-#![allow(warnings)]
+// #![allow(warnings)]
 
 #[cfg(any(
     all(
@@ -191,17 +191,13 @@ impl<T: Copy> RemoteMemoryAddress<T> {
         unsafe { self.raw_mem_addr.offset_from(origin.raw_mem_addr) }
     }
 
+    /// Convert to a different type. This is unsafe because the caller must ensure that size and alignment are correct.
     pub unsafe fn as_type<U: Copy>(&self) -> RemoteMemoryAddress<U> {
         RemoteMemoryAddress::new(self.raw_mem_addr as *const U)
     }
 
     pub fn as_ptr(&self) -> *const T {
         self.raw_mem_addr
-    }
-
-    /// Convert to a different type. This is unsafe because the caller must ensure that size and alignment are correct.
-    pub unsafe fn as_type<U: Copy>(&self) -> RemoteMemoryAddress<U> {
-        RemoteMemoryAddress::new(self.raw_mem_addr as *const U)
     }
 }
 

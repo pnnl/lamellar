@@ -28,9 +28,6 @@ use crate::utils::Either;
 use crate::xcontext::TxContextBase;
 use crate::xcontext::TxContextImplBase;
 use crate::Context;
-use crate::RemoteMemAddrSlice;
-use crate::RemoteMemAddrSliceMut;
-use crate::RemoteMemoryAddress;
 use crate::FI_ADDR_UNSPEC;
 
 use super::message::extract_raw_addr_and_ctx;
