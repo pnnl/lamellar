@@ -2,10 +2,14 @@
 name = "pmi-sys"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
+links = "pmi"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features] 
+vendored = ["pmi-mpich-src"]
 
 [dependencies]
 
 [build-dependencies]
-bindgen = "0.72.0"
+pmi-mpich-src = {version="*", path="../pmi-mpich-src", optional = true}
+bindgen = "0.72"
