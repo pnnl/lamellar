@@ -119,7 +119,11 @@ fn main() {
     // println!("cargo:rustc-link-lib=fabric");
     println!("cargo:rerun-if-changed={}", "build.rs");
     println!("cargo:rustc-link-search={}", artifacts.lib_dir().display());
-    println!("cargo:rustc-link-lib=static=fabric");
+    if cfg!(feature = "shared") {
+        println!("cargo:rustc-link-lib=dylib=fabric");
+    } else {
+        println!("cargo:rustc-link-lib=static=fabric");
+    }
     println!("cargo:rustc-link-lib=rt");
     println!("cargo:rustc-link-lib=rdmacm");
     println!("cargo:rustc-link-lib=ibverbs");
