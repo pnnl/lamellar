@@ -10,7 +10,7 @@ pmix-sys = {path = "../pmix-sys", optional = true}
 
 
 [features]
-default = ["with-pmix"]
 with-pmi1 = ["pmi-sys"]
 with-pmi2 = ["pmi2-sys"]
 with-pmix = ["pmix-sys"]
+vendored = ["pmi-sys?/vendored", "pmi2-sys?/vendored", "pmix-sys?/vendored"]
