@@ -6,10 +6,10 @@ links = "prrte"
 build = "build.rs"
 
 [dependencies]
-pmix-sys = {version = "0.1.0", path="/qfs/people/thom895/rofi/pmix-sys"}
+pmix-sys = {version = "0.1.0", path="../pmix-sys"}
 libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "threading"]}
 hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"]}
 
 [build-dependencies]
-prrte-src = {version="*", path="/people/thom895/rofi/prrte-src"}
+prrte-src = {version="*", path="../prrte-src"}
 bindgen = "0.72.1"
