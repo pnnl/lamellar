@@ -1,6 +1,6 @@
 use crate::ep::ActiveEndpoint;
 use std::marker::PhantomData;
-
+use crate::fid::EpCompletionOwnedTypedFid;
 use super::{
     cq::AsyncCq,
     ep::{AsyncRxEp, AsyncTxEp},
