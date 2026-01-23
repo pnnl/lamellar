@@ -11,6 +11,7 @@ vendored = ["prrte-src", "vendored-libevent", "vendored-hwloc", "vendored-pmix"]
 vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled"]
 vendored-hwloc = ["hwlocality-sys/hwloc-latest", "hwlocality-sys/vendored"]
 vendored-pmix = ["pmix-sys/vendored"]
+vendored-prrte = ["prrte-src", "vendored-libevent", "hwlocality-sys", "pmix-sys"]
 
 [dependencies]
 pmix-sys = {version = "0.1.0", path="../pmix-sys", optional = true}
