@@ -89,7 +89,7 @@ fn main(){
     println!("cargo:rerun-if-changed=build.rs");
 
     // Link with the pmi to access its symbols. 
-    println!("cargo:rustc-link-search={}", artifacts.0.display());
-
     println!("cargo:rustc-link-lib=pmi");
+    println!("cargo:rustc-link-search=native={}", artifacts.0.display());
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}",  artifacts.0.display());
 }
