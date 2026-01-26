@@ -139,7 +139,7 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -196,7 +196,7 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -227,7 +227,7 @@ trait AsyncCollectiveEpImpl: AsyncTxEp + CollectiveEpImpl {
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: Option<&crate::MappedAddress>,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> Result<SingleCompletion, crate::error::Error> {
@@ -357,13 +357,13 @@ pub trait AsyncCollectiveEp: CollectiveEp + AsyncTxEp + AsyncCmEp + SyncSend {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
     // #[allow(clippy::too_many_arguments)]
-    // fn allreduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn allreduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, op: crate::enums::ReduceOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn allgather_async<T: AsFiType>(
         &self,
@@ -386,12 +386,12 @@ pub trait AsyncCollectiveEp: CollectiveEp + AsyncTxEp + AsyncCmEp + SyncSend {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    // fn reduce_scatter_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn reduce_scatter_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, op: crate::enums::ReduceOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn reduce_async<T: AsFiType>(
         &self,
@@ -401,12 +401,12 @@ pub trait AsyncCollectiveEp: CollectiveEp + AsyncTxEp + AsyncCmEp + SyncSend {
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>>;
 
-    // fn reduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, root_mapped_addr: &crate::MappedAddress,op: crate::enums::CollAtomicOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
+    // fn reduce_triggered_async<T: AsFiType, T0>(&self, buf: &mut [T], desc: Option<& impl DataDescriptor, result: &mut [T], result_desc: Option<& impl DataDescriptor, mc_group: &MultiCastGroup, root_mapped_addr: &crate::MappedAddress,op: crate::enums::ReduceOp,  options: CollectiveOptions, context: &mut TriggeredContext) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error:BorrowedMemoryRegionDesc<'_>>;
     #[allow(clippy::too_many_arguments)]
     fn scatter_async<T: AsFiType>(
         &self,
@@ -500,7 +500,7 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
@@ -528,7 +528,7 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {
@@ -544,7 +544,7 @@ impl<EP: AsyncCollectiveEpImpl + AsyncTxEp + AsyncCmEp + SyncSend> AsyncCollecti
         result_desc: Option<&MemoryRegionDesc<'_>>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         ctx: &mut Context,
     ) -> impl std::future::Future<Output = Result<SingleCompletion, crate::error::Error>> {

@@ -118,7 +118,7 @@ gen_enum!(
 
 gen_enum!(
     /// An enumeration of collective atomic operations. Can be the operation of a reduce for example
-    CollAtomicOp,
+    ReduceOp,
     u32,
     (Min, libfabric_sys::fi_op_FI_MIN),
     (Max, libfabric_sys::fi_op_FI_MAX),

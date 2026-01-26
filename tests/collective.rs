@@ -251,7 +251,7 @@ pub mod sync_collective {
                     &mut recv_buf[..1024],
                     Some(&mr.descriptor()),
                     &mc,
-                    libfabric::enums::CollAtomicOp::Sum,
+                    libfabric::enums::ReduceOp::Sum,
                     CollectiveOptions::new(),
                 )
                 .unwrap();
@@ -353,7 +353,7 @@ pub mod sync_collective {
                     &mut recv_buf[..1024],
                     Some(&mr.descriptor()),
                     &mc,
-                    libfabric::enums::CollAtomicOp::Sum,
+                    libfabric::enums::ReduceOp::Sum,
                     CollectiveOptions::new(),
                 )
                 .unwrap();
@@ -405,7 +405,7 @@ pub mod sync_collective {
                     Some(&mr.descriptor()),
                     &mc,
                     &ofi.mapped_addr.as_ref().unwrap()[0],
-                    libfabric::enums::CollAtomicOp::Sum,
+                    libfabric::enums::ReduceOp::Sum,
                     CollectiveOptions::new(),
                 )
                 .unwrap();
@@ -785,7 +785,7 @@ pub mod async_collective {
                         &mut recv_buf[..1024],
                         Some(&mr.descriptor()),
                         &mc,
-                        libfabric::enums::CollAtomicOp::Sum,
+                        libfabric::enums::ReduceOp::Sum,
                         CollectiveOptions::new(),
                         &mut ctx,
                     )
@@ -898,7 +898,7 @@ pub mod async_collective {
                         &mut recv_buf[..1024],
                         Some(&mr.descriptor()),
                         &mc,
-                        libfabric::enums::CollAtomicOp::Sum,
+                        libfabric::enums::ReduceOp::Sum,
                         CollectiveOptions::new(),
                         &mut ctx,
                     )
@@ -955,7 +955,7 @@ pub mod async_collective {
                         Some(&mr.descriptor()),
                         &mc,
                         &ofi.mapped_addr.as_ref().unwrap()[0],
-                        libfabric::enums::CollAtomicOp::Sum,
+                        libfabric::enums::ReduceOp::Sum,
                         CollectiveOptions::new(),
                         &mut ctx,
                     )

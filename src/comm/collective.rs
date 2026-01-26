@@ -144,7 +144,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -175,7 +175,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -207,7 +207,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: Option<&crate::MappedAddress>,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: Option<*mut std::ffi::c_void>,
     ) -> Result<(), crate::error::Error> {
@@ -391,7 +391,7 @@ pub trait CollectiveEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
     ) -> Result<(), crate::error::Error>;
     #[allow(clippy::too_many_arguments)]
@@ -402,7 +402,7 @@ pub trait CollectiveEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -414,7 +414,7 @@ pub trait CollectiveEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -457,7 +457,7 @@ pub trait CollectiveEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
     ) -> Result<(), crate::error::Error>;
     #[allow(clippy::too_many_arguments)]
@@ -468,7 +468,7 @@ pub trait CollectiveEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -480,7 +480,7 @@ pub trait CollectiveEp {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -493,7 +493,7 @@ pub trait CollectiveEp {
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
     ) -> Result<(), crate::error::Error>;
     #[allow(clippy::too_many_arguments)]
@@ -505,7 +505,7 @@ pub trait CollectiveEp {
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut Context,
     ) -> Result<(), crate::error::Error>;
@@ -518,7 +518,7 @@ pub trait CollectiveEp {
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error>;
@@ -757,7 +757,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
     ) -> Result<(), crate::error::Error> {
         self.allreduce_impl(buf, desc, result, result_desc, mc_group, op, options, None)
@@ -771,7 +771,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -795,7 +795,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -875,7 +875,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
     ) -> Result<(), crate::error::Error> {
         self.reduce_scatter_impl(buf, desc, result, result_desc, mc_group, op, options, None)
@@ -889,7 +889,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -913,7 +913,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result: &mut [T],
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -938,7 +938,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
     ) -> Result<(), crate::error::Error> {
         self.reduce_impl(
@@ -963,7 +963,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut Context,
     ) -> Result<(), crate::error::Error> {
@@ -989,7 +989,7 @@ impl<EP: CollectiveEpImpl> CollectiveEp for EP {
         result_desc: Option<&MemoryRegionDesc>,
         mc_group: &MultiCastGroup,
         root_mapped_addr: &crate::MappedAddress,
-        op: crate::enums::CollAtomicOp,
+        op: crate::enums::ReduceOp,
         options: CollectiveOptions,
         context: &mut TriggeredContext,
     ) -> Result<(), crate::error::Error> {
@@ -1177,7 +1177,7 @@ impl<T: AsFiType> CollectiveAttr<T> {
         }
     }
 
-    pub fn op(mut self, op: &enums::CollAtomicOp) -> Self {
+    pub fn op(mut self, op: &enums::ReduceOp) -> Self {
         self.c_attr.op = op.as_raw();
         self
     }
