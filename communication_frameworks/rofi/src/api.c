@@ -528,7 +528,7 @@ ssize_t rofi_atomic_add_u32(uint32_t* addr, uint32_t value, unsigned int id) {
     }
 
     if (addr == NULL || id >= rofi.desc.nodes) {
-        ERR_MSG("Invalid argument.");
+        ERR_MSG("Invalid argument. (%p, %u)", addr, id);
         return UINT32_MAX;
     }
 

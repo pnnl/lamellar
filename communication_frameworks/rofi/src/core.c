@@ -231,7 +231,7 @@ size_t rofi_atomic_add_u32_internal(uint32_t* addr, uint32_t value, unsigned int
     }
     DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx for dst address %p", el->start, el->start + el->size, el->mr_key, addr);
 
-    rma_iov.addr = (uint64_t)(addr - (uint32_t*) el->start + el->iov[id].addr);
+    rma_iov.addr = (uint64_t)((uintptr_t)addr - (uintptr_t)el->start + el->iov[id].addr);
     if(rma_iov.addr == 0) {
         ERR_MSG("\t No address found for address %p on node %u", addr, id);
         return UINT32_MAX;
