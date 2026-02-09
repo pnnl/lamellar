@@ -126,7 +126,7 @@ int rofi_put_internal(void *dst, void *src, size_t size, unsigned int id, unsign
         DEBUG_MSG("remote addr: %d %p", i, el->iov[id].addr);
     }
 
-    rma_iov.addr = (uint64_t)(dst - el->start + el->iov[id].addr);
+    rma_iov.addr = (uint64_t)((uintptr_t)dst - (uintptr_t)el->start + el->iov[id].addr);
     rma_iov.key = el->iov[id].key;
     if (rma_iov.key == 0) {
         ERR_MSG("\t No Key found for address %p on node %u", dst, id);
@@ -171,7 +171,7 @@ int rofi_get_internal(void *dst, void *src, size_t size, unsigned int id, unsign
     }
     DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
 
-    rma_iov.addr = (uint64_t)(src - el->start + el->iov[id].addr);
+    rma_iov.addr = (uint64_t)((uintptr_t)src - (uintptr_t)el->start + el->iov[id].addr);
     rma_iov.key = el->iov[id].key;
     if (rma_iov.key == 0) {
         ERR_MSG("\t No Key found for address %p on node %u", src, id);
