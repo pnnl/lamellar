@@ -10,10 +10,17 @@ build = "build.rs"
 vendored = ["openpmix-src", "hwlocality-sys", "libevent-sys"]
 
 [dependencies]
-hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"], optional = true}
-libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "threading"], optional = true}
+hwlocality-sys = { version = "0.6.1", features = [
+    "hwloc-latest",
+    "vendored",
+], optional = true }
+libevent-sys = { version = "0.3", features = [
+    "bundled",
+    "openssl_bundled",
+    "threading",
+], optional = true }
 
 
 [build-dependencies]
-openpmix-src = {version="*", path="../openpmix-src", optional = true}
+openpmix-src = { version = "*", path = "../openpmix-src", optional = true }
 bindgen = "0.72.1"
