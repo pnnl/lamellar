@@ -1,4 +1,5 @@
-use std::{collections::HashMap, thread::panicking};
+use std::{collections::{HashMap}, hash::{Hash, Hasher}, thread::panicking};
+use std::collections::hash_map::DefaultHasher;
 use std::sync::RwLock;
 
 
@@ -13,6 +14,10 @@ macro_rules! check_error {
 
 pub struct PmiX {
     my_rank: usize,
+    node_id: usize,
+    job_id_str: String,
+    num_nodes: usize,
+    node_map_store: HashMap<usize, Vec<usize>>,
     ranks: Vec<usize>,
     nspace: pmix_sys::pmix_nspace_t,
     finalize: bool,
@@ -32,12 +37,15 @@ impl PmiX {
         check_error!(unsafe { pmix_sys::PMIx_Init(&mut proc, std::ptr::null_mut(), 0) });
         finalize = true;
         let rank = proc.rank;
-        proc.rank = pmix_sys::PMIX_RANK_WILDCARD;
+        let nspace = proc.nspace.clone();
+
+        // get job size
+        let wildcard = pmix_sys::pmix_proc { nspace: nspace.clone(), rank: pmix_sys::PMIX_RANK_WILDCARD };
         let key = pmix_sys::PMIX_JOB_SIZE;
         let mut val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
         check_error!(unsafe {
             pmix_sys::PMIx_Get(
-                &proc,
+                &wildcard,
                 key.as_ptr() as *mut i8,
                 std::ptr::null(),
                 0,
@@ -46,8 +54,113 @@ impl PmiX {
         });
         let size = unsafe { (*val).data.uint32 };
 
+        // get node rank for this process
+        let myproc = pmix_sys::pmix_proc { nspace: nspace.clone(), rank };
+        let mut node_val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
+        check_error!(unsafe {
+            pmix_sys::PMIx_Get(
+                &myproc,
+                pmix_sys::PMIX_NODEID.as_ptr() as *mut i8,
+                std::ptr::null(),
+                0,
+                &mut node_val,
+            )
+        });
+        let raw_node_id = unsafe { (*node_val).data.uint16 } as usize;
+
+        // build node map and compute num_nodes
+        let mut node_map_store_temp: HashMap<usize, Vec<usize>> = HashMap::new();
+        if size <= 1 {
+            node_map_store_temp.insert(0usize, vec![0usize]);
+        } else {
+            for r in 0..size as u32 {
+                let proc_r = pmix_sys::pmix_proc { nspace: nspace.clone(), rank: r };
+                let mut nid_val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
+                let rc = unsafe {
+                    pmix_sys::PMIx_Get(
+                        &proc_r,
+                        pmix_sys::PMIX_NODEID.as_ptr() as *mut i8,
+                        std::ptr::null(),
+                        0,
+                        &mut nid_val,
+                    )
+                };
+
+                if rc != pmix_sys::PMIX_SUCCESS as i32 || nid_val.is_null() {
+                    continue;
+                }
+
+                let nid = unsafe { (*nid_val).data.uint16 } as usize;
+                unsafe { pmix_sys::PMIx_Value_free(nid_val, 1) };
+                node_map_store_temp.entry(nid).or_insert_with(Vec::new).push(r as usize);
+            }
+        }
+
+        let mut unique_node_ids: Vec<usize> = node_map_store_temp.keys().copied().collect();
+        unique_node_ids.sort();
+        unique_node_ids.dedup();
+
+        let mut node_id_map: HashMap<usize, usize> = HashMap::new();
+        for (index, nid) in unique_node_ids.iter().enumerate() {
+            node_id_map.insert(*nid, index);
+        }
+
+        let mut node_map_store: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (actual_nid, ranks) in node_map_store_temp {
+            if let Some(&mapped) = node_id_map.get(&actual_nid) {
+                node_map_store.insert(mapped, ranks);
+            }
+        }
+
+        let num_nodes = node_map_store.len();
+        let mapped_node_id = node_id_map.get(&raw_node_id).copied().unwrap_or(0);
+
+        // compute job id now and store it (string)
+        let job_id = if size <= 1 {
+            String::new()
+        } else {
+            let proc_j = pmix_sys::pmix_proc {
+                nspace: nspace.clone(),
+                rank: pmix_sys::PMIX_RANK_WILDCARD,
+            };
+            let key_job = pmix_sys::PMIX_JOBID;
+            let mut job_val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
+            let rc = unsafe {
+                pmix_sys::PMIx_Get(
+                    &proc_j,
+                    key_job.as_ptr() as *mut i8,
+                    std::ptr::null(),
+                    0,
+                    &mut job_val,
+                )
+            };
+
+            if rc != pmix_sys::PMIX_SUCCESS as i32 || job_val.is_null() {
+                String::new()
+            } else {
+                let out = unsafe {
+                    if !(*job_val).data.string.is_null() {
+                        let s = std::ffi::CStr::from_ptr((*job_val).data.string)
+                            .to_string_lossy()
+                            .into_owned();
+                        pmix_sys::PMIx_Value_free(job_val, 1);
+                        s
+                    } else {
+                        let v = (*job_val).data.uint64 as u64;
+                        pmix_sys::PMIx_Value_free(job_val, 1);
+                        format!("{}", v)
+                    }
+                };
+                out
+            }
+        };
+
         Ok(PmiX {
             my_rank: rank as usize,
+            node_id: mapped_node_id,
+            job_id_str: job_id,
+            num_nodes,
+            node_map_store,
             ranks: (0..size as usize).collect(),
             nspace: proc.nspace,
             finalize,
@@ -70,6 +183,17 @@ impl PmiX {
         self.singleton_kvs.write().unwrap().insert(key.to_owned(), value.to_vec());
         Ok(())
     }
+
+    fn numeric_job_id(id: &str) -> Option<usize> {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if trimmed.chars().all(|c| c.is_ascii_digit()) {
+            return trimmed.parse::<usize>().ok();
+        }
+        None
+    }
 }
 
 impl Pmi for PmiX {
@@ -77,8 +201,42 @@ impl Pmi for PmiX {
         self.my_rank
     }
 
+    fn node(&self) -> usize {
+        self.node_id
+    }
+
+    fn num_nodes(&self) -> usize {
+        self.num_nodes
+    }
+
+    fn ranks_on_node(&self, node: usize) -> Vec<usize> {
+        if let Some(v) = self.node_map_store.get(&node) {
+            v.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
     fn ranks(&self) -> &[usize] {
         &self.ranks
+    }
+
+    fn node_map(&self) -> HashMap<usize, Vec<usize>> {
+        self.node_map_store.clone()
+    }
+
+    fn job_id_str(&self) -> String {
+        self.job_id_str.clone()
+    }
+
+    fn job_id(&self) -> usize {
+        let s = self.job_id_str();
+        if let Some(n) = Self::numeric_job_id(&s) {
+            return n;
+        }
+        let mut hasher = DefaultHasher::new();
+        s.hash(&mut hasher);
+        hasher.finish() as usize
     }
 
     fn get(&self, key: &str, _len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {

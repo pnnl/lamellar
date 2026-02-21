@@ -1,5 +1,7 @@
-use std::{cell::RefCell, collections::HashMap, thread::panicking};
+use std::{collections::{HashMap, HashSet}, hash::{Hash, Hasher}, env, thread::panicking};
 use std::sync::RwLock;
+use std::collections::hash_map::DefaultHasher;
+use libc::{c_char, size_t};
 
 use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
@@ -12,12 +14,17 @@ macro_rules! check_error {
 
 pub struct Pmi2 {
     my_rank: usize,
+    node_id: usize,
+    host_name: String,
     ranks: Vec<usize>,
     finalize: bool,
     singleton_kvs: RwLock<HashMap<String, Vec<u8> >>
 }
 
 impl Pmi2 {
+    const HOST_NAME_KEY: &'static str = "rpmi2-host";
+    const HOST_NAME_BUF: usize = 256;
+
     pub fn new() -> Result<Self, crate::pmi::PmiError> {
         let mut rank = 0;
         let mut size = 0;
@@ -34,12 +41,82 @@ impl Pmi2 {
             panic!("PMI2 is already initialized. Cannot retrieve environment");
         }
 
-        Ok(Pmi2 {
+        let host_name = Self::local_hostname();
+
+        let mut pmi = Pmi2 {
             my_rank: rank as usize,
+            node_id: 0,
+            host_name,
             ranks: (0..size as usize).collect(),
             finalize,
             singleton_kvs: RwLock::new(HashMap::new())
-        })
+        };
+
+        pmi.init_node_info()?;
+
+        Ok(pmi)
+    }
+
+    fn init_node_info(&mut self) -> Result<(), crate::pmi::PmiError> {
+        if self.ranks.len() <= 1 {
+            self.node_id = 0;
+            return Ok(());
+        }
+
+        let host_key = Self::HOST_NAME_KEY;
+        let my_key = format!("{host_key}-{}", self.my_rank);
+        let host_buf = Self::host_buf_from_name(&self.host_name);
+        self.put(my_key.as_str(), &host_buf)?;
+        self.exchange()?;
+
+        let mut hosts = Vec::with_capacity(self.ranks.len());
+        for rank in 0..self.ranks.len() {
+            let key = format!("{host_key}-{rank}");
+            let raw = self.get(key.as_str(), &Self::HOST_NAME_BUF, &rank)?;
+            hosts.push(Self::decode_host_name(raw));
+        }
+
+        let mut unique_hosts = hosts.clone();
+        unique_hosts.sort();
+        unique_hosts.dedup();
+
+        self.node_id = unique_hosts
+            .iter()
+            .position(|h| h == &self.host_name)
+            .unwrap_or(0);
+
+        Ok(())
+    }
+
+    fn host_buf_from_name(name: &str) -> [u8; Self::HOST_NAME_BUF] {
+        let mut buf = [0u8; Self::HOST_NAME_BUF];
+        let bytes = name.as_bytes();
+        let copy_len = bytes.len().min(Self::HOST_NAME_BUF);
+        buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        buf
+    }
+
+    fn decode_host_name(mut raw: Vec<u8>) -> String {
+        if let Some(pos) = raw.iter().position(|&b| b == 0) {
+            raw.truncate(pos);
+        }
+        String::from_utf8_lossy(&raw).into_owned()
+    }
+
+    fn local_hostname() -> String {
+        let mut buf = [0u8; Self::HOST_NAME_BUF];
+        let ret = unsafe {
+            libc::gethostname(buf.as_mut_ptr() as *mut c_char, Self::HOST_NAME_BUF as size_t)
+        };
+
+        if ret == 0 {
+            if let Some(pos) = buf.iter().position(|&b| b == 0) {
+                return String::from_utf8_lossy(&buf[..pos]).into_owned();
+            }
+            return String::from_utf8_lossy(&buf).into_owned();
+        }
+
+        env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string())
     }
 
     fn get_singleton(&self, key: &str) -> Result<Vec<u8>, PmiError> {
@@ -55,10 +132,20 @@ impl Pmi2 {
     }
 
     fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError>{
-        
         self.singleton_kvs.write().unwrap().insert(key.to_owned(), value.to_vec());
 
         Ok(())
+    }
+
+    fn numeric_job_id(id: &str) -> Option<usize> {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if trimmed.chars().all(|c| c.is_ascii_digit()) {
+            return trimmed.parse::<usize>().ok();
+        }
+        None
     }
 }
 impl EncDec for Pmi2 {}
@@ -68,8 +155,116 @@ impl Pmi for Pmi2 {
         self.my_rank
     }
 
+    fn node(&self) -> usize {
+        self.node_id
+    }
+
+    fn num_nodes(&self) -> usize {
+        if self.ranks.len() <= 1 {
+            return 1;
+        }
+
+        let key = "node";
+        let my_bytes = (self.node_id as u32).to_le_bytes();
+        let _ = self.put(key, &my_bytes);
+        let _ = self.exchange();
+
+        let mut set = HashSet::new();
+        for r in 0..self.ranks.len() {
+            if let Ok(v) = self.get(key, &4usize, &r) {
+                if v.len() >= 4 {
+                    let mut arr = [0u8; 4];
+                    arr.copy_from_slice(&v[..4]);
+                    let nid = u32::from_le_bytes(arr) as usize;
+                    set.insert(nid);
+                }
+            }
+        }
+
+        set.len()
+    }
+
+    fn ranks_on_node(&self, node: usize) -> Vec<usize> {
+        if self.ranks.len() <= 1 {
+            return vec![0usize];
+        }
+
+        let key = "node";
+        let my_bytes = (self.node_id as u32).to_le_bytes();
+        let _ = self.put(key, &my_bytes);
+        let _ = self.exchange();
+
+        let mut res = Vec::new();
+        for r in 0..self.ranks.len() {
+            if let Ok(v) = self.get(key, &4usize, &r) {
+                if v.len() >= 4 {
+                    let mut arr = [0u8; 4];
+                    arr.copy_from_slice(&v[..4]);
+                    let nid = u32::from_le_bytes(arr) as usize;
+                    if nid == node {
+                        res.push(r);
+                    }
+                }
+            }
+        }
+
+        res
+    }
+
     fn ranks(&self) -> &[usize] {
         &self.ranks
+    }
+
+    fn node_map(&self) -> HashMap<usize, Vec<usize>> {
+        if self.ranks.len() <= 1 {
+            let mut m = HashMap::new();
+            m.insert(0usize, vec![0usize]);
+            return m;
+        }
+
+        let key = "node";
+        let my_bytes = (self.node_id as u32).to_le_bytes();
+        let _ = self.put(key, &my_bytes);
+        let _ = self.exchange();
+
+        let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
+        for r in 0..self.ranks.len() {
+            if let Ok(v) = self.get(key, &4usize, &r) {
+                if v.len() >= 4 {
+                    let mut arr = [0u8; 4];
+                    arr.copy_from_slice(&v[..4]);
+                    let nid = u32::from_le_bytes(arr) as usize;
+                    map.entry(nid).or_insert_with(Vec::new).push(r);
+                }
+            }
+        }
+
+        map
+    }
+
+    fn job_id_str(&self) -> String {
+        if self.ranks.len() <= 1 {
+            return String::new();
+        }
+
+        let mut buf: Vec<u8> = vec![0; 1024];
+        let rc = unsafe { pmi2_sys::PMI2_Job_GetId(buf.as_mut_ptr() as *mut i8, buf.len() as i32) };
+        if rc != 0 {
+            return String::new();
+        }
+
+        let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const i8) };
+        cstr.to_string_lossy().into_owned()
+    }
+
+    fn job_id(&self) -> usize {
+        let s = self.job_id_str();
+        if let Some(n) = Self::numeric_job_id(&s) {
+            return n;
+        }
+        let mut hasher = DefaultHasher::new();
+        s.hash(&mut hasher);
+        hasher.finish() as usize
     }
 
     fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {

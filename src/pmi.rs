@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub struct PmiError {
     pub(crate) c_err: i32,
     pub kind: ErrorKind,
@@ -73,7 +75,13 @@ pub(crate) trait EncDec: Pmi {
 
 pub trait Pmi: Sync + Send {
     fn rank(&self) -> usize;
+    fn node(&self) -> usize;
+    fn num_nodes(&self) -> usize;
+    fn ranks_on_node(&self, node: usize) -> Vec<usize>;
     fn ranks(&self) -> &[usize];
+    fn node_map(&self) -> HashMap<usize, Vec<usize>>;
+    fn job_id_str(&self) -> String;
+    fn job_id(&self) -> usize;
     fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError>;
     fn put(&self, key: &str, value: &[u8]) -> Result<(), PmiError>;
     fn exchange(&self) -> Result<(), PmiError>;
