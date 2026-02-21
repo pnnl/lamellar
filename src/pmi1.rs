@@ -1,9 +1,13 @@
-use std::{collections::{HashMap, HashSet}, env, hash::{Hash, Hasher}, thread::panicking};
-use std::sync::RwLock;
-use std::collections::hash_map::DefaultHasher;
 use libc::{c_char, size_t};
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    env,
+    hash::{Hash, Hasher},
+    sync::RwLock,
+    thread::panicking,
+};
 
-use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
+use crate::pmi::{numeric_job_id, EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
     ($err_code: expr) => {
         if $err_code as u32 != pmi_sys::PMI_SUCCESS {
@@ -12,6 +16,36 @@ macro_rules! check_error {
     };
 }
 
+/// PMI1 backend implementation.
+///
+/// This struct implements the `Pmi` trait using a PMI1 runtime. Key
+/// behaviors and caveats:
+///
+/// - Initialization: call `Pmi1::new()` to initialize the PMI runtime if
+///   required; the constructor will call `PMI_Init` when needed and arrange
+///   for `PMI_Finalize` on drop when appropriate.
+/// - Node detection: some PMI1 deployments do not provide a stable node
+///   index. In multi-rank runs each rank publishes its hostname (KVS key
+///   `rpmi-host-<rank>`), then ranks collect, sort and deduplicate hostnames
+///   to produce contiguous node indices (0..num_nodes()). This produces
+///   deterministic node assignments across ranks on the same set of hosts.
+/// - Job id resolution: the backend prefers job-manager environment
+///   variables (SLURM_JOB_ID, PMI_JOBID, PMIX_JOBID, etc.) when present,
+///   falls back to a `jobid` KVS entry when available, and finally generates
+///   a deterministic fallback id (hash of the host list) for singleton or
+///   poorly-instrumented runtimes.
+/// - KVS format: application keys use the prefix `rlibfab-<rank>-<key>` to
+///   avoid collisions with other users of the PMI KVS. Values are encoded
+///   into an ASCII-safe representation by the crate before insertion.
+/// - Singleton mode: when the job contains a single rank the crate uses an
+///   in-memory singleton store rather than invoking PMI KVS calls; this
+///   allows unit tests or single-process runs to exercise the same API.
+/// - Thread-safety: `Pmi1` implements `Sync + Send` but underlying PMI
+///   libraries may not be thread-safe; avoid calling PMI APIs concurrently
+///   from multiple threads unless the runtime documents such support.
+///
+/// See the `Pmi` trait documentation for method semantics (`get`, `put`,
+/// `exchange`, `barrier`).
 pub struct Pmi1 {
     my_rank: usize,
     node_id: usize,
@@ -20,7 +54,7 @@ pub struct Pmi1 {
     ranks: Vec<usize>,
     finalize: bool,
     kvs_name: std::ffi::CString,
-    singleton_kvs: RwLock<HashMap<String, Vec<u8> >>,
+    singleton_kvs: RwLock<HashMap<String, Vec<u8>>>,
 }
 
 unsafe impl Sync for Pmi1 {}
@@ -30,13 +64,11 @@ impl Pmi1 {
     const HOST_NAME_KEY: &'static str = "rpmi-host";
     const HOST_NAME_BUF: usize = 256;
 
+    /// Initialize the PMI1 backend and return a `Pmi1` instance.
+    ///
+    /// This performs PMI initialization if necessary and gathers rank and
+    /// node information. Returns a `PmiError` on failure.
     pub fn new() -> Result<Self, crate::pmi::PmiError> {
-        for v in std::env::vars() {
-        if v.0.contains("SLURM") || v.0.contains("PMI") || v.0.contains("PMIX") {
-                println!("PMI1: found env var {}={}", v.0, v.1);
-            }
-        }
-
         let mut finalize = false;
         let mut init = 0;
         let mut spawned = 0;
@@ -141,7 +173,10 @@ impl Pmi1 {
     fn local_hostname() -> String {
         let mut buf = [0u8; Self::HOST_NAME_BUF];
         let ret = unsafe {
-            libc::gethostname(buf.as_mut_ptr() as *mut c_char, Self::HOST_NAME_BUF as size_t)
+            libc::gethostname(
+                buf.as_mut_ptr() as *mut c_char,
+                Self::HOST_NAME_BUF as size_t,
+            )
         };
 
         if ret == 0 {
@@ -166,17 +201,6 @@ impl Pmi1 {
         }
         rank_count.hash(&mut hasher);
         format!("rlibfab-job-{rank_count}-{:x}", hasher.finish())
-    }
-
-    fn numeric_job_id(id: &str) -> Option<usize> {
-        let trimmed = id.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        if trimmed.chars().all(|c| c.is_ascii_digit()) {
-            return trimmed.parse::<usize>().ok();
-        }
-        None
     }
 
     fn job_manager_job_id_env() -> Option<String> {
@@ -207,7 +231,6 @@ impl Pmi1 {
     }
 
     fn get_singleton(&self, key: &str) -> Result<Vec<u8>, crate::pmi::PmiError> {
-       
         if let Some(data) = self.singleton_kvs.read().unwrap().get(key) {
             Ok(data.clone())
         } else {
@@ -219,8 +242,10 @@ impl Pmi1 {
     }
 
     fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), crate::pmi::PmiError> {
-        
-        self.singleton_kvs.write().unwrap().insert(key.to_owned(), value.to_vec());
+        self.singleton_kvs
+            .write()
+            .unwrap()
+            .insert(key.to_owned(), value.to_vec());
         Ok(())
     }
 }
@@ -319,6 +344,10 @@ impl Pmi for Pmi1 {
         map
     }
 
+    /// Return the job id string discovered for this job.
+    ///
+    /// Priority: explicit job-manager env vars -> PMI KVS jobid entry ->
+    /// generated fallback. May be empty for singleton runs.
     fn job_id_str(&self) -> String {
         if let Some(id) = Self::job_manager_job_id_env() {
             return id;
@@ -350,9 +379,11 @@ impl Pmi for Pmi1 {
         self.generated_job_id.clone()
     }
 
+    /// Return a numeric job id. Prefers runtime-provided numeric ids; hashes
+    /// non-numeric strings to a deterministic usize.
     fn job_id(&self) -> usize {
         let s = self.job_id_str();
-        if let Some(n) = Self::numeric_job_id(&s) {
+        if let Some(n) = numeric_job_id(&s) {
             return n;
         }
         let mut hasher = DefaultHasher::new();
@@ -360,6 +391,11 @@ impl Pmi for Pmi1 {
         hasher.finish() as usize
     }
 
+    /// Retrieve a value published by `rank` under `key`.
+    ///
+    /// For multi-rank runs the backend fetches from the PMI KVS and decodes
+    /// the stored bytes; for singleton runs the in-memory singleton store is
+    /// used.
     fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, crate::pmi::PmiError> {
         if self.ranks.len() > 1 {
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}", rank, key))
@@ -381,6 +417,10 @@ impl Pmi for Pmi1 {
         }
     }
 
+    /// Publish `value` under `key` for this rank.
+    ///
+    /// Values are encoded into an ASCII-safe representation before being
+    /// inserted into the KVS. For singleton runs a local store is used.
     fn put(&self, key: &str, value: &[u8]) -> Result<(), crate::pmi::PmiError> {
         if self.ranks.len() > 1 {
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}", self.my_rank, key))
@@ -402,13 +442,18 @@ impl Pmi for Pmi1 {
         }
     }
 
+    /// Ensure recent `put` operations are visible to other ranks.
+    ///
+    /// This calls the PMI commit/fence operations as required by PMI1.
     fn exchange(&self) -> Result<(), crate::pmi::PmiError> {
         check_error!(unsafe { pmi_sys::PMI_KVS_Commit(self.kvs_name.as_ptr()) });
         check_error!(unsafe { pmi_sys::PMI_Barrier() });
         Ok(())
     }
 
-    fn barrier(&self, collect_data: bool) -> Result<(), crate::pmi::PmiError> {
+    /// Global barrier across all ranks. `collect_data` is currently ignored
+    /// by the PMI1 backend.
+    fn barrier(&self, _collect_data: bool) -> Result<(), crate::pmi::PmiError> {
         if self.ranks.len() > 1 {
             check_error!(unsafe { pmi_sys::PMI_Barrier() });
         }

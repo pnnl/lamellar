@@ -1,9 +1,11 @@
-use std::{collections::{HashMap}, hash::{Hash, Hasher}, thread::panicking};
-use std::collections::hash_map::DefaultHasher;
-use std::sync::RwLock;
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    sync::RwLock,
+    thread::panicking,
+};
 
-
-use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
+use crate::pmi::{numeric_job_id, EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
     ($err_code: expr) => {
         if $err_code as u32 != pmix_sys::PMIX_SUCCESS {
@@ -12,6 +14,34 @@ macro_rules! check_error {
     };
 }
 
+/// PMIx backend implementation.
+///
+/// Notes and important details:
+///
+/// - Initialization: call `PmiX::new()` to perform `PMIx_Init` and to query
+///   job size, rank and namespace information. The backend calls
+///   `PMIx_Finalize` on `Drop` when it initially initialized the runtime.
+/// - Node id mapping: PMIx exposes a `PMIX_NODEID` value which may be sparse
+///   or non-contiguous; this backend collects raw PMIx node ids for all
+///   ranks, sorts/deduplicates them and remaps them into contiguous node
+///   indices (0..num_nodes()) so `node()` and `node_map()` are stable and
+///   compact.
+/// - Job id handling: PMIx may return a string job id or a numeric id in a
+///   `uint64`; the backend converts numeric job ids to decimal strings and
+///   prefers numeric strings (returned as `usize` by `job_id()`). Non-numeric
+///   job ids are hashed deterministically to produce a `usize` job id.
+/// - KVS semantics: uses `PMIx_Put` / `PMIx_Commit` and `PMIx_Get` to store
+///   and retrieve values. `exchange()` is implemented via a `PMIx_Fence` for
+///   multi-rank runs.
+/// - Collect data: when `barrier(true)` is used the backend requests
+///   `PMIX_COLLECT_DATA` and forwards the PMIx info structure to the fence
+///   call; runtimes that support collect data may return additional per-rank
+///   info.
+/// - Singleton mode: behaves like other backends and uses an in-memory
+///   store for single-rank operation.
+///
+/// Caveat: PMIx semantics vary between implementations — prefer testing the
+/// crate under the target runtime used in production.
 pub struct PmiX {
     my_rank: usize,
     node_id: usize,
@@ -27,6 +57,10 @@ pub struct PmiX {
 impl EncDec for PmiX {}
 
 impl PmiX {
+    /// Initialize the PMIx backend and return a `PmiX` instance.
+    ///
+    /// Performs `PMIx_Init` and queries job/rank/node metadata. Returns a
+    /// `PmiError` on failure.
     pub fn new() -> Result<Self, PmiError> {
         let finalize;
         let mut proc = pmix_sys::pmix_proc {
@@ -40,7 +74,10 @@ impl PmiX {
         let nspace = proc.nspace.clone();
 
         // get job size
-        let wildcard = pmix_sys::pmix_proc { nspace: nspace.clone(), rank: pmix_sys::PMIX_RANK_WILDCARD };
+        let wildcard = pmix_sys::pmix_proc {
+            nspace: nspace.clone(),
+            rank: pmix_sys::PMIX_RANK_WILDCARD,
+        };
         let key = pmix_sys::PMIX_JOB_SIZE;
         let mut val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
         check_error!(unsafe {
@@ -55,7 +92,10 @@ impl PmiX {
         let size = unsafe { (*val).data.uint32 };
 
         // get node rank for this process
-        let myproc = pmix_sys::pmix_proc { nspace: nspace.clone(), rank };
+        let myproc = pmix_sys::pmix_proc {
+            nspace: nspace.clone(),
+            rank,
+        };
         let mut node_val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
         check_error!(unsafe {
             pmix_sys::PMIx_Get(
@@ -74,7 +114,10 @@ impl PmiX {
             node_map_store_temp.insert(0usize, vec![0usize]);
         } else {
             for r in 0..size as u32 {
-                let proc_r = pmix_sys::pmix_proc { nspace: nspace.clone(), rank: r };
+                let proc_r = pmix_sys::pmix_proc {
+                    nspace: nspace.clone(),
+                    rank: r,
+                };
                 let mut nid_val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
                 let rc = unsafe {
                     pmix_sys::PMIx_Get(
@@ -92,7 +135,10 @@ impl PmiX {
 
                 let nid = unsafe { (*nid_val).data.uint16 } as usize;
                 unsafe { pmix_sys::PMIx_Value_free(nid_val, 1) };
-                node_map_store_temp.entry(nid).or_insert_with(Vec::new).push(r as usize);
+                node_map_store_temp
+                    .entry(nid)
+                    .or_insert_with(Vec::new)
+                    .push(r as usize);
             }
         }
 
@@ -179,20 +225,12 @@ impl PmiX {
         }
     }
 
-    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError>{
-        self.singleton_kvs.write().unwrap().insert(key.to_owned(), value.to_vec());
+    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError> {
+        self.singleton_kvs
+            .write()
+            .unwrap()
+            .insert(key.to_owned(), value.to_vec());
         Ok(())
-    }
-
-    fn numeric_job_id(id: &str) -> Option<usize> {
-        let trimmed = id.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        if trimmed.chars().all(|c| c.is_ascii_digit()) {
-            return trimmed.parse::<usize>().ok();
-        }
-        None
     }
 }
 
@@ -225,13 +263,17 @@ impl Pmi for PmiX {
         self.node_map_store.clone()
     }
 
+    /// Return the raw job id string for this job as provided by PMIx or the
+    /// backend fallback.
     fn job_id_str(&self) -> String {
         self.job_id_str.clone()
     }
 
+    /// Return a deterministic numeric job id. Prefers numeric PMIx job ids
+    /// when available and hashes otherwise.
     fn job_id(&self) -> usize {
         let s = self.job_id_str();
-        if let Some(n) = Self::numeric_job_id(&s) {
+        if let Some(n) = numeric_job_id(&s) {
             return n;
         }
         let mut hasher = DefaultHasher::new();
@@ -239,6 +281,8 @@ impl Pmi for PmiX {
         hasher.finish() as usize
     }
 
+    /// Retrieve a value published by `rank` under `key` using PMIx KVS
+    /// semantics. For singleton runs the local store is used instead.
     fn get(&self, key: &str, _len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
         if self.ranks.len() > 1 {
             let proc = pmix_sys::pmix_proc {
@@ -270,6 +314,7 @@ impl Pmi for PmiX {
         }
     }
 
+    /// Publish `value` under `key` for this rank using PMIx put/commit.
     fn put(&self, key: &str, value: &[u8]) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
             let mut val: pmix_sys::pmix_value = pmix_sys::pmix_value {
@@ -301,6 +346,8 @@ impl Pmi for PmiX {
         Ok(())
     }
 
+    /// Ensure recent `put` operations are visible to other ranks. Implemented
+    /// via a PMIx fence for multi-rank jobs.
     fn exchange(&self) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
             // check_error!(unsafe { pmix_sys::PMIx_Progress() });
@@ -310,6 +357,9 @@ impl Pmi for PmiX {
         Ok(())
     }
 
+    /// Perform a PMIx fence across the job. When `collect_data` is true the
+    /// backend requests PMIX_COLLECT_DATA from the runtime and passes it back
+    /// via PMIx info structures.
     fn barrier(&self, collect_data: bool) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
             if collect_data {

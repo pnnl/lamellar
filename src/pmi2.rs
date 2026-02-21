@@ -1,9 +1,14 @@
-use std::{collections::{HashMap, HashSet}, hash::{Hash, Hasher}, env, thread::panicking};
-use std::sync::RwLock;
-use std::collections::hash_map::DefaultHasher;
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    env,
+    hash::{Hash, Hasher},
+    sync::RwLock,
+    thread::panicking,
+};
+
 use libc::{c_char, size_t};
 
-use crate::pmi::{EncDec, ErrorKind, Pmi, PmiError};
+use crate::pmi::{numeric_job_id, EncDec, ErrorKind, Pmi, PmiError};
 macro_rules! check_error {
     ($err_code: expr) => {
         if $err_code as u32 != pmi2_sys::PMI2_SUCCESS {
@@ -12,19 +17,44 @@ macro_rules! check_error {
     };
 }
 
+/// PMI2 backend implementation.
+///
+/// Detailed behavior and notes:
+///
+/// - Initialization: call `Pmi2::new()` which performs `PMI2_Init` and
+///   collects the job size and rank information. The implementation finalizes
+///   the runtime on `Drop` when appropriate.
+/// - Node detection: identical host-exchange strategy to the PMI1 backend is
+///   used when the runtime does not provide a stable node index. Hostnames
+///   are published under `rpmi2-host-<rank>` and collected to build
+///   contiguous node indices.
+/// - Job id: for PMI2 the backend queries `PMI2_Job_Get`. If that returns an
+///   empty value the backend falls back to a generated deterministic id.
+/// - KVS behavior: uses `PMI2_KVS_Get`/`PMI2_KVS_Put` and issues
+///   `PMI2_KVS_Fence`/commit operations (also used for `exchange` and
+///   `barrier`) to ensure visibility.
+/// - Singleton mode: a local in-memory store is used for single-rank runs.
+/// - Caveats: as with PMI1, PMI2 runtimes may impose ordering or concurrency
+///   constraints; callers should treat PMI operations as collective/fence
+///   paired operations and avoid concurrent PMI calls from multiple threads
+///   unless the runtime documents thread-safety.
 pub struct Pmi2 {
     my_rank: usize,
     node_id: usize,
     host_name: String,
     ranks: Vec<usize>,
     finalize: bool,
-    singleton_kvs: RwLock<HashMap<String, Vec<u8> >>
+    singleton_kvs: RwLock<HashMap<String, Vec<u8>>>,
 }
 
 impl Pmi2 {
     const HOST_NAME_KEY: &'static str = "rpmi2-host";
     const HOST_NAME_BUF: usize = 256;
 
+    /// Initialize the PMI2 backend and return a `Pmi2` instance.
+    ///
+    /// Performs PMI2 initialization and collects rank/node metadata. Returns a
+    /// `PmiError` on failure.
     pub fn new() -> Result<Self, crate::pmi::PmiError> {
         let mut rank = 0;
         let mut size = 0;
@@ -49,7 +79,7 @@ impl Pmi2 {
             host_name,
             ranks: (0..size as usize).collect(),
             finalize,
-            singleton_kvs: RwLock::new(HashMap::new())
+            singleton_kvs: RwLock::new(HashMap::new()),
         };
 
         pmi.init_node_info()?;
@@ -106,7 +136,10 @@ impl Pmi2 {
     fn local_hostname() -> String {
         let mut buf = [0u8; Self::HOST_NAME_BUF];
         let ret = unsafe {
-            libc::gethostname(buf.as_mut_ptr() as *mut c_char, Self::HOST_NAME_BUF as size_t)
+            libc::gethostname(
+                buf.as_mut_ptr() as *mut c_char,
+                Self::HOST_NAME_BUF as size_t,
+            )
         };
 
         if ret == 0 {
@@ -120,7 +153,6 @@ impl Pmi2 {
     }
 
     fn get_singleton(&self, key: &str) -> Result<Vec<u8>, PmiError> {
-       
         if let Some(data) = self.singleton_kvs.read().unwrap().get(key) {
             Ok(data.clone())
         } else {
@@ -131,21 +163,13 @@ impl Pmi2 {
         }
     }
 
-    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError>{
-        self.singleton_kvs.write().unwrap().insert(key.to_owned(), value.to_vec());
+    fn put_singleton(&self, key: &str, value: &[u8]) -> Result<(), PmiError> {
+        self.singleton_kvs
+            .write()
+            .unwrap()
+            .insert(key.to_owned(), value.to_vec());
 
         Ok(())
-    }
-
-    fn numeric_job_id(id: &str) -> Option<usize> {
-        let trimmed = id.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        if trimmed.chars().all(|c| c.is_ascii_digit()) {
-            return trimmed.parse::<usize>().ok();
-        }
-        None
     }
 }
 impl EncDec for Pmi2 {}
@@ -259,7 +283,7 @@ impl Pmi for Pmi2 {
 
     fn job_id(&self) -> usize {
         let s = self.job_id_str();
-        if let Some(n) = Self::numeric_job_id(&s) {
+        if let Some(n) = numeric_job_id(&s) {
             return n;
         }
         let mut hasher = DefaultHasher::new();
@@ -267,6 +291,10 @@ impl Pmi for Pmi2 {
         hasher.finish() as usize
     }
 
+    /// Retrieve a value published by `rank` under `key`.
+    ///
+    /// Uses the PMI2 KVS for multi-rank runs or a local singleton store for
+    /// single-rank execution.
     fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
         if self.ranks.len() > 1 {
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}", rank, key))
@@ -291,6 +319,10 @@ impl Pmi for Pmi2 {
         }
     }
 
+    /// Publish `value` under `key` for this rank.
+    ///
+    /// Encodes `value` for KVS storage. Calls the PMI2 fence/commit as
+    /// required to make the value visible to peers.
     fn put(&self, key: &str, value: &[u8]) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}", self.my_rank, key))
@@ -306,6 +338,7 @@ impl Pmi for Pmi2 {
         Ok(())
     }
 
+    /// Ensure recent `put` operations are visible to other ranks.
     fn exchange(&self) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
             check_error!(unsafe { pmi2_sys::PMI2_KVS_Fence() });
@@ -314,7 +347,9 @@ impl Pmi for Pmi2 {
         Ok(())
     }
 
-    fn barrier(&self, collect_data: bool) -> Result<(), PmiError> {
+    /// Global barrier across all ranks. `collect_data` is currently ignored
+    /// by the PMI2 backend.
+    fn barrier(&self, _collect_data: bool) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
             check_error!(unsafe { pmi2_sys::PMI2_KVS_Fence() });
         }
