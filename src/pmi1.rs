@@ -336,7 +336,7 @@ impl Pmi for Pmi1 {
                     let mut arr = [0u8; 4];
                     arr.copy_from_slice(&v[..4]);
                     let nid = u32::from_le_bytes(arr) as usize;
-                    map.entry(nid).or_insert_with(Vec::new).push(r);
+                    map.entry(nid).or_default().push(r);
                 }
             }
         }

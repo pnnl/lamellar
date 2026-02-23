@@ -192,6 +192,16 @@ impl PmiBuilder {
     ///
     /// The concrete backend returned depends on enabled Cargo features
     /// (`with-pmi1`, `with-pmi2`, `with-pmix`).
+    ///
+    /// Example (runtime required; shown for documentation):
+    ///
+    /// ```ignore
+    /// use pmi::PmiBuilder;
+    /// let pmi = PmiBuilder::init().expect("failed to init PMI backend");
+    /// println!("rank {} / {} ranks", pmi.rank(), pmi.ranks().len());
+    /// pmi.put("greeting", b"hello").unwrap();
+    /// pmi.exchange().unwrap();
+    /// ```
     #[cfg(any(feature = "with-pmi1", feature = "with-pmi2", feature = "with-pmix"))]
     pub fn init() -> Result<impl Pmi, PmiError> {
         #[cfg(not(any(feature = "with-pmi2", feature = "with-pmix")))]
@@ -206,21 +216,21 @@ impl PmiBuilder {
     /// Initialize and return a PMI1 backend instance when the
     /// `with-pmi1` feature is enabled.
     pub fn with_pmi1() -> Result<impl Pmi, PmiError> {
-        return crate::pmi1::Pmi1::new();
+        crate::pmi1::Pmi1::new()
     }
 
     #[cfg(feature = "with-pmi2")]
     /// Initialize and return a PMI2 backend instance when the
     /// `with-pmi2` feature is enabled.
     pub fn with_pmi2() -> Result<impl Pmi, PmiError> {
-        return crate::pmi2::Pmi2::new();
+        crate::pmi2::Pmi2::new()
     }
 
     #[cfg(feature = "with-pmix")]
     /// Initialize and return a PMIx backend instance when the
     /// `with-pmix` feature is enabled.
     pub fn with_pmix() -> Result<impl Pmi, PmiError> {
-        return crate::pmix::PmiX::new();
+        crate::pmix::PmiX::new()
     }
 }
 

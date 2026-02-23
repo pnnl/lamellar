@@ -62,20 +62,19 @@ impl PmiX {
     /// Performs `PMIx_Init` and queries job/rank/node metadata. Returns a
     /// `PmiError` on failure.
     pub fn new() -> Result<Self, PmiError> {
-        let finalize;
         let mut proc = pmix_sys::pmix_proc {
             nspace: [0; 256usize],
             rank: 0,
         };
 
         check_error!(unsafe { pmix_sys::PMIx_Init(&mut proc, std::ptr::null_mut(), 0) });
-        finalize = true;
+        let finalize = true;
         let rank = proc.rank;
-        let nspace = proc.nspace.clone();
+        let nspace = proc.nspace;
 
         // get job size
         let wildcard = pmix_sys::pmix_proc {
-            nspace: nspace.clone(),
+            nspace,
             rank: pmix_sys::PMIX_RANK_WILDCARD,
         };
         let key = pmix_sys::PMIX_JOB_SIZE;
@@ -92,10 +91,7 @@ impl PmiX {
         let size = unsafe { (*val).data.uint32 };
 
         // get node rank for this process
-        let myproc = pmix_sys::pmix_proc {
-            nspace: nspace.clone(),
-            rank,
-        };
+        let myproc = pmix_sys::pmix_proc { nspace, rank };
         let mut node_val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
         check_error!(unsafe {
             pmix_sys::PMIx_Get(
@@ -114,10 +110,7 @@ impl PmiX {
             node_map_store_temp.insert(0usize, vec![0usize]);
         } else {
             for r in 0..size as u32 {
-                let proc_r = pmix_sys::pmix_proc {
-                    nspace: nspace.clone(),
-                    rank: r,
-                };
+                let proc_r = pmix_sys::pmix_proc { nspace, rank: r };
                 let mut nid_val: *mut pmix_sys::pmix_value_t = std::ptr::null_mut();
                 let rc = unsafe {
                     pmix_sys::PMIx_Get(
@@ -135,10 +128,7 @@ impl PmiX {
 
                 let nid = unsafe { (*nid_val).data.uint16 } as usize;
                 unsafe { pmix_sys::PMIx_Value_free(nid_val, 1) };
-                node_map_store_temp
-                    .entry(nid)
-                    .or_insert_with(Vec::new)
-                    .push(r as usize);
+                node_map_store_temp.entry(nid).or_default().push(r as usize);
             }
         }
 
@@ -166,7 +156,7 @@ impl PmiX {
             String::new()
         } else {
             let proc_j = pmix_sys::pmix_proc {
-                nspace: nspace.clone(),
+                nspace,
                 rank: pmix_sys::PMIX_RANK_WILDCARD,
             };
             let key_job = pmix_sys::PMIX_JOBID;
@@ -219,7 +209,7 @@ impl PmiX {
             Ok(data.clone())
         } else {
             Err(PmiError {
-                c_err: pmix_sys::PMIX_ERR_INVALID_KEY as i32,
+                c_err: pmix_sys::PMIX_ERR_INVALID_KEY,
                 kind: ErrorKind::InvalidKey,
             })
         }
@@ -286,7 +276,7 @@ impl Pmi for PmiX {
     fn get(&self, key: &str, _len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
         if self.ranks.len() > 1 {
             let proc = pmix_sys::pmix_proc {
-                nspace: self.nspace.clone(),
+                nspace: self.nspace,
                 rank: *rank as u32,
             };
             let mut recv_val: *mut pmix_sys::pmix_value = std::ptr::null_mut();
@@ -308,7 +298,7 @@ impl Pmi for PmiX {
             let byte_array =
                 unsafe { std::ffi::CStr::from_ptr(val.data.string) }.to_bytes_with_nul();
 
-            Ok(self.decode(&byte_array))
+            Ok(self.decode(byte_array))
         } else {
             self.get_singleton(key)
         }
@@ -376,7 +366,7 @@ impl Pmi for PmiX {
                     )
                 };
 
-                check_error!(unsafe { pmix_sys::PMIx_Fence(std::ptr::null(), 0, &mut cd, 1) });
+                check_error!(unsafe { pmix_sys::PMIx_Fence(std::ptr::null(), 0, &cd, 1) });
             } else {
                 check_error!(unsafe {
                     pmix_sys::PMIx_Fence(std::ptr::null(), 0, std::ptr::null(), 0)
@@ -400,11 +390,10 @@ impl Drop for PmiX {
 
 impl PmiError {
     pub(crate) fn from_pmix_err_code(c_err: i32) -> Self {
-        let kind;
-        if c_err == pmix_sys::PMIX_ERROR {
-            kind = ErrorKind::OperationFailed;
+        let kind = if c_err == pmix_sys::PMIX_ERROR {
+            ErrorKind::OperationFailed
         } else {
-            kind = match c_err {
+            match c_err {
                 pmix_sys::PMIX_ERR_INIT => ErrorKind::NotInitialized,
                 pmix_sys::PMIX_ERR_NOMEM => ErrorKind::NoBufSpaceAvailable,
                 pmix_sys::PMIX_ERR_INVALID_ARG => ErrorKind::InvalidArg,
@@ -419,12 +408,9 @@ impl PmiError {
                 pmix_sys::PMIX_ERR_INVALID_KEYVALP => ErrorKind::InvalidKeyValP,
                 pmix_sys::PMIX_ERR_INVALID_SIZE => ErrorKind::InvalidSize,
                 _ => ErrorKind::Other,
-            };
-        }
+            }
+        };
 
-        Self {
-            c_err: c_err as i32,
-            kind,
-        }
+        Self { c_err, kind }
     }
 }

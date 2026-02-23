@@ -60,16 +60,14 @@ impl Pmi2 {
         let mut size = 0;
         let mut spawned = 0;
         let mut appnum = 0;
-        let finalize;
-
-        if unsafe { pmi2_sys::PMI2_Initialized() } == 0 {
+        let finalize = if unsafe { pmi2_sys::PMI2_Initialized() } == 0 {
             check_error!(unsafe {
                 pmi2_sys::PMI2_Init(&mut spawned, &mut size, &mut rank, &mut appnum)
             });
-            finalize = true;
+            true
         } else {
             panic!("PMI2 is already initialized. Cannot retrieve environment");
-        }
+        };
 
         let host_name = Self::local_hostname();
 
@@ -258,7 +256,7 @@ impl Pmi for Pmi2 {
                     let mut arr = [0u8; 4];
                     arr.copy_from_slice(&v[..4]);
                     let nid = u32::from_le_bytes(arr) as usize;
-                    map.entry(nid).or_insert_with(Vec::new).push(r);
+                    map.entry(nid).or_default().push(r);
                 }
             }
         }
@@ -370,12 +368,11 @@ impl Drop for Pmi2 {
 
 impl PmiError {
     pub(crate) fn from_pmi2_err_code(c_err: i32) -> Self {
-        let kind;
-        if c_err == pmi2_sys::PMI2_FAIL {
-            kind = ErrorKind::OperationFailed;
+        let kind = if c_err == pmi2_sys::PMI2_FAIL {
+            ErrorKind::OperationFailed
         } else {
             let c_err = c_err as u32;
-            kind = match c_err {
+            match c_err {
                 pmi2_sys::PMI2_ERR_INIT => ErrorKind::NotInitialized,
                 pmi2_sys::PMI2_ERR_NOMEM => ErrorKind::NoBufSpaceAvailable,
                 pmi2_sys::PMI2_ERR_INVALID_ARG => ErrorKind::InvalidArg,
@@ -390,12 +387,9 @@ impl PmiError {
                 pmi2_sys::PMI2_ERR_INVALID_KEYVALP => ErrorKind::InvalidKeyValP,
                 pmi2_sys::PMI2_ERR_INVALID_SIZE => ErrorKind::InvalidSize,
                 _ => ErrorKind::Other,
-            };
-        }
+            }
+        };
 
-        Self {
-            c_err: c_err as i32,
-            kind,
-        }
+        Self { c_err, kind }
     }
 }
