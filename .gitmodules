@@ -7,3 +7,6 @@
 [submodule "lamellar"]
 	path = lamellar
 	url = https://github.com/pnnl/lamellar
+[submodule "communication_frameworks/lamellar-ucx-sys/ucx"]
+	path = communication_frameworks/lamellar-ucx-sys/ucx
+	url = https://github.com/openucx/ucx.git
