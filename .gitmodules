@@ -10,3 +10,6 @@
 [submodule "communication_frameworks/lamellar-ucx-sys/ucx"]
 	path = communication_frameworks/lamellar-ucx-sys/ucx
 	url = https://github.com/openucx/ucx.git
+[submodule "communication_frameworks/rofi-sys"]
+	path = communication_frameworks/rofi-sys
+	url = https://github.com/pnnl/rofi-sys
