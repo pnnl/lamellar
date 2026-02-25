@@ -4,12 +4,12 @@
 [submodule "lamellar-benchmarks"]
 	path = lamellar-benchmarks
 	url = https://github.com/pnnl/lamellar-benchmarks
-[submodule "lamellar"]
-	path = lamellar
-	url = https://github.com/pnnl/lamellar
 [submodule "communication_frameworks/lamellar-ucx-sys/ucx"]
 	path = communication_frameworks/lamellar-ucx-sys/ucx
 	url = https://github.com/openucx/ucx.git
 [submodule "communication_frameworks/rofi-sys"]
 	path = communication_frameworks/rofi-sys
 	url = https://github.com/pnnl/rofi-sys
+[submodule "lamellar-runtime"]
+	path = lamellar-runtime
+	url = https://github.com/pnnl/lamellar-runtime
