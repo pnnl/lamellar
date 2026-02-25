@@ -1,0 +1,9 @@
+[submodule "communication_frameworks/rofi"]
+	path = communication_frameworks/rofi
+	url = https://github.com/pnnl/rofi
+[submodule "lamellar-benchmarks"]
+	path = lamellar-benchmarks
+	url = https://github.com/pnnl/lamellar-benchmarks
+[submodule "lamellar"]
+	path = lamellar
+	url = https://github.com/pnnl/lamellar
