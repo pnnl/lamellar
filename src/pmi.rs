@@ -128,33 +128,90 @@ pub trait Pmi: Sync + Send {
     fn num_nodes(&self) -> usize;
 
     /// Return the list of ranks that live on the given `node` index.
+    ///
+    /// Example:
+    ///
+    /// ```no_run
+    /// use pmi::Pmi;
+    /// let pmi = pmi::PmiBuilder::init().unwrap();
+    /// let ranks = pmi.ranks_on_node(0);
+    /// println!("ranks on node 0: {:?}", ranks);
+    /// ```
     fn ranks_on_node(&self, node: usize) -> Vec<usize>;
 
     /// Return a slice containing all ranks in the job (0..N-1).
     fn ranks(&self) -> &[usize];
 
     /// Return a mapping from node index to the ranks on that node.
+    ///
+    /// Example:
+    ///
+    /// ```no_run
+    /// use pmi::Pmi;
+    /// let pmi = pmi::PmiBuilder::init().unwrap();
+    /// let map = pmi.node_map();
+    /// for (n, ranks) in map {
+    ///     println!("node {} -> ranks {:?}", n, ranks);
+    /// }
+    /// ```
     fn node_map(&self) -> HashMap<usize, Vec<usize>>;
 
     /// Return the raw job id string as provided by the runtime or derived by
     /// the backend. May be empty for singleton runs.
+    ///
+    /// Example:
+    ///
+    /// ```no_run
+    /// use pmi::Pmi;
+    /// let pmi = pmi::PmiBuilder::init().unwrap();
+    /// println!("job id string: {}", pmi.job_id_str());
+    /// ```
     fn job_id_str(&self) -> String;
 
     /// Return a deterministic numeric job id.
     ///
     /// If the runtime provided a numeric job id string the numeric value is
     /// returned directly; otherwise a deterministic hash is returned.
+    ///
+    /// Example:
+    ///
+    /// ```no_run
+    /// use pmi::Pmi;
+    /// let pmi = pmi::PmiBuilder::init().unwrap();
+    /// let jid = pmi.job_id();
+    /// println!("numeric job id: {}", jid);
+    /// ```
     fn job_id(&self) -> usize;
 
     /// Retrieve the value previously stored under `key` by `rank`.
     ///
     /// `len` is the expected encoded buffer length for the backend; returns
     /// the raw decoded bytes on success or a `PmiError` on failure.
+    ///
+    /// Example:
+    ///
+    /// ```no_run
+    /// use pmi::Pmi;
+    /// let pmi = pmi::PmiBuilder::init().unwrap();
+    /// pmi.put("k", b"v").unwrap();
+    /// pmi.exchange().unwrap();
+    /// let v = pmi.get("k", &2usize, &0usize).unwrap();
+    /// assert_eq!(v, b"v");
+    /// ```
     fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError>;
 
     /// Store `value` under `key` for this rank.
     ///
     /// Values are encoded by the backend before insertion into the KVS.
+    ///
+    /// Example:
+    ///
+    /// ```no_run
+    /// use pmi::Pmi;
+    /// let pmi = pmi::PmiBuilder::init().unwrap();
+    /// pmi.put("hello", b"world").unwrap();
+    /// pmi.exchange().unwrap();
+    /// ```
     fn put(&self, key: &str, value: &[u8]) -> Result<(), PmiError>;
 
     /// Make recent `put` operations visible to other ranks (backend fence).
@@ -163,6 +220,14 @@ pub trait Pmi: Sync + Send {
     /// Global barrier across all ranks. `collect_data` is reserved for
     /// backends that return additional collective information; it may be
     /// ignored by some implementations.
+    ///
+    /// Example:
+    ///
+    /// ```no_run
+    /// use pmi::Pmi;
+    /// let pmi = pmi::PmiBuilder::init().unwrap();
+    /// pmi.barrier(false).unwrap();
+    /// ```
     fn barrier(&self, collect_data: bool) -> Result<(), PmiError>;
 }
 
@@ -195,7 +260,8 @@ impl PmiBuilder {
     ///
     /// Example (runtime required; shown for documentation):
     ///
-    /// ```ignore
+    /// ```no_run
+    /// use pmi::Pmi;
     /// use pmi::PmiBuilder;
     /// let pmi = PmiBuilder::init().expect("failed to init PMI backend");
     /// println!("rank {} / {} ranks", pmi.rank(), pmi.ranks().len());
