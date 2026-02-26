@@ -22,6 +22,7 @@ pub(crate) enum MulticastAddressSource {
 /// Represents a multicast group that is ready for use
 ///
 /// Corresponds to `libfabric_sys::fi_mcast_group`
+#[derive(Clone)]
 pub struct MultiCastGroup {
     pub(crate) inner: MyRc<MulticastGroupImpl>,
 }
@@ -167,7 +168,6 @@ impl PendingMulticastGroupCollective {
     pub fn join_collective<
         E: CollectiveEp + AsTypedFid<EpRawFid> + 'static + SyncSend,
         STATE: EpState,
-        const INIT: bool,
     >(
         self,
         ep: &EndpointBase<E, STATE>,
