@@ -61,7 +61,7 @@ fn find_prrte_normal(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std:
 }
 
 fn find_prrte(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
-    #[cfg(feature = "vendored-prrte")]
+    #[cfg(any(feature = "vendored-prrte", feature = "vendored"))]
     {
         if env_inner("PRRTE_NO_VENDORED").map_or(true, |v| v == "0") {
             let artifacts = prrte_src::Build::new().build();
