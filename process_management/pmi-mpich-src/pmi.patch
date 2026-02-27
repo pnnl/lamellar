@@ -1,0 +1,47 @@
+diff --git src/pmi/include/pmi.h src/pmi/include/pmi.h
+index 64d2c3c28c..ee5f9d47c7 100644
+--- src/pmi/include/pmi.h
++++ src/pmi/include/pmi.h
+@@ -58,6 +58,9 @@ D*/
+ #define PMI_ERR_INVALID_KEYVALP     12
+ #define PMI_ERR_INVALID_SIZE        13
+ 
++#define PMI_FALSE 0
++#define PMI_TRUE 1
++
+ #define PMI_GROUP_WORLD      ((int *)0)
+ #define PMI_GROUP_SELF       ((int *)1)
+ #define PMI_GROUP_NODE       ((int *)2)
+diff --git src/pmi/src/pmi_v1.c src/pmi/src/pmi_v1.c
+index 802aa61e1d..850f82b6d6 100644
+--- src/pmi/src/pmi_v1.c
++++ src/pmi/src/pmi_v1.c
+@@ -16,9 +16,10 @@
+  */
+ /***************************************************************************/
+ 
++#include "pmi_config.h"
++
+ #ifndef DISABLE_PMI1
+ 
+-#include "pmi_config.h"
+ #include "mpl.h"
+ #include "uthash.h"
+ 
+diff --git src/pmi/src/pmi_v2.c src/pmi/src/pmi_v2.c
+index 9ad8625fda..bac30e77f7 100644
+--- src/pmi/src/pmi_v2.c
++++ src/pmi/src/pmi_v2.c
+@@ -3,9 +3,11 @@
+  *     See COPYRIGHT in top-level directory
+  */
+ 
++ 
++#include "pmi_config.h"
++
+ #ifndef DISABLE_PMI2
+ 
+-#include "pmi_config.h"
+ #include "mpl.h"
+ 
+ #include "pmi_util.h"
