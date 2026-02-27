@@ -1,0 +1,9 @@
+[package]
+name = "openpmix-src"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hwlocality-sys = {version = "0.6.1", features = ["hwloc-latest", "vendored"]}
+libevent-sys = {version="0.3", features = ["bundled", "openssl_bundled", "threading"]}
+autotools = "0.2"
