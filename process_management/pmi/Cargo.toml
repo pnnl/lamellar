@@ -1,0 +1,20 @@
+[package]
+name = "pmi"
+version = "0.1.0"
+edition = "2021"
+links = "pminative"
+
+[dependencies]
+pmi-sys = { path = "../pmi-sys", optional = true }
+pmi2-sys = { path = "../pmi2-sys", optional = true }
+pmix-sys = { path = "../pmix-sys", optional = true }
+libc = "0.2"
+
+[features]
+with-pmi1 = ["pmi-sys"]
+with-pmi2 = ["pmi2-sys"]
+with-pmix = ["pmix-sys"]
+vendored = ["pmi-sys?/vendored", "pmi2-sys?/vendored", "pmix-sys?/vendored"]
+with-pmi1-vendored = ["with-pmi1", "vendored"]
+with-pmi2-vendored = ["with-pmi2", "vendored"]
+with-pmix-vendored = ["with-pmix", "vendored"]
