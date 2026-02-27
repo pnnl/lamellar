@@ -144,6 +144,7 @@ fn build_bindings() {
         .bitfield_enum("ucp_feature")
         .bitfield_enum(".*_field")
         .bitfield_enum(".*_flags(_t)?")
+        .derive_default(true)
         .generate()
         .expect("Unable to generate bindings");
 
