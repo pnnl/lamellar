@@ -13,3 +13,6 @@
 [submodule "lamellar-runtime"]
 	path = lamellar-runtime
 	url = https://github.com/pnnl/lamellar-runtime
+[submodule "communication_frameworks/libfabric-src/libfabric"]
+	path = communication_frameworks/libfabric-src/libfabric
+	url = https://github.com/ofiwg/libfabric.git

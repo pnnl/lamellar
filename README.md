@@ -21,17 +21,34 @@ This repository is a staging area for various repositories and crates we have de
 
 SUBMODULES
 ----------
-- lamellar-runtime/ ([lamellar-runtime/README.md](lamellar-runtime/README.md)) — The primary crate that implements Lamellar’s asynchronous tasking runtime, distributed arrays, Darcs, and the `local`, `shmem`, and optional `rofi` Lamellae backends.
-- communication_frameworks/ — Transport adapters and bindings:
-  - lamellar-ucx-sys/ ([communication_frameworks/lamellar-ucx-sys/README.md](communication_frameworks/lamellar-ucx-sys/README.md)) — Generated UCX FFI plus helpers for contiguous datatypes and pointer-status handling so Lamellar can ride UCX fabrics; the `ucx` submodule sources the upstream UCX repository.
-  - rofi/ ([communication_frameworks/rofi/README.md](communication_frameworks/rofi/README.md)) — Rust OFI transport layer with autotools-based build scripts, RDMA PUT/GET APIs, and provider selection for verbs/tcp.
-  - rofi-sys/ ([communication_frameworks/rofi-sys/README.md](communication_frameworks/rofi-sys/README.md)) — System crate that wraps the ROFI C library via `bindgen`, honoring `OFI_DIR`/`ROFI_DIR` so downstream crates can enable the `rofi` Lamellae backend.
-- lamellar-benchmarks/ ([lamellar-benchmarks/README.md](lamellar-benchmarks/README.md)) — Collection of ramps and utilities that exercise Lamellar’s distributed features:
-  - benchmark_record/ ([lamellar-benchmarks/benchmark_record/README.md](lamellar-benchmarks/benchmark_record/README.md)) — Library for capturing runtime and build-time metadata and emitting JSON lines output.
-  - histo/ ([lamellar-benchmarks/histo/README.md](lamellar-benchmarks/histo/README.md)) — Histo benchmark variations (DMA, buffered, safe/unsafe) targeting Lamellar’s remote memory and active-message APIs.
-  - index_gather/ ([lamellar-benchmarks/index_gather/README.md](lamellar-benchmarks/index_gather/README.md)) — Index gather benchmark demonstrating atomic-array, buffered, and read-only semantics derived from Bale.
-  - randperm/ ([lamellar-benchmarks/randperm/README.md](lamellar-benchmarks/randperm/README.md)) — Randperm benchmark exercising asynchronous initialization and permutation kernels.
-  - triangle_count/ ([lamellar-benchmarks/triangle_count/README.md](lamellar-benchmarks/triangle_count/README.md)) — Triangle counting benchmarks (buffered/unbuffered) with Graph500 inputs and AM/ROFI-backed variants.
+Runtime
+-------
+The `lamellar-runtime/` crate (see [lamellar-runtime/README.md](lamellar-runtime/README.md)) implements the core asynchronous tasking runtime, the distributed arrays and Darcs interfaces, and the `local`, `shmem`, and optional `rofi` Lamellae backends. Its README documents the API, executors, and how to configure backends via features or runtime builders.
+
+Communication frameworks
+------------------------
+Lamellae transport providers live under `communication_frameworks/`. Each subcrate wraps either UCX or OFI in a way that the runtime can consume without exposing C details directly.
+#### UCX transport
+- `lamellar-ucx-sys/` ([README](communication_frameworks/lamellar-ucx-sys/README.md)) builds the UCX submodule (v1.19.0) or reuses an `UCX_DIR`, generates bindings via `bindgen`, and provides helpers for contiguous datatypes and UCS pointer handling.
+
+#### OFI transports
+- `libfabric/` ([README](communication_frameworks/libfabric/README.md)) offers ergonomic Rust types, async executor bindings, and threading helpers over the low-level OFI interface, while gating how the underlying `libfabric-sys` stack is built.
+- `libfabric-sys/` ([README](communication_frameworks/libfabric-sys/README.md)) invokes `libfabric-src`, wraps inline functions, and emits `bindgen` bindings for every OFI symbol so downstream crates can link against `libfabric` transparently.
+- `libfabric-src/` ([README](communication_frameworks/libfabric-src/README.md)) copies the vendored `libfabric` tree into `OUT_DIR`, runs Autotools to build shared or static artifacts (honoring `OFI_DIR` if set), and exposes the include/lib directories.
+
+#### ROFI transport
+- `rofi/` ([README](communication_frameworks/rofi/README.md)) is the Rust OFI transport layer (libfabric-based) with autotools-driven configure scripts, RDMA PUT/GET APIs, and provider selection for verbs/tcp.
+- `rofi-sys/` ([README](communication_frameworks/rofi-sys/README.md)) binds the ROFI C library via `bindgen`, honors `OFI_DIR`/`ROFI_DIR`, and exposes the necessary symbols for the runtime’s `rofi` Lamellae.
+
+Benchmarks & utilities
+----------------------
+`lamellar-benchmarks/` ([README](lamellar-benchmarks/README.md)) aggregates multiple benchmark suites and helper crates that exercise Lamellar’s distributed and Lamellae-specific features. Each subdirectory has its own README describing the benchmark, build requirements, and how to run it on multi-node systems.
+
+- `benchmark_record/` ([README](lamellar-benchmarks/benchmark_record/README.md)) records runtime/build metadata, writes JSON lines, and prints structured summaries so benchmarks can capture context-sensitive outputs.
+- `histo/` ([README](lamellar-benchmarks/histo/README.md)) ports the Histo benchmark (DMA, buffered, safe/unsafe variants) to Lamellar, stressing remote memory updates and active messages.
+- `index_gather/` ([README](lamellar-benchmarks/index_gather/README.md)) implements the Index Gather benchmark with atomic arrays, buffered variants, and read-only modes derived from Bale.
+- `randperm/` ([README](lamellar-benchmarks/randperm/README.md)) runs the Randperm benchmark to exercise asynchronous initialization and permutation kernels on Lamellae.
+- `triangle_count/` ([README](lamellar-benchmarks/triangle_count/README.md)) runs buffered and unbuffered triangle-counting workloads on Graph500 inputs with active-message and ROFI window variants.
 
 STATUS
 ------
