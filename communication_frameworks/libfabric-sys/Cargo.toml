@@ -1,0 +1,16 @@
+[package]
+name = "libfabric-sys"
+version = "0.1.0"
+edition = "2021"
+links = "ofi"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.72"
+libfabric-src = { path = "../libfabric-src", version = "0.1.0" }
+
+[features]
+shared = ["libfabric-src/shared"]
