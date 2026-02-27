@@ -5,9 +5,9 @@ edition = "2021"
 links = "pminative"
 
 [dependencies]
-pmi-sys = { path = "../pmi-sys", optional = true }
-pmi2-sys = { path = "../pmi2-sys", optional = true }
-pmix-sys = { path = "../pmix-sys", optional = true }
+pmi-sys = { git = "https://github.com/pnnl/lamellar", optional = true }
+pmi2-sys = { git = "https://github.com/pnnl/lamellar", optional = true }
+pmix-sys = { git = "https://github.com/pnnl/lamellar", optional = true }
 libc = "0.2"
 
 [features]

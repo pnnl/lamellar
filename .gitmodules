@@ -16,3 +16,12 @@
 [submodule "communication_frameworks/libfabric-src/libfabric"]
 	path = communication_frameworks/libfabric-src/libfabric
 	url = https://github.com/ofiwg/libfabric.git
+[submodule "process_management/pmi-mpich-src/mpich"]
+	path = process_management/pmi-mpich-src/mpich
+	url = https://github.com/pmodels/mpich.git
+[submodule "process_management/openpmix-src/openpmix"]
+	path = process_management/openpmix-src/openpmix
+	url = https://github.com/openpmix/openpmix.git
+[submodule "process_management/prrte-src/prrte"]
+	path = process_management/prrte-src/prrte
+	url = https://github.com/openpmix/prrte.git

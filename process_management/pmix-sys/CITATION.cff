@@ -1,0 +1,24 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Lamellar
+message: Please cite this software using these metadata.
+type: software
+authors:
+  - given-names: Ryan
+    family-names: Friese
+    email: ryan.friese@pnnl.gov
+    affiliation: Pacific Northwest National Lab
+  - given-names: Roberto
+    family-names: Gioiosa
+    email: roberto.gioiosa@pnnl.gov
+    affiliation: PNNL
+  - given-names: 'Joseph '
+    family-names: Cottam
+    email: joseph.cottam@pnnl.gov
+    affiliation: PNNL
+  - given-names: Erdal
+    family-names: Mutlu
+    email: erdal.mutlut@pnnl.gov
+    affiliation: PNNL

@@ -5,7 +5,7 @@ edition = "2021"
 
 
 [dependencies]
-libfabric-sys = { path = "../libfabric-sys", version = "*" }
+libfabric-sys = { git = "https://github.com/pnnl/lamellar" }
 debug_print = "1.0.0"
 tokio = { version = "1.38", optional = true, features = [
     "net",

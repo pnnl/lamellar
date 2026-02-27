@@ -5,19 +5,29 @@ edition = "2021"
 links = "prrte"
 build = "build.rs"
 
-[features] 
-vendored = ["prrte-src", "vendored-libevent", "vendored-hwloc", "vendored-pmix"] # Ideally we wouldn't always need the vendored version of the dependencies
-                                                                                 # but currently hwloc-sys does not expose a way to get the path to a system-installed hwloc
+[features]
+vendored = [
+    "prrte-src",
+    "vendored-libevent",
+    "vendored-hwloc",
+    "vendored-pmix",
+] # Ideally we wouldn't always need the vendored version of the dependencies
+# but currently hwloc-sys does not expose a way to get the path to a system-installed hwloc
 vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled"]
 vendored-hwloc = ["hwlocality-sys/hwloc-latest", "hwlocality-sys/vendored"]
 vendored-pmix = ["pmix-sys/vendored"]
-vendored-prrte = ["prrte-src", "vendored-libevent", "hwlocality-sys", "pmix-sys"]
+vendored-prrte = [
+    "prrte-src",
+    "vendored-libevent",
+    "hwlocality-sys",
+    "pmix-sys",
+]
 
 [dependencies]
-pmix-sys = {version = "0.1.0", path="../pmix-sys", optional = true}
-libevent-sys = {version="0.3", features = ["threading"], optional = true}
-hwlocality-sys = {version = "0.6.1", optional = true}
+pmix-sys = { git = "https://github.com/pnnl/lamellar", optional = true }
+libevent-sys = { version = "0.3", features = ["threading"], optional = true }
+hwlocality-sys = { version = "0.6.1", optional = true }
 
 [build-dependencies]
-prrte-src = {version="*", path="../prrte-src", optional = true}
+prrte-src = { git = "https://github.com/pnnl/lamellar", optional = true }
 bindgen = "0.72.1"

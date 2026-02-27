@@ -50,6 +50,16 @@ Benchmarks & utilities
 - `randperm/` ([README](lamellar-benchmarks/randperm/README.md)) runs the Randperm benchmark to exercise asynchronous initialization and permutation kernels on Lamellae.
 - `triangle_count/` ([README](lamellar-benchmarks/triangle_count/README.md)) runs buffered and unbuffered triangle-counting workloads on Graph500 inputs with active-message and ROFI window variants.
 
+Process management
+------------------
+`process_management/` ([README](process_management/README.md)) gathers the PMI/PMIx/PRRTE bindings that Lamellar uses to integrate with MPI-style launchers.
+
+- `pmi/` ([README](process_management/pmi/README.md)) chooses between PMI-1, PMI-2, and PMIx back ends via Cargo features and optionally builds the vendorized sources when system libraries are absent.
+- `pmi-sys/` ([README](process_management/pmi-sys/README.md)), `pmi2-sys/` ([README](process_management/pmi2-sys/README.md)), and `pmix-sys/` ([README](process_management/pmix-sys/README.md)) contain the low-level `bindgen` bindings and describe their vendored/system build modes.
+- `pmi-mpich-src/` ([README](process_management/pmi-mpich-src/README.md)) is the patched MPICH source tree used when the PMI crates build in vendored mode.
+- `openpmix-src/` ([README](process_management/openpmix-src/README.md)) copies the OpenPMIx/Autotools sources into `OUT_DIR`, runs `autogen.pl`, and exposes the resulting include/lib/bin artifacts to `pmix-sys`.
+- `prrte-sys/` ([README](process_management/prrte-sys/README.md)) and `prrte-src/` ([README](process_management/prrte-src/README.md)) bind PRRTE and optionally vendor PRRTE/libevent/hwloc/PMIx so the runtime can interoperate with PRRTE-based launches.
+
 STATUS
 ------
 Lamellar is still under development, thus not all intended features are yet

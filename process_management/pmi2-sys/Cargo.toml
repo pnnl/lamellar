@@ -3,14 +3,14 @@ name = "pmi2-sys"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
-links= "pmi2"
+links = "pmi2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[features] 
+[features]
 vendored = ["pmi-mpich-src"]
 
 [dependencies]
 
 [build-dependencies]
-pmi-mpich-src = {version="*", path="../pmi-mpich-src", optional = true}
+pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", optional = true }
 bindgen = "0.72"

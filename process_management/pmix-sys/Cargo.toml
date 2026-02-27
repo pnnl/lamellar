@@ -20,7 +20,6 @@ libevent-sys = { version = "0.3", features = [
     "threading",
 ], optional = true }
 
-
 [build-dependencies]
-openpmix-src = { version = "*", path = "../openpmix-src", optional = true }
+openpmix-src = { git = "https://github.com/pnnl/lamellar", optional = true }
 bindgen = "0.72.1"

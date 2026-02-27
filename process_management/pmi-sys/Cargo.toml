@@ -5,11 +5,11 @@ edition = "2021"
 build = "build.rs"
 links = "pmi"
 
-[features] 
+[features]
 vendored = ["pmi-mpich-src"]
 
 [dependencies]
 
 [build-dependencies]
-pmi-mpich-src = {version="*", path="../pmi-mpich-src", optional = true}
+pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", optional = true }
 bindgen = "0.72"

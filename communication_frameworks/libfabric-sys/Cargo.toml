@@ -10,7 +10,7 @@ links = "ofi"
 
 [build-dependencies]
 bindgen = "0.72"
-libfabric-src = { path = "../libfabric-src", version = "0.1.0" }
+libfabric-src = { git = "https://github.com/pnnl/lamellar", version = "0.1.0" }
 
 [features]
 shared = ["libfabric-src/shared"]
