@@ -1,0 +1,12 @@
+[package]
+name = "libfabric-src"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+autotools = "0.2"
+cc = "1.2"
+regex = "1.1"
+
+[features]
+shared = []
