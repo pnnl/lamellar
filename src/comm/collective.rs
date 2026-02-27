@@ -248,7 +248,7 @@ pub(crate) trait CollectiveEpImpl: AsTypedFid<EpRawFid> {
             libfabric_sys::inlined_fi_scatter(
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 buf.as_ptr().cast(),
-                buf.len(),
+                result.len(),
                 desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
                 result.as_mut_ptr().cast(),
                 result_desc.map_or(std::ptr::null_mut(), |d| d.as_raw()),
