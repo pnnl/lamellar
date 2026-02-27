@@ -1,0 +1,531 @@
+pub mod sync_;
+#[cfg(test)]
+pub mod sync_atomic {
+    use libfabric::{cq::{ReadCq, WaitCq}, enums::AtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, RemoteMemAddrAtomicVec}, msg::{MsgAtomic, MsgAtomicConnected}};
+
+    use crate::sync_::tests::{handshake, handshake_connectionless, Either};
+
+
+    // use crate::sync_::{handshake, handshake_connectionless, Either};
+
+
+    fn atomic(server: bool, name: &str, connected: bool) {
+        println!("Staring atomic");
+        let mut ofi = if connected {
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        } else {
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        };
+
+
+        ofi.exchange_keys();
+        
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+
+        // let mapped_addr = ofi.mapped_addr.clone();
+        if server {
+            ofi.atomic(0..512, 0, AtomicOp::Min);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.atomic(0..512, 0, AtomicOp::Max);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.atomic(0..512, 0, AtomicOp::Sum);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.atomic(0..512, 0, AtomicOp::Prod);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.atomic(0..512, 0, AtomicOp::Bor);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.atomic(0..512, 0, AtomicOp::Band);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+
+            // ofi.atomic_bool(&bool_reg_mem[..512], 0, desc0, AtomicOp::Lor);
+            // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.atomic(0..512, 0, AtomicOp::Bxor);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            // ofi.atomic_bool(&bool_reg_mem[..512], 0, desc0, AtomicOp::Land);
+            // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+
+            // ofi.atomic(&reg_mem[..512], 0, desc0, AtomicOp::Lxor);
+            // ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.atomic(0..512, 0, AtomicOp::AtomicWrite);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            let reg_mem = ofi.reg_mem.borrow();
+
+            let iocs = [
+                Ioc::from_slice(&reg_mem[..256]),
+                Ioc::from_slice(&reg_mem[256..512]),
+            ];
+
+
+            let borrow = ofi.mr.borrow();
+            let mr = borrow.as_ref().unwrap();
+
+            let descs = [mr.descriptor(), mr.descriptor()];
+
+            ofi.atomicv(&iocs, 0, Some(&descs), AtomicOp::Prod);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+            ofi.send(512..1024, None, false);
+            let err = ofi.cq_type.tx_cq().sread(1, -1);
+            if let Err(e) = err {
+                if matches!(e.kind, libfabric::error::ErrorKind::ErrorAvailable) {
+                    let realerr = ofi.cq_type.tx_cq().readerr(0).unwrap();
+                    panic!("{:?}", realerr.error());
+                }
+            }
+
+            drop(reg_mem);
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+        } else {
+            let mut expected = vec![2u8; 1024 * 2];
+
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            // Send completion ack
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v= 1);
+            // reg_mem = vec![1; 1024 * 2];
+
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            expected = vec![3; 1024 * 2];
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            expected = vec![2;1024*2];
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+
+            expected = vec![4; 1024 * 2];
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            
+            // Send completion ack
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        }
+    }
+
+    // [TODO Not sure why, but connected endpoints fail with atomic ops
+    // #[test]
+    // fn conn_atomic0() {
+    //     atomic(true, "conn_atomic0", true);
+    // }
+
+    // #[test]
+    // fn conn_atomic1() {
+    //     atomic(false, "conn_atomic0", true);
+    // }
+
+
+    #[test]
+    fn atomic0() {
+        atomic(true, "atomic0", false);
+    }
+
+    #[test]
+    fn atomic1() {
+        atomic(false, "atomic0", false);
+    }
+
+
+
+    fn atomicmsg(server: bool, name: &str, connected: bool) {
+        let mut ofi = if connected {
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        } else {
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        };
+
+        ofi.exchange_keys();
+        
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
+
+        let descs = [mr.descriptor(), mr.descriptor()];
+        let mapped_addr = ofi.mapped_addr.clone();
+
+        let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+        let dst_slice = remote_mem_info.slice(..512);
+        let (dst_slice0, dst_slice1) = dst_slice.split_at(256 * std::mem::size_of::<u8>());
+
+        let mut ctx = ofi.info_entry.allocate_context();
+        if server {
+            let reg_mem = ofi.reg_mem.borrow();
+            let iocs = [
+                Ioc::from_slice(&reg_mem[..256]),
+                Ioc::from_slice(&reg_mem[256..512]),
+            ];
+            let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+            rma_iocs.push(dst_slice0);
+            rma_iocs.push(dst_slice1);
+
+            let msg = if connected {
+                Either::Right(MsgAtomicConnected::from_ioc_slice(
+                    &iocs,
+                    Some(&descs),
+                    &rma_iocs,
+                    AtomicOp::Bor,
+                    Some(128),
+                    &mut ctx,
+                ))
+            } else {
+                Either::Left(MsgAtomic::from_ioc_slice(
+                    &iocs,
+                    Some(&descs),
+                    &mapped_addr.as_ref().unwrap()[1],
+                    &rma_iocs,
+                    AtomicOp::Bor,
+                    Some(128),
+                    &mut ctx,
+                ))
+            };
+            
+            ofi.atomicmsg(&msg);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+
+            drop(reg_mem);
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+        } else {
+            let expected = vec![3u8; 1024 * 2];
+
+            // Recv a completion ack
+            ofi.recv(512..1024, false);
+            ofi.cq_type.rx_cq().sread(1, -1).unwrap();
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            // Send completion ack
+            ofi.send(512..1024, None, false);
+            ofi.cq_type.tx_cq().sread(1, -1).unwrap();
+        }
+    }
+
+    // [TODO Not sure why, but connected endpoints fail with atomic ops
+    // #[test]
+    // fn conn_atomic0() {
+    //     atomic(true, "conn_atomic0", true);
+    // }
+
+    // #[test]
+    // fn conn_atomic1() {
+    //     atomic(false, "conn_atomic0", true);
+    // }
+
+    #[test]
+    fn atomicmsg0() {
+        atomicmsg(true, "atomicmsg0", false);
+    }
+
+    #[test]
+    fn atomicmsg1() {
+        atomicmsg(false, "atomicmsg0", false);
+    }
+}
+
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
+pub mod async_;
+
+#[cfg(any(feature = "use-async-std", feature = "use-tokio"))]
+pub mod async_atomic {
+    use libfabric::{enums::AtomicOp, infocapsoptions::InfoCaps, iovec::{Ioc, RemoteMemAddrAtomicVec}, msg::{MsgAtomic, MsgAtomicConnected}};
+
+    use crate::async_::{handshake, handshake_connectionless, Either};
+
+
+    fn atomic(server: bool, name: &str, connected: bool) {
+
+        let mut ofi = if connected {
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        } else {
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        };
+
+        ofi.exchange_keys();
+
+
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+
+        if server {
+            ofi.atomic(0..512, 0, AtomicOp::Min);
+
+            ofi.atomic(0..512, 0, AtomicOp::Max);
+
+            ofi.atomic(0..512, 0, AtomicOp::Sum);
+
+            ofi.atomic(0..512, 0, AtomicOp::Prod);
+
+            ofi.atomic(0..512, 0, AtomicOp::Bor);
+
+            ofi.atomic(0..512, 0, AtomicOp::Band);
+
+            ofi.send(512..1024, None);
+
+            // Recv a completion ack
+            ofi.recv(512..1024);
+
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lor);
+
+            ofi.atomic(0..512, 0, AtomicOp::Bxor);
+
+            ofi.send(512..1024, None);
+
+            // Recv a completion ack
+            ofi.recv(512..1024);
+
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Land);
+
+            // ofi.atomic(&reg_mem[..512], 0, desc, AtomicOp::Lxor);
+
+            ofi.atomic(
+                0..512,
+                0,
+                AtomicOp::AtomicWrite,
+            );
+            ofi.send(512..1024, None);
+
+            let reg_mem = ofi.reg_mem.borrow();
+
+            let iocs = [
+                Ioc::from_slice(&reg_mem[..256]),
+                Ioc::from_slice(&reg_mem[256..512]),
+            ];
+
+            let borrow = ofi.mr.borrow();
+            let mr = borrow.as_ref().unwrap();
+
+            let descs = [mr.descriptor(), mr.descriptor()];
+
+            ofi.atomicv(&iocs, 0, Some(&descs), AtomicOp::Prod);
+            ofi.send(512..1024, None);
+            // match err {
+            //     Err(e) => {
+            //         if matches!(e.kind, libfabric::error::ErrorKind::ErrorAvailable) {
+            //             let realerr = ofi.cq_type.tx_cq().readerr(0).unwrap();
+            //             panic!("{:?}", realerr.error());
+            //         }
+            //     }
+            //     Ok(_) => {}
+            // }
+            drop(reg_mem);
+
+            // Recv a completion ack
+            ofi.recv(512..1024);
+        } else {
+            let mut expected = vec![2u8; 1024 * 2];
+
+            // Recv a completion ack
+            ofi.recv(512..1024);
+
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            // Send completion ack
+            ofi.reg_mem.borrow_mut().iter_mut().for_each(|v| *v= 1);
+
+            ofi.send(512..1024, None);
+
+            expected = vec![3; 1024 * 2];
+            // Recv a completion ack
+            ofi.recv(512..1024);
+
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            ofi.send(512..1024, None);
+
+            expected = vec![2;1024*2];
+            // Recv a completion ack
+            ofi.recv(512..1024);
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+
+            expected = vec![4; 1024 * 2];
+            // Recv a completion ack
+            ofi.recv(512..1024);
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+
+            // Send completion ack
+            ofi.send(512..1024, None);
+        }
+    }
+
+    // [TODO Not sure why, but connected endpoints fail with atomic ops
+    // #[test]
+    // fn async_conn_atomic0() {
+    //     atomic(true, "conn_atomic0", true);
+    // }
+
+    // #[test]
+    // fn async_conn_atomic1() {
+    //     atomic(false, "conn_atomic0", true);
+    // }
+
+    #[test]
+    fn async_atomic0() {
+        atomic(true, "atomic0", false);
+    }
+
+    #[test]
+    fn async_atomic1() {
+        atomic(false, "atomic0", false);
+    }
+
+
+    fn atomicmsg(server: bool, name: &str, connected: bool) {
+        let mut ofi = if connected {
+            handshake(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        } else {
+            handshake_connectionless(None, server, name, Some(InfoCaps::new().msg().atomic()))
+        };
+
+        ofi.exchange_keys();
+
+
+        {
+            let mut reg_mem = ofi.reg_mem.borrow_mut();
+            if server {
+                reg_mem.fill(2);
+            } else {
+                reg_mem.fill(1);
+            };
+        }
+        let borrow = ofi.mr.borrow();
+        let mr = borrow.as_ref().unwrap();
+
+
+        let descs = [mr.descriptor(), mr.descriptor()];
+        let mapped_addr = ofi.mapped_addr.clone();
+
+        let remote_mem_info = ofi.remote_mem_info.as_ref().unwrap().borrow();
+        let dst_slice = remote_mem_info.slice(..512);
+        let (dst_slice0, dst_slice1) = dst_slice.split_at(256 * std::mem::size_of::<u8>());
+
+        if server {
+            let mut ctx = ofi.info_entry.allocate_context();
+
+            let reg_mem = ofi.reg_mem.borrow();
+            let iocs = [
+                Ioc::from_slice(&reg_mem[..256]),
+                Ioc::from_slice(&reg_mem[256..512]),
+            ];
+            let mut rma_iocs = RemoteMemAddrAtomicVec::new();
+            rma_iocs.push(dst_slice0);
+            rma_iocs.push(dst_slice1);
+
+            let mut msg = if connected {
+                Either::Right(MsgAtomicConnected::from_ioc_slice(
+                    &iocs,
+                    Some(&descs),
+                    &rma_iocs,
+                    AtomicOp::Bor,
+                    Some(128),
+                    &mut ctx,
+                ))
+            } else {
+                Either::Left(MsgAtomic::from_ioc_slice(
+                    &iocs,
+                    Some(&descs),
+                    &mapped_addr.as_ref().unwrap()[1],
+                    &rma_iocs,
+                    AtomicOp::Bor,
+                    Some(128),
+                    &mut ctx,
+                ))
+            };
+
+            ofi.atomicmsg(&mut msg);
+
+            ofi.send(512..1024, None);
+            drop(reg_mem);
+
+            // Recv a completion ack
+            ofi.recv(512..1024);
+        } else {
+            let expected = vec![3u8; 1024 * 2];
+
+            // Recv a completion ack
+            ofi.recv(512..1024);
+
+            assert_eq!(&ofi.reg_mem.borrow()[..512], &expected[..512]);
+            // Send completion ack
+            ofi.send(512..1024, None);
+        }
+    }
+
+    // [TODO Not sure why, but connected endpoints fail with atomic ops
+    // #[test]
+    // fn async_conn_atomic0() {
+    //     atomic(true, "conn_atomic0", true);
+    // }
+
+    // #[test]
+    // fn async_conn_atomic1() {
+    //     atomic(false, "conn_atomic0", true);
+    // }
+
+    #[test]
+    fn async_atomicmsg0() {
+        atomicmsg(true, "atomicmsg0", false);
+    }
+
+    #[test]
+    fn async_atomicmsg1() {
+        atomicmsg(false, "atomicmsg0", false);
+    }
+}
