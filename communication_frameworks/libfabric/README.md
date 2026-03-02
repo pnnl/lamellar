@@ -16,6 +16,11 @@ Add the crate next to `lamellar` when you need higher-level access to `libfabric
 libfabric = { path = "../communication_frameworks/libfabric", features = ["use-tokio", "shared"] }
 ```
 
+STATUS
+------
+Libfabric has been developed as part of the Lamellar project and is still under development, thus not all intended features are yet
+implemented.
+
 ## Features
 
 | Feature | Description |
@@ -25,6 +30,19 @@ libfabric = { path = "../communication_frameworks/libfabric", features = ["use-t
 | `shared` | Forward to `libfabric-sys/shared` so the OFI build produces shared objects instead of static libraries. |
 | `threading-*` | Control threading guarantees (endpoint, completion queue, domain, FID) when building the OFI layer. |
 
+CONTACTS
+--------
+
+Current Team Members
+
+Ryan Friese           - ryan.friese@pnnl.gov 
+Polykarpos Thomadakis - polykarpos.thomadakis@pnnl.gov
+
 ## License
 
-BSD (see [`LICENSE`](LICENSE)).
+This project is licensed under the BSD License - see the [LICENSE.md](LICENSE.md) file for details.
+
+## Acknowledgments
+
+This work was supported by the High Performance Data Analytics (HPDA) Program at Pacific Northwest National Laboratory (PNNL),
+a multi-program DOE laboratory operated by Battelle.

@@ -67,13 +67,23 @@ implemented.
 
 CONTACTS
 --------
-Ryan Friese     - ryan.friese@pnnl.gov  
-Roberto Gioiosa - roberto.gioiosa@pnnl.gov  
-Mark Raugas     - mark.raugas@pnnl.gov  
+
+Current Team Members
+
+Ryan Friese           - ryan.friese@pnnl.gov  
+Roberto Gioiosa       - roberto.gioiosa@pnnl.gov
+Polykarpos Thomadakis - polykarpos.thomadakis@pnnl.gov
+Joseph Cottam         - joseph.cottam@pnnl.gov
+Greg Roek             - gregory.roek@pnnl.gov
+Mark Raugas           - mark.raugas@pnnl.gov  
+
+Past Team Members
+
+Erdal Mutlu           - erdal.mutlu@pnnl.gov  
 
 ## License
 
-This project is licensed under the BSD License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD License - see the [LICENSE.md](LICENSE.md) file for details.
 
 ## Acknowledgments
 

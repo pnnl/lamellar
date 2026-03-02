@@ -41,6 +41,25 @@ Downstream crates consume `lamellar_ucx_sys` for low-level fabric configuration 
 
 If you unset `UCX_DIR`, the crate automatically builds UCX from source using the vendorized copy so that Lamellar can still compile on systems without UCX preinstalled.
 
+STATUS
+------
+lamellar-ucx-sys has been developed as part of the Lamellar project and is still under development, thus not all intended features are yet
+implemented.
+
+CONTACTS
+--------
+
+Current Team Members
+
+Ryan Friese           - ryan.friese@pnnl.gov 
+Polykarpos Thomadakis - polykarpos.thomadakis@pnnl.gov
+
 ## License
 
-This crate is licensed under the BSD License. See [`LICENSE`](LICENSE) for details.
+This project is licensed under the BSD License - see the [LICENSE.md](LICENSE.md) file for details.
+
+## Acknowledgments
+
+This work was supported by the High Performance Data Analytics (HPDA) Program at Pacific Northwest National Laboratory (PNNL),
+a multi-program DOE laboratory operated by Battelle.
+

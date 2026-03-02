@@ -10,3 +10,25 @@
 ## Usage
 
 Add `pmi` as a dependency and choose the backend that matches the process manager on your cluster. Use the vendored features when you do not have a system PMI/PMIx stack available yet still need to run Lamellar examples with job-level coordination.
+
+STATUS
+------
+pmi-rs has been developed as part of the Lamellar project and is still under development, thus not all intended features are yet
+implemented.
+
+CONTACTS
+--------
+
+Current Team Members
+
+Ryan Friese           - ryan.friese@pnnl.gov 
+Polykarpos Thomadakis - polykarpos.thomadakis@pnnl.gov
+
+## License
+
+This project is licensed under the BSD License - see the [LICENSE.md](LICENSE.md) file for details.
+
+## Acknowledgments
+
+This work was supported by the High Performance Data Analytics (HPDA) Program at Pacific Northwest National Laboratory (PNNL),
+a multi-program DOE laboratory operated by Battelle.

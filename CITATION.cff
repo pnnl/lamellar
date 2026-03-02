@@ -9,16 +9,29 @@ authors:
   - given-names: Ryan
     family-names: Friese
     email: ryan.friese@pnnl.gov
-    affiliation: Pacific Northwest National Lab
+    affiliation: Pacific Northwest National Laboratory
   - given-names: Roberto
     family-names: Gioiosa
     email: roberto.gioiosa@pnnl.gov
-    affiliation: PNNL
-  - given-names: 'Joseph '
-    family-names: Cottam
-    email: joseph.cottam@pnnl.gov
-    affiliation: PNNL
+    affiliation: Pacific Northwest National Laboratory
+  - given-names: Polykarpos
+    family-names: Thomadakis
+    email: polykarpos.thomadakis@pnnl.gov
+    affiliation: Pacific Northwest National Laboratory
   - given-names: Erdal
     family-names: Mutlu
-    email: erdal.mutlut@pnnl.gov
-    affiliation: PNNL
+    email: erdal.mutlu@pnnl.gov
+    affiliation: Pacific Northwest National Laboratory
+  - given-names: Joseph
+    family-names: Cottam
+    email: joseph.cottam@pnnl.gov
+    affiliation: Pacific Northwest National Laboratory
+  - given-names: Greg
+    family-names: Roek
+    email: gregory.roek@pnnl.gov
+    affiliation: Pacific Northwest National Laboratory
+  - given-names: Mark
+    family-names: Raugas
+    email: mark.raugas@pnnl.gov
+    affiliation: Pacific Northwest National Laboratory
+ 

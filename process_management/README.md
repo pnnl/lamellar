@@ -10,3 +10,25 @@ This directory gathers MPI process-management bindings and vendored sources that
 | `openpmix-src/` | Vendorized OpenPMIx source tree along with an Autotools build helper that respects `libevent` and `hwloc`. |
 | `prrte-sys/` | FFI crate that binds PRRTE plus the optional vendored libevent/hwloc/PMIx stack. |
 | `prrte-src/` | Vendorized PRRTE Autotools tree with the glue script that wires in the other vendored dependencies when requested. |
+
+STATUS
+------
+the crates in this directory have been developed as part of the Lamellar project and are still under development, thus not all intended features are yet implemented.
+
+CONTACTS
+--------
+
+Current Team Members
+
+Ryan Friese           - ryan.friese@pnnl.gov 
+Polykarpos Thomadakis - polykarpos.thomadakis@pnnl.gov
+
+## License
+
+This project is licensed under the BSD License - see the [LICENSE.md](../LICENSE.md) file for details.
+
+## Acknowledgments
+
+This work was supported by the High Performance Data Analytics (HPDA) Program at Pacific Northwest National Laboratory (PNNL),
+a multi-program DOE laboratory operated by Battelle.
+
