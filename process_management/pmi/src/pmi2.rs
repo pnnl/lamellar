@@ -100,7 +100,7 @@ impl Pmi2 {
         let mut hosts = Vec::with_capacity(self.ranks.len());
         for rank in 0..self.ranks.len() {
             let key = format!("{host_key}-{rank}");
-            let raw = self.get(key.as_str(), &Self::HOST_NAME_BUF, &rank)?;
+            let raw = self.get(key.as_str(), &rank)?;
             hosts.push(Self::decode_host_name(raw));
         }
 
@@ -193,7 +193,7 @@ impl Pmi for Pmi2 {
 
         let mut set = HashSet::new();
         for r in 0..self.ranks.len() {
-            if let Ok(v) = self.get(key, &4usize, &r) {
+            if let Ok(v) = self.get(key, &r) {
                 if v.len() >= 4 {
                     let mut arr = [0u8; 4];
                     arr.copy_from_slice(&v[..4]);
@@ -218,7 +218,7 @@ impl Pmi for Pmi2 {
 
         let mut res = Vec::new();
         for r in 0..self.ranks.len() {
-            if let Ok(v) = self.get(key, &4usize, &r) {
+            if let Ok(v) = self.get(key, &r) {
                 if v.len() >= 4 {
                     let mut arr = [0u8; 4];
                     arr.copy_from_slice(&v[..4]);
@@ -251,7 +251,7 @@ impl Pmi for Pmi2 {
 
         let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
         for r in 0..self.ranks.len() {
-            if let Ok(v) = self.get(key, &4usize, &r) {
+            if let Ok(v) = self.get(key, &r) {
                 if v.len() >= 4 {
                     let mut arr = [0u8; 4];
                     arr.copy_from_slice(&v[..4]);
@@ -293,13 +293,15 @@ impl Pmi for Pmi2 {
     ///
     /// Uses the PMI2 KVS for multi-rank runs or a local singleton store for
     /// single-rank execution.
-    fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
+    fn get(&self, key: &str, rank: &usize) -> Result<Vec<u8>, PmiError> {
         if self.ranks.len() > 1 {
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}", rank, key))
                 .unwrap()
                 .into_raw();
-            let mut kvs_val: Vec<u8> = vec![0; 2 * len + 1];
-            let mut len = 0;
+            
+            let mut len = 0i32;
+            let mut kvs_val_max_len = pmi2_sys::PMI2_MAX_VALLEN;
+            let mut kvs_val: Vec<u8> = vec![0; kvs_val_max_len as usize];
             check_error!(unsafe {
                 pmi2_sys::PMI2_KVS_Get(
                     std::ptr::null(),
@@ -310,6 +312,14 @@ impl Pmi for Pmi2 {
                     &mut len,
                 )
             });
+            if len < 0 {
+                return Err(PmiError {
+                    c_err: pmi2_sys::PMI2_ERR_INVALID_VAL as i32,
+                    kind: ErrorKind::InvalidVal,
+                });
+            }
+
+            kvs_val.truncate(len as usize);
 
             Ok(self.decode(&kvs_val))
         } else {
