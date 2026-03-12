@@ -273,7 +273,7 @@ impl Pmi for PmiX {
 
     /// Retrieve a value published by `rank` under `key` using PMIx KVS
     /// semantics. For singleton runs the local store is used instead.
-    fn get(&self, key: &str, _len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError> {
+    fn get(&self, key: &str, rank: &usize) -> Result<Vec<u8>, PmiError> {
         if self.ranks.len() > 1 {
             let proc = pmix_sys::pmix_proc {
                 nspace: self.nspace,

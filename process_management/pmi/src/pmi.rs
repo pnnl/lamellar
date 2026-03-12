@@ -195,10 +195,10 @@ pub trait Pmi: Sync + Send {
     /// let pmi = pmi::PmiBuilder::init().unwrap();
     /// pmi.put("k", b"v").unwrap();
     /// pmi.exchange().unwrap();
-    /// let v = pmi.get("k", &2usize, &0usize).unwrap();
+    /// let v = pmi.get("k", &0usize).unwrap();
     /// assert_eq!(v, b"v");
     /// ```
-    fn get(&self, key: &str, len: &usize, rank: &usize) -> Result<Vec<u8>, PmiError>;
+    fn get(&self, key: &str, rank: &usize) -> Result<Vec<u8>, PmiError>;
 
     /// Store `value` under `key` for this rank.
     ///
@@ -310,19 +310,10 @@ fn init() {
     );
 }
 
-#[test]
-fn init_pmi1() {
-    let pmi = PmiBuilder::with_pmi1().unwrap();
-    println!(
-        "Hello world from ranks : {}/{}",
-        pmi.rank(),
-        pmi.ranks().len()
-    );
-}
 
 #[test]
 fn put_get() {
-    let pmi = PmiBuilder::with_pmi1().unwrap();
+    let pmi = PmiBuilder::init().unwrap();
     println!(
         "Hello world from rank : {}/{}",
         pmi.rank(),
@@ -336,7 +327,6 @@ fn put_get() {
         let res = pmi
             .get(
                 format!("put{}", i).as_str(),
-                &1,
                 &((pmi.rank() + 1) % pmi.ranks().len()),
             )
             .unwrap();
