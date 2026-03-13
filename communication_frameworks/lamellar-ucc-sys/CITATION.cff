@@ -1,0 +1,16 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Lamellar-ucc-sys
+message: Please cite this software using these metadata.
+type: software
+authors:
+  - given-names: Ryan
+    family-names: Friese
+    email: ryan.friese@pnnl.gov
+    affiliation: Pacific Northwest National Laboratory
+  - given-names: Polykarpos
+    family-names: Thomadakis
+    email: polykarpos.thomadakis@pnnl.gov
+    affiliation: Pacific Northwest National Laboratory

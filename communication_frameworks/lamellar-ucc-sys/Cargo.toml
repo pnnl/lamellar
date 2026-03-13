@@ -1,0 +1,20 @@
+[package]
+name = "lamellar-ucc-sys"
+authors = ["Ryan Friese <ryan.friese@pnnl.gov>", "Polykarpos Thomadakis <polykarpos.thomadakis@pnnl.gov>"]
+version = "0.1.0"
+edition = "2021"
+description = "This system crate provides Rust language bindings (via the use of Bindgen) to the UCC library."
+license-file = "LICENSE"
+keywords = ["hpc", "network", "ditributed", "libfabrics"]
+categories = ["external-ffi-bindings", "network-programming"]
+links = "ucc"
+
+
+
+
+[dependencies]
+lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar"  }
+[build-dependencies]
+autotools = "0.2.7"
+bindgen = "0.72.1"
+cc = "1.2.56"

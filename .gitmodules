@@ -25,3 +25,6 @@
 [submodule "process_management/prrte-src/prrte"]
 	path = process_management/prrte-src/prrte
 	url = https://github.com/openpmix/prrte.git
+[submodule "communication_frameworks/lamellar-ucc-sys/ucc"]
+	path = communication_frameworks/lamellar-ucc-sys/ucc
+	url = https://github.com/openucx/ucc.git
