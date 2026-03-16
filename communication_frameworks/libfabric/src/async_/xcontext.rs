@@ -1,5 +1,6 @@
 use crate::ep::ActiveEndpoint;
 use std::marker::PhantomData;
+#[cfg(feature = "threading-completion")]
 use crate::fid::EpCompletionOwnedTypedFid;
 use super::{
     cq::AsyncCq,
