@@ -1,0 +1,9 @@
+[package]
+name = "rust_tutorial"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lamellar = { version = "0.7.1", features = ["runtime-warnings-panic"] }
+rand = "0.9.0"
+rayon = "1.10.0"
