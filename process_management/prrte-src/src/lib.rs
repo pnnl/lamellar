@@ -49,6 +49,25 @@ impl Artifacts {
 
 fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src.is_dir() {
+        if dst.exists() && !dst.is_dir() {
+            // If destination exists as a file, remove it so we can create a directory
+            match std::fs::remove_file(dst) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(mut perms) = std::fs::metadata(dst).map(|m| m.permissions()) {
+                            perms.set_mode(0o666);
+                            let _ = std::fs::set_permissions(dst, perms);
+                        }
+                    }
+                    // try again
+                    let _ = std::fs::remove_file(dst);
+                }
+                Err(_) => {}
+            }
+        }
         std::fs::create_dir_all(dst)?;
         for entry in std::fs::read_dir(src)? {
             let entry = entry?;
@@ -59,6 +78,24 @@ fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     } else {
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)?;
+        }
+        if dst.exists() {
+            // try to remove existing destination file first; if permission denied, attempt to relax permissions
+            match std::fs::remove_file(dst) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(mut perms) = std::fs::metadata(dst).map(|m| m.permissions()) {
+                            perms.set_mode(0o666);
+                            let _ = std::fs::set_permissions(dst, perms);
+                        }
+                    }
+                    let _ = std::fs::remove_file(dst);
+                }
+                Err(_) => {}
+            }
         }
         std::fs::copy(src, dst)?;
     }

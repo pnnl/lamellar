@@ -130,7 +130,6 @@ fn main() {
     println!("cargo:rustc-link-lib=atomic");
     println!("cargo:rustc-link-lib=pthread");
     println!("cargo:rustc-link-lib=dl");
-    
     println!("cargo:rustc-link-lib=numa");
     println!("cargo:rustc-link-lib=uuid");
 }
