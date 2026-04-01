@@ -54,7 +54,8 @@ int main(int argc, char **argv) {
 
     int err = 0;
     for (int i = 0; i < repetitions; ++i) {
-        ssize_t res = rofi_atomic_add_u32(ptr, 1UL, 0);
+        uint32_t value = 1;
+        ssize_t res = rofi_atomic_op(ptr, &value, 1, ROFI_DATATYPE_UINT32, ROFI_ATOMIC_OP_SUM, 0);
         if (res) {
             fprintf(stderr, "ID: %u/%u Error in atomic add u32 (%ld)\n", id, size, res);
             err = 1;
@@ -62,7 +63,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    ssize_t res = rofi_atomic_add_u32(done, 1UL, 0);
+    uint32_t done_value = 1;
+    ssize_t res = rofi_atomic_op(done, &done_value, 1, ROFI_DATATYPE_UINT32, ROFI_ATOMIC_OP_SUM, 0);
     if (res) {
         fprintf(stderr, "ID: %u/%u Error in atomic add u32 (%ld)\n", id, size, res);
         goto out;

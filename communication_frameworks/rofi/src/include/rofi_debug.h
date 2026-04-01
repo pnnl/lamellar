@@ -17,7 +17,7 @@
 
 #define PRINT_MSG(fmt, ...)                                                                                                      \
     do {                                                                                                                         \
-        fprintf(stderr, "[ROFI][PE: %d][TID: %d][%s][%s:%d] " fmt "\n", rt_get_rank(), syscall(__NR_gettid), __func__, __FILE__, \
+        fprintf(stdout, "[ROFI][PE: %d][TID: %d][%s][%s:%d] " fmt "\n", rt_get_rank(), syscall(__NR_gettid), __func__, __FILE__, \
                 __LINE__, ##__VA_ARGS__);                                                                                        \
     } while (0)
 

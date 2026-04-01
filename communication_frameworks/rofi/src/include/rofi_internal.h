@@ -2,6 +2,7 @@
 #define ROFI_INTERNAL_H
 
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include <pthread.h>
 #include <rdma/fabric.h>
@@ -73,10 +74,10 @@ struct rofi_transport_t {
     struct fid_cntr *recv_cntr;
     struct fid_cq *cq;
     fi_addr_t *remote_addrs;
-    uint64_t pending_put_cntr;
-    uint64_t pending_get_cntr;
-    uint64_t pending_send_cntr;
-    uint64_t pending_recv_cntr;
+    _Atomic uint64_t pending_put_cntr;
+    _Atomic uint64_t pending_get_cntr;
+    _Atomic uint64_t pending_send_cntr;
+    _Atomic uint64_t pending_recv_cntr;
     uint64_t error_cnt;
     rofi_desc_t desc;
     rofi_mr_desc *mr;
@@ -108,5 +109,11 @@ int rofi_sub_release_internal(void *, uint64_t *, uint64_t);
 int rofi_wait_internal(void);
 void *rofi_get_remote_addr_internal(void *, unsigned int);
 void *rofi_get_local_addr_from_remote_addr_internal(void *, unsigned int);
-size_t rofi_atomic_add_u32_internal(uint32_t*, uint32_t, unsigned int);
+int rofi_has_atomics_internal(void);
+int rofi_query_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
+int rofi_query_fetch_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
+int rofi_query_compare_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
+ssize_t rofi_atomic_op_internal(void *, const void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
+ssize_t rofi_atomic_fetch_internal(void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
+ssize_t rofi_compare_atomic_internal(void *, const void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
 #endif
