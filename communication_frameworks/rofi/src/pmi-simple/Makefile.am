@@ -15,8 +15,16 @@ AM_CPPFLAGS= -I$(top_srcdir)/src
 
 lib_LTLIBRARIES = libpmi_simple.la
 libpmi_simple_la_SOURCES = \
-	simple_pmi.c \
 	simple_pmiutil.c \
 	simple_pmiutil.h \
 	pmi.h \
 	mpl.h
+
+if WITH_PMIX
+libpmi_simple_la_SOURCES += pmix_pmi.c
+libpmi_simple_la_CPPFLAGS = $(AM_CPPFLAGS) $(PMIX_CPPFLAGS)
+libpmi_simple_la_LDFLAGS = $(PMIX_LDFLAGS)
+libpmi_simple_la_LIBADD = $(PMIX_LIBS)
+else
+libpmi_simple_la_SOURCES += simple_pmi.c
+endif

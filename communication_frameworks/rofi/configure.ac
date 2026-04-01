@@ -31,6 +31,44 @@ AC_ARG_WITH([ofi-provider],
 		     AC_DEFINE(ROFI_OFI_PROVIDER,[$with_ofi_provider],[OFI Provider])],
 		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, false)])
 
+AC_ARG_WITH([pmix],
+    [AS_HELP_STRING([--with-pmix@<:@=DIR@:>@],
+                    [Build pmi-simple against PMIx, optionally using the installation in DIR])],
+    [PMIX_PATH="$withval"],
+    [PMIX_PATH="no"])
+
+PMIX_CPPFLAGS=""
+PMIX_LDFLAGS=""
+PMIX_LIBS=""
+
+if test "x$PMIX_PATH" != "xno"; then
+    AC_DEFINE([ROFI_USE_PMIX], [1], [Build pmi-simple with a PMIx backend])
+
+    if test "x$PMIX_PATH" != "xyes"; then
+        PMIX_CPPFLAGS="-I$PMIX_PATH/include"
+        PMIX_LDFLAGS="-L$PMIX_PATH/lib -Wl,-rpath,$PMIX_PATH/lib"
+    fi
+
+    save_CPPFLAGS="$CPPFLAGS"
+
+    CPPFLAGS="$CPPFLAGS $PMIX_CPPFLAGS"
+    LDFLAGS="$LDFLAGS $PMIX_LDFLAGS"
+
+    AC_CHECK_HEADERS([pmix.h], [], [AC_MSG_ERROR([pmix.h not found; use --with-pmix=DIR with a valid PMIx installation])])
+    AC_SEARCH_LIBS([PMIx_Init], [pmix],
+                   [PMIX_LIBS="$ac_cv_search_PMIx_Init"],
+                   [AC_MSG_ERROR([libpmix not found; use --with-pmix=DIR with a valid PMIx installation])])
+
+    CPPFLAGS="$save_CPPFLAGS"
+    # Keep PMIX LDFLAGS in LDFLAGS so the linker can find libpmix
+    AS_VAR_APPEND(LDFLAGS, "$PMIX_LDFLAGS")
+fi
+
+AC_SUBST([PMIX_CPPFLAGS])
+AC_SUBST([PMIX_LDFLAGS])
+AC_SUBST([PMIX_LIBS])
+AM_CONDITIONAL([WITH_PMIX], [test "x$PMIX_PATH" != "xno"])
+
 AC_ARG_ENABLE([asan],
     AS_HELP_STRING([--enable-asan], [Enable Address Sanitizer @<:@default=no@:>@]),
     [enable_asan=$enableval], [enable_asan=no])
@@ -57,7 +95,7 @@ CPPFLAGS="$CPPFLAGS -I$OFI_PATH/include"
 AC_CHECK_HEADERS([stdio.h],       [],[AC_MSG_ERROR[stdio.h  not found!]])
 AC_CHECK_HEADERS([sys/socket.h], [],[AC_MSG_ERROR[sys/socket.h  not found!]])
 AC_CHECK_HEADERS([rdma/fabric.h], [],[AC_MSG_ERROR[fabric.h not found!]])
-AC_CHECK_LIB([fabric],fi_getinfo, [],[AC_MSG_ERROR[libfabric not found!]],[-libverbs -pthread -ldl -lrdmacm -lrt])
+AC_SEARCH_LIBS([fi_getinfo], [fabric], [], [AC_MSG_ERROR[libfabric not found!]], [-libverbs -pthread -ldl -lrdmacm -lrt  -lnuma -luuid])
 
 if test "$enable_debug" = "yes" ; then
   AS_VAR_APPEND(CFLAGS, " -O0 -D_DEBUG")
@@ -138,6 +176,7 @@ echo "Options:   "
 echo "		 Debug:		$enable_debug"
 echo "		 Stats:		$enable_stats"
 echo "		 OFI Provider:  $ROFI_OFI_PROVIDER"
+echo "		 PMIx:		$PMIX_PATH"
 echo ""
 echo "Compilers: "
 echo "		 C:		$CC"
