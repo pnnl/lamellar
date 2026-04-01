@@ -1,18 +1,24 @@
 [package]
 name = "rofisys"
 version = "0.4.0"
-authors = [" Mark V Raugas <mark.raugas@pnnl.gov>", "Ryan D. Friese <ryan.friese@pnnl.gov>", "Roberto Gioiosa <roberto.gioiosa@pnnl.gov>"]
+authors = [
+    " Mark V Raugas <mark.raugas@pnnl.gov>",
+    "Ryan D. Friese <ryan.friese@pnnl.gov>",
+    "Roberto Gioiosa <roberto.gioiosa@pnnl.gov>",
+]
 edition = "2021"
 description = "This system crate provides Rust language bindings (via the use of Bindgen) to the Rust-OFI library."
 readme = "README.md"
 repository = "https://github.com/pnnl/rofi-sys"
 license-file = "LICENSE"
-keywords = ["hpc","network","ditributed","libfabrics"]
+keywords = ["hpc", "network", "ditributed", "libfabrics"]
 categories = ["external-ffi-bindings", "network-programming"]
-links ="rofi"
+links = "rofi"
 
 [dependencies]
-
+# libfabric-sys = { path = "../rofi-junction/libfabric-sys", version = "0.1.0" }
+libfabric-sys = { git = "https://github.com/pnnl/lamellar.git" }
+pmix-sys = { git = "https://github.com/pnnl/lamellar.git", features = ["vendored"] }
 
 [build-dependencies]
 bindgen = "0.68.1"
@@ -20,11 +26,13 @@ subprocess = "0.1.18"
 autotools = "0.2.4"
 glob = "0.3.0"
 
+
 [lib]
 name = "rofisys"
 path = "src/lib.rs"
 
 
-
 [features]
 shared = []
+pmix = []
+debug = []

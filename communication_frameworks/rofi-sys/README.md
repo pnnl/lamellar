@@ -16,6 +16,28 @@ The **OFI_DIR** environment variable must be specified with the location of the 
 
 The **ROFI_DIR** environment variable must be specified with the location of the Rust-OFI installation.
 
+## PMIx Support
+
+Building with the `pmix` feature vendors PMIx through Lamellar's `pmix-sys` crate, which in turn builds the bundled `openpmix-src` tree and passes the resulting install root into ROFI's `configure --with-pmix` path.
+
+Example:
+
+```bash
+cargo build --features pmix
+```
+
+If `ROFI_DIR` is unset, `rofi-sys` also builds the bundled ROFI source tree and configures `pmi-simple` to use the vendored PMIx backend.
+
+## Debug Support
+
+Building with the `debug` feature passes `--enable-debug` to the bundled ROFI `configure` step, enabling ROFI runtime debug logging and debug-friendly compile flags.
+
+Example:
+
+```bash
+cargo build --features debug
+```
+
 ## Authors
 
 * **Mark Raugas**, PNNL

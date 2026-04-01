@@ -18,7 +18,8 @@ mod tests {
     fn it_may_work() {
         unsafe {
             let c_str = std::ffi::CString::new("verbs").unwrap();
-            let retval = crate::rofi_init(c_str.as_ptr() as *mut _) as i32;
+            let domain_str = std::ffi::CString::new("").unwrap();
+            let retval = crate::rofi_init(c_str.as_ptr() as *mut _m, domain_str.as_ptr() as *mut _ ) as i32;
 
             println!("rofi_init = {}\n", retval);
             crate::rofi_finit();
