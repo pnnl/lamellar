@@ -37,6 +37,8 @@ fn build_ucx(out_path: &PathBuf) -> PathBuf {
         .without("cuda", None)
         .without("go", None)
         .without("java", None)
+        .without("fuse3", None)
+        .without("fuse3-static", None)
         .with("march", None)
         .build();
 
