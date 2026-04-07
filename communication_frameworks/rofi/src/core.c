@@ -672,6 +672,9 @@ int rofi_init_internal(char *provs, char *domains) {
         rofi.sub_alloc_buf[i].addr = 0;
     }
     fi_freeinfo(hints);
+    if (rofi.desc.nodes > 1) {
+        rt_barrier();
+    }
     rofi_transport_barrier(&rofi);
     return 0;
 
