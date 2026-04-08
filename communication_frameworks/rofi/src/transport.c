@@ -565,9 +565,13 @@ int rofi_transport_progress(rofi_transport_t *rofi) {
             if (ret > 0) {
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+#if __OFI_VERSION__ >= 120
                 ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
-                );
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1);
+#else
+                ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,errmsg, errmsg1);
+#endif
                 err = ebuf.err;
             }
             else if (ret < 0) {
@@ -594,9 +598,15 @@ int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err, struct 
                 int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+// the src_addr field was added sometime around libfabric 1.20
+#if __OFI_VERSION__ >= 120
                 ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
                             ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg, errmsg1
-                );
+#else
+                 ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,errmsg, errmsg1);
+#endif
+
                 // struct fi_cq_err_entry ebuf = {0};
                 // int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 // if (ret > 0 && ebuf.err == -FI_EACCES) {
@@ -619,9 +629,13 @@ int rofi_transport_locked_ctx_check_err(rofi_transport_t *rofi, int err, struct 
                 int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
+#if __OFI_VERSION__ >= 120
                 ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu src_addr %d %s %s", ret,
-                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1
-                );
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,ebuf.src_addr,errmsg,errmsg1);
+#else
+                ERR_MSG("ret: %d context: %p flags %llu len: %d buf: %p data: %llu tag %llu olen %llu err %d prov_err %d err_data %p err_data_size %llu %s %s", ret,
+                            ebuf.op_context,ebuf.flags,ebuf.len,ebuf.buf,ebuf.data, ebuf.tag,ebuf.olen,ebuf.err,ebuf.prov_errno,ebuf.err_data,ebuf.err_data_size,errmsg, errmsg1);
+#endif
             }
             return err;
         }

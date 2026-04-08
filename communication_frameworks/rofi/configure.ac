@@ -31,6 +31,11 @@ AC_ARG_WITH([ofi-provider],
 		     AC_DEFINE(ROFI_OFI_PROVIDER,[$with_ofi_provider],[OFI Provider])],
 		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, false)])
 
+AC_ARG_WITH([ofi-version],
+    [AC_HELP_STRING([--with-ofi-version], [Manually specify the OFI version (default: autoselect with pkg-check)])], 
+    [],
+    [with_ofi_version=auto])
+
 AC_ARG_WITH([pmix],
     [AS_HELP_STRING([--with-pmix@<:@=DIR@:>@],
                     [Build pmi-simple against PMIx, optionally using the installation in DIR])],
@@ -89,13 +94,31 @@ fi
 
 AC_SUBST([ASAN_CFLAGS], [$asan_cflags])
 
-LDFLAGS="$LDFLAGS -L$OFI_PATH/lib -Wl,-rpath,$OFI_PATH/lib $ASAN_CFLAGS"
+LDFLAGS="$LDFLAGS -L$OFI_PATH/lib -Wl,-rpath,$OFI_PATH/lib -L$OFI_PATH/lib64 -Wl,-rpath,$OFI_PATH/lib64 $ASAN_CFLAGS"
 CPPFLAGS="$CPPFLAGS -I$OFI_PATH/include"
 
 AC_CHECK_HEADERS([stdio.h],       [],[AC_MSG_ERROR[stdio.h  not found!]])
 AC_CHECK_HEADERS([sys/socket.h], [],[AC_MSG_ERROR[sys/socket.h  not found!]])
 AC_CHECK_HEADERS([rdma/fabric.h], [],[AC_MSG_ERROR[fabric.h not found!]])
-AC_SEARCH_LIBS([fi_getinfo], [fabric], [], [AC_MSG_ERROR[libfabric not found!]], [-libverbs -pthread -ldl -lrdmacm -lrt  -lnuma -luuid])
+#AC_SEARCH_LIBS([fi_getinfo], [fabric], [], [AC_MSG_ERROR[libfabric not found!]], [-libverbs -pthread -ldl -lrdmacm -lrt  -lnuma -luuid])
+AC_SEARCH_LIBS([fi_getinfo], [fabric], [], [AC_MSG_ERROR([Could not find libfabric library])])
+
+AS_IF([test "x$with_ofi_version" = "xauto"], [
+  OFI_VERSION_RAW=`pkg-config --modversion libfabric`
+  AC_MSG_NOTICE([Detected libfabric version $OFI_VERSION_RAW])], [
+  AC_MSG_NOTICE([Using manually specified libfabric version $with_ofi_version])
+  OFI_VERSION_RAW=$with_ofi_version])
+
+AC_SUBST([OFI_VERSION_RAW])
+OFI_VERSION_MAJOR=`echo $OFI_VERSION_RAW | awk -F. '{print $1}'`
+OFI_VERSION_MINOR=`echo $OFI_VERSION_RAW | awk -F. '{print $2}'`
+AC_SUBST([OFI_VERSION_MAJOR])
+AC_SUBST([OFI_VERSION_MINOR])
+#AC_MSG_NOTICE([Extracted major version: $OFI_VERSION_MAJOR])
+#AC_MSG_NOTICE([Extracted minor version: $OFI_VERSION_MINOR])
+OFI_VERSION_FINAL=$(($OFI_VERSION_MAJOR * 100 + $OFI_VERSION_MINOR))
+AC_SUBST([OFI_VERSION_FINAL])
+AS_VAR_APPEND(CFLAGS, " -D__OFI_VERSION__=$OFI_VERSION_FINAL")
 
 if test "$enable_debug" = "yes" ; then
   AS_VAR_APPEND(CFLAGS, " -O0 -D_DEBUG")
