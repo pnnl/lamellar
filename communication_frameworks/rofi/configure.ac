@@ -24,12 +24,17 @@ AC_ARG_WITH([ofi],
             [OFI_PATH="$withval"],
             [OFI_PATH="/usr/local"])
 
+#AC_ARG_WITH([ofi-provider],
+#    [AC_HELP_STRING([--with-ofi-provider],
+#                    [Manually select the underlying OFI provider (e.g., verbs, default: none)])],
+#		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, true)
+#		     AC_DEFINE(ROFI_OFI_PROVIDER,[$with_ofi_provider],[OFI Provider])],
+#		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, false)])
+
 AC_ARG_WITH([ofi-provider],
-    [AC_HELP_STRING([--with-ofi-provider],
-                    [Manually select the underlying OFI provider (e.g., verbs, default: none)])],
-		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, true)
-		     AC_DEFINE(ROFI_OFI_PROVIDER,[$with_ofi_provider],[OFI Provider])],
-		    [AM_CONDITIONAL(WITH_OFI_PROVIDER, false)])
+    [AC_HELP_STRING([--with-ofi-provider], [Manually select the OFI provider (default: verbs)])],
+    [],
+    [with_ofi_provider=verbs])
 
 AC_ARG_WITH([ofi-version],
     [AC_HELP_STRING([--with-ofi-version], [Manually specify the OFI version (default: autoselect with pkg-check)])], 
@@ -120,6 +125,20 @@ OFI_VERSION_FINAL=$(($OFI_VERSION_MAJOR * 100 + $OFI_VERSION_MINOR))
 AC_SUBST([OFI_VERSION_FINAL])
 AS_VAR_APPEND(CFLAGS, " -D__OFI_VERSION__=$OFI_VERSION_FINAL")
 
+case "$with_ofi_provider" in
+    verbs)
+      AS_VAR_APPEND(CFLAGS, " -D__OFI_PROV_VERBS__")
+      ;;
+    cxi)
+      AS_VAR_APPEND(CFLAGS, " -D__OFI_PROV_CXI__")
+      ;;
+    *)
+      AC_MSG_ERROR([Unknown or no OFI provider specified ($with_ofi_provider) (valid providers: verbs, cxi)])
+      ;;
+esac
+
+
+
 if test "$enable_debug" = "yes" ; then
   AS_VAR_APPEND(CFLAGS, " -O0 -D_DEBUG")
 fi
@@ -198,7 +217,7 @@ echo ""
 echo "Options:   "
 echo "		 Debug:		$enable_debug"
 echo "		 Stats:		$enable_stats"
-echo "		 OFI Provider:  $ROFI_OFI_PROVIDER"
+echo "		 OFI Provider:  $with_ofi_provider"
 echo "		 PMIx:		$PMIX_PATH"
 echo ""
 echo "Compilers: "
