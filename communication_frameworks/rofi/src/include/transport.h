@@ -90,9 +90,22 @@ int rofi_transport_compare_atomic(rofi_transport_t *rofi, struct fi_rma_iov *rma
 int rofi_transport_send(rofi_transport_t *rofi, void *buf, size_t len, uint64_t pe);
 int rofi_transport_recv(rofi_transport_t *rofi, void *buf, size_t len);
 
+int rofi_transport_exchange_init_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr);
 int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr);
 int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes);
+int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes);
 int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, uint64_t *barrier_buf, uint64_t *pes, uint64_t me, uint64_t num_pes);
 int rofi_transport_barrier(rofi_transport_t *rofi);
 
+
+// CXI uses a message-based barrier at the end of rofi_init_internal
+// This requires using at least the Rx completion queue
+// So here we have the barrier and the completion counter wait (blocking on 
+// number of entries)
+#ifdef __OFI_PROV_CXI__
+int rofi_transport_wait_on_cq(struct fid_cq *cq, struct fi_cq_entry *cqe, const int expected_num_entries); // blocking!
+int rofi_transport_barrier_p2p(rofi_transport_t *rofi);
+#endif
+
 #endif /* _TRANSPORT_H_ */
+

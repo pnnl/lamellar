@@ -68,4 +68,5 @@ int rofi_query_compare_atomic(rofi_datatype_t, rofi_atomic_op_t);
 ssize_t rofi_atomic_op(void *, const void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
 ssize_t rofi_atomic_fetch(void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
 ssize_t rofi_compare_atomic(void *, const void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
+
 #endif

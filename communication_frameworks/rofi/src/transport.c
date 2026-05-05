@@ -146,7 +146,7 @@ void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi
     struct fi_info *prov_found = NULL;
     if (prov_names == NULL && domain_names == NULL) {
         rofi->info = fi_dupinfo(prov_cur);
-        WARN_MSG("No matches for the specified provider and/or domain", prov_names, domain_names);
+        WARN_MSG("No matches for the specified provider and/or domain: NULL NULL");
         WARN_MSG("Using first available provider: %s %s", prov_cur->fabric_attr->prov_name, prov_cur->domain_attr->name);
         
         return;
@@ -200,9 +200,28 @@ void rofi_transport_select_provider(struct fi_info *prov, rofi_transport_t *rofi
 }
 
 int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_names_t *prov_names, rofi_names_t *domain_names) {
+    int ofi_version_major = 0;
+    int ofi_version_minor = 0;
+
+    // The libfabric version should be set during configure time and exported to 
+    // the compiler via __OFI_VERSION__. To allow for preprocessor boolean 
+    // checks, major and minor versions are combined according to 
+    // (major * 100 + minor). Here we extract the major and minor versions for 
+    // later use by fi_getinfo.
+#ifndef __OFI_VERSION__
+    ERR_MSG("__OFI_VERSION__ was not defined at compile time!");
+    abort();
+#else
+    ofi_version_major = __OFI_VERSION__ / 100;
+    ofi_version_minor = __OFI_VERSION__ - (ofi_version_major * 100);
+    DEBUG_MSG("ROFI compiled for use with libfabric %d.%d\n", ofi_version_major, ofi_version_minor);
+    
+#endif
+
     DEBUG_MSG("fi_getinfo");
     struct fi_info *prov = fi_allocinfo();
-    int ret = fi_getinfo(ROFI_FI_VERSION, NULL, NULL, 0, hints, &prov);
+    //int ret = fi_getinfo(ROFI_FI_VERSION, NULL, NULL, 0, hints, &prov);
+    int ret = fi_getinfo(FI_VERSION(ofi_version_major, ofi_version_minor), NULL, NULL, 0, hints, &prov);
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_getinfo", ret);
     }    
@@ -280,6 +299,20 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         DEBUG_MSG("Selected atomic: no");
     } 
 
+#ifdef __OFI_PROV_CXI__
+    // The CXI tests in libfabric 2.1 follow up the selection of the 
+    // CXI provider with some additional adjustments to the fi_info struct 
+    // before initializing the fabric, creating the endpoint, etc.
+    // It is not clear they are necessary but they are repeated here.
+    // Before these adjustments, fi_getinfo will return cxi providers with all of 
+    // the capabilities (including RMA) except FI_SOURCE and FI_SOURCE_ERR
+    // Note: CXI man pages for 2.3.1 suggest not turning on FI_SOURCE/FI_SOURCE_ERR
+    rofi->info->ep_attr->tx_ctx_cnt = rofi->info->domain_attr->tx_ctx_cnt;
+    rofi->info->ep_attr->rx_ctx_cnt = rofi->info->domain_attr->rx_ctx_cnt;
+//    rofi->info->caps |= FI_SOURCE | FI_SOURCE_ERR;
+//    rofi->info->rx_attr->caps |= FI_SOURCE | FI_SOURCE_ERR;
+#endif
+
     ret = rofi_transport_init_fabric_resources(rofi);
     if (ret) {
         // already would have printed the error.
@@ -330,6 +363,7 @@ int rofi_transport_init(struct fi_info *hints, rofi_transport_t *rofi, rofi_name
         // already would have printed the error.
         return ret;
     }
+
     return 0;
 }
 
@@ -425,6 +459,12 @@ int rofi_transport_init_endpoint_resources(rofi_transport_t *rofi) {
         return ret;
     }
 
+    // The original verbs code (in the #else branch, below) makes adjustments to the 
+    // fi_info struct containing information for the selected provider at this point. This is not 
+    // required for CXI, so this directive removes it for CXI.
+#ifdef __OFI_PROV_CXI__
+    ;
+#else
     rofi->info->ep_attr->tx_ctx_cnt = 0;
     rofi->info->caps = FI_RMA | FI_WRITE | FI_READ | FI_REMOTE_WRITE | FI_REMOTE_READ | FI_ATOMIC | rofi->fi_collective;
     rofi->info->tx_attr->op_flags = FI_DELIVERY_COMPLETE; // FI_TRANSMIT_COMPLETE fails, FI_DELIVERY_COMPLETE works but I dont see a difference?
@@ -435,6 +475,7 @@ int rofi_transport_init_endpoint_resources(rofi_transport_t *rofi) {
     rofi->info->tx_attr->size = 1024;
     rofi->info->tx_attr->caps = rofi->info->caps;
     rofi->info->rx_attr->caps = FI_RECV | rofi->fi_collective; // to drive progress
+#endif
 
     DEBUG_MSG("rofi->info: %p, provider: %s, caps: 0x%lx\n",
         rofi->info, rofi->info->fabric_attr->prov_name, rofi->info->caps);
@@ -1060,6 +1101,29 @@ int rofi_transport_recv(rofi_transport_t *rofi, void *buf, size_t len) {
     return 0;
 }
 
+// New function to be used only during rofi_init_internal to exchange addressing information 
+// for the rofi.mr used for subsequent exchanges, barriers, etc.
+int rofi_transport_exchange_init_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr) {
+
+    struct fi_rma_iov rma_iov;
+    rma_iov.addr = (uint64_t)mr->start;
+    rma_iov.key = fi_mr_key(mr->fid);
+    DEBUG_MSG("Exchanging initialization (rofi.mr) MR Info (key: 0x%lx, addr: 0x%lx)....", rma_iov.key, rma_iov.addr);
+
+    int ret = rt_exchange_data("mr_init_info", &rma_iov, sizeof(struct fi_rma_iov), mr->iov, rofi->desc.nid, rofi->desc.nodes);
+    if (ret) {
+        ERR_MSG("Error exchanging info for memory region alloc buffer. Aborting!");
+        return ret;
+    }
+
+#ifdef _DEBUG
+    for (int i = 0; i < rofi->desc.nodes; i++) {
+        DEBUG_MSG("\t Results of exchanging inital MR info: Node: %d Key: 0x%lx Addr: 0x%lx", i, mr->iov[i].key, mr->iov[i].addr);
+    }
+#endif
+    return 0;
+}
+
 int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr) {
     if (rofi->desc.nodes == 1) {
         return 0;
@@ -1070,6 +1134,7 @@ int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr) {
     for (uint64_t i = 0; i < rofi->desc.nodes; i++) {
         pes[i] = i;
     }
+
     int ret = rofi_transport_sub_exchange_mr_info(rofi, mr, pes, rofi->desc.nodes);
     free(pes);
     return ret;
@@ -1107,7 +1172,14 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
         }
     }
     struct fi_rma_iov *sub_alloc_buf = rofi->sub_alloc_buf;
+// Under CXI, the fi_rma_iov addr is an offset
+// Under Verbs, it is a virtual address
+// Commenting out because address vs offset should be determined right before commm op
+//#ifdef __OFI_PROV_CXI__
+//    sub_alloc_buf[global_me].addr = 0;
+//#else
     sub_alloc_buf[global_me].addr = (uint64_t)mr->start;
+//#endif
     sub_alloc_buf[global_me].key = fi_mr_key(mr->fid);
     DEBUG_MSG("Placing mr info (key: 0x%lx, addr: 0x%lx)... at local address: %p", sub_alloc_buf[global_me].key, sub_alloc_buf[global_me].addr, &sub_alloc_buf[global_me]);
     uint64_t sub_alloc_barrier_id = 0;
@@ -1214,6 +1286,9 @@ int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr
     }
     DEBUG_MSG("Joined collective");
 
+    // __OFI_PFOV_CXI__
+    // NOTE: Currently CXI does not provide allgather as an OFI collective, so this code path is not followed
+    // However, if it were, it would error because addresses are still virtual and need to be converted to offsets
     struct fi_rma_iov rma_iov;
     rma_iov.addr = (uint64_t)mr->start;
     rma_iov.key = fi_mr_key(mr->fid);
@@ -1300,7 +1375,12 @@ int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, u
 
             DEBUG_MSG("%d Sending %d to %d %p - %p + %p", me, *barrier_id, send_pe, dst, rofi->mr->start, rofi->mr->iov[send_pe].addr);
             struct fi_rma_iov rma_iov;
+#ifdef __OFI_PROV_CXI__
+            // CXI uses offsets, so turn addr into offset by subtracting starting address
+            rma_iov.addr = (uint64_t)(dst - rofi->mr->start + rofi->mr->iov[send_pe].addr) - (uint64_t)rofi->mr->start;
+#else
             rma_iov.addr = (uint64_t)(dst - rofi->mr->start + rofi->mr->iov[send_pe].addr);
+#endif
             rma_iov.key = rofi->mr->iov[send_pe].key;
             DEBUG_MSG("%d Sending barrier_id %lu to PE %d at remote addr 0x%lx with key 0x%lx", me, *barrier_id, send_pe, rma_iov.addr, rma_iov.key);
             ret = rofi_transport_put(rofi, &rma_iov, send_pe, src, sizeof(uint64_t), rofi->mr->mr_desc, NULL);
@@ -1330,3 +1410,182 @@ int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, u
 int rofi_transport_barrier(rofi_transport_t *rofi) {
     return rofi_transport_inner_barrier(rofi, &rofi->global_barrier_id, rofi->global_barrier_buf, NULL, rofi->desc.nid, rofi->desc.nodes);
 }
+
+#ifdef __OFI_PROV_CXI__
+int rofi_transport_wait_on_cq(struct fid_cq *cq, struct fi_cq_entry *cqe, const int num_entries) {
+  int ret;
+  int count = 0;
+
+  while (count < num_entries) {
+    do {
+      ret = fi_cq_read(cq, cqe, 1);
+    } while (ret == -FI_EAGAIN);
+
+    if (ret != 1) {
+      ROFI_TRANSPORT_ERR_MSG("fi_cq_read", ret);
+      struct fi_cq_err_entry ebuf = {0};
+      int ret = fi_cq_readerr(cq, (void *)&ebuf, 0);
+      if (ret > 0) {
+        const char *errmsg = fi_cq_strerror(cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+        ERR_MSG("Error: %s\n", errmsg);
+        abort();
+        return ret;
+      }
+    }
+    count++;
+  }
+  return 0;
+}
+
+int rofi_transport_barrier_p2p(struct rofi_transport_t *rofi)
+{
+  int ret;
+
+  unsigned int my_rank = rofi->desc.nid;
+  unsigned int num_ranks = rofi->desc.nodes;
+  struct fi_cq_entry cqe = {};
+  uint8_t barrier_send_buf[1]; // buffer used for sends in the barrier
+  uint8_t barrier_recv_buf[1]; // ditto but for recvs
+
+  struct iovec iov_send = {barrier_send_buf, sizeof(uint8_t)};
+  struct fi_msg msg_send = {};
+  msg_send.msg_iov = &iov_send;
+  msg_send.iov_count = 1;
+
+  struct iovec iov_recv = {barrier_recv_buf, sizeof(uint8_t)};
+  struct fi_msg msg_recv = {};
+  msg_recv.msg_iov = &iov_recv;
+  msg_recv.iov_count = 1;
+
+  int parent = floor((my_rank-1)/2);
+  int left_child = (2 * my_rank) + 1;
+  int right_child = 2 * (my_rank + 1);
+
+  int num_waits = 0;
+
+  if (right_child < num_ranks) {
+    num_waits++;
+    msg_recv.addr = (rofi->remote_addrs)[right_child];
+    ret = fi_recvmsg(rofi->ep, &msg_recv, FI_COMPLETION);
+  }
+  if (left_child < num_ranks) {
+    num_waits++;
+    msg_recv.addr = (rofi->remote_addrs)[left_child];
+    ret = fi_recvmsg(rofi->ep, &msg_recv, FI_COMPLETION);
+  }
+  if (num_waits > 0) {
+    ret = rofi_transport_wait_on_cq(rofi->cq, &cqe, num_waits);
+  }
+  if (my_rank > 0) {
+    msg_send.addr = (rofi->remote_addrs)[parent];
+    ret = fi_sendmsg(rofi->ep, &msg_send, 0);
+  }
+
+  if (my_rank > 0) {
+    msg_recv.addr = rofi->remote_addrs[parent];
+    ret = fi_recvmsg(rofi->ep, &msg_recv, FI_COMPLETION);
+    ret = rofi_transport_wait_on_cq(rofi->cq, &cqe, 1);
+  }
+  if (left_child < num_ranks) {
+    msg_send.addr = (rofi->remote_addrs)[left_child];
+    ret = fi_sendmsg(rofi->ep, &msg_send, 0);
+  }
+  if (right_child < num_ranks) {
+    msg_send.addr = (rofi->remote_addrs)[right_child];
+    ret = fi_sendmsg(rofi->ep, &msg_send, 0);
+  }
+}
+
+//
+// Linear (1:N followed by N:1) barrier
+//int rofi_transport_msg_barrier_linear(rofi_transport_t *rofi) {
+//  int ret;
+//  unsigned int my_rank = rofi->desc.nid;
+//  unsigned int num_ranks = rofi->desc.nodes;
+//
+//  uint8_t barrier_send_buf[1];
+//  uint8_t barrier_recv_buf[1];
+//  *barrier_send_buf = 5;
+//  *barrier_recv_buf = 0;
+//
+//  // all PEs send the same thing; only the address may change
+//  struct iovec iov_send = {&barrier_send_buf, sizeof(uint8_t)};
+//  struct fi_msg msg_send = {};
+//  msg_send.msg_iov = &iov_send;
+//  msg_send.iov_count = 1;
+//
+//  // all PEs recv to the same location (b/c we don't care about the data 
+//  // getting clobbered), but the address may change
+//  struct iovec iov_recv = {&barrier_recv_buf, sizeof(uint8_t)};
+//  struct fi_msg msg_recv = {};
+//  msg_recv.msg_iov = &iov_recv;
+//  msg_recv.iov_count = 1;
+//
+//  struct fi_cq_entry cqe = {};
+//
+//  DEBUG_MSG("rank %u entering linear barrier with recv_buf = %u", my_rank, *barrier_recv_buf);
+//
+//  if (my_rank > 0) {
+//    // each rank besides 0 posts send to 0
+//    msg_send.addr = (rofi->remote_addrs)[0];
+//    ret = fi_sendmsg(rofi->ep, &msg_send, 0);
+//    if (ret != 0) {
+//      ROFI_TRANSPORT_ERR_MSG("fi_send", ret);
+//      struct fi_cq_err_entry ebuf = {0};
+//      int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+//      if (ret > 0) {
+//        const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+//        ERR_MSG("Error: %s\n", errmsg);
+//        abort();
+//        return ret;
+//      }
+//    }
+//
+//    // each rank waits to hear back from 0
+//    msg_recv.addr = (rofi->remote_addrs)[0];
+//    ret = fi_recvmsg(rofi->ep, &msg_recv, FI_COMPLETION);
+//    // await CQ for recv entry
+//    ret = rofi_transport_await_cq_completion(rofi->cq, &cqe, 1);
+//  } else {
+//    // rank 0 receives from each other rank
+//    for (int src = 1; src < num_ranks; ++src) {
+//      msg_recv.addr = (rofi->remote_addrs)[src];
+//      ret = fi_recvmsg(rofi->ep, &msg_recv, FI_COMPLETION);
+//      if (ret != 0) {
+//        ROFI_TRANSPORT_ERR_MSG("fi_recv", ret);
+//        struct fi_cq_err_entry ebuf = {0};
+//        int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+//        if (ret > 0) {
+//          const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+//          ERR_MSG("Error: %s\n", errmsg);
+//          abort();
+//          return ret;
+//        }
+//      }
+//    }
+//    // await recvs
+//    ret = rofi_transport_await_cq_completion(rofi->cq, &cqe, num_ranks-1);
+//    // rank 0 sends back to each other rank
+//    for (int dst = 1; dst < num_ranks; ++dst) {
+//      msg_send.addr = (rofi->remote_addrs)[dst];
+//      ret = fi_sendmsg(rofi->ep, &msg_send, 0);
+//      if (ret != 0) {
+//        ROFI_TRANSPORT_ERR_MSG("fi_send", ret);
+//        struct fi_cq_err_entry ebuf = {0};
+//        int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
+//        if (ret > 0) {
+//          const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
+//          ERR_MSG("Error: %s\n", errmsg);
+//          abort();
+//          return ret;
+//        }
+//      }
+//    }
+//  }
+//
+//  DEBUG_MSG("rank %u exited linear barrier with recv_buf = %u", my_rank, *barrier_recv_buf);
+//
+//  return 0;
+//}
+
+#endif // __OFI_PROV_CXI__

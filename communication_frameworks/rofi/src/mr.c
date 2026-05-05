@@ -90,9 +90,28 @@ rofi_mr_desc *mr_add(rofi_transport_t *rofi, size_t size, unsigned long mode) {
                     &(el->fid), &(el->ctx));
 
     if (err != FI_SUCCESS) {
-        ERR_MSG("Error creating OFI memroy region (%d). Aborting.", err);
+        ERR_MSG("Error creating OFI memory region (%d). Aborting.", err);
         goto err_mmap;
     }
+
+#ifdef __OFI_PROV_CXI__
+
+    // CXI requires memory regions that can be the targets of external 
+    // writes or reads be (i) registered, (ii) associated with an endpoint, 
+    // and (iii) enabled.
+    err = fi_mr_bind(el->fid, &(rofi->ep->fid), 0);
+    if (err != FI_SUCCESS) {
+        ERR_MSG("Error binding OFI MR (%d). Aborting.", err);
+        goto err_mmap;
+    }
+    err = fi_mr_enable(el->fid);
+    if (err != FI_SUCCESS) {
+        ERR_MSG("Error enabling OFI MR (%d). Aborting.", err);
+        goto err_mmap;
+    }
+    DEBUG_MSG("Performed fi_mr_bind and fi_mr_enable for CXI provider");
+
+#endif
 
     assert(err == 0);
 

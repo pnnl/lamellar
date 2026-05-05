@@ -12,6 +12,11 @@
 
 #include <uthash.h>
 
+#ifdef __OFI_PROV_CXI__
+    #include <stdbool.h>
+    #include <rdma/fi_cxi_ext.h>
+#endif
+
 #ifndef ROFI_FI_VERSION
 #define ROFI_FI_VERSION FI_VERSION(1, 15)
 #endif
@@ -116,4 +121,12 @@ int rofi_query_compare_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
 ssize_t rofi_atomic_op_internal(void *, const void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
 ssize_t rofi_atomic_fetch_internal(void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
 ssize_t rofi_compare_atomic_internal(void *, const void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
+
+// message-based barrier used once by CXI at end of rofi_init_internal
+// Note currently not exposed in the rofi API (i.e., in rofi.h or api.c)
+#ifdef __OFI_PROV_CXI__
+void rofi_barrier_p2p_internal(void);
+#endif
+
+
 #endif
