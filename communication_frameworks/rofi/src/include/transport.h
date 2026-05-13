@@ -104,7 +104,7 @@ int rofi_transport_barrier(rofi_transport_t *rofi);
 // number of entries)
 #ifdef __OFI_PROV_CXI__
 int rofi_transport_wait_on_cq(struct fid_cq *cq, struct fi_cq_entry *cqe, const int expected_num_entries); // blocking!
-int rofi_transport_barrier_p2p(rofi_transport_t *rofi);
+int rofi_transport_barrier_msg(rofi_transport_t *rofi);
 #endif
 
 #endif /* _TRANSPORT_H_ */

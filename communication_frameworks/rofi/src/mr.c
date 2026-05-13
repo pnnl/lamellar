@@ -95,7 +95,6 @@ rofi_mr_desc *mr_add(rofi_transport_t *rofi, size_t size, unsigned long mode) {
     }
 
 #ifdef __OFI_PROV_CXI__
-
     // CXI requires memory regions that can be the targets of external 
     // writes or reads be (i) registered, (ii) associated with an endpoint, 
     // and (iii) enabled.
@@ -110,7 +109,6 @@ rofi_mr_desc *mr_add(rofi_transport_t *rofi, size_t size, unsigned long mode) {
         goto err_mmap;
     }
     DEBUG_MSG("Performed fi_mr_bind and fi_mr_enable for CXI provider");
-
 #endif
 
     assert(err == 0);

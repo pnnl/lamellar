@@ -278,12 +278,6 @@ void rofi_barrier_internal(void) {
     rofi_transport_barrier(&rofi);
 }
 
-#ifdef __OFI_PROV_CXI__
-void rofi_barrier_p2p_internal(void) {
-  rofi_transport_barrier_p2p(&rofi);
-}
-#endif
-
 int rofi_put_internal(void *dst, void *src, size_t size, unsigned int id, unsigned long flags) {
     rofi_mr_desc *el = mr_get(&rofi, dst);
     struct fi_rma_iov rma_iov;
@@ -624,19 +618,21 @@ int rofi_init_internal(char *provs, char *domains) {
     // (1) The following hints are based on working through the code path 
     // for the simple_write rma test included with the CXI provider in 
     // libfabric v2.1
-    // (2) The verbs provider specifies FI_DELIVERY_COMPLETE; CXI supports this, but defaults to FI_TRANSMIT_COMPLETE, 
-    // as it has lower latency. TRANSMIT vs DELIVERY does not make a difference for passing the ROFI tests. 
+    // (2) The verbs provider specifies FI_DELIVERY_COMPLETE; CXI supports this, but defaults to 
+    // FI_TRANSMIT_COMPLETE, as it has lower latency. TRANSMIT vs DELIVERY does not make 
+    // a difference for passing the ROFI tests. 
     // TODO: Will TRANSMIT break lamelar?
-    // (3) hints->tx_attr->size defaults to 1024, and is a hard cap (i.e., will abort if exceeded). A large fan-out could 
-    // cause issues. TODO: What is a safe value?
-    // (4) TODO: Since we've changed to selecting compiler at configure time, the arguments to rofi_init might be reconsidered.
-    // (5) CXI has 'optimized' memory regions for applications that will use a small number of large regions involving 
-    // many small operations. Enabling these requires manually selecting memory keys in the range 0-99 inclusive. This 
-    // in turn requires not configuring with FI_MR_PROV_KEY. Making this change may cause ripple effects across the ROFI 
-    // code. TODO: Consider whether to take this on.
+    // (3) hints->tx_attr->size defaults to 1024, and is a hard cap (i.e., will abort 
+    // if exceeded). A large fan-out could cause issues. TODO: What is a safe value?
+    // (4) CXI has 'optimized' memory regions for applications that will use a small 
+    // number of large regions involving many small operations. Enabling these requires 
+    // manually selecting memory keys in the range 0-99 inclusive. This 
+    // in turn requires not configuring with FI_MR_PROV_KEY. Making this change may 
+    // cause ripple effects across the ROFI code. TODO: Consider whether to take this on.
     // (6) TODO: Explore message ordering constraints. Currently we leave them at the defaults.
-    // (7) TODO: The CXI provider is returned with all of its capabilites active (including FI_RMA_EVENT), which is a 
-    // superset of the caps requested for the verbs provider. Test whether using the same caps as Verbs breaks anything.
+    // (7) TODO: The CXI provider is returned with all of its capabilites active (including 
+    // FI_RMA_EVENT), which is a superset of the caps requested for the verbs provider. Test 
+    // In other work we have not seen a performance impact of doing this. 
 
     hints->fabric_attr->prov_name = strdup("cxi"); // limits returned providers to cxi only
     hints->domain_attr->mr_mode = FI_MR_ENDPOINT | FI_MR_ALLOCATED | FI_MR_PROV_KEY; 
@@ -733,7 +729,7 @@ int rofi_init_internal(char *provs, char *domains) {
     //if (rofi.desc.nodes > 1) {
     //    rt_barrier();
     //}
-    rofi_transport_barrier_p2p(&rofi);  
+    rofi_transport_barrier_msg(&rofi);  
     //rofi_transport_barrier(&rofi);
     return 0;
 

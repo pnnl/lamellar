@@ -1172,14 +1172,7 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
         }
     }
     struct fi_rma_iov *sub_alloc_buf = rofi->sub_alloc_buf;
-// Under CXI, the fi_rma_iov addr is an offset
-// Under Verbs, it is a virtual address
-// Commenting out because address vs offset should be determined right before commm op
-//#ifdef __OFI_PROV_CXI__
-//    sub_alloc_buf[global_me].addr = 0;
-//#else
     sub_alloc_buf[global_me].addr = (uint64_t)mr->start;
-//#endif
     sub_alloc_buf[global_me].key = fi_mr_key(mr->fid);
     DEBUG_MSG("Placing mr info (key: 0x%lx, addr: 0x%lx)... at local address: %p", sub_alloc_buf[global_me].key, sub_alloc_buf[global_me].addr, &sub_alloc_buf[global_me]);
     uint64_t sub_alloc_barrier_id = 0;
@@ -1376,7 +1369,7 @@ int rofi_transport_inner_barrier(rofi_transport_t *rofi, uint64_t *barrier_id, u
             DEBUG_MSG("%d Sending %d to %d %p - %p + %p", me, *barrier_id, send_pe, dst, rofi->mr->start, rofi->mr->iov[send_pe].addr);
             struct fi_rma_iov rma_iov;
 #ifdef __OFI_PROV_CXI__
-            // CXI uses offsets, so turn addr into offset by subtracting starting address
+            // CXI uses offsets, so turn addr into offset
             rma_iov.addr = (uint64_t)(dst - rofi->mr->start + rofi->mr->iov[send_pe].addr) - (uint64_t)rofi->mr->start;
 #else
             rma_iov.addr = (uint64_t)(dst - rofi->mr->start + rofi->mr->iov[send_pe].addr);
@@ -1412,6 +1405,8 @@ int rofi_transport_barrier(rofi_transport_t *rofi) {
 }
 
 #ifdef __OFI_PROV_CXI__
+// This and the following function are to avoid a race condition using RMA for the very first 
+// barrier at the end of initialization
 int rofi_transport_wait_on_cq(struct fid_cq *cq, struct fi_cq_entry *cqe, const int num_entries) {
   int ret;
   int count = 0;
@@ -1437,7 +1432,7 @@ int rofi_transport_wait_on_cq(struct fid_cq *cq, struct fi_cq_entry *cqe, const 
   return 0;
 }
 
-int rofi_transport_barrier_p2p(struct rofi_transport_t *rofi)
+int rofi_transport_barrier_msg(struct rofi_transport_t *rofi)
 {
   int ret;
 
@@ -1495,97 +1490,5 @@ int rofi_transport_barrier_p2p(struct rofi_transport_t *rofi)
     ret = fi_sendmsg(rofi->ep, &msg_send, 0);
   }
 }
-
-//
-// Linear (1:N followed by N:1) barrier
-//int rofi_transport_msg_barrier_linear(rofi_transport_t *rofi) {
-//  int ret;
-//  unsigned int my_rank = rofi->desc.nid;
-//  unsigned int num_ranks = rofi->desc.nodes;
-//
-//  uint8_t barrier_send_buf[1];
-//  uint8_t barrier_recv_buf[1];
-//  *barrier_send_buf = 5;
-//  *barrier_recv_buf = 0;
-//
-//  // all PEs send the same thing; only the address may change
-//  struct iovec iov_send = {&barrier_send_buf, sizeof(uint8_t)};
-//  struct fi_msg msg_send = {};
-//  msg_send.msg_iov = &iov_send;
-//  msg_send.iov_count = 1;
-//
-//  // all PEs recv to the same location (b/c we don't care about the data 
-//  // getting clobbered), but the address may change
-//  struct iovec iov_recv = {&barrier_recv_buf, sizeof(uint8_t)};
-//  struct fi_msg msg_recv = {};
-//  msg_recv.msg_iov = &iov_recv;
-//  msg_recv.iov_count = 1;
-//
-//  struct fi_cq_entry cqe = {};
-//
-//  DEBUG_MSG("rank %u entering linear barrier with recv_buf = %u", my_rank, *barrier_recv_buf);
-//
-//  if (my_rank > 0) {
-//    // each rank besides 0 posts send to 0
-//    msg_send.addr = (rofi->remote_addrs)[0];
-//    ret = fi_sendmsg(rofi->ep, &msg_send, 0);
-//    if (ret != 0) {
-//      ROFI_TRANSPORT_ERR_MSG("fi_send", ret);
-//      struct fi_cq_err_entry ebuf = {0};
-//      int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-//      if (ret > 0) {
-//        const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-//        ERR_MSG("Error: %s\n", errmsg);
-//        abort();
-//        return ret;
-//      }
-//    }
-//
-//    // each rank waits to hear back from 0
-//    msg_recv.addr = (rofi->remote_addrs)[0];
-//    ret = fi_recvmsg(rofi->ep, &msg_recv, FI_COMPLETION);
-//    // await CQ for recv entry
-//    ret = rofi_transport_await_cq_completion(rofi->cq, &cqe, 1);
-//  } else {
-//    // rank 0 receives from each other rank
-//    for (int src = 1; src < num_ranks; ++src) {
-//      msg_recv.addr = (rofi->remote_addrs)[src];
-//      ret = fi_recvmsg(rofi->ep, &msg_recv, FI_COMPLETION);
-//      if (ret != 0) {
-//        ROFI_TRANSPORT_ERR_MSG("fi_recv", ret);
-//        struct fi_cq_err_entry ebuf = {0};
-//        int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-//        if (ret > 0) {
-//          const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-//          ERR_MSG("Error: %s\n", errmsg);
-//          abort();
-//          return ret;
-//        }
-//      }
-//    }
-//    // await recvs
-//    ret = rofi_transport_await_cq_completion(rofi->cq, &cqe, num_ranks-1);
-//    // rank 0 sends back to each other rank
-//    for (int dst = 1; dst < num_ranks; ++dst) {
-//      msg_send.addr = (rofi->remote_addrs)[dst];
-//      ret = fi_sendmsg(rofi->ep, &msg_send, 0);
-//      if (ret != 0) {
-//        ROFI_TRANSPORT_ERR_MSG("fi_send", ret);
-//        struct fi_cq_err_entry ebuf = {0};
-//        int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-//        if (ret > 0) {
-//          const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
-//          ERR_MSG("Error: %s\n", errmsg);
-//          abort();
-//          return ret;
-//        }
-//      }
-//    }
-//  }
-//
-//  DEBUG_MSG("rank %u exited linear barrier with recv_buf = %u", my_rank, *barrier_recv_buf);
-//
-//  return 0;
-//}
 
 #endif // __OFI_PROV_CXI__
