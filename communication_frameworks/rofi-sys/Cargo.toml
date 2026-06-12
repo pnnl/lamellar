@@ -16,9 +16,14 @@ categories = ["external-ffi-bindings", "network-programming"]
 links = "rofi"
 
 [dependencies]
-# libfabric-sys = { path = "../rofi-junction/libfabric-sys", version = "0.1.0" }
+# libfabric-sys = { path = "../libfabric-sys" }
+# pmix-sys = { path = "../../process_management/pmix-sys", features = [
+#     "vendored",
+# ] }
 libfabric-sys = { git = "https://github.com/pnnl/lamellar.git" }
-pmix-sys = { git = "https://github.com/pnnl/lamellar.git", features = ["vendored"] }
+pmix-sys = { git = "https://github.com/pnnl/lamellar.git", features = [
+    "vendored",
+] }
 
 [build-dependencies]
 bindgen = "0.68.1"
