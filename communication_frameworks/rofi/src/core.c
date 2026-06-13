@@ -293,7 +293,12 @@ int rofi_put_internal(void *dst, void *src, size_t size, unsigned int id, unsign
         DEBUG_MSG("remote addr: %d %p", i, el->iov[id].addr);
     }
 
+#ifdef __OFI_PROV_CXI__
+    // if CXI, use offset instead of virtual address
+    rma_iov.addr = (uint64_t)(dst - el->start + el->iov[id].addr) - (uint64_t)el->start;
+#else
     rma_iov.addr = (uint64_t)(dst - el->start + el->iov[id].addr);
+#endif
     rma_iov.key = el->iov[id].key;
     if (rma_iov.key == 0) {
         ERR_MSG("\t No Key found for address %p on node %u", dst, id);
@@ -339,7 +344,11 @@ int rofi_get_internal(void *dst, void *src, size_t size, unsigned int id, unsign
     }
     DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
 
+#ifdef __OFI_PROV_CXI__
+    rma_iov.addr = (uint64_t)(src - el->start + el->iov[id].addr) - (uint64_t)el->start;
+#else
     rma_iov.addr = (uint64_t)(src - el->start + el->iov[id].addr);
+#endif
     rma_iov.key = el->iov[id].key;
     if (rma_iov.key == 0) {
         ERR_MSG("\t No Key found for address %p on node %u", src, id);
@@ -589,6 +598,8 @@ int rofi_init_internal(char *provs, char *domains) {
         return EXIT_FAILURE;
     }
 
+#if defined (__OFI_PROV_VERBS__)
+
     hints->caps = FI_RMA | FI_ATOMIC | FI_COLLECTIVE | FI_MSG;
     hints->addr_format = FI_FORMAT_UNSPEC;
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
@@ -598,6 +609,47 @@ int rofi_init_internal(char *provs, char *domains) {
     hints->mode = FI_CONTEXT;
     hints->ep_attr->type = FI_EP_RDM;
     hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE; // maybe need to change this to FI_INJECT_COMPLETE or FI_TRANSMIT_COMPLETE
+
+#elif defined (__OFI_PROV_CXI__)
+
+    DEBUG_MSG("Process %d requesting CXI provider", rofi.desc.nid);
+
+    // NOTES: 
+    // (1) The following hints are based on working through the code path 
+    // for the simple_write rma test included with the CXI provider in 
+    // libfabric v2.1
+    // (2) The verbs provider specifies FI_DELIVERY_COMPLETE; CXI supports this, but defaults to 
+    // FI_TRANSMIT_COMPLETE, as it has lower latency. TRANSMIT vs DELIVERY does not make 
+    // a difference for passing the ROFI tests. 
+    // TODO: Will TRANSMIT break lamelar?
+    // (3) hints->tx_attr->size defaults to 1024, and is a hard cap (i.e., will abort 
+    // if exceeded). A large fan-out could cause issues. TODO: What is a safe value?
+    // (4) CXI has 'optimized' memory regions for applications that will use a small 
+    // number of large regions involving many small operations. Enabling these requires 
+    // manually selecting memory keys in the range 0-99 inclusive. This 
+    // in turn requires not configuring with FI_MR_PROV_KEY. Making this change may 
+    // cause ripple effects across the ROFI code. TODO: Consider whether to take this on.
+    // (6) TODO: Explore message ordering constraints. Currently we leave them at the defaults.
+    // (7) TODO: The CXI provider is returned with all of its capabilites active (including 
+    // FI_RMA_EVENT), which is a superset of the caps requested for the verbs provider. Test 
+    // In other work we have not seen a performance impact of doing this. 
+
+    hints->fabric_attr->prov_name = strdup("cxi"); // limits returned providers to cxi only
+    hints->domain_attr->mr_mode = FI_MR_ENDPOINT | FI_MR_ALLOCATED | FI_MR_PROV_KEY; 
+    hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
+    hints->domain_attr->control_progress = FI_PROGRESS_MANUAL; 
+    hints->tx_attr->size = 4096;  
+    //hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE;  // default for CXI is FI_TRANSMIT_COMPLETE
+
+    // TBD: message ordering requirements (tx_attr and rx_attr)
+    // Through trial and error, we determined This will make most of them NO;
+    // hints->tx_attr->msg_order = 0;
+
+    DEBUG_MSG("ROFI Compiled for CXI support");
+
+#else
+    ERR_MSG("Invalid or no OFI provider selected during ROFI configuration!");
+#endif
 
     rofi_names_t *prov_names = NULL;
     if (provs) {
@@ -654,7 +706,8 @@ int rofi_init_internal(char *provs, char *domains) {
         rt_barrier();
     }
 
-    ret = rofi_transport_exchange_mr_info(&rofi, rofi.mr);
+    ret = rofi_transport_exchange_init_mr_info(&rofi, rofi.mr);
+    // ORIGINAL: ret = rofi_transport_exchange_mr_info(&rofi, rofi.mr);
 
     if (ret) {
         return ret;
@@ -672,10 +725,12 @@ int rofi_init_internal(char *provs, char *domains) {
         rofi.sub_alloc_buf[i].addr = 0;
     }
     fi_freeinfo(hints);
-    if (rofi.desc.nodes > 1) {
-        rt_barrier();
-    }
-    rofi_transport_barrier(&rofi);
+
+    //if (rofi.desc.nodes > 1) {
+    //    rt_barrier();
+    //}
+    rofi_transport_barrier_msg(&rofi);  
+    //rofi_transport_barrier(&rofi);
     return 0;
 
 err:
