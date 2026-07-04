@@ -105,8 +105,12 @@ CPPFLAGS="$CPPFLAGS -I$OFI_PATH/include"
 AC_CHECK_HEADERS([stdio.h],       [],[AC_MSG_ERROR[stdio.h  not found!]])
 AC_CHECK_HEADERS([sys/socket.h], [],[AC_MSG_ERROR[sys/socket.h  not found!]])
 AC_CHECK_HEADERS([rdma/fabric.h], [],[AC_MSG_ERROR[fabric.h not found!]])
-#AC_SEARCH_LIBS([fi_getinfo], [fabric], [], [AC_MSG_ERROR[libfabric not found!]], [-libverbs -pthread -ldl -lrdmacm -lrt  -lnuma -luuid])
-AC_SEARCH_LIBS([fi_getinfo], [fabric], [], [AC_MSG_ERROR([Could not find libfabric library])])
+AC_SEARCH_LIBS([fi_getinfo], [fabric], [], [
+    unset ac_cv_search_fi_getinfo
+    AC_SEARCH_LIBS([fi_getinfo], [fabric], [],
+                   [AC_MSG_ERROR([libfabric not found!])],
+                   [-libverbs -pthread -ldl -lrdmacm -lrt -lnuma -luuid])
+])
 
 AS_IF([test "x$with_ofi_version" = "xauto"], [
   OFI_VERSION_RAW=`pkg-config --modversion libfabric`
