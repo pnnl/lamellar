@@ -729,8 +729,11 @@ int rofi_init_internal(char *provs, char *domains) {
     //if (rofi.desc.nodes > 1) {
     //    rt_barrier();
     //}
-    rofi_transport_barrier_msg(&rofi);  
-    //rofi_transport_barrier(&rofi);
+#ifdef __OFI_PROV_CXI__
+    rofi_transport_barrier_msg(&rofi);
+#else
+    rofi_transport_barrier(&rofi);
+#endif
     return 0;
 
 err:
