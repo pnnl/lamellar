@@ -1432,7 +1432,7 @@ int rofi_transport_wait_on_cq(struct fid_cq *cq, struct fi_cq_entry *cqe, const 
   return 0;
 }
 
-int rofi_transport_barrier_msg(struct rofi_transport_t *rofi)
+int rofi_transport_barrier_msg(rofi_transport_t *rofi)
 {
   int ret;
 
