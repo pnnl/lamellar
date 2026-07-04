@@ -118,6 +118,7 @@ fn main() {
 
     // println!("cargo:rustc-link-lib=fabric");
     println!("cargo:rerun-if-changed={}", "build.rs");
+    println!("cargo:root={}", artifacts.lib_dir().parent().unwrap_or(artifacts.lib_dir()).display());
     println!("cargo:rustc-link-search={}", artifacts.lib_dir().display());
     if cfg!(feature = "shared") {
         println!("cargo:rustc-link-lib=dylib=fabric");
