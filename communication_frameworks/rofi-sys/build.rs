@@ -56,6 +56,14 @@ fn build_rofi(
         if let Some(pmix_root) = pmix {
             config.with(format!("pmix={}", pmix_root.display()), None);
         }
+        let pkgconfig_path = ofi_lib.join("pkgconfig");
+        let existing = std::env::var("PKG_CONFIG_PATH").unwrap_or_default();
+        let new_pkgconfig_path = if existing.is_empty() {
+            pkgconfig_path.display().to_string()
+        } else {
+            format!("{}:{}", pkgconfig_path.display(), existing)
+        };
+        config.env("PKG_CONFIG_PATH", new_pkgconfig_path);
         config.ldflag(format!("-L{} -libverbs -pthread -ldl -lrdmacm -lrt", ofi_lib.display()));
         config.cflag(format!("-O3 -I{}", ofi_inc.display()));
         config.cxxflag("-O3");
