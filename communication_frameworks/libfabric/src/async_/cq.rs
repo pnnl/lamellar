@@ -959,26 +959,44 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                                     ));
                                 } else {
                                     // println!("Found error in context but not for me!");
-                                    // We need to return the error to the context
+                                    // We need to return the error to the context.
+                                    // A null op_context means the erroring op (e.g. an
+                                    // inject-class atomic) never registered a context, so
+                                    // there is no owner to route this error to; drop it
+                                    // instead of dereferencing a null pointer.
                                     match mut_self.context.0 {
-                                        ContextType::Context1(_) => unsafe {
-                                            (err.c_err.op_context as *mut std::ffi::c_void
-                                                as *mut crate::Context1)
-                                                .as_mut()
-                                                .unwrap()
+                                        ContextType::Context1(_) => {
+                                            if let Some(ctx) = unsafe {
+                                                (err.c_err.op_context as *mut std::ffi::c_void
+                                                    as *mut crate::Context1)
+                                                    .as_mut()
+                                            } {
+                                                ctx.set_completion_done(Err(
+                                                    Error::from_completion_queue_err(err),
+                                                ));
+                                            } else {
+                                                panic!(
+                                                    "libfabric: dropping anonymous CQ completion error (no owning context): {}",
+                                                    err.error()
+                                                );
+                                            }
                                         }
-                                        .set_completion_done(Err(
-                                            Error::from_completion_queue_err(err),
-                                        )),
-                                        ContextType::Context2(_) => unsafe {
-                                            (err.c_err.op_context as *mut std::ffi::c_void
-                                                as *mut crate::Context2)
-                                                .as_mut()
-                                                .unwrap()
+                                        ContextType::Context2(_) => {
+                                            if let Some(ctx) = unsafe {
+                                                (err.c_err.op_context as *mut std::ffi::c_void
+                                                    as *mut crate::Context2)
+                                                    .as_mut()
+                                            } {
+                                                ctx.set_completion_done(Err(
+                                                    Error::from_completion_queue_err(err),
+                                                ));
+                                            } else {
+                                                panic!(
+                                                    "libfabric: dropping anonymous CQ completion error (no owning context): {}",
+                                                    err.error()
+                                                );
+                                            }
                                         }
-                                        .set_completion_done(Err(
-                                            Error::from_completion_queue_err(err),
-                                        )),
                                     }
                                     cx.waker().wake_by_ref();
                                     return std::task::Poll::Pending;
@@ -1010,30 +1028,50 @@ impl<'a> Future for CqAsyncReadOwned<'a> {
                     let mut done = true;
                     match mut_self.context.0 {
                         ContextType::Context1(_) => {
-                            let context = (d.op_context() as *mut std::ffi::c_void
+                            // A null op_context means the completing op (e.g. an
+                            // inject-class write) never registered a context, so
+                            // there is no owner to route this completion to; drop
+                            // it instead of dereferencing a null pointer.
+                            match (d.op_context() as *mut std::ffi::c_void
                                 as *mut crate::Context1)
                                 .as_mut()
-                                .unwrap();
-                            if d.op_context() as usize != mut_self.context.inner() as usize {
-                                context.set_completion_done(Ok(d.clone()));
-                                mut_self.buf = None;
-                                done = false;
-                            } else {
-                                context.set_completion_done(Ok(d.clone()));
+                            {
+                                None => {
+                                    mut_self.buf = None;
+                                    done = false;
+                                }
+                                Some(context) => {
+                                    if d.op_context() as usize != mut_self.context.inner() as usize
+                                    {
+                                        context.set_completion_done(Ok(d.clone()));
+                                        mut_self.buf = None;
+                                        done = false;
+                                    } else {
+                                        context.set_completion_done(Ok(d.clone()));
+                                    }
+                                }
                             }
                         }
                         ContextType::Context2(_) => {
-                            let context = (d.op_context() as *mut std::ffi::c_void
+                            match (d.op_context() as *mut std::ffi::c_void
                                 as *mut crate::Context2)
                                 .as_mut()
-                                .unwrap();
-                            if d.op_context() as usize != mut_self.context.inner() as usize {
-                                context.set_completion_done(Ok(d.clone()));
-                                mut_self.buf = None;
-                                done = false;
-                            } else {
-                                context.set_completion_done(Ok(d.clone()));
-                                mut_self.buf = None;
+                            {
+                                None => {
+                                    mut_self.buf = None;
+                                    done = false;
+                                }
+                                Some(context) => {
+                                    if d.op_context() as usize != mut_self.context.inner() as usize
+                                    {
+                                        context.set_completion_done(Ok(d.clone()));
+                                        mut_self.buf = None;
+                                        done = false;
+                                    } else {
+                                        context.set_completion_done(Ok(d.clone()));
+                                        mut_self.buf = None;
+                                    }
+                                }
                             }
                         }
                     }
