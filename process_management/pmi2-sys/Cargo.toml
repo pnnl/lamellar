@@ -12,5 +12,5 @@ vendored = ["pmi-mpich-src"]
 [dependencies]
 
 [build-dependencies]
-pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", optional = true }
+pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", branch = "dev", optional = true }
 bindgen = "0.72"
