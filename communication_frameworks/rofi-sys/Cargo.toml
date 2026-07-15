@@ -20,8 +20,8 @@ links = "rofi"
 # pmix-sys = { path = "../../process_management/pmix-sys", features = [
 #     "vendored",
 # ] }
-libfabric-sys = { git = "https://github.com/pnnl/lamellar.git" }
-pmix-sys = { git = "https://github.com/pnnl/lamellar.git", features = [
+libfabric-sys = { git = "https://github.com/pnnl/lamellar.git", branch = "dev" }
+pmix-sys = { git = "https://github.com/pnnl/lamellar.git", branch = "dev", features = [
     "vendored",
 ] }
 
