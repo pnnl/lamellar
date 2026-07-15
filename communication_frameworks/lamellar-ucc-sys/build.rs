@@ -3,8 +3,29 @@ use std::process::Command;
 use std::{env, path::PathBuf};
 use std::path::Path;
 
+fn remove_dst_forcibly(dst: &Path) {
+    match std::fs::remove_file(dst) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(mut perms) = std::fs::metadata(dst).map(|m| m.permissions()) {
+                    perms.set_mode(0o666);
+                    let _ = std::fs::set_permissions(dst, perms);
+                }
+            }
+            let _ = std::fs::remove_file(dst);
+        }
+        Err(_) => {}
+    }
+}
+
 fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src.is_dir() {
+        if dst.exists() && !dst.is_dir() {
+            remove_dst_forcibly(dst);
+        }
         std::fs::create_dir_all(dst)?;
         for entry in std::fs::read_dir(src)? {
             let entry = entry?;
@@ -15,6 +36,9 @@ fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     } else {
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)?;
+        }
+        if dst.exists() {
+            remove_dst_forcibly(dst);
         }
         std::fs::copy(src, dst)?;
     }
