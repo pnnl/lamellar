@@ -13,7 +13,7 @@ links = "ucc"
 
 
 [dependencies]
-lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar"  }
+lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar",branch="dev"  }
 [build-dependencies]
 autotools = "0.2.7"
 bindgen = "0.72.1"
