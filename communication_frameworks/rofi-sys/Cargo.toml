@@ -26,10 +26,10 @@ pmix-sys = { git = "https://github.com/pnnl/lamellar.git", branch = "dev", featu
 ] }
 
 [build-dependencies]
-bindgen = "0.68.1"
-subprocess = "0.1.18"
-autotools = "0.2.4"
-glob = "0.3.0"
+bindgen = "0.72.1"
+subprocess = "1.2.0"
+autotools = "0.2.7"
+glob = "0.3.3"
 
 
 [lib]
