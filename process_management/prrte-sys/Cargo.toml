@@ -25,8 +25,8 @@ vendored-prrte = [
 
 [dependencies]
 pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "dev", optional = true }
-libevent-sys = { version = "0.3", features = ["threading"], optional = true }
-hwlocality-sys = { version = "0.6.1", optional = true }
+libevent-sys = { version = "0.4.0", features = ["threading"], optional = true }
+hwlocality-sys = { version = "0.7.1", optional = true }
 
 [build-dependencies]
 prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "dev", optional = true }
