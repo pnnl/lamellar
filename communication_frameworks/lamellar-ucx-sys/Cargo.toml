@@ -16,7 +16,6 @@ links = "ucx"
 autotools = "0.2.7"
 bindgen = "0.72.1"
 glob = "0.3.3"
-subprocess = "0.2.9"
 
 [lib]
 name = "lamellar_ucx_sys"

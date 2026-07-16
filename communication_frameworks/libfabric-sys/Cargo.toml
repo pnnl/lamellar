@@ -9,7 +9,7 @@ links = "ofi"
 [dependencies]
 
 [build-dependencies]
-bindgen = "0.72"
+bindgen = "0.72.1"
 libfabric-src = { git = "https://github.com/pnnl/lamellar", branch = "dev" }
 
 [features]
