@@ -42,20 +42,20 @@ or adding them to  features section in the lamellar entry in cargo.toml
   Everything before the first `--` is cargo's own args, between the two `--`s is forwarded
   to the app (unused here), after the second `--` is forwarded to the launcher. `--pes` =
   number of PEs. `--pes-per-node` only matters once you're spanning multiple nodes — skip
-  it for this single-node local tutorial. Without `LAMELLAR_BACKEND` set (or set to `local`),
+  it for this single-node local tutorial. Without `--lamellae` set (or set to `local`),
   omitting `--pes` just runs a single PE (`world.num_pes() == 1`) — useful for quick
   single-PE debugging.
   - **Try `--pes 4` right now, before setting anything else.** Every one of the 4 processes
     comes up as its own isolated single-PE world (all print PE 0, no shared data) — the
     default backend doesn't actually connect PEs together.
-  - Now set `LAMELLAR_BACKEND=shmem` and re-run the same command: the 4 processes join one
+  - Now add `--lamellae shmem` and re-run the same command: the 4 processes join one
     real 4-PE world (distinct `my_pe()` values, shared/distributed array data). This is the
-    backend that makes local multi-PE runs real — set it for the rest of the tutorial:
+    backend that makes local multi-PE runs real — pass it for the rest of the tutorial:
 
     ```bash
-    export LAMELLAR_BACKEND=shmem
+    cargo run --profile release-dev --bin main -- -- --pes 4 --lamellae shmem
     ```
-  - **Always pass `--pes N` explicitly once `LAMELLAR_BACKEND=shmem` is set.** Omitting it
+  - **Always pass `--pes N` explicitly once `--lamellae shmem` is set.** Omitting it
     doesn't default to 1 PE here — it fans out to one PE per NUMA domain on the node (e.g.
     16 PEs on a 16-NUMA-domain machine), which can surprise you with a much bigger run than
     intended.
@@ -86,7 +86,7 @@ or adding them to  features section in the lamellar entry in cargo.toml
 - Bug in `src/main_array_basics.rs`: `onesided_iter()` runs on every PE instead of being
   guarded by `if world.my_pe() == 0`, so the full array prints once per PE. Fix, or check
   `solutions/main_array_basics.rs`.
-- Make sure `LAMELLAR_BACKEND=shmem` is set (per Setup) before running this with `--pes > 1`
+- Make sure `--lamellae shmem` is passed (per Setup) before running this with `--pes > 1`
   — otherwise you're back to the isolated-PEs behavior from the setup demo.
 
 ### 3. AM deep dive (~30 min) — `src/main_am_deep_dive.rs`
@@ -132,7 +132,7 @@ Histogram, three ways (adapted from `../April_2025/src/main_histo.rs`, minus ray
 Run multi-PE to see it actually distribute:
 
 ```bash
-LAMELLAR_BACKEND=shmem cargo run --profile release-dev --bin main_capstone -- -- --pes 4
+cargo run --profile release-dev --bin main_capstone -- -- --pes 4 --lamellae shmem
 ```
 
 Bug: `lamellar_am_histogram` never calls `world.wait_all()` / `world.barrier()` after
