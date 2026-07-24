@@ -1,6 +1,6 @@
 [package]
 name = "pmi-mpich-src"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.3"
 edition = "2024"
 authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
 description = "Vendored build of MPICH's PMI implementation, developed for use by the Lamellar runtime."
@@ -16,7 +16,6 @@ exclude = [
     "mpich/modules/ucx",
     "mpich/modules/json-c",
     "mpich/modules/mydef_boot",
-    "mpich/test",
     "mpich/doc",
     "mpich/examples",
 ]
