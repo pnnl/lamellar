@@ -10,6 +10,16 @@ homepage = "https://github.com/pnnl/lamellar-runtime"
 license-file = "LICENSE"
 keywords = ["hpc", "pmi", "process-management"]
 categories = ["external-ffi-bindings", "network-programming"]
+exclude = [
+    "mpich/modules/libfabric",
+    "mpich/modules/hwloc",
+    "mpich/modules/ucx",
+    "mpich/modules/json-c",
+    "mpich/modules/mydef_boot",
+    "mpich/test",
+    "mpich/doc",
+    "mpich/examples",
+]
 
 [dependencies]
 autotools = "0.2.7"
