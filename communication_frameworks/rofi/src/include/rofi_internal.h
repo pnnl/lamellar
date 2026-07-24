@@ -2,6 +2,7 @@
 #define ROFI_INTERNAL_H
 
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include <pthread.h>
 #include <rdma/fabric.h>
@@ -11,8 +12,13 @@
 
 #include <uthash.h>
 
+#ifdef __OFI_PROV_CXI__
+    #include <stdbool.h>
+    #include <rdma/fi_cxi_ext.h>
+#endif
+
 #ifndef ROFI_FI_VERSION
-#define ROFI_FI_VERSION FI_VERSION(1, 20)
+#define ROFI_FI_VERSION FI_VERSION(1, 15)
 #endif
 
 typedef struct rofi_transport_t rofi_transport_t;
@@ -20,6 +26,7 @@ typedef struct rofi_transport_t rofi_transport_t;
 #include "context.h"
 #include "mr.h"
 #include "rt.h"
+#include "rofi.h"
 
 #define ROFI_STATUS_NONE 0
 #define ROFI_STATUS_START 1
@@ -72,10 +79,11 @@ struct rofi_transport_t {
     struct fid_cntr *recv_cntr;
     struct fid_cq *cq;
     fi_addr_t *remote_addrs;
-    uint64_t pending_put_cntr;
-    uint64_t pending_get_cntr;
-    uint64_t pending_send_cntr;
-    uint64_t pending_recv_cntr;
+    _Atomic uint64_t pending_put_cntr;
+    _Atomic uint64_t pending_get_cntr;
+    _Atomic uint64_t pending_send_cntr;
+    _Atomic uint64_t pending_recv_cntr;
+    uint64_t error_cnt;
     rofi_desc_t desc;
     rofi_mr_desc *mr;
     uint64_t global_barrier_id;
@@ -106,5 +114,19 @@ int rofi_sub_release_internal(void *, uint64_t *, uint64_t);
 int rofi_wait_internal(void);
 void *rofi_get_remote_addr_internal(void *, unsigned int);
 void *rofi_get_local_addr_from_remote_addr_internal(void *, unsigned int);
+int rofi_has_atomics_internal(void);
+int rofi_query_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
+int rofi_query_fetch_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
+int rofi_query_compare_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
+ssize_t rofi_atomic_op_internal(void *, const void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
+ssize_t rofi_atomic_fetch_internal(void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
+ssize_t rofi_compare_atomic_internal(void *, const void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
+
+// message-based barrier used once by CXI at end of rofi_init_internal
+// Note currently not exposed in the rofi API (i.e., in rofi.h or api.c)
+#ifdef __OFI_PROV_CXI__
+void rofi_barrier_p2p_internal(void);
+#endif
+
 
 #endif

@@ -500,3 +500,145 @@ void *rofi_get_local_addr_from_remote_addr(void *addr, unsigned int id) {
     DEBUG_MSG("Translating address %p on node %lu...", addr, id);
     return rofi_get_local_addr_from_remote_addr_internal(addr, id);
 }
+
+/**
+ * @brief Query support for a ROFI atomic datatype and operation
+ *
+ * This function queries whether the selected provider for the current ROFI
+ * instantiation supports a given ROFI datatype and atomic operation pair.
+ *
+ * @param datatype The ROFI datatype to query
+ * @param op The ROFI atomic operation to query
+ * @return 0 on success, non-zero when unsupported or invalid
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
+int rofi_query_atomic(rofi_datatype_t datatype, rofi_atomic_op_t op) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_query_atomic_internal(datatype, op);
+}
+
+/**
+ * @brief Query support for a ROFI fetch-atomic datatype and operation
+ *
+ * This function queries whether the selected provider for the current ROFI
+ * instantiation supports a given ROFI datatype and fetch-atomic operation pair.
+ *
+ * @param datatype The ROFI datatype to query
+ * @param op The ROFI atomic operation to query
+ * @return 0 on success, non-zero when unsupported or invalid
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
+int rofi_query_fetch_atomic(rofi_datatype_t datatype, rofi_atomic_op_t op) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_query_fetch_atomic_internal(datatype, op);
+}
+
+/**
+ * @brief Query support for a ROFI compare-atomic datatype and operation
+ *
+ * This function queries whether the selected provider for the current ROFI
+ * instantiation supports a given ROFI datatype and compare-atomic operation pair.
+ *
+ * @param datatype The ROFI datatype to query
+ * @param op The ROFI atomic operation to query
+ * @return 0 on success, non-zero when unsupported or invalid
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
+int rofi_query_compare_atomic(rofi_datatype_t datatype, rofi_atomic_op_t op) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_query_compare_atomic_internal(datatype, op);
+}
+
+/**
+ * @brief Query whether atomics are supported by the active provider.
+ *
+ * @return 1 when atomic operations are supported, 0 otherwise
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+int rofi_has_atomics(void) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_has_atomics_internal();
+}
+
+/**
+ * @brief ROFI Atomic Operation
+ *
+ * Initiates an atomic operation against remote memory using the selected
+ * datatype and operation.
+ *
+ * @param addr The remote symmetric address to update
+ * @param value Pointer to the input operand buffer
+ * @param count Number of datatype elements in the operand buffer
+ * @param datatype The ROFI datatype for the operation
+ * @param op The ROFI atomic operation to perform
+ * @param id The ID of the remote node
+ * @return 0 on success, otherwise a libfabric error code
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+ssize_t rofi_atomic_op(void *addr, const void *value, size_t count, rofi_datatype_t datatype, rofi_atomic_op_t op,
+                       unsigned int id) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_atomic_op_internal(addr, value, count, datatype, op, id);
+}
+
+/**
+ * @brief ROFI Atomic Fetch Operation
+ *
+ * Initiates an atomic fetch operation against remote memory and stores the old
+ * value in \p result.
+ *
+ * @param addr The remote symmetric address to update
+ * @param value Pointer to the input operand buffer. For read operations this may be NULL.
+ * @param result Pointer to the result buffer that receives the old value
+ * @param count Number of datatype elements in the operand and result buffers
+ * @param datatype The ROFI datatype for the operation
+ * @param op The ROFI atomic operation to perform
+ * @param id The ID of the remote node
+ * @return 0 on success, otherwise a libfabric error code
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+ssize_t rofi_atomic_fetch(void *addr, const void *value, void *result, size_t count, rofi_datatype_t datatype,
+                          rofi_atomic_op_t op, unsigned int id) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_atomic_fetch_internal(addr, value, result, count, datatype, op, id);
+}
+
+/**
+ * @brief ROFI Compare Atomic Operation
+ *
+ * Initiates a compare-and-update atomic operation against remote memory and
+ * stores the old value in \p result.
+ *
+ * @param addr The remote symmetric address to update
+ * @param value Pointer to the input operand buffer
+ * @param compare Pointer to the compare buffer
+ * @param result Pointer to the result buffer that receives the old value
+ * @param count Number of datatype elements in the operand, compare, and result buffers
+ * @param datatype The ROFI datatype for the operation
+ * @param op The ROFI atomic operation to perform
+ * @param id The ID of the remote node
+ * @return 0 on success, otherwise a libfabric error code
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+ssize_t rofi_compare_atomic(void *addr, const void *value, const void *compare, void *result, size_t count,
+                            rofi_datatype_t datatype, rofi_atomic_op_t op, unsigned int id) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_compare_atomic_internal(addr, value, compare, result, count, datatype, op, id);
+}

@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <rdma/fi_atomic.h>
 
 #include <rofi.h>
 #include <rofi_atomic.h>
@@ -14,7 +15,174 @@
 #include <rofi_internal.h>
 #include <transport.h>
 
-rofi_transport_t rofi;
+rofi_transport_t rofi = {0};
+
+static int rofi_to_fi_datatype(rofi_datatype_t datatype, enum fi_datatype *fi_datatype) {
+    switch (datatype) {
+        case ROFI_DATATYPE_INT8:
+            *fi_datatype = FI_INT8;
+            return 0;
+        case ROFI_DATATYPE_UINT8:
+            *fi_datatype = FI_UINT8;
+            return 0;
+        case ROFI_DATATYPE_INT16:
+            *fi_datatype = FI_INT16;
+            return 0;
+        case ROFI_DATATYPE_UINT16:
+            *fi_datatype = FI_UINT16;
+            return 0;
+        case ROFI_DATATYPE_INT32:
+            *fi_datatype = FI_INT32;
+            return 0;
+        case ROFI_DATATYPE_UINT32:
+            *fi_datatype = FI_UINT32;
+            return 0;
+        case ROFI_DATATYPE_INT64:
+            *fi_datatype = FI_INT64;
+            return 0;
+        case ROFI_DATATYPE_UINT64:
+            *fi_datatype = FI_UINT64;
+            return 0;
+        case ROFI_DATATYPE_FLOAT:
+            *fi_datatype = FI_FLOAT;
+            return 0;
+        case ROFI_DATATYPE_DOUBLE:
+            *fi_datatype = FI_DOUBLE;
+            return 0;
+        case ROFI_DATATYPE_FLOAT_COMPLEX:
+            *fi_datatype = FI_FLOAT_COMPLEX;
+            return 0;
+        case ROFI_DATATYPE_DOUBLE_COMPLEX:
+            *fi_datatype = FI_DOUBLE_COMPLEX;
+            return 0;
+        default:
+            return -1;
+    }
+}
+
+static int rofi_to_fi_atomic_op(rofi_atomic_op_t op, enum fi_op *fi_op) {
+    switch (op) {
+        case ROFI_ATOMIC_OP_MIN:
+            *fi_op = FI_MIN;
+            return 0;
+        case ROFI_ATOMIC_OP_MAX:
+            *fi_op = FI_MAX;
+            return 0;
+        case ROFI_ATOMIC_OP_SUM:
+            *fi_op = FI_SUM;
+            return 0;
+        case ROFI_ATOMIC_OP_PROD:
+            *fi_op = FI_PROD;
+            return 0;
+        case ROFI_ATOMIC_OP_LOR:
+            *fi_op = FI_LOR;
+            return 0;
+        case ROFI_ATOMIC_OP_LAND:
+            *fi_op = FI_LAND;
+            return 0;
+        case ROFI_ATOMIC_OP_BOR:
+            *fi_op = FI_BOR;
+            return 0;
+        case ROFI_ATOMIC_OP_BAND:
+            *fi_op = FI_BAND;
+            return 0;
+        case ROFI_ATOMIC_OP_LXOR:
+            *fi_op = FI_LXOR;
+            return 0;
+        case ROFI_ATOMIC_OP_BXOR:
+            *fi_op = FI_BXOR;
+            return 0;
+        case ROFI_ATOMIC_OP_READ:
+            *fi_op = FI_ATOMIC_READ;
+            return 0;
+        case ROFI_ATOMIC_OP_CSWAP:
+            *fi_op = FI_CSWAP;
+            return 0;
+        case ROFI_ATOMIC_OP_CSWAP_NE:
+            *fi_op = FI_CSWAP_NE;
+            return 0;
+        case ROFI_ATOMIC_OP_CSWAP_LE:
+            *fi_op = FI_CSWAP_LE;
+            return 0;
+        case ROFI_ATOMIC_OP_CSWAP_LT:
+            *fi_op = FI_CSWAP_LT;
+            return 0;
+        case ROFI_ATOMIC_OP_CSWAP_GE:
+            *fi_op = FI_CSWAP_GE;
+            return 0;
+        case ROFI_ATOMIC_OP_CSWAP_GT:
+            *fi_op = FI_CSWAP_GT;
+            return 0;
+        case ROFI_ATOMIC_OP_MSWAP:
+            *fi_op = FI_MSWAP;
+            return 0;
+        case ROFI_ATOMIC_OP_WRITE:
+            *fi_op = FI_ATOMIC_WRITE;
+            return 0;
+        default:
+            return -1;
+    }
+}
+
+static int rofi_query_atomic_internal_with_mode(rofi_datatype_t datatype, rofi_atomic_op_t op, int mode) {
+    enum fi_datatype fi_datatype;
+    enum fi_op fi_op;
+    size_t count = 0;
+    int ret;
+
+    if (rofi_to_fi_datatype(datatype, &fi_datatype) != 0 || rofi_to_fi_atomic_op(op, &fi_op) != 0) {
+        ERR_MSG("Invalid ROFI atomic query datatype (%d) or op (%d)", datatype, op);
+        return -1;
+    }
+
+    if (!(rofi.info->caps & FI_ATOMIC) || rofi.domain == NULL || rofi.ep == NULL) {
+        return -1;
+    }
+
+    switch (mode) {
+        case 0:
+            ret = fi_atomicvalid(rofi.ep, fi_datatype, fi_op, &count);
+            break;
+        case 1:
+            ret = fi_fetch_atomicvalid(rofi.ep, fi_datatype, fi_op, &count);
+            break;
+        case 2:
+            ret = fi_compare_atomicvalid(rofi.ep, fi_datatype, fi_op, &count);
+            break;
+        default:
+            return -1;
+    }
+
+    if (ret) {
+        return ret;
+    }
+
+    if (count < 1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int rofi_query_atomic_internal(rofi_datatype_t datatype, rofi_atomic_op_t op) {
+    return rofi_query_atomic_internal_with_mode(datatype, op, 0);
+}
+
+int rofi_query_fetch_atomic_internal(rofi_datatype_t datatype, rofi_atomic_op_t op) {
+    return rofi_query_atomic_internal_with_mode(datatype, op, 1);
+}
+
+int rofi_query_compare_atomic_internal(rofi_datatype_t datatype, rofi_atomic_op_t op) {
+    return rofi_query_atomic_internal_with_mode(datatype, op, 2);
+}
+
+int rofi_has_atomics_internal(void) {
+    if (rofi.info == NULL || rofi.domain == NULL) {
+        return 0;
+    }
+
+    return (rofi.info->caps & FI_ATOMIC) ? 1 : 0;
+}
 
 void *rofi_get_remote_addr_internal(void *addr, unsigned int id) {
     rofi_mr_desc *el = mr_get(&rofi, addr);
@@ -125,7 +293,12 @@ int rofi_put_internal(void *dst, void *src, size_t size, unsigned int id, unsign
         DEBUG_MSG("remote addr: %d %p", i, el->iov[id].addr);
     }
 
+#ifdef __OFI_PROV_CXI__
+    // if CXI, use offset instead of virtual address
+    rma_iov.addr = (uint64_t)(dst - el->start + el->iov[id].addr) - (uint64_t)el->start;
+#else
     rma_iov.addr = (uint64_t)(dst - el->start + el->iov[id].addr);
+#endif
     rma_iov.key = el->iov[id].key;
     if (rma_iov.key == 0) {
         ERR_MSG("\t No Key found for address %p on node %u", dst, id);
@@ -136,6 +309,7 @@ int rofi_put_internal(void *dst, void *src, size_t size, unsigned int id, unsign
               rofi.put_cntr,
               flags & ROFI_SYNC);
 
+    
     if (flags & ROFI_SYNC) {
         if (rofi_transport_put(&rofi, &rma_iov, id, src, size, el->mr_desc, NULL)) {
             ERR_MSG("\t Error writing %lu bytes from %p to address 0x%lx at node %u with key 0x%lx",
@@ -170,7 +344,11 @@ int rofi_get_internal(void *dst, void *src, size_t size, unsigned int id, unsign
     }
     DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx", el->start, el->start + el->size, el->mr_key);
 
+#ifdef __OFI_PROV_CXI__
+    rma_iov.addr = (uint64_t)(src - el->start + el->iov[id].addr) - (uint64_t)el->start;
+#else
     rma_iov.addr = (uint64_t)(src - el->start + el->iov[id].addr);
+#endif
     rma_iov.key = el->iov[id].key;
     if (rma_iov.key == 0) {
         ERR_MSG("\t No Key found for address %p on node %u", src, id);
@@ -220,6 +398,153 @@ int rofi_recv_internal(void *buf, size_t size, unsigned long flags) {
     return 0;
 }
 
+static int rofi_prepare_atomic_iov(void *addr, unsigned int id, struct fi_rma_iov *rma_iov) {
+    rofi_mr_desc *el = mr_get(&rofi, addr);
+
+    if (!el) {
+        ERR_MSG("MR not found for address %p on node %u", addr, id);
+        return -1;
+    }
+    DEBUG_MSG("\t Found MR [0x%p - 0x%p] Key: 0x%lx for dst address %p", el->start, el->start + el->size, el->mr_key, addr);
+
+    rma_iov->addr = (uint64_t)((uintptr_t)addr - (uintptr_t)el->start + el->iov[id].addr);
+    if (rma_iov->addr == 0) {
+        ERR_MSG("\t No address found for address %p on node %u", addr, id);
+        return -1;
+    }
+
+    rma_iov->key = el->iov[id].key;
+    if (rma_iov->key == 0) {
+        ERR_MSG("\t No Key found for address %p on node %u", addr, id);
+        return -1;
+    }
+
+    return 0;
+}
+
+static void *rofi_get_local_mr_desc(const void *addr) {
+    rofi_mr_desc *el;
+
+    if (addr == NULL) {
+        return NULL;
+    }
+
+    el = mr_get(&rofi, (void *)addr);
+    if (!el) {
+        return NULL;
+    }
+
+    return el->mr_desc;
+}
+
+ssize_t rofi_atomic_op_internal(void *addr, const void *value, size_t count, rofi_datatype_t datatype, rofi_atomic_op_t op,
+                                unsigned int id) {
+    enum fi_datatype fi_datatype;
+    enum fi_op fi_op;
+    struct fi_rma_iov rma_iov;
+    void *value_desc;
+    ssize_t ret;
+
+    if (addr == NULL || value == NULL || count < 1 || id >= rofi.desc.nodes) {
+        ERR_MSG("Invalid atomic_op arguments. addr=%p value=%p count=%lu id=%u", addr, value, count, id);
+        return -1;
+    }
+
+    if (rofi_to_fi_datatype(datatype, &fi_datatype) != 0 || rofi_to_fi_atomic_op(op, &fi_op) != 0) {
+        ERR_MSG("Invalid atomic_op datatype (%d) or op (%d)", datatype, op);
+        return -1;
+    }
+
+    if (rofi_query_atomic_internal(datatype, op) != 0) {
+        ERR_MSG("Atomic op is not supported by the provider for datatype (%d) and op (%d)", datatype, op);
+        return -1;
+    }
+
+    if (rofi_prepare_atomic_iov(addr, id, &rma_iov) != 0) {
+        return -1;
+    }
+
+    value_desc = rofi_get_local_mr_desc(value);
+
+    ret = rofi_transport_atomic(&rofi, &rma_iov, id, value, count, fi_datatype, fi_op, value_desc, NULL);
+    return ret;
+}
+
+ssize_t rofi_atomic_fetch_internal(void *addr, const void *value, void *result, size_t count, rofi_datatype_t datatype,
+                                   rofi_atomic_op_t op, unsigned int id) {
+    enum fi_datatype fi_datatype;
+    enum fi_op fi_op;
+    struct fi_rma_iov rma_iov;
+    void *value_desc;
+    void *result_desc;
+    ssize_t ret;
+
+    if (addr == NULL || result == NULL || count < 1 || id >= rofi.desc.nodes) {
+        ERR_MSG("Invalid atomic_fetch arguments. addr=%p result=%p count=%lu id=%u", addr, result, count, id);
+        return -1;
+    }
+
+    if (rofi_to_fi_datatype(datatype, &fi_datatype) != 0 || rofi_to_fi_atomic_op(op, &fi_op) != 0) {
+        ERR_MSG("Invalid atomic_fetch datatype (%d) or op (%d)", datatype, op);
+        return -1;
+    }
+
+    if (rofi_query_fetch_atomic_internal(datatype, op) != 0) {
+        ERR_MSG("Atomic fetch is not supported by the provider for datatype (%d) and op (%d)", datatype, op);
+        return -1;
+    }
+
+    if (rofi_prepare_atomic_iov(addr, id, &rma_iov) != 0) {
+        return -1;
+    }
+
+    value_desc = rofi_get_local_mr_desc(value);
+    result_desc = rofi_get_local_mr_desc(result);
+
+    ret = rofi_transport_atomic_fetch(&rofi, &rma_iov, id, value, result, count, fi_datatype, fi_op, value_desc,
+                                      result_desc, NULL);
+    return ret;
+}
+
+ssize_t rofi_compare_atomic_internal(void *addr, const void *value, const void *compare, void *result, size_t count,
+                                     rofi_datatype_t datatype, rofi_atomic_op_t op, unsigned int id) {
+    enum fi_datatype fi_datatype;
+    enum fi_op fi_op;
+    struct fi_rma_iov rma_iov;
+    void *value_desc;
+    void *compare_desc;
+    void *result_desc;
+    ssize_t ret;
+
+    if (addr == NULL || value == NULL || compare == NULL || result == NULL || count < 1 || id >= rofi.desc.nodes) {
+        ERR_MSG("Invalid compare_atomic arguments. addr=%p value=%p compare=%p result=%p count=%lu id=%u", addr,
+                value, compare, result, count, id);
+        return -1;
+    }
+
+    if (rofi_to_fi_datatype(datatype, &fi_datatype) != 0 || rofi_to_fi_atomic_op(op, &fi_op) != 0) {
+        ERR_MSG("Invalid compare_atomic datatype (%d) or op (%d)", datatype, op);
+        return -1;
+    }
+
+    if (rofi_query_compare_atomic_internal(datatype, op) != 0) {
+        ERR_MSG("Compare atomic is not supported by the provider for datatype (%d) and op (%d)", datatype, op);
+        return -1;
+    }
+
+    if (rofi_prepare_atomic_iov(addr, id, &rma_iov) != 0) {
+        return -1;
+    }
+
+    value_desc = rofi_get_local_mr_desc(value);
+    compare_desc = rofi_get_local_mr_desc(compare);
+    result_desc = rofi_get_local_mr_desc(result);
+
+    ret = rofi_transport_compare_atomic(&rofi, &rma_iov, id, value, compare, result, count, fi_datatype, fi_op,
+                                        value_desc, compare_desc, result_desc, NULL);
+    return ret;
+}
+
 rofi_names_t *rofi_parse_names_internal(char *names_list) {
     char token = ';';
     int name_cnt = 0;
@@ -247,6 +572,8 @@ rofi_names_t *rofi_parse_names_internal(char *names_list) {
     return names;
 }
 
+
+
 int rofi_init_internal(char *provs, char *domains) {
     pthread_rwlock_init(&rofi.mr_lock, NULL);
     pthread_mutex_init(&rofi.lock, NULL);
@@ -271,6 +598,8 @@ int rofi_init_internal(char *provs, char *domains) {
         return EXIT_FAILURE;
     }
 
+#if defined (__OFI_PROV_VERBS__)
+
     hints->caps = FI_RMA | FI_ATOMIC | FI_COLLECTIVE | FI_MSG;
     hints->addr_format = FI_FORMAT_UNSPEC;
     hints->domain_attr->resource_mgmt = FI_RM_ENABLED;
@@ -280,6 +609,47 @@ int rofi_init_internal(char *provs, char *domains) {
     hints->mode = FI_CONTEXT;
     hints->ep_attr->type = FI_EP_RDM;
     hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE; // maybe need to change this to FI_INJECT_COMPLETE or FI_TRANSMIT_COMPLETE
+
+#elif defined (__OFI_PROV_CXI__)
+
+    DEBUG_MSG("Process %d requesting CXI provider", rofi.desc.nid);
+
+    // NOTES: 
+    // (1) The following hints are based on working through the code path 
+    // for the simple_write rma test included with the CXI provider in 
+    // libfabric v2.1
+    // (2) The verbs provider specifies FI_DELIVERY_COMPLETE; CXI supports this, but defaults to 
+    // FI_TRANSMIT_COMPLETE, as it has lower latency. TRANSMIT vs DELIVERY does not make 
+    // a difference for passing the ROFI tests. 
+    // TODO: Will TRANSMIT break lamelar?
+    // (3) hints->tx_attr->size defaults to 1024, and is a hard cap (i.e., will abort 
+    // if exceeded). A large fan-out could cause issues. TODO: What is a safe value?
+    // (4) CXI has 'optimized' memory regions for applications that will use a small 
+    // number of large regions involving many small operations. Enabling these requires 
+    // manually selecting memory keys in the range 0-99 inclusive. This 
+    // in turn requires not configuring with FI_MR_PROV_KEY. Making this change may 
+    // cause ripple effects across the ROFI code. TODO: Consider whether to take this on.
+    // (6) TODO: Explore message ordering constraints. Currently we leave them at the defaults.
+    // (7) TODO: The CXI provider is returned with all of its capabilites active (including 
+    // FI_RMA_EVENT), which is a superset of the caps requested for the verbs provider. Test 
+    // In other work we have not seen a performance impact of doing this. 
+
+    hints->fabric_attr->prov_name = strdup("cxi"); // limits returned providers to cxi only
+    hints->domain_attr->mr_mode = FI_MR_ENDPOINT | FI_MR_ALLOCATED | FI_MR_PROV_KEY; 
+    hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
+    hints->domain_attr->control_progress = FI_PROGRESS_MANUAL; 
+    hints->tx_attr->size = 4096;  
+    //hints->tx_attr->op_flags = FI_DELIVERY_COMPLETE;  // default for CXI is FI_TRANSMIT_COMPLETE
+
+    // TBD: message ordering requirements (tx_attr and rx_attr)
+    // Through trial and error, we determined This will make most of them NO;
+    // hints->tx_attr->msg_order = 0;
+
+    DEBUG_MSG("ROFI Compiled for CXI support");
+
+#else
+    ERR_MSG("Invalid or no OFI provider selected during ROFI configuration!");
+#endif
 
     rofi_names_t *prov_names = NULL;
     if (provs) {
@@ -308,6 +678,7 @@ int rofi_init_internal(char *provs, char *domains) {
         for (int i = 0; i < prov_names->num; i++) {
             free(prov_names->names[i]);
         }
+        free(prov_names->names);
         free(prov_names);
     }
 
@@ -315,6 +686,7 @@ int rofi_init_internal(char *provs, char *domains) {
         for (int i = 0; i < domain_names->num; i++) {
             free(domain_names->names[i]);
         }
+        free(domain_names->names);
         free(domain_names);
     }
 
@@ -329,8 +701,13 @@ int rofi_init_internal(char *provs, char *domains) {
         ERR_MSG("Error allocating memory for memory region alloc buffer. Aborting!");
         return -ENOMEM;
     }
+    
+    if (rofi.desc.nodes > 1) {
+        rt_barrier();
+    }
 
-    ret = rofi_transport_exchange_mr_info(&rofi, rofi.mr);
+    ret = rofi_transport_exchange_init_mr_info(&rofi, rofi.mr);
+    // ORIGINAL: ret = rofi_transport_exchange_mr_info(&rofi, rofi.mr);
 
     if (ret) {
         return ret;
@@ -348,7 +725,15 @@ int rofi_init_internal(char *provs, char *domains) {
         rofi.sub_alloc_buf[i].addr = 0;
     }
     fi_freeinfo(hints);
+
+    //if (rofi.desc.nodes > 1) {
+    //    rt_barrier();
+    //}
+#ifdef __OFI_PROV_CXI__
+    rofi_transport_barrier_msg(&rofi);
+#else
     rofi_transport_barrier(&rofi);
+#endif
     return 0;
 
 err:
@@ -372,6 +757,10 @@ int rofi_finit_internal(void) {
     pthread_mutex_lock(&rofi.lock);
     rofi_transport_fini(&rofi);
     pthread_mutex_unlock(&rofi.lock);
+    if (rofi.desc.nodes > 1) {
+        rt_barrier();
+    }
+    rt_finit();
 
     return 0;
 }

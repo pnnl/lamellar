@@ -14,6 +14,7 @@ ROFI provide support for synchronous and asynchronous RDMA-based APIs (i.e., PUT
 
 NEWS
 ----
+July 2026: Fourth alpha release
 Feb 2024: Third alpha release
 May 2021: Second alpha release
 Feb 2020: First alpha release
@@ -270,6 +271,13 @@ In the case no option is specified with `rofi_init()`, ROFI selects the first pr
 
 HISTORY
 -------
+- version 0.4:
+  - add PMIx backend and autotools integration alongside PMI2
+  - atomic operation API refactor (add_u32, alignment/EGAIN fixes) with dedicated tests
+  - CXI provider support and libfabric version detection during configure
+  - more robust remote operation completion detection, race-condition fix before final init barrier
+  - route memory region exchanges through ROFI sub_exchange rather than the PMI-based exchange
+  - additional randperm/index-gather test coverage
 - version 0.3:
   - cleaned up and simplified implementation
   - use FI_COLLECTIVE to support memregion allocation on a sub set of pes
@@ -299,7 +307,7 @@ Mark Raugas     - mark.raugas@pnnl.gov
 
 ## License
 
-This project is licensed under the BSD License - see the [LICENSE.md](LICENSE.md) file for details.
+This project is licensed under the BSD License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 

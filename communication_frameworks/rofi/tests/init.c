@@ -5,8 +5,7 @@
 
 int main(void) {
     rofi_banner("Init Test");
-    rofi_init(NULL, "ib0");
-    // rofi_init(NULL, NULL);
+    rofi_init("verbs", NULL);
 
     rofi_verify(0);
     rofi_finit();

@@ -108,7 +108,7 @@ int rt_init(void) {
 }
 
 int rt_finit(void) {
-    DEBUG_MSG("Shutting down ROTI RT...");
+    DEBUG_MSG("Shutting down ROFI PMI RT...");
     if (location_array) {
         free(location_array);
     }
@@ -117,7 +117,7 @@ int rt_finit(void) {
         PMI_Finalize();
         initialized_pmi = 0;
     }
-    DEBUG_MSG("ROTI RT finalized.");
+    DEBUG_MSG("ROFI PMI RT finalized.");
     return 0;
 }
 
