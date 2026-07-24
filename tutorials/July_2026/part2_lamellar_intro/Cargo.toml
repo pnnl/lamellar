@@ -1,0 +1,62 @@
+[package]
+name = "lamellar_tutorial"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lamellar = { path = "../../../lamellar-runtime", features = ["runtime-warnings-panic"] }
+rand = "0.9.0"
+
+[profile.dev.build-override]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.release-dev]
+inherits = "release"
+opt-level = 3
+lto = false
+codegen-units = 256
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "main_array_basics"
+path = "src/main_array_basics.rs"
+
+[[bin]]
+name = "main_am_deep_dive"
+path = "src/main_am_deep_dive.rs"
+
+[[bin]]
+name = "main_array_types"
+path = "src/main_array_types.rs"
+
+[[bin]]
+name = "main_capstone"
+path = "src/main_capstone.rs"
+
+[[bin]]
+name = "solution_main"
+path = "solutions/main.rs"
+
+[[bin]]
+name = "solution_main_array_basics"
+path = "solutions/main_array_basics.rs"
+
+[[bin]]
+name = "solution_main_am_deep_dive"
+path = "solutions/main_am_deep_dive.rs"
+
+[[bin]]
+name = "solution_main_array_types"
+path = "solutions/main_array_types.rs"
+
+[[bin]]
+name = "solution_main_capstone"
+path = "solutions/main_capstone.rs"
