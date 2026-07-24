@@ -149,7 +149,7 @@ int rofi_put(void *dst, void *src, size_t size, unsigned int id, unsigned long f
     assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
 
     if (dst == NULL || src == NULL || size == 0 || id >= rofi.desc.nodes) {
-        ERR_MSG("Invalide argument.");
+        ERR_MSG("Invalide argument. dst %p src %p size %lu id %u", dst, src, size, id);
         return -1;
     }
 
