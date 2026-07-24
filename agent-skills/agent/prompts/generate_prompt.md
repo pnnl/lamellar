@@ -27,8 +27,13 @@ below one at a time and wait for responses. Make sure to not generate any code b
       since there were not serial code 
   In `fine-tuning.md`, it is said to create a sample first for a serial baseline to 
 
-** Execution parameters
+** Execution parameters (OPTIONAL)
+5. What should be the PE count for evaluation? Set default to 2.
+6. How many nodes? Set default to 1.
+7. How do you want to scale the data? Set default to small
 
-** After collecting answers, agent needs to
-
+## After collecting answers, agent needs to
+1. Run `skills.md` procedure
+2. Generate code
+3. Run `skills.md` verification cheklist one by one and result for each checklist
 
