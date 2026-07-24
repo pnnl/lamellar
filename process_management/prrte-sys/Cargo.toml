@@ -1,9 +1,17 @@
 [package]
 name = "prrte-sys"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 edition = "2021"
 links = "prrte"
 build = "build.rs"
+authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
+description = "Low-level FFI bindings to PRRTE, developed for use by the Lamellar runtime."
+readme = "README.md"
+repository = "https://github.com/pnnl/lamellar"
+homepage = "https://github.com/pnnl/lamellar-runtime"
+license-file = "LICENSE"
+keywords = ["hpc", "pmi", "process-management"]
+categories = ["external-ffi-bindings", "network-programming"]
 
 [features]
 vendored = [
@@ -24,10 +32,10 @@ vendored-prrte = [
 ]
 
 [dependencies]
-pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "dev", optional = true }
+pmix-sys = { version = "0.1.0-rc.1", optional = true }
 libevent-sys = { version = "0.4.0", features = ["threading"], optional = true }
 hwlocality-sys = { version = "0.7.1", optional = true }
 
 [build-dependencies]
-prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "dev", optional = true }
+prrte-src = { version = "0.1.0-rc.1", optional = true }
 bindgen = "0.72.1"
