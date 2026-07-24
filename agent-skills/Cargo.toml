@@ -1,0 +1,36 @@
+[package]
+name = "agent-skills"
+version = "0.1.0"
+edition = "2024"
+description = "AI agents helpers in writing Lamellar applications"
+
+[dependencies]
+derive-getters = "0.2.0"
+derive-new = "0.5.9"
+indicatif = "0.17.3"
+itertools = "0.10.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sprs = "0.11.0"
+lamellar = { git = "https://github.com/pnnl/lamellar-runtime.git", branch = "dev", features = ["runtime-warnings-panic","enable-ucx"] }
+
+
+[dev-dependencies]
+trybuild = "1.0.71"
+matrixmultiply = "0.3.2"
+rayon = "1.1"
+hostname = "0.3"
+nix = "0.23"
+assert_cmd = "2.0.4"
+serial_test = "3.2.0"
+backtrace = "0.3"
+
+[[example]]
+name = "serial_workflow"
+path = "agent/templates/serial_workflow.rs"
+
+
+[[example]]
+name = "serial_to_parallel_workflow_using_skills"
+path = "agent/examples/serial_to_parallel_workflow_using_skills.rs"
+
