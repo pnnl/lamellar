@@ -1,11 +1,11 @@
-/target
-Cargo.lock
+**/target
+**/Cargo.lock
 **/*.rs.bk
-/.vscode
+**/.vscode
 *.out
 *expanded*.rs
-/bin
-/output
+**/bin
+**/output
 run*.sh
 *.ansi
 *.log
@@ -15,7 +15,7 @@ run*.sh
 TODO
 /.cargo
 /.github
-/bin
-/node_modules
-/output*
+**/bin
+**/node_modules
+**/output*
 lamellar_env.sh
