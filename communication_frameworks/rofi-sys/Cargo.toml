@@ -1,6 +1,6 @@
 [package]
 name = "rofisys"
-version = "0.5.0-rc.1"
+version = "0.5.0"
 authors = [
     " Mark V Raugas <mark.raugas@pnnl.gov>",
     "Ryan D. Friese <ryan.friese@pnnl.gov>",
@@ -20,8 +20,8 @@ links = "rofi"
 # pmix-sys = { path = "../../process_management/pmix-sys", features = [
 #     "vendored",
 # ] }
-libfabric-sys = { package = "lamellar-libfabric-sys", version = "0.1.0-rc.1" }
-pmix-sys = { version = "0.1.0-rc.1", features = [
+libfabric-sys = { package = "lamellar-libfabric-sys", version = "0.1.0" }
+pmix-sys = { version = "0.1.0", features = [
     "vendored",
 ] }
 
