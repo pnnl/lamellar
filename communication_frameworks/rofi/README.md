@@ -301,9 +301,14 @@ implemented.
 
 CONTACTS
 --------
-Roberto Gioiosa - roberto.gioiosa@pnnl.gov  
+Current Team Members
+
 Ryan Friese     - ryan.friese@pnnl.gov  
 Mark Raugas     - mark.raugas@pnnl.gov  
+
+Past Team Members
+
+Roberto Gioiosa
 
 ## License
 
