@@ -1,6 +1,6 @@
 [package]
 name = "pmix-sys"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2021"
 links = "pmix"
 build = "build.rs"
@@ -29,5 +29,5 @@ libevent-sys = { version = "0.4.0", features = [
 ], optional = true }
 
 [build-dependencies]
-openpmix-src = { version = "0.1.0-rc.1", optional = true }
+openpmix-src = { version = "0.1.0", optional = true }
 bindgen = "0.72.1"

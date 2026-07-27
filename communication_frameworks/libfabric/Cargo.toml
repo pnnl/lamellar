@@ -1,6 +1,6 @@
 [package]
 name = "lamellar-libfabric"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
 description = "Mid-level Rust bindings for libfabric, developed for use by the Lamellar runtime."
@@ -15,7 +15,7 @@ categories = ["external-ffi-bindings", "network-programming"]
 name = "libfabric"
 
 [dependencies]
-libfabric-sys = { package = "lamellar-libfabric-sys", version = "0.1.0-rc.1" }
+libfabric-sys = { package = "lamellar-libfabric-sys", version = "0.1.0" }
 tokio = { version = "1.38", optional = true, features = [
     "net",
     "rt",

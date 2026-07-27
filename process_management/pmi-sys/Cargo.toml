@@ -1,6 +1,6 @@
 [package]
 name = "pmi-sys"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 links = "pmi"
@@ -19,5 +19,5 @@ vendored = ["pmi-mpich-src"]
 [dependencies]
 
 [build-dependencies]
-pmi-mpich-src = { version = "0.1.0-rc.3", optional = true }
+pmi-mpich-src = { version = "0.1.0", optional = true }
 bindgen = "0.72.1"

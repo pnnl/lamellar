@@ -1,7 +1,7 @@
 [package]
 name = "lamellar-ucx-sys"
 authors = ["Ryan Friese <ryan.friese@pnnl.gov>"]
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2024"
 description = "This system crate provides Rust language bindings (via the use of Bindgen) to the UCXlibrary."
 readme = "README.md"

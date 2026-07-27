@@ -1,6 +1,6 @@
 [package]
 name = "pmi"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2021"
 links = "pminative"
 authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
@@ -13,9 +13,9 @@ keywords = ["hpc", "pmi", "process-management"]
 categories = ["external-ffi-bindings", "network-programming"]
 
 [dependencies]
-pmi-sys = { version = "0.1.0-rc.1", optional = true }
-pmi2-sys = { version = "0.1.0-rc.1", optional = true }
-pmix-sys = { version = "0.1.0-rc.1", optional = true }
+pmi-sys = { version = "0.1.0", optional = true }
+pmi2-sys = { version = "0.1.0", optional = true }
+pmix-sys = { version = "0.1.0", optional = true }
 libc = "0.2"
 
 [features]

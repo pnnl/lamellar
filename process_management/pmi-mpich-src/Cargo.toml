@@ -1,6 +1,6 @@
 [package]
 name = "pmi-mpich-src"
-version = "0.1.0-rc.3"
+version = "0.1.0"
 edition = "2024"
 authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
 description = "Vendored build of MPICH's PMI implementation, developed for use by the Lamellar runtime."

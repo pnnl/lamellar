@@ -1,6 +1,6 @@
 [package]
 name = "prrte-src"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2024"
 authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
 description = "Vendored build of PRRTE, developed for use by the Lamellar runtime."
