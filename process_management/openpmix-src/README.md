@@ -18,7 +18,10 @@ CONTACTS
 Current Team Members
 
 Ryan Friese           - ryan.friese@pnnl.gov 
-Polykarpos Thomadakis - polykarpos.thomadakis@pnnl.gov
+
+Past Team Members
+
+Polykarpos Thomadakis
 
 ## License
 

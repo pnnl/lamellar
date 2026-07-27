@@ -59,6 +59,14 @@ or adding them to  features section in the lamellar entry in cargo.toml
     doesn't default to 1 PE here — it fans out to one PE per NUMA domain on the node (e.g.
     16 PEs on a 16-NUMA-domain machine), which can surprise you with a much bigger run than
     intended.
+  - **Run via `cargo run` at least once per binary before invoking it directly.** `cargo
+    build` alone isn't enough — the RPATH/RUNPATH patching that lets a launched PE find
+    libfabric/UCX/rofi (see main `lamellar-runtime` README) happens at `#[lamellar::main]`
+    launch time, not at build time, so it only runs the first time you actually execute the
+    binary. After that one `cargo run`, the binary's RPATH is patched in place and you can
+    call it directly (e.g. `./target/release-dev/main -- --pes 4 --lamellae shmem`) without
+    going through `cargo run` again — useful for scripting repeated runs without paying
+    cargo's own startup overhead each time.
 
 ### 1. Active Messages basics (~45 min) — `src/main.rs`
 
