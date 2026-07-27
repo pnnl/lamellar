@@ -40,9 +40,14 @@ cargo build --features debug
 
 ## Authors
 
+Current Team Members
+
 * **Mark Raugas**, PNNL
 * **Ryan Friese**, PNNL
-* **Roberto Gioiosa**, PNNL
+
+Past Team Members
+
+* **Roberto Gioiosa**
 
 ## License
 
