@@ -115,8 +115,12 @@ impl Build {
     pub fn build(&self) -> Artifacts {
         let out_dir = self.out_dir.as_ref().expect("OUT_DIR not set");
         let target = self.target.as_ref().expect("TARGET not set");
-        let lib_event_dir = std::env::var("DEP_EVENT_ROOT").expect("Couldn't find libevent");
-        let libhwloc_dir = std::env::var("DEP_HWLOC_ROOT").expect("Couldn't find libhwloc");
+        let lib_event_dir = std::env::var("LIBEVENT_DIR")
+            .or_else(|_| std::env::var("DEP_EVENT_ROOT"))
+            .expect("Couldn't find libevent: set LIBEVENT_DIR to a system libevent install prefix, or enable the vendored-libevent feature");
+        let libhwloc_dir = std::env::var("HWLOC_DIR")
+            .or_else(|_| std::env::var("DEP_HWLOC_ROOT"))
+            .expect("Couldn't find libhwloc: set HWLOC_DIR to a system hwloc install prefix, or enable the vendored-hwloc feature");
 
         let dest = out_dir.join("src");
         let src = source_dir();

@@ -4,6 +4,8 @@ This crate vendors the PRRTE source tree, copies it into `OUT_DIR`, and runs the
 
 The build helper exposes the produced `include`, `lib`, and `bin` directories via the exported `Artifacts` struct so the `prrte-sys` build script can link against the freshly built libraries.
 
+For `libevent`/`hwloc`, the install prefix is resolved in this order: the `LIBEVENT_DIR`/`HWLOC_DIR` env vars (for linking a system install directly), then the `DEP_EVENT_ROOT`/`DEP_HWLOC_ROOT` build-script metadata (set when those deps are vendored via `libevent-sys`/`hwlocality-sys`), then a fallback derived from `DEP_EVENT_INCLUDE`/`DEP_HWLOC_INCLUDE`.
+
 
 STATUS
 ------

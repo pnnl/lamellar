@@ -9,6 +9,14 @@
 
 The build script emits the include/lib directories so downstream crates know where to find PRRTE’s headers and libraries.
 
+### Linking a system hwloc/libevent while vendoring PRRTE
+
+If you want PRRTE (and PMIx) built from source but linked against a system hwloc/libevent — e.g. on macOS, where hwlocality's vendored autotools build fails — enable `prrte-src` and `vendored-pmix` without `vendored-hwloc`/`vendored-libevent`, and set `HWLOC_DIR`/`LIBEVENT_DIR` to the relevant install prefix:
+
+```sh
+HWLOC_DIR=$(brew --prefix hwloc) cargo build --no-default-features --features prrte-src,vendored-libevent,vendored-pmix
+```
+
 STATUS
 ------
 prrte-sys has been developed as part of the Lamellar project and is still under development, thus not all intended features are yet

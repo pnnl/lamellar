@@ -21,9 +21,9 @@ vendored = [
     "vendored-pmix",
 ] # Ideally we wouldn't always need the vendored version of the dependencies
 # but currently hwloc-sys does not expose a way to get the path to a system-installed hwloc
-vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled"]
-vendored-hwloc = ["hwlocality-sys/hwloc-latest", "hwlocality-sys/vendored"]
-vendored-pmix = ["pmix-sys/vendored"]
+vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled", "pmix-sys/vendored-libevent"]
+vendored-hwloc = ["hwlocality-sys/hwloc-latest", "hwlocality-sys/vendored", "pmix-sys/vendored-hwloc"]
+vendored-pmix = ["pmix-sys/openpmix-src"]
 vendored-prrte = [
     "prrte-src",
     "vendored-libevent",

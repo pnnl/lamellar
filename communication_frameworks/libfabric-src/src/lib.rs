@@ -26,6 +26,7 @@ pub struct Artifacts {
     lib_dir: PathBuf,
     bin_dir: PathBuf,
     libs: Vec<String>,
+    generated_header: PathBuf,
     #[allow(dead_code)]
     target: String,
 }
@@ -47,6 +48,13 @@ impl Artifacts {
 
     pub fn bin_dir(&self) -> &Path {
         &self.bin_dir
+    }
+
+    /// Path to the generated `fabric_sys.h` (and its inlined-function wrappers),
+    /// which lives under `OUT_DIR` rather than `include_dir` so a system
+    /// `OFI_DIR` install (potentially read-only) is never written into.
+    pub fn generated_header(&self) -> &Path {
+        &self.generated_header
     }
 }
 
@@ -204,11 +212,14 @@ impl Build {
         let lib_dir = libfabric_build.join("lib");
         let bin_dir = libfabric_build.join("bin");
         let ofi_include_rdma_path = libfabric_build.join("include/rdma/");
-        
+
         // libfabric has multiple header file that we are required to generate bindings for so we create a
-        // new header named fabric_sys.h and #include all headers there
+        // new header named fabric_sys.h and #include all headers there. This is written into
+        // OUT_DIR (not include_dir) since include_dir may be a system OFI_DIR install that we
+        // shouldn't write into (and may not even be writable).
+        let generated_header = out_dir.join("fabric_sys.h");
         let header_file =
-            std::fs::File::create(include_dir.join("fabric_sys.h")).unwrap();
+            std::fs::File::create(&generated_header).unwrap();
         let mut writer = std::io::BufWriter::new(header_file);
         
         // Another problem is that there are several static inline functions in these header files which do
@@ -261,6 +272,7 @@ impl Build {
             lib_dir,
             bin_dir,
             libs,
+            generated_header,
             target: target.to_string(),
         }
 

@@ -1,5 +1,5 @@
 extern crate bindgen;
-#[cfg(feature = "vendored")]
+#[cfg(any(feature = "vendored", feature = "openpmix-src"))]
 extern crate openpmix_src;
 
 
@@ -53,17 +53,28 @@ fn find_pmix_normal(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::
 }
 
 fn find_pmix(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::PathBuf) {
-    #[cfg(feature = "vendored")]
+    #[cfg(any(feature = "vendored", feature = "openpmix-src"))]
     {
         if env_inner("PMIX_NO_VENDORED").map_or(true, |v| v == "0") {
-            let lib_event_dir = std::env::var("DEP_EVENT_ROOT").expect("Couldn't find libevent");
-            let libhwloc_dir = std::env::var("DEP_HWLOC_ROOT").expect("Couldn't find libhwloc");
+            let libevent_from_env = env_inner("LIBEVENT_DIR");
+            let lib_event_dir = libevent_from_env.clone()
+                .or_else(|| std::env::var("DEP_EVENT_ROOT").ok())
+                .expect("Couldn't find libevent: set LIBEVENT_DIR to a system libevent install prefix, or enable the vendored-libevent feature");
+            let hwloc_from_env = env_inner("HWLOC_DIR");
+            let libhwloc_dir = hwloc_from_env.clone()
+                .or_else(|| std::env::var("DEP_HWLOC_ROOT").ok())
+                .expect("Couldn't find libhwloc: set HWLOC_DIR to a system hwloc install prefix, or enable the vendored-hwloc feature");
             let artifacts =  openpmix_src::Build::new().build();
             println!("cargo:rustc-link-search={}/lib", lib_event_dir);
             println!("cargo:rustc-link-search={}/lib", libhwloc_dir);
-            println!("cargo:rustc-link-lib=static=event_core");
-            println!("cargo:rustc-link-lib=static=event_pthreads");
-            println!("cargo:rustc-link-lib=static=hwloc");
+            // A system libevent/hwloc (selected via LIBEVENT_DIR/HWLOC_DIR) is typically
+            // only available as a shared library, unlike the vendored autotools build
+            // which always produces static archives.
+            let event_link_kind = if libevent_from_env.is_some() { "dylib" } else { "static" };
+            let hwloc_link_kind = if hwloc_from_env.is_some() { "dylib" } else { "static" };
+            println!("cargo:rustc-link-lib={}=event_core", event_link_kind);
+            println!("cargo:rustc-link-lib={}=event_pthreads", event_link_kind);
+            println!("cargo:rustc-link-lib={}=hwloc", hwloc_link_kind);
             return (
                 artifacts.lib_dir().to_path_buf(),
                 artifacts.include_dir().to_path_buf(),

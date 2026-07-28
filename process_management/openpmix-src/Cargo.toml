@@ -11,7 +11,11 @@ license-file = "LICENSE"
 keywords = ["hpc", "pmi", "process-management"]
 categories = ["external-ffi-bindings", "network-programming"]
 
+[features]
+vendored-hwloc = ["hwlocality-sys/hwloc-latest", "hwlocality-sys/vendored"]
+vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled"]
+
 [dependencies]
-hwlocality-sys = {version = "0.7.1", features = ["hwloc-latest", "vendored"]}
-libevent-sys = {version="0.4.0", features = ["bundled", "openssl_bundled", "threading"]}
+hwlocality-sys = {version = "0.7.1", optional = true}
+libevent-sys = {version="0.4.0", features = ["threading"], optional = true}
 autotools = "0.2.7"

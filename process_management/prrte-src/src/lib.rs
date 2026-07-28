@@ -114,17 +114,21 @@ impl Build {
     pub fn build(&self) -> Artifacts {
         let out_dir = self.out_dir.as_ref().expect("OUT_DIR not set");
         let target = self.target.as_ref().expect("TARGET not set");
-        let lib_event_dir = if let Ok(root_dir) = std::env::var("DEP_EVENT_ROOT") {
+        let lib_event_dir = if let Ok(dir) = std::env::var("LIBEVENT_DIR") {
+            dir
+        } else if let Ok(root_dir) = std::env::var("DEP_EVENT_ROOT") {
             root_dir
         } else {
-            let include_str = std::env::var("DEP_EVENT_INCLUDE").expect("Couldn't find libevent");
+            let include_str = std::env::var("DEP_EVENT_INCLUDE").expect("Couldn't find libevent: set LIBEVENT_DIR to a system libevent install prefix, or enable the vendored-libevent feature");
             let include_dir = std::path::Path::new(&include_str);
             include_dir.parent().unwrap().display().to_string()
         };
-        let libhwloc_dir = if let Ok(root_dir) = std::env::var("DEP_HWLOC_ROOT") {
+        let libhwloc_dir = if let Ok(dir) = std::env::var("HWLOC_DIR") {
+            dir
+        } else if let Ok(root_dir) = std::env::var("DEP_HWLOC_ROOT") {
             root_dir
         } else {
-            let include_str = std::env::var("DEP_HWLOC_INCLUDE").expect("Couldn't find libhwloc");
+            let include_str = std::env::var("DEP_HWLOC_INCLUDE").expect("Couldn't find libhwloc: set HWLOC_DIR to a system hwloc install prefix, or enable the vendored-hwloc feature");
             let include_dir = std::path::Path::new(&include_str);
             include_dir.parent().unwrap().display().to_string()
         };

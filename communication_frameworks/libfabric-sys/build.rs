@@ -102,7 +102,7 @@ fn main() {
         // .blocklist_function("qecvt")
         // .blocklist_function("qecvt_r")
         // .blocklist_function("strtold")
-        .header(artifacts.include_dir().join("fabric_sys.h").to_str().unwrap())
+        .header(artifacts.generated_header().to_str().unwrap())
         .clang_arg(format!("-I{}", artifacts.include_dir().to_str().unwrap()))
         .generate()
         .expect("Unable to generate bindings");
