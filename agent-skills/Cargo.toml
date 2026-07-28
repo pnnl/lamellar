@@ -9,11 +9,10 @@ derive-getters = "0.2.0"
 derive-new = "0.5.9"
 indicatif = "0.17.3"
 itertools = "0.10.0"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1"
 sprs = "0.11.0"
-lamellar = { git = "https://github.com/pnnl/lamellar-runtime.git", branch = "dev", features = ["runtime-warnings-panic","enable-ucx"] }
-
+lamellar = { version = "0.8.0-rc.1", features = ["runtime-warnings-panic", "enable-ucx"] }
 
 [dev-dependencies]
 trybuild = "1.0.71"
@@ -24,6 +23,7 @@ nix = "0.23"
 assert_cmd = "2.0.4"
 serial_test = "3.2.0"
 backtrace = "0.3"
+
 
 [[example]]
 name = "serial_workflow"

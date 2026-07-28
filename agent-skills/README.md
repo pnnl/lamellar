@@ -15,6 +15,9 @@ cargo build --release --examples
 cargo run --release --example <example-name>
 ```
 
+```
+salloc -N 2 --exclusive
+cargo run --release --example <example-name> -- -- --nodes 2 --pes 4 --lamellae ucx
 
 The layout:
 

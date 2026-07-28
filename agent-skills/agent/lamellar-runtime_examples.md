@@ -1,24 +1,12 @@
 # Lamellar HPC Runtime — Example Catalog
 
-A human-readable guide to the example programs in [`examples/`](examples/).
+A human-readable guide to the example programs in [`lamellar/lamellar-runtime/examples/`](lamellar/lamellar-runtime/examples/).
 Lamellar is an asynchronous, distributed-memory runtime for HPC written in Rust,
 built around **Active Messages (AMs)**, **distributed arrays**, **RDMA memory regions**,
  **distributed reference-counting (Darc)**, and **teams** of PEs
 (processing elements).
 
-Following building packages instruction located in `README.md`, each example can typically be run with:
-
-```bash
-# single process (local backend)
-cargo run --release --example <name>
-
-# shared memory, N PEs
-./lamellar_run.sh -N=4 ./target/release/examples/<name>
-
-# distributed (rofi / UCX backend via MPI launcher)
-srun -N 2 --mpi=pmi2 ./target/release/examples/<name>
-```
-
+NOTE: these are examples located in `lamellar/lamellar-runtime`.
 ---
 
 ## Hello World (`examples/hello_world/`)
