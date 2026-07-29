@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-lamellar = { path = "../../../lamellar-runtime", features = ["runtime-warnings-panic"] }
+lamellar = { version = "0.8.0", features = ["runtime-warnings-panic"] }
 rand = "0.9.0"
 
 # You may need this if on macOS: hwloc's vendored autotools build fails there,
@@ -15,7 +15,7 @@ rand = "0.9.0"
 #   (also `brew reinstall autoconf automake libtool` if autoreconf fails with
 #   "bad interpreter: /usr/bin/perl5.30: No such file or directory")
 #   HWLOC_DIR=$(brew --prefix hwloc) PKG_CONFIG_PATH=$(brew --prefix hwloc)/lib/pkgconfig cargo build
-# lamellar = { path = "../../../lamellar-runtime", default-features = false, features = ["runtime-warnings-panic", "with-pmix-vendored", "enable-lamellar-main", "enable-numa-detect"] }
+# lamellar = { version = "0.8.0", default-features = false, features = ["runtime-warnings-panic", "with-pmix-vendored", "enable-lamellar-main", "enable-numa-detect"] }
 
 [profile.dev.build-override]
 opt-level = 3

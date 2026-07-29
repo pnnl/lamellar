@@ -13,8 +13,8 @@ Linux-only libfabric headers/errno codes. Stick to the default `shmem` backend o
 
 ### 0. Setup / orientation (~15 min)
 
-- `Cargo.toml` points `lamellar` at the local `lamellar-runtime` checkout (v0.8.0, releasing
-  before this tutorial) plus `rand`. No `rayon` in this tutorial — part 1's `Arc`/
+- `Cargo.toml` points `lamellar` at crates.io v0.8.0 plus `rand`. No `rayon` in this
+  tutorial — part 1's `Arc`/
   `AtomicUsize` thread demo (topic 10) already covers single-process concurrency; part 2 is
   exclusively about the *lamellar (distributed)* story.
 - `Cargo.toml` also ports `lamellar-runtime`'s own `[profile.dev.build-override]`/
