@@ -34,9 +34,10 @@ fn main() {
         .block();
     world.barrier();
 
-    // BUG: into_read_only() consumes the array and returns a new handle - forgetting to
-    // bind (or bind + block) the result means `atomic_array` below still refers to the old
-    // (now-invalid) atomic handle, not the read-only one.
+    // BUG: into_read_only() takes `self` by value, consuming atomic_array. Dropping the
+    // returned handle instead of binding it doesn't leave the old handle usable - it's a
+    // hard compile error (E0382, "borrow of moved value") on the `atomic_array` use below.
+    // Fix by binding (and blocking) the result: `let read_only_array = atomic_array.into_read_only().block();`
     atomic_array.into_read_only();
 
     if my_pe == 0 {

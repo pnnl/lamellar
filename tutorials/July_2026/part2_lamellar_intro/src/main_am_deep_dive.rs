@@ -58,9 +58,8 @@ fn main() {
     for t in 0..num_threads {
         let start = t * chunk;
         let end = if t == num_threads - 1 { data.len() } else { start + chunk };
-        // BUG: spawn_am_local returns a lazy future - it does nothing unless you call
-        // .spawn() or .block() on it. Dropping the result here means the AM never runs
-        // at all, so `total` stays 0.
+        // spawn_am_local is EAGER - it's already submitted to the scheduler here,
+        // dropping the handle doesn't stop it from running.
         let _ = world.spawn_am_local(LocalSumAm {
             data: data.clone(),
             start,
@@ -69,5 +68,8 @@ fn main() {
         });
     }
 
+    // BUG: nothing waits for the fanned-out LocalSumAm's to finish before reading
+    // `total` - a race, so the print below may show a partial (or even 0) sum
+    // depending on how fast the AMs land relative to this line.
     println!("PE {my_pe}: partial total = {:?}", total.load(Ordering::Relaxed));
 }

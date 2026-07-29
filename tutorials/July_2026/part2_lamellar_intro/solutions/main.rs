@@ -23,8 +23,15 @@ fn main() {
     let my_pe = world.my_pe();
     world.barrier();
 
-    let request = world.spawn_am_all(HelloWorld {
+    // exec_am_all() is lazy - must call .spawn()/.block()/await or it never runs.
+    let request = world.exec_am_all(HelloWorld {
         original_pe: my_pe,
     });
     request.block(); // wait for all PEs to finish executing the AM before exiting
+
+    // spawn_am_all() is eager - runs immediately, .block() here just waits on it too.
+    let request = world.spawn_am_all(HelloWorld {
+        original_pe: my_pe,
+    });
+    request.block();
 }

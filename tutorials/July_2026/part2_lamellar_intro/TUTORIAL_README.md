@@ -7,6 +7,10 @@ But these can easily be enabled via passing
 `--features enable-ucx`
 or adding them to  features section in the lamellar entry in cargo.toml 
 
+**macOS**: `enable-ucx` and `enable-libfabric` are not supported on macOS — UCX's
+build requires `-lrt` (Linux-only), and the `libfabric`/`libfabric-sys` bindings assume
+Linux-only libfabric headers/errno codes. Stick to the default `shmem` backend on macOS.
+
 ### 0. Setup / orientation (~15 min)
 
 - `Cargo.toml` points `lamellar` at the local `lamellar-runtime` checkout (v0.8.0, releasing
@@ -18,6 +22,10 @@ or adding them to  features section in the lamellar entry in cargo.toml
   top-level manifest, so the tutorial (its own separate Cargo root) needs its own copy.
   This cuts the first build (which compiles PMIx/PRRTE from source — vendored, not
   prebuilt) from ~21 min down to ~7 min. Build/run everything with `--profile release-dev`.
+- **macOS**: hwloc's vendored autotools build fails there. See the commented-out
+  `lamellar` dependency line in `Cargo.toml` for the fix (link a system hwloc instead) —
+  requires `brew install hwloc libevent pkgconf` (plus `brew reinstall autoconf automake
+  libtool` if `autoreconf` fails with a "bad interpreter: /usr/bin/perl5.30" error).
 - Nomenclature:
   - **PE** (Processing Element) — one participant in the distributed program (a process, here).
   - **World** — the top-level handle representing all PEs; created once via
@@ -36,24 +44,28 @@ or adding them to  features section in the lamellar entry in cargo.toml
   flags, forwarded after a `--`:
 
   ```bash
-  cargo run --profile release-dev --bin main -- -- --pes 4
+  cargo run --profile release-dev --bin hello -- -- --pes 4
   ```
+
+  (`src/hello.rs` just prints `my_pe()`/`num_pes()` and calls `world.barrier()` — no AMs,
+  no intentional bugs, so it's a clean way to see `--pes`/`--lamellae` in isolation before
+  section 1 introduces the AM bug.)
 
   Everything before the first `--` is cargo's own args, between the two `--`s is forwarded
   to the app (unused here), after the second `--` is forwarded to the launcher. `--pes` =
   number of PEs. `--pes-per-node` only matters once you're spanning multiple nodes — skip
-  it for this single-node local tutorial. Without `--lamellae` set (or set to `local`),
+  it for this single-node tutorial. Without `--lamellae` set (or set to `local`),
   omitting `--pes` just runs a single PE (`world.num_pes() == 1`) — useful for quick
   single-PE debugging.
   - **Try `--pes 4` right now, before setting anything else.** Every one of the 4 processes
     comes up as its own isolated single-PE world (all print PE 0, no shared data) — the
     default backend doesn't actually connect PEs together.
   - Now add `--lamellae shmem` and re-run the same command: the 4 processes join one
-    real 4-PE world (distinct `my_pe()` values, shared/distributed array data). This is the
-    backend that makes local multi-PE runs real — pass it for the rest of the tutorial:
+    real 4-PE world (distinct `my_pe()` values). This is the backend that makes local
+    multi-PE runs real — pass it for the rest of the tutorial:
 
     ```bash
-    cargo run --profile release-dev --bin main -- -- --pes 4 --lamellae shmem
+    cargo run --profile release-dev --bin hello -- -- --pes 4 --lamellae shmem
     ```
   - **Always pass `--pes N` explicitly once `--lamellae shmem` is set.** Omitting it
     doesn't default to 1 PE here — it fans out to one PE per NUMA domain on the node (e.g.
@@ -73,16 +85,33 @@ or adding them to  features section in the lamellar entry in cargo.toml
 - Build `LamellarWorldBuilder::new().build()`, inspect `world.my_pe()` / `world.num_pes()`.
 - Define an AM: a plain struct annotated `#[AmData(Debug, Clone)]`, plus
   `#[am] impl LamellarAM for YourStruct { async fn exec(self) { ... } }`.
-- Launch it with `world.spawn_am_all(...)` (every PE) or `world.spawn_am_pe(pe, ...)`
-  (one specific PE) — both return a lazy request handle that does nothing until you call
-  `.spawn()` (fire-and-forget, track completion later via `world.wait_all()`) or `.block()`
-  (wait now, get any return value).
-- `cargo run --profile release-dev --bin main` — has an intentional bug (missing
-  `request.block()`): the runtime
-  itself catches this (`Cargo.toml` enables the `runtime-warnings-panic` feature) and panics
-  with `[LAMELLAR WARNING] You are dropping a MultiAmHandle that has not been 'await'ed,
-  'spawn()'ed or 'block()'ed` — a live demo of the runtime telling you exactly what you
-  forgot. Fix, or check `solutions/main.rs`.
+- Launch it with `world.exec_am_all(...)` / `world.spawn_am_all(...)` (every PE) or
+  `world.exec_am_pe(pe, ...)` / `world.spawn_am_pe(pe, ...)` (one specific PE) — these
+  differ in when the AM actually gets submitted to the scheduler:
+  - `exec_am_all`/`exec_am_pe` are **lazy** — building the handle does not submit the AM.
+    Nothing runs until you call `.spawn()` (fire-and-forget, track completion later via
+    `world.wait_all()`), `.block()` (wait now, get any return value), or `.await` it.
+    Drop the handle without doing one of those and the AM *never runs* — the runtime
+    catches this for you (`Cargo.toml` enables the `runtime-warnings-panic` feature) and
+    panics with `[LAMELLAR WARNING] You are dropping a MultiAmHandle that has not been
+    'await'ed, 'spawn()'ed or 'block()'ed`.
+  - `spawn_am_all`/`spawn_am_pe` are **eager** — the AM is submitted to the scheduler
+    immediately, before the call even returns. The handle you get back is only for
+    tracking/collecting results; dropping it doesn't stop the AM from running, it just
+    means you never observe when it finishes.
+- `cargo run --profile release-dev --bin main` — has an intentional bug: the first AM is
+  launched with `world.exec_am_all(...)` and its handle dropped without `.spawn()`/
+  `.block()`, so it never runs at all, and the runtime panics with the `MultiAmHandle`
+  warning above. Fix by adding `.block()` (or `.spawn()` + a later `wait_all()`).
+  Once that's fixed, notice the *second* AM in the file — launched with
+  `world.spawn_am_all(...)` and also dropped — does not panic (it's eager, so it already
+  ran). Its `println!` is still guaranteed to land before `main` returns: dropping
+  `LamellarWorld` runs an implicit `barrier(); wait_all(); barrier();`, so any AM already
+  submitted to the scheduler (eager `spawn_am_all`/`spawn_am_pe`) is waited on even if you
+  never touch its handle. That implicit wait is exactly why the *lazy* `exec_am_all` case
+  is the dangerous one: an AM that was never submitted has nothing for `wait_all()` to
+  wait on, so the dropped-handle panic is your only signal something didn't run.
+  Check `solutions/main.rs` for both fixed.
 
 ### 2. Distributed Arrays basics (~45 min) — `src/main_array_basics.rs`
 
@@ -104,10 +133,12 @@ or adding them to  features section in the lamellar entry in cargo.toml
 - Local-only AMs (`#[AmLocalData]` / `#[local_am]`, launched with `world.spawn_am_local(...)`)
   never leave the issuing PE — no serialization needed, good for fanning work out across a
   PE's own worker threads.
-- Bug: the fan-out loop drops each `spawn_am_local(...)` handle without `.spawn()`, so the
-  runtime panics with `[LAMELLAR WARNING] You are dropping a LocalAmHandle that has not
-  been 'await'ed, 'spawn()'ed or 'block()'ed` — the AM never ran, and `total` would have
-  stayed 0. Fix, or check `solutions/main_am_deep_dive.rs`.
+- `spawn_am_local` is **eager** — like `spawn_am_all`/`spawn_am_pe`, it's already submitted
+  to the scheduler when the call returns; dropping the handle doesn't stop it running.
+- Bug: the fan-out loop never waits for the fanned-out `LocalSumAm`s to finish before
+  reading `total` — a race. The final print may show a partial (or even zero) sum depending
+  on how fast the AMs land relative to that line. Fix by adding a wait (e.g.
+  `world.wait_all()`) before the print, or check `solutions/main_am_deep_dive.rs`.
 
 ### 4. Array type survey (~30 min) — `src/main_array_types.rs`
 
@@ -122,18 +153,22 @@ Safety/use-case spectrum, foundation to most-guarded:
 Convert between them with `.into_atomic()`, `.into_read_only()`, `.into_local_lock()`,
 `.into_global_lock()` — each returns a new handle wrapped in `.block()`.
 
-Bug: `atomic_array.into_read_only();` — the return value (the new `ReadOnlyArray` handle) is
-dropped instead of bound, so the code below still (incorrectly) uses the old `atomic_array`
-binding. Fix, or check `solutions/main_array_types.rs`.
+Bug: `atomic_array.into_read_only();` — `into_read_only()` takes `self` by value, so this
+consumes `atomic_array`. Dropping the returned handle instead of binding it doesn't compile:
+the code below's use of `atomic_array` is a moved-value error (E0382). Fix by binding it
+(`let read_only_array = atomic_array.into_read_only().block();`), or check
+`solutions/main_array_types.rs`.
 
 ### 5. Capstone (~35 min) — `src/main_capstone.rs`
 
-Histogram, three ways (adapted from `../April_2025/src/main_histo.rs`, minus rayon):
+Histogram, four ways (adapted from `../April_2025/src/main_histo.rs`, minus rayon):
 
 1. **Serial** — plain `Vec<usize>`, single PE, single thread — baseline.
-2. **Lamellar array** — `AtomicArray::batch_add(indices, 1)` — one line replaces the
+2. **UnsafeArray** — `UnsafeArray::batch_add(indices, 1)` — same one-line batch op as step 3,
+   but on the unsynchronized foundation array type every other array type is built on top of.
+3. **Lamellar array** — `AtomicArray::batch_add(indices, 1)` — one line replaces the
    entire histogram loop, automatically distributed across every PE.
-3. **Hand-rolled AM** — each PE's `HistoLaunch` (a local AM) routes indices to their owning
+4. **Hand-rolled AM** — each PE's `HistoLaunch` (a local AM) routes indices to their owning
    PE, dispatching a `HistoAm` that increments counts in a `Darc<Vec<AtomicUsize>>` — the
    distributed analog of the `Arc<AtomicUsize>` from part 1 topic 10.
 
@@ -143,7 +178,11 @@ Run multi-PE to see it actually distribute:
 cargo run --profile release-dev --bin main_capstone -- -- --pes 4 --lamellae shmem
 ```
 
-Bug: `lamellar_am_histogram` never calls `world.wait_all()` / `world.barrier()` after
+Bug 1: `lamellar_unsafe_histogram` doesn't compile as written — `UnsafeArray`'s ops
+(`batch_add`, `sum`) are `unsafe fn`, unlike `AtomicArray`'s. Fix by wrapping both calls
+in `unsafe { ... }`, or check `solutions/main_capstone.rs`.
+
+Bug 2: `lamellar_am_histogram` never calls `world.wait_all()` / `world.barrier()` after
 launching the `HistoLaunch` AMs, so the final sum can be read before every `HistoAm` has
 landed and incremented the table — flaky/undercounted totals, more visible at `-N 4+`.
 Fix, or check `solutions/main_capstone.rs`.

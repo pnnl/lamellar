@@ -25,6 +25,27 @@ fn serial_histogram(indices: &[usize]) {
     println!("Sum: {:?}", table.iter().sum::<usize>());
 }
 
+// Fixed: batch_add()/sum() are `unsafe fn` on UnsafeArray - wrap both in `unsafe { ... }`.
+fn lamellar_unsafe_histogram(world: &LamellarWorld, indices: &[usize]) {
+    let table: UnsafeArray<usize> = UnsafeArray::new(
+        world,
+        indices.len() * world.num_pes(),
+        Distribution::Cyclic,
+    )
+    .block();
+    world.barrier();
+    let timer = std::time::Instant::now();
+    unsafe {
+        table.batch_add(indices, 1).block();
+    }
+    table.barrier();
+    println!("Lamellar Unsafe Time: {:?}", timer.elapsed());
+
+    if world.my_pe() == 0 {
+        println!("Sum: {:?}", unsafe { table.sum().block() });
+    }
+}
+
 fn lamellar_histogram(world: &LamellarWorld, indices: &[usize]) {
     let table: AtomicArray<usize> = AtomicArray::new(
         world,
@@ -135,6 +156,8 @@ fn main() {
     let per_pe = table_size / world.num_pes();
     let pe_indices = generate_random_indices(per_pe, per_pe);
 
+    lamellar_unsafe_histogram(&world, &pe_indices);
+    world.barrier();
     lamellar_histogram(&world, &pe_indices);
     world.barrier();
     lamellar_am_histogram(&world, pe_indices);

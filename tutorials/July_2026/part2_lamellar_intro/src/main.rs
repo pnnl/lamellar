@@ -27,12 +27,26 @@ fn main() {
     let my_pe = world.my_pe();
     world.barrier();
 
-    // Send a Hello World Active Message to all PEs.
-    let request = world.spawn_am_all(HelloWorld {
+    // exec_am_all() is LAZY: it builds the request but does not submit it to
+    // the scheduler. Dropping the handle without '.spawn()'/'.block()'/await
+    // means the AM never runs at all - the runtime catches this for you
+    // (`Cargo.toml` enables the `runtime-warnings-panic` feature) and panics with
+    // `[LAMELLAR WARNING] You are dropping a MultiAmHandle that has not been
+    // 'await'ed, 'spawn()'ed or 'block()'ed`.
+    //
+    // BUG: forgot to wait for the request before it drops -
+    // uncomment the next line to fix it.
+    world.exec_am_all(HelloWorld {
         original_pe: my_pe,
     });
+    // .block();
 
-    // BUG: forgot to wait for the request before the world drops -
-    // comment out the next line and see prints arrive incomplete/out of order.
-    // request.block();
-} // world drop performs an implicit barrier, but does NOT wait for outstanding AMs
+    // spawn_am_all() is EAGER: it submits to the scheduler immediately, so the
+    // AM runs on every PE regardless of what you do with the returned handle.
+    // Dropping it (as below) just means you never get its result/completion
+    // signal directly - but world's Drop impl calls wait_all() for you, so the
+    // print below is still guaranteed to land before the process exits.
+    world.spawn_am_all(HelloWorld {
+        original_pe: my_pe,
+    });
+} // world drop does barrier() + wait_all() + barrier() - it DOES wait for outstanding AMs

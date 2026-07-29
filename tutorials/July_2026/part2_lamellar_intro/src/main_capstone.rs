@@ -1,6 +1,8 @@
-// Part 2, Section 6: Capstone - histogram, serial -> AtomicArray -> hand-rolled Darc AM.
+// Part 2, Section 6: Capstone - histogram, serial -> UnsafeArray -> AtomicArray ->
+// hand-rolled Darc AM.
 // No rayon here (see part1's std::thread/Arc/AtomicUsize topic for the single-process story).
-// Intentional bug: see BUG comment in lamellar_am_histogram/HistoAm below.
+// Intentional bugs: see BUG comments in lamellar_unsafe_histogram and
+// lamellar_am_histogram/HistoAm below.
 use rand::Rng; // just the trait - `rand::prelude::*` also exports a `Distribution` trait
                // that collides with lamellar::array::Distribution
 
@@ -28,7 +30,31 @@ fn serial_histogram(indices: &[usize]) {
     println!("Sum: {:?}", table.iter().sum::<usize>());
 }
 
-// Step 2: same computation, expressed with a LamellarArray - runs across every PE.
+// Step 2: same computation, expressed with an UnsafeArray - runs across every PE.
+// BUG: UnsafeArray's ops are `unsafe fn` (no per-element synchronization, unlike
+// AtomicArray below) - batch_add()/sum() must be called inside an `unsafe { ... }`
+// block. As written this doesn't compile: E0133, call to unsafe function requires
+// unsafe function or block. Fix by wrapping both calls in `unsafe { ... }`, or check
+// `solutions/main_capstone.rs`.
+fn lamellar_unsafe_histogram(world: &LamellarWorld, indices: &[usize]) {
+    let table: UnsafeArray<usize> = UnsafeArray::new(
+        world,
+        indices.len() * world.num_pes(),
+        Distribution::Cyclic,
+    )
+    .block();
+    world.barrier();
+    let timer = std::time::Instant::now();
+    table.batch_add(indices, 1).block();
+    table.barrier();
+    println!("Lamellar Unsafe Time: {:?}", timer.elapsed());
+
+    if world.my_pe() == 0 {
+        println!("Sum: {:?}", table.sum().block());
+    }
+}
+
+// Step 3: same computation, expressed with a LamellarArray - runs across every PE.
 fn lamellar_histogram(world: &LamellarWorld, indices: &[usize]) {
     let table: AtomicArray<usize> = AtomicArray::new(
         world,
@@ -47,7 +73,7 @@ fn lamellar_histogram(world: &LamellarWorld, indices: &[usize]) {
     }
 }
 
-// Step 3: hand-rolled version - each PE routes indices to their owning PE via an AM,
+// Step 4: hand-rolled version - each PE routes indices to their owning PE via an AM,
 // updating a Darc<Vec<AtomicUsize>> (the distributed analog of Arc<Vec<AtomicUsize>>).
 #[AmLocalData]
 struct HistoLaunch {
@@ -103,6 +129,8 @@ impl LamellarAM for HistoAm {
     }
 }
 
+// Step 4: hand-rolled version - each PE routes indices to their owning PE via an AM,
+// updating a Darc<Vec<AtomicUsize>> (the distributed analog of Arc<Vec<AtomicUsize>>).     
 fn lamellar_am_histogram(world: &LamellarWorld, indices: Vec<usize>) {
     let mut table = Vec::with_capacity(indices.len());
     for _ in 0..indices.len() {
@@ -145,6 +173,7 @@ fn main() {
     let per_pe = table_size / world.num_pes();
     let pe_indices = generate_random_indices(per_pe, per_pe);
 
+    lamellar_unsafe_histogram(&world, &pe_indices);
     lamellar_histogram(&world, &pe_indices);
     world.barrier();
     lamellar_am_histogram(&world, pe_indices);
