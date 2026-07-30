@@ -34,3 +34,11 @@ path = "agent/templates/serial_workflow.rs"
 name = "serial_to_parallel_workflow_using_skills"
 path = "agent/examples/serial_to_parallel_workflow_using_skills.rs"
 
+[[example]]
+name = "triangle_count_serial_agent_generated"
+path = "agent/examples/triangle_count_serial_agent_generated.rs"
+
+[[example]]
+name = "triangle_count_agent_generated"
+path = "agent/examples/triangle_count_agent_generated.rs"
+
