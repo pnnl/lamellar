@@ -36,7 +36,11 @@ below one at a time and wait for responses. Make sure to not generate any code b
 
 ## After collecting answers, agent needs to:
   **If a baseline is being created:** write, register, build,
+<<<<<<< HEAD
   and run `examples/<task>_serial_agent_generated.rs` first. Present its source, the measured `RESULT:`, and the independent correctness check; wait for approval from the user before continuing. The serial baseline is plain rust -- no lamellar imports, no LamellarWorldBuilder, no PEs, no barriers, just ordinary  `fn main` with loops ending in the `RESULT:` line -- and it runs with no lamellar argument `time cargo run --release --example <task>_serial_agent_generated.rs` (note there are no `-- -- --nodes 2 --pes 2 --lamellae ucx`)
+=======
+  and run `examples/<task>_serial_agent_generated.rs` first. Present its source, the measured `RESULT:`, and the independent correctness check; wait for approval from the user before continuing.
+>>>>>>> 954c9a68d60c37e0ecf7afb1f53b0e7e1c37ed73
 1. Run `skills.md` procedure and present it for approval before code: Inventory, Classify, Plan. 
   Plan the launch+gather 
   - exec_am_all -> Vec<T>;
@@ -45,6 +49,7 @@ below one at a time and wait for responses. Make sure to not generate any code b
    Run it on the serial baseline when one exists, or directly on the task description. Wait for approval.
     (Batch runs with pre-filled answers: write this plan as a comment block at the top of the generated file instead of waiting.)
 2. Generate code to the path that user agrees to: `examples/<task>_agent_generated.rs`. 
+
    If that file ALREADY EXISTS (this is a revision of an existing task): first archive the current file to `examples/revisions/<task>_agent_generated_rev<n>.rs` (n = the rev number in its top-of-file comment), then write the new version with the rev comment bumped (`// rev <n+1>: <what changed and why>`) — fine-tuning.md. NEVER overwrite a revision without archiving it first.
 3. DO NOT add dependencies in `Cargo.toml`, the only thing an agent is allowed to add and WITH USER APPROVAL is `[[example]]`, but if USER needs other dependencies then the agent can suggest it and print it for the USER to decide and add. You CANNOT make that decision without user approval.
 3. Run `skills.md` verification cheklist one by one and state the result for each checklist explicitly.
