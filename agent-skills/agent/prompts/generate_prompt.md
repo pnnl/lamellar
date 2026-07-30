@@ -17,6 +17,7 @@ below one at a time and wait for responses. Make sure to not generate any code b
 1. What should the code do? Write 1-2 sentences.
 2. What should the final result the code should print?
 3. What should the name of the `<task>` be? 
+  `<task>` drives every derived name:  `examples/<task>_agent_generated.rs`,  `results/<task>_agent_generated.md`. 
 
 ** Input files([REQUIRED, this also includes "None")
 4. Is there a serial template of the code that is to be parallelized?
@@ -26,18 +27,27 @@ below one at a time and wait for responses. Make sure to not generate any code b
       and show you the source code and RESULT and wait for user response for approval before any parallel code. 
     - If no, go straight to parallel version, build independent checks into it. Make sure the results file will sat rhar the baseline=none 
       since there were not serial code 
-  In `fine-tuning.md`, it is said to create a sample first for a serial baseline to 
+  Look into `fine-tuning.md` for more instructions. 
 
 ** Execution parameters (OPTIONAL)
 5. What should be the PE count for evaluation? Set default to 2.
 6. How many nodes? Set default to 1.
 7. How do you want to scale the data? Set default to small
 
-## After collecting answers, agent needs to
-1. Run `skills.md` procedure
-2. Generate code to the path that user agrees to 
+## After collecting answers, agent needs to:
+  **If a baseline is being created:** write, register, build,
+  and run `examples/<task>_serial_agent_generated.rs` first. Present its source, the measured `RESULT:`, and the independent correctness check; wait for approval from the user before continuing.
+1. Run `skills.md` procedure and present it for approval before code: Inventory, Classify, Plan. 
+  Plan the launch+gather 
+  - exec_am_all -> Vec<T>;
+  - typed_am_group! -> TypedAmGroupResult<T>;
+  - exec_am_pe -> T; array reductions -> Option<T>.
+   Run it on the serial baseline when one exists, or directly on the task description. Wait for approval.
+    (Batch runs with pre-filled answers: write this plan as a comment block at the top of the generated file instead of waiting.)
+2. Generate code to the path that user agrees to: `examples/<task>_agent_generated.rs`. 
+   If that file ALREADY EXISTS (this is a revision of an existing task): first archive the current file to `examples/revisions/<task>_ai_rev<n>.rs` (n = the rev number in its top-of-file comment), then write the new version with the rev comment bumped (`// rev <n+1>: <what changed and why>`) — fine-tuning.md. NEVER overwrite a revision without archiving it first.
 3. DO NOT add dependencies in `Cargo.toml`, the only thing an agent is allowed to add and WITH USER APPROVAL is `[[example]]`, but if USER needs other dependencies then the agent can suggest it and print it for the USER to decide and add. You CANNOT make that decision without user approval.
-3. Run `skills.md` verification cheklist one by one and result for each checklist explicitly.
+3. Run `skills.md` verification cheklist one by one and state the result for each checklist explicitly.
    This includes but not limited to imports match use case, handles driven by exactly one of .block()/.spawn()/.await,
    make sure there is no .lock() inside async, collect result collection types, barrier before collective reads.
 4. ASK for approval for the generated code.
@@ -60,7 +70,7 @@ below one at a time and wait for responses. Make sure to not generate any code b
   Run these and record time in seconds.
   State clearly what run was conducted. Remember that a 1 PE run does NOT mean that it validates multi-PE correctness so do NOT make that assumption.
 
-7. Write results to `agent/results/<task>_agent_generated.text` as stated in `fine-tuning.md` with summary line, fixed, table, completed checklist and notes section. 
+7. Write results to `agent/results/<task>_agent_generated.md` as stated in `fine-tuning.md`'s mandatory report section with summary line, fixed, table, completed checklist and notes section. 
 Make sure to end the response by reproducing the table. ONLY include measured values -- NEVER speculate any measured values if you can not get it.
 
 
