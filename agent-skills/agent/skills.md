@@ -127,11 +127,7 @@ an "unexecuted remote operation" warning).
 
 ### Run commands
 
-```bash
-cargo run --release --example <name>                          # 1 PE (local backend)
-./lamellar_run.sh -N=4 -T=8 ./target/release/examples/<name>  # 4 PEs x 8 threads (shmem)
-srun -N 2 --mpi=pmi2 ./target/release/examples/<name>         # distributed
-```
+In `README.md` and `fine-tuning.md`
 
 ### Verification checklist (run before claiming done)
 

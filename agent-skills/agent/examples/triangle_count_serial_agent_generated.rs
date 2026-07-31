@@ -8,7 +8,7 @@
 //!     line, `#` comments ignored, self-loops and duplicate edges dropped).
 //!   * (no flag)        : generate deterministically from a fixed seed
 //!     (splitmix64, no extra deps) so the count is reproducible and identical to
-//!     the parallel version. "medium" scale is set below via N_VERTICES/AVG_DEGREE.
+//!     the parallel version. "large" scale is set below via N_VERTICES/AVG_DEGREE.
 //!
 //! Counting method (exact, once-per-triangle): build sorted adjacency lists with
 //! no self-loops and no duplicate edges. For each vertex `u`, for each neighbor
@@ -16,9 +16,9 @@
 //! intersection. The strict ordering u < v < w guarantees each triangle is
 //! counted exactly once.
 
-// ---- data-scale knobs (medium) ----
-const N_VERTICES: usize = 2_000;
-const AVG_DEGREE: usize = 10;
+// ---- data-scale knobs (large) ----
+const N_VERTICES: usize = 50_000;
+const AVG_DEGREE: usize = 100;
 const SEED: u64 = 0x1234_5678_9abc_def0;
 
 /// Deterministic splitmix64 PRNG. Process-local, no deps. Good bit distribution

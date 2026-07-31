@@ -1,6 +1,3 @@
-// rev 2: scale up to LARGE data (N_VERTICES=50_000, AVG_DEGREE=100, ~2.5M edges)
-//        so the counting work dominates runtime startup and per-PE partitioning
-//        shows a real effect. Algorithm/structure unchanged from rev 1.
 // rev 1: initial parallel Lamellar implementation of exact triangle counting.
 //
 // ============================================================================
@@ -46,9 +43,9 @@
 
 use lamellar::active_messaging::prelude::*;
 
-// ---- data-scale knobs (large) — must match the serial baseline ----
-const N_VERTICES: usize = 50_000;
-const AVG_DEGREE: usize = 100;
+// ---- data-scale knobs (medium) — must match the serial baseline ----
+const N_VERTICES: usize = 2_000;
+const AVG_DEGREE: usize = 10;
 const SEED: u64 = 0x1234_5678_9abc_def0;
 
 /// Deterministic splitmix64 PRNG (identical to the serial baseline).
