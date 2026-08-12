@@ -210,9 +210,6 @@ impl<T: BufferedAm> LamellarAM for LaunchAm<T> {
                 pe_cnt[rank] += 1;
             }
         }
-        if lamellar::current_pe == 0 {
-            println!("PE {} issued {:?} AMs", lamellar::current_pe, pe_cnt);
-        }
         task_group.await_all().await;
     }
 }
