@@ -448,7 +448,7 @@ impl Graph {
         }
         println!("reorder issue time: {:?}", start.elapsed().as_secs_f64());
         world.wait_all();
-        println!("reorder  time: {:?}", start.elapsed().as_secs_f64());
+        println!("reorder time: {:?}", start.elapsed().as_secs_f64());
 
         let task_group = LamellarTaskGroup::new(world.team());
         let mut pe_neigh_lists: HashMap<usize, Vec<(u32, OneSidedMemoryRegion<u32>)>> =
@@ -465,9 +465,9 @@ impl Graph {
                 .push((new_node as u32, region.clone()));
         }
 
-        let num_batches = std::cmp::min(10, neigh_list.len());
+        let num_batches = std::cmp::min(10, neigh_list.len()).max(1);
         for (pe, neigh_lists) in pe_neigh_lists.iter_mut() {
-            let batch_size = neigh_lists.len() / num_batches;
+            let batch_size = neigh_lists.len().div_ceil(num_batches).max(1);
 
             while neigh_lists.len() > batch_size {
                 let _ = task_group
@@ -493,7 +493,9 @@ impl Graph {
                     .spawn();
             }
         }
+
         println!("distribute issue time: {:?}", start.elapsed().as_secs_f64());
+        task_group.wait_all();
         world.wait_all();
         println!("distribute time: {:?}", start.elapsed().as_secs_f64());
         Ok(num_nodes)

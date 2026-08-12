@@ -2,6 +2,8 @@
 **/*.rs.bk
 **/Cargo.lock
 **/*.out
+**/benchmarking
+nohup.out
 
 # mac-specific file
 .DS_Store

@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 async-lock = "3.3.0"
 async-std = { workspace = true }
+benchmark_record = { path = "../benchmark_record" }
 clap = { workspace = true }
 futures = { workspace = true }
 lamellar = { workspace = true }
@@ -15,6 +16,9 @@ parking_lot = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_bytes = "0.11.14"
+
+[build-dependencies]
+benchmark_record = { path = "../benchmark_record" }
 
 [features]
 ofi = ["lamellar/enable-libfabric"]
