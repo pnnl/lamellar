@@ -11,13 +11,24 @@ From the workspace root:
 ```sh
 cargo build --profile release-dev -p index_gather
 
-LAMELLAR_BACKEND=local LAMELLAR_PES=1 \
-  cargo run --profile release-dev -p index_gather -- \
-  --variants safe-am read-only-array --local-size 1000 --local-updates 1000
+cargo run --profile release-dev -p index_gather -- \
+  --variants safe-am read-only-array --local-size 1000 --local-updates 1000 \
+  -- \
+  --pes 1 --threads-per-pe 1 --lamellae local
 ```
 
+Use `release-dev` for development and validation. For performance collection,
+replace `--profile release-dev` with `--release` in the run command above.
+
 Use `--variants`, `--am-index-size`, and `--array-distribution` to select the
-Dev implementations. Backend-specific setup is provided by Lamellar.
+Dev implementations. `lamellar_main` receives the arguments after `--`; use
+`cargo run --profile release-dev -p index_gather -- --help` for benchmark help
+and `cargo run --profile release-dev -p index_gather -- -- --help` for launcher
+help.
+
+For a distributed launch, use launcher options such as
+`--nodes 2 --pes-per-node 1 --threads-per-pe 8 --lamellae ucx` after the
+separator.
 
 PE 0 writes one JSONL record per variant/iteration to `benchmarking/`.
 

@@ -40,7 +40,33 @@ In the following, assume a root directory ${ROOT}
 2. download Lamellar to ${ROOT}/lamellar-runtime  -- or update Cargo.toml to point to the proper location
     `cd ${ROOT} && git clone https://github.com/pnnl/lamellar-runtime`
 
-3. see readmes in  "histo", "triangle_count"
+3. Choose a build profile before running a benchmark:
+
+   - Use `release-dev` during development and validation. It keeps optimized
+     code while compiling faster.
+   - Use `release` when collecting performance results. It enables the
+     workspace's full LTO/low-codegen-unit configuration.
+
+   For example, a development build is:
+
+   `cargo build --profile release-dev -p histo`
+
+   Replace `--profile release-dev` with `--release` for a performance build.
+
+4. The benchmark executables use `lamellar_main`. Pass benchmark options
+   first, followed by `--`, followed by launcher options. For example:
+
+   ```sh
+   cargo run --profile release-dev -p histo -- \
+     --variants safe-am --local-size 1000 --local-updates 1000 \
+     -- \
+     --pes 1 --threads-per-pe 1 --lamellae local
+   ```
+
+   Use `cargo run --profile release-dev -p <benchmark> -- --help` for
+   benchmark-specific options and `cargo run --profile release-dev -p
+   <benchmark> -- -- --help` for `lamellar_main` launcher options. See each
+   package README for benchmark-specific examples.
 
 OPTIONS
 -------
@@ -49,15 +75,7 @@ For use with distributed HPC systems, lamellar installation may require addition
 
 The user may also set the number of worker threads via a environmental variable.  See the Lamellare [documentation](https://github.com/pnnl/lamellar-runtime#environment-variables) for details.
 
-HISTORY
--------
 
-- version 0.2:
-  - histo
-  - triangle count
-- version 0.1:
-  - histo
-  - triangle count
   
 NOTES
 -----
@@ -71,8 +89,8 @@ CONTACTS
 --------
 
 Ryan Friese     - ryan.friese@pnnl.gov  
-Roberto Gioiosa - roberto.gioiosa@pnnl.gov  
-Mark Raugas     - mark.raugas@pnnl.gov  
+Mark Raugas     - mark.raugas@pnnl.gov
+Joseph Cottam   - joseph.cottam@pnnl.gov
 
 License
 -------
