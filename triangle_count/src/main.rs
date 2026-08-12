@@ -11,50 +11,13 @@ use graph::{Graph, GraphType};
 use options::TcCli;
 use printer::{print_am_times, print_results};
 
-use benchmark_record::{embed_build_time_info, BenchmarkInformation};
 use clap::{Parser, ValueEnum};
-use std::time::Duration;
 
 #[derive(ValueEnum, Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Variant {
     Buffered,
     AmGroup,
     Single,
-}
-
-fn record_run(
-    world: &lamellar::LamellarWorld,
-    cli: &TcCli,
-    graph: &Graph,
-    variant: Variant,
-    buffer_size: Option<usize>,
-    iteration: usize,
-    times: (Duration, Duration, Duration),
-) {
-    if world.my_pe() != 0 {
-        return;
-    }
-
-    let global_secs = times.2.as_secs_f64();
-    let mut record = BenchmarkInformation::new();
-    embed_build_time_info!(record);
-    record.with_output("variant", format!("{variant:?}"));
-    record.with_output(
-        "buffer_size",
-        buffer_size.map_or_else(|| "none".to_owned(), |size| size.to_string()),
-    );
-    record.with_output("iteration", iteration.to_string());
-    record.with_output("graph_file", cli.graph_file.clone());
-    record.with_output("num_nodes", graph.num_nodes().to_string());
-    record.with_output("num_pes", world.num_pes().to_string());
-    record.with_output("launch_threads", cli.launch_threads.to_string());
-    record.with_output("issue_time_secs", times.0.as_secs_f64().to_string());
-    record.with_output("local_completion_secs", times.1.as_secs_f64().to_string());
-    record.with_output("global_completion_secs", global_secs.to_string());
-    record.with_output("mb_sent_total", world.MB_sent().to_string());
-    if let Err(error) = record.write(&record.default_output_path("benchmarking")) {
-        eprintln!("failed to write benchmark record: {error}");
-    }
 }
 
 #[lamellar::main]
@@ -93,14 +56,9 @@ fn main() {
                             .or_insert(Vec::new())
                             .push(times);
                         print_am_times(my_pe, &variant, *buf_size, times);
-                        record_run(
-                            &world,
-                            &cli,
-                            &graph,
-                            variant,
-                            Some(*buf_size),
-                            iteration,
-                            times,
+                        benchmark_record::benchmark_report!(
+                            @triangle_count,
+                            &world, &cli, &graph, variant, Some(*buf_size), iteration, times,
                         );
                     }
                 }
@@ -114,14 +72,9 @@ fn main() {
                             .or_insert(Vec::new())
                             .push(times);
                         print_am_times(my_pe, &variant, *buf_size, times);
-                        record_run(
-                            &world,
-                            &cli,
-                            &graph,
-                            variant,
-                            Some(*buf_size),
-                            iteration,
-                            times,
+                        benchmark_record::benchmark_report!(
+                            @triangle_count,
+                            &world, &cli, &graph, variant, Some(*buf_size), iteration, times,
                         );
                     }
                 }
@@ -129,7 +82,10 @@ fn main() {
                     let times = active_message::single::triangle_count(&world, &cli, &graph);
                     variant_results.entry(0).or_insert(Vec::new()).push(times);
                     print_am_times(my_pe, &variant, 0, times);
-                    record_run(&world, &cli, &graph, variant, None, iteration, times);
+                    benchmark_record::benchmark_report!(
+                        @triangle_count,
+                        &world, &cli, &graph, variant, None, iteration, times,
+                    );
                 }
             }
         }

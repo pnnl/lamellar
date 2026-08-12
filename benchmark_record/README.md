@@ -34,3 +34,21 @@ If you write to same key twice, the first value with be lost!
 The `default_output_path` function will return a name based on the current executable and slurm context (if available).
 It writes in a JSON lines format and appends values (so you can write multiple times from the same program).
 The `display` function prints to the screen.  The optional integer value controls the indenentation (`None` prints on one line).
+
+## Reporting a benchmark iteration
+
+Use `benchmark_report!` when a benchmark finishes one variant/subvariant/
+iteration. It records build/runtime provenance, evaluates the supplied fields
+only on PE 0, and appends one JSONL record to `benchmarking/`:
+
+```rust
+benchmark_record::benchmark_report!(&world, {
+    "variant" => format!("{variant:?}"),
+    "iteration" => iteration,
+    "global_completion_secs" => elapsed.as_secs_f64(),
+});
+```
+
+The benchmark suite also provides the `@update_table`, `@randperm`, and
+`@triangle_count` schemas for its shared metric sets. New benchmarks should use
+the generic form unless they intentionally share one of those schemas.

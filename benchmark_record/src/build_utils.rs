@@ -17,10 +17,10 @@ pub fn record_build_time_info(manifest_path: String) {
 #[macro_export]
 macro_rules! embed_build_time_info {
     ($bench:ident) => {
-        benchmark_record::embed_compile_info!($bench);
-        benchmark_record::embed_git_info!($bench);
-        benchmark_record::embed_manifest_info!($bench);
-        benchmark_record::embed_package_info!($bench);
+        $crate::embed_compile_info!($bench);
+        $crate::embed_git_info!($bench);
+        $crate::embed_manifest_info!($bench);
+        $crate::embed_package_info!($bench);
     };
 }
 

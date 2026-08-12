@@ -8,6 +8,119 @@ use std::path::PathBuf;
 
 pub mod build_utils;
 
+/// Writes one benchmark result record from PE 0.
+///
+/// The supplied expressions are evaluated only on PE 0, so fields may inspect
+/// local benchmark state without doing redundant work on every PE. Build-time,
+/// Git, package, runtime, and system provenance is embedded automatically.
+/// Each invocation appends one JSON object to `benchmarking/`.
+///
+/// ```ignore
+/// benchmark_record::benchmark_report!(&world, {
+///     "variant" => format!("{variant:?}"),
+///     "iteration" => iteration,
+///     "global_completion_secs" => elapsed.as_secs_f64(),
+/// });
+/// ```
+#[macro_export]
+macro_rules! benchmark_report {
+    // Shared Histo/Index Gather schema: distributed table updates and four
+    // timing phases.
+    (@update_table,
+        $world:expr, $cli:expr, $variant:expr, $subvariant:expr,
+        $iteration:expr, $times:expr $(,)?
+    ) => {
+        $crate::benchmark_report!($world, {
+            "variant" => format!("{:?}", $variant),
+            "subvariant" => $subvariant,
+            "iteration" => $iteration,
+            "num_pes" => $world.num_pes(),
+            "updates_total" => $cli.total_updates($world.num_pes()),
+            "updates_per_pe" => $cli.pe_updates($world.num_pes()),
+            "table_size_total" => $cli.total_table_size($world.num_pes()),
+            "table_size_per_pe" => $cli.pe_table_size($world.num_pes()),
+            "launch_threads" => $cli.launch_threads,
+            "buffer_size" => $cli.buffer_size,
+            "issue_time_secs" => $times.0.as_secs_f64(),
+            "launch_completion_secs" => $times.1.as_secs_f64(),
+            "local_completion_secs" => $times.2.as_secs_f64(),
+            "global_completion_secs" => $times.3.as_secs_f64(),
+            "global_mups" => ($cli.total_updates($world.num_pes()) as f64 / 1_000_000.0)
+                / $times.3.as_secs_f64().max(f64::MIN_POSITIVE),
+            "mb_sent_total" => $world.MB_sent(),
+        });
+    };
+    // Randperm schema, including its permutation correctness check.
+    (@randperm,
+        $world:expr, $cli:expr, $variant:expr, $subvariant:expr,
+        $iteration:expr, $times:expr $(,)?
+    ) => {
+        $crate::benchmark_report!($world, {
+            "variant" => format!("{:?}", $variant),
+            "subvariant" => $subvariant,
+            "iteration" => $iteration,
+            "num_pes" => $world.num_pes(),
+            "table_size_total" => $cli.total_table_size($world.num_pes()),
+            "table_size_per_pe" => $cli.pe_table_size($world.num_pes()),
+            "target_factor" => $cli.target_factor,
+            "launch_threads" => $cli.launch_threads,
+            "buffer_size" => $cli.buffer_size,
+            "permute_time_secs" => $times.0.as_secs_f64(),
+            "collect_time_secs" => $times.1.as_secs_f64(),
+            "global_completion_secs" => $times.2.as_secs_f64(),
+            "global_mups" => ($cli.total_table_size($world.num_pes()) as f64 / 1_000_000.0)
+                / $times.2.as_secs_f64().max(f64::MIN_POSITIVE),
+            "reduced_sum" => $times.3,
+            "expected_sum" => {
+                let count = $cli.total_table_size($world.num_pes());
+                count * count.saturating_sub(1) / 2
+            },
+            "sum_match" => {
+                let count = $cli.total_table_size($world.num_pes());
+                $times.3 == count * count.saturating_sub(1) / 2
+            },
+            "mb_sent_total" => $world.MB_sent(),
+        });
+    };
+    // Triangle Count schema for single, buffered, and AM-group variants.
+    (@triangle_count,
+        $world:expr, $cli:expr, $graph:expr, $variant:expr, $buffer_size:expr,
+        $iteration:expr, $times:expr $(,)?
+    ) => {
+        $crate::benchmark_report!($world, {
+            "variant" => format!("{:?}", $variant),
+            "buffer_size" => {
+                let buffer_size: Option<usize> = $buffer_size;
+                buffer_size.map_or_else(|| "none".to_owned(), |size| size.to_string())
+            },
+            "iteration" => $iteration,
+            "graph_file" => &$cli.graph_file,
+            "num_nodes" => $graph.num_nodes(),
+            "num_pes" => $world.num_pes(),
+            "launch_threads" => $cli.launch_threads,
+            "issue_time_secs" => $times.0.as_secs_f64(),
+            "local_completion_secs" => $times.1.as_secs_f64(),
+            "global_completion_secs" => $times.2.as_secs_f64(),
+            "mb_sent_total" => $world.MB_sent(),
+        });
+    };
+    ($world:expr, { $($key:expr => $value:expr),* $(,)? }) => {{
+        let benchmark_record_world = $world;
+        if benchmark_record_world.my_pe() == 0 {
+            let mut benchmark_record = $crate::BenchmarkInformation::new();
+            $crate::embed_build_time_info!(benchmark_record);
+            $(
+                benchmark_record.with_output($key, ($value).to_string());
+            )*
+            if let Err(error) = benchmark_record.write(
+                &benchmark_record.default_output_path("benchmarking"),
+            ) {
+                eprintln!("failed to write benchmark record: {error}");
+            }
+        }
+    }};
+}
+
 pub struct BenchmarkInformation {
     pub benchmark_name: String,
     executable: PathBuf,
