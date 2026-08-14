@@ -1,12 +1,22 @@
 use std::path::{Path, PathBuf};
 use std::env;
 
+/// Vendored OpenPMIx release: the official "make dist" tarball from an
+/// OpenPMIx GitHub release (v5.0.9), NOT a git checkout. It ships with
+/// `configure` already generated, so no Flex/Autoconf/Automake/Libtool/
+/// autogen.pl is required to build it. Its pre-built Sphinx docs bundle
+/// (docs/_build, docs/images) has been stripped out -- it's ~90% of the
+/// tarball's size and unneeded since we never install docs; `configure`
+/// detects its absence and skips doc install cleanly (see
+/// `oac_install_docs` in openpmix/config/pmix.m4).
+const PMIX_VERSION: &str = "5.0.9";
+
 pub fn source_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("openpmix")
 }
 
 pub fn version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+    PMIX_VERSION
 }
 
 pub struct Build {
@@ -128,19 +138,24 @@ impl Build {
         copy_rec(&src, &dest).expect("Failed to copy source_dir() to OUT_DIR/src");
 
         let pmix_path = std::fs::canonicalize(dest).unwrap();
-        std::process::Command::new("./autogen.pl")
-                .current_dir(pmix_path.as_path())
-                .status()
-                .expect("Failed to autogen for PMIx");
-        
+
+        // No autogen.pl / autoreconf here: the vendored tree came from the
+        // official release tarball, which ships a pre-generated `configure`
+        // -- that's the whole point of vendoring the tarball instead of a
+        // git checkout.
         let mut pmix_build = autotools::Config::new(pmix_path.as_path());
-        let pmix_build = pmix_build.reconf("-ivf")
-                .out_dir(out_dir)
-                .disable_static()
-                .enable_shared()
-                .with("libevent", Some(&lib_event_dir))
-                .with("hwloc", Some(&libhwloc_dir))
-                .build();
+        let pmix_build = pmix_build
+            .out_dir(out_dir)
+            .disable_static()
+            .enable_shared()
+            // Library only: skip building/installing the pmix_info/plookup/
+            // pps/pattrs/pquery/pevent/wrapper CLI tools and the test/example
+            // programs. Neither is needed to link against libpmix.
+            .disable("pmix-binaries", None)
+            .with("tests-examples", Some("no"))
+            .with("libevent", Some(&lib_event_dir))
+            .with("hwloc", Some(&libhwloc_dir))
+            .build();
 
         let include_dir = pmix_build.join("include");
         let lib_dir = pmix_build.join("lib");
@@ -158,5 +173,31 @@ impl Build {
             target: target.to_string(),
         }
 
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copies_vendored_source() {
+        let tmp = std::env::temp_dir().join("openpmix-src-vendor-test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let dest = tmp.join("src");
+        copy_rec(&source_dir(), &dest).unwrap();
+
+        assert!(dest.join("configure").is_file());
+        assert!(dest.join("src").join("mca").is_dir());
+        assert!(!dest.join("docs").join("_build").exists());
+        assert!(!dest.join("docs").join("images").exists());
+        assert!(dest.join("docs").join("Makefile.in").is_file());
+        assert!(dest.join("contrib").join("Makefile.in").is_file());
+        assert!(dest.join("test").join("Makefile.in").is_file());
+        assert!(dest.join("bindings").join("python").join("Makefile.in").is_file());
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

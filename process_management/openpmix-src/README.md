@@ -1,6 +1,8 @@
 # openpmix-src
 
-This crate vendorizes the [OpenPMIx](https://github.com/openpmix/openpmix) source tree, copies it into the Cargo build directory, and runs its Autotools build (via `autogen.pl` / `configure`).
+This crate vendors the official [OpenPMIx](https://github.com/openpmix/openpmix) release tarball (v5.0.9 — the pre-generated "make dist" tarball from GitHub Releases, not a git checkout) under `openpmix/`, copies it into the Cargo build directory, and runs its Autotools build. Because the vendored tree came from the tarball, `configure` is already generated, so no `autogen.pl`/`autoreconf` step is run and no Flex/Autoconf/Automake/Libtool toolchain is required on the build machine — that overhead only applies to developer builds from a git clone.
+
+The build only produces the PMIx library: the `pmix-binaries` CLI tools and the test/example programs are disabled (`--disable-pmix-binaries --with-tests-examples=no`). The tarball's pre-built Sphinx docs bundle (`docs/_build`, `docs/images`) was stripped from the vendored tree, since no docs are installed — `configure` detects its absence and skips doc install cleanly.
 
 The build helper requires paths to `libevent` and `hwloc`. When integrated via `pmix-sys`'s `vendored-hwloc`/`vendored-libevent` features, those paths are provided through the bundled `hwlocality-sys`/`libevent-sys` build metadata (`DEP_HWLOC_ROOT`/`DEP_EVENT_ROOT`). To link against a system install instead, set `HWLOC_DIR`/`LIBEVENT_DIR` directly — this takes priority over the `DEP_*` metadata, so it also works when the `hwlocality-sys`/`libevent-sys` deps are disabled entirely (via the `vendored-hwloc`/`vendored-libevent` features on this crate).
 
