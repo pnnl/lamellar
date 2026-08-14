@@ -23,7 +23,7 @@ SUBMODULES
 ----------
 Runtime
 -------
-The `lamellar-runtime/` crate (see [lamellar-runtime/README.md](lamellar-runtime/README.md)) implements the core asynchronous tasking runtime, the distributed arrays and Darcs interfaces, and the `local`, `shmem`, and optional `rofi` Lamellae backends. Its README documents the API, executors, and how to configure backends via features or runtime builders.
+The `lamellar-runtime/` crate (see [lamellar-runtime/README.md](https://github.com/pnnl/lamellar-runtime/blob/master/README.md)) implements the core asynchronous tasking runtime, the distributed arrays and Darcs interfaces, and the `local`, `shmem`, and optional `rofi` Lamellae backends. Its README documents the API, executors, and how to configure backends via features or runtime builders.
 
 Communication frameworks
 ------------------------
