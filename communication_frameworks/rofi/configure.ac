@@ -1,5 +1,6 @@
 AC_INIT([Rust OFI Library], [0.1], [roberto.gioiosa@pnnl.gov] , [rofi])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects tar-pax])
+AM_MAINTAINER_MODE
 
 AC_CONFIG_MACRO_DIR([m4])
 AM_PROG_AR

@@ -2,4 +2,4 @@ ACLOCAL_AMFLAGS = -I m4
 
 SUBDIRS = src tests
 dist_doc_DATA = README.md
-EXTRA_DIST = docs
+EXTRA_DIST = docs uthash
