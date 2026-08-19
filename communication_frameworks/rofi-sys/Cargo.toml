@@ -1,6 +1,6 @@
 [package]
 name = "rofisys"
-version = "0.5.0"
+version = "0.5.1"
 authors = [
     " Mark V Raugas <mark.raugas@pnnl.gov>",
     "Ryan D. Friese <ryan.friese@pnnl.gov>",
@@ -21,9 +21,7 @@ links = "rofi"
 #     "vendored",
 # ] }
 libfabric-sys = { package = "lamellar-libfabric-sys", version = "0.1.0" }
-pmix-sys = { version = "0.1.0", features = [
-    "vendored",
-] }
+pmix-sys = { version = "0.1.0", optional = true }
 
 [build-dependencies]
 bindgen = "0.72.1"
@@ -39,5 +37,8 @@ path = "src/lib.rs"
 
 [features]
 shared = []
-pmix = []
+pmix = ["pmix-sys"]
+vendored-hwloc = ["pmix-sys?/vendored-hwloc"]
+vendored-pmix = ["pmix-sys?/openpmix-src"]
+vendored-libevent = ["pmix-sys?/vendored-libevent"]
 debug = []

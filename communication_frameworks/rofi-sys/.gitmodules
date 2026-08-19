@@ -1,7 +1,0 @@
-[submodule "rofi"]
-	path = rofi
-	url = https://github.com/pnnl/rofi.git
-
-[submodule "libfabric"]
-	path = libfabric
-	url = https://github.com/ofiwg/libfabric.git

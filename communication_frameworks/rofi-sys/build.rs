@@ -28,7 +28,6 @@ fn build_rofi(
         .status();
     if let Ok(_) = cp_result {
         let mut config = autotools::Config::new(dest);
-        config.reconf("-ivfWnone");
 
         #[cfg(feature = "shared")]
         {
