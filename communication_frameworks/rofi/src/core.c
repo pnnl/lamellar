@@ -714,11 +714,12 @@ int rofi_init_internal(char *provs, char *domains) {
     }
 
     rofi.global_barrier_id = 0;
+    rofi.sub_alloc_barrier_id = 0;
     rofi.global_barrier_buf = (uint64_t *)rofi.mr->start;
     rofi.sub_alloc_barrier_buf = (uint64_t *)(rofi.mr->start + global_barrier_size);
     rofi.sub_alloc_buf = (struct fi_rma_iov *)(rofi.mr->start + global_barrier_size + sub_alloc_barrier_size);
 
-    for (int i = 0; i < rofi.desc.nid; i++) {
+    for (int i = 0; i < rofi.desc.nodes; i++) {
         rofi.global_barrier_buf[i] = 0;
         rofi.sub_alloc_barrier_buf[i] = 0;
         rofi.sub_alloc_buf[i].key = 0;

@@ -1161,48 +1161,72 @@ int rofi_transport_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr) {
 
 // for use when FI_COLLECTIVE not available
 int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes) {
+    if (num_pes == 0) {
+        ERR_MSG("Cannot exchange MR info with an empty PE set");
+        return -EINVAL;
+    }
+
     int global_me = rofi->desc.nid;
     int team_me = global_me;
+    int found_me = pes == NULL;
     if (pes != NULL) { // doing sub barrier, figure out team pe id
-        for (int i = 0; i < num_pes; i++) {
+        for (uint64_t i = 0; i < num_pes; i++) {
             if (pes[i] == global_me) {
                 team_me = i;
+                found_me = 1;
                 break;
             }
         }
     }
+    if (!found_me) {
+        ERR_MSG("PE %d is not part of the MR-info exchange", global_me);
+        return -EINVAL;
+    }
+
     struct fi_rma_iov *sub_alloc_buf = rofi->sub_alloc_buf;
     sub_alloc_buf[global_me].addr = (uint64_t)mr->start;
     sub_alloc_buf[global_me].key = fi_mr_key(mr->fid);
     DEBUG_MSG("Placing mr info (key: 0x%lx, addr: 0x%lx)... at local address: %p", sub_alloc_buf[global_me].key, sub_alloc_buf[global_me].addr, &sub_alloc_buf[global_me]);
-    uint64_t sub_alloc_barrier_id = 0;
-    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, team_me, num_pes);
+    int ret = rofi_transport_inner_barrier(rofi, &rofi->sub_alloc_barrier_id,
+                                            rofi->sub_alloc_barrier_buf, pes,
+                                            team_me, num_pes);
+    if (ret) {
+        return ret;
+    }
 
-    for (int pe = team_me + 1; pe < num_pes; pe++) {
-        uint64_t global_pe = pes[pe];
+    for (uint64_t pe = team_me + 1; pe < num_pes; pe++) {
+        uint64_t global_pe = pes == NULL ? pe : pes[pe];
         void *src = (void *)&sub_alloc_buf[global_pe]; // this will be translated to the remote PE
         void *dst = src;                               // this will be our local data
 
-        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
+        ret = rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
+        if (ret) {
+            return ret;
+        }
     }
-    for (int pe = 0; pe < team_me; pe++) {
-        uint64_t global_pe = pes[pe];
+    for (uint64_t pe = 0; pe < team_me; pe++) {
+        uint64_t global_pe = pes == NULL ? pe : pes[pe];
         void *src = (void *)&sub_alloc_buf[global_pe]; // this will be translated to the remote PE
         void *dst = src;                               // this will be our local data
 
-        rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
+        ret = rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
+        if (ret) {
+            return ret;
+        }
     }
-    if (rofi_transport_get_wait_all(rofi)) {
+    ret = rofi_transport_get_wait_all(rofi);
+    if (ret) {
         ERR_MSG("\t Error waiting for get");
+        return ret;
     }
-    for (int pe = 0; pe < num_pes; pe++) {
-        uint64_t global_pe = pes[pe];
+    for (uint64_t pe = 0; pe < num_pes; pe++) {
+        uint64_t global_pe = pes == NULL ? pe : pes[pe];
         mr->iov[global_pe] = sub_alloc_buf[global_pe];
         DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", pe, global_pe, sub_alloc_buf[global_pe].addr, sub_alloc_buf[global_pe].key);
     }
-    rofi_transport_inner_barrier(rofi, &sub_alloc_barrier_id, rofi->sub_alloc_barrier_buf, pes, team_me, num_pes);
-
-    return 0;
+    return rofi_transport_inner_barrier(rofi, &rofi->sub_alloc_barrier_id,
+                                        rofi->sub_alloc_barrier_buf, pes,
+                                        team_me, num_pes);
 }
 
 int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes) {
