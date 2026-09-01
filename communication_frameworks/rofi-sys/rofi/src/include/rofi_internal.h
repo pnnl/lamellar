@@ -87,6 +87,7 @@ struct rofi_transport_t {
     rofi_desc_t desc;
     rofi_mr_desc *mr;
     uint64_t global_barrier_id;
+    uint64_t sub_alloc_barrier_id;
     uint64_t *global_barrier_buf;
     uint64_t *sub_alloc_barrier_buf;
     struct fi_rma_iov *sub_alloc_buf;
