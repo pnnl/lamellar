@@ -37,6 +37,10 @@ path = "src/lib.rs"
 
 [features]
 shared = []
+# Default PMI backend (rofi's simple_pmi.c, the standard PMI-1 wire client) when
+# `pmix` is not enabled. No-op marker for discoverability — rofi has no PMI-2
+# client, so PMI-1 vs PMIx is the only choice.
+pmi1 = []
 pmix = ["pmix-sys"]
 vendored-hwloc = ["pmix-sys?/vendored-hwloc"]
 vendored-pmix = ["pmix-sys?/openpmix-src"]
