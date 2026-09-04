@@ -30,6 +30,9 @@ pub enum Variant {
     UnsafeArray,
     AtomicArray,
     LocalLockArray,
+    UnsafeArrayCustomType,
+    AtomicArrayCustomType,
+    LocalLockArrayCustomType,
 }
 
 #[lamellar::main]
@@ -59,6 +62,9 @@ fn main() {
             Variant::UnsafeArray,
             Variant::AtomicArray,
             Variant::LocalLockArray,
+            Variant::UnsafeArrayCustomType,
+            Variant::AtomicArrayCustomType,
+            Variant::LocalLockArrayCustomType,
         ],
     };
 
@@ -80,6 +86,9 @@ fn main() {
         let variant_results = results.entry(variant).or_insert(BTreeMap::new());
 
         for iteration in 0..iterations {
+            #[cfg(not(feature = "benchmark-record"))]
+            let _ = iteration;
+
             // create new random indicies for each iteration
             let rand_index = Arc::new(
                 (0..l_num_updates)
@@ -257,6 +266,66 @@ fn main() {
                 Variant::LocalLockArray => {
                     for distribution in &array_distribution {
                         let times = array::histo(
+                            &world,
+                            &cli,
+                            &rand_index,
+                            ArrayType::LocalLock,
+                            distribution,
+                        );
+                        variant_results
+                            .entry(format!("{distribution:?}"))
+                            .or_insert(Vec::new())
+                            .push(times);
+                        print_array_times(&cli, my_pe, num_pes, &variant, distribution, times);
+                        benchmark_record::benchmark_report!(
+                            @update_table,
+                            &world, &cli, variant, &format!("{distribution:?}"), iteration, times,
+                        );
+                    }
+                }
+                Variant::UnsafeArrayCustomType => {
+                    for distribution in &array_distribution {
+                        let times = array::histo_custom_type(
+                            &world,
+                            &cli,
+                            &rand_index,
+                            ArrayType::Unsafe,
+                            distribution,
+                        );
+                        variant_results
+                            .entry(format!("{distribution:?}"))
+                            .or_insert(Vec::new())
+                            .push(times);
+                        print_array_times(&cli, my_pe, num_pes, &variant, distribution, times);
+                        benchmark_record::benchmark_report!(
+                            @update_table,
+                            &world, &cli, variant, &format!("{distribution:?}"), iteration, times,
+                        );
+                    }
+                }
+                Variant::AtomicArrayCustomType => {
+                    for distribution in &array_distribution {
+                        let times = array::histo_custom_type(
+                            &world,
+                            &cli,
+                            &rand_index,
+                            ArrayType::Atomic,
+                            distribution,
+                        );
+                        variant_results
+                            .entry(format!("{distribution:?}"))
+                            .or_insert(Vec::new())
+                            .push(times);
+                        print_array_times(&cli, my_pe, num_pes, &variant, distribution, times);
+                        benchmark_record::benchmark_report!(
+                            @update_table,
+                            &world, &cli, variant, &format!("{distribution:?}"), iteration, times,
+                        );
+                    }
+                }
+                Variant::LocalLockArrayCustomType => {
+                    for distribution in &array_distribution {
+                        let times = array::histo_custom_type(
                             &world,
                             &cli,
                             &rand_index,
