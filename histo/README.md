@@ -21,27 +21,27 @@ or ROFI-C execution.
 
 ## Run
 
-`lamellar_main` separates benchmark arguments from launch arguments. Put the
-benchmark's options first, then use `--` before Lamellar launcher options.
+This backport targets lamellar 0.7.1, which has no `#[lamellar::main]`
+launcher and therefore no second `--`-delimited launcher-argument block.
+All arguments go to the benchmark's own CLI; runtime configuration (backend,
+threads-per-PE, etc.) is set via `LAMELLAR_*` environment variables instead
+(see the `lamellar` crate's `env_var` docs).
 
 For a small local run:
 
 ```sh
 cargo run --profile release-dev -p histo -- \
-  --variants safe-am atomic-array --local-size 1000 --local-updates 1000 \
-  -- \
-  --pes 1 --threads-per-pe 1 --lamellae local
+  --variants safe-am atomic-array --local-size 1000 --local-updates 1000
 ```
 
 Use `--variants`, `--am-index-size`, and `--array-distribution` to narrow the
 implementations under test. Benchmark help is available with
-`cargo run --profile release-dev -p histo -- --help`; launcher help is
-available with `cargo run --profile release-dev -p histo -- -- --help`.
+`cargo run --profile release-dev -p histo -- --help`.
 
-For a multi-node job, replace the final launcher arguments with, for example,
-`--nodes 2 --pes-per-node 1 --threads-per-pe 8 --lamellae ucx`. The launcher
-passes unrecognized options through to `salloc`/`srun` or the configured
-underlying launcher.
+Multi-PE/multi-node execution is not yet re-verified on this branch since it
+depends on how PEs are launched without `lamellar_main`'s built-in launcher
+(likely an external `mpirun`/`srun` invocation with the `enable-rofi`
+feature); treat this as unconfirmed until validated at runtime.
 
 With the benchmark's `benchmark-record` feature enabled, each PE 0 run writes
 JSONL provenance/results to `benchmarking/` by default. Set

@@ -62,7 +62,7 @@ struct UnsafeBufferedAMu32 {
 impl LamellarAM for UnsafeBufferedAMu32 {
     async fn exec(self) {
         for o in &self.indices {
-            unsafe { self.counts.as_mut_slice()[*o as usize] += 1 }; //this update would be unsafe and has potential for races / dropped updates
+            unsafe { self.counts.as_mut_slice().unwrap()[*o as usize] += 1 }; //this update would be unsafe and has potential for races / dropped updates
         }
     }
 }
@@ -78,7 +78,7 @@ struct UnsafeBufferedAMusize {
 impl LamellarAM for UnsafeBufferedAMusize {
     async fn exec(self) {
         for o in &self.indices {
-            unsafe { self.counts.as_mut_slice()[*o] += 1 }; //this update would be unsafe and has potential for races / dropped updates
+            unsafe { self.counts.as_mut_slice().unwrap()[*o] += 1 }; //this update would be unsafe and has potential for races / dropped updates
         }
     }
 }
@@ -227,13 +227,17 @@ fn launch_ams<T: BufferedAm>(
     for tid in 0..histo_config.launch_threads {
         let start = (tid as f32 * slice_size).round() as usize;
         let end = (tid as f32 * slice_size + slice_size).round() as usize;
-        launch_tasks.push(world.spawn_am_local(LaunchAm {
-            rand_indices: rand_indices.clone(),
-            slice_start: start,
-            slice_end: end,
-            buffer_size: histo_config.buffer_size,
-            am_builder: am_builder.clone(),
-        }));
+        launch_tasks.push(
+            world
+                .exec_am_local(LaunchAm {
+                    rand_indices: rand_indices.clone(),
+                    slice_start: start,
+                    slice_end: end,
+                    buffer_size: histo_config.buffer_size,
+                    am_builder: am_builder.clone(),
+                })
+                .spawn(),
+        );
     }
     Box::pin(futures::future::join_all(launch_tasks))
 }
@@ -285,7 +289,7 @@ pub fn histo(
             .alloc_shared_mem_region(histo_config.pe_table_size(num_pes))
             .block();
         unsafe {
-            for elem in counts.as_mut_slice().iter_mut() {
+            for elem in counts.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;
             }
         }

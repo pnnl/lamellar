@@ -58,7 +58,7 @@ struct UnsafeU32Group {
 impl LamellarAM for UnsafeU32Group {
     async fn exec(self) {
         //this update would be unsafe and has potential for races / dropped updates
-        unsafe { self.counts.as_mut_slice()[self.index as usize] += 1 };
+        unsafe { self.counts.as_mut_slice().unwrap()[self.index as usize] += 1 };
     }
 }
 
@@ -73,7 +73,7 @@ struct UnsafeUsizeGroup {
 #[lamellar::am(AmGroup)]
 impl LamellarAM for UnsafeUsizeGroup {
     async fn exec(self) {
-        unsafe { self.counts.as_mut_slice()[self.index] += 1 }; //this update would be Unsafe and has potential for races / dropped updates
+        unsafe { self.counts.as_mut_slice().unwrap()[self.index] += 1 }; //this update would be Unsafe and has potential for races / dropped updates
     }
 }
 
@@ -213,32 +213,38 @@ fn launch_ams(
         let start = (tid as f32 * slice_size).round() as usize;
         let end = (tid as f32 * slice_size + slice_size).round() as usize;
         launch_tasks.push(match am_type {
-            AmType::SafeU32Group(ref counts) => world.spawn_am_local(LaunchAmSafeU32Group {
-                rand_indices: rand_indices.clone(),
-                slice_start: start,
-                slice_end: end,
-                counts: counts.clone(),
-            }),
-            AmType::SafeUsizeGroup(ref counts) => world.spawn_am_local(LaunchAmSafeUsizeGroup {
-                rand_indices: rand_indices.clone(),
-                slice_start: start,
-                slice_end: end,
-                counts: counts.clone(),
-            }),
-            AmType::UnsafeU32Group(ref counts) => world.spawn_am_local(LaunchAmUnsafeU32Group {
-                rand_indices: rand_indices.clone(),
-                slice_start: start,
-                slice_end: end,
-                counts: counts.clone(),
-            }),
-            AmType::UnsafeUsizeGroup(ref counts) => {
-                world.spawn_am_local(LaunchAmUnsafeUsizeGroup {
+            AmType::SafeU32Group(ref counts) => world
+                .exec_am_local(LaunchAmSafeU32Group {
                     rand_indices: rand_indices.clone(),
                     slice_start: start,
                     slice_end: end,
                     counts: counts.clone(),
                 })
-            }
+                .spawn(),
+            AmType::SafeUsizeGroup(ref counts) => world
+                .exec_am_local(LaunchAmSafeUsizeGroup {
+                    rand_indices: rand_indices.clone(),
+                    slice_start: start,
+                    slice_end: end,
+                    counts: counts.clone(),
+                })
+                .spawn(),
+            AmType::UnsafeU32Group(ref counts) => world
+                .exec_am_local(LaunchAmUnsafeU32Group {
+                    rand_indices: rand_indices.clone(),
+                    slice_start: start,
+                    slice_end: end,
+                    counts: counts.clone(),
+                })
+                .spawn(),
+            AmType::UnsafeUsizeGroup(ref counts) => world
+                .exec_am_local(LaunchAmUnsafeUsizeGroup {
+                    rand_indices: rand_indices.clone(),
+                    slice_start: start,
+                    slice_end: end,
+                    counts: counts.clone(),
+                })
+                .spawn(),
         });
     }
     Box::pin(futures::future::join_all(launch_tasks))
@@ -289,7 +295,7 @@ pub fn histo(
             .alloc_shared_mem_region(histo_config.pe_table_size(num_pes))
             .block();
         unsafe {
-            for elem in counts.as_mut_slice().iter_mut() {
+            for elem in counts.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;
             }
         }

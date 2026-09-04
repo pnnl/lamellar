@@ -56,7 +56,7 @@ struct UnsafeU32 {
 #[lamellar::am]
 impl LamellarAM for UnsafeU32 {
     async fn exec(self) -> usize {
-        unsafe { self.table.as_mut_slice()[self.index as usize] }
+        unsafe { self.table.as_mut_slice().unwrap()[self.index as usize] }
     }
 }
 
@@ -70,7 +70,7 @@ struct UnsafeUsize {
 #[lamellar::am]
 impl LamellarAM for UnsafeUsize {
     async fn exec(self) -> usize {
-        unsafe { self.table.as_mut_slice()[self.index] } //this update would be unsafe and has potential for races / dropped updates
+        unsafe { self.table.as_mut_slice().unwrap()[self.index] } //this update would be unsafe and has potential for races / dropped updates
     }
 }
 
@@ -205,7 +205,7 @@ pub fn index_gather(
             .alloc_shared_mem_region(ig_config.pe_table_size(num_pes))
             .block();
         unsafe {
-            for elem in table.as_mut_slice().iter_mut() {
+            for elem in table.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;
             }
         }

@@ -26,7 +26,6 @@ pub enum Variant {
     LocalLockArray,
 }
 
-#[lamellar::main]
 fn main() {
     let world = lamellar::LamellarWorldBuilder::new()
         // .with_executor(lamellar::ExecutorType::LamellarWorkStealing)

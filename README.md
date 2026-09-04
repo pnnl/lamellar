@@ -53,65 +53,37 @@ In the following, assume a root directory ${ROOT}
 
    Replace `--profile release-dev` with `--release` for a performance build.
 
-4. The benchmark executables use `lamellar_main`. Pass benchmark options
-   first, followed by `--`, followed by launcher options. For example:
+4. Pass benchmark options directly; no launcher-argument block. For example:
 
    ```sh
    cargo run --profile release-dev -p histo -- \
-     --variants safe-am --local-size 1000 --local-updates 1000 \
-     -- \
-     --pes 1 --threads-per-pe 1 --lamellae local
+     --variants safe-am --local-size 1000 --local-updates 1000
    ```
 
    Use `cargo run --profile release-dev -p <benchmark> -- --help` for
-   benchmark-specific options and `cargo run --profile release-dev -p
-   <benchmark> -- -- --help` for `lamellar_main` launcher options. See each
-   package README for benchmark-specific examples.
+   benchmark-specific options. See each package README for benchmark-specific
+   examples.
 
 OPTIONS
 -------
 
-Everything after the second `--` in a `cargo run` invocation is a launch
-option, handled by `lamellar_main` rather than the benchmark itself. Each can
-also be set as an environment variable, which is useful in job scripts.
-
-| flag                  | env var                 | purpose                                                            |
-|-----------------------|--------------------------|---------------------------------------------------------------------|
-| `--nodes <N>`         | `LAMELLAR_NODES`        | request `N` nodes via `salloc`; not needed for a single-node run     |
-| `--pes <N>`           | `LAMELLAR_PES`          | total PEs across all nodes                                          |
-| `--pes-per-node <N>`  | `LAMELLAR_PES_PER_NODE` | PEs per node                                                         |
-| `--threads-per-pe <N>`| `LAMELLAR_THREADS`      | worker threads per PE                                                |
-| `--lamellae <name>`   | `LAMELLAR_BACKEND`      | communication backend: `local`, `shmem`, `ucx`, `libfabric`, `rofi_c`|
-| `--cmd-queue <name>`  | `LAMELLAR_CMD_QUEUE`    | command queue protocol (default `get`)                              |
-| `--batcher <name>`    | `LAMELLAR_BATCHER`      | active-message batcher (default `simple`)                           |
-| `--output-dir <dir>`  | -                        | redirect each PE's stdout/stderr into `<dir>`                       |
-| `--salloc-opts ...`   | -                        | extra args forwarded to `salloc`, terminated by `--`                |
-
-Any flag not listed above is passed through verbatim to the underlying
-launcher (`prterun`/`srun`). The full list is always available from the
-binary itself: `cargo run --profile release-dev -p <benchmark> -- -- --help`.
-
-Note that these benchmarks are built with `ucx`, `libfabric`, and `rofi_c` all
-enabled, so if `--lamellae`/`LAMELLAR_BACKEND` is left unset the runtime picks
-`rofi_c` rather than `local`. Always pass `--lamellae local` explicitly for a
-single-node development run.
+**This backport branch targets lamellar 0.7.1, which has no
+`#[lamellar::main]` launcher.** The `lamellar_main`-provided second
+`--`-delimited launcher-argument block (`--nodes`, `--pes-per-node`,
+`--threads-per-pe`, `--lamellae`, `--salloc-opts`, etc.) does not exist here;
+those flags are gone, not just undocumented. Runtime configuration instead
+goes through `LAMELLAR_*` environment variables read directly by the
+lamellar 0.7.1 crate (`LAMELLAR_BACKEND`, `LAMELLAR_THREADS`,
+`LAMELLAR_HEAP_SIZE`, etc. — see that crate's `env_var` module docs for the
+full list). There is no `LAMELLAR_NODES`/`LAMELLAR_PES` equivalent in 0.7.1.
 
 ### Running distributed
 
-To run across multiple nodes, pick the backend that matches the interconnect
-and either let `--nodes` drive a `salloc` allocation or launch from inside an
-existing one:
-
-```sh
-cargo run --release -p histo -- \
-  --variants atomic-array \
-  -- \
-  --nodes 2 --pes-per-node 1 --threads-per-pe 16 --lamellae ucx
-```
-
-For a multi-process run confined to one node with no network fabric involved,
-use `--lamellae shmem` (or `local` for a single PE) instead of requesting
-nodes.
+Multi-PE/multi-node execution has not been re-verified on this branch.
+Without `lamellar_main`'s built-in launcher, starting multiple PEs likely
+requires launching multiple OS processes directly (e.g. via `mpirun`/`srun`)
+with the `enable-rofi` feature enabled, each process becoming one PE — but
+this is unconfirmed until validated at runtime.
 
 
   

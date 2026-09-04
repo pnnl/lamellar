@@ -12,23 +12,22 @@ From the workspace root:
 cargo build --profile release-dev -p index_gather
 
 cargo run --profile release-dev -p index_gather -- \
-  --variants safe-am read-only-array --local-size 1000 --local-updates 1000 \
-  -- \
-  --pes 1 --threads-per-pe 1 --lamellae local
+  --variants safe-am read-only-array --local-size 1000 --local-updates 1000
 ```
 
 Use `release-dev` for development and validation. For performance collection,
 replace `--profile release-dev` with `--release` in the run command above.
 
 Use `--variants`, `--am-index-size`, and `--array-distribution` to select the
-implementations. `lamellar_main` receives the arguments after `--`; use
-`cargo run --profile release-dev -p index_gather -- --help` for benchmark help
-and `cargo run --profile release-dev -p index_gather -- -- --help` for launcher
-help.
+implementations. Benchmark help is available with
+`cargo run --profile release-dev -p index_gather -- --help`.
 
-For a distributed launch, use launcher options such as
-`--nodes 2 --pes-per-node 1 --threads-per-pe 8 --lamellae ucx` after the
-separator.
+This backport targets lamellar 0.7.1, which has no `#[lamellar::main]`
+launcher, so there is no second `--`-delimited launcher-argument block.
+Runtime configuration (backend, threads-per-PE, etc.) is set via
+`LAMELLAR_*` environment variables instead. Multi-PE/multi-node execution is
+not yet re-verified on this branch; treat it as unconfirmed until validated
+at runtime.
 
 PE 0 writes one JSONL record per variant/iteration to `benchmarking/` by
 default when the benchmark's `benchmark-record` feature is enabled. Set

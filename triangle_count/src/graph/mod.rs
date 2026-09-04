@@ -179,7 +179,7 @@ struct RelabelMapAm {
 #[lamellar::local_am]
 impl LamellarAM for RelabelMapAm {
     async fn exec() {
-        let relabled = unsafe { self.relabeled.as_mut_slice() };
+        let relabled = unsafe { self.relabeled.as_mut_slice() }.unwrap();
         for (i, node) in self.nodes.iter().enumerate() {
             relabled[*node as usize] = (i + self.start_index) as u32;
         }
@@ -194,10 +194,10 @@ struct RelabelAm {
 #[lamellar::local_am]
 impl LamellarAM for RelabelAm {
     async fn exec() {
-        let relabled = unsafe { self.relabeled.as_slice() };
+        let relabled = unsafe { self.relabeled.as_slice() }.unwrap();
         for nodes in &self.nodes {
             let old_nodes = &nodes.0;
-            let new_nodes = unsafe { nodes.1.as_mut_slice() };
+            let new_nodes = unsafe { nodes.1.as_mut_slice() }.unwrap();
             if old_nodes.len() == 0 {
                 new_nodes[0] = (self.relabeled.len() + 1) as u32;
             } else {
@@ -227,7 +227,7 @@ impl LamellarAM for LocalNeighborsAM {
             nodes.push(*node);
             remotes.push(graph.get_local_neighbors(neighbors.clone()));
         }
-        let remotes = lamellar::world.join_all(remotes).await;
+        let remotes = futures::future::join_all(remotes).await;
         // for (node, neighbors) in nodes.iter().zip(remotes.iter()) {
         //     graph.add_remote_neighbors(*node, neighbors.clone());
         // }
@@ -406,7 +406,7 @@ impl Graph {
         println!("ind len {}", indices.len());
 
         let relabeled = world.alloc_one_sided_mem_region::<u32>(num_nodes);
-        let relabeled_slice = unsafe { relabeled.as_mut_slice() };
+        let relabeled_slice = unsafe { relabeled.as_mut_slice() }.unwrap();
 
         let mut cnt = 0;
         for (i, node) in indices.iter().enumerate() {
@@ -457,7 +457,7 @@ impl Graph {
             pe_neigh_lists.insert(pe, vec![]);
         }
         for (old_node, region) in neigh_list.iter().enumerate() {
-            let new_node = unsafe { relabeled.as_slice()[old_node] as usize };
+            let new_node = unsafe { relabeled.as_slice() }.unwrap()[old_node] as usize;
             let pe = new_node % world.num_pes();
             pe_neigh_lists
                 .get_mut(&pe)

@@ -65,7 +65,7 @@ impl LamellarAM for UnsafeBufferedAMu32 {
     async fn exec(self) -> Vec<usize> {
         self.indices
             .iter()
-            .map(|i| unsafe { self.table.as_mut_slice()[*i as usize] })
+            .map(|i| unsafe { self.table.as_mut_slice().unwrap()[*i as usize] })
             .collect::<Vec<usize>>()
     }
 }
@@ -82,7 +82,7 @@ impl LamellarAM for UnsafeBufferedAMusize {
     async fn exec(self) -> Vec<usize> {
         self.indices
             .iter()
-            .map(|i| unsafe { self.table.as_mut_slice()[*i] })
+            .map(|i| unsafe { self.table.as_mut_slice().unwrap()[*i] })
             .collect::<Vec<usize>>()
     }
 }
@@ -298,7 +298,7 @@ pub fn index_gather(
             .alloc_shared_mem_region(ig_config.pe_table_size(num_pes))
             .block();
         unsafe {
-            for elem in table.as_mut_slice().iter_mut() {
+            for elem in table.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;
             }
         }
