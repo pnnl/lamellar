@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 //------ Safe AMs -----------
 // Updates are atomic, indices are buffered u32s
-#[lamellar::AmData]
+#[lamellar::AmData(AmGroup)]
 struct CasDartU32AmGroup {
     #[AmGroup(static)]
     target: Darc<Vec<AtomicUsize>>,
@@ -23,7 +23,7 @@ struct CasDartU32AmGroup {
     val: usize,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for CasDartU32AmGroup {
     async fn exec(self) {
         if self.target[self.dart_index as usize]
@@ -54,7 +54,7 @@ impl LamellarAM for CasDartU32AmGroup {
     }
 }
 
-#[lamellar::AmData]
+#[lamellar::AmData(AmGroup)]
 struct CasDartUsizeAmGroup {
     #[AmGroup(static)]
     target: Darc<Vec<AtomicUsize>>,
@@ -62,7 +62,7 @@ struct CasDartUsizeAmGroup {
     val: usize,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for CasDartUsizeAmGroup {
     async fn exec(self) {
         if self.target[self.dart_index]

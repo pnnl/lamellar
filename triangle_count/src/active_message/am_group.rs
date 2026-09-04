@@ -8,7 +8,7 @@ use lamellar::array::prelude::*;
 use lamellar::darc::prelude::*;
 
 use std::time::Duration;
-#[lamellar::AmData]
+#[lamellar::AmData(AmGroup)]
 struct TcGroupAm {
     #[AmGroup(static)]
     graph: Darc<GraphData>, //allows us to access the graph data on other pes (with out the data explicitly being allocated in RDMA registered memory)
@@ -41,7 +41,7 @@ impl TcGroupAm {
     }
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for TcGroupAm {
     async fn exec() {
         // println!("here");

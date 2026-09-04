@@ -14,14 +14,14 @@ use std::time::{Duration, Instant};
 
 //------ Safe AMs -----------
 // Updates are atomic, indices are buffered u32s
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct SafeU32Group {
     index: u32,
     #[AmGroup(static)]
     counts: Darc<Vec<AtomicUsize>>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for SafeU32Group {
     async fn exec(self) {
         self.counts[self.index as usize].fetch_add(1, Ordering::Relaxed);
@@ -29,14 +29,14 @@ impl LamellarAM for SafeU32Group {
 }
 
 // Updates are not atomic, indices are buffered usizes
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct SafeUsizeGroup {
     index: usize,
     #[AmGroup(static)]
     counts: Darc<Vec<AtomicUsize>>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for SafeUsizeGroup {
     async fn exec(self) {
         self.counts[self.index].fetch_add(1, Ordering::Relaxed);
@@ -47,14 +47,14 @@ impl LamellarAM for SafeUsizeGroup {
 
 //------ Unsafe AMs ------
 // Updates are not atomic, indices are buffered u32s
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct UnsafeU32Group {
     index: u32,
     #[AmGroup(static)]
     counts: SharedMemoryRegion<usize>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for UnsafeU32Group {
     async fn exec(self) {
         //this update would be unsafe and has potential for races / dropped updates
@@ -63,14 +63,14 @@ impl LamellarAM for UnsafeU32Group {
 }
 
 // Updates are not atomic, indices are buffered usizes
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct UnsafeUsizeGroup {
     index: usize,
     #[AmGroup(static)]
     counts: SharedMemoryRegion<usize>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for UnsafeUsizeGroup {
     async fn exec(self) {
         unsafe { self.counts.as_mut_slice()[self.index] += 1 }; //this update would be Unsafe and has potential for races / dropped updates

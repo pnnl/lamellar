@@ -18,14 +18,14 @@ use std::time::{Duration, Instant};
 // repeating this process until the dart as landed, or this PE is full
 
 //------ Safe AMs -----------
-#[lamellar::AmData]
+#[lamellar::AmData(AmGroup)]
 struct CasDartAmGroup {
     #[AmGroup(static)]
     target: Darc<(Vec<AtomicUsize>, AtomicUsize)>,
     val: usize,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for CasDartAmGroup {
     async fn exec(self) {
         let mut thread_rng = thread_rng();

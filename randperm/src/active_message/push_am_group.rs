@@ -17,14 +17,14 @@ use std::time::{Duration, Instant};
 // and then once we arrive we simply append it to the end of the vector
 
 //------ Safe AMs -----------
-#[lamellar::AmData]
+#[lamellar::AmData(AmGroup)]
 struct PushDartAmGroup {
     #[AmGroup(static)]
     target: LocalRwDarc<Vec<usize>>,
     val: usize,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for PushDartAmGroup {
     async fn exec(self) {
         self.target.write().await.push(self.val);

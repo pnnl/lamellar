@@ -16,14 +16,14 @@ use std::time::{Duration, Instant};
 
 //------ Safe AMs -----------
 // Updates are atomic, indices are buffered u32s
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct SafeU32Group {
     index: u32,
     #[AmGroup(static)]
     table: Darc<Vec<usize>>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for SafeU32Group {
     async fn exec(self) -> usize {
         self.table[self.index as usize]
@@ -31,14 +31,14 @@ impl LamellarAM for SafeU32Group {
 }
 
 // Updates are not atomic, indices are buffered usizes
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct SafeUsizeGroup {
     index: usize,
     #[AmGroup(static)]
     table: Darc<Vec<usize>>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for SafeUsizeGroup {
     async fn exec(self) -> usize {
         self.table[self.index]
@@ -49,14 +49,14 @@ impl LamellarAM for SafeUsizeGroup {
 
 //------ Unsafe AMs ------
 // Updates are not atomic, indices are buffered u32s
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct UnsafeU32Group {
     index: u32,
     #[AmGroup(static)]
     table: SharedMemoryRegion<usize>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for UnsafeU32Group {
     async fn exec(self) -> usize {
         //this update would be unsafe and has potential for races / dropped updates
@@ -65,14 +65,14 @@ impl LamellarAM for UnsafeU32Group {
 }
 
 // Updates are not atomic, indices are buffered usizes
-#[lamellar::AmData(Clone, Debug)]
+#[lamellar::AmData(Clone, Debug, AmGroup)]
 struct UnsafeUsizeGroup {
     index: usize,
     #[AmGroup(static)]
     table: SharedMemoryRegion<usize>,
 }
 
-#[lamellar::am]
+#[lamellar::am(AmGroup)]
 impl LamellarAM for UnsafeUsizeGroup {
     async fn exec(self) -> usize {
         unsafe { self.table.as_mut_slice()[self.index] } //this update would be Unsafe and has potential for races / dropped updates
