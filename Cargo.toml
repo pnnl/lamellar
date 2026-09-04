@@ -15,21 +15,42 @@ members = [
 async-std = "1.12.0"
 clap = { version = "4.3.4", features = ["derive", "env"] }
 futures = "0.3"
-#lamellar = { path = "../lamellar-runtime-junction", features = [
-lamellar = { version="0.8.1", features = [
+lamellar = { version = "0.8.0", features = [
     "enable-ucx",
     "enable-libfabric",
     "enable-rofi-c",
     "with-salloc",
+    "vendored-hwloc",
     "runtime-warnings-panic",
-] }
+] } #lamellar = { path = "../lamellar-runtime-junction", features = [
 lazy_static = "1.3.0"
 parking_lot = { version = "0.12" }
 rand = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 
+
 [patch.crates-io]
-lamellar = { path = "../lamellar-runtime-junction" }
+
+# Local testing against process_management/* and communication_frameworks/*
+# from the lamellar-repo monorepo instead of the published crates.io versions.
+# Uncomment exactly one variant below.
+
+# --- Variant A: GitHub-hosted lamellar-repo (works from any checkout) ---
+lamellar = { git = "https://github.com/pnnl/lamellar-runtime", branch = "master" }
+pmi = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+pmi-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+pmi2-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+prrte-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+openpmix-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+rofisys = { git = "https://github.com/pnnl/rofi-sys", branch = "master" }
+lamellar-libfabric = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+lamellar-libfabric-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+lamellar-libfabric-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+lamellar-ucc-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 
 
 [profile.release]
