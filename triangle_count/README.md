@@ -1,6 +1,6 @@
 # Triangle Count benchmark
 
-The Dev-era `triangle_count` executable loads a graph and runs the selected
+The `triangle_count` executable loads a graph and runs the selected
 active-message implementation (`single`, `buffered`, or `am-group`).
 
 ```sh
@@ -23,7 +23,7 @@ options, including `--nodes`, `--pes-per-node`, `--threads-per-pe`, and
 for benchmark help or `cargo run --profile release-dev -p triangle_count -- --
 --help` for launcher help.
 PE 0 writes a JSONL result/provenance record for every variant, buffer size,
-and iteration to `benchmarking/`.
+and iteration to `benchmarking/` by default when the benchmark's
+`benchmark-record` feature is enabled. Set `BENCHMARK_RECORD_OUTPUT_DIR` to use
+a different output directory.
 
-The former `triangle_count` and `triangle_count_buffered` standalone sources
-are archived in `src/deprecated/`; they are not Cargo targets.

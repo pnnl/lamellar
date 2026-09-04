@@ -15,6 +15,7 @@ rand = { workspace = true }
 benchmark_record = { path = "../benchmark_record" }
 
 [features]
+benchmark-record = ["benchmark_record/benchmark-record"]
 ofi = ["lamellar/enable-libfabric"]
 ucx = ["lamellar/enable-ucx"]
 rofi-c = ["lamellar/enable-rofi-c"]

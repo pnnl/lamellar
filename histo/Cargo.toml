@@ -19,3 +19,6 @@ tikv-jemallocator = "0.5"
 
 [build-dependencies]
 benchmark_record = { path = "../benchmark_record" }
+
+[features]
+benchmark-record = ["benchmark_record/benchmark-record"]

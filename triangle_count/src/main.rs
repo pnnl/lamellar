@@ -45,6 +45,9 @@ fn main() {
     for variant in variants {
         let variant_results = results.entry(variant).or_insert(HashMap::new());
         for iteration in 0..iterations {
+            #[cfg(not(feature = "benchmark-record"))]
+            let _ = iteration;
+
             match variant {
                 Variant::Buffered => {
                     for buf_size in &cli.buffer_size {

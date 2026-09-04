@@ -75,6 +75,9 @@ fn main() {
         let variant_results = results.entry(variant).or_insert(HashMap::new());
 
         for iteration in 0..iterations {
+            #[cfg(not(feature = "benchmark-record"))]
+            let _ = iteration;
+
             // create new random indicies for each iteration
             let rand_index = Arc::new(
                 (0..l_num_updates)

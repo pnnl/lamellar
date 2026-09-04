@@ -1,7 +1,7 @@
 # Histo benchmark
 
 This package benchmarks histogram updates using the Lamellar runtime.  It uses
-the unified Dev-era `histo` executable and selects implementations with CLI
+a single unified `histo` executable and selects implementations with CLI
 options rather than maintaining one binary per variant.
 
 ## Build
@@ -34,7 +34,7 @@ cargo run --profile release-dev -p histo -- \
 ```
 
 Use `--variants`, `--am-index-size`, and `--array-distribution` to narrow the
-Dev implementations under test. Benchmark help is available with
+implementations under test. Benchmark help is available with
 `cargo run --profile release-dev -p histo -- --help`; launcher help is
 available with `cargo run --profile release-dev -p histo -- -- --help`.
 
@@ -43,10 +43,7 @@ For a multi-node job, replace the final launcher arguments with, for example,
 passes unrecognized options through to `salloc`/`srun` or the configured
 underlying launcher.
 
-Each PE 0 run writes JSONL provenance/results to `benchmarking/`.
+With the benchmark's `benchmark-record` feature enabled, each PE 0 run writes
+JSONL provenance/results to `benchmarking/` by default. Set
+`BENCHMARK_RECORD_OUTPUT_DIR` to use a different output directory.
 
-## Legacy implementations
-
-The former standalone sources are retained in `src/deprecated/` for historical
-reference. They are not Cargo targets and must not be invoked as
-`histo_safe_am`, `histo_buffered_safe_am`, or other former binary names.

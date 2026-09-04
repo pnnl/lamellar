@@ -1,7 +1,7 @@
 # Randperm benchmark
 
-This package runs the Dev-era unified `randperm` benchmark. Choose algorithms
-with `--variants` rather than using the former standalone source layout.
+This package runs a single unified `randperm` benchmark. Choose algorithms
+with `--variants` rather than using separate binaries per algorithm.
 
 ```sh
 cargo build --profile release-dev -p randperm
@@ -19,7 +19,7 @@ The options before `--` configure Randperm; those after it configure the
 `lamellar_main` launch. Run `cargo run --profile release-dev -p randperm --
 --help` for benchmark options or `cargo run --profile release-dev -p randperm
 -- -- --help` for launcher options. PE 0 writes JSONL result/provenance records
-to `benchmarking/`.
+to `benchmarking/` by default when the benchmark's `benchmark-record` feature
+is enabled. Set `BENCHMARK_RECORD_OUTPUT_DIR` to use a different output
+directory.
 
-Historical implementations remain under `src/deprecated/` and are not Cargo
-targets.

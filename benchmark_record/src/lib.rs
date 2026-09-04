@@ -6,14 +6,22 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 
+use std::ffi::OsString;
+use std::path::Path;
+
 pub mod build_utils;
+
+/// Environment variable used to override the benchmark result directory.
+pub const OUTPUT_DIR_ENV_VAR: &str = "BENCHMARK_RECORD_OUTPUT_DIR";
 
 /// Writes one benchmark result record from PE 0.
 ///
 /// The supplied expressions are evaluated only on PE 0, so fields may inspect
 /// local benchmark state without doing redundant work on every PE. Build-time,
 /// Git, package, runtime, and system provenance is embedded automatically.
-/// Each invocation appends one JSON object to `benchmarking/`.
+/// With the `benchmark-record` feature enabled, each invocation appends one
+/// JSON object to `benchmarking/`, or to the directory set in
+/// [`OUTPUT_DIR_ENV_VAR`]. Without the feature, the macro is a no-op.
 ///
 /// ```ignore
 /// benchmark_record::benchmark_report!(&world, {
@@ -22,6 +30,7 @@ pub mod build_utils;
 ///     "global_completion_secs" => elapsed.as_secs_f64(),
 /// });
 /// ```
+#[cfg(feature = "benchmark-record")]
 #[macro_export]
 macro_rules! benchmark_report {
     // Shared Histo/Index Gather schema: distributed table updates and four
@@ -119,6 +128,13 @@ macro_rules! benchmark_report {
             }
         }
     }};
+}
+
+/// Disabled form of the benchmark-reporting macro.
+#[cfg(not(feature = "benchmark-record"))]
+#[macro_export]
+macro_rules! benchmark_report {
+    ($($input:tt)*) => {{}};
 }
 
 pub struct BenchmarkInformation {
@@ -237,12 +253,17 @@ impl BenchmarkInformation {
             })
     }
 
-    /// Generate a default output file name based on the benchmark name and slurm ID or current time.
+    /// Generate a default output path based on the benchmark name and Slurm ID or current time.
+    ///
+    /// A non-empty [`OUTPUT_DIR_ENV_VAR`] overrides `root` as the output
+    /// directory.
     pub fn default_output_path(&self, root: &str) -> PathBuf {
         let stem = self.benchmark_name.clone();
         let time = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
         let id = self.slurm_params.get("SLURM_JOB_ID").unwrap_or(&time);
-        PathBuf::from(format!("{root}/{stem}_{id}_result.jsonl"))
+
+        let output_dir = output_directory(env::var_os(OUTPUT_DIR_ENV_VAR), Path::new(root));
+        output_dir.join(format!("{stem}_{id}_result.jsonl"))
     }
 
     /// Collects all environment variables that start with the given prefix into a HashMap
@@ -313,6 +334,13 @@ impl BenchmarkInformation {
     }
 }
 
+fn output_directory(configured: Option<OsString>, default: &Path) -> PathBuf {
+    configured
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| default.to_path_buf())
+}
+
 /// Get the current executable path
 fn executable() -> PathBuf {
     env::current_exe().unwrap_or(PathBuf::from("__unknown__"))
@@ -363,6 +391,18 @@ mod tests {
 
         assert!(output_path_str.ends_with(".jsonl"));
         assert!(output_path_str.contains(default_benchmark_name().as_str()));
+    }
+
+    #[test]
+    fn test_output_directory_configuration() {
+        let default = Path::new("benchmarking");
+
+        assert_eq!(output_directory(None, default), default);
+        assert_eq!(output_directory(Some(OsString::new()), default), default);
+        assert_eq!(
+            output_directory(Some(OsString::from("custom/results")), default),
+            PathBuf::from("custom/results")
+        );
     }
 
     #[test]

@@ -75,6 +75,9 @@ fn main() {
         let variant_results = results.entry(variant).or_insert(HashMap::new());
 
         for iteration in 0..iterations {
+            #[cfg(not(feature = "benchmark-record"))]
+            let _ = iteration;
+
             match variant {
                 Variant::CasDart => {
                     for idx_size in &am_index_size {
