@@ -47,7 +47,7 @@ impl LamellarAM for CasDartU32Am {
                         dart_index: pe_index as u32,
                     },
                 )
-                .spawn();
+                ;
             // .await; //awaiting here prevents the original AM from returning until the dart has landed somewhere
         }
     }
@@ -85,7 +85,7 @@ impl LamellarAM for CasDartUsizeAm {
                         dart_index: pe_index,
                     },
                 )
-                .spawn();
+                ;
             // .await; //awaiting here prevents the original AM from returning until the dart has landed somewhere
         }
     }
@@ -136,7 +136,7 @@ impl LamellarAM for LaunchAm {
                             dart_index: pe_index as u32,
                         },
                     )
-                    .spawn(),
+                    ,
                 AmType::CasDartUsizeAm(target) => lamellar::world
                     .exec_am_pe(
                         pe,
@@ -146,7 +146,7 @@ impl LamellarAM for LaunchAm {
                             dart_index: pe_index,
                         },
                     )
-                    .spawn(),
+                    ,
             };
         }
     }
@@ -175,7 +175,7 @@ fn launch_ams(
                     val_end: end,
                     target: am_type.clone(),
                 })
-                .spawn(),
+                ,
         );
     }
     Box::pin(futures::future::join_all(launch_tasks))
@@ -187,11 +187,9 @@ pub fn rand_perm(
     index_size: &IndexSize,
 ) -> (Duration, Duration, Duration, usize) {
     let num_pes = world.num_pes();
-    let local_lens =
-        AtomicArray::new(world, world.num_pes(), lamellar::Distribution::Block).block();
-    let the_array = LocalRwDarc::new(world, vec![0; rand_perm_config.pe_table_size(num_pes)])
-        .block()
-        .unwrap();
+    let local_lens = AtomicArray::new(world, world.num_pes(), lamellar::Distribution::Block);
+    let the_array =
+        LocalRwDarc::new(world, vec![0; rand_perm_config.pe_table_size(num_pes)]).unwrap();
     world.barrier();
     let mut timer = Instant::now();
     let target_size = rand_perm_config.pe_table_size(num_pes) * rand_perm_config.target_factor;
@@ -199,9 +197,7 @@ pub fn rand_perm(
     for _ in 0..target_size {
         target_inner.push(AtomicUsize::new(usize::MAX));
     }
-    let target = Darc::new(world, target_inner)
-        .block()
-        .expect("darc should be created");
+    let target = Darc::new(world, target_inner).expect("darc should be created");
     world.barrier();
     let _init_time = timer.elapsed();
     timer = Instant::now();
@@ -220,14 +216,13 @@ pub fn rand_perm(
     };
     world.block_on(launch_tasks);
     world.wait_all();
-    let target = target.into_localrw().block(); //a cheap hack to ensure all other references to the darc are dropped, and thus the all the launched active messages have completed
+    let target = target.into_localrw(); //a cheap hack to ensure all other references to the darc are dropped, and thus the all the launched active messages have completed
     world.barrier();
     let perm_time = timer.elapsed();
 
     let collect_timer = Instant::now();
-    let data = target
-        .read()
-        .block()
+    let data = world
+        .block_on(target.read())
         .iter()
         .map(|x| x.load(Ordering::Relaxed))
         .filter(|x| *x != usize::MAX)
@@ -237,10 +232,8 @@ pub fn rand_perm(
 
     let global_finish_time = timer.elapsed();
 
-    let sum = Darc::new(world, AtomicUsize::new(0))
-        .block()
-        .expect("darc should be created");
-    let local_sum = the_array.read().block().iter().sum::<usize>();
+    let sum = Darc::new(world, AtomicUsize::new(0)).expect("darc should be created");
+    let local_sum = world.block_on(the_array.read()).iter().sum::<usize>();
 
     let _ = world
         .exec_am_pe(
@@ -250,7 +243,7 @@ pub fn rand_perm(
                 amt: local_sum,
             },
         )
-        .spawn();
+        ;
     world.wait_all();
     world.barrier();
 

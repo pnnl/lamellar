@@ -8,16 +8,14 @@ members = [
     "index_gather",
     "randperm",
     "triangle_count",
-    "primitives",
 ]
 
 [workspace.dependencies]
 async-std = "1.12.0"
 clap = { version = "4.3.4", features = ["derive", "env"] }
 futures = "0.3"
-lamellar = { version = "0.7.1", features = [
+lamellar = { version = "0.6.1", features = [
     "enable-rofi",
-    "runtime-warnings-panic",
 ] }
 lazy_static = "1.3.0"
 parking_lot = { version = "0.12" }

@@ -89,7 +89,7 @@ impl LamellarAm for LaunchAm {
                         .collect::<Vec<u32>>(), //only send neighbors that are less than node as an optimization
                     final_cnt: self.final_cnt.clone(),
                 })
-                .spawn();
+                ;
         }
     }
 }
@@ -102,7 +102,7 @@ pub(crate) fn triangle_count(
     let my_pe = world.my_pe();
     let num_nodes = graph.num_nodes();
 
-    let final_cnt = AtomicArray::new(world.team(), world.num_pes(), Distribution::Block).block();
+    let final_cnt = AtomicArray::new(world.team(), world.num_pes(), Distribution::Block);
 
     println!(
         "PE {}: starting single message triangle count with {} nodes",
@@ -124,7 +124,7 @@ pub(crate) fn triangle_count(
                     end_node,
                     final_cnt: final_cnt.clone(),
                 })
-                .spawn(),
+                ,
         );
     }
 
@@ -136,7 +136,7 @@ pub(crate) fn triangle_count(
     world.wait_all(); //wait for all the triangle counting active messages to finish locally
     let local_time = timer.elapsed();
     world.barrier(); //wait for all the triangle counting active messages to finish on all PEs
-    let final_cnt_sum = final_cnt.sum().block(); //reduce the final count across all PEs
+    let final_cnt_sum = world.block_on(final_cnt.sum()); //reduce the final count across all PEs
     let global_time = timer.elapsed();
     if my_pe == 0 {
         println!("triangles counted: {:?}", final_cnt_sum,)

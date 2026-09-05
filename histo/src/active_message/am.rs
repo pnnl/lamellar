@@ -109,7 +109,7 @@ impl LamellarAM for LaunchAmSafeU32 {
                         counts: self.counts.clone(),
                     },
                 )
-                .spawn(); //we could await here but we will just do a wait_all later instead
+                ; //we could await here but we will just do a wait_all later instead
         }
     }
 }
@@ -136,7 +136,7 @@ impl LamellarAM for LaunchAmSafeUsize {
                         counts: self.counts.clone(),
                     },
                 )
-                .spawn(); //we could await here but we will just do a wait_all later instead
+                ; //we could await here but we will just do a wait_all later instead
         }
     }
 }
@@ -163,7 +163,7 @@ impl LamellarAM for LaunchAmUnsafeU32 {
                         counts: self.counts.clone(),
                     },
                 )
-                .spawn(); //we could await here but we will just do a wait_all later instead
+                ; //we could await here but we will just do a wait_all later instead
         }
     }
 }
@@ -190,7 +190,7 @@ impl LamellarAM for LaunchAmUnsafeUsize {
                         counts: self.counts.clone(),
                     },
                 )
-                .spawn(); //we could await here but we will just do a wait_all later instead
+                ; //we could await here but we will just do a wait_all later instead
         }
     }
 }
@@ -215,32 +215,28 @@ fn launch_ams(
                     slice_start: start,
                     slice_end: end,
                     counts: counts.clone(),
-                })
-                .spawn(),
+                }),
             AmType::SafeUsize(ref counts) => world
                 .exec_am_local(LaunchAmSafeUsize {
                     rand_indices: rand_indices.clone(),
                     slice_start: start,
                     slice_end: end,
                     counts: counts.clone(),
-                })
-                .spawn(),
+                }),
             AmType::UnsafeU32(ref counts) => world
                 .exec_am_local(LaunchAmUnsafeU32 {
                     rand_indices: rand_indices.clone(),
                     slice_start: start,
                     slice_end: end,
                     counts: counts.clone(),
-                })
-                .spawn(),
+                }),
             AmType::UnsafeUsize(ref counts) => world
                 .exec_am_local(LaunchAmUnsafeUsize {
                     rand_indices: rand_indices.clone(),
                     slice_start: start,
                     slice_end: end,
                     counts: counts.clone(),
-                })
-                .spawn(),
+                }),
         });
     }
     Box::pin(futures::future::join_all(launch_tasks))
@@ -261,9 +257,7 @@ pub fn histo(
         for _ in 0..histo_config.pe_table_size(num_pes) {
             counts_inner.push(AtomicUsize::new(0));
         }
-        let counts = Darc::new(world, counts_inner)
-            .block()
-            .expect("darc should be created");
+        let counts = Darc::new(world, counts_inner).expect("darc should be created");
         world.barrier();
         let init_time = timer.elapsed();
         timer = Instant::now();
@@ -277,9 +271,7 @@ pub fn histo(
         };
         (init_time, launch_tasks)
     } else {
-        let counts = world
-            .alloc_shared_mem_region(histo_config.pe_table_size(num_pes))
-            .block();
+        let counts = world.alloc_shared_mem_region(histo_config.pe_table_size(num_pes));
         unsafe {
             for elem in counts.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;

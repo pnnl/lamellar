@@ -109,8 +109,7 @@ impl LamellarAM for LaunchAm {
                             index: index as u32,
                             table: target.clone(),
                         },
-                    )
-                    .spawn(),
+                    ),
                 AmType::SafeUsize(target) => lamellar::world
                     .exec_am_pe(
                         rank,
@@ -118,8 +117,7 @@ impl LamellarAM for LaunchAm {
                             index,
                             table: target.clone(),
                         },
-                    )
-                    .spawn(),
+                    ),
                 AmType::UnsafeU32(target) => lamellar::world
                     .exec_am_pe(
                         rank,
@@ -127,8 +125,7 @@ impl LamellarAM for LaunchAm {
                             index: index as u32,
                             table: target.clone(),
                         },
-                    )
-                    .spawn(),
+                    ),
                 AmType::UnsafeUsize(target) => lamellar::world
                     .exec_am_pe(
                         rank,
@@ -136,8 +133,7 @@ impl LamellarAM for LaunchAm {
                             index,
                             table: target.clone(),
                         },
-                    )
-                    .spawn(),
+                    ),
             });
         }
         futures::future::join_all(reqs).await
@@ -164,8 +160,7 @@ fn launch_ams(
                     slice_start: start,
                     slice_end: end,
                     table: am_type.clone(),
-                })
-                .spawn(),
+                }),
         );
     }
     Box::pin(futures::future::join_all(launch_tasks))
@@ -187,9 +182,7 @@ pub fn index_gather(
         for i in 0..ig_config.pe_table_size(num_pes) {
             table_inner.push(my_pe * ig_config.pe_table_size(num_pes) + i);
         }
-        let table = Darc::new(world, table_inner)
-            .block()
-            .expect("darc should be created");
+        let table = Darc::new(world, table_inner).expect("darc should be created");
         world.barrier();
         let init_time = timer.elapsed();
         timer = Instant::now();
@@ -201,9 +194,7 @@ pub fn index_gather(
         };
         (init_time, launch_tasks)
     } else {
-        let table = world
-            .alloc_shared_mem_region(ig_config.pe_table_size(num_pes))
-            .block();
+        let table = world.alloc_shared_mem_region(ig_config.pe_table_size(num_pes));
         unsafe {
             for elem in table.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;

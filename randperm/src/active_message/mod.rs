@@ -80,7 +80,7 @@ fn collect_perm(
                     index: start_offset,
                 },
             )
-            .spawn();
+            ;
     } else {
         let mut cur_pe = end_pe;
         while cur_pe >= start_pe {
@@ -95,7 +95,7 @@ fn collect_perm(
                             index: 0,
                         },
                     )
-                    .spawn();
+                    ;
             } else if cur_pe == start_pe {
                 let _ = world
                     .exec_am_pe(
@@ -106,7 +106,7 @@ fn collect_perm(
                             index: start_offset,
                         },
                     )
-                    .spawn();
+                    ;
                 data = vec![]; //to appease the compiler because we consume data above
             } else {
                 let pe_data = data.split_off(data.len() - pe_size);
@@ -119,7 +119,7 @@ fn collect_perm(
                             index: 0,
                         },
                     )
-                    .spawn();
+                    ;
             }
             cur_pe -= 1;
         }

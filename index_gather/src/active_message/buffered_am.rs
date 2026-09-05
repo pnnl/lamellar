@@ -189,7 +189,7 @@ struct LaunchAm<T: BufferedAm> {
 
 #[lamellar::local_am]
 impl<T: BufferedAm> LamellarAM for LaunchAm<T> {
-    async fn exec(self) -> Vec<<T as LamellarAM>::Output> {
+    async fn exec(self) -> Vec<()> {
         // let _timer = Instant::now();
         let num_pes = lamellar::num_pes;
         let mut pe_ams = vec![self.am_builder.blank(); num_pes];
@@ -202,14 +202,16 @@ impl<T: BufferedAm> LamellarAM for LaunchAm<T> {
             if pe_ams[rank].len() >= self.buffer_size {
                 let mut am = self.am_builder.blank();
                 std::mem::swap(&mut am, &mut pe_ams[rank]);
-                reqs.push(task_group.exec_am_pe(rank, am).spawn());
+                let req = task_group.exec_am_pe(rank, am);
+                reqs.push(Box::pin(async move { req.await; }) as Pin<Box<dyn Future<Output = ()> + Send>>);
             }
         }
         //send any remaining buffered updates
 
         for (rank, am) in pe_ams.into_iter().enumerate() {
             if am.len() > 0 {
-                reqs.push(task_group.exec_am_pe(rank, am).spawn());
+                let req = task_group.exec_am_pe(rank, am);
+                reqs.push(Box::pin(async move { req.await; }) as Pin<Box<dyn Future<Output = ()> + Send>>);
             }
         }
         // println!("send time {:?}", _timer.elapsed());
@@ -220,14 +222,14 @@ impl<T: BufferedAm> LamellarAM for LaunchAm<T> {
     }
 }
 
-type LaunchAmsFut<T> = Pin<Box<dyn Future<Output = Vec<Vec<<T as LamellarAM>::Output>>>>>;
+type LaunchAmsFut = Pin<Box<dyn Future<Output = Vec<Vec<()>>>>>;
 
 fn launch_ams<T: BufferedAm>(
     world: &LamellarWorld,
     ig_config: &IndexGatherCli,
     rand_indices: &Arc<Vec<usize>>,
     am_builder: T,
-) -> LaunchAmsFut<T> {
+) -> LaunchAmsFut {
     let num_pes = world.num_pes();
     let slice_size = ig_config.pe_updates(num_pes) as f32 / ig_config.launch_threads as f32;
     let mut launch_tasks = vec![];
@@ -243,8 +245,7 @@ fn launch_ams<T: BufferedAm>(
                     slice_end: end,
                     buffer_size: ig_config.buffer_size,
                     am_builder: am_builder.clone(),
-                })
-                .spawn(),
+                }),
         );
     }
     Box::pin(futures::future::join_all(launch_tasks))
@@ -266,9 +267,7 @@ pub fn index_gather(
         for i in 0..ig_config.pe_table_size(num_pes) {
             table_inner.push(my_pe * ig_config.pe_table_size(num_pes) + i);
         }
-        let table = Darc::new(world, table_inner)
-            .block()
-            .expect("darc should be created");
+        let table = Darc::new(world, table_inner).expect("darc should be created");
         world.barrier();
         let init_time = timer.elapsed();
         timer = Instant::now();
@@ -294,9 +293,7 @@ pub fn index_gather(
         };
         (init_time, launch_tasks)
     } else {
-        let table = world
-            .alloc_shared_mem_region(ig_config.pe_table_size(num_pes))
-            .block();
+        let table = world.alloc_shared_mem_region(ig_config.pe_table_size(num_pes));
         unsafe {
             for elem in table.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;

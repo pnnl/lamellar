@@ -237,7 +237,7 @@ impl LamellarAM for LocalNeighborsAM {
                 nodes,
                 neighbors: remotes,
             })
-            .spawn();
+            ;
     }
 }
 
@@ -270,7 +270,7 @@ impl Graph {
         let my_pe = world.my_pe();
         let _ = graph_type;
         let graph = GraphData::MapGraph(MapGraph::new(world.team().clone()));
-        let graph = LocalRwDarc::new(world.team(), graph).block().unwrap(); // we are creating with the world team so should be valid on all pes
+        let graph = LocalRwDarc::new(world.team(), graph).unwrap(); // we are creating with the world team so should be valid on all pes
 
         Graph::load(fpath, &world, &graph).expect("error reading graph");
         if my_pe == 0 {
@@ -278,7 +278,7 @@ impl Graph {
         }
         let g = Graph {
             world,
-            graph: graph.into_darc().block(),
+            graph: graph.into_darc(),
             my_pe,
         };
         if g.my_pe == 0 {
@@ -428,7 +428,7 @@ impl Graph {
                         nodes: temp_nodes,
                         relabeled: relabeled.clone(),
                     })
-                    .spawn();
+                    ;
                 temp_nodes = vec![];
                 size = 0;
             }
@@ -444,7 +444,7 @@ impl Graph {
                     nodes: temp_nodes,
                     relabeled: relabeled.clone(),
                 })
-                .spawn();
+                ;
         }
         println!("reorder issue time: {:?}", start.elapsed().as_secs_f64());
         world.wait_all();
@@ -479,7 +479,7 @@ impl Graph {
                                 .split_off(neigh_lists.len() - batch_size),
                         },
                     )
-                    .spawn();
+                    ;
             }
             if !neigh_lists.is_empty() {
                 let _ = task_group
@@ -490,7 +490,7 @@ impl Graph {
                             node_and_neighbors: neigh_lists.clone(),
                         },
                     )
-                    .spawn();
+                    ;
             }
         }
 

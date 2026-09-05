@@ -251,32 +251,28 @@ fn launch_ams(
                     slice_start: start,
                     slice_end: end,
                     table: table.clone(),
-                })
-                .spawn(),
+                }),
             AmType::SafeUsizeGroup(ref table) => world
                 .exec_am_local(LaunchAmSafeUsizeGroup {
                     rand_indices: rand_indices.clone(),
                     slice_start: start,
                     slice_end: end,
                     table: table.clone(),
-                })
-                .spawn(),
+                }),
             AmType::UnsafeU32Group(ref table) => world
                 .exec_am_local(LaunchAmUnsafeU32Group {
                     rand_indices: rand_indices.clone(),
                     slice_start: start,
                     slice_end: end,
                     table: table.clone(),
-                })
-                .spawn(),
+                }),
             AmType::UnsafeUsizeGroup(ref table) => world
                 .exec_am_local(LaunchAmUnsafeUsizeGroup {
                     rand_indices: rand_indices.clone(),
                     slice_start: start,
                     slice_end: end,
                     table: table.clone(),
-                })
-                .spawn(),
+                }),
         });
     }
     Box::pin(futures::future::join_all(launch_tasks))
@@ -302,9 +298,7 @@ pub fn index_gather(
         for i in 0..ig_config.pe_table_size(num_pes) {
             table_inner.push(my_pe * ig_config.pe_table_size(num_pes) + i);
         }
-        let table = Darc::new(world, table_inner)
-            .block()
-            .expect("darc should be created");
+        let table = Darc::new(world, table_inner).expect("darc should be created");
         world.barrier();
         let init_time = timer.elapsed();
         timer = Instant::now();
@@ -321,9 +315,7 @@ pub fn index_gather(
         };
         (init_time, launch_tasks)
     } else {
-        let table = world
-            .alloc_shared_mem_region(ig_config.pe_table_size(num_pes))
-            .block();
+        let table = world.alloc_shared_mem_region(ig_config.pe_table_size(num_pes));
         unsafe {
             for elem in table.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;

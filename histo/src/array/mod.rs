@@ -81,8 +81,7 @@ pub fn histo(
                 world,
                 histo_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
             //the actual histo operation
@@ -93,8 +92,7 @@ pub fn histo(
                 world,
                 histo_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
 
@@ -106,8 +104,7 @@ pub fn histo(
                 world,
                 histo_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
 
@@ -118,7 +115,7 @@ pub fn histo(
 
     let launch_issue_time = timer.elapsed();
     let launch_finish_time = timer.elapsed();
-    histo_request.block();
+    world.block_on(histo_request);
     let local_finish_time = timer.elapsed();
     world.barrier();
     let global_finish_time = timer.elapsed();
@@ -155,8 +152,7 @@ pub fn histo_custom_type(
                 world,
                 histo_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
             //the actual histo operation
@@ -167,8 +163,7 @@ pub fn histo_custom_type(
                 world,
                 histo_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
 
@@ -180,8 +175,7 @@ pub fn histo_custom_type(
                 world,
                 histo_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
 
@@ -192,7 +186,7 @@ pub fn histo_custom_type(
 
     let launch_issue_time = timer.elapsed();
     let launch_finish_time = timer.elapsed();
-    histo_request.block();
+    world.block_on(histo_request);
     let local_finish_time = timer.elapsed();
     world.barrier();
     let global_finish_time = timer.elapsed();

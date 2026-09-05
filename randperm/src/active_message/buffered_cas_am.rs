@@ -50,7 +50,7 @@ impl LamellarAM for BufferedCasDartU32Am {
                                 buffer_size: self.buffer_size,
                             },
                         )
-                        .spawn(); //we could await here but we will just do a wait_all later instead
+                        ;
                 }
             }
         }
@@ -65,7 +65,7 @@ impl LamellarAM for BufferedCasDartU32Am {
                             buffer_size: self.buffer_size,
                         },
                     )
-                    .spawn();
+                    ;
             }
         }
     }
@@ -106,7 +106,7 @@ impl LamellarAM for BufferedCasDartUsizeAm {
                                 buffer_size: self.buffer_size,
                             },
                         )
-                        .spawn();
+                        ;
                 }
             }
         }
@@ -121,7 +121,7 @@ impl LamellarAM for BufferedCasDartUsizeAm {
                             buffer_size: self.buffer_size,
                         },
                     )
-                    .spawn();
+                    ;
             }
         }
     }
@@ -167,7 +167,7 @@ impl LamellarAM for LaunchU32Am {
                             buffer_size: self.buffer_size,
                         },
                     )
-                    .spawn();
+                    ;
             }
         }
 
@@ -182,7 +182,7 @@ impl LamellarAM for LaunchU32Am {
                             buffer_size: self.buffer_size,
                         },
                     )
-                    .spawn();
+                    ;
             }
         }
     }
@@ -220,7 +220,7 @@ impl LamellarAM for LaunchUsizeAm {
                             buffer_size: self.buffer_size,
                         },
                     )
-                    .spawn();
+                    ;
             }
         }
         for (pe, darts) in buffered_darts.drain(..).enumerate() {
@@ -234,7 +234,7 @@ impl LamellarAM for LaunchUsizeAm {
                             buffer_size: self.buffer_size,
                         },
                     )
-                    .spawn();
+                    ;
             }
         }
     }
@@ -265,7 +265,7 @@ fn launch_ams(
                         target: target.clone(),
                         buffer_size: rand_perm_config.buffer_size,
                     })
-                    .spawn(),
+                    ,
             ),
             AmType::BufferedCasDartUsizeAm(target) => launch_tasks.push(
                 world
@@ -275,7 +275,7 @@ fn launch_ams(
                         target: target.clone(),
                         buffer_size: rand_perm_config.buffer_size,
                     })
-                    .spawn(),
+                    ,
             ),
         }
     }
@@ -290,9 +290,8 @@ pub fn rand_perm(
 ) -> (Duration, Duration, Duration, usize) {
     let num_pes = world.num_pes();
     let local_lens =
-        AtomicArray::new(world, world.num_pes(), lamellar::Distribution::Block).block();
+        AtomicArray::new(world, world.num_pes(), lamellar::Distribution::Block);
     let the_array = LocalRwDarc::new(world, vec![0; rand_perm_config.pe_table_size(num_pes)])
-        .block()
         .unwrap();
     world.barrier();
     let mut timer = Instant::now();
@@ -303,7 +302,6 @@ pub fn rand_perm(
         target_inner.push(AtomicUsize::new(usize::MAX));
     }
     let target = Darc::new(world, target_inner)
-        .block()
         .expect("darc should be created");
     world.barrier();
     let _init_time = timer.elapsed();
@@ -324,14 +322,13 @@ pub fn rand_perm(
     };
     world.block_on(launch_tasks);
     world.wait_all();
-    let target = target.into_localrw().block(); //a cheap hack to ensure all other references to the darc are dropped, and thus the all the launched active messages have completed
+    let target = target.into_localrw(); //a cheap hack to ensure all other references to the darc are dropped, and thus the all the launched active messages have completed
     world.barrier();
     let perm_time = timer.elapsed();
 
     let collect_timer = Instant::now();
-    let data = target
-        .read()
-        .block()
+    let data = world
+        .block_on(target.read())
         .iter()
         .map(|x| x.load(Ordering::Relaxed))
         .filter(|x| *x != usize::MAX)
@@ -342,9 +339,8 @@ pub fn rand_perm(
     let global_finish_time = timer.elapsed();
 
     let sum = Darc::new(world, AtomicUsize::new(0))
-        .block()
         .expect("darc should be created");
-    let local_sum = the_array.read().block().iter().sum::<usize>();
+    let local_sum = world.block_on(the_array.read()).iter().sum::<usize>();
 
     let _ = world
         .exec_am_pe(
@@ -354,7 +350,7 @@ pub fn rand_perm(
                 amt: local_sum,
             },
         )
-        .spawn();
+        ;
     world.wait_all();
     world.barrier();
 

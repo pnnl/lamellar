@@ -38,8 +38,8 @@ fn array_rand_perm<A: LamellarArray<usize> + CompareExchangeOps<usize>>(
 
     // launch initial set of darts, and collect any that didnt stick
     let init_darts = target_array.batch_compare_exchange(&rand_index, usize::MAX, local_darts);
-    let mut remaining_darts = init_darts
-        .block()
+    let mut remaining_darts = world
+        .block_on(init_darts)
         .iter()
         .enumerate()
         .filter_map(|(i, elem)| {
@@ -54,9 +54,8 @@ fn array_rand_perm<A: LamellarArray<usize> + CompareExchangeOps<usize>>(
         let rand_index = (0..remaining_darts.len())
             .map(|_| rng.gen_range(0, target_array.len()))
             .collect::<Vec<usize>>();
-        remaining_darts = target_array
-            .batch_compare_exchange(&rand_index, usize::MAX, remaining_darts.clone())
-            .block()
+        remaining_darts = world
+            .block_on(target_array.batch_compare_exchange(&rand_index, usize::MAX, remaining_darts.clone()))
             .iter()
             .enumerate()
             .filter_map(|(i, elem)| {
@@ -71,7 +70,7 @@ fn array_rand_perm<A: LamellarArray<usize> + CompareExchangeOps<usize>>(
     world.barrier();
 }
 
-fn unsafe_array_rand_perm<A: LamellarArray<usize> + UnsafeCompareExchangeOps<usize>>(
+fn unsafe_array_rand_perm<A: LamellarArray<usize> + CompareExchangeOps<usize>>(
     world: &lamellar::LamellarWorld,
     local_darts: &[usize],
     target_array: &A,
@@ -85,8 +84,8 @@ fn unsafe_array_rand_perm<A: LamellarArray<usize> + UnsafeCompareExchangeOps<usi
     // launch initial set of darts, and collect any that didnt stick
     let init_darts =
         unsafe { target_array.batch_compare_exchange(&rand_index, usize::MAX, local_darts) };
-    let mut remaining_darts = init_darts
-        .block()
+    let mut remaining_darts = world
+        .block_on(init_darts)
         .iter()
         .enumerate()
         .filter_map(|(i, elem)| {
@@ -101,20 +100,19 @@ fn unsafe_array_rand_perm<A: LamellarArray<usize> + UnsafeCompareExchangeOps<usi
         let rand_index = (0..remaining_darts.len())
             .map(|_| rng.gen_range(0, target_array.len()))
             .collect::<Vec<usize>>();
-        remaining_darts = unsafe {
-            target_array
-                .batch_compare_exchange(&rand_index, usize::MAX, remaining_darts.clone())
-                .block()
-                .iter()
-                .enumerate()
-                .filter_map(|(i, elem)| {
-                    match elem {
-                        Ok(_val) => None,                   //the dart stuck!
-                        Err(_) => Some(remaining_darts[i]), //something else was there, try again
-                    }
-                })
-                .collect::<Vec<usize>>()
-        };
+        let next_darts =
+            unsafe { target_array.batch_compare_exchange(&rand_index, usize::MAX, remaining_darts.clone()) };
+        remaining_darts = world
+            .block_on(next_darts)
+            .iter()
+            .enumerate()
+            .filter_map(|(i, elem)| {
+                match elem {
+                    Ok(_val) => None,                   //the dart stuck!
+                    Err(_) => Some(remaining_darts[i]), //something else was there, try again
+                }
+            })
+            .collect::<Vec<usize>>();
     }
     world.wait_all();
     world.barrier();
@@ -142,14 +140,12 @@ pub fn rand_perm(
         world,
         rand_perm_config.total_table_size(num_pes),
         lamellar::Distribution::Block,
-    )
-    .block();
+    );
     let target_array = UnsafeArray::<usize>::new(
         world,
         rand_perm_config.total_table_size(num_pes) * rand_perm_config.target_factor,
         distribution.into(),
-    )
-    .block();
+    );
     let mut rng: StdRng = SeedableRng::seed_from_u64(my_pe as u64);
     let darts_init = unsafe {
         darts_array.dist_iter_mut().enumerate().for_each(|(i, x)| {
@@ -157,55 +153,55 @@ pub fn rand_perm(
         })
     };
     let target_init = unsafe { target_array.dist_iter_mut().for_each(|x| *x = usize::MAX) };
-    darts_init.block();
-    target_init.block();
+    world.block_on(darts_init);
+    world.block_on(target_init);
 
-    let mut darts_array = darts_array.into_read_only().block();
+    let mut darts_array = darts_array.into_read_only();
     let local_darts = darts_array.local_data();
     let (perm_time, collect_time) = match array_type {
         ArrayType::Unsafe => {
             timer = Instant::now();
             unsafe_array_rand_perm(world, local_darts, &target_array, &mut rng);
             let perm_time = timer.elapsed();
-            darts_array = unsafe {
+            let collect_fut = unsafe {
                 target_array
                     .dist_iter()
                     .filter_map(|x| if *x == usize::MAX { None } else { Some(*x) })
                     .collect::<ReadOnlyArray<usize>>(distribution.into())
-                    .block()
             };
+            darts_array = world.block_on(collect_fut);
             (perm_time, timer.elapsed())
         }
         ArrayType::Atomic => {
-            let temp = target_array.into_atomic().block();
+            let temp = target_array.into_atomic();
             timer = Instant::now();
             array_rand_perm(world, local_darts, &temp, &mut rng);
             let perm_time = timer.elapsed();
-            darts_array = temp
-                .dist_iter()
-                .filter_map(|x| {
-                    let x = x.load();
-                    if x == usize::MAX {
-                        None
-                    } else {
-                        Some(x)
-                    }
-                })
-                .collect::<ReadOnlyArray<usize>>(distribution.into())
-                .block();
+            darts_array = world.block_on(
+                temp.dist_iter()
+                    .filter_map(|x| {
+                        let x = x.load();
+                        if x == usize::MAX {
+                            None
+                        } else {
+                            Some(x)
+                        }
+                    })
+                    .collect::<ReadOnlyArray<usize>>(distribution.into()),
+            );
 
             (perm_time, timer.elapsed())
         }
         ArrayType::LocalLock => {
-            let temp = target_array.into_local_lock().block();
+            let temp = target_array.into_local_lock();
             timer = Instant::now();
             array_rand_perm(world, local_darts, &temp, &mut rng);
             let perm_time = timer.elapsed();
-            darts_array = temp
-                .dist_iter()
-                .filter_map(|x| if *x == usize::MAX { None } else { Some(*x) })
-                .collect::<ReadOnlyArray<usize>>(distribution.into())
-                .block();
+            darts_array = world.block_on(
+                temp.dist_iter()
+                    .filter_map(|x| if *x == usize::MAX { None } else { Some(*x) })
+                    .collect::<ReadOnlyArray<usize>>(distribution.into()),
+            );
             (perm_time, timer.elapsed())
         }
     };
@@ -213,7 +209,7 @@ pub fn rand_perm(
     let global_finish_time = timer.elapsed();
 
     // if my_pe == 0 {
-    let sum = darts_array.sum().block().unwrap();
+    let sum = world.block_on(darts_array.sum());
 
     // (perm_time, collect_time, global_finish_time, sum.unwrap())
     (perm_time, collect_time, global_finish_time, sum)

@@ -50,51 +50,47 @@ pub fn index_gather(
                 world,
                 ig_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
             //the actual index_gather operation
-            unsafe { array.batch_load(rand_indices.as_slice()).spawn() }
+            unsafe { array.batch_load(rand_indices.as_slice()) }
         }
         ArrayType::Atomic => {
             let array = AtomicArray::<usize>::new(
                 world,
                 ig_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
 
             //the actual index_gather operation
-            array.batch_load(rand_indices.as_slice()).spawn()
+            array.batch_load(rand_indices.as_slice())
         }
         ArrayType::ReadOnly => {
             let array = ReadOnlyArray::<usize>::new(
                 world,
                 ig_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
 
             //the actual index_gather operation
-            array.batch_load(rand_indices.as_slice()).spawn()
+            array.batch_load(rand_indices.as_slice())
         }
         ArrayType::LocalLock => {
             let array = LocalLockArray::<usize>::new(
                 world,
                 ig_config.total_table_size(num_pes),
                 distribution.into(),
-            )
-            .block();
+            );
             let _init_time = timer.elapsed();
             timer = Instant::now();
 
             //the actual index_gather operation
-            array.batch_load(rand_indices.as_slice()).spawn()
+            array.batch_load(rand_indices.as_slice())
         }
     };
 

@@ -198,7 +198,7 @@ impl<T: BufferedAm> LamellarAM for LaunchAm<T> {
             if pe_ams[rank].len() * self.am_builder.index_size() >= self.buffer_size {
                 let mut am = self.am_builder.blank();
                 std::mem::swap(&mut am, &mut pe_ams[rank]);
-                let _ = task_group.exec_am_pe(rank, am).spawn(); //we could await here but we will just do a wait_all later instead
+                let _ = task_group.exec_am_pe(rank, am); //we could await here but we will just do a wait_all later instead
                 pe_cnt[rank] += 1;
             }
         }
@@ -206,11 +206,11 @@ impl<T: BufferedAm> LamellarAM for LaunchAm<T> {
         let _timer = Instant::now();
         for (rank, am) in pe_ams.into_iter().enumerate() {
             if am.len() > 0 {
-                let _ = task_group.exec_am_pe(rank, am).spawn(); //we could await here but we will just do a wait_all later instead
+                let _ = task_group.exec_am_pe(rank, am); //we could await here but we will just do a wait_all later instead
                 pe_cnt[rank] += 1;
             }
         }
-        task_group.await_all().await;
+        task_group.wait_all();
     }
 }
 
@@ -235,8 +235,7 @@ fn launch_ams<T: BufferedAm>(
                     slice_end: end,
                     buffer_size: histo_config.buffer_size,
                     am_builder: am_builder.clone(),
-                })
-                .spawn(),
+                }),
         );
     }
     Box::pin(futures::future::join_all(launch_tasks))
@@ -257,9 +256,7 @@ pub fn histo(
         for _ in 0..histo_config.pe_table_size(num_pes) {
             counts_inner.push(AtomicUsize::new(0));
         }
-        let counts = Darc::new(world, counts_inner)
-            .block()
-            .expect("darc should be created");
+        let counts = Darc::new(world, counts_inner).expect("darc should be created");
         world.barrier();
         let init_time = timer.elapsed();
         timer = Instant::now();
@@ -285,9 +282,7 @@ pub fn histo(
         };
         (init_time, launch_tasks)
     } else {
-        let counts = world
-            .alloc_shared_mem_region(histo_config.pe_table_size(num_pes))
-            .block();
+        let counts = world.alloc_shared_mem_region(histo_config.pe_table_size(num_pes));
         unsafe {
             for elem in counts.as_mut_slice().unwrap().iter_mut() {
                 *elem = 0;
