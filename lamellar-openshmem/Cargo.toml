@@ -87,4 +87,9 @@ name = "shmem"
 name = "shmem"
 description = "OpenSHMEM 1.4 on the Lamellar runtime"
 
+# find_package(LamellarShmem) -> <prefix>/share/cmake/LamellarShmem/LamellarShmemConfig.cmake
+[package.metadata.capi.install.data]
+subdirectory = ""
+asset = [{ from = "cmake/LamellarShmemConfig.cmake", to = "cmake/LamellarShmem" }]
+
 [workspace]
