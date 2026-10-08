@@ -1,0 +1,38 @@
+[package]
+name = "lamellar-openshmem-wrappers"
+version = "0.1.0"
+edition = "2021"
+description = "Compiler wrappers (shmemcc, oshcc, shmemcxx, oshcxx) and launcher (oshrun, shmemrun) for the Lamellar OpenSHMEM library"
+license-file = "../../lamellar-runtime/LICENSE"
+
+[lib]
+name = "shmem_wrappers"
+path = "src/lib.rs"
+
+# One binary per name: cargo cannot install a binary under two names, and `+` is not allowed in a target name, so the
+# C++ names `shmemc++` / `oshc++` are not built; link them to `shmemcxx` if you want them.
+[[bin]]
+name = "shmemcc"
+path = "src/bin/shmemcc.rs"
+
+[[bin]]
+name = "oshcc"
+path = "src/bin/oshcc.rs"
+
+[[bin]]
+name = "shmemcxx"
+path = "src/bin/shmemcxx.rs"
+
+[[bin]]
+name = "oshcxx"
+path = "src/bin/oshcxx.rs"
+
+[[bin]]
+name = "oshrun"
+path = "src/bin/oshrun.rs"
+
+[[bin]]
+name = "shmemrun"
+path = "src/bin/shmemrun.rs"
+
+[workspace]
