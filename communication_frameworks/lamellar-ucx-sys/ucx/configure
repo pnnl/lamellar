@@ -32992,7 +32992,7 @@ test_modules=""
 # See file LICENSE for terms.
 #
 
-ac_config_files="$ac_config_files test/gtest/common/googletest/Makefile"
+: # Lamellar patch (not upstream): test/gtest removed from this vendored copy.
 
 
 #
@@ -33001,7 +33001,7 @@ ac_config_files="$ac_config_files test/gtest/common/googletest/Makefile"
 # See file LICENSE for terms.
 #
 
-ac_config_files="$ac_config_files test/gtest/ucm/test_dlopen/Makefile"
+: # Lamellar patch (not upstream): test/gtest removed from this vendored copy.
 
 
 #
@@ -33010,7 +33010,7 @@ ac_config_files="$ac_config_files test/gtest/ucm/test_dlopen/Makefile"
 # See file LICENSE for terms.
 #
 
-ac_config_files="$ac_config_files test/gtest/ucm/test_dlopen/rpath-subdir/Makefile"
+: # Lamellar patch (not upstream): test/gtest removed from this vendored copy.
 
 
 #
@@ -33020,7 +33020,7 @@ ac_config_files="$ac_config_files test/gtest/ucm/test_dlopen/rpath-subdir/Makefi
 #
 
 test_modules="${test_modules}:module"
-ac_config_files="$ac_config_files test/gtest/ucs/test_module/Makefile"
+: # Lamellar patch (not upstream): test/gtest removed from this vendored copy.
 
 
 
@@ -33028,7 +33028,7 @@ cat >>confdefs.h <<_ACEOF
 #define test_MODULES "${test_modules}"
 _ACEOF
 
-ac_config_files="$ac_config_files test/gtest/Makefile"
+: # Lamellar patch (not upstream): test/gtest removed from this vendored copy.
 
 
      #
@@ -33072,7 +33072,7 @@ fi
 # See file LICENSE for terms.
 #
 
-ac_config_files="$ac_config_files test/apps/uct_info/Makefile"
+: # Lamellar patch (not upstream): test/apps removed from this vendored copy.
 
 
 
@@ -33250,16 +33250,16 @@ build_bindings=${build_bindings}
 #
 # Final output
 #
-ac_config_files="$ac_config_files Makefile docs/doxygen/header.tex src/uct/api/version.h"
+ac_config_files="$ac_config_files Makefile src/uct/api/version.h"
 
 if test "x$with_docs_only" = xyes; then :
 
 else
 
-ac_config_files="$ac_config_files ucx.spec ucx.pc contrib/rpmdef.sh contrib/ucx debian/rules debian/control debian/changelog src/ucp/Makefile src/ucp/api/ucp_version.h src/ucp/core/ucp_version.c src/tools/vfs/Makefile src/tools/info/Makefile src/tools/profile/Makefile test/apps/Makefile test/apps/iodemo/Makefile test/apps/profiling/Makefile test/mpi/Makefile bindings/go/Makefile bindings/java/Makefile bindings/java/pom.xml bindings/java/src/main/native/Makefile examples/Makefile cmake/Makefile cmake/ucx-config-version.cmake cmake/ucx-config.cmake cmake/ucx-targets.cmake config/Makefile"
+ac_config_files="$ac_config_files ucx.spec ucx.pc contrib/rpmdef.sh contrib/ucx debian/rules debian/control debian/changelog src/ucp/Makefile src/ucp/api/ucp_version.h src/ucp/core/ucp_version.c src/tools/vfs/Makefile src/tools/info/Makefile src/tools/profile/Makefile bindings/go/Makefile bindings/java/Makefile bindings/java/pom.xml bindings/java/src/main/native/Makefile cmake/Makefile cmake/ucx-config-version.cmake cmake/ucx-config.cmake cmake/ucx-targets.cmake config/Makefile"
 
 
-ac_config_files="$ac_config_files test/mpi/run_mpi.sh"
+: # Lamellar patch (not upstream): test/mpi removed from this vendored copy.
 
 
 fi

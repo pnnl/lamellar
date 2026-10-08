@@ -12,6 +12,12 @@ keywords = ["hpc", "network", "ditributed", "libfabrics"]
 categories = ["external-ffi-bindings", "network-programming"]
 links = "ucx"
 
+[features]
+# Build the vendored UCX as shared libraries (libucp.so, libuct.so, libucs.so, libucm.so plus the lib/ucx transport
+# plugins) instead of linking static archives into the final binary. Needed to build a libshmem.so cdylib
+# without duplicating UCX's process-global state, and to run another UCX client (for example Open MPI's OSHMEM)
+# against the very same UCX build.
+shared = []
 
 [build-dependencies]
 autotools = "0.2.7"

@@ -27030,7 +27030,7 @@ fi
 
 fi
 
-ac_config_files="$ac_config_files Makefile contrib/Makefile contrib/doca_urom_ucc_plugin/Makefile src/Makefile src/ucc/api/ucc_version.h src/core/ucc_version.c src/components/cl/basic/Makefile src/components/cl/hier/Makefile src/components/cl/doca_urom/Makefile src/components/mc/cpu/Makefile src/components/mc/cuda/Makefile src/components/topo/cuda/Makefile src/components/topo/ib/Makefile src/components/ec/cpu/Makefile src/components/ec/cuda/Makefile src/components/ec/cuda/kernel/Makefile src/components/mc/rocm/Makefile src/components/ec/rocm/Makefile src/components/ec/rocm/kernel/Makefile src/components/tl/cuda/kernels/Makefile test/mpi/Makefile test/gtest/Makefile tools/info/Makefile tools/perf/Makefile cmake/Makefile cmake/ucc-config-version.cmake cmake/ucc-config.cmake cmake/ucc-targets.cmake ucc.pc"
+ac_config_files="$ac_config_files Makefile contrib/Makefile contrib/doca_urom_ucc_plugin/Makefile src/Makefile src/ucc/api/ucc_version.h src/core/ucc_version.c src/components/cl/basic/Makefile src/components/cl/hier/Makefile src/components/cl/doca_urom/Makefile src/components/mc/cpu/Makefile src/components/mc/cuda/Makefile src/components/topo/cuda/Makefile src/components/topo/ib/Makefile src/components/ec/cpu/Makefile src/components/ec/cuda/Makefile src/components/ec/cuda/kernel/Makefile src/components/mc/rocm/Makefile src/components/ec/rocm/Makefile src/components/ec/rocm/kernel/Makefile src/components/tl/cuda/kernels/Makefile tools/info/Makefile tools/perf/Makefile cmake/Makefile cmake/ucc-config-version.cmake cmake/ucc-config.cmake cmake/ucc-targets.cmake ucc.pc"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure

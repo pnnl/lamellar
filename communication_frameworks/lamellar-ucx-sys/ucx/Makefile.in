@@ -616,8 +616,15 @@ doc_dir = $(pkgdatadir)/doc
 @DOCS_ONLY_FALSE@SUBDIRS = src/ucm src/ucs src/uct src/ucp \
 @DOCS_ONLY_FALSE@	$(am__append_1) src/tools/vfs src/tools/info \
 @DOCS_ONLY_FALSE@	src/tools/perf src/tools/profile bindings/go \
-@DOCS_ONLY_FALSE@	bindings/java test/apps examples cmake config \
+@DOCS_ONLY_FALSE@	bindings/java cmake config \
 @DOCS_ONLY_FALSE@	$(am__append_2) $(am__append_3)
+# Lamellar patch (not upstream): test/apps, test/gtest, test/mpi, examples,
+# and docs removed from this vendored copy to cut ~5.9MB / 250+ files of
+# unused test suite / sample apps / doxygen docs. test/apps and examples
+# were dropped directly above (they were unconditional, unlike test/gtest
+# and test/mpi, which are already gated behind HAVE_GTEST/HAVE_MPICC via
+# am__append_2/am__append_3 -- confirmed both unset on this build already,
+# so those two were already a pure disk cost, never actually built).
 @HAVE_LCOV_TRUE@LCOV_DIR = lcov_data
 @HAVE_LCOV_TRUE@LCOV_INFO = lcov.info
 @DX_COND_doc_TRUE@@DX_COND_html_TRUE@DX_CLEAN_HTML = @DX_DOCDIR@/html

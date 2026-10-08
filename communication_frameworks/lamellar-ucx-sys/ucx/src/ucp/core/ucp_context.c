@@ -27,6 +27,7 @@
 #include <ucs/vfs/base/vfs_obj.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <dirent.h>
 
 
 #define UCP_RSC_CONFIG_ALL    "all"
@@ -1863,6 +1864,62 @@ static void ucp_fill_resources_reg_md_map_update(ucp_context_h context)
     }
 }
 
+/* Lamellar patch (not upstream): a static (--disable-shared) build only
+ * registers a UCT component if it was actually linked with
+ * -Wl,--whole-archive -- nothing else references those objects by symbol,
+ * unlike a shared build where ucs dlopen()s every lib/ucx/libuct_*.so
+ * plugin unconditionally. A consumer that links this vendored UCX directly
+ * (bypassing lamellar-ucx-sys's own build.rs, which always adds
+ * --whole-archive) and forgets the "ib" transport module silently ends up
+ * with only tcp/self, with no link error -- ucp_check_resources() below
+ * only errors when there are NO usable transports at all, not when a
+ * specific one is unexpectedly missing. This is the one place both build
+ * paths reliably reach: warn here if IB hardware exists but the "ib"
+ * component never registered, so the fallback is visible instead of a
+ * silent performance regression. */
+static void ucp_warn_missing_ib_component(ucp_context_h context)
+{
+    ucp_rsc_index_t i;
+    int have_ib_hw;
+    int have_ib_component = 0;
+    DIR *dir;
+    struct dirent *entry;
+    unsigned num_devices = 0;
+
+    dir = opendir("/sys/class/infiniband");
+    if (dir == NULL) {
+        return; /* no IB hardware (or no /sys access) -- nothing to check */
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        if ((strcmp(entry->d_name, ".") != 0) &&
+            (strcmp(entry->d_name, "..") != 0)) {
+            ++num_devices;
+        }
+    }
+    closedir(dir);
+    have_ib_hw = (num_devices > 0);
+    if (!have_ib_hw) {
+        return;
+    }
+
+    for (i = 0; i < context->num_cmpts; ++i) {
+        if (!strcmp(context->tl_cmpts[i].attr.name, "ib")) {
+            have_ib_component = 1;
+            break;
+        }
+    }
+
+    if (!have_ib_component) {
+        ucs_warn("%u InfiniBand device(s) found in /sys/class/infiniband, "
+                 "but this UCX build has no \"ib\" transport component "
+                 "registered -- falling back to tcp/self only. If this is "
+                 "a static build, the consumer likely linked libuct_ib.a "
+                 "without -Wl,--whole-archive (see lamellar-ucx-sys's "
+                 "build.rs / NATIVE_DEPENDENCIES.md for the required "
+                 "pattern).", num_devices);
+    }
+}
+
 static ucs_status_t ucp_fill_resources(ucp_context_h context,
                                        const ucp_config_t *config)
 {
@@ -1957,6 +2014,8 @@ static ucs_status_t ucp_fill_resources(ucp_context_h context,
 
         max_mds += context->tl_cmpts[i].attr.md_resource_count;
     }
+
+    ucp_warn_missing_ib_component(context);
 
     /* Allocate actual array of MDs */
     context->tl_mds = ucs_calloc(max_mds, sizeof(*context->tl_mds),

@@ -18,6 +18,7 @@
 #include <glob.h>
 #include <unistd.h>
 #include <assert.h>
+#include <string.h>
 
 #define IFACE_NAME_LEN_MAX                                                     \
     (UCC_MAX_FRAMEWORK_NAME_LEN + UCC_MAX_COMPONENT_NAME_LEN + 32)
@@ -79,6 +80,105 @@ error:
     return UCC_ERR_NO_MESSAGE;
 }
 
+/*
+ * Lamellar patch (not upstream UCC): built-in components for static builds.
+ *
+ * Upstream only discovers components by globbing
+ * <component_path>/libucc_<framework>_*.so and dlopen()ing each one, so a
+ * static-only build (libucc.a + lib/ucc/libucc_*.a linked into the final
+ * executable) finds no CL/MC and ucc_init() fails.  Each component exposes
+ * its iface as a global named ucc_<framework>_<name> (the same symbol the
+ * dlopen path dlsym()s), so reference those weakly here: a component whose
+ * archive is linked in (lamellar-ucc-sys links them with +whole-archive)
+ * resolves to its iface, an absent one resolves to NULL.  The .so path is
+ * kept for dynamic builds; a .so and a built-in with the same name are
+ * de-duplicated, with the built-in winning.
+ */
+#define UCC_BUILTIN_COMPONENT(_fw, _name)                                      \
+    extern ucc_component_iface_t ucc_##_fw##_##_name __attribute__((weak));
+UCC_BUILTIN_COMPONENT(cl, basic)
+UCC_BUILTIN_COMPONENT(cl, hier)
+UCC_BUILTIN_COMPONENT(cl, doca_urom)
+UCC_BUILTIN_COMPONENT(tl, self)
+UCC_BUILTIN_COMPONENT(tl, ucp)
+UCC_BUILTIN_COMPONENT(tl, cuda)
+UCC_BUILTIN_COMPONENT(tl, mlx5)
+UCC_BUILTIN_COMPONENT(tl, nccl)
+UCC_BUILTIN_COMPONENT(tl, rccl)
+UCC_BUILTIN_COMPONENT(tl, sharp)
+UCC_BUILTIN_COMPONENT(mc, cpu)
+UCC_BUILTIN_COMPONENT(mc, cuda)
+UCC_BUILTIN_COMPONENT(mc, rocm)
+UCC_BUILTIN_COMPONENT(ec, cpu)
+UCC_BUILTIN_COMPONENT(ec, cuda)
+UCC_BUILTIN_COMPONENT(ec, rocm)
+UCC_BUILTIN_COMPONENT(sysinfo, ib)
+UCC_BUILTIN_COMPONENT(sysinfo, cuda)
+#undef UCC_BUILTIN_COMPONENT
+
+#define UCC_BUILTIN_ENTRY(_fw, _name) {#_fw, &ucc_##_fw##_##_name},
+static const struct {
+    const char            *framework;
+    ucc_component_iface_t *iface;
+} ucc_builtin_components[] = {
+    UCC_BUILTIN_ENTRY(cl, basic)
+    UCC_BUILTIN_ENTRY(cl, hier)
+    UCC_BUILTIN_ENTRY(cl, doca_urom)
+    UCC_BUILTIN_ENTRY(tl, self)
+    UCC_BUILTIN_ENTRY(tl, ucp)
+    UCC_BUILTIN_ENTRY(tl, cuda)
+    UCC_BUILTIN_ENTRY(tl, mlx5)
+    UCC_BUILTIN_ENTRY(tl, nccl)
+    UCC_BUILTIN_ENTRY(tl, rccl)
+    UCC_BUILTIN_ENTRY(tl, sharp)
+    UCC_BUILTIN_ENTRY(mc, cpu)
+    UCC_BUILTIN_ENTRY(mc, cuda)
+    UCC_BUILTIN_ENTRY(mc, rocm)
+    UCC_BUILTIN_ENTRY(ec, cpu)
+    UCC_BUILTIN_ENTRY(ec, cuda)
+    UCC_BUILTIN_ENTRY(ec, rocm)
+    UCC_BUILTIN_ENTRY(sysinfo, ib)
+    UCC_BUILTIN_ENTRY(sysinfo, cuda)
+};
+#undef UCC_BUILTIN_ENTRY
+
+#define UCC_N_BUILTIN_COMPONENTS                                               \
+    (sizeof(ucc_builtin_components) / sizeof(ucc_builtin_components[0]))
+
+/* Append the linked-in built-ins of framework_name to ifaces (capacity
+ * UCC_N_BUILTIN_COMPONENTS past n_loaded), replacing a dlopen()ed component
+ * of the same name.  Returns the new count. */
+static int ucc_components_add_builtin(const char *framework_name,
+                                      ucc_component_iface_t **ifaces,
+                                      int n_loaded)
+{
+    ucc_component_iface_t *iface;
+    int                    i, j;
+
+    for (i = 0; i < UCC_N_BUILTIN_COMPONENTS; i++) {
+        iface = ucc_builtin_components[i].iface;
+        if (!iface || strcmp(ucc_builtin_components[i].framework,
+                             framework_name)) {
+            continue;
+        }
+        iface->dl_handle = NULL;
+        iface->id        = ucc_str_hash_djb2(iface->name);
+        for (j = 0; j < n_loaded; j++) {
+            if (!strcmp(ifaces[j]->name, iface->name)) {
+                break;
+            }
+        }
+        if (j < n_loaded) {
+            ucc_debug("using built-in %s component %s instead of .so",
+                      framework_name, iface->name);
+            ifaces[j] = iface;
+        } else {
+            ifaces[n_loaded++] = iface;
+        }
+    }
+    return n_loaded;
+}
+
 #define CHECK_COMPONENT_UNIQ(_framework, _field)                               \
     do {                                                                       \
         ucc_component_iface_t **c = _framework->components;                    \
@@ -130,26 +230,36 @@ ucc_status_t ucc_components_load(const char *framework_name,
         return UCC_ERR_INVALID_PARAM;
     }
 
-    pattern_size =
-        strlen(ucc_global_config.component_path) + strlen(framework_name) + 16;
-    full_pattern = (char *)ucc_malloc(pattern_size, "full_pattern");
-    if (!full_pattern) {
-        ucc_error("failed to allocate %zd bytes for full_pattern",
-                  pattern_size);
-        return UCC_ERR_NO_MEMORY;
+    /* Lamellar patch: in a static build, component constructors (e.g.
+     * tl_ucp_iface_init loading its "tlcp_ucp" plugins) run at program start,
+     * before ucc_init() has set component_path.  Upstream only reaches here
+     * from a dlopen()ed component after init.  Skip the .so glob and use only
+     * the built-ins in that case. */
+    memset(&globbuf, 0, sizeof(globbuf));
+    if (ucc_global_config.component_path) {
+        pattern_size = strlen(ucc_global_config.component_path) +
+                       strlen(framework_name) + 16;
+        full_pattern = (char *)ucc_malloc(pattern_size, "full_pattern");
+        if (!full_pattern) {
+            ucc_error("failed to allocate %zd bytes for full_pattern",
+                      pattern_size);
+            return UCC_ERR_NO_MEMORY;
+        }
+        ucc_snprintf_safe(full_pattern, pattern_size, "%s/libucc_%s_*.so",
+                          ucc_global_config.component_path, framework_name);
+        glob(full_pattern, 0, NULL, &globbuf);
+        ucc_free(full_pattern);
     }
-    ucc_snprintf_safe(full_pattern, pattern_size, "%s/libucc_%s_*.so",
-                      ucc_global_config.component_path, framework_name);
-    glob(full_pattern, 0, NULL, &globbuf);
-    ucc_free(full_pattern);
     n_loaded          = 0;
 
     dlerror(); /* Clear any existing error */
     ifaces = (ucc_component_iface_t **)ucc_malloc(
-        globbuf.gl_pathc * sizeof(ucc_component_iface_t *), "ifaces");
+        (globbuf.gl_pathc + UCC_N_BUILTIN_COMPONENTS) *
+            sizeof(ucc_component_iface_t *), "ifaces");
     if (!ifaces) {
         ucc_error("failed to allocate %zd bytes for ifaces",
-                  globbuf.gl_pathc * sizeof(ucc_component_iface_t *));
+                  (globbuf.gl_pathc + UCC_N_BUILTIN_COMPONENTS) *
+                      sizeof(ucc_component_iface_t *));
         return UCC_ERR_NO_MEMORY;
     }
 
@@ -163,6 +273,7 @@ ucc_status_t ucc_components_load(const char *framework_name,
     }
 
     assert(n_loaded <= globbuf.gl_pathc);
+    n_loaded = ucc_components_add_builtin(framework_name, ifaces, n_loaded);
     if (globbuf.gl_pathc > 0) {
         globfree(&globbuf);
     }
@@ -200,6 +311,32 @@ ucc_status_t ucc_components_load(const char *framework_name,
     for (i = 0; i < n_loaded; i++) {
         framework->names.names[i] = strdup(framework->components[i]->name);
     }
+
+    /* Lamellar patch (not upstream): same class of check as UCX's
+     * ucp_warn_missing_ib_component() -- a static build only gets a given
+     * component's *other* object files (the ones implementing its actual
+     * collective ops, not just the weak iface-struct definition referenced
+     * above) if that component's archive was linked with
+     * -Wl,--whole-archive. A consumer linking this vendored UCC directly
+     * and forgetting lib/ucc/libucc_tl_ucp.a's whole-archive treatment
+     * doesn't hit an error here -- the "tl" framework still loads
+     * successfully via tl_self alone -- it just silently never gets a
+     * UCX-backed TL. dlsym() for ucp_init as a proxy for "UCX was actually
+     * linked into this binary at all"; if it's present but tl_ucp's weak
+     * iface never resolved, the omission is on UCC's own whole-archive
+     * list, not on UCX being unavailable. */
+    ucc_component_iface_t *ucp_iface = &ucc_tl_ucp;
+    if (!strcmp(framework_name, "tl") && !ucp_iface &&
+        dlsym(RTLD_DEFAULT, "ucp_init") != NULL) {
+        ucc_warn("UCX (ucp_init) is linked into this process, but UCC's "
+                 "own \"tl_ucp\" component never registered -- collectives "
+                 "will run without a UCX-backed transport layer. If this "
+                 "is a static build, the consumer likely linked "
+                 "libucc_tl_ucp.a without -Wl,--whole-archive (see "
+                 "lamellar-ucc-sys's build.rs / NATIVE_DEPENDENCIES.md for "
+                 "the required pattern).");
+    }
+
     return UCC_OK;
 err:
     ucc_free(framework->components);
