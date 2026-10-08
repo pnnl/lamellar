@@ -14,27 +14,30 @@ keywords = ["hpc", "pmi", "process-management"]
 categories = ["external-ffi-bindings", "network-programming"]
 
 [features]
+# hwloc is no longer a standalone knob here: openpmix-src vendor-builds it and
+# pmix-sys re-exports the prefix via DEP_PMIX_HWLOC_ROOT/DEP_PMIX_HWLOC_INCLUDE
+# (see prrte-src's Build::build()), so pulling in vendored-pmix is sufficient.
 vendored = [
     "prrte-src",
     "vendored-libevent",
-    "vendored-hwloc",
     "vendored-pmix",
-] # Ideally we wouldn't always need the vendored version of the dependencies
-# but currently hwloc-sys does not expose a way to get the path to a system-installed hwloc
+]
 vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled", "pmix-sys?/vendored-libevent"]
-vendored-hwloc = ["hwlocality-sys/hwloc-latest", "hwlocality-sys/vendored", "pmix-sys?/vendored-hwloc"]
 vendored-pmix = ["pmix-sys/openpmix-src"]
+# PRRTE's own ./configure hard-requires external PMIx headers (prte_setup_pmix.m4:
+# "Cannot continue" if none found) -- there is no way to build PRRTE without PMIx.
+# Redeclaring this optional-dep feature explicitly (instead of leaving it implicit)
+# lets us pull in pmix-sys unconditionally, so enabling prrte-src can't skip it.
+prrte-src = ["dep:prrte-src", "pmix-sys"]
 vendored-prrte = [
     "prrte-src",
     "vendored-libevent",
-    "hwlocality-sys",
     "pmix-sys",
 ]
 
 [dependencies]
 pmix-sys = { version = "0.1.0", optional = true }
 libevent-sys = { version = "0.4.0", features = ["threading"], optional = true }
-hwlocality-sys = { version = "0.7.1", optional = true }
 
 [build-dependencies]
 prrte-src = { version = "0.1.0", optional = true }

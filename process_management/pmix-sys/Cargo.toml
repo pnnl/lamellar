@@ -15,12 +15,10 @@ categories = ["external-ffi-bindings", "network-programming"]
 
 
 [features]
-vendored = ["openpmix-src", "vendored-hwloc", "vendored-libevent"]
-vendored-hwloc = ["hwlocality-sys/hwloc-latest", "hwlocality-sys/vendored", "openpmix-src?/vendored-hwloc"]
+vendored = ["openpmix-src", "vendored-libevent"]
 vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled", "openpmix-src?/vendored-libevent"]
 
 [dependencies]
-hwlocality-sys = { version = "0.7.1", optional = true }
 libevent-sys = { version = "0.4.0", features = [
     "threading",
 ], optional = true }

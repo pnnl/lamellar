@@ -674,7 +674,8 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = config contrib src include docs
+# Lamellar patch (not upstream): docs/ removed from this vendored copy.
+SUBDIRS = config contrib src include
 EXTRA_DIST = README.md VERSION LICENSE autogen.pl examples/README \
 	examples/Makefile examples/examples.h examples/alloc.c \
 	examples/bad_exit.c examples/client.c examples/client2.c \

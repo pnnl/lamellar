@@ -67282,40 +67282,40 @@ oac_var_scope_pop oac_list_arg oac_list_append oac_list_val oac_list_tmp_variabl
     pathfile=$PMIX_top_srcdir/config/mca_library_paths.txt
     PMIX_COMPONENT_LIBRARY_PATHS=`cat $pathfile`
 
-    ac_config_files="$ac_config_files test/run_tests00.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests01.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests02.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests03.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests04.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests05.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests06.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests07.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests08.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests09.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests10.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests11.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests12.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-    ac_config_files="$ac_config_files test/run_tests13.pl"
+    : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
 #    AC_CONFIG_FILES(pmix_config_prefix[test/run_tests14.pl], [chmod +x test/run_tests14.pl])
 #    AC_CONFIG_FILES(pmix_config_prefix[test/run_tests15.pl], [chmod +x test/run_tests15.pl])
     if test "$WANT_PYTHON_BINDINGS" = "1"; then
-        ac_config_files="$ac_config_files test/python/run_server.sh"
+        : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
-        ac_config_files="$ac_config_files test/python/run_sched.sh"
+        : # Lamellar patch (not upstream): test/ removed from this vendored copy.
 
     fi
 
@@ -68824,7 +68824,7 @@ CONFIGURE_DEPENDENCIES='$(top_srcdir)/VERSION'
 
 
 
-ac_config_files="$ac_config_files contrib/Makefile examples/Makefile test/Makefile test/test_v2/Makefile test/python/Makefile test/simple/Makefile test/util/Makefile docs/Makefile maint/pmix.pc"
+ac_config_files="$ac_config_files contrib/Makefile maint/pmix.pc"
 
 
 pmix_show_title "Configuration complete"

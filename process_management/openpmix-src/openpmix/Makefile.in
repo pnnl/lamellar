@@ -649,7 +649,10 @@ top_srcdir = @top_srcdir@
 # Note that the -I directory must *exactly* match what was specified
 # via AC_CONFIG_MACRO_DIR in configure.ac.
 ACLOCAL_AMFLAGS = -I ./config
-SUBDIRS = config contrib include src etc bindings docs $(am__append_1)
+# Lamellar patch (not upstream): docs/ removed from this vendored copy (and
+# test/, examples/ -- those were already conditional on PMIX_TESTS_EXAMPLES,
+# off by default, via am__append_1, so removing them needed no SUBDIRS edit).
+SUBDIRS = config contrib include src etc bindings $(am__append_1)
 AM_DISTCHECK_CONFIGURE_FLAGS = --disable-dlopen
 headers = 
 sources = 

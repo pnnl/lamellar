@@ -68163,7 +68163,7 @@ prte_want_prd=0
 
 prte_show_subtitle "Final output"
 
-ac_config_files="$ac_config_files Makefile config/Makefile contrib/Makefile include/Makefile include/prte_version.h docs/Makefile src/docs/Makefile src/docs/prrte-rst-content/Makefile"
+ac_config_files="$ac_config_files Makefile config/Makefile contrib/Makefile include/Makefile include/prte_version.h"
 
 
 

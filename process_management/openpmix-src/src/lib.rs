@@ -11,12 +11,28 @@ use std::env;
 /// `oac_install_docs` in openpmix/config/pmix.m4).
 const PMIX_VERSION: &str = "5.0.9";
 
+/// Vendored hwloc release tarball (official `hwloc-2.11.2.tar.gz`), same
+/// rationale as PMIx/PRRTE: `configure` ships pre-generated so no autoreconf
+/// is required. Both PRRTE and PMIx hard-require hwloc in the 1.11.0-2.x
+/// window (checked directly in their `config/autogen_found_items.m4`), so we
+/// build it once here and export the install prefix to both consumers
+/// (PMIx directly, PRRTE transitively via pmix-sys's DEP_PMIX_HWLOC_ROOT).
+const HWLOC_VERSION: &str = "2.11.2";
+
 pub fn source_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("openpmix")
 }
 
+pub fn hwloc_source_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("hwloc")
+}
+
 pub fn version() -> &'static str {
     PMIX_VERSION
+}
+
+pub fn hwloc_version() -> &'static str {
+    HWLOC_VERSION
 }
 
 pub struct Build {
@@ -35,6 +51,7 @@ pub struct Artifacts {
     libs: Vec<String>,
     #[allow(dead_code)]
     target: String,
+    hwloc_dir: Option<PathBuf>,
 }
 
 
@@ -54,6 +71,14 @@ impl Artifacts {
 
     pub fn bin_dir(&self) -> &Path {
         &self.bin_dir
+    }
+
+    /// Install prefix of the hwloc actually used to build PMIx -- either the
+    /// vendored build (OUT_DIR/hwloc-install) or an external override
+    /// (HWLOC_DIR/DEP_HWLOC_ROOT/DEP_HWLOC_INCLUDE). None only if PMIx's own
+    /// configure was left to auto-detect hwloc via pkg-config.
+    pub fn hwloc_dir(&self) -> Option<&Path> {
+        self.hwloc_dir.as_deref()
     }
 }
 
@@ -155,6 +180,93 @@ fn retime_generated_lexers(root: &Path) {
     walk(root, now, older);
 }
 
+/// Vendor-build hwloc into OUT_DIR/hwloc-install and return its install prefix.
+/// hwloc's release tarball ships no `.l` flex sources (unlike PRRTE/PMIx), so
+/// no lexer retiming is needed here. It DOES need the same class of fix as
+/// `retime_generated_lexers`, though, for `configure`/`Makefile.in` vs their
+/// `configure.ac`/`aclocal.m4`/`*.m4`/`Makefile.am` sources: `copy_rec`
+/// (std::fs::copy) doesn't preserve mtimes, so after copying, `configure.ac`
+/// can end up newer than the pre-generated `configure` purely due to
+/// readdir-order luck. Automake's standard "missing"-script auto-remake rule
+/// then tries to regenerate `configure` for real with whatever autoconf is
+/// installed on the build machine -- silently discarding every hand-patch
+/// made to the committed `configure` (this is exactly how the doc/tests/
+/// utils/contrib trim patches kept reverting themselves whenever autoconf
+/// happened to be installed). Re-assert generated-newer-than-source the same
+/// way retime_generated_lexers does for Flex.
+fn retime_generated_autotools(root: &Path) {
+    fn set_mtime(path: &Path, t: std::time::SystemTime) {
+        if let Ok(f) = std::fs::OpenOptions::new().write(true).open(path) {
+            let _ = f.set_modified(t);
+        }
+    }
+    fn walk(dir: &Path, now: std::time::SystemTime, older: std::time::SystemTime) {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, now, older);
+                continue;
+            }
+            match path.file_name().and_then(|n| n.to_str()) {
+                Some("configure.ac") | Some("configure.in") | Some("aclocal.m4")
+                | Some("Makefile.am") => set_mtime(&path, older),
+                Some(name) if name.ends_with(".m4") => set_mtime(&path, older),
+                Some("configure") | Some("Makefile.in") | Some("config.h.in") => {
+                    set_mtime(&path, now)
+                }
+                _ => {}
+            }
+        }
+    }
+    let now = std::time::SystemTime::now();
+    let older = now - std::time::Duration::from_secs(60);
+    walk(root, now, older);
+}
+
+fn build_hwloc(out_dir: &Path) -> PathBuf {
+    let dest = out_dir.join("hwloc-src");
+    let src = hwloc_source_dir();
+    copy_rec(&src, &dest).expect("Failed to copy hwloc_source_dir() to OUT_DIR/hwloc-src");
+    retime_generated_autotools(&dest);
+    let hwloc_path = std::fs::canonicalize(dest).unwrap();
+
+    let hwloc_install = out_dir.join("hwloc-install");
+    std::fs::create_dir_all(&hwloc_install).expect("Failed to create hwloc-install dir");
+    let mut hwloc_build = autotools::Config::new(hwloc_path.as_path());
+    hwloc_build
+        .out_dir(&hwloc_install)
+        .enable_static()
+        .disable_shared()
+        // Rust binaries link PIE by default; libtool skips -fPIC object
+        // compilation for a static-only (--disable-shared) build unless
+        // explicitly told otherwise, which breaks the final PIE link
+        // (R_X86_64_32/32S relocations against non-PIC objects).
+        .with("pic", None)
+        .disable("io", None)
+        .disable("libudev", None)
+        .disable("cairo", None)
+        .disable("cuda", None)
+        .disable("opencl", None)
+        .disable("nvml", None)
+        .disable("libxml2", None);
+    // Lamellar patch (not upstream): this vendored copy ships without doc/,
+    // tests/, utils/, or contrib/ (see configure's own patched
+    // ac_config_files calls, and the patched doc/-existence check that
+    // used to force --enable-embedded-mode) to avoid shipping ~19MB of
+    // doxygen docs and an unused test suite. --enable-embedded-mode itself
+    // is NOT used here: it changes `make install` to expect textual
+    // source embedding into a consumer's own build rather than a
+    // standalone configure+make+install into its own prefix, which is
+    // what this function actually does (then hands the resulting prefix
+    // to PMIx's own --with-hwloc) -- embedded mode broke hwloc.pc/header
+    // installation for that usage.
+    hwloc_build.build()
+}
+
 impl Build {
     pub fn new() -> Build {
         Build {
@@ -197,6 +309,12 @@ impl Build {
                         .to_string()
                 })
             });
+        // No override given: vendor-build hwloc ourselves so PMIx (and, via
+        // pmix-sys's DEP_PMIX_HWLOC_ROOT, PRRTE) always has one that satisfies
+        // their shared 1.11.0-2.x version requirement.
+        let libhwloc_dir = libhwloc_dir.or_else(|| {
+            Some(build_hwloc(out_dir).display().to_string())
+        });
 
         let dest = out_dir.join("src");
         let src = source_dir();
@@ -213,13 +331,28 @@ impl Build {
         let mut pmix_build = autotools::Config::new(pmix_path.as_path());
         pmix_build
             .out_dir(out_dir)
-            .disable_static()
-            .enable_shared()
+            .enable_static()
+            .disable_shared()
+            // Same PIC requirement as hwloc above -- see that comment.
+            .with("pic", None)
             // Library only: skip building/installing the pmix_info/plookup/
             // pps/pattrs/pquery/pevent/wrapper CLI tools and the test/example
             // programs. Neither is needed to link against libpmix.
             .disable("pmix-binaries", None)
-            .with("tests-examples", Some("no"));
+            .with("tests-examples", Some("no"))
+            // munge: optional PSEC credential component, auto-detected via
+            // pkg-config if present on the build machine (native uid/gid
+            // check is the fallback). A shared libpmix.so would record it
+            // as DT_NEEDED and the dynamic linker resolves it transitively;
+            // a static libpmix.a does not, so an unrelated consumer binary
+            // fails to link with undefined munge_* symbols unless it
+            // explicitly adds -lmunge itself. Disabled explicitly instead,
+            // since the vendored static build's whole point is not
+            // depending on what happens to be installed on the build
+            // machine. zlib is left auto-detected (optional modex/topology
+            // compression) -- pmix-sys's build.rs adds the corresponding
+            // -lz explicitly for the static-link case.
+            .without("munge", None);
         if let Some(dir) = lib_event_dir.as_ref() {
             pmix_build.with("libevent", Some(dir));
         }
@@ -242,6 +375,7 @@ impl Build {
             bin_dir,
             libs,
             target: target.to_string(),
+            hwloc_dir: libhwloc_dir.map(PathBuf::from),
         }
 
     }

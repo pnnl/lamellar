@@ -1008,7 +1008,8 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = docs etc util $(MCA_prte_FRAMEWORKS_SUBDIRS) \
+# Lamellar patch (not upstream): src/docs/ removed from this vendored copy.
+SUBDIRS = etc util $(MCA_prte_FRAMEWORKS_SUBDIRS) \
 	$(MCA_prte_FRAMEWORK_COMPONENT_STATIC_SUBDIRS) . \
 	$(MCA_prte_FRAMEWORK_COMPONENT_DSO_SUBDIRS) tools/prted \
 	tools/prun tools/pcc tools/prte_info tools/prte tools/pterm

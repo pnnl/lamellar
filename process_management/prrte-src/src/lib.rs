@@ -178,11 +178,21 @@ impl Build {
         } else {
             None
         };
+        // DEP_PMIX_HWLOC_ROOT/DEP_PMIX_HWLOC_INCLUDE: openpmix-src vendor-builds hwloc
+        // itself and pmix-sys re-exports that prefix under these keys, so PRRTE reuses
+        // the exact same hwloc PMIx already linked against instead of needing its own
+        // hwloc-src vendoring (PRRTE requires an external PMIx unconditionally anyway --
+        // see libpmix_dir below -- so pmix-sys's build script always runs first).
         let libhwloc_dir = if let Ok(dir) = std::env::var("HWLOC_DIR") {
             Some(dir)
         } else if let Ok(root_dir) = std::env::var("DEP_HWLOC_ROOT") {
             Some(root_dir)
         } else if let Ok(include_str) = std::env::var("DEP_HWLOC_INCLUDE") {
+            let include_dir = std::path::Path::new(&include_str);
+            Some(include_dir.parent().unwrap().display().to_string())
+        } else if let Ok(root_dir) = std::env::var("DEP_PMIX_HWLOC_ROOT") {
+            Some(root_dir)
+        } else if let Ok(include_str) = std::env::var("DEP_PMIX_HWLOC_INCLUDE") {
             let include_dir = std::path::Path::new(&include_str);
             Some(include_dir.parent().unwrap().display().to_string())
         } else {
