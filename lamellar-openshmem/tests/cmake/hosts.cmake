@@ -1,0 +1,20 @@
+# Check that the launcher spreads ranks over NODES nodes: run `hostname` as the program and count the distinct answers.
+#   cmake -DRUN=<oshrun> -DNODES=2 -DPPN=2 -P hosts.cmake
+cmake_minimum_required(VERSION 3.20)
+execute_process(COMMAND ${RUN} -N ${NODES} --pes-per-node ${PPN} hostname
+  RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_QUIET TIMEOUT 120)
+string(REPLACE "\n" ";" lines "${out}")
+set(hosts "")
+foreach(l IN LISTS lines)
+  if(l MATCHES "^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    list(APPEND hosts "${l}")
+  endif()
+endforeach()
+list(LENGTH hosts nranks)
+list(REMOVE_DUPLICATES hosts)
+list(LENGTH hosts ndistinct)
+math(EXPR want "${NODES} * ${PPN}")
+if(NOT rc STREQUAL "0" OR NOT nranks EQUAL want OR NOT ndistinct EQUAL NODES)
+  message(FATAL_ERROR "expected ${want} ranks on ${NODES} nodes, got ${nranks} on ${ndistinct} (exit '${rc}'): ${out}")
+endif()
+message(STATUS "${nranks} ranks on ${ndistinct} nodes: ${hosts}")
