@@ -1,0 +1,6 @@
+target/
+__pycache__/
+
+# The repository-wide .gitignore ignores every `bin` directory; this one holds the compiler wrappers and launcher.
+!/bin/
+!/wrappers/src/bin/
