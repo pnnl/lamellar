@@ -265,12 +265,27 @@ void ofi_mr_cache_delete(struct ofi_mr_cache *cache, struct ofi_mr_entry *entry)
  * new entry, then check under lock that a conflict with another thread
  * hasn't occurred.  If a conflict occurred, we return -EAGAIN and
  * restart the entire operation.
+ *
+ * Lamellar backport (not in upstream 1.22.0): the rbnode for the tree
+ * insertion is also pre-allocated outside the lock.  ofi_rbmap_insert()
+ * may malloc() the node, and doing that under mm_lock deadlocks against a
+ * concurrent free() that holds the glibc arena lock while trimming the heap
+ * (madvise/brk intercept -> ofi_intercept_handler -> mm_lock).  Fixed
+ * upstream in libfabric 2.6.0+ by ofiwg/libfabric commit d27cfffdced9
+ * ("util: Drop mm lock before memory operations"); drop this backport when
+ * the vendored libfabric is upgraded to >= 2.6.0.  Without the fix the
+ * hang can also be avoided by disabling the MR cache
+ * (FI_MR_CACHE_MAX_COUNT=0 or FI_MR_CACHE_MONITOR=disabled), at a
+ * significant performance cost.  Unlike upstream, the
+ * spare node is malloc()ed directly rather than via ofi_rbnode_alloc(),
+ * since that pops the tree free list, which is only safe under mm_lock.
  */
 static int
 util_mr_cache_create(struct ofi_mr_cache *cache, const struct ofi_mr_info *info,
 		     struct ofi_mr_entry **entry)
 {
 	struct ofi_mr_entry *cur;
+	struct ofi_rbnode *rbnode;
 	int ret;
 	struct ofi_mem_monitor *monitor = cache->monitors[info->iface];
 
@@ -291,6 +306,12 @@ util_mr_cache_create(struct ofi_mr_cache *cache, const struct ofi_mr_info *info,
 	if (ret)
 		goto free;
 
+	rbnode = malloc(sizeof(*rbnode));
+	if (OFI_UNLIKELY(!rbnode)) {
+		ret = -FI_ENOMEM;
+		goto free;
+	}
+
 	pthread_mutex_lock(&mm_lock);
 	cur = ofi_mr_rbt_find(&cache->tree, info);
 	if (cur) {
@@ -302,11 +323,14 @@ util_mr_cache_create(struct ofi_mr_cache *cache, const struct ofi_mr_info *info,
 		cache->uncached_cnt++;
 		cache->uncached_size += info->iov.iov_len;
 	} else {
-		if (ofi_rbmap_insert(&cache->tree, (void *) &(*entry)->info,
-				     (void *) *entry, &(*entry)->node)) {
-			ret = -FI_ENOMEM;
+		ret = ofi_rbmap_insert_at(&cache->tree,
+					  (void *) &(*entry)->info,
+					  (void *) *entry, &(*entry)->node,
+					  rbnode);
+		if (ret)
 			goto unlock;
-		}
+		rbnode = NULL; /* now owned by the tree */
+
 		cache->cached_cnt++;
 		cache->cached_size += info->iov.iov_len;
 
@@ -319,10 +343,17 @@ util_mr_cache_create(struct ofi_mr_cache *cache, const struct ofi_mr_info *info,
 			cache->uncached_size += (*entry)->info.iov.iov_len;
 		}
 	}
+	/* ofi_rbnode_free() only returns the node to the tree free list (never
+	 * allocates), so it is safe to call while holding mm_lock.
+	 */
+	if (rbnode)
+		ofi_rbnode_free(&cache->tree, rbnode);
 	pthread_mutex_unlock(&mm_lock);
 	return 0;
 
 unlock:
+	if (rbnode)
+		ofi_rbnode_free(&cache->tree, rbnode);
 	pthread_mutex_unlock(&mm_lock);
 free:
 	util_mr_free_entry(cache, *entry);
