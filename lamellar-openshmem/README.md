@@ -173,7 +173,7 @@ in `include/shmem.h` is exported. By area:
   forms, plus `shmem_putmem`/`getmem` (and `_nbi`). Remote targets may be the symmetric heap or, on supporting
   backends, global/static data.
 * **Atomics:** the 1.4 typed atomic family (fetch, set, swap, compare-swap, add, increment, and, or, xor and their
-  fetch and non-blocking variants). `swap` is currently a compare-and-swap loop on the network backends.
+  fetch and non-blocking variants). `swap` uses the backends' native swap.
 * **Ordering:** `shmem_fence`, `shmem_quiet`.
 * **Synchronization:** `shmem_barrier_all`, `shmem_sync_all`, `shmem_barrier`, `shmem_sync` (active sets),
   point-to-point `shmem_wait_until` and `shmem_test` families, and distributed locks
@@ -227,7 +227,15 @@ in `include/shmem.h` is exported. By area:
 * The libfabric collectives scale linearly with PE count. The runtime barrier is slower than the shim's own dissemination
   barrier. Both are runtime items.
 * Non-fetching atomics (`add`, `inc`) wait for completion on the network backends, unlike OSHMEM, which returns at once.
-  `swap` is a CAS loop. Strided `iput`/`iget` are far slower than OSHMEM.
+  Strided `iput`/`iget` are far slower than OSHMEM.
+* On `libfabric-sys-opt`, put and get between ordinary memory and the heap are staged through the runtime's registered
+  pool from 512 B up (the transfer size at which libfabric stops injecting). This protects against libfabric's
+  registration cache going stale when a heap range is recycled, which can land a get in old physical pages. Staging
+  blocks are recycled, and `*_nbi` operations stay asynchronous (the block is held until the next `shmem_quiet`). The
+  copy is within about 5% of letting the provider register the buffer directly up to 4 KiB; at 64 KiB a put is about
+  13% and a get about 32% slower, and from 1 MiB a put is 20% to 40% slower and a get about 1.9x slower (1 MiB get 169 us
+  versus 90 us, 4 MiB get 659 us versus 345 us; two nodes). `LAMELLAR_RDMA_STAGING=0` restores the faster path without
+  the protection. `ucx-opt` is not affected.
 
 **Other**
 
@@ -242,7 +250,8 @@ indicative, since fabric state swings results by several times between jobs (com
 * **Point-to-point, inter-node:** 8 B put and get latency is about 1.3 to 1.5x OSHMEM's on `ucx-opt` and `libfabric-sys-opt`;
   large transfers (64 KiB and up) are on par, and `libfabric-sys-opt` reaches OSHMEM's bandwidth at 64 KiB. 8 B put message
   rate is about 0.6x.
-* **Atomics, inter-node:** fetching atomics are about 1.5x OSHMEM's latency (`swap` about 3x).
+* **Atomics, inter-node:** fetching atomics are about 1.5x OSHMEM's latency. `swap` was about 3x before it moved to the native swap, which halved its
+  latency (5.8 to 2.8 us on `ucx-opt`, 8.4 to 4.6 us on `libfabric-sys-opt`); it has not been re-measured against OSHMEM.
 * **Collectives, 64 PEs on 2 nodes:** `ucx-opt` broadcast and fcollect are within 1.5 to 2.5x of OSHMEM, `libfabric-sys-opt` is
   about 50x to 80x slower, and the barrier and `sum_to_all` are slower on both. Routing `sum_to_all` through the runtime
   was 4 to 20x faster than the shim's own fold.
@@ -288,9 +297,21 @@ The shim depends on the following changes in `lamellar-runtime` (branch `openshm
 
 **Already made**
 
-* `ffi` feature and `src/ffi.rs`: a raw pointer-based API for the shim (`RawHeap`, `RawExternal`, `RawAtomicOp`,
-  `RawReduceOp`) covering RMA to/from arbitrary user pointers without staging, atomics, `quiet`, and a typed
-  `RawHeap::allreduce`.
+* The public `SharedMemoryRegion` API the shim is built on (all in `memregion/shared.rs`):
+  * `atomic_{add,sub,mul,bit_and,bit_or,bit_xor}` and their `atomic_fetch_*` forms, `atomic_compare_exchange`, and
+    `_blocking` / `_unmanaged` variants of every atomic. Atomics run on the NIC where the backend has them.
+  * `try_cast` / `cast`: view a region as another element type, checking that the byte offset and length are multiples
+    of the new element size and that the allocation is aligned for it. The shim allocates its heap as `u64` words and
+    views it as bytes and as `u32` / `u64`.
+  * `put_ptr_blocking`, `put_ptr_unmanaged`, `get_into_ptr_blocking`, `get_into_ptr_unmanaged`: RMA to and from any local
+    pointer. The local side is passed as an *unregistered* input (`MemregionRdmaInputInner::Unregistered`,
+    `UnregisteredSlice`), so backends that need a registered source stage it; `CommSlice` is documented as
+    registered-memory-only.
+  * `try_register_external_shared_mem_region` (on `RemoteMemoryRegion`): collectively register caller-owned memory such
+    as `.data/.bss` and get an ordinary `SharedMemoryRegion` back.
+* `MemoryRegion`'s put, get, atomic and compare-exchange methods are generic over the element type, so
+  `SharedMemoryRegion` and `OneSidedMemoryRegion` no longer clone the region with `as_base` on every call (about 20-25 ns
+  per operation, measured on `shmem-opt`).
 * `register_external` (register caller-owned memory such as `.data/.bss` for remote access): a default in `CommMem`
   that returns `Unsupported`, with implementations on `libfabric`, `ucx`, `ucx-opt`, `libfabric-sys-opt` and `shmem-opt`.
   On `shmem-opt` it remaps the range onto a shared file (`shmem_opt_lamellae/external.rs`).
@@ -323,15 +344,14 @@ The shim depends on the following changes in `lamellar-runtime` (branch `openshm
    every lamellae.
 4. **Float reductions on the original `shmem` lamellae**, or retire that lamellae: `typed_atomic_fetch_op` in
    `comm/atomic.rs` has no `f32`/`f64`; `shmem-opt` solves it with a host fold in `local_reduce`.
-5. **Native fetching write (swap) and non-blocking-completion semantics for `add`/`inc`** on the network lamellae, to
-   close the AMO gaps to OSHMEM.
+5. **Non-blocking-completion semantics for `add`/`inc`** on the network lamellae, to close the AMO gap to OSHMEM.
 6. **Runtime teams for arbitrary PE subsets** (cached per PE list) so OpenSHMEM active sets and, later, 1.5 teams can use
    runtime collectives.
 7. **Error reporting for collective failures** instead of silent spins: the libfabric-sys-opt wait loops should surface
    a failed collective with a message and a timeout.
 8. **Strided RMA (`iput`/`iget`) as a native runtime operation** instead of per-element transfers.
 9. Upstream the two libfabric fixes.
-10. **Feature-gate the LamellarArray code.** The shim uses only memory regions (and the `ffi` raw API), but the runtime always
+10. **Feature-gate the LamellarArray code.** The shim uses only memory regions, but the runtime always
     compiles the array module (about 85k lines), which adds build time and code the shim never reaches. Gating it behind a
     Cargo feature (off for the shim) would shrink the build. The main coupling is that the memory-region code imports a few
     array traits from `src/array.rs`, which would have to move out first. Arrays such as `UnsafeArray` were evaluated as a
