@@ -425,19 +425,31 @@ fn data_segment_range() -> Option<(usize, usize)> {
         let base = info.dlpi_addr as usize;
         let page = libc::sysconf(libc::_SC_PAGESIZE) as usize;
         let up = |x: usize| (x + page - 1) & !(page - 1);
-        let (mut relro_end, mut best): (usize, Option<(usize, usize)>) = (0, None);
+        let mut relro_end = 0usize;
+        let mut best: Option<(usize, usize)> = None;
         let mut loads: Vec<(usize, usize)> = Vec::new();
+        let mut writable: Vec<(usize, usize)> = Vec::new();
         for ph in std::slice::from_raw_parts(info.dlpi_phdr, info.dlpi_phnum as usize) {
             let (s, e) = (base + ph.p_vaddr as usize, base + ph.p_vaddr as usize + ph.p_memsz as usize);
             match ph.p_type {
                 libc::PT_GNU_RELRO => relro_end = up(e),
                 libc::PT_LOAD => {
                     loads.push((s, e));
-                    if ph.p_flags & libc::PF_W != 0 && best.map_or(true, |(bs, be)| e - s > be - bs) {
-                        best = Some((s, e));
+                    if ph.p_flags & libc::PF_W != 0 {
+                        writable.push((s, e));
                     }
                 }
                 _ => {}
+            }
+        }
+        // Pick the writable segment with the most registrable bytes left once its RELRO pages are
+        // dropped (with `-z relro` the RELRO segment can be larger than the real .data/.bss).
+        let mut best_left = 0usize;
+        for &(s, e) in &writable {
+            let left = e - if relro_end > s { relro_end.min(e) } else { s };
+            if left > best_left {
+                best_left = left;
+                best = Some((s, e));
             }
         }
         if let Some((s, e)) = best {
