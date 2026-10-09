@@ -63,6 +63,37 @@ int main(void) {
     double t5 = now_us();
     bad += check("nbi get from heap", dst, me, total);  /* right's hbuf holds data I put there */
 
+    /* many mid-sized nbi operations from/into ordinary heap buffers, repeated with fresh contents each round: the
+     * backends may stage such buffers through recycled scratch memory, so a block reused too early, a copy-out that
+     * runs before the data landed, or one that is lost shows up as corrupt data here */
+    {
+        static const size_t sizes[] = { 513, 4096, 70000 };
+        enum { OPS = 48, ROUNDS = 20 };
+        unsigned char *mh = shmem_malloc((size_t)OPS * 70000);
+        for (int r = 0; r < ROUNDS && !bad; r++) {
+            for (int si = 0; si < 3 && !bad; si++) {
+                size_t n = sizes[si];
+                unsigned char *s = malloc((size_t)OPS * n), *d = malloc((size_t)OPS * n);
+                for (size_t i = 0; i < (size_t)OPS * n; i++) s[i] = (unsigned char)(pat(me, i) + r * 7 + si);
+                for (int k = 0; k < OPS; k++) shmem_putmem_nbi(mh + (size_t)k * n, s + (size_t)k * n, n, right);
+                shmem_quiet();
+                memset(s, 0xEE, (size_t)OPS * n);   /* the source of an nbi put may be reused after the quiet */
+                shmem_barrier_all();
+                for (int k = 0; k < OPS; k++) shmem_getmem_nbi(d + (size_t)k * n, mh + (size_t)k * n, n, right);
+                shmem_quiet();
+                for (size_t i = 0; i < (size_t)OPS * n; i++)
+                    if (d[i] != (unsigned char)(pat(me, i) + r * 7 + si)) {
+                        printf("FAIL: mixed nbi round %d size %zu mismatch at byte %zu\n", r, n, i);
+                        bad++;
+                        break;
+                    }
+                free(s); free(d);
+                shmem_barrier_all();
+            }
+        }
+        shmem_free(mh);
+    }
+
     if (me == 0)
         printf("PE 0: nbi: put issue %.0f us, quiet %.0f us | get issue %.0f us, quiet %.0f us (16 x 1 MiB%s)\n",
                t1 - t0, t2 - t1, t4 - t3, t5 - t4, use_global ? " x heap+global for puts" : "");
