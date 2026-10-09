@@ -12,7 +12,7 @@ name = "shmem"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-lamellar = { path = "../lamellar-runtime", default-features = false, features = ["ffi"] }
+lamellar = { path = "../lamellar-runtime", default-features = false, features = [] }
 paste = "1.0"
 libc = "0.2"
 parking_lot = "0.12"

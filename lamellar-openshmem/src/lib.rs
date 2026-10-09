@@ -1,15 +1,15 @@
 //! OpenSHMEM 1.4 C API on top of Lamellar.
 //!
-//! Phase A: everything goes through Lamellar's public API. RMA to/from
-//! arbitrary user pointers is staged through a registered scratch area carved
-//! out of the symmetric heap (see `heap.rs`); raw zero-copy ops arrive with the
-//! runtime `ffi` module (Phase B).
+//! Everything goes through Lamellar's public memory-region API: the symmetric heap is a `SharedMemoryRegion`, the
+//! program's `.data`/`.bss` is registered with `try_register_external_shared_mem_region`, and RMA to/from arbitrary
+//! user pointers uses the region's pointer put/get (see `sym.rs`).
 
 mod amo;
 mod coll;
 mod heap;
 mod rma;
 mod state;
+mod sym;
 mod sync;
 
 pub use amo::*;

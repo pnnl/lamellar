@@ -9,12 +9,12 @@
 
 use std::os::raw::{c_int, c_long, c_void};
 
-use lamellar::ffi::RawReduceOp;
 use lamellar::BroadcastInput;
 
 use crate::heap::offset_of;
 use crate::rma::{get_bytes, get_off};
 use crate::state::state;
+use crate::sym::ReduceKind;
 use crate::sync::{barrier_locked, ActiveSet};
 
 /// Heap index of `source` if this call can be handed to the runtime's collectives: the active set is the
@@ -143,12 +143,12 @@ unsafe fn collect(target: *mut c_void, source: *const c_void, nbytes: usize, sta
 /// bit-identical result (matters for floating point). The second barrier precedes writing
 /// `dest`, so `dest` may alias `source`.
 unsafe fn reduce<T: Copy + lamellar::Remote>(
-    dest: *mut T, source: *const T, n: usize, set: &ActiveSet, rop: RawReduceOp, f: impl Fn(T, T) -> T,
+    dest: *mut T, source: *const T, n: usize, set: &ActiveSet, rop: ReduceKind, f: impl Fn(T, T) -> T,
 ) {
     // Whole team, symmetric-heap source: hand it to the runtime's allreduce (SHMEM_RUNTIME_REDUCE=1).
     if runtime_reduce_enabled() {
         if let Some(idx) = runtime_path(set, source as *const c_void).filter(|_| n > 0) {
-            if let Some(v) = state().raw.allreduce::<T>(idx, n, rop) {
+            if let Some(v) = state().heap.allreduce::<T>(idx, n, rop) {
                 std::ptr::copy_nonoverlapping(v.as_ptr(), dest, n);
                 return;
             }
@@ -183,13 +183,13 @@ fn runtime_reduce_enabled() -> bool {
 }
 
 macro_rules! rop {
-    (and) => { RawReduceOp::And };
-    (or) => { RawReduceOp::Or };
-    (xor) => { RawReduceOp::Xor };
-    (max) => { RawReduceOp::Max };
-    (min) => { RawReduceOp::Min };
-    (sum) => { RawReduceOp::Sum };
-    (prod) => { RawReduceOp::Prod };
+    (and) => { ReduceKind::And };
+    (or) => { ReduceKind::Or };
+    (xor) => { ReduceKind::Xor };
+    (max) => { ReduceKind::Max };
+    (min) => { ReduceKind::Min };
+    (sum) => { ReduceKind::Sum };
+    (prod) => { ReduceKind::Prod };
 }
 
 macro_rules! to_all {

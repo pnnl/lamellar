@@ -49,12 +49,12 @@ pub(crate) unsafe fn put_off(doff: usize, src: *const u8, n: usize, pe: usize) {
         if doff & DATA_FLAG != 0 {
             s.data.as_ref().unwrap().put_nbi(pe, doff & !DATA_FLAG, src, n);
         } else {
-            s.raw.put_nbi(pe, doff, src, n);
+            s.heap.put_nbi(pe, doff, src, n);
         }
     } else if doff & DATA_FLAG != 0 {
         s.data.as_ref().unwrap().put(pe, doff & !DATA_FLAG, src, n);
     } else {
-        s.raw.put(pe, doff, src, n);
+        s.heap.put(pe, doff, src, n);
     }
 }
 
@@ -69,7 +69,7 @@ pub(crate) unsafe fn get_off(soff: usize, dest: *mut u8, n: usize, pe: usize) {
     } else if soff & DATA_FLAG != 0 {
         s.data.as_ref().unwrap().get(pe, soff & !DATA_FLAG, dest, n);
     } else {
-        s.raw.get(pe, soff, dest, n);
+        s.heap.get(pe, soff, dest, n);
     }
 }
 
@@ -85,7 +85,7 @@ pub(crate) unsafe fn put_nbi_off(doff: usize, src: *const u8, n: usize, pe: usiz
     } else if doff & DATA_FLAG != 0 {
         s.data.as_ref().unwrap().put_nbi(pe, doff & !DATA_FLAG, src, n);
     } else {
-        s.raw.put_nbi(pe, doff, src, n);
+        s.heap.put_nbi(pe, doff, src, n);
     }
 }
 
@@ -100,7 +100,7 @@ pub(crate) unsafe fn get_nbi_off(soff: usize, dest: *mut u8, n: usize, pe: usize
     } else if soff & DATA_FLAG != 0 {
         s.data.as_ref().unwrap().get_nbi(pe, soff & !DATA_FLAG, dest, n);
     } else {
-        s.raw.get_nbi(pe, soff, dest, n);
+        s.heap.get_nbi(pe, soff, dest, n);
     }
 }
 

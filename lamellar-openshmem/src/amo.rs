@@ -1,15 +1,14 @@
 //! Atomic memory operations and locks.
 //!
 //! The local PE applies a `std::sync::atomic` operation directly; remote PEs use the
-//! backend's atomics via `lamellar::ffi::RawHeap` (NIC atomics where the fabric has them).
+//! backend's atomics via `the runtime's public region API` (NIC atomics where the fabric has them).
 
 use std::os::raw::{c_int, c_long, c_void};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::SeqCst};
 
-use lamellar::ffi::RawAtomicOp;
-
 use crate::rma::sym_off;
 use crate::state::{progress, shmem_quiet, state, DATA_FLAG};
+use crate::sym::AtomicKind;
 
 const OP_FETCH: u8 = 0;
 const OP_SET: u8 = 1;
@@ -71,7 +70,7 @@ fn local_amo_via_net() -> bool {
 }
 
 /// Perform an AMO on symmetric address `target` on `pe`. The local PE applies a CPU atomic
-/// directly; remote PEs use the backend's atomics through `RawHeap`.
+/// directly; remote PEs use the backend's atomics through the heap's region views.
 unsafe fn amo(pe: usize, target: *mut u8, size: u8, op: u8, a: u64, b: u64) -> u64 {
     let s = state();
     let off = sym_off("atomic", target);
@@ -83,14 +82,14 @@ unsafe fn amo(pe: usize, target: *mut u8, size: u8, op: u8, a: u64, b: u64) -> u
         return apply(target, size, op, a, b);
     }
     let rop = match op {
-        OP_FETCH => RawAtomicOp::Fetch,
-        OP_SET => RawAtomicOp::Set,
-        OP_SWAP => RawAtomicOp::Swap,
-        OP_CSWAP => RawAtomicOp::CompareSwap,
-        OP_ADD => RawAtomicOp::Add,
-        OP_AND => RawAtomicOp::And,
-        OP_OR => RawAtomicOp::Or,
-        OP_XOR => RawAtomicOp::Xor,
+        OP_FETCH => AtomicKind::Fetch,
+        OP_SET => AtomicKind::Set,
+        OP_SWAP => AtomicKind::Swap,
+        OP_CSWAP => AtomicKind::CompareSwap,
+        OP_ADD => AtomicKind::Add,
+        OP_AND => AtomicKind::And,
+        OP_OR => AtomicKind::Or,
+        OP_XOR => AtomicKind::Xor,
         _ => unreachable!(),
     };
     if off & DATA_FLAG != 0 {
@@ -103,9 +102,9 @@ unsafe fn amo(pe: usize, target: *mut u8, size: u8, op: u8, a: u64, b: u64) -> u
         };
     }
     if size == 4 {
-        s.raw.atomic_u32(pe, off, rop, a as u32, b as u32) as u64
+        s.heap.atomic_u32(pe, off, rop, a as u32, b as u32) as u64
     } else {
-        s.raw.atomic_u64(pe, off, rop, a, b)
+        s.heap.atomic_u64(pe, off, rop, a, b)
     }
 }
 

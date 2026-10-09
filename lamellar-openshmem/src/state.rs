@@ -4,12 +4,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use lamellar::active_messaging::prelude::*;
-use lamellar::ffi::{RawExternal, RawHeap};
 use lamellar::memregion::prelude::*;
 use lamellar::{LamellarWorld, LamellarWorldBuilder};
 use parking_lot::Mutex;
 
 use crate::heap::HeapAlloc;
+use crate::sym::Sym;
 
 /// Default symmetric heap size (user-visible part), overridable with
 /// `SHMEM_SYMMETRIC_SIZE` (bytes).
@@ -35,8 +35,8 @@ pub(crate) struct State {
     /// ManuallyDrop: the world's teardown waits for all distributed references to be
     /// released, so finalize must drop these *before* the world (see `shmem_finalize`).
     pub region: ManuallyDrop<SharedMemoryRegion<u8>>,
-    /// Raw-pointer RDMA/atomics over `region` (holds its own reference; also dropped in finalize).
-    pub raw: ManuallyDrop<RawHeap>,
+    /// Pointer RDMA/atomics over `region` (holds its own references; also dropped in finalize).
+    pub heap: ManuallyDrop<Sym>,
     pub base: usize,
     pub user_len: usize,
     pub alloc: Mutex<HeapAlloc>,
@@ -44,7 +44,7 @@ pub(crate) struct State {
     /// written by PE `i`), followed by one u64 scratch word used by `collect`.
     /// The main program's `.data`/`.bss`, registered so globals/statics can be remote targets
     /// (libfabric only; `None` elsewhere, in which case non-heap addresses are rejected).
-    pub data: Option<ManuallyDrop<RawExternal>>,
+    pub data: Option<ManuallyDrop<Sym>>,
     pub data_base: usize,
     pub data_len: usize,
     pub meta_off: usize,
@@ -216,9 +216,12 @@ fn init_inner(requested: c_int) -> c_int {
     let num_pes = world.num_pes();
     let meta_off = user_len;
     let meta_len = 8 * num_pes + 8;
-    let region = world
-        .alloc_shared_mem_region::<u8>(meta_off + meta_len)
+    // Allocated as u64 words so that the whole region is aligned for the 4- and 8-byte atomics, then viewed as bytes.
+    let words = world
+        .alloc_shared_mem_region::<u64>((meta_off + meta_len).div_ceil(8))
         .block();
+    let region: SharedMemoryRegion<u8> = unsafe { words.cast() };
+    drop(words);
     let base = unsafe { region.as_mut_ptr().expect("local symmetric region") } as usize;
     // Peers only write into this after the barrier below, so zeroing it here is race free.
     unsafe { std::ptr::write_bytes((base + meta_off) as *mut u8, 0, meta_len) };
@@ -228,7 +231,7 @@ fn init_inner(requested: c_int) -> c_int {
     let st = State {
         my_pe: world.my_pe(),
         num_pes,
-        raw: ManuallyDrop::new(RawHeap::new(region.clone())),
+        heap: ManuallyDrop::new(unsafe { Sym::new(region.clone()) }.expect("symmetric heap is not aligned for atomics")),
         region: ManuallyDrop::new(region),
         base,
         user_len,
@@ -297,7 +300,7 @@ pub extern "C" fn shmem_finalize() {
             if let Some(d) = &s.data {
                 drop(std::ptr::read(&**d));
             }
-            drop(std::ptr::read(&*s.raw));
+            drop(std::ptr::read(&*s.heap));
             drop(std::ptr::read(&*s.region));
             drop(std::ptr::read(&*s.team));
         }
@@ -383,7 +386,7 @@ fn quiet_region() -> bool {
 #[no_mangle]
 pub extern "C" fn shmem_quiet() {
     if quiet_region() {
-        state().raw.quiet();
+        state().heap.quiet();
     } else {
         state().team.wait_all();
     }
@@ -461,12 +464,17 @@ fn data_segment_range() -> Option<(usize, usize)> {
 /// Collectively register the data segment (every PE runs the same binary, so all PEs attempt the
 /// same thing). Failure is not fatal: globals simply stay unsupported, with a clear message when
 /// one is used.
-unsafe fn register_data_segment(team: &std::sync::Arc<LamellarTeam>) -> (usize, usize, Option<RawExternal>) {
+unsafe fn register_data_segment(team: &std::sync::Arc<LamellarTeam>) -> (usize, usize, Option<Sym>) {
     let Some((start, len)) = data_segment_range() else {
         return (0, 0, None);
     };
-    match RawExternal::register(team, start as *mut u8, len) {
-        Ok(ext) => (start, len, Some(ext)),
+    let registered = team
+        .try_register_external_shared_mem_region::<u8>(start as *mut u8, len)
+        .block()
+        .map_err(|e| e.to_string())
+        .and_then(|region| Sym::new(region));
+    match registered {
+        Ok(sym) => (start, len, Some(sym)),
         Err(e) => {
             if std::env::var_os("SHMEM_DEBUG").is_some() || std::env::var_os("SHMEM_WARN_DATA").is_some() {
                 eprintln!("shmem: data segment ({len} bytes) not registered: {e}; globals/statics unsupported");
