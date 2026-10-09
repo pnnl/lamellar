@@ -77,6 +77,35 @@ Notes:
 * Multi-node runs of the network backends need either Slurm with PMIx support or `prterun`; `make prrte` builds the vendored
   PRRTE once into `target/fab/prrte` for clusters without it.
 
+### A static `libshmem.a`
+
+`tools/build-static.sh <backend> [prefix]` (prefix defaults to `target/stage/<backend>-static`) builds a self-contained static
+library for one backend, with the backends named as in the first column of the table above, and installs it with the
+header, `shmem.pc`, the CMake package and the wrappers. It builds the backend without the `*-shared` features:
+
+```bash
+tools/build-static.sh ucx-opt /opt/lamellar-shmem
+shmemcc --shmem-static prog.c -o prog               # /opt/lamellar-shmem/bin/shmemcc
+cc prog.c $(pkg-config --static --cflags --libs shmem) -o prog     # PKG_CONFIG_PATH=/opt/lamellar-shmem/lib/pkgconfig
+```
+
+or `find_package(LamellarShmem)` with `Lamellar::shmem_static` in CMake. The archive contains the shim, the runtime and the
+fabric stack, and a program linked against it needs only system libraries (for example verbs, rdmacm, numa, libc), listed in
+`<prefix>/lib/shmem.libs` and in `Libs.private` of `shmem.pc`. It does not need `libshmem.so`, `libfabric.so` or any UCX
+library. The programs are not fully static executables: libc and those system libraries stay dynamic.
+
+How the archives are made:
+
+* **libfabric:** `cargo cinstall --library-type staticlib` already puts libfabric's objects into `libshmem.a`. (Only the shared
+  `libshmem.so` has the versioned-symbol problem described below, because it links a shared `libfabric.so`.)
+* **UCX:** cargo builds UCX and UCC as static archives but does not put them into the Rust static library, and both register
+  their transports and components from static constructors, which an ordinary archive link drops. The script merges them
+  into one relocatable object (`ld -r --whole-archive`) and adds it to `libshmem.a`, so the linker takes it whole. Link the
+  archive with `--whole-archive` (as the wrappers and the CMake package do) so the shim's own active-message registrations
+  survive too.
+
+Sizes are about 42 MB for `libfabric-sys-opt` and 110 MB for `ucx-opt`.
+
 ## Usage
 
 ### Compiling
@@ -85,7 +114,7 @@ Notes:
 
 ```bash
 shmemcc prog.c -o prog                 # dynamic link against libshmem.so
-shmemcc --shmem-static prog.c -o prog  # link libshmem.a (see limitations)
+shmemcc --shmem-static prog.c -o prog  # link libshmem.a (UCX and libfabric: a prefix from tools/build-static.sh)
 shmemcc --showme:compile               # print the flags instead of compiling (also :link, :command, :version)
 ```
 
@@ -217,10 +246,11 @@ in `include/shmem.h` is exported. By area:
   remap destroys the mapping and aborts, (e) statically linking `libshmem.a` puts runtime statics inside the range,
   (f) the registered start must be page aligned, and (g) `/dev/shm` usage grows by the segment size per PE.
 * `libfabric-sys-opt` collectives depend on libfabric 1.22's collective provider, which has two known bugs (below).
-* **Static linking** (`shmemcc --shmem-static`) works for `shmem` and `shmem-opt`. For the UCX and libfabric backends the
-  vendored static archives (UCX, UCC, libfabric) that `libshmem.a` needs are not installed by `cargo cinstall`, so a static
-  application link from an installed prefix does not work. The shared `libshmem.so` needs `libfabric.so` next to it for the
-  libfabric backends, because libfabric's static objects carry versioned symbols that cannot be linked into a shared library.
+* **Static linking** needs a prefix made by `tools/build-static.sh` for the UCX and libfabric backends (see
+  [A static libshmem.a](#a-static-libshmema)); the prefix from `cargo cinstall` with the `*-shared` features has no
+  self-contained archive. The result still depends on the system's verbs, rdmacm and similar shared libraries, so it is
+  not a fully static executable. The shared `libshmem.so` needs `libfabric.so` next to it for the libfabric backends,
+  because libfabric's static objects carry versioned symbols that cannot be linked into a shared library.
 
 **Performance** (relative to Open MPI's OSHMEM on the same InfiniBand cluster; see [Performance](#performance))
 
@@ -275,6 +305,10 @@ ctest --test-dir target/tests-build/ucx-opt -L aslr        --output-on-failure  
 are the programs in `tests/c` and `tests/cxx` (ring, full API coverage, globals, bulk transfers, threads, non-blocking,
 atomicity, progress, C++, and a reduction-correctness check); a test passes when the launcher exits 0, the success marker
 appears once per PE, and no failure text appears (`tests/cmake/expect.cmake`).
+
+For `ucx`, `ucx-opt`, `ucx-shared`, `libfabric` and `libfabric-sys-opt`, `tests/stage.sh` also runs `tools/build-static.sh` into
+`target/stage/<backend>-static` and links the `ring_static` test against that archive (a second build of the backend, so
+staging takes longer). `SHMEM_SKIP_STATIC=1` skips it and the static test.
 
 Other checks: `tests/check_header.sh` (every declared function is exported), `tests/toolchain.sh` (installs into a
 temporary prefix and builds and runs programs through the wrappers, static link, pkg-config and CMake;
@@ -358,8 +392,8 @@ The shim depends on the following changes in `lamellar-runtime` (branch `openshm
     foundation for the shim and offer nothing it needs: they sit on top of memory regions, do arithmetic and reductions
     through active messages, and expose no raw pointer.
 11. **Static libfabric inside `libshmem.so`.** Building libfabric without symbol versioning would let its static objects link
-    into the shared library, removing the need to ship `libfabric.so` next to it. Installing the vendored static archives
-    would also make `--shmem-static` work for the UCX and libfabric backends.
+    into the shared library, removing the need to ship `libfabric.so` next to it. (A static `libshmem.a` with libfabric inside
+    already works, see above.)
 
 ## Future plans
 
@@ -383,6 +417,7 @@ assets/     shmem.h as cargo-c installs it
 cmake/      the CMake package installed by cargo cinstall
 wrappers/   a separate small crate: shmemcc, oshcc, shmemcxx, oshcxx (compiler wrappers); oshrun, shmemrun (launcher)
 tests/      CMakeLists.txt and c/, cxx/ programs; stage.sh (install a backend and build the tests); bench/ micro-benchmark
-tools/      helpers that copy libfabric.so / UCX libraries next to libshmem.so, and build the vendored PRRTE
+tools/      build-static.sh (self-contained static libshmem.a), helpers that copy libfabric.so / UCX libraries next to
+            libshmem.so, and one that builds the vendored PRRTE
 Makefile    wrappers, header, prrte and check targets
 ```
