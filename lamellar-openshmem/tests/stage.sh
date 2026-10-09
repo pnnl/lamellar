@@ -52,9 +52,23 @@ esac
 
 echo "== build the tests"
 globals=ON; [ "$name" = shmem ] && globals=OFF    # the original shmem backend cannot register the data segment
-static=ON; case "$name" in ucx*|libfabric*) static=OFF ;; esac   # their static archives are not installed by cargo-c
+# UCX and libfabric need a self-contained static library (tools/build-static.sh, a second build of the backend without the
+# *-shared features); SHMEM_SKIP_STATIC=1 skips it and the static test
+static=ON; static_prefix=""
+case "$name" in
+  ucx|ucx-opt|ucx-shared|libfabric|libfabric-sys-opt)
+    if [ "${SHMEM_SKIP_STATIC:-0}" = 1 ]; then
+      static=OFF
+    else
+      static_backend="$backend"
+      static_prefix="$root/target/stage/$static_backend-static"
+      echo "== static library for $static_backend -> $static_prefix"
+      "$root/tools/build-static.sh" "$static_backend" "$static_prefix"
+    fi ;;
+esac
 prrte=""; [ -x "$root/target/fab/prrte/bin/prterun" ] && prrte="$root/target/fab/prrte/bin"
 cmake -S "$root/tests" -B "$root/target/tests-build/$name" -DCMAKE_PREFIX_PATH="$prefix" -DSHMEM_BACKEND="$backend" \
-      -DSHMEM_TEST_GLOBALS="$globals" -DSHMEM_TEST_STATIC="$static" ${prrte:+-DSHMEM_PRRTE_DIR="$prrte"} "$@" >/dev/null
+      -DSHMEM_TEST_GLOBALS="$globals" -DSHMEM_TEST_STATIC="$static" ${static_prefix:+-DSHMEM_STATIC_PREFIX="$static_prefix"} \
+      ${prrte:+-DSHMEM_PRRTE_DIR="$prrte"} "$@" >/dev/null
 cmake --build "$root/target/tests-build/$name" -j 8 >/dev/null
 echo "staged $name: ctest --test-dir target/tests-build/$name -L single-node --output-on-failure"

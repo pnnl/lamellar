@@ -6,10 +6,17 @@ if(EXISTS "${_shmem_prefix}/lib64/libshmem.so" AND NOT EXISTS "${_shmem_prefix}/
 else()
   set(_shmem_libdir "${_shmem_prefix}/lib")
 endif()
-# Libraries a static link of libshmem.a needs (see Libs.private in shmem.pc); override before find_package if a backend
-# needs more (for example fabric;rdmacm;ibverbs for a libfabric build).
+# Libraries a static link of libshmem.a needs (see Libs.private in shmem.pc). A prefix made by tools/build-static.sh lists
+# them in lib/shmem.libs; otherwise a default that suits the shmem backends. Set LamellarShmem_STATIC_LIBS before
+# find_package to override.
 if(NOT DEFINED LamellarShmem_STATIC_LIBS)
-  set(LamellarShmem_STATIC_LIBS "util;rt;pthread;m;dl")
+  if(EXISTS "${_shmem_libdir}/shmem.libs")
+    file(READ "${_shmem_libdir}/shmem.libs" _shmem_libs_file)
+    string(STRIP "${_shmem_libs_file}" _shmem_libs_file)
+    separate_arguments(LamellarShmem_STATIC_LIBS UNIX_COMMAND "${_shmem_libs_file}")
+  else()
+    set(LamellarShmem_STATIC_LIBS "util;rt;pthread;m;dl")
+  endif()
 endif()
 
 if(NOT TARGET Lamellar::shmem)
