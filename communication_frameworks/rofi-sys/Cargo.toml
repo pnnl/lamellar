@@ -1,0 +1,49 @@
+[package]
+name = "rofisys"
+version = "0.5.1"
+authors = [
+    " Mark V Raugas <mark.raugas@pnnl.gov>",
+    "Ryan D. Friese <ryan.friese@pnnl.gov>",
+    "Roberto Gioiosa <roberto.gioiosa@pnnl.gov>",
+]
+edition = "2021"
+description = "This system crate provides Rust language bindings (via the use of Bindgen) to the Rust-OFI library."
+readme = "README.md"
+repository = "https://github.com/pnnl/lamellar"
+license-file = "LICENSE"
+keywords = ["hpc", "network", "ditributed", "libfabrics"]
+categories = ["external-ffi-bindings", "network-programming"]
+links = "rofi"
+
+[dependencies]
+# libfabric-sys = { path = "../libfabric-sys" }
+# pmix-sys = { path = "../../process_management/pmix-sys", features = [
+#     "vendored",
+# ] }
+libfabric-sys = { package = "lamellar-libfabric-sys", version = "0.1.0" }
+pmix-sys = { version = "0.1.0", optional = true }
+
+[build-dependencies]
+bindgen = "0.72.1"
+subprocess = "1.2.0"
+autotools = "0.2.7"
+glob = "0.3.3"
+
+
+[lib]
+name = "rofisys"
+path = "src/lib.rs"
+
+
+[features]
+default = []
+shared = []
+# Default PMI backend (rofi's simple_pmi.c, the standard PMI-1 wire client) when
+# `pmix` is not enabled. No-op marker for discoverability — rofi has no PMI-2
+# client, so PMI-1 vs PMIx is the only choice.
+pmi1 = []
+pmix = ["pmix-sys"]
+vendored-hwloc = ["pmix-sys?/vendored-hwloc"]
+vendored-pmix = ["pmix-sys?/openpmix-src"]
+vendored-libevent = ["pmix-sys?/vendored-libevent"]
+debug = []
