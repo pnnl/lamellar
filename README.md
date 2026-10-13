@@ -22,8 +22,6 @@ This repository is a staging area for various repositories and crates we have de
 For native build prerequisites and backend-specific system dependencies, see
 [Native dependencies](NATIVE_DEPENDENCIES.md).
 
-SUBMODULES
-----------
 Runtime
 -------
 The `lamellar-runtime/` crate (see [lamellar-runtime/README.md](https://github.com/pnnl/lamellar-runtime/blob/master/README.md)) implements the core asynchronous tasking runtime, the distributed arrays and Darcs interfaces, and the `local`, `shmem`, and optional `rofi` Lamellae backends. Its README documents the API, executors, and how to configure backends via features or runtime builders.
@@ -40,7 +38,7 @@ Lamellae transport providers live under `communication_frameworks/`. Each subcra
 - `libfabric-src/` ([README](communication_frameworks/libfabric-src/README.md)) copies the vendored `libfabric` tree into `OUT_DIR`, runs Autotools to build shared or static artifacts (honoring `OFI_DIR` if set), and exposes the include/lib directories.
 
 #### ROFI transport
-- `rofi/` ([README](communication_frameworks/rofi/README.md)) is the Rust OFI transport layer (libfabric-based) with autotools-driven configure scripts, RDMA PUT/GET APIs, and provider selection for verbs/tcp.
+- `rofi/` ([README](communication_frameworks/rofi/README.md)) is the ROFI C library (libfabric-based) with autotools-driven configure scripts, RDMA PUT/GET APIs, and provider selection for verbs/tcp. It is the source of truth for the C code that `rofi-sys/rofi/` vendors.
 - `rofi-sys/` ([README](communication_frameworks/rofi-sys/README.md)) binds the ROFI C library via `bindgen`, honors `OFI_DIR`/`ROFI_DIR`, and exposes the necessary symbols for the runtime’s `rofi` Lamellae.
 
 Benchmarks & utilities
