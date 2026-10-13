@@ -23,7 +23,7 @@ pmix-sys = { git = "https://github.com/pnnl/lamellar", rev = "c3491e6e20d6166be4
 openpmix-src = { git = "https://github.com/pnnl/lamellar", rev = "c3491e6e20d6166be431af2045d90cbd7ce0c0e5" }
 prrte-sys = { git = "https://github.com/pnnl/lamellar", rev = "c3491e6e20d6166be431af2045d90cbd7ce0c0e5" }
 prrte-src = { git = "https://github.com/pnnl/lamellar", rev = "c3491e6e20d6166be431af2045d90cbd7ce0c0e5" }
-rofisys = { git = "https://github.com/pnnl/rofi-sys", rev = "ad5e91b8596a2551e932195f1d47a3019b1b2543" }
+rofisys = { git = "https://github.com/pnnl/lamellar", rev = "685f55c2bd016c00bbe5fcc96d14dd01e2c79e1f" }
 lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar", rev = "c3491e6e20d6166be431af2045d90cbd7ce0c0e5" }
 lamellar-ucc-sys = { git = "https://github.com/pnnl/lamellar", rev = "c3491e6e20d6166be431af2045d90cbd7ce0c0e5" }
 
