@@ -236,10 +236,10 @@ in `include/shmem.h` is exported. By area:
 
 **Backends**
 
-* The original `shmem` backend cannot register globals, and with the runtime reduce on (the default) a float reduction
-  (`float`/`double` `*_to_all`) panics there: its runtime allreduce is built on integer-only atomics
-  (`lamellar-runtime/src/lamellae/comm/atomic.rs`). Set `SHMEM_RUNTIME_REDUCE=0` for that backend. The original
-  `libfabric` and `ucx` backends have not been checked with the runtime reduce.
+* The original `shmem` backend cannot register globals. Its runtime allreduce reads the other PEs' data and folds it on the
+  host, as `shmem-opt` does, so `float` and `double` `*_to_all` work with the runtime reduce on (checked at 2, 4, 8 and 16
+  PEs). The rest of its reductions (rooted `reduce`, `reduce_scatter`), which the shim does not use, still go through
+  integer-only atomics. The original `libfabric` and `ucx` backends have not been checked with the runtime reduce.
 * `shmem-opt` global-data caveats: the program's `.data/.bss` is copied to a per-PE file in `/dev/shm` and remapped
   `MAP_SHARED` over the original range, so (a) transparent huge pages are lost for that range, (b) a `fork`ed child
   shares the range with its parent, (c) writes to a global between the copy and the remap can be lost, (d) a failed
@@ -355,6 +355,12 @@ The shim depends on the following changes in `lamellar-runtime` (branch `openshm
 * `libfabric_sys_opt_lamellae/fabric.rs::broadcast_inner`: broadcasts whose element count is not a multiple of the group
   size go through a zero-padded bounce buffer, because libfabric's collective provider writes `ceil(count/ranks)*ranks`
   elements into the caller's buffer.
+* `libfabric_sys_opt_lamellae`: staging blocks for unregistered local buffers are recycled instead of allocated per transfer,
+  and unmanaged (`*_nbi`) puts and gets stay asynchronous: the staging block, and a get's copy-out, are held until the next
+  `wait_all`. (See the cost on large transfers under [Current limitations](#current-limitations).)
+* `shmem_lamellae` (the original shmem backend): `reduce_all`, `reduce_all_into_buffer` and `reduce_all_in_place` read the
+  other PEs' data in place and fold it with `local_reduce` (shared with `shmem-opt`) instead of applying atomic fetch-ops
+  into PE 0's data, so float reductions work and every PE gets the same bits.
 
 **In the vendored libfabric** (`communication_frameworks/libfabric-src/libfabric`)
 
@@ -376,8 +382,9 @@ The shim depends on the following changes in `lamellar-runtime` (branch `openshm
    `CommAllocCollectiveAllToAll` in `comm/collective.rs`). `shmem_alltoall*` / `shmem_alltoalls*` stay unimplemented in the
    shim until the runtime has a personalized exchange (source `len * num_pes`, block `j` to PE `j`) that behaves the same on
    every lamellae.
-4. **Float reductions on the original `shmem` lamellae**, or retire that lamellae: `typed_atomic_fetch_op` in
-   `comm/atomic.rs` has no `f32`/`f64`; `shmem-opt` solves it with a host fold in `local_reduce`.
+4. **The remaining reductions on the original `shmem` lamellae** (`reduce`, `reduce_into_buffer`, `reduce_scatter`) still use
+   integer-only atomics (`typed_atomic_fetch_op` in `comm/atomic.rs` has no `f32`/`f64`), so floats panic there; the shim
+   does not use them. Converting them to the host fold that `reduce_all` now uses, or retiring that lamellae, closes it.
 5. **Non-blocking-completion semantics for `add`/`inc`** on the network lamellae, to close the AMO gap to OSHMEM.
 6. **Runtime teams for arbitrary PE subsets** (cached per PE list) so OpenSHMEM active sets and, later, 1.5 teams can use
    runtime collectives.
