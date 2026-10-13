@@ -1480,7 +1480,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 [[package]]
 name = "rofisys"
 version = "0.5.1"
-source = "git+https://github.com/pnnl/rofi-sys?rev=ad5e91b8596a2551e932195f1d47a3019b1b2543#ad5e91b8596a2551e932195f1d47a3019b1b2543"
+source = "git+https://github.com/pnnl/lamellar?rev=685f55c2bd016c00bbe5fcc96d14dd01e2c79e1f#685f55c2bd016c00bbe5fcc96d14dd01e2c79e1f"
 dependencies = [
  "autotools",
  "bindgen",
