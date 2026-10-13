@@ -577,6 +577,7 @@ rofi_names_t *rofi_parse_names_internal(char *names_list) {
 int rofi_init_internal(char *provs, char *domains) {
     pthread_rwlock_init(&rofi.mr_lock, NULL);
     pthread_mutex_init(&rofi.lock, NULL);
+    pthread_mutex_init(&rofi.sub_alloc_lock, NULL);
     int ret = 0;
     rofi.desc.PageSize = sysconf(_SC_PAGESIZE);
 

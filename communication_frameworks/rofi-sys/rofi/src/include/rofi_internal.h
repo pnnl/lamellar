@@ -92,6 +92,7 @@ struct rofi_transport_t {
     uint64_t *sub_alloc_barrier_buf;
     struct fi_rma_iov *sub_alloc_buf;
     pthread_mutex_t lock;
+    pthread_mutex_t sub_alloc_lock; // serializes rofi_transport_sub_exchange_mr_info_manual against the shared sub_alloc_buf/sub_alloc_barrier_* scratch fields above
     pthread_rwlock_t mr_lock;
     uint64_t fi_collective;
 };

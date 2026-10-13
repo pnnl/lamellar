@@ -138,7 +138,23 @@ int PMI_Init( int *spawned )
     }
 
     if ( PMI_fd == -1 ) {
-	/* Singleton init: Process not started with mpiexec, 
+	/* No PMI_FD/PMI_PORT means no PMI-1 process manager connected to us.
+	   PRTE/PMIx launchers never set PMI_FD/PMI_PORT but do set these vars
+	   on every rank of a real job -- if any is present we are actually
+	   part of a multi-process PMIx job this PMI-1 client can't talk to.
+	   Falling back to singleton here would silently give every rank
+	   size=1, corrupting later MR exchanges. Fail loudly instead. */
+	if ( getenv( "PMIX_VERSION" ) || getenv( "PMIX_RANK" ) || getenv( "PRTE_LAUNCHED" ) ) {
+	    PMIU_printf( 1, "PMI_Init: PMIx-based launcher detected in environment "
+			     "(PMIX_VERSION/PMIX_RANK/PRTE_LAUNCHED set) but no "
+			     "PMI_FD/PMI_PORT is set; this PMI-1 client cannot join "
+			     "that job. Refusing singleton fallback. If you are using "
+			     "lamellar's enable-rofi-c feature, try enable-rofi-c-pmix "
+			     "instead.\n" );
+	    return PMI_FAIL;
+	}
+
+	/* Singleton init: Process not started with mpiexec,
 	   so set size to 1, rank to 0 */
 	PMI_size = 1;
 	PMI_rank = 0;

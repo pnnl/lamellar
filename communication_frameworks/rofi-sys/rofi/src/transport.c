@@ -1183,6 +1183,15 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
         return -EINVAL;
     }
 
+    // rofi->sub_alloc_buf, sub_alloc_barrier_buf, and sub_alloc_barrier_id are single
+    // process-wide scratch fields on the shared rofi_transport_t (see rofi_internal.h).
+    // Two concurrent calls to this function (e.g. from separate lamellar worker threads
+    // each allocating a memory region) race on that shared state: one call's write/barrier
+    // can be clobbered by another's before the corresponding rofi_get_internal reads land,
+    // silently producing a zero-valued iov entry instead of an error. Serialize the whole
+    // exchange on a dedicated lock to prevent that.
+    pthread_mutex_lock(&rofi->sub_alloc_lock);
+
     struct fi_rma_iov *sub_alloc_buf = rofi->sub_alloc_buf;
     sub_alloc_buf[global_me].addr = (uint64_t)mr->start;
     sub_alloc_buf[global_me].key = fi_mr_key(mr->fid);
@@ -1191,6 +1200,7 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
                                             rofi->sub_alloc_barrier_buf, pes,
                                             team_me, num_pes);
     if (ret) {
+        pthread_mutex_unlock(&rofi->sub_alloc_lock);
         return ret;
     }
 
@@ -1201,6 +1211,7 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
 
         ret = rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
         if (ret) {
+            pthread_mutex_unlock(&rofi->sub_alloc_lock);
             return ret;
         }
     }
@@ -1211,12 +1222,14 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
 
         ret = rofi_get_internal(dst, src, sizeof(struct fi_rma_iov), global_pe, 0);
         if (ret) {
+            pthread_mutex_unlock(&rofi->sub_alloc_lock);
             return ret;
         }
     }
     ret = rofi_transport_get_wait_all(rofi);
     if (ret) {
         ERR_MSG("\t Error waiting for get");
+        pthread_mutex_unlock(&rofi->sub_alloc_lock);
         return ret;
     }
     for (uint64_t pe = 0; pe < num_pes; pe++) {
@@ -1224,16 +1237,18 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
         mr->iov[global_pe] = sub_alloc_buf[global_pe];
         DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", pe, global_pe, sub_alloc_buf[global_pe].addr, sub_alloc_buf[global_pe].key);
     }
-    return rofi_transport_inner_barrier(rofi, &rofi->sub_alloc_barrier_id,
+    ret = rofi_transport_inner_barrier(rofi, &rofi->sub_alloc_barrier_id,
                                         rofi->sub_alloc_barrier_buf, pes,
                                         team_me, num_pes);
+    pthread_mutex_unlock(&rofi->sub_alloc_lock);
+    return ret;
 }
 
 int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes) {
     if (rofi->desc.nodes == 1) {
         return 0;
     }
-    if ( !rofi->fi_collective) {
+    if (!rofi->fi_collective) {
         return rofi_transport_sub_exchange_mr_info_manual(rofi, mr, pes, num_pes);
     }
 
