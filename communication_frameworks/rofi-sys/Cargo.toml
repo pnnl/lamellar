@@ -36,6 +36,7 @@ path = "src/lib.rs"
 
 
 [features]
+default = []
 shared = []
 # Default PMI backend (rofi's simple_pmi.c, the standard PMI-1 wire client) when
 # `pmix` is not enabled. No-op marker for discoverability — rofi has no PMI-2

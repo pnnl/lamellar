@@ -52,8 +52,60 @@ fn build_rofi(
         }
 
         config.with(format!("ofi={}", ofi.display()), None);
+        // PMIx's own configure-time PMIx_Init link probe (`checking for
+        // library containing PMIx_Init`) links only against -lpmix by
+        // default. The vendored PMIx here is a static archive, so its own
+        // transitive deps (hwloc, libevent) must be supplied explicitly via
+        // -L/-l, same class of fix as lamellar-ucc-sys/lamellar-ucx-sys's
+        // static-link issues. DEP_PMIX_HWLOC_ROOT/DEP_PMIX_EVENT_ROOT are
+        // re-exported by pmix-sys's build.rs for exactly this purpose.
+        //
+        // -L/-Wl,-rpath go through LDFLAGS (order doesn't matter for search
+        // paths), but the actual -l names must go through LIBS instead of
+        // LDFLAGS: autoconf's conftest link line is `$CC $LDFLAGS conftest.c
+        // $LIBS`, i.e. LDFLAGS is placed BEFORE the source file and LIBS
+        // AFTER. A static archive's undefined symbols are only resolved
+        // against objects/archives appearing LATER on the command line, so
+        // -lpmix (a static archive) sitting in LDFLAGS -- before conftest.c
+        // even exists on the line -- gets scanned and discarded before
+        // main()'s call to PMIx_Init is ever seen, producing "undefined
+        // reference to PMIx_Init" despite -lpmix being present. Same bug
+        // class as lamellar-ucc-sys's --start-group/LIBS fix.
+        let mut pmix_ldflags = String::new();
+        let mut pmix_libs = String::new();
         if let Some(pmix_root) = pmix {
             config.with(format!("pmix={}", pmix_root.display()), None);
+            let pmix_lib_dir = pmix_root.join("lib");
+            pmix_ldflags.push_str(&format!(
+                " -L{} -Wl,-rpath,{}",
+                pmix_lib_dir.display(),
+                pmix_lib_dir.display()
+            ));
+            // -lutil: PMIx's pmix_pty.c (used by its IOF/forwarding code)
+            // calls openpty(), which lives in glibc's libutil, not libc.
+            // Only surfaces once libpmix.a's undefined refs are actually
+            // scanned against real objects (i.e. after fixing the LDFLAGS/
+            // LIBS ordering bug above) -- a dynamic libpmix.so hides this
+            // because -lutil is one of *its* transitive DT_NEEDED deps.
+            // -lz: PMIx auto-detects zlib via pkg-config and compiles in
+            // compress_zlib.c (modex/topology compression) whenever present
+            // on the build machine -- same reason pmix-sys/build.rs adds
+            // -lz=dylib for the final Rust link of a static libpmix.a.
+            pmix_libs.push_str(" -lpmix -lutil -lz");
+            if let Ok(hwloc_root) = std::env::var("DEP_PMIX_HWLOC_ROOT") {
+                pmix_ldflags.push_str(&format!(
+                    " -L{0}/lib -Wl,-rpath,{0}/lib",
+                    hwloc_root
+                ));
+                pmix_libs.push_str(" -lhwloc");
+            }
+            if let Ok(event_root) = std::env::var("DEP_PMIX_EVENT_ROOT") {
+                pmix_ldflags.push_str(&format!(
+                    " -L{0}/lib -Wl,-rpath,{0}/lib",
+                    event_root
+                ));
+                pmix_libs.push_str(" -levent_core -levent_pthreads");
+            }
         }
         let pkgconfig_path = ofi_lib.join("pkgconfig");
         let existing = std::env::var("PKG_CONFIG_PATH").unwrap_or_default();
@@ -63,7 +115,21 @@ fn build_rofi(
             format!("{}:{}", pkgconfig_path.display(), existing)
         };
         config.env("PKG_CONFIG_PATH", new_pkgconfig_path);
-        config.ldflag(format!("-L{} -libverbs -pthread -ldl -lrdmacm -lrt", ofi_lib.display()));
+        config.ldflag(format!(
+            "-L{}{}",
+            ofi_lib.display(),
+            pmix_ldflags
+        ));
+        // -libverbs/-pthread/-ldl/-lrdmacm/-lrt/-lpmix/-lhwloc/-levent_* all
+        // moved into LIBS (appended after conftest.c on every conftest link
+        // line) instead of LDFLAGS, for the same ordering reason as above --
+        // libibverbs.so etc happened to work by luck before (shared libs
+        // tolerate being scanned early far more often than static archives
+        // do), but LIBS is the correct place for all of them regardless.
+        config.env(
+            "LIBS",
+            format!("-libverbs -pthread -ldl -lrdmacm -lrt{}", pmix_libs),
+        );
         config.cflag(format!("-O3 -I{}", ofi_inc.display()));
         config.cxxflag("-O3");
 
