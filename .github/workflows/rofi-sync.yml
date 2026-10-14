@@ -1,0 +1,33 @@
+name: Check rofi-sys/rofi is in sync with rofi
+
+# rofi-sys vendors a copy of communication_frameworks/rofi (plus generated
+# autotools output) so the published crate builds without autoreconf. Fail if
+# the two have drifted; fix with communication_frameworks/rofi-sys/tools/sync-rofi.sh.
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - 'communication_frameworks/rofi/**'
+      - 'communication_frameworks/rofi-sys/rofi/**'
+      - 'communication_frameworks/rofi-sys/tools/sync-rofi.sh'
+      - '.github/workflows/rofi-sync.yml'
+  pull_request:
+    paths:
+      - 'communication_frameworks/rofi/**'
+      - 'communication_frameworks/rofi-sys/rofi/**'
+      - 'communication_frameworks/rofi-sys/tools/sync-rofi.sh'
+      - '.github/workflows/rofi-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check rofi-sys/rofi against rofi
+        run: communication_frameworks/rofi-sys/tools/sync-rofi.sh --check

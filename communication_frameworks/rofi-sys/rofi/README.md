@@ -41,12 +41,11 @@ BUILDING PACKAGE
 ----------------
 In the following, assume that ROFI source code has been downloaded in $(SRCDIR)
 
-0. If ROFI has been cloned from the GIT repository, generate the configure script and populate uthash submodule:
+0. If ROFI has been cloned from the GIT repository, generate the configure script:
 
 `autoreconf --install`
 
-1. make sure Uthash is present
-`git submodule update --init --recursive`
+1. Uthash is vendored in `uthash/`; no submodule step is needed.
 
 2. Configure ROFI for your system:  
 

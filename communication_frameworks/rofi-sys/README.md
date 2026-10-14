@@ -18,7 +18,19 @@ The **ROFI_DIR** environment variable must be specified with the location of the
 
 ## Provenance of `rofi/`
 
-Upstream [pnnl/rofi](https://github.com/pnnl/rofi) (now also native in this repository as `communication_frameworks/rofi`) has never published an official "make dist" release tarball (checked every tag — none carry a dist asset). So `rofi/` is not an official release artifact: it's a tarball generated from a fresh checkout of upstream commit [`d112544`](https://github.com/pnnl/rofi/commit/d112544) (which already includes an `AM_MAINTAINER_MODE` fix and a `make dist` completeness fix, both pushed upstream) by running `autoreconf -ivf && ./configure && make dist`, then vendoring the resulting `rofi-0.1.tar.gz` verbatim (generated `configure`/`Makefile.in`/etc. included). The only changes since are `src/` C fixes copied byte-for-byte from [`communication_frameworks/rofi`](../rofi) (currently in sync with `f32adbc` of the upstream history, which is imported alongside this crate); `rofi/` here should be refreshed from there rather than edited independently. This removes the need for `autotools::Config::reconf` at build time — `rofi/` already ships a working `configure` script.
+`rofi/` is a build copy of ROFI, not an independently edited source tree. The source of truth is [`communication_frameworks/rofi`](../rofi). `rofi/` here mirrors its hand-written files (`src/`, `tests/`, `configure.ac`, every `Makefile.am`, the docs inputs, `uthash/` and `README.md`) and adds the generated autotools output (`configure`, `Makefile.in`, `aclocal.m4`, `ltmain.sh`, `m4/`, ...). That output is why neither `build.rs` nor the published crate needs `autoreconf` (or `autotools::Config::reconf`) at build time. Do not edit the mirrored files here.
+
+To change ROFI, edit it in `communication_frameworks/rofi`, then run from this crate:
+
+```
+tools/sync-rofi.sh               # copy changed files into rofi/
+tools/sync-rofi.sh --regenerate  # also re-run autoreconf (needed after a configure.ac / Makefile.am change)
+tools/sync-rofi.sh --check       # verify nothing has drifted; exits non-zero otherwise
+```
+
+`rofi/.autotools-stamp` records a hash of `configure.ac` and every `Makefile.am` as of the last time the generated files were produced, and `--check` fails if those change without a `--regenerate`. `--regenerate` needs Autoconf, Automake and Libtool; the checked-in files were generated with Autoconf 2.69, and a different version will show up as extra churn in `git diff`.
+
+The generated files first came from upstream [pnnl/rofi](https://github.com/pnnl/rofi) commit [`d112544`](https://github.com/pnnl/rofi/commit/d112544) (which already includes an `AM_MAINTAINER_MODE` fix and a `make dist` completeness fix) by running `autoreconf -ivf && ./configure && make dist`. Upstream never published an official "make dist" release tarball (no tag carries a dist asset), so this is not an official release artifact.
 
 The tarball's `uthash/` subdirectory (a single-header hash table, vendored upstream as plain files rather than a submodule) has its `include -> src` symlink dereferenced into a real directory copy by `make dist`; contents are identical either way and no build-flag changes were needed.
 
