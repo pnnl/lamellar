@@ -134,7 +134,16 @@ default = [
 ]
 
 # --- launcher (lamellar_main / hpc_launch) ---
-enable-lamellar-main = ["lamellar_main/use-prterun", "prrte-sys/prrte-src"]
+# `dep:` is used for optional deps below so the implicit `<dep>` feature is not exposed
+# (e.g. `--features rofisys` would pull in the crate without its supporting deps).
+# Deliberately NOT converted: libfabric, libfabric-sys (build.rs cfg's on those names),
+# pmi (shmem comm.rs cfg's on it), pmix-sys (no feature enables it directly).
+enable-lamellar-main = [
+    "dep:lamellar_main",
+    "lamellar_main/use-prterun",
+    "dep:prrte-sys",
+    "prrte-sys/prrte-src",
+]
 with-salloc = ["lamellar_main/with-salloc"]
 
 # Builds PRRTE's (and, when pmix is also vendored, PMIx's) libevent from source.
@@ -186,32 +195,38 @@ rofi-c = []
 # only options). Vendoring PMIx here is controlled by the top-level
 # vendored-pmix feature (which pulls in rofisys?/vendored-pmix); omit it and
 # set PMIX_LIB_DIR/PMIX_INCLUDE_DIR to link a system PMIx instead.
-enable-rofi-c = ["rofisys", "libc", "libfabric"]
+enable-rofi-c = ["dep:rofisys", "dep:libc", "libfabric"]
 enable-rofi-c-pmix = ["enable-rofi-c", "rofisys/pmix"]
 enable-rofi-c-shared = [
+    "dep:rofisys",
     "rofisys/shared",
-    "libc",
+    "dep:libc",
     "libfabric",
     "libfabric-sys/shared",
 ]
 enable-rofi-c-shared-pmix = ["enable-rofi-c-shared", "rofisys/pmix"]
 enable-rofi-rust = []
-enable-libfabric = ["libfabric", "pmi", "libc"]
-enable-libfabric-sys = ["libfabric-sys", "pmi", "libc"]
-enable-libfabric-sys-opt = ["libfabric-sys", "pmi", "libc"]
-enable-shmem-opt = ["libc"]
+enable-libfabric = ["libfabric", "pmi", "dep:libc"]
+enable-libfabric-sys = ["libfabric-sys", "pmi", "dep:libc"]
+enable-libfabric-sys-opt = ["libfabric-sys", "pmi", "dep:libc"]
+enable-shmem-opt = ["dep:libc"]
 enable-libfabric-async = ["libfabric/use-async-std", "pmi"]
-enable-ucx = ["lamellar-ucx-sys", "lamellar-ucc-sys", "pmi", "thiserror"]
-enable-ucx-opt = [
-    "lamellar-ucx-sys",
-    "lamellar-ucc-sys",
+enable-ucx = [
+    "dep:lamellar-ucx-sys",
+    "dep:lamellar-ucc-sys",
     "pmi",
-    "thiserror",
-    "event-listener",
+    "dep:thiserror",
+]
+enable-ucx-opt = [
+    "dep:lamellar-ucx-sys",
+    "dep:lamellar-ucc-sys",
+    "pmi",
+    "dep:thiserror",
+    "dep:event-listener",
 ]
 
 # --- executor ---
-tokio-executor = ["tokio"]
+tokio-executor = ["dep:tokio"]
 
 # --- runtime behavior / diagnostics ---
 disable-runtime-warnings = []
@@ -221,7 +236,7 @@ enable-on-node-shmem = []
 slurm-test = []
 enable-prof = [
     "lamellar-prof/use-lamellar",
-    "backtrace",
+    "dep:backtrace",
     "lamellar_main/enable-prof",
 ]
 
