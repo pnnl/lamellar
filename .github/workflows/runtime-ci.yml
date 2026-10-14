@@ -1,13 +1,26 @@
-name: Rust
+name: Runtime CI
+
+# lamellar-runtime lives under lamellar-runtime/ in this repo (it was previously a submodule),
+# so the jobs below run from that directory and only trigger on changes to it.
 
 on:
   push:
     branches: [ master, dev ]
+    paths:
+      - 'lamellar-runtime/**'
+      - '.github/workflows/runtime-ci.yml'
   pull_request:
     branches: [ master, dev ]
+    paths:
+      - 'lamellar-runtime/**'
+      - '.github/workflows/runtime-ci.yml'
 
 env:
   CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: lamellar-runtime
 
 jobs:
   build:
