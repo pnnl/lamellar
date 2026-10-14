@@ -1,0 +1,2470 @@
+//! This module provides an unsafe abstraction of a distributed array in Lamellar.
+
+mod collective;
+pub(crate) mod handle;
+mod iteration;
+pub(crate) mod local_chunks;
+pub(crate) mod operations;
+mod rdma;
+
+pub use handle::UnsafeArrayHandle;
+
+use crate::active_messaging::ActiveMessaging;
+use crate::active_messaging::*;
+use crate::array::private::{ArrayExecAm, LamellarArrayPrivate};
+use crate::array::*;
+use crate::array::{LamellarRead, LamellarWrite};
+use crate::barrier::BarrierHandle;
+use crate::darc::{Darc, DarcMode};
+use crate::env_var::config;
+use crate::lamellae::collective::ReduceOp;
+use crate::lamellae::{AllocationType, AtomicOp, CollectiveOpKind, CommInfo, CommProgress};
+use crate::lamellar_team::{IntoLamellarTeam, LamellarTeamRT};
+use crate::memregion::{Dist, MemoryRegion};
+use crate::scheduler::LamellarTask;
+use crate::warnings::RuntimeWarning;
+use crate::LamellarTaskGroup;
+use crate::Remote;
+
+use core::marker::PhantomData;
+use futures_util::{future, StreamExt};
+use std::ops::Bound;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
+use tracing::trace;
+
+pub(crate) struct UnsafeArrayData {
+    pub(crate) mem_region: MemoryRegion<u8>,
+    pub(crate) array_counters: Arc<AMCounters>,
+    pub(crate) team: Darc<LamellarTeamRT>,
+    pub(crate) task_group: Arc<LamellarTaskGroup>,
+    pub(crate) my_pe: usize,
+    pub(crate) num_pes: usize,
+    req_cnt: Arc<AtomicUsize>,
+}
+
+impl std::fmt::Debug for UnsafeArrayData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "UnsafeArrayData{{ mem_region: {:?}, array_counters: {:?}, team: {:?}, task_group: {:?}, my_pe: {:?}, num_pes: {:?} req_cnt: {:?} }}",
+            self.mem_region, self.array_counters, self.team, self.task_group, self.my_pe, self.num_pes, self.req_cnt
+        )
+    }
+}
+
+/// An unsafe abstraction of a distributed array.
+///
+/// This array type provides no gaurantees on how it's data is being accessed, either locally or from remote PEs.
+///
+/// UnsafeArrays are really intended for use in the runtime as the foundation for our safe array types.
+///
+/// # Warning
+/// Unless you are very confident in low level distributed memory access it is highly recommended you utilize the
+/// the other LamellarArray types ([AtomicArray], [LocalLockArray], [GlobalLockArray], [ReadOnlyArray]) to construct and interact with distributed memory.
+// #[lamellar_impl::AmDataRT(Clone, Debug)]
+#[derive(Debug)]
+pub struct UnsafeArray<T: Remote> {
+    pub(crate) inner: UnsafeArrayInner,
+    pub(crate) mem_region: MemoryRegion<T>,
+    pub(crate) atomic_support: UnsafeAtomicOpSupport,
+    pub(crate) collective_support: UnsafeCollectiveSupport,
+    phantom: PhantomData<T>,
+}
+
+#[derive(crate::Deserialize, crate::Serialize, Clone, Copy, Debug, Default)]
+pub(crate) struct UnsafeAtomicOpSupport {
+    pub(crate) load: bool,  //read
+    pub(crate) store: bool, //write
+    pub(crate) swap: bool,  //cas
+    pub(crate) cas: bool,
+    pub(crate) add: bool, // this is for add and sub
+    pub(crate) fetch_add: bool,
+    pub(crate) prod: bool,
+    pub(crate) fetch_prod: bool,
+    pub(crate) bit_or: bool,
+    pub(crate) fetch_bit_or: bool,
+    pub(crate) bit_xor: bool,
+    pub(crate) fetch_bit_xor: bool,
+    pub(crate) bit_and: bool,
+    pub(crate) fetch_bit_and: bool,
+}
+
+#[derive(crate::Deserialize, crate::Serialize, Clone, Copy, Debug, Default)]
+pub(crate) struct UnsafeCollectiveSupport {
+    pub(crate) barrier: bool,
+    pub(crate) broadcast: bool,
+    pub(crate) alltoall: bool,
+    pub(crate) all_sum: bool,
+    pub(crate) all_prod: bool,
+    pub(crate) all_min: bool,
+    pub(crate) all_max: bool,
+    pub(crate) all_bit_or: bool,
+    pub(crate) all_bit_xor: bool,
+    pub(crate) all_bit_and: bool,
+    pub(crate) allgather: bool,
+    pub(crate) sum_scatter: bool,
+    pub(crate) prod_scatter: bool,
+    pub(crate) min_scatter: bool,
+    pub(crate) max_scatter: bool,
+    pub(crate) bit_or_scatter: bool,
+    pub(crate) bit_xor_scatter: bool,
+    pub(crate) bit_and_scatter: bool,
+    pub(crate) sum: bool,
+    pub(crate) prod: bool,
+    pub(crate) min: bool,
+    pub(crate) max: bool,
+    pub(crate) bit_or: bool,
+    pub(crate) bit_xor: bool,
+    pub(crate) bit_and: bool,
+    pub(crate) scatter: bool,
+    pub(crate) gather: bool,
+}
+
+impl<T: Remote> Clone for UnsafeArray<T> {
+    fn clone(&self) -> Self {
+        UnsafeArray {
+            inner: self.inner.clone(),
+            mem_region: unsafe { self.mem_region.as_base::<T>() },
+            atomic_support: self.atomic_support,
+            collective_support: self.collective_support,
+
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[lamellar_impl::AmDataRT(Clone, Debug)]
+pub struct __UnsafeArraySerde<T> {
+    pub(crate) array: UnsafeArrayInner,
+    phantom: PhantomData<T>,
+}
+
+impl<T: Remote> From<UnsafeArray<T>> for __UnsafeArraySerde<T> {
+    fn from(array: UnsafeArray<T>) -> Self {
+        Self {
+            array: array.inner.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: Remote> Drop for UnsafeArray<T> {
+    fn drop(&mut self) {
+        trace!(target: "drop", "drop UnsafeArray");
+    }
+}
+
+impl<T: Dist> serde::Serialize for UnsafeArray<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        __UnsafeArraySerde::from(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de, T: Dist + 'static> serde::Deserialize<'de> for UnsafeArray<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let array: __UnsafeArraySerde<T> = __UnsafeArraySerde::deserialize(deserializer)?;
+        let inner = array.array;
+        let mem_region = unsafe { inner.data.mem_region.as_base::<T>() };
+        let sample = mem_region.as_slice()[0];
+        let atomic_support =
+            UnsafeArray::<T>::detect_atomic_support(inner.data.team.lamellae.comm(), sample);
+        let collective_support =
+            UnsafeArray::<T>::detect_collective_support(inner.data.team.lamellae.comm(), sample);
+
+        Ok(UnsafeArray {
+            inner,
+            mem_region,
+            atomic_support,
+            collective_support,
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl<T: Remote> crate::active_messaging::DarcSerde for UnsafeArray<T> {
+    fn ser(&self, num_pes: usize, darcs: &mut Vec<RemotePtr>) {
+        self.inner.ser(num_pes, darcs);
+    }
+}
+
+/// Internal runtime data struct used by the Lamellar runtime for active message serialization.
+///
+/// The struct is exposed so that active messages and serializers can describe a concrete
+/// `UnsafeArray` payload at runtime without requiring the receiver to know the generic
+/// parameters ahead of time. It is not intended for direct use in user code.
+#[lamellar_impl::AmDataRT(Clone, Debug)]
+pub struct __UnsafeByteArray {
+    pub(crate) inner: UnsafeArrayInner,
+}
+
+impl __UnsafeByteArray {
+    #[doc(hidden)]
+    pub fn mut_local_data<T: Dist>(&self) -> &mut [T] {
+        unsafe {
+            let u8_slice = self.inner.local_as_mut_slice();
+            // println!("u8 slice {:?} u8_len {:?} len {:?}",u8_slice,u8_slice.len(),u8_slice.len()/std::mem::size_of::<T>());
+            std::slice::from_raw_parts_mut(
+                u8_slice.as_mut_ptr() as *mut T,
+                u8_slice.len() / std::mem::size_of::<T>(),
+            )
+        }
+    }
+    #[doc(hidden)]
+    pub fn local_data<T: Dist>(&self) -> &[T] {
+        self.mut_local_data()
+    }
+}
+
+pub(crate) mod private {
+    use super::UnsafeArrayData;
+    use crate::array::Distribution;
+    use crate::darc::Darc;
+    #[lamellar_impl::AmDataRT(Clone, Debug)]
+    pub struct UnsafeArrayInner {
+        pub(crate) data: Darc<UnsafeArrayData>,
+        pub(crate) distribution: Distribution,
+        pub(crate) orig_elem_per_pe: usize,
+        pub(crate) orig_remaining_elems: usize,
+        pub(crate) elem_size: usize, //for bytes array will be size of T, for T array will be 1
+        pub(crate) offset: usize,    //relative to size of T
+        pub(crate) size: usize,      //relative to size of T
+        pub(crate) sub: bool,
+    }
+}
+use private::UnsafeArrayInner;
+
+// #[lamellar_impl::AmLocalDataRT(Clone, Debug)]
+// pub(crate) struct UnsafeArrayInnerWeak {
+//     pub(crate) data: WeakDarc<UnsafeArrayData>,
+//     pub(crate) distribution: Distribution,
+//     orig_elem_per_pe: usize,
+//     orig_remaining_elems: usize, // the number of elements that can't be evenly divided amongst all PES
+//     elem_size: usize,            //for bytes array will be size of T, for T array will be 1
+//     offset: usize,               //relative to size of T
+//     size: usize,                 //relative to size of T
+//     sub: bool,
+// }
+
+impl<T: Dist + ArrayOps + Default + 'static> UnsafeArray<T> {
+    #[doc(alias = "Collective")]
+    /// Construct a new UnsafeArray with a length of `array_size` whose data will be layed out with the provided `distribution` on the PE's specified by the `team`.
+    /// `team` is commonly a [LamellarWorld][crate::LamellarWorld] or [LamellarTeam] (instance or reference).
+    ///
+    /// # Collective Operation
+    /// Requires all PEs associated with the `team` to enter the constructor call otherwise deadlock will occur (i.e. team barriers are being called internally)
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    ///
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    pub fn new<U: Into<IntoLamellarTeam>>(
+        team: U,
+        array_size: usize,
+        distribution: Distribution,
+    ) -> UnsafeArrayHandle<T> {
+        // let temp_team = team.into();
+        let team = team.into().team.clone();
+        UnsafeArrayHandle {
+            team: team.clone(),
+            launched: false,
+            creation_future: Box::pin(UnsafeArray::async_new(
+                team,
+                array_size,
+                distribution,
+                DarcMode::UnsafeArray,
+            )),
+        }
+    }
+
+    pub(crate) async fn async_new<U: Into<IntoLamellarTeam>>(
+        team: U,
+        array_size: usize,
+        distribution: Distribution,
+        darc_mode: DarcMode,
+    ) -> UnsafeArray<T> {
+        trace!(target: "new", "beginning async new UnsafeArray");
+        let team = team.into().team.clone();
+        team.async_barrier().await;
+        let task_group = LamellarTaskGroup::new(team.clone());
+        let my_pe = team.team_pe_id().unwrap();
+        let num_pes = team.num_pes();
+        let full_array_size = std::cmp::max(array_size, num_pes);
+
+        let elem_per_pe = full_array_size / num_pes;
+        let remaining_elems = full_array_size % num_pes;
+        let mut per_pe_size = elem_per_pe;
+        if remaining_elems > 0 {
+            per_pe_size += 1
+        }
+        let array_counters = Arc::new(AMCounters::new());
+        let team_counters: Option<Arc<[Arc<AMCounters>]>> = {
+            let base = team.counters();
+            let inner = base.as_deref().unwrap_or(&[]);
+            let mut v = inner.to_vec();
+            v.push(array_counters.clone());
+            Some(Arc::from(v))
+        };
+        let rmr_t: MemoryRegion<T> = if team.num_world_pes == team.num_pes {
+            MemoryRegion::new(
+                per_pe_size,
+                &team.scheduler,
+                team_counters,
+                &team.lamellae,
+                AllocationType::Global,
+            )
+        } else {
+            MemoryRegion::new(
+                per_pe_size,
+                &team.scheduler,
+                team_counters,
+                &team.lamellae,
+                AllocationType::Sub(team.get_pes()),
+            )
+        };
+
+        unsafe {
+            if std::mem::needs_drop::<T>() {
+                // If `T` needs to be dropped then we have to do this one item at a time, in
+                // case one of the intermediate drops does a panic.
+                // slice.iter_mut().for_each(write_zeroes);
+                panic!("Lamellar Arrays do not yet support elements that impl Drop");
+            } else {
+                // Otherwise we can be really fast and just fill everthing with zeros.
+                // let len = std::mem::size_of_val::<[T]>(
+                //     rmr_t.as_mut_slice(), //.expect("data should exist on pe"),
+                // );
+                // std::ptr::write_bytes(
+                //     rmr_t.as_mut_ptr().expect("data should exist on pe") as *mut u8,
+                //     0u8,
+                //     len,
+                // )
+                rmr_t.as_mut_slice().fill(T::default());
+            }
+        }
+        let rmr = unsafe { rmr_t.to_base::<u8>() };
+
+        let data = Darc::async_try_new_with_drop(
+            team.clone(),
+            UnsafeArrayData {
+                mem_region: rmr,
+                array_counters,
+                team: team.clone(),
+                task_group: Arc::new(task_group),
+                my_pe,
+                num_pes,
+                req_cnt: Arc::new(AtomicUsize::new(0)),
+            },
+            darc_mode,
+            None,
+        )
+        .await
+        .expect("trying to create array on non team member");
+        let mem_region = unsafe { data.mem_region.as_base::<T>() };
+        let array = UnsafeArray {
+            inner: UnsafeArrayInner {
+                data,
+                distribution: distribution.clone(),
+                orig_elem_per_pe: elem_per_pe,
+                orig_remaining_elems: remaining_elems,
+                elem_size: std::mem::size_of::<T>(),
+                offset: 0,             //relative to size of T
+                size: full_array_size, //relative to size of T
+                sub: false,
+            },
+            mem_region,
+            atomic_support: Self::detect_atomic_support(team.lamellae.comm(), T::default()),
+            collective_support: Self::detect_collective_support(team.lamellae.comm(), T::default()),
+            phantom: PhantomData,
+        };
+
+        trace!(target: "new", "finished async new UnsafeArray");
+        if full_array_size != array_size {
+            println!("WARNING: Array size {array_size} is less than number of pes {full_array_size}, each PE will not contain data");
+            array.sub_array(0..array_size)
+        } else {
+            array
+        }
+    }
+}
+impl<T: Dist + 'static> UnsafeArray<T> {
+    pub(crate) fn detect_atomic_support(
+        comm: &crate::lamellae::Comm,
+        sample: T,
+    ) -> UnsafeAtomicOpSupport {
+        UnsafeAtomicOpSupport {
+            load: comm
+                .atomic_op_avail::<T>(AtomicOp::Read(unsafe { Box::pin(std::mem::zeroed()) })),
+            store: comm.atomic_op_avail::<T>(AtomicOp::Write(Box::pin(sample))),
+            swap: comm.atomic_op_avail::<T>(AtomicOp::Write(Box::pin(sample))),
+            cas: comm.atomic_op_avail::<T>(AtomicOp::Cas),
+            add: comm.atomic_op_avail::<T>(AtomicOp::Sum(Box::pin(sample))),
+            fetch_add: comm.atomic_op_avail::<T>(AtomicOp::FetchSum(Box::pin(sample))),
+            prod: comm.atomic_op_avail::<T>(AtomicOp::Prod(Box::pin(sample))),
+            fetch_prod: comm.atomic_op_avail::<T>(AtomicOp::FetchProd(Box::pin(sample))),
+            bit_or: comm.atomic_op_avail::<T>(AtomicOp::BitOr(Box::pin(sample))),
+            fetch_bit_or: comm.atomic_op_avail::<T>(AtomicOp::FetchBitOr(Box::pin(sample))),
+            bit_xor: comm.atomic_op_avail::<T>(AtomicOp::BitXor(Box::pin(sample))),
+            fetch_bit_xor: comm.atomic_op_avail::<T>(AtomicOp::FetchBitXor(Box::pin(sample))),
+            bit_and: comm.atomic_op_avail::<T>(AtomicOp::BitAnd(Box::pin(sample))),
+            fetch_bit_and: comm.atomic_op_avail::<T>(AtomicOp::FetchBitAnd(Box::pin(sample))),
+        }
+    }
+
+    pub(crate) fn detect_collective_support(
+        comm: &crate::lamellae::Comm,
+        _sample: T,
+    ) -> UnsafeCollectiveSupport {
+        UnsafeCollectiveSupport {
+            barrier: comm.collective_avail::<()>(CollectiveOpKind::Barrier),
+            broadcast: comm.collective_avail::<T>(CollectiveOpKind::Broadcast),
+            alltoall: comm.collective_avail::<T>(CollectiveOpKind::AllToAll),
+            all_sum: comm.collective_avail::<T>(CollectiveOpKind::AllReduce(ReduceOp::Sum)),
+            all_prod: comm.collective_avail::<T>(CollectiveOpKind::AllReduce(ReduceOp::Prod)),
+            all_min: comm.collective_avail::<T>(CollectiveOpKind::AllReduce(ReduceOp::Min)),
+            all_max: comm.collective_avail::<T>(CollectiveOpKind::AllReduce(ReduceOp::Max)),
+            all_bit_or: comm.collective_avail::<T>(CollectiveOpKind::AllReduce(ReduceOp::BitOr)),
+            all_bit_xor: comm.collective_avail::<T>(CollectiveOpKind::AllReduce(ReduceOp::BitXor)),
+            all_bit_and: comm.collective_avail::<T>(CollectiveOpKind::AllReduce(ReduceOp::BitAnd)),
+            allgather: comm.collective_avail::<T>(CollectiveOpKind::AllGather),
+            sum_scatter: comm.collective_avail::<T>(CollectiveOpKind::ReduceScatter(ReduceOp::Sum)),
+            prod_scatter: comm
+                .collective_avail::<T>(CollectiveOpKind::ReduceScatter(ReduceOp::Prod)),
+            min_scatter: comm.collective_avail::<T>(CollectiveOpKind::ReduceScatter(ReduceOp::Min)),
+            max_scatter: comm.collective_avail::<T>(CollectiveOpKind::ReduceScatter(ReduceOp::Max)),
+            bit_or_scatter: comm
+                .collective_avail::<T>(CollectiveOpKind::ReduceScatter(ReduceOp::BitOr)),
+            bit_xor_scatter: comm
+                .collective_avail::<T>(CollectiveOpKind::ReduceScatter(ReduceOp::BitXor)),
+            bit_and_scatter: comm
+                .collective_avail::<T>(CollectiveOpKind::ReduceScatter(ReduceOp::BitAnd)),
+            sum: comm.collective_avail::<T>(CollectiveOpKind::Reduce(ReduceOp::Sum)),
+            prod: comm.collective_avail::<T>(CollectiveOpKind::Reduce(ReduceOp::Prod)),
+            min: comm.collective_avail::<T>(CollectiveOpKind::Reduce(ReduceOp::Min)),
+            max: comm.collective_avail::<T>(CollectiveOpKind::Reduce(ReduceOp::Max)),
+            bit_or: comm.collective_avail::<T>(CollectiveOpKind::Reduce(ReduceOp::BitOr)),
+            bit_xor: comm.collective_avail::<T>(CollectiveOpKind::Reduce(ReduceOp::BitXor)),
+            bit_and: comm.collective_avail::<T>(CollectiveOpKind::Reduce(ReduceOp::BitAnd)),
+            scatter: comm.collective_avail::<T>(CollectiveOpKind::Scatter),
+            gather: comm.collective_avail::<T>(CollectiveOpKind::Gather),
+        }
+    }
+    #[doc(alias("One-sided", "onesided"))]
+    /// Change the distribution this array handle uses to index into the data of the array.
+    ///
+    /// # One-sided Operation
+    /// This is a one-sided call and does not redistribute or modify the actual data, it simply changes how the array is indexed for this particular handle.
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    /// // do something interesting... or not
+    /// let block_view = array.clone().use_distribution(Distribution::Block);
+    ///```
+    pub fn use_distribution(mut self, distribution: Distribution) -> Self {
+        self.inner.distribution = distribution;
+        self
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Return the calling PE's local data as an immutable slice
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's may access this PE's local data.
+    /// It is also possible to have mutable and immutable references to this arrays data on the same PE
+    ///
+    /// # One-sided Operation
+    /// Only returns local data on the calling PE
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// unsafe {
+    ///     let slice = array.local_as_slice();
+    ///     println!("PE{my_pe} data: {slice:?}");
+    /// }
+    ///```
+    pub unsafe fn local_as_slice(&self) -> &[T] {
+        self.local_as_mut_slice()
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Return the calling PE's local data as a mutable slice
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's may access this PE's local data.
+    /// It is also possible to have mutable and immutable references to this arrays data on the same PE
+    ///
+    /// # One-sided Operation
+    /// Only returns local data on the calling PE
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// unsafe {
+    ///     let slice =  array.local_as_mut_slice();
+    ///     for elem in slice{
+    ///         *elem += 1;
+    ///     }
+    /// }
+    ///```
+    pub unsafe fn local_as_mut_slice(&self) -> &mut [T] {
+        let u8_slice = self.inner.local_as_mut_slice();
+        std::slice::from_raw_parts_mut(
+            u8_slice.as_mut_ptr() as *mut T,
+            u8_slice.len() / std::mem::size_of::<T>(),
+        )
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Return the calling PE's local data as an immutable slice
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's may access this PE's local data.
+    /// It is also possible to have mutable and immutable references to this arrays data on the same PE
+    ///
+    /// # One-sided Operation
+    /// Only returns local data on the calling PE
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    /// unsafe {
+    ///     let slice = array.local_data();
+    ///     println!("PE{my_pe} data: {slice:?}");
+    /// }
+    ///```
+    pub unsafe fn local_data(&self) -> &[T] {
+        self.local_as_mut_slice()
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Return the calling PE's local data as a mutable slice
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's may access this PE's local data.
+    /// It is also possible to have mutable and immutable references to this arrays data on the same PE
+    ///
+    /// # One-sided Operation
+    /// Only returns local data on the calling PE
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// unsafe {
+    ///     let slice = array.mut_local_data();
+    ///     for elem in slice{
+    ///         *elem += 1;
+    ///     }
+    /// }
+    ///```
+    pub unsafe fn mut_local_data(&self) -> &mut [T] {
+        self.local_as_mut_slice()
+    }
+
+    pub(crate) fn local_as_mut_ptr(&self) -> *mut T {
+        let u8_ptr = unsafe { self.inner.local_as_mut_ptr() };
+        u8_ptr as *mut T
+    }
+
+    /// Return the index range with respect to the original array over which this array handle represents)
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// assert_eq!(array.sub_array_range(),(0..100));
+    ///
+    /// let sub_array = array.sub_array(25..75);
+    /// assert_eq!(sub_array.sub_array_range(),(25..75));
+    ///```
+    pub fn sub_array_range(&self) -> std::ops::Range<usize> {
+        self.inner.offset..(self.inner.offset + self.inner.size)
+    }
+
+    pub(crate) fn team_rt(&self) -> Darc<LamellarTeamRT> {
+        self.inner.data.team.clone()
+    }
+
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) async fn await_all(&self) {
+        self.inner.data.team.lamellae.comm().wait_all(); //wait on operations from all threads
+        let am_counters = self.inner.data.array_counters.clone();
+
+        let mut temp_now = Instant::now();
+        let mut orig_reqs = am_counters.send_req_cnt.load(Ordering::SeqCst);
+        let mut orig_launched = am_counters.launched_req_cnt.load(Ordering::SeqCst);
+        let mut done = false;
+        while !done {
+            while self.team().panic.load(Ordering::SeqCst) == 0
+                && ((am_counters.outstanding_reqs.load(Ordering::SeqCst) > 0)
+                    || orig_reqs != am_counters.send_req_cnt.load(Ordering::SeqCst)
+                    || orig_launched != am_counters.launched_req_cnt.load(Ordering::SeqCst))
+            {
+                orig_reqs = am_counters.send_req_cnt.load(Ordering::SeqCst);
+                orig_launched = am_counters.launched_req_cnt.load(Ordering::SeqCst);
+                async_std::task::yield_now().await;
+                if temp_now.elapsed().as_secs_f64() > config().deadlock_warning_timeout {
+                    println!(
+                        "in darc await_all mype: {:?} cnt: {:?} {:?}",
+                        self.team_rt().world_pe,
+                        am_counters.send_req_cnt.load(Ordering::SeqCst),
+                        am_counters.outstanding_reqs.load(Ordering::SeqCst),
+                    );
+                    temp_now = Instant::now();
+                }
+            }
+            if am_counters.send_req_cnt.load(Ordering::SeqCst)
+                != am_counters.launched_req_cnt.load(Ordering::SeqCst)
+            {
+                if am_counters.outstanding_reqs.load(Ordering::SeqCst) > 0
+                    || orig_reqs != am_counters.send_req_cnt.load(Ordering::SeqCst)
+                    || orig_launched != am_counters.launched_req_cnt.load(Ordering::SeqCst)
+                {
+                    continue;
+                }
+                println!(
+                    "in darc await_all mype: {:?} cnt: {:?} {:?} {:?}",
+                    self.team_rt().world_pe,
+                    am_counters.send_req_cnt.load(Ordering::SeqCst),
+                    am_counters.outstanding_reqs.load(Ordering::SeqCst),
+                    am_counters.launched_req_cnt.load(Ordering::SeqCst)
+                );
+                RuntimeWarning::UnspawnedTask(
+                    "`await_all` before all tasks/active messages have been spawned",
+                )
+                .print();
+            }
+            done = true;
+        }
+
+        self.inner.data.task_group.await_all().await;
+    }
+
+    pub(crate) async fn await_on_outstanding(&self, mode: DarcMode) {
+        self.await_all().await;
+        let array_darc = self.inner.data.clone();
+        array_darc.block_on_outstanding(mode, 1).await;
+    }
+
+    #[doc(alias = "Collective")]
+    /// Convert this UnsafeArray into a (safe) [ReadOnlyArray]
+    ///
+    /// This is a collective and blocking function which will only return when there is at most a single reference on each PE
+    /// to this Array, and that reference is currently calling this function.
+    ///
+    /// When it returns, it is gauranteed that there are only  `ReadOnlyArray` handles to the underlying data
+    ///
+    /// # Collective Operation
+    /// Requires all PEs associated with the `array` to enter the call otherwise deadlock will occur (i.e. team barriers are being called internally)
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let read_only_array = array.into_read_only().block();
+    ///```
+    ///
+    /// # Warning
+    /// Because this call blocks there is the possibility for deadlock to occur, as highlighted below:
+    ///```no_run
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let mut_slice = unsafe {array1.local_as_mut_slice()};
+    ///
+    /// // no borrows to this specific instance (array) so it can enter the "into_read_only" call
+    /// // but array1 will not be dropped until after mut_slice is dropped.
+    /// // Given the ordering of these calls we will get stuck in "into_read_only" as it
+    /// // waits for the reference count to go down to "1" (but we will never be able to drop mut_slice/array1).
+    /// let ro_array = array.into_read_only().block();
+    /// ro_array.print();
+    /// println!("{mut_slice:?}");
+    ///```
+    /// Instead we would want to do something like:
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let slice = unsafe {array1.local_data()};
+    ///
+    /// // do something interesting with the slice and then manually drop the slice and array1 to ensure the reference count for array is 1.
+    /// println!("{:?}",slice[0]);
+    /// drop(slice);
+    /// drop(array1);
+    /// // now we can call into_read_only and it will not deadlock
+    /// let ro_array = array.into_read_only().block();
+    /// ro_array.print();
+    ///```
+    pub fn into_read_only(self) -> IntoReadOnlyArrayHandle<T> {
+        IntoReadOnlyArrayHandle {
+            team: self.team_rt(),
+            launched: false,
+            outstanding_future: Box::pin(self.async_into()),
+        }
+    }
+
+    #[doc(alias = "Collective")]
+    /// Convert this UnsafeArray into a (safe) [LocalLockArray]
+    ///
+    /// This is a collective and blocking function which will only return when there is at most a single reference on each PE
+    /// to this Array, and that reference is currently calling this function.
+    ///
+    /// When it returns, it is gauranteed that there are only `LocalLockArray` handles to the underlying data
+    ///
+    /// # Collective Operation
+    /// Requires all PEs associated with the `array` to enter the call otherwise deadlock will occur (i.e. team barriers are being called internally)
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let local_lock_array = array.into_local_lock().block();
+    ///```
+    /// # Warning
+    /// Because this call blocks there is the possibility for deadlock to occur, as highlighted below:
+    ///```no_run
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let mut_slice = unsafe {array1.local_as_mut_slice()};
+    ///
+    /// // no borrows to this specific instance (array) so it can enter the "into_local_lock" call
+    /// // but array1 will not be dropped until after mut_slice is dropped.
+    /// // Given the ordering of these calls we will get stuck in "into_local_lock" as it
+    /// // waits for the reference count to go down to "1" (but we will never be able to drop mut_slice/array1).
+    /// let local_lock_array = array.into_local_lock().block();
+    /// local_lock_array.print();
+    /// println!("{mut_slice:?}");
+    ///```
+    /// Instead we would want to do something like:
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let slice = unsafe {array1.local_data()};
+    ///
+    /// // do something interesting with the slice and then manually drop the slice and array1 to ensure the reference count for array is 1.
+    /// println!("{:?}",slice[0]);
+    /// drop(slice);
+    /// drop(array1);
+    /// // now we can call into_local_lock and it will not deadlock
+    /// let local_lock_array = array.into_local_lock().block();
+    /// local_lock_array.print();
+    ///```
+    pub fn into_local_lock(self) -> IntoLocalLockArrayHandle<T> {
+        IntoLocalLockArrayHandle {
+            team: self.team_rt(),
+            launched: false,
+            outstanding_future: Box::pin(self.async_into()),
+        }
+    }
+
+    #[doc(alias = "Collective")]
+    /// Convert this UnsafeArray into a (safe) [GlobalLockArray]
+    ///
+    /// This is a collective and blocking function which will only return when there is at most a single reference on each PE
+    /// to this Array, and that reference is currently calling this function.
+    ///
+    /// When it returns, it is gauranteed that there are only `GlobalLockArray` handles to the underlying data
+    ///
+    /// # Collective Operation
+    /// Requires all PEs associated with the `array` to enter the call otherwise deadlock will occur (i.e. team barriers are being called internally)
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let global_lock_array = array.into_global_lock().block();
+    ///```
+    /// # Warning
+    /// Because this call blocks there is the possibility for deadlock to occur, as highlighted below:
+    ///```no_run
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let slice = unsafe {array1.local_data()};
+    ///
+    /// // no borrows to this specific instance (array) so it can enter the "into_global_lock" call
+    /// // but array1 will not be dropped until after mut_slice is dropped.
+    /// // Given the ordering of these calls we will get stuck in "into_global_lock" as it
+    /// // waits for the reference count to go down to "1" (but we will never be able to drop slice/array1).
+    /// let global_lock_array = array.into_global_lock().block();
+    /// global_lock_array.print();
+    /// println!("{slice:?}");
+    ///```
+    /// Instead we would want to do something like:
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let slice = unsafe {array1.local_data()};
+    ///
+    /// // do something interesting with the slice and then manually drop the slice and array1 to ensure the reference count for array is 1.
+    /// println!("{:?}",slice[0]);
+    /// drop(slice);
+    /// drop(array1);
+    /// // now we can call into_global_lock and it will not deadlock
+    /// let global_lock_array = array.into_global_lock().block();
+    /// global_lock_array.print();
+    ///```
+    pub fn into_global_lock(self) -> IntoGlobalLockArrayHandle<T> {
+        IntoGlobalLockArrayHandle {
+            team: self.team_rt(),
+            launched: false,
+            outstanding_future: Box::pin(self.async_into()),
+        }
+    }
+
+    pub(crate) fn async_barrier(&self) -> BarrierHandle {
+        self.inner.data.team.async_barrier()
+    }
+}
+
+impl<T: Dist + 'static> UnsafeArray<T> {
+    #[doc(alias = "Collective")]
+    /// Convert this UnsafeArray into a (safe) [AtomicArray]
+    ///
+    /// This is a collective and blocking function which will only return when there is at most a single reference on each PE
+    /// to this Array, and that reference is currently calling this function.
+    ///
+    /// When it returns, it is gauranteed that there are only `AtomicArray` handles to the underlying data
+    ///
+    /// # Collective Operation
+    /// Requires all PEs associated with the `array` to enter the call otherwise deadlock will occur (i.e. team barriers are being called internally)
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let atomic_array = array.into_atomic().block();
+    ///```
+    /// # Warning
+    /// Because this call blocks there is the possibility for deadlock to occur, as highlighted below:
+    ///```no_run
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let my_pe = world.my_pe();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let mut_slice = unsafe {array1.local_as_mut_slice()};
+    ///
+    /// // no borrows to this specific instance (array) so it can enter the "into_atomic" call
+    /// // but array1 will not be dropped until after mut_slice is dropped.
+    /// // Given the ordering of these calls we will get stuck in "into_atomic" as it
+    /// // waits for the reference count to go down to "1" (but we will never be able to drop mut_slice/array1).
+    /// let atomic_array = array.into_atomic().block();
+    /// atomic_array.print();
+    /// println!("{mut_slice:?}");
+    ///```
+    /// Instead we would want to do something like:
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array: UnsafeArray<usize> = UnsafeArray::new(&world,100,Distribution::Cyclic).block();
+    ///
+    /// let array1 = array.clone();
+    /// let slice = unsafe {array1.local_data()};
+    ///
+    /// // do something interesting with the slice and then manually drop the slice and array1 to ensure the reference count for array is 1.
+    /// println!("{:?}",slice[0]);
+    /// drop(slice);
+    /// drop(array1);
+    /// // now we can call into_atomic and it will not deadlock
+    /// let atomic_array = array.into_atomic().block();
+    /// atomic_array.print();
+    ///```
+    pub fn into_atomic(self) -> IntoAtomicArrayHandle<T> {
+        IntoAtomicArrayHandle {
+            team: self.team_rt(),
+            launched: false,
+            outstanding_future: Box::pin(self.async_into()),
+        }
+    }
+}
+
+impl<T: Dist + ArrayOps + Default> TeamFrom<(Vec<T>, Distribution)> for UnsafeArray<T> {
+    fn team_from(input: (Vec<T>, Distribution), team: &Arc<LamellarTeam>) -> Self {
+        let (vals, distribution) = input;
+        let input = (&vals, distribution);
+        TeamInto::team_into(input, team)
+    }
+}
+
+impl<T: Dist + ArrayOps + Default> AsyncTeamFrom<(Vec<T>, Distribution)> for UnsafeArray<T> {
+    async fn team_from(input: (Vec<T>, Distribution), team: &Arc<LamellarTeam>) -> Self {
+        let (local_vals, distribution) = input;
+        let team = team.team.clone();
+        team.async_barrier().await;
+        let local_sizes = UnsafeArray::<usize>::async_new(
+            team.clone(),
+            team.num_pes,
+            Distribution::Block,
+            crate::darc::DarcMode::UnsafeArray,
+        )
+        .await;
+        unsafe {
+            local_sizes.local_as_mut_slice()[0] = local_vals.len();
+        }
+        team.async_barrier().await;
+        let mut size = 0;
+        let mut my_start = 0;
+        let my_pe = team.team_pe.expect("pe not part of team");
+        unsafe {
+            local_sizes
+                .buffered_onesided_iter(team.num_pes)
+                .into_stream()
+                .enumerate()
+                .for_each(|(i, local_size)| {
+                    size += local_size;
+                    if i < my_pe {
+                        my_start += local_size;
+                    }
+                    future::ready(())
+                })
+                .await;
+        }
+        let array = UnsafeArray::<T>::async_new(
+            team.clone(),
+            size,
+            distribution,
+            crate::darc::DarcMode::UnsafeArray,
+        )
+        .await;
+        if local_vals.len() > 0 {
+            unsafe { array.put_buffer(my_start, local_vals).await };
+        }
+        team.async_barrier().await;
+        array
+    }
+}
+
+impl<T: Dist + ArrayOps + Default> TeamFrom<(&Vec<T>, Distribution)> for UnsafeArray<T> {
+    fn team_from(input: (&Vec<T>, Distribution), team: &Arc<LamellarTeam>) -> Self {
+        let (local_vals, distribution) = input;
+        let team = team.team.clone();
+        let local_sizes =
+            UnsafeArray::<usize>::new(team.clone(), team.num_pes, Distribution::Block).block();
+        unsafe {
+            local_sizes.local_as_mut_slice()[0] = local_vals.len();
+        }
+        local_sizes.barrier();
+        let mut size = 0;
+        let mut my_start = 0;
+        let my_pe = team.team_pe.expect("pe not part of team");
+        unsafe {
+            local_sizes
+                .buffered_onesided_iter(team.num_pes)
+                .into_iter()
+                .enumerate()
+                .for_each(|(i, local_size)| {
+                    size += local_size;
+                    if i < my_pe {
+                        my_start += local_size;
+                    }
+                });
+        }
+        let array = UnsafeArray::<T>::new(team.clone(), size, distribution).block();
+        if local_vals.len() > 0 {
+            array.block_on(unsafe { array.put_buffer(my_start, local_vals) });
+        }
+        array.barrier();
+        array
+    }
+}
+
+#[async_trait]
+impl<T: Dist> AsyncFrom<AtomicArray<T>> for UnsafeArray<T> {
+    async fn async_from(array: AtomicArray<T>) -> Self {
+        match array {
+            AtomicArray::NativeAtomicArray(array) => UnsafeArray::<T>::async_from(array).await,
+            AtomicArray::GenericAtomicArray(array) => UnsafeArray::<T>::async_from(array).await,
+            AtomicArray::NetworkAtomicArray(array) => UnsafeArray::<T>::async_from(array).await,
+        }
+    }
+}
+
+#[async_trait]
+impl<T: Dist> AsyncFrom<NativeAtomicArray<T>> for UnsafeArray<T> {
+    async fn async_from(array: NativeAtomicArray<T>) -> Self {
+        array
+            .array
+            .await_on_outstanding(DarcMode::UnsafeArray)
+            .await;
+        array.array
+    }
+}
+
+#[async_trait]
+impl<T: Dist> AsyncFrom<GenericAtomicArray<T>> for UnsafeArray<T> {
+    async fn async_from(array: GenericAtomicArray<T>) -> Self {
+        array
+            .array
+            .await_on_outstanding(DarcMode::UnsafeArray)
+            .await;
+        array.array
+    }
+}
+
+#[async_trait]
+impl<T: Dist> AsyncFrom<LocalLockArray<T>> for UnsafeArray<T> {
+    async fn async_from(array: LocalLockArray<T>) -> Self {
+        array
+            .array
+            .await_on_outstanding(DarcMode::UnsafeArray)
+            .await;
+        array.array.clone()
+    }
+}
+
+#[async_trait]
+impl<T: Dist> AsyncFrom<GlobalLockArray<T>> for UnsafeArray<T> {
+    async fn async_from(array: GlobalLockArray<T>) -> Self {
+        array
+            .array
+            .await_on_outstanding(DarcMode::UnsafeArray)
+            .await;
+        array.array
+    }
+}
+
+#[async_trait]
+impl<T: Dist> AsyncFrom<ReadOnlyArray<T>> for UnsafeArray<T> {
+    async fn async_from(array: ReadOnlyArray<T>) -> Self {
+        array
+            .array
+            .await_on_outstanding(DarcMode::UnsafeArray)
+            .await;
+        array.array
+    }
+}
+
+#[async_trait]
+impl<T: Dist> AsyncFrom<NetworkAtomicArray<T>> for UnsafeArray<T> {
+    async fn async_from(array: NetworkAtomicArray<T>) -> Self {
+        array
+            .array
+            .await_on_outstanding(DarcMode::UnsafeArray)
+            .await;
+        array.array
+    }
+}
+
+impl<T: Dist + 'static> From<__UnsafeByteArray> for UnsafeArray<T> {
+    fn from(array: __UnsafeByteArray) -> Self {
+        let inner = array.inner;
+        let mem_region = unsafe { inner.data.mem_region.as_base::<T>() };
+        let sample = mem_region.as_slice()[0];
+        let atomic_support =
+            UnsafeArray::<T>::detect_atomic_support(inner.data.team.lamellae.comm(), sample);
+
+        let collective_support =
+            UnsafeArray::<T>::detect_collective_support(inner.data.team.lamellae.comm(), sample);
+        UnsafeArray {
+            inner,
+            mem_region,
+            atomic_support,
+            collective_support,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: Dist + 'static> From<&__UnsafeByteArray> for UnsafeArray<T> {
+    fn from(array: &__UnsafeByteArray) -> Self {
+        let mem_region = unsafe { array.inner.data.mem_region.as_base::<T>() };
+        let sample = mem_region.as_slice()[0];
+        let atomic_support =
+            UnsafeArray::<T>::detect_atomic_support(array.inner.data.team.lamellae.comm(), sample);
+        let collective_support = UnsafeArray::<T>::detect_collective_support(
+            array.inner.data.team.lamellae.comm(),
+            sample,
+        );
+        UnsafeArray {
+            inner: array.inner.clone(),
+            mem_region,
+            atomic_support,
+            collective_support,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: Dist> From<UnsafeArray<T>> for __UnsafeByteArray {
+    fn from(array: UnsafeArray<T>) -> Self {
+        __UnsafeByteArray {
+            inner: array.inner.clone(),
+        }
+    }
+}
+
+impl<T: Dist> From<&UnsafeArray<T>> for __UnsafeByteArray {
+    fn from(array: &UnsafeArray<T>) -> Self {
+        __UnsafeByteArray {
+            inner: array.inner.clone(),
+        }
+    }
+}
+
+impl<T: Dist> From<UnsafeArray<T>> for LamellarByteArray {
+    fn from(array: UnsafeArray<T>) -> Self {
+        LamellarByteArray::UnsafeArray(array.into())
+    }
+}
+
+impl<T: Dist> From<LamellarByteArray> for UnsafeArray<T> {
+    fn from(array: LamellarByteArray) -> Self {
+        if let LamellarByteArray::UnsafeArray(array) = array {
+            array.into()
+        } else {
+            panic!("Expected LamellarByteArray::UnsafeArray")
+        }
+    }
+}
+
+impl<T: Dist> ArrayExecAm<T> for UnsafeArray<T> {
+    fn team_rt(&self) -> Darc<LamellarTeamRT> {
+        self.team_rt()
+    }
+    fn team_counters(&self) -> Arc<AMCounters> {
+        self.inner.data.array_counters.clone()
+    }
+}
+impl<T: Dist> LamellarArrayPrivate<T> for UnsafeArray<T> {
+    fn inner_array(&self) -> &UnsafeArray<T> {
+        self
+    }
+    fn local_as_ptr(&self) -> *const T {
+        self.local_as_mut_ptr()
+    }
+    fn local_as_mut_ptr(&self) -> *mut T {
+        self.local_as_mut_ptr()
+    }
+    fn pe_for_dist_index(&self, index: usize) -> Option<usize> {
+        self.inner.pe_for_dist_index(index)
+    }
+    fn pe_offset_for_dist_index(&self, pe: usize, index: usize) -> Option<usize> {
+        if self.inner.sub {
+            self.inner.pe_sub_offset_for_dist_index(pe, index)
+        } else {
+            self.inner.pe_full_offset_for_dist_index(pe, index)
+        }
+    }
+
+    unsafe fn into_inner(self) -> UnsafeArray<T> {
+        self
+    }
+    fn as_lamellar_byte_array(&self) -> LamellarByteArray {
+        self.clone().into()
+    }
+}
+
+impl<T: Dist> ActiveMessaging for UnsafeArray<T> {
+    type SinglePeAmHandle<R: AmDist> = AmHandle<R>;
+    type MultiAmHandle<R: AmDist> = MultiAmHandle<R>;
+    type LocalAmHandle<L> = LocalAmHandle<L>;
+    fn exec_am_all<F>(&self, am: F) -> Self::MultiAmHandle<F::Output>
+    where
+        F: RemoteActiveMessage + LamellarAM + Serde + AmDist,
+    {
+        self.inner
+            .data
+            .team
+            .exec_am_all_tg(am, Some(self.team_counters()))
+    }
+    fn exec_am_pe<F>(&self, pe: usize, am: F) -> Self::SinglePeAmHandle<F::Output>
+    where
+        F: RemoteActiveMessage + LamellarAM + Serde + AmDist,
+    {
+        self.inner
+            .data
+            .team
+            .exec_am_pe_tg(pe, am, Some(self.team_counters()))
+    }
+    fn exec_am_local<F>(&self, am: F) -> Self::LocalAmHandle<F::Output>
+    where
+        F: LamellarActiveMessage + LocalAM + 'static,
+    {
+        self.inner
+            .data
+            .team
+            .exec_am_local_tg(am, Some(self.team_counters()), None)
+    }
+    //#[tracing::instrument(skip_all, level = "debug")]
+    fn wait_all(&self) {
+        self.inner.data.team.lamellae.comm().wait_all(); //wait on operations from all threads
+        let mut temp_now = Instant::now();
+        // Wrapped once around the whole spin loop so a tokio worker thread blocking
+        // here doesn't exhaust the whole worker pool.
+        let scheduler = self.inner.data.team.scheduler.clone();
+        scheduler.block_in_place(|| {
+            while self
+                .inner
+                .data
+                .array_counters
+                .outstanding_reqs
+                .load(Ordering::SeqCst)
+                > 0
+                || self.inner.data.req_cnt.load(Ordering::SeqCst) > 0
+            {
+                self.inner.data.team.scheduler.exec_task(); //mmight as well do useful work while we wait
+                if temp_now.elapsed().as_secs_f64() > config().deadlock_warning_timeout {
+                    println!(
+                        "in array wait_all mype: {:?} cnt: {:?} {:?} {:?}",
+                        self.inner.data.team.world_pe,
+                        self.inner
+                            .data
+                            .array_counters
+                            .send_req_cnt
+                            .load(Ordering::SeqCst),
+                        self.inner
+                            .data
+                            .array_counters
+                            .outstanding_reqs
+                            .load(Ordering::SeqCst),
+                        self.inner.data.req_cnt.load(Ordering::SeqCst)
+                    );
+                    temp_now = Instant::now();
+                }
+            }
+        });
+        if self
+            .inner
+            .data
+            .array_counters
+            .send_req_cnt
+            .load(Ordering::SeqCst)
+            != self
+                .inner
+                .data
+                .array_counters
+                .launched_req_cnt
+                .load(Ordering::SeqCst)
+        {
+            println!(
+                "in array wait_all  cnt: {:?} {:?} {:?}",
+                self.inner
+                    .data
+                    .array_counters
+                    .send_req_cnt
+                    .load(Ordering::SeqCst),
+                self.inner
+                    .data
+                    .array_counters
+                    .outstanding_reqs
+                    .load(Ordering::SeqCst),
+                self.inner
+                    .data
+                    .array_counters
+                    .launched_req_cnt
+                    .load(Ordering::SeqCst)
+            );
+            RuntimeWarning::UnspawnedTask(
+                "`wait_all` on an array before all operations, iterators, etc, created by the array have been spawned",
+            )
+            .print();
+        }
+        self.inner.data.task_group.wait_all();
+    }
+    fn await_all(&self) -> impl Future<Output = ()> + Send {
+        self.await_all()
+    }
+    fn barrier(&self) {
+        self.inner.data.team.barrier()
+    }
+    fn async_barrier(&self) -> BarrierHandle {
+        self.inner.data.team.async_barrier()
+    }
+    fn spawn<F>(&self, f: F) -> LamellarTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send,
+    {
+        self.inner.data.team.scheduler.spawn_task(
+            f,
+            Some(Arc::from([
+                self.inner.data.team.world_counters.clone(),
+                self.inner.data.team.team_counters.clone(),
+                self.inner.data.array_counters.clone(),
+            ])),
+        )
+    }
+    fn block_on<F: Future>(&self, f: F) -> F::Output {
+        self.inner.data.team.scheduler.block_on(f)
+    }
+    fn block_on_all<I>(&self, iter: I) -> Vec<<<I as IntoIterator>::Item as Future>::Output>
+    where
+        I: IntoIterator,
+        <I as IntoIterator>::Item: Future + Send + 'static,
+        <<I as IntoIterator>::Item as Future>::Output: Send,
+    {
+        self.inner.data.team.block_on_all(iter)
+    }
+}
+
+impl<T: Dist> LamellarArray<T> for UnsafeArray<T> {
+    fn len(&self) -> usize {
+        self.inner.size
+    }
+
+    fn num_elems_local(&self) -> usize {
+        self.inner.num_elems_local()
+    }
+    //#[tracing::instrument(skip_all, level = "debug")]
+    fn pe_and_offset_for_global_index(&self, index: usize) -> Option<(usize, usize)> {
+        if self.inner.sub {
+            let pe = self.inner.pe_for_dist_index(index)?;
+            let offset = self.inner.pe_sub_offset_for_dist_index(pe, index)?;
+            Some((pe, offset))
+        } else {
+            self.inner.full_pe_and_offset_for_global_index(index)
+        }
+    }
+
+    fn first_global_index_for_pe(&self, pe: usize) -> Option<usize> {
+        self.inner.start_index_for_pe(pe)
+    }
+
+    fn last_global_index_for_pe(&self, pe: usize) -> Option<usize> {
+        self.inner.end_index_for_pe(pe)
+    }
+}
+
+impl<T: Dist> UnsafeArray<T> {
+    /// Like `pe_and_offset_for_global_index` but always returns the absolute PE-local
+    /// memory offset (not sub-array-relative). Required for raw RDMA operations that
+    /// address PE memory directly (e.g. `mem_region.get_pe(pe, offset)`).
+    pub(crate) fn pe_and_rdma_offset_for_global_index(
+        &self,
+        index: usize,
+    ) -> Option<(usize, usize)> {
+        let pe = self.inner.pe_for_dist_index(index)?;
+        let offset = self.inner.pe_full_offset_for_dist_index(pe, index)?;
+        Some((pe, offset))
+    }
+}
+
+impl<T: Dist> LamellarEnv for UnsafeArray<T> {
+    fn my_pe(&self) -> usize {
+        self.inner.data.my_pe
+    }
+
+    fn num_pes(&self) -> usize {
+        self.inner.data.num_pes
+    }
+
+    fn num_threads_per_pe(&self) -> usize {
+        self.inner.data.team.num_threads()
+    }
+    fn world(&self) -> Arc<LamellarTeam> {
+        self.inner.data.team.world()
+    }
+    fn team(&self) -> Arc<LamellarTeam> {
+        self.inner.data.team.team()
+    }
+}
+
+impl<T: Dist> LamellarWrite for UnsafeArray<T> {}
+impl<T: Dist> LamellarRead for UnsafeArray<T> {}
+
+impl<T: Dist> SubArray<T> for UnsafeArray<T> {
+    type Array = UnsafeArray<T>;
+    fn sub_array<R: std::ops::RangeBounds<usize>>(&self, range: R) -> Self::Array {
+        let start = match range.start_bound() {
+            //inclusive
+            Bound::Included(idx) => *idx,
+            Bound::Excluded(idx) => *idx + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            //exclusive
+            Bound::Included(idx) => *idx + 1,
+            Bound::Excluded(idx) => *idx,
+            Bound::Unbounded => self.inner.size,
+        };
+        if end > self.inner.size {
+            panic!(
+                "subregion range ({:?}-{:?}) exceeds size of array {:?}",
+                start, end, self.inner.size
+            );
+        }
+        let mut inner = self.inner.clone();
+        inner.offset += start;
+        inner.size = end - start;
+        inner.sub = true;
+        let mem_region = unsafe { inner.data.mem_region.as_base::<T>() };
+        UnsafeArray {
+            inner: inner,
+            mem_region,
+            atomic_support: self.atomic_support,
+            collective_support: self.collective_support,
+            phantom: PhantomData,
+        }
+    }
+    fn global_index(&self, sub_index: usize) -> usize {
+        self.inner.offset + sub_index
+    }
+}
+
+impl<T: Dist + std::fmt::Debug> UnsafeArray<T> {
+    #[doc(alias = "Collective")]
+    /// Print the data within a lamellar array
+    ///
+    /// # Collective Operation
+    /// Requires all PEs associated with the array to enter the print call otherwise deadlock will occur (i.e. barriers are being called internally)
+    ///
+    /// # Examples
+    ///```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let block_array = UnsafeArray::<usize>::new(&world,100,Distribution::Block).block();
+    /// let cyclic_array = UnsafeArray::<usize>::new(&world,100,Distribution::Block).block();
+    ///
+    /// unsafe{
+    ///     let _ =block_array.dist_iter_mut().enumerate().for_each(move |(i,elem)| {
+    ///         *elem = i;
+    ///     }).spawn();
+    ///     let _ = cyclic_array.dist_iter_mut().enumerate().for_each(move |(i,elem)| {
+    ///         *elem = i;
+    ///     }).spawn();
+    /// }
+    /// world.wait_all();
+    /// block_array.print();
+    /// println!();
+    /// cyclic_array.print();
+    ///```
+    pub fn print(&self) {
+        <UnsafeArray<T> as ArrayPrint<T>>::print(&self);
+    }
+}
+
+impl<T: Dist + std::fmt::Debug> ArrayPrint<T> for UnsafeArray<T> {
+    fn print(&self) {
+        self.inner.data.team.tasking_barrier(); //TODO: have barrier accept a string so we can print where we are stalling.
+        for pe in 0..self.inner.data.team.num_pes() {
+            self.inner.data.team.tasking_barrier();
+            if self.inner.data.my_pe == pe {
+                println!("[pe {:?} data] {:?}", pe, unsafe { self.local_as_slice() });
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        self.inner.data.team.tasking_barrier();
+    }
+}
+
+impl<T: Dist + AmDist + 'static> UnsafeArray<T> {
+    pub(crate) fn get_reduction_op(
+        &self,
+        op: &str,
+        byte_array: LamellarByteArray,
+    ) -> LamellarArcAm {
+        REDUCE_OPS
+            .get(&(std::any::TypeId::of::<T>(), op))
+            .expect("unexpected reduction type")(byte_array, self.inner.data.team.num_pes())
+    }
+    pub(crate) fn reduce_data_user(
+        &self,
+        op: &str,
+        byte_array: LamellarByteArray,
+    ) -> crate::array::ArrayReduceHandle<T> {
+        self.reduce_data(self.get_reduction_op(op, byte_array))
+    }
+    pub(crate) fn reduce_data(&self, am: LamellarArcAm) -> crate::array::ArrayReduceHandle<T> {
+        let raw = if let Ok(my_pe) = self.inner.data.team.team_pe_id() {
+            self.inner.data.team.exec_arc_am_pe::<Vec<u8>>(
+                my_pe,
+                am,
+                Some(self.inner.data.array_counters.clone()),
+            )
+        } else {
+            self.inner.data.team.exec_arc_am_pe::<Vec<u8>>(
+                0,
+                am,
+                Some(self.inner.data.array_counters.clone()),
+            )
+        };
+        crate::array::ArrayReduceHandle::new(raw)
+    }
+}
+
+// This is esentially impl LamellarArrayReduce, but we man to explicity have UnsafeArray expose unsafe functions
+impl<T: Dist + AmDist + 'static> UnsafeArray<T> {
+    #[doc(alias("One-sided", "onesided"))]
+    /// Perform a reduction on the entire distributed array, returning the value to the calling PE.
+    ///
+    /// Please see the documentation for the [register_reduction] procedural macro for
+    /// more details and examples on how to create your own reductions.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `Reduce` active messages on the other PEs associated with the array.
+    /// the returned reduction result is only available on the calling PE
+    /// # Note
+    /// The future retuned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// use rand::Rng;
+    ///
+    /// register_reduction!(my_sum, |a,b| a+b, usize);
+    ///
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let num_pes = world.num_pes();
+    /// let array = UnsafeArray::<usize>::new(&world,1000000,Distribution::Block).block();
+    /// let array_clone = array.clone();
+    /// unsafe { // THIS IS NOT SAFE -- we are randomly updating elements, no protections, updates may be lost... DONT DO THIS
+    ///     let req = array.local_iter().for_each(move |_| {
+    ///         let index = rand::thread_rng().gen_range(0..array_clone.len());
+    ///         let _ = array_clone.add(index,1).spawn(); //randomly at one to an element in the array.
+    ///     }).spawn();
+    /// }
+    /// array.wait_all();
+    /// array.barrier();
+    /// let sum = unsafe {array.registered_reduce("my_sum").block()}; // equivalent to calling array.sum()
+    /// //assert_eq!(array.len()*num_pes,sum); // may or may not fail
+    ///```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn registered_reduce(&self, op: &str) -> crate::array::ArrayReduceHandle<T> {
+        self.reduce_data_user(op, self.clone().into())
+    }
+}
+
+impl<T: Dist + AmDist + ElementArithmeticOps + 'static> UnsafeArray<T> {
+    #[doc(alias("One-sided", "onesided"))]
+    /// Perform a sum reduction on the entire distributed array, returning the value to the calling PE.
+    ///
+    /// This equivalent to `reduce("sum")`.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `Sum` active messages on the other PEs associated with the array.
+    /// the returned sum reduction result is only available on the calling PE
+    /// # Note
+    /// The future retuned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// use rand::Rng;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let num_pes = world.num_pes();
+    /// let array = UnsafeArray::<usize>::new(&world,1000000,Distribution::Block).block();
+    /// let array_clone = array.clone();
+    /// unsafe { // THIS IS NOT SAFE -- we are randomly updating elements, no protections, updates may be lost... DONT DO THIS
+    ///     let req = array.local_iter().for_each(move |_| {
+    ///         let index = rand::thread_rng().gen_range(0..array_clone.len());
+    ///         let _ = array_clone.add(index,1).spawn(); //randomly at one to an element in the array.
+    ///     }).spawn();
+    /// }
+    /// array.wait_all();
+    /// array.barrier();
+    /// let sum = unsafe{array.sum().block()}; //Safe in this instance as we have ensured no updates are currently happening
+    /// // assert_eq!(array.len()*num_pes,sum);//this may or may not fail
+    ///```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn sum(&self) -> crate::array::ArrayReduceHandle<T> {
+        match ScalarType::get_type::<T>() {
+            Some((scalar_type, _)) => self.reduce_data(Arc::new(ScalarBuiltinReductionAm::new(
+                self.clone().into(),
+                scalar_type,
+                BuiltinOp::Sum,
+            ))),
+            None => self.reduce_data_user("sum", self.clone().into()),
+        }
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Perform a production reduction on the entire distributed array, returning the value to the calling PE.
+    ///
+    /// This equivalent to `reduce("prod")`.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `Prod` active messages on the other PEs associated with the array.
+    /// the returned prod reduction result is only available on the calling PE
+    /// # Note
+    /// The future retuned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// use rand::Rng;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let num_pes = world.num_pes();
+    /// let array = UnsafeArray::<usize>::new(&world,10,Distribution::Block).block();
+    /// unsafe {
+    ///     let req = array.dist_iter_mut().enumerate().for_each(move |(i,elem)| {
+    ///         *elem = i+1;
+    ///     }).spawn();
+    /// }
+    /// array.print();
+    /// array.wait_all();
+    /// array.print();
+    /// let prod = unsafe{ array.prod().block().expect("array len > 0")};
+    /// assert_eq!((1..=array.len()).product::<usize>(),prod);
+    ///```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn prod(&self) -> crate::array::ArrayReduceHandle<T> {
+        match ScalarType::get_type::<T>() {
+            Some((scalar_type, _)) => self.reduce_data(Arc::new(ScalarBuiltinReductionAm::new(
+                self.clone().into(),
+                scalar_type,
+                BuiltinOp::Prod,
+            ))),
+            None => self.reduce_data_user("prod", self.clone().into()),
+        }
+    }
+}
+
+impl<T: Dist + AmDist + ElementComparePartialEqOps + 'static> UnsafeArray<T> {
+    #[doc(alias("One-sided", "onesided"))]
+    /// Find the max element in the entire destributed array, returning to the calling PE
+    ///
+    /// This equivalent to `reduce("max")`.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `Max` active messages on the other PEs associated with the array.
+    /// the returned max reduction result is only available on the calling PE
+    /// # Note
+    /// The future retuned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let num_pes = world.num_pes();
+    /// let array = UnsafeArray::<usize>::new(&world,10,Distribution::Block).block();
+    /// let array_clone = array.clone();
+    /// let _ = unsafe{array.dist_iter_mut().enumerate().for_each(|(i,elem)| *elem = i*2).spawn()}; //safe as we are accessing in a data parallel fashion
+    /// array.wait_all();
+    /// array.barrier();
+    /// let max_req = unsafe{array.max()}; //Safe in this instance as we have ensured no updates are currently happening
+    /// let max = max_req.block().expect("array len > 0");
+    /// assert_eq!((array.len()-1)*2,max);
+    ///```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn max(&self) -> crate::array::ArrayReduceHandle<T> {
+        match ScalarType::get_type::<T>() {
+            Some((scalar_type, _)) => self.reduce_data(Arc::new(ScalarBuiltinReductionAm::new(
+                self.clone().into(),
+                scalar_type,
+                BuiltinOp::Max,
+            ))),
+            None => self.reduce_data_user("max", self.clone().into()),
+        }
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Find the min element in the entire destributed array, returning to the calling PE
+    ///
+    /// This equivalent to `reduce("min")`.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `Min` active messages on the other PEs associated with the array.
+    /// the returned min reduction result is only available on the calling PE
+    /// # Note
+    /// The future retuned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let num_pes = world.num_pes();
+    /// let array = UnsafeArray::<usize>::new(&world,10,Distribution::Block).block();
+    /// let array_clone = array.clone();
+    /// let _ = unsafe{array.dist_iter_mut().enumerate().for_each(|(i,elem)| *elem = i*2).spawn()}; //safe as we are accessing in a data parallel fashion
+    /// array.wait_all();
+    /// array.barrier();
+    /// let min_req = unsafe{array.min()}; //Safe in this instance as we have ensured no updates are currently happening
+    /// let min = min_req.block().expect("array len > 0");
+    /// assert_eq!(0,min);
+    ///```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn min(&self) -> crate::array::ArrayReduceHandle<T> {
+        match ScalarType::get_type::<T>() {
+            Some((scalar_type, _)) => self.reduce_data(Arc::new(ScalarBuiltinReductionAm::new(
+                self.clone().into(),
+                scalar_type,
+                BuiltinOp::Min,
+            ))),
+            None => self.reduce_data_user("min", self.clone().into()),
+        }
+    }
+}
+
+impl<T: Dist + AmDist + ElementBitWiseOps + 'static> UnsafeArray<T> {
+    #[doc(alias("One-sided", "onesided"))]
+    /// Perform a bitwise AND reduction on the entire distributed array, returning the value to the calling PE.
+    ///
+    /// This is equivalent to `reduce("and")`.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `And` active messages on the other PEs associated with the array.
+    /// The returned bitwise AND reduction result is only available on the calling PE.
+    ///
+    /// # Note
+    /// The future returned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array = UnsafeArray::<u8>::new(&world, 10, Distribution::Block).block();
+    /// unsafe {
+    ///     let _ = array.dist_iter_mut().for_each(|elem| *elem = 0xFF).spawn();
+    /// }
+    /// array.wait_all();
+    /// array.barrier();
+    /// let and_result = unsafe { array.and().block().expect("array len > 0") };
+    /// assert_eq!(0xFF_u8, and_result);
+    /// ```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn and(&self) -> crate::array::ArrayReduceHandle<T> {
+        match ScalarType::get_type::<T>() {
+            Some((scalar_type, _)) => self.reduce_data(Arc::new(ScalarBuiltinReductionAm::new(
+                self.clone().into(),
+                scalar_type,
+                BuiltinOp::And,
+            ))),
+            None => self.reduce_data_user("and", self.clone().into()),
+        }
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Perform a bitwise OR reduction on the entire distributed array, returning the value to the calling PE.
+    ///
+    /// This is equivalent to `reduce("or")`.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `Or` active messages on the other PEs associated with the array.
+    /// The returned bitwise OR reduction result is only available on the calling PE.
+    ///
+    /// # Note
+    /// The future returned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array = UnsafeArray::<u8>::new(&world, 10, Distribution::Block).block();
+    /// unsafe {
+    ///     let _ = array.dist_iter_mut().enumerate().for_each(|(i, elem)| *elem = i as u8).spawn();
+    /// }
+    /// array.wait_all();
+    /// array.barrier();
+    /// let or_result = unsafe { array.or().block().expect("array len > 0") };
+    /// // or_result is the bitwise OR of all elements
+    /// ```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn or(&self) -> crate::array::ArrayReduceHandle<T> {
+        match ScalarType::get_type::<T>() {
+            Some((scalar_type, _)) => self.reduce_data(Arc::new(ScalarBuiltinReductionAm::new(
+                self.clone().into(),
+                scalar_type,
+                BuiltinOp::Or,
+            ))),
+            None => self.reduce_data_user("or", self.clone().into()),
+        }
+    }
+
+    #[doc(alias("One-sided", "onesided"))]
+    /// Perform a bitwise XOR reduction on the entire distributed array, returning the value to the calling PE.
+    ///
+    /// This is equivalent to `reduce("xor")`.
+    ///
+    /// # Safety
+    /// Data in UnsafeArrays are always unsafe as there are no protections on how remote PE's or local threads may access this PE's local data.
+    /// Any updates to local data are not guaranteed to be Atomic.
+    ///
+    /// # One-sided Operation
+    /// The calling PE is responsible for launching `Xor` active messages on the other PEs associated with the array.
+    /// The returned bitwise XOR reduction result is only available on the calling PE.
+    ///
+    /// # Note
+    /// The future returned by this function is lazy and does nothing unless awaited, [spawned][AmHandle::spawn] or [blocked on][AmHandle::block]
+    /// # Examples
+    /// ```
+    /// use lamellar::array::prelude::*;
+    /// let world = LamellarWorldBuilder::new().build();
+    /// let array = UnsafeArray::<u8>::new(&world, 10, Distribution::Block).block();
+    /// unsafe {
+    ///     let _ = array.dist_iter_mut().enumerate().for_each(|(i, elem)| *elem = i as u8).spawn();
+    /// }
+    /// array.wait_all();
+    /// array.barrier();
+    /// let xor_result = unsafe { array.xor().block().expect("array len > 0") };
+    /// // xor_result is the bitwise XOR of all elements
+    /// ```
+    #[must_use = "this function is lazy and does nothing unless awaited. Either await the returned future, or call 'spawn()' or 'block()' on it "]
+    pub unsafe fn xor(&self) -> crate::array::ArrayReduceHandle<T> {
+        match ScalarType::get_type::<T>() {
+            Some((scalar_type, _)) => self.reduce_data(Arc::new(ScalarBuiltinReductionAm::new(
+                self.clone().into(),
+                scalar_type,
+                BuiltinOp::Xor,
+            ))),
+            None => self.reduce_data_user("xor", self.clone().into()),
+        }
+    }
+}
+
+// impl UnsafeArrayInnerWeak {
+//     #[allow(dead_code)]
+//     pub(crate) fn upgrade(&self) -> Option<UnsafeArrayInner> {
+//         if let Some(data) = self.data.upgrade() {
+//             Some(UnsafeArrayInner {
+//                 data,
+//                 distribution: self.distribution.clone(),
+//                 orig_elem_per_pe: self.orig_elem_per_pe,
+//                 orig_remaining_elems: self.orig_remaining_elems,
+//                 elem_size: self.elem_size,
+//                 offset: self.offset,
+//                 size: self.size,
+//                 sub: self.sub,
+//             })
+//         } else {
+//             None
+//         }
+//     }
+// }
+
+impl UnsafeArrayInner {
+    pub(crate) fn spawn<F>(&self, f: F) -> LamellarTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send,
+    {
+        self.data.team.scheduler.spawn_task(
+            f,
+            Some(Arc::from([
+                self.data.team.world_counters.clone(),
+                self.data.team.team_counters.clone(),
+                self.data.array_counters.clone(),
+            ])),
+        )
+    }
+    pub(crate) fn block_on<F: Future>(&self, f: F) -> F::Output {
+        self.data.team.scheduler.block_on(f)
+    }
+    // #[allow(dead_code)]
+    // pub(crate) fn downgrade(array: &UnsafeArrayInner) -> UnsafeArrayInnerWeak {
+    //     UnsafeArrayInnerWeak {
+    //         data: Darc::downgrade(&array.data),
+    //         distribution: array.distribution.clone(),
+    //         orig_elem_per_pe: array.orig_elem_per_pe,
+    //         orig_remaining_elems: array.orig_remaining_elems,
+    //         elem_size: array.elem_size,
+    //         offset: array.offset,
+    //         size: array.size,
+    //         sub: array.sub,
+    //     }
+    // }
+
+    pub(crate) fn full_pe_and_offset_for_global_index(
+        &self,
+        index: usize,
+    ) -> Option<(usize, usize)> {
+        if self.size > index {
+            let global_index = index;
+            match self.distribution {
+                Distribution::Block => {
+                    let rem_index = self.orig_remaining_elems * (self.orig_elem_per_pe + 1);
+
+                    let (pe, offset) = if global_index < rem_index {
+                        //index is on a pe with extra elems
+                        let pe = global_index / (self.orig_elem_per_pe + 1); // accounts for the reamining elems
+                        let offset = global_index - (pe * (self.orig_elem_per_pe + 1));
+                        (pe, offset)
+                    } else {
+                        //index is on a pe without extra elems
+                        let temp_index = global_index - rem_index; //get the remainin index after accounter for PEs with extra elements
+                        let temp_pe = temp_index / self.orig_elem_per_pe; //the pe after accounting for PEs with extra elements
+                        let pe = self.orig_remaining_elems  // N pes that have extra elements
+                            + temp_pe;
+                        let offset = temp_index - (temp_pe * self.orig_elem_per_pe);
+                        (pe, offset)
+                    };
+                    Some((pe, offset))
+                }
+                Distribution::Cyclic => {
+                    let res = Some((
+                        global_index % self.data.num_pes,
+                        global_index / self.data.num_pes,
+                    ));
+                    res
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    //index is relative to (sub)array (i.e. index=0 doesnt necessarily live on pe=0)
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn pe_for_dist_index(&self, index: usize) -> Option<usize> {
+        if self.size > index {
+            let global_index = index + self.offset;
+
+            match self.distribution {
+                Distribution::Block => {
+                    let rem_index = self.orig_remaining_elems * (self.orig_elem_per_pe + 1);
+                    let pe = if global_index < rem_index {
+                        global_index / (self.orig_elem_per_pe + 1) // accounts for the reamining elems
+                    } else {
+                        self.orig_remaining_elems  // N pes that have extra elements
+                            + ((global_index - rem_index) //get the remainin index after accounter for PEs with extra elements
+                            / self.orig_elem_per_pe)
+                    };
+                    Some(pe)
+                }
+                Distribution::Cyclic => Some(global_index % self.data.num_pes),
+            }
+        } else {
+            None
+        }
+    }
+
+    //index relative to subarray, return offset relative to subarray
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn pe_full_offset_for_dist_index(&self, pe: usize, index: usize) -> Option<usize> {
+        let global_index = self.offset + index;
+        match self.distribution {
+            Distribution::Block => {
+                let rem_index = self.orig_remaining_elems * (self.orig_elem_per_pe + 1);
+                let offset = if global_index < rem_index {
+                    //index is on a pe with extra elems
+                    global_index - (pe * (self.orig_elem_per_pe + 1))
+                } else {
+                    //index is on a pe without extra elems
+                    let temp_index = global_index - rem_index; //get the remainin index after accounter for PEs with extra elements
+                    let temp_pe = temp_index / self.orig_elem_per_pe; //the pe after accounting for PEs with extra elements
+
+                    temp_index - (temp_pe * self.orig_elem_per_pe)
+                };
+                Some(offset)
+            }
+            Distribution::Cyclic => {
+                let num_pes = self.data.num_pes;
+                if global_index % num_pes == pe {
+                    Some(global_index / num_pes)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    //index relative to subarray, return offset relative to subarray
+    pub(crate) fn pe_sub_offset_for_dist_index(&self, pe: usize, index: usize) -> Option<usize> {
+        let start_pe = self.pe_for_dist_index(0)?;
+
+        match self.distribution {
+            Distribution::Block => {
+                if start_pe == pe {
+                    if index < self.size {
+                        Some(index)
+                    } else {
+                        None
+                    }
+                } else {
+                    self.pe_full_offset_for_dist_index(pe, index)
+                }
+            }
+            Distribution::Cyclic => {
+                let num_pes = self.data.num_pes;
+                if (index + self.offset) % num_pes == pe {
+                    Some(index / num_pes)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    //index is local with respect to subarray
+    //returns local offset relative to full array
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn pe_full_offset_for_local_index(&self, pe: usize, index: usize) -> Option<usize> {
+        let global_index = self.global_index_from_local(index)?;
+        match self.distribution {
+            Distribution::Block => {
+                let pe_start_index = self.global_start_index_for_pe(pe);
+                let mut pe_end_index = pe_start_index + self.orig_elem_per_pe;
+                if pe < self.orig_remaining_elems {
+                    pe_end_index += 1;
+                }
+                if pe_start_index <= global_index && global_index < pe_end_index {
+                    Some(global_index - pe_start_index)
+                } else {
+                    None
+                }
+            }
+            Distribution::Cyclic => {
+                let num_pes = self.data.num_pes;
+                if global_index % num_pes == pe {
+                    Some(global_index / num_pes)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    //index is local with respect to subarray
+    //returns index with respect to original full length array
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn global_index_from_local(&self, index: usize) -> Option<usize> {
+        let my_pe = self.data.my_pe;
+        match self.distribution {
+            Distribution::Block => {
+                let global_start = self.global_start_index_for_pe(my_pe);
+                let start = global_start as isize - self.offset as isize;
+                if start >= 0 {
+                    //the (sub)array starts before my pe
+                    if (start as usize) < self.size {
+                        //sub(array) exists on my node
+                        Some(global_start as usize + index)
+                    } else {
+                        //sub array does not exist on my node
+                        None
+                    }
+                } else {
+                    //inner starts on or after my pe
+                    let mut global_end = global_start + self.orig_elem_per_pe;
+                    if my_pe < self.orig_remaining_elems {
+                        global_end += 1;
+                    }
+                    if self.offset < global_end {
+                        //the (sub)array starts on my pe
+                        Some(self.offset + index)
+                    } else {
+                        //the (sub)array starts after my pe
+                        None
+                    }
+                }
+            }
+            Distribution::Cyclic => {
+                let num_pes = self.data.num_pes;
+                let start_pe = match self.pe_for_dist_index(0) {
+                    Some(i) => i,
+                    None => panic!("index 0 out of bounds for array of length {:?}", self.size),
+                };
+                let end_pe = match self.pe_for_dist_index(self.size - 1) {
+                    Some(i) => i,
+                    None => panic!(
+                        "index {:?} out of bounds for array of length {:?}",
+                        self.size - 1,
+                        self.size
+                    ),
+                };
+
+                let mut num_elems = self.size / num_pes;
+
+                if self.size % num_pes != 0 {
+                    //we have leftover elements
+                    if start_pe <= end_pe {
+                        //no wrap around occurs
+                        if start_pe <= my_pe && my_pe <= end_pe {
+                            num_elems += 1;
+                        }
+                    } else {
+                        //wrap around occurs
+                        if start_pe <= my_pe || my_pe <= end_pe {
+                            num_elems += 1;
+                        }
+                    }
+                }
+
+                if index < num_elems {
+                    if start_pe <= my_pe {
+                        Some(num_pes * index + self.offset + (my_pe - start_pe))
+                    } else {
+                        Some(num_pes * index + self.offset + (num_pes - start_pe) + my_pe)
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    //index is local with respect to subarray
+    //returns index with respect to subarrayy
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn subarray_index_from_local(&self, index: usize) -> Option<usize> {
+        let my_pe = self.data.my_pe;
+        let my_start_index = self.start_index_for_pe(my_pe)?; //None means subarray doesnt exist on this PE
+        match self.distribution {
+            Distribution::Block => {
+                if my_start_index + index < self.size {
+                    //local index is in subarray
+                    Some(my_start_index + index)
+                } else {
+                    //local index outside subarray
+                    None
+                }
+            }
+            Distribution::Cyclic => {
+                let num_pes = self.data.num_pes;
+                let num_elems_local = self.num_elems_local();
+                if index < num_elems_local {
+                    //local index is in subarray
+                    Some(my_start_index + num_pes * index)
+                } else {
+                    //local index outside subarray
+                    None
+                }
+            }
+        }
+    }
+
+    // return index relative to the full array
+    pub(crate) fn global_start_index_for_pe(&self, pe: usize) -> usize {
+        match self.distribution {
+            Distribution::Block => {
+                let global_start = self.orig_elem_per_pe * pe;
+                global_start + std::cmp::min(pe, self.orig_remaining_elems)
+            }
+            Distribution::Cyclic => pe,
+        }
+    }
+    //return index relative to the subarray
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn start_index_for_pe(&self, pe: usize) -> Option<usize> {
+        match self.distribution {
+            Distribution::Block => {
+                let global_start = self.global_start_index_for_pe(pe);
+                let start = global_start as isize - self.offset as isize;
+                if start >= 0 {
+                    //the (sub)array starts before my pe
+                    if (start as usize) < self.size {
+                        //sub(array) exists on my node
+                        Some(start as usize)
+                    } else {
+                        //sub array does not exist on my node
+                        None
+                    }
+                } else {
+                    let mut global_end = global_start + self.orig_elem_per_pe;
+                    if pe < self.orig_remaining_elems {
+                        global_end += 1;
+                    }
+                    if self.offset < global_end {
+                        //the (sub)array starts on my pe
+                        Some(0)
+                    } else {
+                        //the (sub)array starts after my pe
+                        None
+                    }
+                }
+            }
+            Distribution::Cyclic => {
+                let num_pes = self.data.num_pes;
+                if let Some(start_pe) = self.pe_for_dist_index(0) {
+                    let temp_len = if self.size < num_pes {
+                        //sub array might not exist on my array
+                        self.size
+                    } else {
+                        num_pes
+                    };
+                    for i in 0..temp_len {
+                        if (i + start_pe) % num_pes == pe {
+                            return Some(i);
+                        }
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn global_end_index_for_pe(&self, pe: usize) -> usize {
+        self.global_start_index_for_pe(pe) + self.num_elems_pe(pe)
+    }
+
+    //return index relative to the subarray
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn end_index_for_pe(&self, pe: usize) -> Option<usize> {
+        let start_i = self.start_index_for_pe(pe)?;
+        match self.distribution {
+            Distribution::Block => {
+                //(sub)array ends on our pe
+                if pe == self.pe_for_dist_index(self.size - 1)? {
+                    Some(self.size - 1)
+                } else {
+                    // (sub)array ends on another pe
+                    Some(self.start_index_for_pe(pe + 1)? - 1)
+                }
+            }
+            Distribution::Cyclic => {
+                let num_elems = self.num_elems_pe(pe);
+                let num_pes = self.data.num_pes;
+                let end_i = start_i + (num_elems - 1) * num_pes;
+                Some(end_i)
+            }
+        }
+    }
+
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn num_elems_pe(&self, pe: usize) -> usize {
+        match self.distribution {
+            Distribution::Block => {
+                if let Some(start_i) = self.start_index_for_pe(pe) {
+                    //inner starts before or on pe
+                    let end_i = if let Some(end_i) = self.start_index_for_pe(pe + 1) {
+                        //inner ends after pe
+                        end_i
+                    } else {
+                        //inner ends on pe
+                        self.size
+                    };
+                    // println!("num_elems_pe pe {:?} si {:?} ei {:?}",pe,start_i,end_i);
+                    end_i - start_i
+                } else {
+                    0
+                }
+            }
+            Distribution::Cyclic => {
+                let num_pes = self.data.num_pes;
+                if let Some(start_pe) = self.pe_for_dist_index(0) {
+                    let end_pe = match self.pe_for_dist_index(self.size - 1) {
+                        Some(i) => i,
+                        None => panic!(
+                            "index {:?} out of bounds for array of length {:?}",
+                            self.size - 1,
+                            self.size
+                        ),
+                    }; //inclusive
+                    let mut num_elems = self.size / num_pes;
+                    if self.size % num_pes != 0 {
+                        //we have left over elements
+                        if start_pe <= end_pe {
+                            //no wrap around occurs
+                            if pe >= start_pe && pe <= end_pe {
+                                num_elems += 1
+                            }
+                        } else {
+                            //wrap arround occurs
+                            if pe >= start_pe || pe <= end_pe {
+                                num_elems += 1
+                            }
+                        }
+                    }
+                    num_elems
+                } else {
+                    0
+                }
+            }
+        }
+    }
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn num_elems_local(&self) -> usize {
+        self.num_elems_pe(self.data.my_pe)
+    }
+
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) unsafe fn local_as_mut_slice(&self) -> &mut [u8] {
+        let slice =
+            self.data.mem_region.as_casted_mut_slice::<u8>().expect(
+                "memory doesnt exist on this pe (this should not happen for arrays currently)",
+            );
+        // let len = self.size;
+        let my_pe = self.data.my_pe;
+        let num_pes = self.data.num_pes;
+        let num_elems_local = self.num_elems_local();
+        match self.distribution {
+            Distribution::Block => {
+                let start_pe = self
+                    .pe_for_dist_index(0)
+                    .expect("array len should be greater than 0"); //index is relative to inner
+                                                                   // let end_pe = self.pe_for_dist_index(len-1).unwrap();
+                                                                   // println!("spe {:?} epe {:?}",start_pe,end_pe);
+                let start_index = if my_pe == start_pe {
+                    //inner starts on my pe
+                    let global_start = self.global_start_index_for_pe(my_pe);
+                    self.offset - global_start
+                } else {
+                    0
+                };
+                let end_index = start_index + num_elems_local;
+                &mut slice[start_index * self.elem_size..end_index * self.elem_size]
+            }
+            Distribution::Cyclic => {
+                let global_index = self.offset;
+                let start_index = global_index / num_pes
+                    + if my_pe >= global_index % num_pes {
+                        0
+                    } else {
+                        1
+                    };
+                let end_index = start_index + num_elems_local;
+                &mut slice[start_index * self.elem_size..end_index * self.elem_size]
+            }
+        }
+    }
+
+    // //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) unsafe fn local_as_mut_ptr(&self) -> *mut u8 {
+        let ptr =
+            self.data.mem_region.as_casted_mut_ptr::<u8>().expect(
+                "memory doesnt exist on this pe (this should not happen for arrays currently)",
+            );
+        let my_pe = self.data.my_pe;
+        let num_pes = self.data.num_pes;
+        match self.distribution {
+            Distribution::Block => {
+                let start_pe = self
+                    .pe_for_dist_index(0)
+                    .expect("array len should be greater than 0"); //index is relative to inner
+                                                                   // let end_pe = self.pe_for_dist_index(len-1).unwrap();
+                                                                   // println!("spe {:?} epe {:?}",start_pe,end_pe);
+                let start_index = if my_pe == start_pe {
+                    //inner starts on my pe
+                    let global_start = self.global_start_index_for_pe(my_pe);
+                    self.offset - global_start
+                } else {
+                    0
+                };
+                ptr.offset((start_index * self.elem_size) as isize)
+            }
+            Distribution::Cyclic => {
+                let global_index = self.offset;
+                let start_index = global_index / num_pes
+                    + if my_pe >= global_index % num_pes {
+                        0
+                    } else {
+                        1
+                    };
+                ptr.offset((start_index * self.elem_size) as isize)
+            }
+        }
+    }
+
+    pub(crate) fn barrier_handle(&self) -> BarrierHandle {
+        self.data.team.barrier.barrier_handle()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn pe_for_dist_index() {
+        for num_pes in 2..200 {
+            println!("num_pes {:?}", num_pes);
+            for len in num_pes..2000 {
+                let mut elems_per_pe = vec![0; num_pes];
+                let mut pe_for_elem = vec![0; len];
+                let epp = len as f32 / num_pes as f32;
+                let mut cur_elem = 0;
+                for pe in 0..num_pes {
+                    elems_per_pe[pe] =
+                        (((pe + 1) as f32 * epp).round() - (pe as f32 * epp).round()) as usize;
+                    for _i in 0..elems_per_pe[pe] {
+                        pe_for_elem[cur_elem] = pe;
+                        cur_elem += 1;
+                    }
+                }
+                for elem in 0..len {
+                    //the actual calculation
+                    let mut calc_pe = (((elem) as f32 / epp).floor()) as usize;
+                    let end_i = (epp * (calc_pe + 1) as f32).round() as usize;
+                    if elem >= end_i {
+                        calc_pe += 1;
+                    }
+                    //--------------------
+                    if calc_pe != pe_for_elem[elem] {
+                        println!(
+                            "npe: {:?} len {:?} e: {:?} eep: {:?} cpe: {:?}  ei {:?}",
+                            num_pes,
+                            len,
+                            elem,
+                            epp,
+                            ((elem) as f32 / epp),
+                            end_i
+                        );
+                        println!("{:?}", elems_per_pe);
+                        println!("{:?}", pe_for_elem);
+                    }
+                    assert_eq!(calc_pe, pe_for_elem[elem]);
+                }
+            }
+        }
+    }
+}

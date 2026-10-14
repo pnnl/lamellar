@@ -1,0 +1,541 @@
+pub(crate) mod comm;
+pub(crate) mod command_queues;
+pub(crate) mod command_queues_batched;
+pub(crate) mod command_queues_get_eager;
+pub(crate) mod command_queues_get_slots;
+pub(crate) mod command_queues_put;
+pub(crate) mod command_queues_put_eager;
+pub(crate) mod command_queues_put_slots;
+pub(crate) mod local_lamellae;
+pub(crate) mod shmem_lamellae;
+#[cfg(feature = "enable-shmem-opt")]
+pub(crate) mod shmem_opt_lamellae;
+
+#[cfg(feature = "enable-on-node-shmem")]
+pub(crate) mod shmem_utils;
+
+#[cfg(feature = "enable-libfabric-sys")]
+use crate::lamellae::libfabric_sys_lamellae::LibfabricSys;
+#[cfg(feature = "enable-libfabric-sys-opt")]
+use crate::lamellae::libfabric_sys_opt_lamellae::LibfabricSysOpt;
+use crate::{active_messaging::Msg, config, lamellar_arch::LamellarArchRT, scheduler::Scheduler};
+pub(crate) use comm::*;
+
+pub use comm::atomic::{AtomicCompareExchangeOpHandle, AtomicFetchOpHandle, AtomicOpHandle};
+pub use comm::rdma::RdmaHandle;
+use local_lamellae::{Local, LocalBuilder};
+use shmem_lamellae::{Shmem, ShmemBuilder};
+#[cfg(feature = "enable-shmem-opt")]
+use shmem_opt_lamellae::{ShmemOpt, ShmemOptBuilder};
+
+#[cfg(feature = "enable-rofi-c")]
+pub(crate) mod rofi_c_lamellae;
+#[cfg(feature = "enable-rofi-c")]
+use rofi_c_lamellae::{RofiC, RofiCBuilder};
+
+#[cfg(feature = "enable-libfabric")]
+pub(crate) mod libfabric_lamellae;
+
+#[cfg(feature = "enable-libfabric-async")]
+pub(crate) mod libfabric_async_lamellae;
+#[cfg(feature = "enable-libfabric-sys")]
+pub(crate) mod libfabric_sys_lamellae;
+#[cfg(feature = "enable-libfabric-sys-opt")]
+pub(crate) mod libfabric_sys_opt_lamellae;
+#[cfg(feature = "enable-ucx")]
+pub(crate) mod ucx_lamellae;
+#[cfg(feature = "enable-ucx-opt")]
+pub(crate) mod ucx_opt_lamellae;
+
+#[cfg(feature = "enable-libfabric-sys")]
+use crate::lamellae::libfabric_sys_lamellae::LibfabricSysBuilder;
+#[cfg(feature = "enable-libfabric-sys-opt")]
+use crate::lamellae::libfabric_sys_opt_lamellae::LibfabricSysOptBuilder;
+#[cfg(feature = "enable-libfabric-async")]
+use libfabric_async_lamellae::{LibfabricAsync, LibfabricAsyncBuilder};
+#[cfg(feature = "enable-libfabric")]
+use libfabric_lamellae::{Libfabric, LibfabricBuilder};
+#[cfg(feature = "enable-ucx")]
+use ucx_lamellae::{Ucx, UcxBuilder};
+#[cfg(feature = "enable-ucx-opt")]
+use ucx_opt_lamellae::{UcxOpt, UcxOptBuilder};
+
+use async_trait::async_trait;
+use enum_dispatch::enum_dispatch;
+use std::sync::Arc;
+use zerocopy::TryFromBytes;
+
+pub(crate) const SERIALIZE_HEADER_LEN: usize = std::mem::size_of::<SerializeHeader>();
+
+/// The list of available lamellae backends, used to specify how data is transferred between PEs
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy,
+)]
+pub enum Backend {
+    #[cfg(feature = "enable-rofi-c")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-rofi-c")))]
+    /// The RofiC backend for communication
+    RofiC,
+    #[cfg(feature = "enable-libfabric-sys")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-libfabric-sys")))]
+    /// The LibfabricSys backend for communication
+    LibfabricSys,
+    #[cfg(feature = "enable-libfabric-sys-opt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-libfabric-sys-opt")))]
+    /// The optimized, verbs-only LibfabricSysOpt backend for communication
+    LibfabricSysOpt,
+    #[cfg(feature = "enable-libfabric")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-libfabric")))]
+    /// The Libfabric backend for communication
+    Libfabric,
+    #[cfg(feature = "enable-libfabric-async")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-libfabric-async")))]
+    /// The async Libfabric backend for communication
+    LibfabricAsync,
+    #[cfg(feature = "enable-ucx")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-ucx")))]
+    /// The UCX backend for communication
+    Ucx,
+    #[cfg(feature = "enable-ucx-opt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-ucx-opt")))]
+    /// The optimized UCX backend for communication
+    UcxOpt,
+    /// The Local backend -- intended for single process environments
+    Local,
+    /// The Shmem backend -- intended for multi process environments single node environments
+    Shmem,
+    #[cfg(feature = "enable-shmem-opt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "enable-shmem-opt")))]
+    /// The optimized Shmem backend -- single node, multi process, universal-address shared heap
+    ShmemOpt,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum AllocationType {
+    Local,
+    Global,
+    Sub(Vec<usize>),
+}
+
+impl Default for Backend {
+    fn default() -> Self {
+        // println!("default backend: {}", config().backend);
+        match config().backend.as_str() {
+            "rofi_c" => {
+                #[cfg(feature = "enable-rofi-c")]
+                return Backend::RofiC;
+                #[cfg(not(feature = "enable-rofi-c"))]
+                panic!("unable to set rofi C backend, recompile with 'enable-rofi-c' feature")
+            }
+            "libfabric-sys" => {
+                #[cfg(feature = "enable-libfabric-sys")]
+                return Backend::LibfabricSys;
+                #[cfg(not(feature = "enable-libfabric-sys"))]
+                panic!("unable to set libfabric-sys backend, recompile with 'enable-libfabric-sys' feature")
+            }
+            "libfabric-sys-opt" => {
+                #[cfg(feature = "enable-libfabric-sys-opt")]
+                return Backend::LibfabricSysOpt;
+                #[cfg(not(feature = "enable-libfabric-sys-opt"))]
+                panic!("unable to set libfabric-sys-opt backend, recompile with 'enable-libfabric-sys-opt' feature")
+            }
+            "libfabric" => {
+                #[cfg(feature = "enable-libfabric")]
+                return Backend::Libfabric;
+                #[cfg(not(feature = "enable-libfabric"))]
+                panic!("unable to set libfabric backend, recompile with 'enable-libfabric' feature")
+            }
+
+            "libfabric-async" => {
+                #[cfg(feature = "enable-libfabric-async")]
+                return Backend::LibfabricAsync;
+                #[cfg(not(feature = "enable-libfabric-async"))]
+                panic!("unable to set libfabric-async backend, recompile with 'enable-libfabric-async' feature")
+            }
+            "ucx" => {
+                #[cfg(feature = "enable-ucx")]
+                return Backend::Ucx;
+                #[cfg(not(feature = "enable-ucx"))]
+                panic!("unable to set ucx backend, recompile with 'enable-ucx' feature")
+            }
+            "ucx-opt" => {
+                #[cfg(feature = "enable-ucx-opt")]
+                return Backend::UcxOpt;
+                #[cfg(not(feature = "enable-ucx-opt"))]
+                panic!("unable to set ucx-opt backend, recompile with 'enable-ucx-opt' feature")
+            }
+            "shmem" => {
+                return Backend::Shmem;
+            }
+            "shmem-opt" => {
+                #[cfg(feature = "enable-shmem-opt")]
+                return Backend::ShmemOpt;
+                #[cfg(not(feature = "enable-shmem-opt"))]
+                panic!("unable to set shmem-opt backend, recompile with 'enable-shmem-opt' feature")
+            }
+            "local" => {
+                return Backend::Local;
+            }
+            _ => {
+                panic!("unknown backend: {}", config().backend);
+            }
+        }
+    }
+}
+
+// Fixed-size wire header: zerocopy raw-byte layout, not (de)serialized via
+// crate::serialize/deserialize -- its length must be a true compile-time
+// constant, independent of field values (see SERIALIZE_HEADER_LEN above).
+#[repr(C)]
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    zerocopy_derive::IntoBytes,
+    zerocopy_derive::TryFromBytes,
+    zerocopy_derive::KnownLayout,
+    zerocopy_derive::Immutable,
+)]
+pub(crate) struct SerializeHeader {
+    pub(crate) msg: Msg,
+}
+
+// #[derive(Debug)]
+#[derive(Clone)]
+pub(crate) struct SerializedData {
+    pub(crate) alloc: CommAlloc,
+    pub(crate) ser_data_bytes: CommSlice<u8>,
+    pub(crate) header_bytes: CommSlice<u8>,
+    pub(crate) payload_bytes: CommSlice<u8>,
+}
+
+// we have allocated this memory out of fabric memory and thus are responsible for managing it,
+// we will not move the underlying data, reallocate it, nor free it until all references are dropped
+unsafe impl Send for SerializedData {}
+unsafe impl Sync for SerializedData {}
+
+#[lamellar_prof::prof]
+impl SerializedData {
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn new(comm: Arc<Comm>, size: usize) -> Result<Self, anyhow::Error> {
+        let alloc_size = size; //+ ser_data_size_size;
+        // header and payload are always fully written before the buffer is sent
+        let alloc = comm.rt_alloc_uninit(alloc_size, std::mem::align_of::<usize>())?;
+
+        let ser_data_bytes = alloc.comm_slice_at_byte_offset(0, size);
+        let header_bytes = ser_data_bytes.sub_slice(0..SERIALIZE_HEADER_LEN);
+        let payload_bytes = ser_data_bytes.sub_slice(SERIALIZE_HEADER_LEN..size);
+
+        // println!(
+        //     "[{:?}, {:?}] creating new serialized data {:?} {:?} {:?} {:?}",
+        //     std::time::Instant::now(),
+        //     std::thread::current().id(),
+        //     alloc,
+        //     ser_data_bytes,
+        //     header_bytes,
+        //     payload_bytes
+        // );
+
+        Ok(SerializedData {
+            alloc,
+            ser_data_bytes,
+            header_bytes,
+            payload_bytes,
+        })
+    }
+}
+
+#[lamellar_prof::prof]
+impl SerializedData {
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn header_as_bytes(&self) -> CommSlice<u8> {
+        self.header_bytes.clone()
+    }
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn header_as_bytes_mut(&mut self) -> CommSlice<u8> {
+        self.header_bytes.clone()
+    }
+
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn data_as_bytes(&self) -> CommSlice<u8> {
+        self.payload_bytes.clone()
+    }
+
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn data_as_bytes_mut(&mut self) -> CommSlice<u8> {
+        self.payload_bytes.clone()
+    }
+
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn data_len(&self) -> usize {
+        self.payload_bytes.len()
+    }
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn header_and_data_as_bytes_mut(&mut self) -> CommSlice<u8> {
+        self.ser_data_bytes.clone()
+    }
+
+    //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn len(&self) -> usize {
+        self.ser_data_bytes.len()
+    }
+
+    pub(crate) fn leak_alloc(self) -> CommAlloc {
+        // println!("Leaking allocation");
+        self.alloc
+    }
+}
+
+impl std::fmt::Debug for SerializedData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SeralizedData addr: {:x} relative addr {:?} len {:?} data {:?} data_len {:?} alloc_size {:?}",
+
+            self.alloc.comm_addr(),
+            self.ser_data_bytes.as_ptr(),
+            self.ser_data_bytes.len(),
+            self.payload_bytes.as_ptr(),
+            self.payload_bytes.len(),
+            self.alloc.num_bytes())
+    }
+}
+
+#[lamellar_prof::prof]
+impl Des for SerializedData {
+    //#[tracing::instrument(skip_all, level = "debug")]
+    fn deserialize_header(&self) -> SerializeHeader {
+        SerializeHeader::try_read_from_bytes(&self.header_as_bytes())
+            .expect("SERIALIZE_HEADER_LEN-sized slice must parse as SerializeHeader")
+    }
+}
+
+#[lamellar_prof::prof]
+impl SerializedData {
+    pub(crate) fn drop_payload_bytes(&mut self, num_bytes: usize) -> SerializedData {
+        SerializedData {
+            alloc: self.alloc.clone(),
+            ser_data_bytes: self.ser_data_bytes.clone(),
+            header_bytes: self.header_bytes.clone(),
+            payload_bytes: self
+                .payload_bytes
+                .sub_slice(0..self.payload_bytes.len() - num_bytes),
+        }
+    }
+}
+
+#[enum_dispatch]
+pub(crate) trait Des {
+    fn deserialize_header(&self) -> SerializeHeader;
+}
+
+#[enum_dispatch(LamellaeInit)]
+pub(crate) enum LamellaeBuilder {
+    #[cfg(feature = "enable-rofi-c")]
+    RofiCBuilder,
+    #[cfg(feature = "enable-libfabric-sys")]
+    LibfabricSysBuilder,
+    #[cfg(feature = "enable-libfabric-sys-opt")]
+    LibfabricSysOptBuilder,
+    #[cfg(feature = "enable-libfabric")]
+    LibfabricBuilder,
+    #[cfg(feature = "enable-libfabric-async")]
+    LibfabricAsyncBuilder,
+    #[cfg(feature = "enable-ucx")]
+    UcxBuilder,
+    #[cfg(feature = "enable-ucx-opt")]
+    UcxOptBuilder,
+    ShmemBuilder,
+    #[cfg(feature = "enable-shmem-opt")]
+    ShmemOptBuilder,
+    LocalBuilder,
+}
+
+#[async_trait]
+#[enum_dispatch]
+pub(crate) trait LamellaeInit {
+    fn init_fabric(&mut self) -> (usize, usize); //(my_pe,num_pes)
+    fn init_lamellae(&mut self, scheduler: Arc<Scheduler>) -> Arc<Lamellae>;
+}
+
+#[enum_dispatch]
+pub(crate) trait LamellaeShutdown {
+    fn shutdown(&self);
+    fn force_shutdown(&self);
+    fn force_deinit(&self);
+}
+
+// #[async_trait]
+#[enum_dispatch]
+pub(crate) trait Ser {
+    fn serialize_header(
+        &self,
+        header: SerializeHeader,
+        serialized_size: usize,
+    ) -> Result<SerializedData, anyhow::Error>;
+}
+
+#[enum_dispatch(Ser, LamellaeUtil, LamellaeShutdown)]
+#[derive(Debug)]
+pub(crate) enum Lamellae {
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC,
+    #[cfg(feature = "enable-libfabric-sys")]
+    LibfabricSys,
+    #[cfg(feature = "enable-libfabric-sys-opt")]
+    LibfabricSysOpt,
+    #[cfg(feature = "enable-libfabric")]
+    Libfabric,
+    #[cfg(feature = "enable-libfabric-async")]
+    LibfabricAsync,
+    #[cfg(feature = "enable-ucx")]
+    Ucx,
+    #[cfg(feature = "enable-ucx-opt")]
+    UcxOpt,
+    // #[cfg(feature = "enable-libfabric")]
+    // LibfabricAsync,
+    Shmem,
+    #[cfg(feature = "enable-shmem-opt")]
+    ShmemOpt,
+    Local,
+}
+
+#[lamellar_prof::prof]
+impl Lamellae {
+    pub(crate) fn comm(&self) -> &Comm {
+        match self {
+            #[cfg(feature = "enable-rofi-c")]
+            Lamellae::RofiC(rofi_c) => rofi_c.comm(),
+            #[cfg(feature = "enable-libfabric-sys")]
+            Lamellae::LibfabricSys(libfabric_sys) => libfabric_sys.comm(),
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            Lamellae::LibfabricSysOpt(libfabric_sys_opt) => libfabric_sys_opt.comm(),
+            #[cfg(feature = "enable-libfabric")]
+            Lamellae::Libfabric(libfabric) => libfabric.comm(),
+            #[cfg(feature = "enable-libfabric-async")]
+            Lamellae::LibfabricAsync(libfabric_async) => libfabric_async.comm(),
+            #[cfg(feature = "enable-ucx")]
+            Lamellae::Ucx(ucx) => ucx.comm(),
+            #[cfg(feature = "enable-ucx-opt")]
+            Lamellae::UcxOpt(ucx_opt) => ucx_opt.comm(),
+            Lamellae::Shmem(shmem) => shmem.comm(),
+            #[cfg(feature = "enable-shmem-opt")]
+            Lamellae::ShmemOpt(shmem_opt) => shmem_opt.comm(),
+            Lamellae::Local(local) => local.comm(),
+        }
+    }
+
+    pub(crate) fn wait_all_print(&self) {
+        match self {
+            #[cfg(feature = "enable-rofi-c")]
+            Lamellae::RofiC(rofi_c) => rofi_c.wait_all_print(),
+            #[cfg(feature = "enable-libfabric-sys")]
+            Lamellae::LibfabricSys(libfabric_sys) => libfabric_sys.wait_all_print(),
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            Lamellae::LibfabricSysOpt(libfabric_sys_opt) => libfabric_sys_opt.wait_all_print(),
+            #[cfg(feature = "enable-libfabric")]
+            Lamellae::Libfabric(libfabric) => libfabric.wait_all_print(),
+            #[cfg(feature = "enable-libfabric-async")]
+            Lamellae::LibfabricAsync(libfabric_async) => libfabric_async.wait_all_print(),
+            #[cfg(feature = "enable-ucx")]
+            Lamellae::Ucx(ucx) => ucx.wait_all_print(),
+            #[cfg(feature = "enable-ucx-opt")]
+            Lamellae::UcxOpt(ucx_opt) => ucx_opt.wait_all_print(),
+            // #[cfg(feature = "enable-libfabric")]
+            // Lamellae::LibfabricAsync => println!("libfabric async - nothing to print"),
+            Lamellae::Shmem(shmem) => shmem.wait_all_print(),
+            #[cfg(feature = "enable-shmem-opt")]
+            Lamellae::ShmemOpt(shmem_opt) => shmem_opt.wait_all_print(),
+            Lamellae::Local(local) => local.wait_all_print(),
+        }
+    }
+}
+
+impl Lamellae {
+    /// Appends one wire record to this PE's stream to `dst` (see shmem-opt mailbox.rs);
+    /// `fill` encodes it in place. Hands `fill` back if the backend has no stream or no
+    /// room for it right now.
+    #[inline(always)]
+    pub(crate) fn stream_write<F: FnOnce(&mut [u8])>(&self, dst: usize, len: usize, fill: F) -> Result<(), F> {
+        match self {
+            #[cfg(feature = "enable-shmem-opt")]
+            Lamellae::ShmemOpt(shmem_opt) => shmem_opt.stream_write(dst, len, fill),
+            #[allow(unreachable_patterns)]
+            _ => {
+                let _ = (dst, len);
+                Err(fill)
+            }
+        }
+    }
+}
+
+#[async_trait]
+#[enum_dispatch]
+pub(crate) trait LamellaeUtil: Send {
+    async fn send_to_pes_async(
+        &self,
+        pe: Option<usize>,
+        team: Arc<LamellarArchRT>,
+        data: SerializedData,
+    );
+
+    async fn send_vec_to_pe_async(&self, pe: usize, data: Vec<u8>);
+
+    // #[allow(dead_code)]
+    // async fn send_vec_to_team_pes_async(
+    //     &self,
+    //     _team: Arc<LamellarArchRT>,
+    //     _data: Vec<u8>,
+    // ){
+    //     unimplemented!()
+    // }
+
+    async fn request_new_alloc(&self, min_size: usize);
+
+    fn available_to_send(&self, pe: usize) -> bool;
+}
+
+//#[tracing::instrument(skip_all, level = "debug")]
+pub(crate) fn create_lamellae(backend: Backend, _num_threads: usize) -> LamellaeBuilder {
+    match backend {
+        #[cfg(feature = "enable-rofi-c")]
+        Backend::RofiC => {
+            let provider = config().rofi_provider.clone();
+            let domain = config().rofi_domain.clone();
+            return LamellaeBuilder::RofiCBuilder(RofiCBuilder::new(&provider, &domain));
+        }
+        #[cfg(feature = "enable-libfabric-sys")]
+        Backend::LibfabricSys => {
+            let provider = config().rofi_provider.clone();
+            let domain = config().rofi_domain.clone();
+            LamellaeBuilder::LibfabricSysBuilder(LibfabricSysBuilder::new(&provider, &domain))
+        }
+        #[cfg(feature = "enable-libfabric-sys-opt")]
+        Backend::LibfabricSysOpt => {
+            let provider = config().rofi_provider.clone();
+            let domain = config().rofi_domain.clone();
+            LamellaeBuilder::LibfabricSysOptBuilder(LibfabricSysOptBuilder::new(&provider, &domain))
+        }
+        #[cfg(feature = "enable-libfabric")]
+        Backend::Libfabric => {
+            let provider = config().rofi_provider.clone();
+            let domain = config().rofi_domain.clone();
+            LamellaeBuilder::LibfabricBuilder(LibfabricBuilder::new(&provider, &domain))
+        }
+        #[cfg(feature = "enable-libfabric-async")]
+        Backend::LibfabricAsync => {
+            let provider = config().rofi_provider.clone();
+            let domain = config().rofi_domain.clone();
+            LamellaeBuilder::LibfabricAsyncBuilder(LibfabricAsyncBuilder::new(&provider, &domain))
+        }
+        #[cfg(feature = "enable-ucx")]
+        Backend::Ucx => LamellaeBuilder::UcxBuilder(UcxBuilder::new()),
+        #[cfg(feature = "enable-ucx-opt")]
+        Backend::UcxOpt => LamellaeBuilder::UcxOptBuilder(UcxOptBuilder::new()),
+        Backend::Shmem => LamellaeBuilder::ShmemBuilder(ShmemBuilder::new()),
+        #[cfg(feature = "enable-shmem-opt")]
+        Backend::ShmemOpt => LamellaeBuilder::ShmemOptBuilder(ShmemOptBuilder::new()),
+        Backend::Local => LamellaeBuilder::LocalBuilder(LocalBuilder::new()),
+    }
+}

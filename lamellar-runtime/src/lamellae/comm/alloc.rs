@@ -1,0 +1,4365 @@
+#[cfg(feature = "enable-shmem-opt")]
+use crate::lamellae::shmem_opt_lamellae::external::ShmemOptExternAlloc;
+#[cfg(feature = "enable-shmem-opt")]
+use crate::lamellae::shmem_opt_lamellae::fabric::{OneSidedShmemOptAlloc, ShmemOptAlloc};
+use crate::lamellae::collective::{
+    BroadcastInput, CollectiveAllGatherIntoBufferOpHandle, CollectiveAllGatherOpHandle,
+    CollectiveAllReduceInPlaceOpHandle, CollectiveAllReduceIntoBufferOpHandle,
+    CollectiveAllReduceOpHandle, CollectiveAllToAllIntoBufferOpHandle, CollectiveAllToAllOpHandle,
+    CollectiveBroadcastIntoBufferOpHandle, CollectiveBroadcastOpHandle,
+    CollectiveGatherIntoBufferOpHandle, CollectiveGatherOpHandle,
+    CollectiveReduceIntoBufferOpHandle, CollectiveReduceOpHandle,
+    CollectiveReduceScatterIntoBufferOpHandle, CollectiveReduceScatterOpHandle,
+    CollectiveScatterIntoBufferOpHandle, CollectiveScatterOpHandle, CommAllocCollectiveAllGather,
+    CommAllocCollectiveAllReduce, CommAllocCollectiveAllToAll, CommAllocCollectiveBroadcast,
+    CommAllocCollectiveGather, CommAllocCollectiveReduce, CommAllocCollectiveReduceScatter,
+    CommAllocCollectiveScatter, ReduceOp, RootOrLamellarBuffer, RootSrcOrLamellarBuffer,
+    ScatterInput,
+};
+#[cfg(feature = "enable-libfabric-async")]
+use crate::lamellae::libfabric_async_lamellae::fabric::{
+    LibfabricAsyncAlloc, OneSidedLibfabricAsyncAlloc,
+};
+#[cfg(feature = "enable-libfabric")]
+use crate::lamellae::libfabric_lamellae::fabric::{LibfabricAlloc, OneSidedLibfabricAlloc};
+#[cfg(feature = "enable-libfabric-sys")]
+use crate::lamellae::libfabric_sys_lamellae::fabric::{
+    LibfabricSysAlloc, OneSidedLibfabricSysAlloc,
+};
+#[cfg(feature = "enable-libfabric-sys-opt")]
+use crate::lamellae::libfabric_sys_opt_lamellae::fabric::{
+    LibfabricSysOptAlloc, OneSidedLibfabricSysOptAlloc,
+};
+#[cfg(feature = "enable-rofi-c")]
+use crate::lamellae::rofi_c_lamellae::fabric::{OneSidedRofiCAlloc, RofiCAlloc};
+#[cfg(feature = "enable-ucx")]
+use crate::lamellae::ucx_lamellae::fabric::{OneSidedUcxAlloc, UcxAlloc};
+#[cfg(feature = "enable-ucx-opt")]
+use crate::lamellae::ucx_opt_lamellae::fabric::{OneSidedUcxOptAlloc, UcxOptAlloc};
+
+use crate::{
+    active_messaging::AMCounters,
+    lamellae::{
+        local_lamellae::comm::LocalAlloc,
+        shmem_lamellae::fabric::{OneSidedShmemAlloc, ShmemAlloc},
+        AtomicOp, CommAllocAtomic, CommAllocRdma, CommSlice, RdmaGetBufferHandle, RdmaGetHandle,
+        RdmaGetIntoBufferHandle,
+    },
+    memregion::{AsLamellarBuffer, LamellarBuffer, MemregionRdmaInputInner},
+    scheduler::Scheduler,
+    AtomicCompareExchangeOpHandle, AtomicFetchOpHandle, AtomicOpHandle, Deserialize, RdmaHandle,
+    Remote, Serialize,
+};
+
+use derive_more::{Add, Into, Sub};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+use tracing::trace;
+
+// Masks and functions for encoding/decoding reference count and padding into a single usize
+// to be used when tracking allocations from the fabric and runtime sides.
+pub(crate) const PADDING_MASK: usize = 0xFF << (usize::BITS - 8);
+pub(crate) const COUNT_MASK: usize = !PADDING_MASK;
+
+pub(crate) fn encode_ref_count_and_padding(ref_count: usize, padding: usize) -> usize {
+    assert!(padding < 256, "Padding must fit within 8 bits");
+    (ref_count & COUNT_MASK) | ((padding << (usize::BITS - 8)) & PADDING_MASK)
+}
+
+#[cfg(any(
+    feature = "enable-libfabric",
+    feature = "enable-libfabric-async",
+    feature = "enable-libfabric-sys",
+    feature = "enable-libfabric-sys-opt"
+))]
+pub(crate) fn decode_ref_count_and_padding(encoded: usize) -> (usize, usize) {
+    let ref_count = encoded & COUNT_MASK;
+    let padding = (encoded & PADDING_MASK) >> (usize::BITS - 8);
+    (ref_count, padding)
+}
+
+pub(crate) fn decode_padding(encoded: usize) -> usize {
+    (encoded & PADDING_MASK) >> (usize::BITS - 8)
+}
+
+pub(crate) fn decode_ref_count(encoded: usize) -> usize {
+    encoded & COUNT_MASK
+}
+
+// WARNING: in theory this could overflow if ref count exceeds 56^2 -1 = 72057594037927935
+// which if we had that many references to a single allocation something has likely has gone very wrong
+pub(crate) fn increment_ref_count(counter: &AtomicUsize) -> usize {
+    decode_ref_count(counter.fetch_add(1, Ordering::SeqCst))
+}
+
+pub(crate) fn decrement_ref_count(counter: &AtomicUsize) -> usize {
+    decode_ref_count(counter.fetch_sub(1, Ordering::SeqCst))
+}
+
+// pub(crate) fn get_padding(counter: &AtomicUsize) -> usize {
+//     decode_padding(counter.load(Ordering::SeqCst))
+// }
+
+#[cfg(any(
+    feature = "enable-libfabric",
+    feature = "enable-libfabric-async",
+    feature = "enable-libfabric-sys",
+    feature = "enable-libfabric-sys-opt"
+))]
+pub(crate) fn get_ref_count(counter: &AtomicUsize) -> usize {
+    decode_ref_count(counter.load(Ordering::SeqCst))
+}
+// --------------------------------------------------------------------
+
+pub(crate) fn calc_alloc_padding_size_align(size: usize, align: usize) -> (usize, usize, usize) {
+    // add space for ref count
+    let ref_cnt_size = std::mem::size_of::<AtomicUsize>();
+    let ref_cnt_align = std::mem::align_of::<AtomicUsize>();
+    let align = std::cmp::max(align, ref_cnt_align);
+    // padding absorbs ALL alignment slack (not just the ref-cnt-alignment portion),
+    // so `total - padding - ref_cnt_size == size` always holds exactly. Every
+    // backend's rt_alloc derives its reported byte count that way, and primary
+    // alloc constructors report `size` (the original request) directly - both
+    // rely on this invariant surviving align_of::<T>() > ref_cnt_align (e.g. i128).
+    let unaligned_total = size + ref_cnt_size;
+    let total = (unaligned_total + align - 1) / align * align;
+    let padding = total - size - ref_cnt_size;
+    (padding, total, align)
+}
+//
+
+#[derive(Clone, Debug)]
+pub(crate) enum CommAllocInner {
+    /// A bare address and size with no allocation behind it: nothing owns, pins, registers or frees the memory.
+    ///
+    /// Only valid for memory that is *already* registered with the network and kept alive by something else
+    /// (for example a window into a runtime-owned heap or an active message buffer that is released through
+    /// the command queue). It is NOT for arbitrary caller memory such as a user's stack, heap or `.data`:
+    /// a [`CommSlice`] built on it is assumed to be registered (see `MemregionRdmaInputInner::Slice`), so the
+    /// backends send from it directly with no staging. Caller memory must go through
+    /// `MemregionRdmaInputInner::Unregistered` / `UnregisteredSlice` instead. It can only be the local side
+    /// of a transfer; using it as the remote target panics.
+    Raw(usize, usize), //address, size
+    LocalAlloc(Arc<LocalAlloc>),
+    ShmemAlloc(ShmemAlloc),
+    #[cfg(feature = "enable-shmem-opt")]
+    ShmemOptAlloc(ShmemOptAlloc),
+    /// Caller-owned memory (e.g. `.data`/`.bss`) made shared with the other PEs; RMA and atomics only.
+    #[cfg(feature = "enable-shmem-opt")]
+    ShmemOptExternAlloc(ShmemOptExternAlloc),
+    OneSidedShmemAlloc(OneSidedShmemAlloc),
+    #[cfg(feature = "enable-shmem-opt")]
+    OneSidedShmemOptAlloc(OneSidedShmemOptAlloc),
+    #[cfg(feature = "enable-libfabric-sys")]
+    LibfabricSysAlloc(LibfabricSysAlloc),
+    #[cfg(feature = "enable-libfabric-sys-opt")]
+    LibfabricSysOptAlloc(LibfabricSysOptAlloc),
+    #[cfg(feature = "enable-libfabric")]
+    LibfabricAlloc(LibfabricAlloc),
+    #[cfg(feature = "enable-libfabric-async")]
+    LibfabricAsyncAlloc(LibfabricAsyncAlloc),
+    #[cfg(feature = "enable-libfabric-sys")]
+    OneSidedLibfabricSysAlloc(OneSidedLibfabricSysAlloc),
+    #[cfg(feature = "enable-libfabric-sys-opt")]
+    OneSidedLibfabricSysOptAlloc(OneSidedLibfabricSysOptAlloc),
+    #[cfg(feature = "enable-libfabric")]
+    OneSidedLibfabricAlloc(OneSidedLibfabricAlloc),
+    #[cfg(feature = "enable-libfabric-async")]
+    OneSidedLibfabricAsyncAlloc(OneSidedLibfabricAsyncAlloc),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiCAlloc(RofiCAlloc),
+    #[cfg(feature = "enable-rofi-c")]
+    OneSidedRofiCAlloc(OneSidedRofiCAlloc),
+    #[cfg(feature = "enable-ucx")]
+    UcxAlloc(UcxAlloc),
+    #[cfg(feature = "enable-ucx-opt")]
+    UcxOptAlloc(UcxOptAlloc),
+    #[cfg(feature = "enable-ucx")]
+    OneSidedUcxAlloc(OneSidedUcxAlloc),
+    #[cfg(feature = "enable-ucx-opt")]
+    OneSidedUcxOptAlloc(OneSidedUcxOptAlloc),
+}
+
+impl CommAllocInner {
+    /// Address of world PE `pe`'s copy of local address `addr` of this allocation, for
+    /// backends where every alloc PE can load every other's memory directly.
+    pub(crate) fn peer_addr(&self, pe: usize, addr: usize) -> Option<usize> {
+        match self {
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => inner_alloc.peer_copy_addr(pe, addr),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => inner_alloc.peer_copy_addr(pe, addr),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn addr(&self) -> CommAllocAddr {
+        match self {
+            CommAllocInner::Raw(addr, _) => CommAllocAddr(*addr),
+            CommAllocInner::LocalAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            CommAllocInner::ShmemAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocAddr(inner_alloc.start())
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocAddr(inner_alloc.start())
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => CommAllocAddr(inner_alloc.start()),
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocAddr(inner_alloc.start())
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocAddr(inner_alloc.start())
+            }
+        }
+    }
+
+    pub(crate) fn leak(self) -> Option<CommAllocAddr> {
+        match self {
+            CommAllocInner::Raw(_, _) => None,
+            CommAllocInner::LocalAlloc(inner_alloc) => inner_alloc.leak(),
+            CommAllocInner::ShmemAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => inner_alloc.leak(),
+            CommAllocInner::OneSidedShmemAlloc(_inner_alloc) => {
+                panic!("OneSidedShmemAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(_inner_alloc) => {
+                panic!("OneSidedShmemOptAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(_inner_alloc) => {
+                panic!("OneSidedLibfabricSysAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(_inner_alloc) => {
+                panic!("OneSidedLibfabricSysOptAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(_inner_alloc) => {
+                panic!("OneSidedLibfabricAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(_inner_alloc) => {
+                panic!("OneSidedLibfabricAsyncAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(_inner_alloc) => {
+                panic!("OneSidedRofiCAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => inner_alloc.leak(),
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(_inner_alloc) => {
+                panic!("OneSidedUcxAlloc cannot be leaked")
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(_inner_alloc) => {
+                panic!("OneSidedUcxOptAlloc cannot be leaked")
+            }
+        }
+    }
+    pub(crate) fn size(&self) -> usize {
+        match self {
+            CommAllocInner::Raw(_, size) => *size,
+            CommAllocInner::LocalAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            CommAllocInner::ShmemAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => inner_alloc.num_bytes(),
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => inner_alloc.num_bytes(),
+        }
+    }
+    pub(crate) fn sub_alloc(&self, offset: usize, size: usize) -> CommAllocInner {
+        trace!("sub_alloc offset: {} size: {}", offset, size);
+        assert!(offset + size <= self.size());
+        match self {
+            CommAllocInner::Raw(addr, _) => CommAllocInner::Raw(*addr + offset, size),
+            CommAllocInner::LocalAlloc(inner_alloc) => CommAllocInner::LocalAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            CommAllocInner::ShmemAlloc(inner_alloc) => CommAllocInner::ShmemAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => CommAllocInner::ShmemOptAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => CommAllocInner::ShmemOptExternAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => CommAllocInner::OneSidedShmemAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => CommAllocInner::OneSidedShmemOptAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => CommAllocInner::LibfabricSysAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocInner::LibfabricSysOptAlloc(
+                    inner_alloc
+                        .sub_alloc(offset, size)
+                        .expect("Invalid sub allocation"),
+                )
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocInner::OneSidedLibfabricSysAlloc(
+                    inner_alloc
+                        .sub_alloc(offset, size)
+                        .expect("Invalid sub allocation"),
+                )
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocInner::OneSidedLibfabricSysOptAlloc(
+                    inner_alloc
+                        .sub_alloc(offset, size)
+                        .expect("Invalid sub allocation"),
+                )
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => CommAllocInner::LibfabricAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocInner::OneSidedLibfabricAlloc(
+                    inner_alloc
+                        .sub_alloc(offset, size)
+                        .expect("Invalid sub allocation"),
+                )
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocInner::LibfabricAsyncAlloc(
+                    inner_alloc
+                        .sub_alloc(offset, size)
+                        .expect("Invalid sub allocation"),
+                )
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocInner::OneSidedLibfabricAsyncAlloc(
+                    inner_alloc
+                        .sub_alloc(offset, size)
+                        .expect("Invalid sub allocation"),
+                )
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => CommAllocInner::RofiCAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => CommAllocInner::OneSidedRofiCAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => CommAllocInner::UcxAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => CommAllocInner::UcxOptAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => CommAllocInner::OneSidedUcxAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => CommAllocInner::OneSidedUcxOptAlloc(
+                inner_alloc
+                    .sub_alloc(offset, size)
+                    .expect("Invalid sub allocation"),
+            ),
+        }
+    }
+    pub(crate) fn contains(&self, addr: &usize) -> bool {
+        let my_addr: usize = self.addr().into();
+        my_addr <= *addr && *addr < my_addr + self.size()
+    }
+
+    pub(crate) fn wait(&self) {
+        match self {
+            CommAllocInner::Raw(_, _) => {}
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.alloc.wait();
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.alloc.wait();
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc
+                    .wait()
+                    .expect("error waiting on libfabric alloc");
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc
+                    .alloc
+                    .wait()
+                    .expect("error waiting on onesided libfabric alloc");
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc
+                    .wait()
+                    .expect("error waiting on libfabric async alloc");
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc
+                    .alloc
+                    .wait()
+                    .expect("error waiting on onesided libfabric async alloc");
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.wait();
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.alloc.wait();
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.alloc.wait();
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.wait().expect("error waiting on rofi-c alloc");
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc
+                    .alloc
+                    .wait()
+                    .expect("error waiting on onesided rofi-c alloc");
+            }
+        }
+    }
+}
+
+impl CommAllocRdma for CommAllocInner {
+    fn put<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: T,
+        pe: usize,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+        }
+    }
+    fn put_blocking<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        src: T,
+        pe: usize,
+        offset: usize,
+    ) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_blocking(inner_alloc, scheduler, src, pe, offset)
+            }
+        }
+    }
+    fn put_unmanaged<T: Remote>(&self, src: T, pe: usize, offset: usize) {
+        trace!("CommAllocInner::put_unmanaged called");
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_unmanaged(inner_alloc, src, pe, offset)
+            }
+        }
+    }
+    fn put_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        pe: usize,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer(inner_alloc, scheduler, counters, src, pe, offset)
+            }
+        }
+    }
+    fn put_buffer_unmanaged<T: Remote>(
+        &self,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        pe: usize,
+        offset: usize,
+    ) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_buffer_unmanaged(inner_alloc, src, pe, offset)
+            }
+        }
+    }
+    fn put_all<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: T,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all(inner_alloc, scheduler, counters, src, offset)
+            }
+        }
+    }
+    fn put_all_unmanaged<T: Remote>(&self, src: T, offset: usize) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_unmanaged(inner_alloc, src, offset)
+            }
+        }
+    }
+    fn put_all_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer(inner_alloc, scheduler, counters, src, offset)
+            }
+        }
+    }
+    fn put_all_buffer_unmanaged<T: Remote>(
+        &self,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        offset: usize,
+    ) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::put_all_buffer_unmanaged(inner_alloc, src, offset)
+            }
+        }
+    }
+
+    fn get<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        pe: usize,
+        offset: usize,
+    ) -> RdmaGetHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get(inner_alloc, scheduler, counters, pe, offset)
+            }
+        }
+    }
+
+    fn blocking_get<T: Remote>(&self, scheduler: &Arc<Scheduler>, pe: usize, offset: usize) -> T {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get(inner_alloc, scheduler, pe, offset)
+            }
+        }
+    }
+
+    fn get_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        pe: usize,
+        offset: usize,
+        len: usize,
+    ) -> RdmaGetBufferHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_buffer(inner_alloc, scheduler, counters, pe, offset, len)
+            }
+        }
+    }
+    fn blocking_get_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        pe: usize,
+        offset: usize,
+        len: usize,
+    ) -> Vec<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_buffer(inner_alloc, scheduler, pe, offset, len)
+            }
+        }
+    }
+    fn get_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        pe: usize,
+        offset: usize,
+        dst: LamellarBuffer<T, B>,
+    ) -> RdmaGetIntoBufferHandle<T, B> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer(inner_alloc, scheduler, counters, pe, offset, dst)
+            }
+        }
+    }
+    fn blocking_get_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        pe: usize,
+        offset: usize,
+        dst: LamellarBuffer<T, B>,
+    ) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::blocking_get_into_buffer(inner_alloc, scheduler, pe, offset, dst)
+            }
+        }
+    }
+    fn get_into_buffer_unmanaged<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        pe: usize,
+        offset: usize,
+        dst: LamellarBuffer<T, B>,
+    ) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                CommAllocRdma::get_into_buffer_unmanaged(inner_alloc, pe, offset, dst)
+            }
+        }
+    }
+}
+
+impl CommAllocAtomic for CommAllocInner {
+    fn atomic_op<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        op: AtomicOp<T>,
+        pe: usize,
+        offset: usize,
+    ) -> AtomicOpHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op(scheduler, counters, op, pe, offset)
+            }
+        }
+    }
+    fn atomic_op_blocking<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        op: AtomicOp<T>,
+        pe: usize,
+        offset: usize,
+    ) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_blocking(scheduler, op, pe, offset)
+            }
+        }
+    }
+    fn atomic_op_unmanaged<T: Remote>(&self, op: AtomicOp<T>, pe: usize, offset: usize) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_unmanaged(op, pe, offset)
+            }
+        }
+    }
+    fn atomic_op_all<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        op: AtomicOp<T>,
+        offset: usize,
+    ) -> AtomicOpHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all(scheduler, counters, op, offset)
+            }
+        }
+    }
+    fn atomic_op_all_unmanaged<T: Remote>(&self, op: AtomicOp<T>, offset: usize) {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_op_all_unmanaged(op, offset)
+            }
+        }
+    }
+    fn atomic_fetch_op<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        op: AtomicOp<T>,
+        pe: usize,
+        offset: usize,
+    ) -> AtomicFetchOpHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            }
+        }
+    }
+    fn atomic_fetch_op_blocking<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        op: AtomicOp<T>,
+        pe: usize,
+        offset: usize,
+    ) -> T {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_fetch_op_blocking(scheduler, op, pe, offset)
+            }
+        }
+    }
+    fn atomic_compare_exchange<T: Remote + PartialEq>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        current: T,
+        new: T,
+        pe: usize,
+        offset: usize,
+    ) -> AtomicCompareExchangeOpHandle<T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange(scheduler, counters, current, new, pe, offset)
+            }
+        }
+    }
+    fn atomic_compare_exchange_blocking<T: Remote + PartialEq>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        current: T,
+        new: T,
+        pe: usize,
+        offset: usize,
+    ) -> Result<T, T> {
+        match self {
+            CommAllocInner::Raw(_addr, _size) => {
+                panic!("Raw allocation not supported")
+            }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::OneSidedShmemOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::OneSidedLibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::OneSidedLibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::OneSidedUcxOptAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::RofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+            #[cfg(feature = "enable-rofi-c")]
+            CommAllocInner::OneSidedRofiCAlloc(inner_alloc) => {
+                inner_alloc.atomic_compare_exchange_blocking(scheduler, current, new, pe, offset)
+            }
+        }
+    }
+}
+
+impl CommAllocCollectiveAllReduce for CommAllocInner {
+    fn reduce_all<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+        op: ReduceOp,
+    ) -> CollectiveAllReduceOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.reduce_all(scheduler, counters, index, len, op)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.reduce_all(scheduler, counters, index, len, op)
+              // }
+
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.reduce_all(scheduler, counters, index, len, op)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.reduce_all(scheduler, counters, index, len, op)
+              // }
+        }
+    }
+    fn reduce_all_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+        op: ReduceOp,
+        buffer: LamellarBuffer<T, B>,
+    ) -> CollectiveAllReduceIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            _ => {
+                panic!("Collective reduce_all not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn reduce_all_in_place<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src_and_dst: LamellarBuffer<T, B>,
+        op: ReduceOp,
+    ) -> CollectiveAllReduceInPlaceOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric-mt")]
+              // CommAllocInner::LibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::UcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+}
+
+impl CommAllocCollectiveReduce for CommAllocInner {
+    fn reduce<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        op: ReduceOp,
+        index: usize,
+        len: usize,
+        root_pe: usize,
+    ) -> CollectiveReduceOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn reduce_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        op: ReduceOp,
+        index: usize,
+        len: usize,
+        root_or_buffer: RootOrLamellarBuffer<T, B>,
+    ) -> CollectiveReduceIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    // fn reduce_in_place<T: Remote> ( // TODO: FIX
+    //     &self,
+    //     scheduler: &Arc<Scheduler>,
+    //     counters: Option<Arc<[Arc<AMCounters>]>>,
+    //     op: ReduceOp,
+    //     root_pe: usize,
+    // ) -> CollectiveReduceInPlaceOpHandle<T> {
+    //     match self {
+    //         // CommAllocInner::Raw(_addr, _size) => {
+    //         //     panic!("Raw allocation not supported")
+    //         // }
+    //         // CommAllocInner::LocalAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // CommAllocInner::ShmemAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         #[cfg(feature = "enable-libfabric")]
+    //         CommAllocInner::LibfabricAlloc(inner_alloc) => {
+    //             inner_alloc.reduce_in_place(scheduler, counters, op, root_pe)
+    //         }
+    //         _ => {
+    //             panic!("Collective reduce not supported for this CommAlloc type")
+    //         }
+    //         // #[cfg(feature = "enable-libfabric")]
+    //         // CommAllocInner::LibfabricMtAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // #[cfg(feature = "enable-libfabric")]
+    //         // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // #[cfg(feature = "enable-libfabric")]
+    //         // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // #[cfg(feature = "enable-libfabric-async")]
+    //         // CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // #[cfg(feature = "enable-libfabric-async")]
+    //         // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // #[cfg(feature = "enable-ucx")]
+    //         // CommAllocInner::UcxAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //         // #[cfg(feature = "enable-ucx")]
+    //         // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+    //         //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+    //         // }
+    //     }
+    // }
+}
+
+impl CommAllocCollectiveAllGather for CommAllocInner {
+    fn gather_all<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+    ) -> CollectiveAllGatherOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn gather_all_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+        buffer: LamellarBuffer<T, B>,
+    ) -> CollectiveAllGatherIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+}
+
+impl CommAllocCollectiveGather for CommAllocInner {
+    fn gather<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+        root_pe: usize,
+    ) -> CollectiveGatherOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
+            _ => {
+                panic!("Collective gather not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn gather_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+        root_or_buffer: RootOrLamellarBuffer<T, B>,
+    ) -> CollectiveGatherIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            _ => {
+                panic!("Collective gather not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+}
+
+impl CommAllocCollectiveAllToAll for CommAllocInner {
+    fn alltoall<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+    ) -> CollectiveAllToAllOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn alltoall_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        index: usize,
+        len: usize,
+        buffer: LamellarBuffer<T, B>,
+    ) -> CollectiveAllToAllIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            _ => {
+                panic!("Collective reduce not supported for this CommAlloc type")
+            }
+        }
+    }
+}
+
+impl CommAllocCollectiveBroadcast for CommAllocInner {
+    fn broadcast<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src_or_root_pe: BroadcastInput,
+        len: usize,
+    ) -> CollectiveBroadcastOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
+            _ => {
+                panic!("Collective broadcast not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn broadcast_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        root_or_buffer: RootSrcOrLamellarBuffer<T, B>,
+        len: usize,
+    ) -> CollectiveBroadcastIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            _ => {
+                panic!("Collective broadcast not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+}
+
+impl CommAllocCollectiveScatter for CommAllocInner {
+    fn scatter<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src_or_root_pe: ScatterInput,
+        len: usize,
+    ) -> CollectiveScatterOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
+            _ => {
+                panic!("Collective scatter not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn scatter_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        buf: LamellarBuffer<T, B>,
+        src_or_root_pe: ScatterInput,
+        len: usize,
+    ) -> CollectiveScatterIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            _ => {
+                panic!("Collective scatter not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+}
+
+impl CommAllocCollectiveReduceScatter for CommAllocInner {
+    fn reduce_scatter<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        op: ReduceOp,
+        index: usize,
+        len: usize,
+    ) -> CollectiveReduceScatterOpHandle<T> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
+            _ => {
+                panic!("Collective reduce_scatter not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+    fn reduce_scatter_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        op: ReduceOp,
+        index: usize,
+        len: usize,
+        buffer: LamellarBuffer<T, B>,
+    ) -> CollectiveReduceScatterIntoBufferOpHandle<T, B> {
+        match self {
+            // CommAllocInner::Raw(_addr, _size) => {
+            //     panic!("Raw allocation not supported")
+            // }
+            CommAllocInner::LocalAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            CommAllocInner::ShmemAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            #[cfg(feature = "enable-shmem-opt")]
+            CommAllocInner::ShmemOptExternAlloc(_inner_alloc) => {
+                panic!("collective operations are not supported on externally registered memory")
+            }
+            // CommAllocInner::OneSidedShmemAlloc(inner_alloc) => {
+            //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+            // }
+            #[cfg(feature = "enable-libfabric")]
+            CommAllocInner::LibfabricAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-async")]
+            CommAllocInner::LibfabricAsyncAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            #[cfg(feature = "enable-ucx")]
+            CommAllocInner::UcxAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            #[cfg(feature = "enable-ucx-opt")]
+            CommAllocInner::UcxOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            _ => {
+                panic!("Collective reduce_scatter not supported for this CommAlloc type")
+            } // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric")]
+              // CommAllocInner::OneSidedLibfabricAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-libfabric-async")]
+              // CommAllocInner::OneSidedLibfabricAsyncAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+              // #[cfg(feature = "enable-ucx")]
+              // CommAllocInner::OneSidedUcxAlloc(inner_alloc) => {
+              //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
+              // }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CommAlloc {
+    pub(crate) inner_alloc: Arc<CommAllocInner>,
+    // pub(crate) alloc_type: CommAllocType,
+}
+
+impl CommAlloc {
+    //#[tracing::instrument(skip(self), level = "debug")]
+    pub(crate) fn as_comm_slice<T>(&self) -> CommSlice<T> {
+        CommSlice {
+            inner_alloc: Arc::clone(&self.inner_alloc),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+    //#[tracing::instrument(level = "debug")]
+    pub(crate) fn comm_slice_at_byte_offset<T>(
+        &self,
+        offset: usize,
+        num_elems: usize,
+    ) -> CommSlice<T> {
+        trace!(
+            "{:?} offset: {}  num_elems: {} bytes: {}",
+            self,
+            offset,
+            num_elems,
+            num_elems * std::mem::size_of::<T>()
+        );
+        assert!(offset + num_elems * std::mem::size_of::<T>() <= self.num_bytes());
+        CommSlice {
+            inner_alloc: Arc::new(
+                self.inner_alloc
+                    .sub_alloc(offset, num_elems * std::mem::size_of::<T>()),
+            ),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub(crate) unsafe fn as_ptr<T>(&self) -> *const T {
+        self.inner_alloc.addr().as_ptr::<T>()
+    }
+    pub(crate) unsafe fn as_mut_ptr<T>(&self) -> *mut T {
+        self.inner_alloc.addr().as_mut_ptr::<T>()
+    }
+    // pub(crate) unsafe fn as_ref<T>(&self) -> Option<&T> {
+    //     self.as_ptr::<T>().as_ref()
+    // }
+    pub(crate) fn comm_addr(&self) -> CommAllocAddr {
+        self.inner_alloc.addr()
+    }
+    pub(crate) fn num_bytes(&self) -> usize {
+        self.inner_alloc.size()
+    }
+
+    // For Allocs that have been created using rt_alloc, this functions
+    // will consume the CommAlloc and return the underlying address
+    // and prevent the memory from being freed when the CommAlloc is dropped (if it was the last reference)
+    // if the CommAlloc was allocated directly from the fabric then None is returned
+    // since we cannot guarantee the memory will remain valid
+    pub(crate) fn leak(self) -> Option<CommAllocAddr> {
+        (*self.inner_alloc).clone().leak()
+    }
+    pub(crate) fn sub_alloc(&self, offset: usize, size: usize) -> CommAlloc {
+        CommAlloc {
+            inner_alloc: Arc::new(self.inner_alloc.sub_alloc(offset, size)),
+            // alloc_type: self.alloc_type,
+        }
+    }
+}
+
+impl CommAllocRdma for CommAlloc {
+    fn put<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: T,
+        pe: usize,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        self.inner_alloc.put(scheduler, counters, src, pe, offset)
+    }
+    fn put_blocking<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        src: T,
+        pe: usize,
+        offset: usize,
+    ) {
+        self.inner_alloc.put_blocking(scheduler, src, pe, offset)
+    }
+    fn put_unmanaged<T: Remote>(&self, src: T, pe: usize, offset: usize) {
+        self.inner_alloc.put_unmanaged(src, pe, offset)
+    }
+    fn put_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        pe: usize,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        self.inner_alloc
+            .put_buffer(scheduler, counters, src, pe, offset)
+    }
+    fn put_buffer_unmanaged<T: Remote>(
+        &self,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        pe: usize,
+        offset: usize,
+    ) {
+        self.inner_alloc.put_buffer_unmanaged(src, pe, offset)
+    }
+    fn put_all<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: T,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        self.inner_alloc.put_all(scheduler, counters, src, offset)
+    }
+    fn put_all_unmanaged<T: Remote>(&self, src: T, offset: usize) {
+        self.inner_alloc.put_all_unmanaged(src, offset)
+    }
+    fn put_all_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        offset: usize,
+    ) -> RdmaHandle<T> {
+        self.inner_alloc
+            .put_all_buffer(scheduler, counters, src, offset)
+    }
+    fn put_all_buffer_unmanaged<T: Remote>(
+        &self,
+        src: impl Into<MemregionRdmaInputInner<T>>,
+        offset: usize,
+    ) {
+        self.inner_alloc.put_all_buffer_unmanaged(src, offset)
+    }
+    fn get<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        pe: usize,
+        offset: usize,
+    ) -> RdmaGetHandle<T> {
+        self.inner_alloc.get(scheduler, counters, pe, offset)
+    }
+    fn blocking_get<T: Remote>(&self, scheduler: &Arc<Scheduler>, pe: usize, offset: usize) -> T {
+        self.inner_alloc.blocking_get(scheduler, pe, offset)
+    }
+    fn get_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        pe: usize,
+        offset: usize,
+        len: usize,
+    ) -> RdmaGetBufferHandle<T> {
+        self.inner_alloc
+            .get_buffer(scheduler, counters, pe, offset, len)
+    }
+    fn blocking_get_buffer<T: Remote>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        pe: usize,
+        offset: usize,
+        len: usize,
+    ) -> Vec<T> {
+        self.inner_alloc
+            .blocking_get_buffer(scheduler, pe, offset, len)
+    }
+    fn get_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        counters: Option<Arc<[Arc<AMCounters>]>>,
+        pe: usize,
+        offset: usize,
+        dst: LamellarBuffer<T, B>,
+    ) -> RdmaGetIntoBufferHandle<T, B> {
+        self.inner_alloc
+            .get_into_buffer(scheduler, counters, pe, offset, dst)
+    }
+    fn blocking_get_into_buffer<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        scheduler: &Arc<Scheduler>,
+        pe: usize,
+        offset: usize,
+        dst: LamellarBuffer<T, B>,
+    ) {
+        self.inner_alloc
+            .blocking_get_into_buffer(scheduler, pe, offset, dst)
+    }
+    fn get_into_buffer_unmanaged<T: Remote, B: AsLamellarBuffer<T>>(
+        &self,
+        pe: usize,
+        offset: usize,
+        dst: LamellarBuffer<T, B>,
+    ) {
+        self.inner_alloc.get_into_buffer_unmanaged(pe, offset, dst)
+    }
+}
+
+// #[allow(dead_code)]
+// #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+// pub(crate) enum CommAllocType {
+//     RtHeap,
+//     Fabric,
+//     Remote,
+// }
+// unsafe impl Send for CommAllocType {}
+// unsafe impl Sync for CommAllocType {}
+
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Add,
+    Sub,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    zerocopy_derive::IntoBytes,
+    zerocopy_derive::TryFromBytes,
+    zerocopy_derive::KnownLayout,
+    zerocopy_derive::Immutable,
+)]
+pub(crate) struct CommAllocAddr(pub(crate) usize);
+
+impl Into<usize> for &CommAllocAddr {
+    fn into(self) -> usize {
+        self.0
+    }
+}
+
+impl Into<usize> for CommAllocAddr {
+    fn into(self) -> usize {
+        self.0
+    }
+}
+
+impl Into<CommAllocAddr> for usize {
+    fn into(self) -> CommAllocAddr {
+        CommAllocAddr(self)
+    }
+}
+
+impl std::ops::Deref for CommAllocAddr {
+    type Target = usize;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for CommAllocAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
+}
+
+impl std::fmt::LowerHex for CommAllocAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
+}
+// unsafe impl Send for CommAllocAddr {}
+// unsafe impl Sync for CommAllocAddr {}
+
+impl CommAllocAddr {
+    pub(crate) unsafe fn as_ptr<T>(&self) -> *const T {
+        self.0 as *const T
+    }
+    pub(crate) unsafe fn as_mut_ptr<T>(&self) -> *mut T {
+        self.0 as *mut T
+    }
+
+    pub(crate) unsafe fn as_ref<T>(&self) -> Option<&T> {
+        self.as_ptr::<T>().as_ref()
+    }
+
+    // pub(crate) unsafe fn as_mut<T>(&self) -> Option<&mut T> {
+    //     self.as_mut_ptr::<T>().as_mut()
+    // }
+}
+
+impl std::ops::Add<usize> for CommAllocAddr {
+    type Output = CommAllocAddr;
+    fn add(self, rhs: usize) -> Self::Output {
+        CommAllocAddr(self.0 + rhs)
+    }
+}
+impl std::ops::Add<usize> for &CommAllocAddr {
+    type Output = CommAllocAddr;
+    fn add(self, rhs: usize) -> Self::Output {
+        CommAllocAddr(self.0 + rhs)
+    }
+}
+
+impl std::ops::Sub<usize> for CommAllocAddr {
+    type Output = CommAllocAddr;
+    fn sub(self, rhs: usize) -> Self::Output {
+        CommAllocAddr(self.0 - rhs)
+    }
+}
+impl std::ops::Sub<usize> for &CommAllocAddr {
+    type Output = CommAllocAddr;
+    fn sub(self, rhs: usize) -> Self::Output {
+        CommAllocAddr(self.0 - rhs)
+    }
+}
+
+impl std::convert::AsRef<CommAllocAddr> for CommAllocAddr {
+    fn as_ref(&self) -> &CommAllocAddr {
+        self
+    }
+}
+
+impl std::convert::AsRef<usize> for CommAllocAddr {
+    fn as_ref(&self) -> &usize {
+        &self.0
+    }
+}

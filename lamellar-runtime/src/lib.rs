@@ -1,0 +1,423 @@
+#![warn(missing_docs)]
+#![warn(unreachable_pub)]
+#![doc(test(attr(deny(unused_must_use))))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+//! Lamellar is an investigation of the applicability of the Rust systems programming language for HPC as an alternative to C and C++, with a focus on PGAS approaches.
+//!
+//! # Some Nomenclature
+//! Throughout this documentation and APIs there are a few terms we end up reusing a lot, those terms and brief descriptions are provided below:
+//! - `PE` - a processing element, typically a multi threaded process, for those familiar with MPI, it corresponds to a Rank.
+//!     - Commonly you will create 1 PE per physical CPU socket on your system, but it is just as valid to have multiple PE's per CPU
+//!     - There may be some instances where `Node` (meaning a compute node) is used instead of `PE` in these cases they are interchangeable
+//! - `World` - an abstraction representing your distributed computing system
+//!     - consists of N PEs all capable of communicating with one another
+//! - `Team` - A subset of the PEs that exist in the world
+//! - `AM` - short for [Active Message][crate::active_messaging]
+//! - `Collective Operation` - Generally means that all PEs (associated with a given distributed object) must explicitly participate in the operation, otherwise deadlock will occur.
+//!     - e.g. barriers, construction of new distributed objects
+//! - `One-sided Operation` - Generally means that only the calling PE is required for the operation to successfully complete.
+//!     - e.g. accessing local data, waiting for local work to complete
+//!
+//! # Features
+//!
+//! Lamellar provides several different communication patterns and programming models to distributed applications, briefly highlighted below
+//! ## Active Messages
+//! Lamellar allows for sending and executing user defined active messages on remote PEs in a distributed environment.
+//! User first implement runtime exported trait (LamellarAM) for their data structures and then call a procedural macro [#\[lamellar::am\]][crate::active_messaging::am] on the implementation.
+//! The procedural macro produces all the necessary code to enable remote execution of the active message.
+//! More details can be found in the [Active Messaging][crate::active_messaging] module documentation.
+//!
+//! ## Darcs (Distributed Arcs)
+//! Lamellar provides a distributed extension of an [`Arc`][std::sync::Arc] called a [Darc][crate::darc].
+//! Darcs provide safe shared access to inner objects in a distributed environment, ensuring lifetimes and read/write accesses are enforced properly.
+//! More details can be found in the [Darc][crate::darc] module documentation.
+//!
+//! ## PGAS abstractions
+//!
+//! Lamellar also provides PGAS capabilities through multiple interfaces.
+//!
+//! ### LamellarArrays (Distributed Arrays)
+//!
+//! The first is a high-level abstraction of distributed arrays, allowing for distributed iteration and data parallel processing of elements.
+//! More details can be found in the [LamellarArray][crate::array] module documentation.
+//!
+//! ### Low-level Memory Regions
+//!
+//! The second is a low level (unsafe) interface for constructing memory regions which are readable and writable from remote PEs.
+//! Note that unless you are very comfortable/confident in low level distributed memory (and even then) it is highly recommended you use the LamellarArrays interface
+//! More details can be found in the [Memory Region][crate::memregion] module documentation.
+//!
+//! # Network Backends
+//!
+//! Lamellar relies on network providers called Lamellae to perform the transfer of data throughout the system.
+//! Currently several such Lamellae exist (some require feature flags to enable):
+//! - `local` -  used for single-PE (single system, single process) development (this is the default),
+//! - `shmem` -  used for multi-PE (single system, multi-process) development, useful for emulating distributed environments (communicates through shared memory)
+//! - `rofi-c` - used for multi-PE (multi system, multi-process) distributed development, based on the Rust OpenFabrics Interface Transport Layer (ROFI) (<https://github.com/pnnl/rofi>).
+//!     - Requires the Rofi C-library and libfabrics; enable with `features = ["enable-rofi-c"]` in your `Cargo.toml`
+//! - `libfabric` - multi-PE distributed backend using libfabrics directly; enable with `features = ["enable-libfabric"]`
+//! - `libfabric-async` - async variant of the libfabric backend; enable with `features = ["enable-libfabric-async"]`
+//! - `ucx` - multi-PE distributed backend using UCX; enable with `features = ["enable-ucx"]`
+//!
+//! The long term goal for lamellar is that you can develop using the `local` backend and then when you are ready to run distributed switch to the `rofi` backend with no changes to your code.
+//! Currently the inverse is true, if it compiles and runs using `rofi` it will compile and run when using `local` and `shmem` with no changes.
+//!
+//! Additional information on using each of the lamellae backends can be found below in the `Running Lamellar Applications` section
+//!
+//! Environment Variables
+//! ---------------------
+//! Lamellar has a number of environment variables that can be used to configure the runtime.
+//! please see the [Environment Variables][crate::env_var] module documentation for more details
+//!
+//! Examples
+//! --------
+//! Our repository also provides numerous examples highlighting various features of the runtime: <https://github.com/pnnl/lamellar-runtime/tree/master/examples>
+//!
+//! Additionally, we are compiling a set of benchmarks (some with multiple implementations) that may be helpful to look at as well: <https://github.com/pnnl/lamellar-benchmarks/>
+//!
+//! Below are a few small examples highlighting some of the features of lamellar, more in-depth examples can be found in the documentation for the various features.
+//! # Selecting a Lamellae and constructing a lamellar world instance
+//! You can select which backend to use at runtime as shown below:
+//! ```
+//! use lamellar::Backend;
+//! fn main(){
+//!  let mut world = lamellar::LamellarWorldBuilder::new()
+//!         .with_lamellae( Default::default() ) //if "enable-rofi-c" feature is active default is rofi, otherwise  default is `Local`
+//!         //.with_lamellae( Backend::RofiC ) //explicity set the lamellae backend to rofi,
+//!         //.with_lamellae( Backend::Local ) //explicity set the lamellae backend to local
+//!         //.with_lamellae( Backend::Shmem ) //explicity set the lamellae backend to use shared memory
+//!         .build();
+//! }
+//! ```
+//! or by setting the following environment variable:
+//!```LAMELLAR_BACKEND="lamellae"``` where lamellae is one of `local`, `shmem`, or `rofi`.
+//!
+//! # Creating and executing a Registered Active Message
+//! Please refer to the [Active Messaging][crate::active_messaging] documentation for more details and examples
+//! ```
+//! use lamellar::active_messaging::prelude::*;
+//!
+//! #[AmData(Debug, Clone)] // `AmData` is a macro used in place of `derive`
+//! struct HelloWorld { //the "input data" we are sending with our active message
+//!     my_pe: usize, // "pe" is processing element == a node
+//! }
+//!
+//! #[lamellar::am] // at a highlevel registers this LamellarAM implementation with the runtime for remote execution
+//! impl LamellarAM for HelloWorld {
+//!     async fn exec(&self) {
+//!         println!(
+//!             "Hello pe {:?} of {:?}, I'm pe {:?}",
+//!             lamellar::current_pe,
+//!             lamellar::num_pes,
+//!             self.my_pe
+//!         );
+//!     }
+//! }
+//!
+//! fn main(){
+//!     let mut world = lamellar::LamellarWorldBuilder::new().build();
+//!     let my_pe = world.my_pe();
+//!     let num_pes = world.num_pes();
+//!     let am = HelloWorld { my_pe: my_pe };
+//!     for pe in 0..num_pes{
+//!         let _ = world.spawn_am_pe(pe,am.clone()); // explicitly launch on each PE
+//!     }
+//!     world.wait_all(); // wait for all active messages to finish
+//!     world.barrier();  // synchronize with other PEs
+//!     let request = world.exec_am_all(am.clone()); //also possible to execute on every PE with a single call
+//!     request.block(); //exec_am_all returns a future that can be used to wait for completion and access any returned result
+//! }
+//! ```
+//!
+//! # Creating, initializing, and iterating through a distributed array
+//! Please refer to the [LamellarArray][crate::array] documentation for more details and examples
+//! ```
+//! use lamellar::array::prelude::*;
+//!
+//! fn main(){
+//!     let world = lamellar::LamellarWorldBuilder::new().build();
+//!     let my_pe = world.my_pe();
+//!     let block_array = AtomicArray::<usize>::new(&world, 1000, Distribution::Block).block(); //we also support Cyclic distribution.
+//!     let _ =block_array.dist_iter_mut().enumerate().for_each(move |(i,elem)| elem.store(i)).block(); //simultaneously initialize array across all PEs, each pe only updates its local data
+//!     block_array.barrier();
+//!     if my_pe == 0{
+//!         for (i,elem) in block_array.onesided_iter().into_iter().enumerate(){ //iterate through entire array on pe 0 (automatically transferring remote data)
+//!             println!("i: {} = {})",i,elem);
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! # Utilizing a Darc within an active message
+//! Please refer to the [Darc][crate::darc] documentation for more details and examples
+//!```
+//! use lamellar::active_messaging::prelude::*;
+//! use lamellar::darc::prelude::*;
+//! use std::sync::atomic::{AtomicUsize,Ordering};
+//!
+//! #[AmData(Debug, Clone)] // `AmData` is a macro used in place of `derive`
+//! struct DarcAm { //the "input data" we are sending with our active message
+//!     cnt: Darc<AtomicUsize>, // count how many times each PE executes an active message
+//! }
+//!
+//! #[lamellar::am] // at a highlevel registers this LamellarAM implementation with the runtime for remote execution
+//! impl LamellarAM for DarcAm {
+//!     async fn exec(&self) {
+//!         self.cnt.fetch_add(1,Ordering::SeqCst);
+//!     }
+//! }
+//!
+//! fn main(){
+//!     let mut world = lamellar::LamellarWorldBuilder::new().build();
+//!     let my_pe = world.my_pe();
+//!     let num_pes = world.num_pes();
+//!     let cnt = Darc::new(&world, AtomicUsize::new(0)).block().expect("Current PE is in world team");
+//!     for pe in 0..num_pes{
+//!         let _ = world.spawn_am_pe(pe,DarcAm{cnt: cnt.clone()}); // explicitly launch on each PE
+//!     }
+//!     let _ = world.spawn_am_all(DarcAm{cnt: cnt.clone()}); //also possible to execute on every PE with a single call
+//!     cnt.fetch_add(1,Ordering::SeqCst); //this is valid as well!
+//!     world.wait_all(); // wait for all active messages to finish
+//!     world.barrier();  // synchronize with other PEs
+//!     assert_eq!(cnt.load(Ordering::SeqCst),num_pes*2 + 1);
+//! }
+//!```
+//! # Using Lamellar
+//! Lamellar is capable of running on single node workstations as well as distributed HPC systems.
+//! For a workstation, simply copy the following to the dependency section of you Cargo.toml file:
+//!
+//!``` lamellar = "0.8.0" ```
+//!
+//! If planning to use within a distributed HPC system copy the following to your Cargo.toml file:
+//!
+//! ``` lamellar = { version = "0.8.0", features = ["enable-rofi-c"]}```
+//!
+//! NOTE: as of Lamellar 0.6.1 It is no longer necessary to manually install Libfabric, the build process will now try to automatically build libfabric for you.
+//! If this process fails, it is still possible to pass in a manual libfabric installation via the OFI_DIR environment variable.
+//!
+//!
+//! For both environments, build your application as normal
+//!
+//! ```cargo build (--release)```
+//! # Running Lamellar Applications
+//! A Lamellar application's `main` function must be annotated with `#[lamellar::main]` (see examples above), which is responsible for launching the requested number of PEs. You still construct the world yourself (e.g. via `LamellarWorldBuilder`) inside `main`.
+//!
+//! The generated `main` detects whether it's already running as a launched PE (e.g. under PRRTE/srun); if not, it re-executes itself under a launcher (`prterun` by default, or `srun` with the `use-srun` feature). A single `cargo run`/binary invocation transparently becomes a multi-PE job -- no separate `lamellar_run.sh` step is needed.
+//! ## local / shmem (single system, one or many processes)
+//! 1. directly launch the executable
+//!     - ```cargo run --release```
+//! 2. to run multiple PEs on a single system (shared-memory backend), add launcher args after a `--`-separated section:
+//!     - ```LAMELLAR_BACKEND=shmem cargo run --release -- <app args> -- --pes 4```
+//! ## distributed (multi-process, multi-system)
+//! 1. allocate compute nodes on the cluster:
+//!     - ```salloc -N 2```
+//! 2. run your application the same way as above -- `#[lamellar::main]` handles invoking `prterun`/`srun` across the allocated nodes; select the distributed backend via `LAMELLAR_BACKEND` (e.g. `rofi_c`, `libfabric`, `ucx`) or the corresponding `Backend::*` variant in the world builder:
+//!     - ```cargo run --release -- <app args> -- --pes 8 --pes-per-node 4```
+//!
+//! See the [README](https://github.com/pnnl/lamellar-runtime#running-lamellar-applications) for the full set of launch flags (`--nodes`, `--lamellae`, `--cmd-queue`, etc.).
+//!
+
+extern crate self as lamellar;
+//#[doc(hidden)]
+pub extern crate serde;
+
+//#[doc(hidden)]
+pub use serde::*;
+
+#[doc(hidden)]
+pub extern crate serde_bytes;
+// #[doc(hidden)]
+// pub use serde_bytes::*;
+
+#[doc(hidden)]
+pub extern crate zerocopy;
+#[doc(hidden)]
+pub use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+
+//#[doc(hidden)]
+// pub extern crate tracing;
+//#[doc(hidden)]
+pub use parking_lot;
+//#[doc(hidden)]
+pub use ::tracing;
+pub use ::tracing::*;
+
+//#[doc(hidden)]
+pub use async_trait;
+
+//#[doc(hidden)]
+pub use futures_util;
+
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL_ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+pub mod active_messaging;
+// //#[doc(hidden)]
+pub use active_messaging::prelude::*;
+pub mod array;
+// //#[doc(hidden)]
+pub use array::prelude::*;
+mod barrier;
+pub mod darc;
+// //#[doc(hidden)]
+pub use darc::prelude::*;
+mod lamellae;
+mod lamellar_alloc;
+mod lamellar_arch;
+pub mod lamellar_env;
+pub use lamellar_env::LamellarEnv;
+mod lamellar_request;
+mod lamellar_task_group;
+mod lamellar_team;
+mod lamellar_world;
+pub mod memregion;
+// //#[doc(hidden)]
+pub use memregion::prelude::*;
+mod scheduler;
+pub use scheduler::LAMELLAR_THREAD_ID;
+mod utils;
+//#[doc(hidden)]
+pub use utils::*;
+
+pub(crate) mod warnings;
+
+pub mod env_var;
+pub use env_var::config;
+pub use env_var::{available_backends, compiled_default_backend};
+
+pub use crate::lamellae::comm::collective::{
+    BroadcastInput, RootOrLamellarBuffer, RootSrcOrLamellarBuffer, ScatterInput,
+};
+pub use crate::lamellae::Backend;
+pub use crate::lamellae::{
+    AtomicCompareExchangeOpHandle, AtomicFetchOpHandle, AtomicOpHandle, RdmaHandle,
+};
+pub use crate::lamellar_arch::{BlockedArch, IdError, LamellarArch, StridedArch};
+// //#[doc(hidden)]
+pub use crate::lamellar_task_group::{
+    AmGroup, AmGroupResult, BaseAmGroupReq, LamellarTaskGroup, TypedAmGroupBatchReq,
+    TypedAmGroupBatchResult, TypedAmGroupResult,
+};
+pub use crate::lamellar_team::LamellarTeam;
+// //#[doc(hidden)]
+pub use crate::lamellar_team::ArcLamellarTeam;
+pub(crate) use crate::lamellar_team::LamellarTeamRT;
+pub use crate::lamellar_world::*;
+pub use crate::scheduler::ExecutorType;
+pub use crate::scheduler::LamellarTask;
+
+// extern crate lamellar_impl;
+// pub mod lamellar_impl;
+// //#[doc(hidden)]
+pub use lamellar_impl::Dist;
+
+/// Lightweight backtrace-based profiler used by the `#[lamellar::prof]` macros.
+#[cfg(feature = "enable-prof")]
+pub mod prof;
+
+pub use lamellar_prof;
+pub use lamellar_prof::fini_prof;
+pub use lamellar_prof::init_prof;
+pub use lamellar_prof::init_prof_bt;
+pub use lamellar_prof::prof;
+pub use lamellar_prof::prof_all;
+
+#[cfg(feature = "enable-lamellar-main")]
+pub use lamellar_main::main;
+#[cfg(feature = "enable-lamellar-main")]
+pub use lamellar_main::prrte_sys;
+#[cfg(feature = "enable-lamellar-main")]
+pub use lamellar_main::test;
+#[cfg(feature = "enable-lamellar-main")]
+pub use lamellar_main::{
+    cores_per_package, generic_help_text, init_tracing_from_env, numa_domain_count, package_count,
+    pe_id, resolve_pe_defaults,
+};
+
+//#[doc(hidden)]
+pub use inventory;
+
+// use std::sync::atomic::AtomicUsize;
+// use std::sync::atomic::Ordering::SeqCst;
+// use std::sync::Arc;
+// lazy_static! {
+//     pub(crate) static ref SERIALIZE_TIMER: thread_local::ThreadLocal<Arc<AtomicUsize>> =
+//         thread_local::ThreadLocal::new();
+//     pub(crate) static ref DESERIALIZE_TIMER: thread_local::ThreadLocal<Arc<AtomicUsize>> =
+//         thread_local::ThreadLocal::new();
+//     pub(crate) static ref SERIALIZE_SIZE_TIMER: thread_local::ThreadLocal<Arc<AtomicUsize>> =
+//         thread_local::ThreadLocal::new();
+// }
+
+/// Serializes an object into a byte vector.
+///
+/// # Examples
+///```
+/// let data = vec![1, 2, 3];
+/// let serialized = lamellar::serialize(&data, false).expect("serialize");
+/// assert!(!serialized.is_empty());
+///```
+pub fn serialize<T>(obj: &T, _var: bool) -> Result<Vec<u8>, anyhow::Error>
+where
+    T: serde::Serialize,
+{
+    postcard::to_allocvec(obj).map_err(|e| anyhow::anyhow!("{}", e))
+}
+
+/// Returns the size of an object once serialized.
+///
+/// Note this allocates and fully encodes `obj`, then discards the bytes -- prefer
+/// serializing once via [`serialize`] and using the resulting `Vec`'s length when a
+/// real encode is needed anyway, rather than calling this and then serializing again.
+///
+/// # Examples
+///```
+/// let data = vec![1, 2, 3];
+/// let size = lamellar::serialized_size(&data, false);
+/// assert!(size > 0);
+///```
+pub fn serialized_size<T>(obj: &T, _var: bool) -> usize
+where
+    T: serde::Serialize,
+{
+    // counting flavor: sizes without allocating or writing the encoding
+    postcard::serialize_with_flavor(obj, postcard::ser_flavors::Size::default()).unwrap()
+}
+
+/// Wrapper function for serializing an object into a buffer.
+///
+/// # Examples
+///```
+/// let mut buf = vec![0u8; 64];
+/// let data = vec![1, 2, 3];
+/// lamellar::serialize_into(&mut buf, &data, false)?;
+///# Ok::<(), anyhow::Error>(())
+///```
+pub fn serialize_into<T>(buf: &mut [u8], obj: &T, _var: bool) -> Result<(), anyhow::Error>
+where
+    T: serde::Serialize,
+{
+    postcard::to_slice(obj, buf).map_err(|e| anyhow::anyhow!("{}", e))?;
+    Ok(())
+}
+
+/// Wrapper function for deserializing data.
+///
+/// # Examples
+///```
+/// let data = vec![1, 2, 3];
+/// let serialized = lamellar::serialize(&data, false)?;
+/// let deserialized: Vec<i32> = lamellar::deserialize(&serialized, false)?;
+/// assert_eq!(data, deserialized);
+///# Ok::<(), anyhow::Error>(())
+///```
+pub fn deserialize<'a, T>(bytes: &'a [u8], _var: bool) -> Result<T, anyhow::Error>
+where
+    T: serde::Deserialize<'a>,
+{
+    postcard::from_bytes(bytes).map_err(|e| anyhow::anyhow!("{}", e))
+}
+//#[doc(hidden)]
+pub use async_std;

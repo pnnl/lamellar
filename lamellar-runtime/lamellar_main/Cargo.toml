@@ -1,0 +1,22 @@
+[package]
+name = "lamellar_main"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
+description = "Lamellar-specific launcher wrapper (#[lamellar_main::main]) around hpc_launch, used by lamellar's #[lamellar::main]/#[lamellar::test]."
+readme = "README.md"
+repository = "https://github.com/pnnl/lamellar"
+homepage = "https://github.com/pnnl/lamellar"
+license-file = "LICENSE"
+keywords = ["hpc", "runtime", "launcher", "distributed", "prterun"]
+categories = ["asynchronous", "concurrency", "network-programming", "science"]
+
+[dependencies]
+lamellar_main_impl = { version = "0.1.0", path = "../lamellar_main_impl" }
+hpc_launch = { version = "0.1.0", path = "../hpc_launch", default-features = false }
+
+[features]
+use-srun = ["lamellar_main_impl/use-srun", "hpc_launch/use-srun"]
+use-prterun = ["lamellar_main_impl/use-prterun", "hpc_launch/use-prterun"]
+with-salloc = ["lamellar_main_impl/with-salloc", "hpc_launch/with-salloc"]
+enable-prof = ["lamellar_main_impl/enable-prof"]

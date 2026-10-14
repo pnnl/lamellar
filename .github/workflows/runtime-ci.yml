@@ -1,0 +1,69 @@
+name: Runtime CI
+
+# lamellar-runtime lives under lamellar-runtime/ in this repo (it was previously a submodule),
+# so the jobs below run from that directory and only trigger on changes to it.
+
+on:
+  push:
+    branches: [ master, dev ]
+    paths:
+      - 'lamellar-runtime/**'
+      - '.github/workflows/runtime-ci.yml'
+  pull_request:
+    branches: [ master, dev ]
+    paths:
+      - 'lamellar-runtime/**'
+      - '.github/workflows/runtime-ci.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: lamellar-runtime
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Update Rust
+      run: rustup update stable
+    - name: Build
+      run: rustup -V && cargo build --verbose
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Update Rust
+        run: rustup update stable
+      - name: Build
+        run: rustup -V && cargo build --verbose
+      - name: Run tests
+        run: |
+          cd impl
+          cargo test --verbose
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Cargo Audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Run Cargo Audit
+        run: cargo audit
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Update Rust
+        run: rustup update stable
+      - name: impl clippy
+        run: |
+          cd impl
+          cargo clippy --all-features --tests -- -D warnings

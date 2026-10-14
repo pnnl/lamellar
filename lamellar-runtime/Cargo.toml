@@ -1,0 +1,1079 @@
+# cargo-features = ["codegen-backend"]
+[package]
+name = "lamellar"
+version = "0.8.1"
+authors = [
+    "Ryan D. Friese <ryan.friese@pnnl.gov>",
+    "Roberto Gioiosa <roberto.gioiosa@pnnl.gov>",
+    "Joseph Cottam <joseph.cottam@pnnl.gov>",
+    "Greg Roek <gregory.roek@pnnl.gov>",
+    "Erdal Mutlu <erdal.mutlu@pnnl.gov>",
+]
+edition = "2021"
+description = "Lamellar is an asynchronous tasking runtime for HPC systems developed in RUST."
+readme = "README.md"
+repository = "https://github.com/pnnl/lamellar"
+homepage = "https://github.com/pnnl/lamellar"
+license-file = "LICENSE"
+keywords = ["hpc", "runtime", "pgas", "distributed", "asynchronous"]
+categories = ["asynchronous", "concurrency", "network-programming", "science"]
+
+[dependencies]
+# --- local workspace crates ---
+lamellar-impl = { version = "0.8.0", path = "impl" }
+mimalloc = { version = "0.1", optional = true, default-features = false }
+lamellar_main = { version = "0.1.0", path = "./lamellar_main", optional = true }
+lamellar-prof = { version = "0.2.0", path = "./lamellar-prof" }
+
+# --- HPC network/process-management backends (all optional, feature-gated) ---
+lamellar-ucc-sys = { version = "0.1.0", optional = true }
+lamellar-ucx-sys = { version = "0.1.0", optional = true }
+libfabric = { package = "lamellar-libfabric", version = "0.1.0", features = [
+    # "use-async-std",
+    # "threading-domain",
+    "threading-thread-safe",
+], optional = true }
+libfabric-sys = { package = "lamellar-libfabric-sys", version = "0.1.0", optional = true }
+pmi = { version = "0.1.0", optional = true }
+pmix-sys = { version = "0.1.0", optional = true }
+prrte-sys = { version = "0.1.0", optional = true }
+rofisys = { version = "0.5.0", optional = true }
+
+# --- async runtime / executors ---
+async-global-executor = "2.4.1"
+async-lock = "3.4.1"
+async-recursion = "1.0.0"
+async-std = "1.13.2"
+async-task = "4.3.0"
+async-trait = "0.1.58"
+futures-executor = "0.3.34"
+futures-util = "0.3.31"
+pin-project = "1.1.10"
+tokio = { version = "1.47.1", features = ["full"], optional = true }
+
+# --- concurrency / sync primitives ---
+core_affinity = "0.8.3"
+crossbeam = "0.8.4"
+event-listener = { version = "5.4.2", optional = true }
+parking_lot = { version = "0.12.4", features = [
+    "arc_lock",
+    "send_guard",
+    "serde",
+] }
+thread_local = "1.1.9"
+
+# --- serialization ---
+postcard = { version = "1", features = ["alloc"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_bytes = "0.11.17"
+zerocopy = { version = "0.8.48", features = ["derive"] }
+zerocopy-derive = "0.8.48"
+
+# --- data structures / general utilities ---
+anyhow = "1.0.99"
+derive_more = { version = "1.0.0", features = ["add", "from", "into"] }
+enum_dispatch = "0.3.8"
+envy = "0.4.2"
+indexmap = "2.11.1"                                                     #lamellar_alloc
+memmap = "0.7.0"
+page_size = "0.6.0"
+paste = "1.0.15"
+rand = "0.9.2"
+shared_memory = "0.12.4"
+thiserror = { version = "2.0.16", optional = true }
+
+# --- codegen / reflection / diagnostics ---
+backtrace = { version = "0.3", optional = true }
+crabtime = "1.1.4"
+inventory = "0.3.21"
+libc = { version = "0.2.175", optional = true }
+tracing = "0.1.41"
+
+[dev-dependencies]
+assert_cmd = "2.0.4"
+backtrace = "0.3"
+bincode = { version = "2.0.1", features = ["serde"] }
+criterion = "0.5"
+hostname = "0.3"
+matrixmultiply = "0.3.2"
+rayon = "1.1"
+rkyv = "0.8"
+serial_test = "3.2.0"
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "fmt",
+    "registry",
+] }
+trybuild = "1.0.71"
+#packed_simd = { version = "0.3.4", package = "packed_simd_2" } #uncomment if using nightly tool chain and want to run the am_flops example
+
+
+[workspace]
+members = [
+    "impl",
+    "hpc_launch_impl",
+    "hpc_launch",
+    "lamellar_main_impl",
+    "lamellar_main",
+]
+
+# Set the settings for build scripts and proc-macros.
+[profile.dev.build-override]
+opt-level = 3
+
+#features are strictly additive.... can't have mutual exclusitivity
+[features]
+# use mimalloc as the process-wide global allocator
+mimalloc = ["dep:mimalloc"]
+default = [
+    "with-pmix",
+    "vendored-pmi",
+    "enable-lamellar-main",
+    "vendored-libevent",
+    "vendored-pmix",
+]
+
+# --- launcher (lamellar_main / hpc_launch) ---
+enable-lamellar-main = ["lamellar_main/use-prterun", "prrte-sys/prrte-src"]
+with-salloc = ["lamellar_main/with-salloc"]
+
+# Builds PRRTE's (and, when pmix is also vendored, PMIx's) libevent from source.
+# Only takes effect if prrte-sys and/or pmix-sys are already pulled in by
+# enable-lamellar-main / enable-rofi-c(-shared). Omit and set LIBEVENT_DIR (or
+# rely on system pkg-config auto-detection) to link a system libevent instead.
+vendored-libevent = [
+    "prrte-sys?/vendored-libevent",
+    "pmix-sys?/vendored-libevent",
+    "rofisys?/vendored-libevent",
+]
+# Builds PMIx from source (via pmix-sys/openpmix-src) instead of linking a system
+# PMIx. Only takes effect if pmix-sys is already pulled in (enable-lamellar-main
+# or enable-rofi-c(-shared)). Omit and set PMIX_DIR (or rely on system pkg-config
+# auto-detection) to link a system PMIx instead — useful on clusters where PMIx
+# is already installed and version-matched to the system Slurm/PRRTE.
+vendored-pmix = [
+    "prrte-sys?/vendored-pmix",
+    "pmix-sys?/openpmix-src",
+    "rofisys?/vendored-pmix",
+]
+
+# --- PMI (process management interface) ---
+with-pmi1 = ["pmi/with-pmi1"]
+with-pmi2 = ["pmi/with-pmi2"]
+with-pmix = ["pmi/with-pmix"]
+with-pmix-vendored = ["pmi/with-pmix-vendored"]
+# Vendors pmix-sys as pulled in through the `pmi` abstraction crate (used by
+# enable-libfabric/enable-ucx) — a separate instance from the one governed by
+# vendored-pmix/vendored-libevent above, which only cover pmix-sys as pulled in
+# directly by lamellar-runtime/rofisys/prrte-sys. Only takes effect once a pmi
+# backend is selected (with-pmix/with-pmi1/with-pmi2).
+vendored-pmi = ["pmi/vendored"]
+
+# Convenience alias for the default feature set minus vendored-pmi/vendored-libevent/
+# vendored-pmix (Cargo features are additive-only, so there's no way to remove just
+# those from `default` without restating the rest). Use on clusters with a
+# system-installed, version-matched PMIx/PRRTE (and libevent) already on
+# PKG_CONFIG_PATH or pointed to via PMIX_DIR/LIBEVENT_DIR:
+#   cargo build --no-default-features --features system-pmix-launcher
+# Kept in sync with `default` by hand — if `default`'s core set changes, update both.
+system-pmix-launcher = ["with-pmix", "enable-lamellar-main"]
+
+# --- network backends ---
+rofi-c = []
+# Base rofi-c backend: builds against rofi's default PMI-1 client (simple_pmi.c),
+# no PMIx involved. Add enable-rofi-c-pmix on top to switch rofi's process
+# management to PMIx instead (rofi has no PMI-2 client, so PMI-1/PMIx are the
+# only options). Vendoring PMIx here is controlled by the top-level
+# vendored-pmix feature (which pulls in rofisys?/vendored-pmix); omit it and
+# set PMIX_LIB_DIR/PMIX_INCLUDE_DIR to link a system PMIx instead.
+enable-rofi-c = ["rofisys", "libc", "libfabric"]
+enable-rofi-c-pmix = ["enable-rofi-c", "rofisys/pmix"]
+enable-rofi-c-shared = [
+    "rofisys/shared",
+    "libc",
+    "libfabric",
+    "libfabric-sys/shared",
+]
+enable-rofi-c-shared-pmix = ["enable-rofi-c-shared", "rofisys/pmix"]
+enable-rofi-rust = []
+enable-libfabric = ["libfabric", "pmi", "libc"]
+enable-libfabric-sys = ["libfabric-sys", "pmi", "libc"]
+enable-libfabric-sys-opt = ["libfabric-sys", "pmi", "libc"]
+enable-shmem-opt = ["libc"]
+enable-libfabric-async = ["libfabric/use-async-std", "pmi"]
+enable-ucx = ["lamellar-ucx-sys", "lamellar-ucc-sys", "pmi", "thiserror"]
+enable-ucx-opt = [
+    "lamellar-ucx-sys",
+    "lamellar-ucc-sys",
+    "pmi",
+    "thiserror",
+    "event-listener",
+]
+
+# --- executor ---
+tokio-executor = ["tokio"]
+
+# --- runtime behavior / diagnostics ---
+disable-runtime-warnings = []
+runtime-warnings-panic = []
+enable-stats = []
+enable-on-node-shmem = []
+slurm-test = []
+enable-prof = [
+    "lamellar-prof/use-lamellar",
+    "backtrace",
+    "lamellar_main/enable-prof",
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.release-dev]
+inherits = "release"
+opt-level = 3
+lto = false
+codegen-units = 256
+
+[profile.release-debug]
+inherits = "release-dev"
+debug = true
+[profile.release-debug.package."*"]
+debug = true
+
+[package.metadata.docs.rs]
+no-default-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+
+[lib]
+doctest = false
+name = "lamellar"
+path = "src/lib.rs"
+
+# Local testing against process_management/* and communication_frameworks/*
+# from the lamellar-repo monorepo instead of the published crates.io versions.
+# Uncomment the [patch.crates-io] header and exactly one variant below.
+[patch.crates-io]
+
+# --- Variant A: GitHub-hosted lamellar-repo (works from any checkout) ---
+# pmi = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# pmi-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# pmi2-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# prrte-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# openpmix-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# rofisys = { git = "https://github.com/pnnl/rofi-sys", branch = "master" }
+# lamellar-libfabric = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# lamellar-libfabric-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# lamellar-libfabric-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# lamellar-ucc-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+
+# --- Variant B: relative paths, for lamellar-runtime checked out inside this
+# --- lamellar-repo staging tree (sibling to process_management/, communication_frameworks/) ---
+pmi = { path = "../process_management/pmi" }
+pmi-sys = { path = "../process_management/pmi-sys" }
+pmi2-sys = { path = "../process_management/pmi2-sys" }
+pmi-mpich-src = { path = "../process_management/pmi-mpich-src" }
+pmix-sys = { path = "../process_management/pmix-sys" }
+prrte-sys = { path = "../process_management/prrte-sys" }
+openpmix-src = { path = "../process_management/openpmix-src" }
+prrte-src = { path = "../process_management/prrte-src" }
+rofisys = { path = "../communication_frameworks/rofi-sys" }
+lamellar-libfabric = { path = "../communication_frameworks/libfabric" }
+lamellar-libfabric-sys = { path = "../communication_frameworks/libfabric-sys" }
+lamellar-libfabric-src = { path = "../communication_frameworks/libfabric-src" }
+lamellar-ucx-sys = { path = "../communication_frameworks/lamellar-ucx-sys" }
+lamellar-ucc-sys = { path = "../communication_frameworks/lamellar-ucc-sys" }
+
+#[[test]]
+#name= "tests"
+#path = "tests/progress.rs"
+
+##------tests-------##
+
+[[example]]
+name = "put_test"
+path = "tests/array/rdma/put_test.rs"
+
+[[example]]
+name = "get_test"
+path = "tests/array/rdma/get_test.rs"
+
+[[example]]
+name = "blocking_get_test"
+path = "tests/array/rdma/blocking_get_test.rs"
+
+[[example]]
+name = "get_buffer_test"
+path = "tests/array/rdma/get_buffer_test.rs"
+
+[[example]]
+name = "get_into_buffer_test"
+path = "tests/array/rdma/get_into_buffer_test.rs"
+
+[[example]]
+name = "get_into_buffer_unmanaged_test"
+path = "tests/array/rdma/get_into_buffer_unmanaged_test.rs"
+
+[[example]]
+name = "put_buffer_test"
+path = "tests/array/rdma/put_buffer_test.rs"
+
+[[example]]
+name = "put_buffer_unmanaged_test"
+path = "tests/array/rdma/put_buffer_unmanaged_test.rs"
+
+[[example]]
+name = "get_pe_test"
+path = "tests/array/rdma/get_pe_test.rs"
+
+[[example]]
+name = "blocking_get_pe_test"
+path = "tests/array/rdma/blocking_get_pe_test.rs"
+
+[[example]]
+name = "get_buffer_pe_test"
+path = "tests/array/rdma/get_buffer_pe_test.rs"
+
+[[example]]
+name = "blocking_get_buffer_pe_test"
+path = "tests/array/rdma/blocking_get_buffer_pe_test.rs"
+
+[[example]]
+name = "get_into_buffer_pe_test"
+path = "tests/array/rdma/get_into_buffer_pe_test.rs"
+
+[[example]]
+name = "blocking_get_into_buffer_pe_test"
+path = "tests/array/rdma/blocking_get_into_buffer_pe_test.rs"
+
+[[example]]
+name = "get_into_buffer_unmanaged_pe_test"
+path = "tests/array/rdma/get_into_buffer_unmanaged_pe_test.rs"
+
+[[example]]
+name = "blocking_get_buffer_test"
+path = "tests/array/rdma/blocking_get_buffer_test.rs"
+
+[[example]]
+name = "blocking_get_into_buffer_test"
+path = "tests/array/rdma/blocking_get_into_buffer_test.rs"
+
+[[example]]
+name = "put_unmanaged_test"
+path = "tests/array/rdma/put_unmanaged_test.rs"
+
+[[example]]
+name = "put_pe_test"
+path = "tests/array/rdma/put_pe_test.rs"
+
+[[example]]
+name = "put_pe_unmanaged_test"
+path = "tests/array/rdma/put_pe_unmanaged_test.rs"
+
+[[example]]
+name = "put_pe_buffer_test"
+path = "tests/array/rdma/put_pe_buffer_test.rs"
+
+[[example]]
+name = "put_pe_buffer_unmanaged_test"
+path = "tests/array/rdma/put_pe_buffer_unmanaged_test.rs"
+
+[[example]]
+name = "put_all_test"
+path = "tests/array/rdma/put_all_test.rs"
+
+[[example]]
+name = "put_all_unmanaged_test"
+path = "tests/array/rdma/put_all_unmanaged_test.rs"
+
+[[example]]
+name = "put_all_buffer_test"
+path = "tests/array/rdma/put_all_buffer_test.rs"
+
+[[example]]
+name = "put_all_buffer_unmanaged_test"
+path = "tests/array/rdma/put_all_buffer_unmanaged_test.rs"
+
+[[example]]
+name = "array_into_test"
+path = "tests/array/array_into_test.rs"
+
+[[example]]
+name = "add_test"
+path = "tests/array/arithmetic_ops/add_test.rs"
+
+[[example]]
+name = "fetch_add_test"
+path = "tests/array/arithmetic_ops/fetch_add_test.rs"
+
+[[example]]
+name = "sub_test"
+path = "tests/array/arithmetic_ops/sub_test.rs"
+
+[[example]]
+name = "fetch_sub_test"
+path = "tests/array/arithmetic_ops/fetch_sub_test.rs"
+
+[[example]]
+name = "mul_test"
+path = "tests/array/arithmetic_ops/mul_test.rs"
+
+[[example]]
+name = "fetch_mul_test"
+path = "tests/array/arithmetic_ops/fetch_mul_test.rs"
+
+[[example]]
+name = "div_test"
+path = "tests/array/arithmetic_ops/div_test.rs"
+
+[[example]]
+name = "fetch_div_test"
+path = "tests/array/arithmetic_ops/fetch_div_test.rs"
+
+[[example]]
+name = "rem_test"
+path = "tests/array/arithmetic_ops/rem_test.rs"
+
+[[example]]
+name = "fetch_rem_test"
+path = "tests/array/arithmetic_ops/fetch_rem_test.rs"
+
+[[example]]
+name = "and_test"
+path = "tests/array/bitwise_ops/and_test.rs"
+
+[[example]]
+name = "fetch_and_test"
+path = "tests/array/bitwise_ops/fetch_and_test.rs"
+
+[[example]]
+name = "or_test"
+path = "tests/array/bitwise_ops/or_test.rs"
+
+[[example]]
+name = "fetch_or_test"
+path = "tests/array/bitwise_ops/fetch_or_test.rs"
+
+[[example]]
+name = "xor_test"
+path = "tests/array/bitwise_ops/xor_test.rs"
+[[example]]
+name = "fetch_xor_test"
+path = "tests/array/bitwise_ops/fetch_xor_test.rs"
+
+[[example]]
+name = "load_store_test"
+path = "tests/array/atomic_ops/load_store_test.rs"
+
+[[example]]
+name = "swap_test"
+path = "tests/array/atomic_ops/swap_test.rs"
+
+[[example]]
+name = "compare_exchange_test"
+path = "tests/array/atomic_ops/compare_exchange_test.rs"
+
+[[example]]
+name = "shared_mem_region_subregion_test"
+path = "tests/memregion/collective/shared_mem_region_subregion_test.rs"
+
+[[example]]
+name = "sum_all_test"
+path = "tests/array/collective/sum_all_test.rs"
+
+[[example]]
+name = "prod_all_test"
+path = "tests/array/collective/prod_all_test.rs"
+
+[[example]]
+name = "min_all_test"
+path = "tests/array/collective/min_all_test.rs"
+
+[[example]]
+name = "max_all_test"
+path = "tests/array/collective/max_all_test.rs"
+
+[[example]]
+name = "or_all_test"
+path = "tests/array/collective/or_all_test.rs"
+
+[[example]]
+name = "and_all_test"
+path = "tests/array/collective/and_all_test.rs"
+
+[[example]]
+name = "xor_all_test"
+path = "tests/array/collective/xor_all_test.rs"
+
+[[example]]
+name = "gather_all_test"
+path = "tests/array/collective/gather_all_test.rs"
+
+[[example]]
+name = "alltoall_test"
+path = "tests/array/collective/alltoall_test.rs"
+
+[[example]]
+name = "scatter_from_pe_test"
+path = "tests/array/collective/scatter_from_pe_test.rs"
+
+[[example]]
+name = "broadcast_test"
+path = "tests/array/collective/broadcast_test.rs"
+
+
+[[example]]
+name = "sum_at_pe_test"
+path = "tests/array/collective/sum_at_pe_test.rs"
+
+[[example]]
+name = "prod_at_pe_test"
+path = "tests/array/collective/prod_at_pe_test.rs"
+
+[[example]]
+name = "min_at_pe_test"
+path = "tests/array/collective/min_at_pe_test.rs"
+
+[[example]]
+name = "max_at_pe_test"
+path = "tests/array/collective/max_at_pe_test.rs"
+
+[[example]]
+name = "or_at_pe_test"
+path = "tests/array/collective/or_at_pe_test.rs"
+
+[[example]]
+name = "and_at_pe_test"
+path = "tests/array/collective/and_at_pe_test.rs"
+
+[[example]]
+name = "xor_at_pe_test"
+path = "tests/array/collective/xor_at_pe_test.rs"
+
+[[example]]
+name = "sum_scatter_test"
+path = "tests/array/collective/sum_scatter_test.rs"
+
+[[example]]
+name = "prod_scatter_test"
+path = "tests/array/collective/prod_scatter_test.rs"
+
+[[example]]
+name = "min_scatter_test"
+path = "tests/array/collective/min_scatter_test.rs"
+
+[[example]]
+name = "max_scatter_test"
+path = "tests/array/collective/max_scatter_test.rs"
+
+[[example]]
+name = "and_scatter_test"
+path = "tests/array/collective/and_scatter_test.rs"
+
+[[example]]
+name = "or_scatter_test"
+path = "tests/array/collective/or_scatter_test.rs"
+
+[[example]]
+name = "xor_scatter_test"
+path = "tests/array/collective/xor_scatter_test.rs"
+
+[[example]]
+name = "gather_at_pe_test"
+path = "tests/array/collective/gather_at_pe_test.rs"
+
+[[example]]
+name = "sum_all_into_buffer_test"
+path = "tests/array/collective/sum_all_into_buffer_test.rs"
+
+[[example]]
+name = "prod_all_into_buffer_test"
+path = "tests/array/collective/prod_all_into_buffer_test.rs"
+
+[[example]]
+name = "min_all_into_buffer_test"
+path = "tests/array/collective/min_all_into_buffer_test.rs"
+
+[[example]]
+name = "max_all_into_buffer_test"
+path = "tests/array/collective/max_all_into_buffer_test.rs"
+
+[[example]]
+name = "or_all_into_buffer_test"
+path = "tests/array/collective/or_all_into_buffer_test.rs"
+
+[[example]]
+name = "and_all_into_buffer_test"
+path = "tests/array/collective/and_all_into_buffer_test.rs"
+
+[[example]]
+name = "xor_all_into_buffer_test"
+path = "tests/array/collective/xor_all_into_buffer_test.rs"
+
+[[example]]
+name = "sum_at_pe_into_buffer_test"
+path = "tests/array/collective/sum_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "max_at_pe_into_buffer_test"
+path = "tests/array/collective/max_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "min_at_pe_into_buffer_test"
+path = "tests/array/collective/min_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "prod_at_pe_into_buffer_test"
+path = "tests/array/collective/prod_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "and_at_pe_into_buffer_test"
+path = "tests/array/collective/and_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "xor_at_pe_into_buffer_test"
+path = "tests/array/collective/xor_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "or_at_pe_into_buffer_test"
+path = "tests/array/collective/or_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "sum_scatter_into_buffer_test"
+path = "tests/array/collective/sum_scatter_into_buffer_test.rs"
+
+[[example]]
+name = "max_scatter_into_buffer_test"
+path = "tests/array/collective/max_scatter_into_buffer_test.rs"
+
+[[example]]
+name = "min_scatter_into_buffer_test"
+path = "tests/array/collective/min_scatter_into_buffer_test.rs"
+
+[[example]]
+name = "prod_scatter_into_buffer_test"
+path = "tests/array/collective/prod_scatter_into_buffer_test.rs"
+
+[[example]]
+name = "and_scatter_into_buffer_test"
+path = "tests/array/collective/and_scatter_into_buffer_test.rs"
+
+[[example]]
+name = "xor_scatter_into_buffer_test"
+path = "tests/array/collective/xor_scatter_into_buffer_test.rs"
+
+[[example]]
+name = "or_scatter_into_buffer_test"
+path = "tests/array/collective/or_scatter_into_buffer_test.rs"
+
+[[example]]
+name = "gather_all_into_buffer_test"
+path = "tests/array/collective/gather_all_into_buffer_test.rs"
+
+[[example]]
+name = "gather_at_pe_into_buffer_test"
+path = "tests/array/collective/gather_at_pe_into_buffer_test.rs"
+
+[[example]]
+name = "alltoall_into_buffer_test"
+path = "tests/array/collective/alltoall_into_buffer_test.rs"
+
+[[example]]
+name = "broadcast_from_pe_into_buffer_test"
+path = "tests/array/collective/broadcast_from_pe_into_buffer_test.rs"
+
+[[example]]
+name = "scatter_from_pe_into_buffer_test"
+path = "tests/array/collective/scatter_from_pe_into_buffer_test.rs"
+
+
+##------------ Bandwidth Examples -----------------##
+
+[[example]]
+name = "am_latency"
+path = "examples/bandwidths/am_latency.rs"
+
+[[example]]
+name = "coll_latency"
+path = "examples/bandwidths/coll_latency.rs"
+
+[[example]]
+name = "put_latency"
+path = "examples/bandwidths/put_latency.rs"
+
+[[example]]
+name = "am_bw"
+path = "examples/bandwidths/am_bw.rs"
+
+[[example]]
+name = "am_bw_small"
+path = "examples/bandwidths/am_bw_small.rs"
+
+[[example]]
+name = "atomic_f64_collective_latency"
+path = "examples/misc/atomic_f64_collective_latency.rs"
+
+[[example]]
+name = "task_group_am_bw"
+path = "examples/bandwidths/task_group_am_bw.rs"
+
+[[example]]
+name = "task_group_futures_am_bw"
+path = "examples/bandwidths/task_group_futures_am_bw.rs"
+
+[[example]]
+name = "task_group_typed_futures_am_bw"
+path = "examples/bandwidths/task_group_typed_futures_am_bw.rs"
+
+[[example]]
+name = "am_bw_get"
+path = "examples/bandwidths/am_bw_get.rs"
+
+[[example]]
+name = "serde_rdma_pingpong"
+path = "examples/bandwidths/serde_rdma_pingpong.rs"
+
+[[example]]
+name = "am_group_bw_get"
+path = "examples/bandwidths/am_group_bw_get.rs"
+
+[[example]]
+name = "get_bw"
+path = "examples/bandwidths/get_bw.rs"
+
+[[example]]
+name = "get_small"
+path = "examples/bandwidths/get_small.rs"
+
+[[example]]
+name = "put_bw"
+path = "examples/bandwidths/put_bw.rs"
+
+[[example]]
+name = "put_congested"
+path = "examples/bandwidths/put_congested.rs"
+[[example]]
+name = "exchange_bench"
+path = "examples/bandwidths/exchange_bench.rs"
+[[example]]
+name = "onnode_atomic_stress"
+path = "examples/stress_tests/onnode_atomic_stress.rs"
+[[example]]
+name = "onnode_suballoc"
+path = "examples/stress_tests/onnode_suballoc.rs"
+
+[[example]]
+name = "put_bw_mt"
+path = "examples/bandwidths/put_bw_mt.rs"
+
+[[example]]
+name = "put_small_mt"
+path = "examples/bandwidths/put_small_mt.rs"
+
+[[example]]
+name = "get_bw_mt"
+path = "examples/bandwidths/get_bw_mt.rs"
+
+[[example]]
+name = "unsafe_array_put_bw"
+path = "examples/bandwidths/unsafe_array_put_bw.rs"
+
+[[example]]
+name = "unsafe_array_put_unchecked_bw"
+path = "examples/bandwidths/unsafe_array_put_unchecked_bw.rs"
+
+[[example]]
+name = "atomic_array_put_bw"
+path = "examples/bandwidths/atomic_array_put_bw.rs"
+
+[[example]]
+name = "local_lock_atomic_array_put_bw"
+path = "examples/bandwidths/local_lock_atomic_array_put_bw.rs"
+
+[[example]]
+name = "global_lock_atomic_array_put_bw"
+path = "examples/bandwidths/global_lock_atomic_array_put_bw.rs"
+
+[[example]]
+name = "unsafe_array_get_bw"
+path = "examples/bandwidths/unsafe_array_get_bw.rs"
+
+[[example]]
+name = "unsafe_array_store_bw"
+path = "examples/bandwidths/unsafe_array_store_bw.rs"
+
+[[example]]
+name = "unsafe_array_store_bw_customtype"
+path = "examples/bandwidths/unsafe_array_store_bw_customtype.rs"
+
+[[example]]
+name = "unsafe_array_get_unchecked_bw"
+path = "examples/bandwidths/unsafe_array_get_unchecked_bw.rs"
+
+[[example]]
+name = "atomic_array_get_bw"
+path = "examples/bandwidths/atomic_array_get_bw.rs"
+
+[[example]]
+name = "local_lock_atomic_array_get_bw"
+path = "examples/bandwidths/local_lock_atomic_array_get_bw.rs"
+
+[[example]]
+name = "global_lock_atomic_array_get_bw"
+path = "examples/bandwidths/global_lock_atomic_array_get_bw.rs"
+
+[[example]]
+name = "readonly_array_get_bw"
+path = "examples/bandwidths/readonly_array_get_bw.rs"
+
+[[example]]
+name = "readonly_array_get_unchecked_bw"
+path = "examples/bandwidths/readonly_array_get_unchecked_bw.rs"
+
+
+##------------ Active Message Examples -----------------##
+[[example]]
+name = "am_no_return"
+path = "examples/active_message_examples/am_no_return.rs"
+
+[[example]]
+name = "am_return_usize"
+path = "examples/active_message_examples/am_return_usize.rs"
+
+[[example]]
+name = "am_return_ordered"
+path = "examples/active_message_examples/am_return_ordered.rs"
+
+[[example]]
+name = "am_return_am"
+path = "examples/active_message_examples/am_return_am.rs"
+
+[[example]]
+name = "am_return_am_usize"
+path = "examples/active_message_examples/am_return_am_usize.rs"
+
+[[example]]
+name = "async_comparison"
+path = "examples/active_message_examples/async_comparison.rs"
+
+[[example]]
+name = "recursive_am"
+path = "examples/active_message_examples/recursive_am.rs"
+
+[[example]]
+name = "am_batch_tests"
+path = "examples/active_message_examples/am_batch_tests.rs"
+
+[[example]]
+name = "am_local"
+path = "examples/active_message_examples/am_local.rs"
+
+[[example]]
+name = "am_local_thread"
+path = "examples/active_message_examples/am_local_thread.rs"
+
+[[example]]
+name = "am_local_memregions"
+path = "examples/active_message_examples/am_local_memregions.rs"
+
+
+##---------------Array Examples -------------------##
+[[example]]
+name = "dist_array_reduce"
+path = "examples/array_examples/dist_array_reduce.rs"
+
+[[example]]
+name = "array_am"
+path = "examples/array_examples/array_am.rs"
+
+[[example]]
+name = "array_put_get"
+path = "examples/array_examples/array_put_get.rs"
+
+[[example]]
+name = "onesided_iteration"
+path = "examples/array_examples/onesided_iteration.rs"
+
+[[example]]
+name = "local_iteration"
+path = "examples/array_examples/local_iteration.rs"
+
+[[example]]
+name = "distributed_iteration"
+path = "examples/array_examples/distributed_iteration.rs"
+
+[[example]]
+name = "array_consumer_schedules"
+path = "examples/array_examples/array_consumer_schedules.rs"
+
+#[[example]]
+#name="local_only_array"
+#path="examples/array_examples/local_only_array.rs"
+
+[[example]]
+name = "generic_array"
+path = "examples/array_examples/generic_array.rs"
+
+[[example]]
+name = "array_batch_add"
+path = "examples/array_examples/array_batch_add.rs"
+
+[[example]]
+name = "array_ops"
+path = "examples/array_examples/array_ops.rs"
+
+[[example]]
+name = "atomic_compare_exchange"
+path = "examples/array_examples/atomic_compare_exchange.rs"
+
+[[example]]
+name = "network_atomics"
+path = "examples/array_examples/network_atomics.rs"
+
+#[[example]]
+#name = "network_atomic_ops"
+#path = "examples/array_examples/network_atomic_ops.rs"
+
+[[example]]
+name = "array_first_last_global_indices"
+path = "examples/array_examples/array_first_last_global_indices.rs"
+
+[[example]]
+name = "global_lock_array"
+path = "examples/array_examples/global_lock_array.rs"
+
+#[[example]]
+#name="2d_array"
+#path="examples/array_examples/2d_array.rs"
+
+[[example]]
+name = "histo"
+path = "examples/array_examples/histo.rs"
+
+#[[example]]
+#name="single_pe_array"
+#path="examples/array_examples/single_pe_array.rs"
+
+[[example]]
+name = "prefix_sum"
+path = "examples/array_examples/prefix_sum.rs"
+
+
+##------------ RDMA Examples -----------------##
+[[example]]
+name = "rdma_put"
+path = "examples/rdma_examples/rdma_put.rs"
+
+[[example]]
+name = "rdma_get"
+path = "examples/rdma_examples/rdma_get.rs"
+
+[[example]]
+name = "rdma_am"
+path = "examples/rdma_examples/rdma_am.rs"
+
+
+##------------ Team Examples -----------------##
+[[example]]
+name = "team_am"
+path = "examples/team_examples/team_am.rs"
+
+[[example]]
+name = "custom_team_arch"
+path = "examples/team_examples/custom_team_arch.rs"
+
+[[example]]
+name = "random_team"
+path = "examples/team_examples/random_team.rs"
+
+##------------ Kernel Examples -----------------##
+[[example]]
+name = "am_flops"
+path = "examples/kernels/am_flops.rs"
+
+[[example]]
+name = "dft_proxy"
+path = "examples/kernels/dft_proxy.rs"
+
+[[example]]
+name = "am_gemm"
+path = "examples/kernels/am_gemm.rs"
+
+[[example]]
+name = "cached_am_gemm"
+path = "examples/kernels/cached_am_gemm.rs"
+
+[[example]]
+name = "serial_array_gemm"
+path = "examples/kernels/serial_array_gemm.rs"
+
+[[example]]
+name = "parallel_array_gemm"
+path = "examples/kernels/parallel_array_gemm.rs"
+
+[[example]]
+name = "parallel_blocked_array_gemm"
+path = "examples/kernels/parallel_blocked_array_gemm.rs"
+
+[[example]]
+name = "safe_parallel_blocked_array_gemm"
+path = "examples/kernels/safe_parallel_blocked_array_gemm.rs"
+
+#[[example]]
+#name="safe_parallel_blocked_array_gemm_2"
+#path="examples/kernels/safe_parallel_blocked_array_gemm_2.rs"
+
+
+##------------ Miscellaneous Examples -----------------##
+[[example]]
+name = "simple_ptp"
+path = "examples/misc/simple_ptp.rs"
+
+[[example]]
+name = "lamellar_env"
+path = "examples/misc/lamellar_env.rs"
+
+[[example]]
+name = "ping_pong"
+path = "examples/misc/ping_pong.rs"
+
+[[example]]
+name = "dist_hashmap"
+path = "examples/misc/dist_hashmap.rs"
+
+
+##------------ Darc examples ------------------##
+[[example]]
+name = "darc"
+path = "examples/darc_examples/darc.rs"
+
+[[example]]
+name = "stress_test"
+path = "examples/darc_examples/stress_test.rs"
+
+[[example]]
+name = "string_darc"
+path = "examples/darc_examples/string_darc.rs"
+
+[[example]]
+name = "collective_write"
+path = "examples/darc_examples/collective_write.rs"
+
+##------------ Hello Worlds examples ------------------##
+[[example]]
+name = "hello_world_am"
+path = "examples/hello_world/hello_world_am.rs"
+
+[[example]]
+name = "hello_world_array"
+path = "examples/hello_world/hello_world_array.rs"
+
+[[example]]
+name = "hello_world_array_iteration"
+path = "examples/hello_world/hello_world_array_iteration.rs"

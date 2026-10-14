@@ -1,0 +1,231 @@
+pub(crate) mod alloc;
+pub(crate) mod atomic;
+pub(crate) mod collective;
+pub(crate) mod error;
+pub(crate) mod rdma;
+pub(crate) mod slice;
+
+pub(crate) use alloc::*;
+pub(crate) use atomic::*;
+pub(crate) use error::*;
+pub(crate) use rdma::*;
+pub(crate) use slice::*;
+
+use super::Backend;
+pub use rdma::Remote;
+
+#[cfg(feature = "enable-libfabric-sys")]
+use crate::lamellae::libfabric_sys_lamellae::comm::LibfabricSysComm;
+
+#[cfg(feature = "enable-libfabric-sys-opt")]
+use crate::lamellae::libfabric_sys_opt_lamellae::comm::LibfabricSysOptComm;
+
+#[cfg(feature = "enable-libfabric")]
+use crate::lamellae::libfabric_lamellae::comm::LibfabricComm;
+
+#[cfg(feature = "enable-libfabric-async")]
+use crate::lamellae::libfabric_async_lamellae::comm::LibfabricAsyncComm;
+
+#[cfg(feature = "enable-rofi-c")]
+use crate::lamellae::rofi_c_lamellae::comm::RofiCComm;
+#[cfg(feature = "enable-ucx")]
+use crate::lamellae::ucx_lamellae::comm::UcxComm;
+#[cfg(feature = "enable-ucx-opt")]
+use crate::lamellae::ucx_opt_lamellae::comm::UcxOptComm;
+#[cfg(feature = "enable-shmem-opt")]
+use crate::lamellae::shmem_opt_lamellae::comm::ShmemOptComm;
+use crate::lamellae::{
+    collective::ReduceOp, local_lamellae::comm::LocalComm, shmem_lamellae::comm::ShmemComm,
+    AllocationType, SerializedData,
+};
+
+use enum_dispatch::enum_dispatch;
+use std::sync::Arc;
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CmdQStatus {
+    Active = 1,
+    Finished = 2,
+    ShuttingDown = 3,
+    Panic = 4,
+}
+
+pub(crate) enum CollectiveOpKind {
+    Barrier,
+    Broadcast,
+    AllToAll,
+    #[allow(dead_code)]
+    // ReduceOp payload only read by libfabric/ucx-family collective_avail impls
+    AllReduce(ReduceOp),
+    AllGather,
+    #[allow(dead_code)]
+    // ReduceOp payload only read by libfabric/ucx-family collective_avail impls
+    ReduceScatter(ReduceOp),
+    #[allow(dead_code)]
+    // ReduceOp payload only read by libfabric/ucx-family collective_avail impls
+    Reduce(ReduceOp),
+    Scatter,
+    Gather,
+}
+
+#[enum_dispatch(CommMem, CommShutdown, CommInfo, CommProgress)]
+#[derive(Debug)]
+pub(crate) enum Comm {
+    #[cfg(feature = "enable-libfabric-sys")]
+    LibfabricSys(LibfabricSysComm),
+    #[cfg(feature = "enable-libfabric-sys-opt")]
+    LibfabricSysOpt(LibfabricSysOptComm),
+    #[cfg(feature = "enable-libfabric")]
+    Libfabric(LibfabricComm),
+    #[cfg(feature = "enable-libfabric-async")]
+    LibfabricAsync(LibfabricAsyncComm),
+    #[cfg(feature = "enable-ucx")]
+    Ucx(UcxComm),
+    #[cfg(feature = "enable-ucx-opt")]
+    UcxOpt(UcxOptComm),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(RofiCComm),
+    Shmem(ShmemComm),
+    #[cfg(feature = "enable-shmem-opt")]
+    ShmemOpt(ShmemOptComm),
+    Local(LocalComm),
+}
+
+impl Comm {
+    //#[tracing::instrument(skip(self), level = "debug")]
+    pub(crate) fn new_serialized_data(
+        self: &Arc<Comm>,
+        size: usize,
+    ) -> Result<SerializedData, anyhow::Error> {
+        // trace!("new serialized data");
+        SerializedData::new(self.clone(), size)
+    }
+}
+
+#[enum_dispatch]
+pub(crate) trait CommShutdown {
+    fn force_shutdown(&self);
+}
+
+#[enum_dispatch]
+pub(crate) trait CommMem {
+    fn alloc(
+        &self,
+        size: usize,
+        alloc: AllocationType,
+        align: usize,
+    ) -> error::AllocResult<CommAlloc>;
+
+    fn rt_alloc(&self, size: usize, align: usize) -> error::AllocResult<CommAlloc>;
+    /// Like `rt_alloc`, but contents are unspecified; for buffers the caller fully overwrites.
+    fn rt_alloc_uninit(&self, size: usize, align: usize) -> error::AllocResult<CommAlloc> {
+        self.rt_alloc(size, align)
+    }
+
+    /// Collectively register `len` bytes at `ptr` (memory the caller owns, e.g. its data segment)
+    /// so that peers can target it with RDMA. Every PE must call this in the same order; each PE
+    /// may pass a different `ptr`. The returned allocation never frees the memory. Offsets into
+    /// the allocation are relative to each PE's own `ptr`.
+    fn register_external(&self, _ptr: *mut u8, _len: usize) -> error::AllocResult<CommAlloc> {
+        Err(error::AllocError::Unsupported("register_external"))
+    }
+    fn rt_check_alloc(&self, size: usize, align: usize) -> bool;
+    fn mem_occupied(&self) -> usize;
+    fn alloc_pool(&self, min_size: usize);
+    fn num_pool_allocs(&self) -> usize;
+    fn print_pools(&self);
+    // this translates a remote address to a local address
+    fn local_addr(&self, remote_pe: usize, remote_addr: usize) -> CommAllocAddr;
+    // this creates a CommAlloc from a remote PE and remote address that represents a one-sided allocation
+    // we can only perform rdma operations to remote_pe using this allocation
+    fn one_sided_alloc_from_remote_pe_and_addr(
+        &self,
+        remote_pe: usize,
+        remote_addr: usize,
+        num_bytes: usize,
+    ) -> CommAlloc;
+
+    // this translates a remote address to its local allocation + offset within that allocation
+    // we need this to support onesided allocations that arrive at remote node
+    fn local_alloc_and_offset_from_remote_pe_and_addr(
+        &self,
+        remote_pe: usize,
+        remote_addr: usize,
+    ) -> (CommAlloc, usize);
+
+    // think of this as Box::from_raw, it takes a raw local address and returns the CommAlloc that contains it
+    // this does not not increment the ref count of the CommAlloc, this should be matched to a alloc.leak() call typically
+    // we need this to enable appropriate freeing of serialized active message data after it has been processed at a remote PE
+    // or for use in reconstructing a Darc<LamellarTeamRT> from a raw pointer
+    fn local_rt_alloc_from_local_addr(&self, addr: usize) -> error::AllocResult<CommAlloc>;
+
+    // this translates a local address to a remote address
+    fn remote_addr(&self, remote_pe: usize, local_addr: usize) -> CommAllocAddr;
+
+    // this checks for an allocation at the given address and returns it if it exists incrementing the ref count
+    fn get_alloc_cloned(&self, addr: CommAllocAddr) -> error::AllocResult<CommAlloc>;
+}
+
+/// Ticketed operations (completed by a callback or a CQ entry) currently in flight on the active backend. A
+/// backend that overrides `CommProgress::background_flush` with [`background_progress_due`] increments this when
+/// it issues such an operation and decrements it when it completes.
+pub(crate) static TRACKED_INFLIGHT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// Whether the receive loop's background progress call should run now: always while a tracked operation is in
+/// flight (futures waiting on it rely on this loop), otherwise at most once per millisecond, which keeps wireup
+/// and target-side work going without contending with issuing threads for the progress lock.
+pub(crate) fn background_progress_due() -> bool {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+    const FLOOR_NS: u64 = 1_000_000;
+    if TRACKED_INFLIGHT.load(Ordering::Relaxed) > 0 {
+        return true;
+    }
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    let now = START.get_or_init(std::time::Instant::now).elapsed().as_nanos() as u64 + 1;
+    if now.saturating_sub(LAST.load(Ordering::Relaxed)) < FLOOR_NS {
+        return false;
+    }
+    LAST.store(now, Ordering::Relaxed);
+    true
+}
+
+#[enum_dispatch]
+pub(crate) trait CommProgress {
+    fn flush_all(&self);
+    fn thread_flush(&self) {
+        self.flush_all();
+    }
+    /// The progress call made by the command queue's receive loop. A backend that knows it has nothing in
+    /// flight may skip it.
+    fn background_flush(&self) {
+        self.thread_flush();
+    }
+    fn wait_all(&self);
+    fn thread_wait(&self) {
+        self.wait_all();
+    }
+    fn barrier(&self);
+}
+
+#[enum_dispatch]
+pub(crate) trait CommInfo {
+    fn my_pe(&self) -> usize;
+    fn num_pes(&self) -> usize;
+    fn backend(&self) -> Backend;
+    fn atomic_avail<T: 'static>(&self) -> bool
+    where
+        Self: Sized;
+    fn atomic_op_avail<T: 'static>(&self, _op: AtomicOp<T>) -> bool
+    where
+        Self: Sized,
+    {
+        self.atomic_avail::<T>()
+    }
+    fn collective_avail<T: 'static>(&self, op: CollectiveOpKind) -> bool;
+
+    #[allow(non_snake_case)]
+    fn MB_sent(&self) -> f64;
+}
