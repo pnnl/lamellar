@@ -1,0 +1,799 @@
+use crate::{
+    active_messaging::batching::{
+        simple_batcher::io_task_stats, BATCHER_AM_PE_RECV_CNTS, BATCHER_AM_PE_SEND_CNTS,
+    },
+    env_var::config,
+    lamellae::{AllocationType, CommAllocRdma, CommProgress, CommSlice, Lamellae},
+    lamellar_arch::LamellarArchRT,
+    lamellar_request::LamellarRequest,
+    memregion::MemoryRegion,
+    scheduler::Scheduler,
+    utils::print_stats,
+    warnings::RuntimeWarning,
+};
+
+use futures_util::Future;
+use pin_project::{pin_project, pinned_drop};
+use std::pin::Pin;
+use std::sync::{
+    atomic::{AtomicU8, AtomicUsize, Ordering},
+    Arc,
+};
+use std::task::{Context, Poll, Waker};
+use std::time::Instant;
+use tracing::{debug, trace};
+
+// Native progress words (see `Barrier::native`): each PE has one per round, on a line of its
+// own, set to the barrier id once it starts that round (the pull equivalent of having sent
+// that round's flags). One line per round means each line has only that round's n readers.
+const NATIVE_LINE: usize = 64;
+const NATIVE_LINE_WORDS: usize = NATIVE_LINE / std::mem::size_of::<usize>();
+
+#[inline(always)]
+fn native_word(base: usize, round: usize) -> &'static AtomicUsize {
+    unsafe { &*((base + round * NATIVE_LINE) as *const AtomicUsize) }
+}
+
+// Each round a PE hears from n more distances, so after k rounds it knows about (n + 1)^k PEs.
+fn dissemination_rounds(num_pes: usize, n: usize) -> usize {
+    let mut num_rounds = 0;
+    let mut reach = 1;
+    while reach < num_pes {
+        reach *= n + 1;
+        num_rounds += 1;
+    }
+    num_rounds
+}
+
+// Pure spins between scheduler/progress calls while polling a native progress word.
+const NATIVE_SPINS: u32 = 256;
+
+pub(crate) struct Barrier {
+    my_pe: usize, // global pe id
+    num_pes: usize,
+    n: usize, // dissemination factor
+    num_rounds: usize,
+    pub(crate) arch: Arc<LamellarArchRT>,
+    pub(crate) scheduler: Arc<Scheduler>,
+    lamellae: Arc<Lamellae>,
+    barrier_cnt: AtomicUsize,
+    cur_barrier_id: Arc<AtomicUsize>,
+    barrier_mem_region: Option<MemoryRegion<usize>>, //keep mem region alive
+    barrier_buf: Arc<Vec<CommSlice<usize>>>,
+    // Per team index, the address of that PE's first progress line when the backend lets every
+    // team PE load the others' memory (shmem-opt). Each PE stores its own progress and polls
+    // its round partners' words, so a round is one store and n loads instead of n puts.
+    // Valid while `barrier_buf` holds the allocation.
+    native: Option<Arc<Vec<usize>>>,
+    // send_buf: Option<MemoryRegion<usize>>,
+    panic: Arc<AtomicU8>,
+}
+
+// impl Drop for Barrier {
+//     fn drop(&mut self) {
+//         trace!(target: "lamellae_debug",  "Dropping Barrier for my_pe {:?} lamellae cnt: {:?} ", self.my_pe, Arc::strong_count(&self.lamellae));
+//     }
+// }
+
+impl Barrier {
+    pub(crate) fn new(
+        my_pe: usize,
+        global_pes: usize,
+        lamellae: Arc<Lamellae>,
+        arch: Arc<LamellarArchRT>,
+        scheduler: Arc<Scheduler>,
+        panic: Arc<AtomicU8>,
+    ) -> Barrier {
+        let num_pes = arch.num_pes();
+        // let mut n = std::env::var("LAMELLAR_BARRIER_DISSEMNATION_FACTOR")
+        let mut n = config().barrier_dissemination_factor;
+        if n < 1 || num_pes <= 2 {
+            n = 1;
+        }
+        let mut num_rounds = dissemination_rounds(num_pes, n);
+        let (mem_region, buffs, native) = if let Ok(_my_index) = arch.team_pe(my_pe) {
+            if num_pes > 1 {
+                let alloc = if global_pes == arch.num_pes() {
+                    AllocationType::Global
+                } else {
+                    let mut pes = arch.team_iter().collect::<Vec<usize>>();
+                    pes.sort();
+                    AllocationType::Sub(pes)
+                };
+                trace!(target: "lamellae_debug", "creating barrier with alloc {:?} for my_pe {:?} num_pes {:?} num_rounds {:?} n {:?} lamellae cnt: {:?}", alloc, my_pe, num_pes, num_rounds, n, Arc::strong_count(&lamellae));
+                // room for the put flags or, natively, one line per round plus alignment slack
+                // (natively the factor may drop to 1, see below)
+                let len = std::cmp::max(
+                    num_rounds * n,
+                    (dissemination_rounds(num_pes, 1) + 1) * NATIVE_LINE_WORDS,
+                );
+                let mem_region =
+                    MemoryRegion::new(len, &scheduler, None, &lamellae, alloc.clone());
+                let mem_region_comm_slice = unsafe {
+                    mem_region.as_comm_slice().expect(
+                        "MemoryRegion should be registered and able to be converted to CommSlice",
+                    )
+                };
+                let mut buffs = vec![];
+                for r in 0..n {
+                    trace!(
+                        target: "lamellae_debug",
+                        "[r: {r}] creating barrier buff {:?}, num_rounds: {num_rounds} lamellae cnt: {:?}",
+                        alloc,
+                        Arc::strong_count(&lamellae)
+                    );
+                    buffs.push(
+                        mem_region_comm_slice.sub_slice(r * num_rounds..(r + 1) * num_rounds),
+                    );
+                }
+
+                // let send_buf = MemoryRegion::new(1, &scheduler, vec![], &lamellae, alloc);
+
+                unsafe {
+                    for buff in &mut buffs {
+                        for elem in buff.as_mut_slice() {
+                            *elem = 0;
+                        }
+                    }
+                }
+                let line = (mem_region_comm_slice.inner_alloc.addr().0 + NATIVE_LINE - 1)
+                    & !(NATIVE_LINE - 1);
+                let native = (0..num_pes)
+                    .map(|i| {
+                        let pe = arch.single_iter(i).next().unwrap();
+                        mem_region_comm_slice.inner_alloc.peer_addr(pe, line)
+                    })
+                    .collect::<Option<Vec<usize>>>()
+                    .map(Arc::new);
+                (Some(mem_region), buffs, native)
+            } else {
+                (None, vec![], None)
+            }
+        } else {
+            (None, vec![], None)
+        };
+        // Natively a round costs one dependent load per partner, so extra partners per round
+        // cost more than the rounds they save: binary dissemination measured fastest on shmem-opt
+        // at every P. An explicitly set factor still wins.
+        if native.is_some() && std::env::var("LAMELLAR_BARRIER_DISSEMINATION_FACTOR").is_err() {
+            n = 1;
+            num_rounds = dissemination_rounds(num_pes, 1);
+        }
+
+        let bar = Barrier {
+            my_pe,
+            num_pes,
+            n,
+            num_rounds,
+            arch,
+            scheduler,
+            lamellae,
+            barrier_cnt: AtomicUsize::new(1),
+            barrier_mem_region: mem_region,
+            cur_barrier_id: Arc::new(AtomicUsize::new(1)),
+            barrier_buf: Arc::new(buffs),
+            native,
+            panic,
+        };
+        // bar.print_bar();
+        trace!(target: "lamellae_debug", "Created Barrier for my_pe: {:?} num_pes: {:?} n: {:?} num_rounds: {:?} lamellae cnt: {:?}", my_pe, num_pes, n, num_rounds, Arc::strong_count(&bar.lamellae));
+        bar
+    }
+
+    fn print_bar(&self) {
+        if let Some(_) = &self.barrier_mem_region {
+            let buffs = self
+                .barrier_buf
+                .iter()
+                .map(|b| b.as_slice())
+                .collect::<Vec<_>>();
+            println!(
+                " [LAMELLAR BARRIER][{:?}][{:?}][{:?}] {:?}  {:?}",
+                std::thread::current().id(),
+                self.my_pe,
+                self.barrier_buf[0],
+                buffs,
+                self.barrier_cnt.load(Ordering::SeqCst)
+            );
+        }
+    }
+
+    fn barrier_timeout(
+        &self,
+        s: &mut Instant,
+        my_index: usize,
+        round: usize,
+        i: usize,
+        team_recv_pe: isize,
+        recv_pe: usize,
+        barrier_id: usize,
+    ) {
+        RuntimeWarning::BarrierTimeout(s.elapsed().as_secs_f64()).print();
+
+        if s.elapsed().as_secs_f64() > config().deadlock_warning_timeout {
+            self.lamellae.wait_all_print();
+
+            println!(
+                "[{:?}][{:?}, {:?}] round: {:?} i: {:?} teamsend_pe: {:?} team_recv_pe: {:?} recv_pe: {:?} id: {:?} buf {:?} AM send/recv counts: {:?} {:?} {:?}",
+                std::thread::current().id(),
+                self.my_pe,
+                my_index,
+                round,
+                i,
+                (my_index + i * (self.n + 1).pow(round as u32))
+                    % self.num_pes,
+                team_recv_pe,
+                recv_pe,
+                barrier_id,
+                    self.barrier_buf[i - 1]
+                        .as_slice(),
+                    print_stats!(&*BATCHER_AM_PE_SEND_CNTS),
+                    print_stats!(&*BATCHER_AM_PE_RECV_CNTS),
+                        io_task_stats(),
+            );
+            self.print_bar();
+            *s = Instant::now();
+        }
+    }
+
+    fn barrier_internal<F: Fn()>(&self, wait_func: F) {
+        // println!("in barrier");
+        // self.print_bar();
+        trace!(
+            "[{:?}] entering barrier cnt: {:?} cur_barrier_id: {:?}",
+            std::thread::current().id(),
+            self.barrier_cnt.load(Ordering::SeqCst),
+            self.cur_barrier_id.load(Ordering::SeqCst)
+        );
+        let mut s = Instant::now();
+        if self.panic.load(Ordering::SeqCst) == 0 {
+            if let Some(_) = &self.barrier_mem_region {
+                if let Ok(my_index) = self.arch.team_pe(self.my_pe) {
+                    let barrier_id = self.barrier_cnt.fetch_add(1, Ordering::SeqCst);
+
+                    trace!(
+                        "[{:?}] barrier_id = {:?}",
+                        std::thread::current().id(),
+                        barrier_id
+                    );
+                    while barrier_id > self.cur_barrier_id.load(Ordering::SeqCst) {
+                        wait_func();
+                        if s.elapsed().as_secs_f64() > config().deadlock_warning_timeout {
+                            break;
+                        }
+                        self.lamellae.comm().flush_all();
+                    }
+
+                    if let Some(words) = &self.native {
+                        for round in 0..self.num_rounds {
+                            let val = barrier_id;
+                            native_word(words[my_index], round).store(val, Ordering::Release);
+                            let stride = (self.n + 1).pow(round as u32);
+                            for i in 1..=self.n {
+                                let team_recv_pe = (my_index + self.num_pes
+                                    - (i * stride) % self.num_pes)
+                                    % self.num_pes;
+                                if team_recv_pe == my_index {
+                                    continue;
+                                }
+                                let w = native_word(words[team_recv_pe], round);
+                                let mut spins = 0u32;
+                                while w.load(Ordering::Acquire) < val {
+                                    spins += 1;
+                                    if spins % NATIVE_SPINS == 0 {
+                                        let recv_pe =
+                                            self.arch.single_iter(team_recv_pe).next().unwrap();
+                                        self.barrier_timeout(
+                                            &mut s,
+                                            my_index,
+                                            round,
+                                            i,
+                                            team_recv_pe as isize,
+                                            recv_pe,
+                                            barrier_id,
+                                        );
+                                        self.lamellae.comm().flush_all();
+                                        wait_func();
+                                    } else {
+                                        std::hint::spin_loop();
+                                    }
+                                }
+                            }
+                        }
+                        self.cur_barrier_id.store(barrier_id + 1, Ordering::SeqCst);
+                        return;
+                    }
+                    for round in 0..self.num_rounds {
+                        trace!(
+                            "[{:?}][ {:?} {:?}] round: {:?} barrier_id: {:?}",
+                            std::thread::current().id(),
+                            self.my_pe,
+                            my_index,
+                            round,
+                            barrier_id
+                        );
+                        // let mut reqs = vec![];
+                        for i in 1..=self.n {
+                            let team_send_pe =
+                                (my_index + i * (self.n + 1).pow(round as u32)) % self.num_pes;
+                            trace!(
+                                    "[{:?}][ {:?} {:?}] round: {:?}  i: {:?} sending to [ ({:?}) ] id: {:?} buf {:?}",
+                                    std::thread::current().id(),
+                                    self.my_pe,
+                                    my_index,
+                                    round,
+                                    i,
+                                    team_send_pe,
+                                    barrier_id,
+                                        self.barrier_buf[i - 1]
+                                            .as_slice()
+                                    );
+                            if team_send_pe != my_index {
+                                let send_pe = self.arch.single_iter(team_send_pe).next().unwrap();
+
+                                // println!("barrier put_slice 1");
+                                // reqs.push(
+                                self.barrier_buf[i - 1].put_unmanaged(barrier_id, send_pe, round);
+                                // );
+                                // let _ = self.barrier_buf[i - 1]
+                                //     .put_comm_slice(
+                                //         send_pe,
+                                //         round,
+                                //         CommSlice::from_slice(barrier_slice),
+                                //     )
+                                //     .spawn(); //no need to pass in counters as we wont leave until the barrier is complete anyway
+                                //safe as we are the only ones writing to our index
+                            }
+                        }
+                        // join_all(reqs).await;
+                        // for req in reqs.into_iter() {
+                        //     req.block();
+                        // }
+                        self.barrier_buf[0].wait();
+                        for i in 1..=self.n {
+                            let team_recv_pe = ((my_index as isize
+                                - (i as isize * (self.n as isize + 1).pow(round as u32) as isize))
+                                as isize)
+                                .rem_euclid(self.num_pes as isize)
+                                as isize;
+                            let recv_pe =
+                                self.arch.single_iter(team_recv_pe as usize).next().unwrap();
+                            if team_recv_pe as usize != my_index {
+                                trace!(
+                                    "[{:?}][{:?} ] recv from [{:?} ({:?}) ] id: {:?} buf {:?}",
+                                    std::thread::current().id(),
+                                    self.my_pe,
+                                    recv_pe,
+                                    team_recv_pe,
+                                    barrier_id,
+                                    self.barrier_buf[i - 1].as_slice()
+                                );
+
+                                //safe as  each pe is only capable of writing to its own index
+                                while self.barrier_buf[i - 1].as_slice()[round] < barrier_id {
+                                    self.barrier_timeout(
+                                        &mut s,
+                                        my_index,
+                                        round,
+                                        i,
+                                        team_recv_pe,
+                                        recv_pe,
+                                        barrier_id,
+                                    );
+                                    self.lamellae.comm().flush_all();
+                                    wait_func();
+                                }
+                            }
+                        }
+                    }
+                    self.cur_barrier_id.store(barrier_id + 1, Ordering::SeqCst);
+                    // println!("leaving barrier {:?}", barrier_id);
+                }
+            }
+        }
+
+        // self.print_bar();
+        // self.lamellae.comm().flush();
+    }
+
+    pub(crate) fn barrier(&self) {
+        if std::thread::current().id() == *crate::MAIN_THREAD {
+            // Wrapped once around the whole barrier_internal call (not per spin
+            // iteration) so a tokio worker thread blocking here doesn't exhaust the
+            // whole worker pool, without repeatedly entering/exiting block_in_place.
+            self.scheduler.block_in_place(|| {
+                self.barrier_internal(|| {
+                    // std::thread::yield_now();
+                    self.scheduler.exec_task();
+                });
+            });
+        } else {
+            RuntimeWarning::BlockingCall("barrier", "async_barrier().await").print();
+            self.tasking_barrier()
+        }
+    }
+
+    // typically we want to block on the barrier and  spin on the barrier flags so that we can quick resume
+    // but for the case of Darcs, or any case where the barrier is being called in a worker thread
+    // we actually want to be able to process other tasks while the barrier is active
+    pub(crate) fn tasking_barrier(&self) {
+        // println!("calling tasking barrier");
+        self.scheduler.block_in_place(|| {
+            self.barrier_internal(|| {
+                self.scheduler.exec_task();
+            });
+        });
+    }
+
+    pub(crate) fn barrier_handle(&self) -> BarrierHandle {
+        let mut handle = BarrierHandle {
+            barrier_buf: self.barrier_buf.clone(),
+            native: self.native.clone(),
+            arch: self.arch.clone(),
+            scheduler: self.scheduler.clone(),
+            lamellae: self.lamellae.clone(),
+            my_index: 0,
+            num_pes: self.num_pes,
+            barrier_id: 0,
+            cur_barrier_id: self.cur_barrier_id.clone(),
+            num_rounds: self.num_rounds,
+            n: self.n,
+            state: State::RoundInit(self.num_rounds),
+            launched: false,
+        };
+        trace!("in barrier handle");
+        // self.print_bar();
+        if self.panic.load(Ordering::SeqCst) == 0 {
+            if let Some(_) = &self.barrier_mem_region {
+                if let Ok(my_index) = self.arch.team_pe(self.my_pe) {
+                    let barrier_id = self.barrier_cnt.fetch_add(1, Ordering::SeqCst);
+                    trace!("barrier id: {:?}", barrier_id);
+                    debug!(target: "barrier", my_pe = self.my_pe, thread = ?std::thread::current().id(), barrier_id, cur_barrier_id = self.cur_barrier_id.load(Ordering::SeqCst), "barrier_handle created, drew barrier_id");
+                    handle.barrier_id = barrier_id;
+                    handle.my_index = my_index;
+
+                    if barrier_id > self.cur_barrier_id.load(Ordering::SeqCst) {
+                        debug!(target: "barrier", my_pe = self.my_pe, thread = ?std::thread::current().id(), barrier_id, cur_barrier_id = self.cur_barrier_id.load(Ordering::SeqCst), "barrier_id ahead of cur_barrier_id, entering Waiting state");
+                        handle.state = State::Waiting;
+                        return handle;
+                    }
+                    // else if barrier_id < self.cur_barrier_id.load(Ordering::SeqCst) {
+                    //     println!("should this happen>?");
+                    // }
+
+                    handle.state = State::RoundInit(0);
+                    let mut round = 0;
+                    while round < self.num_rounds {
+                        handle.do_send_round(round);
+                        if let Some(recv_pe) = handle.do_recv_round(round, 1) {
+                            debug!(target: "barrier", my_pe = self.my_pe, thread = ?std::thread::current().id(), barrier_id, round, recv_pe, "round in progress, awaiting recv_pe (sync path)");
+                            handle.state = State::RoundInProgress(round, recv_pe);
+                            return handle;
+                        }
+                        round += 1;
+                    }
+                    debug!(target: "barrier", my_pe = self.my_pe, thread = ?std::thread::current().id(), barrier_id, "barrier completed synchronously in barrier_handle(), advancing cur_barrier_id");
+                    self.cur_barrier_id.store(barrier_id + 1, Ordering::SeqCst);
+                    handle.state = State::RoundInit(self.num_rounds);
+                }
+            }
+        }
+        handle
+    }
+
+    pub(crate) async fn async_barrier(&self) {
+        self.barrier_handle().await;
+    }
+}
+
+// impl Drop for Barrier {
+//     fn drop(&mut self) {
+//         println!("dropping barrier");
+//         println!("lamellae cnt: {:?}", Arc::strong_count(&self.lamellae));
+//         println!("scheduler cnt: {:?}", Arc::strong_count(&self.scheduler));
+//         println!("dropped barrier");
+//     }
+// }
+
+/// A handle to a Lamellar barrier that can be used to wait on the barrier
+#[pin_project(PinnedDrop)]
+pub struct BarrierHandle {
+    barrier_buf: Arc<Vec<CommSlice<usize>>>,
+    native: Option<Arc<Vec<usize>>>,
+    arch: Arc<LamellarArchRT>,
+    scheduler: Arc<Scheduler>,
+    lamellae: Arc<Lamellae>,
+    my_index: usize,
+    num_pes: usize,
+    pub(crate) barrier_id: usize,
+    cur_barrier_id: Arc<AtomicUsize>,
+    num_rounds: usize,
+    n: usize,
+    state: State,
+    launched: bool,
+}
+
+#[pinned_drop]
+impl PinnedDrop for BarrierHandle {
+    fn drop(self: Pin<&mut Self>) {
+        trace!(target: "lamellae_debug",  "Dropping BarrierHandle  lamellae cnt: {:?} ", Arc::strong_count(&self.lamellae));
+        if !self.launched {
+            RuntimeWarning::DroppedHandle("a BarrierHandle").print();
+        }
+    }
+}
+
+enum State {
+    Waiting,
+    RoundInit(usize),              //the round we are in
+    RoundInProgress(usize, usize), //the round we are in, pe we are waiting to hear from
+}
+
+impl BarrierHandle {
+    fn do_send_round(&self, round: usize) {
+        trace!("do send round {:?}", round);
+        if let Some(words) = &self.native {
+            native_word(words[self.my_index], round).store(self.barrier_id, Ordering::Release);
+            return;
+        }
+        // let barrier_slice = &[self.barrier_id];
+        // let mut reqs = vec![];
+        for i in 1..=self.n {
+            let team_send_pe = (self.my_index + i * (self.n + 1).pow(round as u32)) % self.num_pes;
+            if team_send_pe != self.my_index {
+                let send_pe = self.arch.single_iter(team_send_pe).next().unwrap();
+                trace!("sending to pe {:?} for round {:?}", send_pe, round);
+                self.barrier_buf[i - 1].put_unmanaged(self.barrier_id, send_pe, round);
+            }
+        }
+        // for req in reqs.into_iter() {
+        //     req.block();
+        // }
+        trace!("waiting on sends to complete for round {:?}", round);
+        self.barrier_buf[0].wait();
+    }
+
+    fn do_recv_round(&self, round: usize, recv_pe_index: usize) -> Option<usize> {
+        // trace!("do recv round {:?}", round);
+        for i in recv_pe_index..=self.n {
+            let team_recv_pe = ((self.my_index as isize
+                - (i as isize * (self.n as isize + 1).pow(round as u32) as isize))
+                as isize)
+                .rem_euclid(self.num_pes as isize) as isize;
+            // let recv_pe = self.arch.single_iter(team_recv_pe as usize).next().unwrap();
+            if team_recv_pe as usize != self.my_index {
+                if let Some(words) = &self.native {
+                    if native_word(words[team_recv_pe as usize], round).load(Ordering::Acquire)
+                        < self.barrier_id
+                    {
+                        return Some(i);
+                    }
+                    continue;
+                }
+                //safe as  each pe is only capable of writing to its own index
+                if self.barrier_buf[i - 1].as_slice()[round] < self.barrier_id {
+                    self.lamellae.comm().thread_flush();
+                    // trace!("waiting for recv pe: {:?} round: {:?} i: {:?}",  team_recv_pe, round, i);
+                    return Some(i);
+                }
+            }
+        }
+        // trace!("dont need to wait for any recv pe");
+        None
+    }
+}
+
+impl Future for BarrierHandle {
+    type Output = ();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // let mut this = self.project();
+        self.launched = true;
+        match self.state {
+            State::Waiting => {
+                let cur = self.cur_barrier_id.load(Ordering::SeqCst);
+                if self.barrier_id > cur {
+                    debug!(target: "barrier", thread = ?std::thread::current().id(), barrier_id = self.barrier_id, cur_barrier_id = cur, "poll: still Waiting, barrier_id ahead");
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                // else if self.barrier_id < self.cur_barrier_id.load(Ordering::SeqCst) {
+                //     println!("barrier id is less than cur barrier id");
+                // }
+                debug!(target: "barrier", thread = ?std::thread::current().id(), barrier_id = self.barrier_id, cur_barrier_id = cur, "poll: Waiting -> RoundInit(0)");
+                *self.project().state = State::RoundInit(0);
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+            State::RoundInit(round) => {
+                let mut round = round;
+                while round < self.num_rounds {
+                    self.do_send_round(round);
+                    if let Some(recv_pe) = self.do_recv_round(round, 1) {
+                        // println!("waiting for pe {:?}", recv_pe);
+                        debug!(target: "barrier", thread = ?std::thread::current().id(), barrier_id = self.barrier_id, round, recv_pe, "poll: RoundInit -> RoundInProgress, waiting on recv_pe");
+                        *self.project().state = State::RoundInProgress(round, recv_pe);
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
+                    round += 1;
+                }
+                debug!(target: "barrier", thread = ?std::thread::current().id(), barrier_id = self.barrier_id, "poll: RoundInit complete, all rounds done, advancing cur_barrier_id, Ready");
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+                *self.project().state = State::RoundInit(round);
+
+                Poll::Ready(())
+            }
+            State::RoundInProgress(round, recv_pe) => {
+                let mut round = round;
+                if let Some(recv_pe) = self.do_recv_round(round, recv_pe) {
+                    // println!("waiting for pe {:?}", recv_pe);
+                    *self.project().state = State::RoundInProgress(round, recv_pe);
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                round += 1;
+                while round < self.num_rounds {
+                    self.do_send_round(round);
+                    if let Some(recv_pe) = self.do_recv_round(round, 1) {
+                        // println!("waiting for pe {:?}", recv_pe);
+                        debug!(target: "barrier", thread = ?std::thread::current().id(), barrier_id = self.barrier_id, round, recv_pe, "poll: RoundInProgress continuing, waiting on next recv_pe");
+                        *self.project().state = State::RoundInProgress(round, recv_pe);
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
+                    round += 1;
+                }
+                debug!(target: "barrier", thread = ?std::thread::current().id(), barrier_id = self.barrier_id, "poll: RoundInProgress complete, all rounds done, advancing cur_barrier_id, Ready");
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+                *self.project().state = State::RoundInit(round);
+
+                Poll::Ready(())
+            }
+        }
+    }
+}
+
+impl LamellarRequest for BarrierHandle {
+    fn launch(&mut self) {
+        self.launched = true;
+    }
+    fn blocking_wait(mut self) -> Self::Output {
+        self.launched = true;
+        match self.state {
+            State::Waiting => {
+                while self.barrier_id > self.cur_barrier_id.load(Ordering::SeqCst) {
+                    std::thread::yield_now();
+                }
+                if self.barrier_id < self.cur_barrier_id.load(Ordering::SeqCst) {
+                    println!("barrier id is less than cur barrier id");
+                }
+                let mut round = 0;
+                while round < self.num_rounds {
+                    self.do_send_round(round);
+                    let mut recv_pe_index = 1;
+                    while let Some(recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                        recv_pe_index = recv_pe;
+                        std::thread::yield_now();
+                    }
+                    round += 1;
+                }
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+            }
+            State::RoundInit(round) => {
+                let mut round = round;
+                while round < self.num_rounds {
+                    self.do_send_round(round);
+                    let mut recv_pe_index = 1;
+                    while let Some(recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                        recv_pe_index = recv_pe;
+                        std::thread::yield_now();
+                    }
+                    round += 1;
+                }
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+            }
+            State::RoundInProgress(round, recv_pe) => {
+                let mut round = round;
+                let mut recv_pe_index = recv_pe;
+                while let Some(_recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                    recv_pe_index = recv_pe;
+                    std::thread::yield_now();
+                }
+                round += 1;
+                while round < self.num_rounds {
+                    recv_pe_index = 1;
+                    while let Some(recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                        recv_pe_index = recv_pe;
+                        std::thread::yield_now();
+                    }
+                    round += 1;
+                }
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn ready_or_set_waker(&mut self, _waker: &Waker) -> bool {
+        self.launched = true;
+        match self.state {
+            State::Waiting => false,
+            State::RoundInit(round) => {
+                if round < self.num_rounds {
+                    false
+                } else {
+                    true
+                }
+            }
+            State::RoundInProgress(round, _) => {
+                if round < self.num_rounds {
+                    false
+                } else {
+                    true
+                }
+            }
+        }
+    }
+
+    fn val(&self) -> Self::Output {
+        match self.state {
+            State::Waiting => {
+                while self.barrier_id > self.cur_barrier_id.load(Ordering::SeqCst) {
+                    std::thread::yield_now();
+                }
+                // if self.barrier_id < self.cur_barrier_id.load(Ordering::SeqCst) {
+                //     println!("barrier id is less than cur barrier id");
+                // }
+                let mut round = 0;
+                while round < self.num_rounds {
+                    self.do_send_round(round);
+                    let mut recv_pe_index = 1;
+                    while let Some(recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                        recv_pe_index = recv_pe;
+                        std::thread::yield_now();
+                    }
+                    round += 1;
+                }
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+            }
+            State::RoundInit(round) => {
+                let mut round = round;
+                while round < self.num_rounds {
+                    self.do_send_round(round);
+                    let mut recv_pe_index = 1;
+                    while let Some(recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                        recv_pe_index = recv_pe;
+                        std::thread::yield_now();
+                    }
+                    round += 1;
+                }
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+            }
+            State::RoundInProgress(round, recv_pe) => {
+                let mut round = round;
+                let mut recv_pe_index = recv_pe;
+                while let Some(recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                    recv_pe_index = recv_pe;
+                    std::thread::yield_now();
+                }
+                round += 1;
+                while round < self.num_rounds {
+                    recv_pe_index = 1;
+                    while let Some(recv_pe) = self.do_recv_round(round, recv_pe_index) {
+                        recv_pe_index = recv_pe;
+                        std::thread::yield_now();
+                    }
+                    round += 1;
+                }
+                self.cur_barrier_id
+                    .store(self.barrier_id + 1, Ordering::SeqCst);
+            }
+        }
+    }
+}

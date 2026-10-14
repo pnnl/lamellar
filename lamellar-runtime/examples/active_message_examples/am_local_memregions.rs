@@ -1,0 +1,154 @@
+// use lamellar::{
+//     ActiveMessaging, BlockedArch, OneSidedMemoryRegion, RemoteMemoryRegion, StridedArch,
+// };
+use lamellar::active_messaging::prelude::*;
+use lamellar::memregion::prelude::*;
+use lamellar::{BlockedArch, StridedArch};
+use std::time::Instant;
+
+use rand::distr::{Distribution, Uniform};
+
+// const ARRAY_LEN: usize = 1 * 1024 * 1024 * 1024;
+
+#[lamellar::AmData(Clone, Debug)]
+struct DataAM {
+    array: OneSidedMemoryRegion<u8>,
+    depth: usize,
+    width: usize,
+    path: Vec<(usize, Option<usize>)>,
+}
+
+#[lamellar::am]
+impl LamellarAM for DataAM {
+    async fn exec() {
+        let mut rng = rand::rng();
+        let pes = Uniform::try_from(0..lamellar::team.num_pes()).expect("could not create uniform");
+        // println!("depth {:?} {:?}",self.depth, self.path);
+        let mut path = self.path.clone();
+        path.push((lamellar::world.my_pe(), lamellar::team.team_pe_id().ok()));
+        if self.depth > 0 {
+            for _i in 0..self.width {
+                let pe = pes.sample(&mut rng);
+                println!(
+                    "sending {:?} to {:?} of {} ({})",
+                    path,
+                    pe,
+                    lamellar::team.num_pes(),
+                    lamellar::world.num_pes()
+                );
+                let _ = lamellar::team.spawn_am_pe(
+                    pe,
+                    DataAM {
+                        array: self.array.clone(),
+                        depth: self.depth - 1,
+                        width: self.width,
+                        path: path.clone(),
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[lamellar::main]
+fn main() {
+    let world = lamellar::LamellarWorldBuilder::new().build();
+    let my_pe = world.my_pe();
+    let num_pes = world.num_pes();
+    if num_pes < 2 {
+        eprintln!(
+            "am_local_memregions requires at least 2 PEs (got {}) -- it builds an odd-PE subteam, skipping",
+            num_pes
+        );
+        std::process::exit(0);
+    }
+    let array = world.alloc_one_sided_mem_region::<u8>(10);
+
+    let mut rng = rand::rng();
+    let pes = Uniform::try_from(0..num_pes).expect("could not create uniform");
+    let _width = 10;
+    let s = Instant::now();
+    // for _i in 0..width {
+    //     let pe = pes.sample(&mut rng);
+    //     world.spawn_am_pe(//         pe,
+    //         DataAM {
+    //             array: array.clone(),
+    //             depth: 5,
+    //             width: width,
+    //             path: vec![my_pe],
+    //         },
+    //     );
+    // }
+    world.wait_all();
+    world.barrier();
+    println!("time: {:?}", s.elapsed().as_secs_f64());
+    let first_half_team = world
+        .create_team_from_arch(BlockedArch::new(
+            0,                                      //start pe
+            (num_pes as f64 / 2.0).ceil() as usize, //num_pes in team
+        ))
+        .unwrap(); //okay to unwrap because we are creating a sub_team of the world (i.e. my_pe guaranteed to be in the parent or the subteam)
+    println!(
+        "first half team {:?} my pe {:?} team pe id {:?}",
+        first_half_team,
+        my_pe,
+        first_half_team.team_pe_id()
+    );
+    let odd_team = world
+        .create_team_from_arch(StridedArch::new(
+            1,                                      // start pe
+            2,                                      // stride
+            (num_pes as f64 / 2.0).ceil() as usize, //num pes in team
+        ))
+        .unwrap(); //okay to unwrap because we are creating a sub_team of the world (i.e. my_pe guaranteed to be in the parent or the subteam)
+    println!(
+        "odd team {:?} my pe {:?} team pe id {:?}",
+        odd_team,
+        my_pe,
+        odd_team.team_pe_id()
+    );
+    let s = Instant::now();
+    let width = 2;
+    if my_pe == 0 {
+        for _i in 0..width {
+            let pe = pes.sample(&mut rng) / 2; //since both teams consist of half the number of pes as the world
+            println!(
+                "sending {:?} to {:?} of {} ({})",
+                (my_pe, first_half_team.team_pe_id().ok()),
+                pe,
+                first_half_team.num_pes(),
+                world.num_pes()
+            );
+            let _ = first_half_team.spawn_am_pe(
+                pe,
+                DataAM {
+                    array: array.clone(),
+                    depth: 5,
+                    width: width,
+                    path: vec![(my_pe, first_half_team.team_pe_id().ok())],
+                },
+            );
+
+            println!(
+                "sending {:?} to {:?} of {} ({})",
+                (my_pe, odd_team.team_pe_id().ok()),
+                pe,
+                odd_team.num_pes(),
+                world.num_pes()
+            );
+            let _ = odd_team.spawn_am_pe(
+                pe,
+                DataAM {
+                    array: array.clone(),
+                    depth: 5,
+                    width: width,
+                    path: vec![(my_pe, odd_team.team_pe_id().ok())],
+                },
+            );
+        }
+    }
+    world.wait_all();
+    world.barrier();
+
+    println!("time: {:?}", s.elapsed().as_secs_f64());
+}
