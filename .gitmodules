@@ -1,6 +1,3 @@
 [submodule "lamellar-benchmarks"]
 	path = lamellar-benchmarks
 	url = https://github.com/pnnl/lamellar-benchmarks
-[submodule "lamellar-runtime"]
-	path = lamellar-runtime
-	url = https://github.com/pnnl/lamellar-runtime
