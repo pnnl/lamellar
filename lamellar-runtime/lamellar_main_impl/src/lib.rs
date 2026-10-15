@@ -288,6 +288,9 @@ fn create_launch_block(
 
             let threads_per_pe: u32 = threads_per_pe_flag
                 .or_else(|| std::env::var("LAMELLAR_THREADS").ok().and_then(|s| s.parse().ok()))
+                // a PE bound explicitly (e.g. `--map-by node:PE=4`) should run that many threads,
+                // not one per core of the whole node
+                .or_else(|| ::lamellar::explicit_cores_per_pe(&prterun_args))
                 .unwrap_or_else(|| {
                     let cores = std::thread::available_parallelism()
                         .map(|n| n.get() as u32)

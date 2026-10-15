@@ -332,8 +332,8 @@ pub use lamellar_main::prrte_sys;
 pub use lamellar_main::test;
 #[cfg(feature = "enable-lamellar-main")]
 pub use lamellar_main::{
-    cores_per_package, generic_help_text, init_tracing_from_env, numa_domain_count, package_count,
-    pe_id, resolve_pe_defaults,
+    cores_per_package, explicit_cores_per_pe, generic_help_text, init_tracing_from_env,
+    numa_domain_count, package_count, pe_id, resolve_pe_defaults,
 };
 
 //#[doc(hidden)]
