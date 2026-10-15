@@ -36,6 +36,8 @@ fn active_features() -> Vec<&'static str> {
         "enable-stats",
         "enable-rofi-c",
         "enable-rofi-c-shared",
+        "enable-rofi-c-pmix",
+        "enable-rofi-c-shared-pmix",
         "rofi-c",
         "enable-rofi-rust",
         "enable-libfabric",
@@ -72,6 +74,25 @@ pub fn ensure_example_built(name: &str) {
         let set = guard.get_or_insert_with(HashSet::new);
         if !set.insert(name.to_string()) {
             return;
+        }
+    }
+
+    // Many test processes run at once from one shared target directory (see run_tests_on_nodes.rs); cargo's lock
+    // does not protect that reliably, and two builds writing the same artifacts leave one of them without its
+    // `.rlib`. A runner that has already built every example sets this, and then nothing is built from in here.
+    if std::env::var_os("LAMELLAR_TEST_EXAMPLES_PREBUILT").is_some() {
+        let exe = std::env::current_exe().expect("failed to get current exe path");
+        let built = exe
+            .ancestors()
+            .nth(2)
+            .map(|profile_dir| profile_dir.join("examples").join(name))
+            .filter(|path| path.exists());
+        match built {
+            Some(_) => return,
+            None => panic!(
+                "LAMELLAR_TEST_EXAMPLES_PREBUILT is set but example `{name}` has not been built for profile `{}`",
+                profile()
+            ),
         }
     }
 
