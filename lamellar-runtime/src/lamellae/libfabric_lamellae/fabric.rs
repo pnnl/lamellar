@@ -3409,11 +3409,40 @@ impl LibfabricAlloc {
             .mcast_group
             .as_ref()
             .expect("No multicast group for collective reduce");
-        let (result, root_pe) = match slice_or_pe {
-            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe),
-            RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe),
+        let (result, root_pe, is_root) = match slice_or_pe {
+            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe, true),
+            RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe, false),
         };
         let res = unsafe { std::mem::transmute::<&mut [T], &mut [OFI]>(result) };
+        // libfabric's coll provider (libfabric 1.22, prov/coll `coll_ep_broadcast`) scatters and then allgathers
+        // `ceil(len / ranks)` elements per rank through the caller's buffer, i.e. it reads and writes
+        // `ceil(len / ranks) * ranks` elements. When `len` is not a multiple of the group size that overruns the
+        // buffer and corrupts the heap (which shows up as hangs and wrong data). Go through a zero-padded bounce
+        // buffer in that case. The result is copied back after completion, so this path waits for the collective here
+        // instead of returning with it in flight.
+        let ranks = self.num_pes();
+        if ranks > 1 && !res.is_empty() && res.len() % ranks != 0 {
+            let len = res.len();
+            let padded_len = len.div_ceil(ranks) * ranks;
+            let mut padded: Vec<std::mem::MaybeUninit<OFI>> = (0..padded_len)
+                .map(|_| std::mem::MaybeUninit::<OFI>::zeroed())
+                .collect();
+            std::ptr::copy_nonoverlapping(res.as_ptr(), padded.as_mut_ptr() as *mut OFI, len);
+            let padded_slice = std::slice::from_raw_parts_mut(padded.as_mut_ptr() as *mut OFI, padded_len);
+            cg.post_collective(true, || {
+                cg.ep.broadcast(
+                    padded_slice,
+                    None,
+                    mc,
+                    &cg.mapped_addresses[root_pe],
+                    CollectiveOptions::default(),
+                )
+            })?;
+            if !is_root {
+                std::ptr::copy_nonoverlapping(padded.as_ptr() as *const OFI, res.as_mut_ptr(), len);
+            }
+            return Ok(());
+        }
         cg.post_collective(blocking, || {
             cg.ep.broadcast(
                 res,
