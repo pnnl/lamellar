@@ -83,7 +83,11 @@ impl LamellarExecutor for AsyncStdRt {
 
     // //#[tracing::instrument(skip_all)]
     fn exec_task(&self) {
-        // I dont think tokio has a way to do this
+        // async-std has no way to run a queued task on the calling thread. Callers sit in a
+        // spin loop (barrier, wait_all, blocking_wait, ...) around this call, so yield the
+        // core to the workers instead of burning it: with a busy-spinning main thread plus
+        // the worker threads, a PE bound to few cores starves its own workers.
+        std::thread::yield_now();
     }
 
     // async-global-executor's pool is a fixed size unless given headroom (see
@@ -113,8 +117,11 @@ impl LamellarExecutor for AsyncStdRt {
 }
 
 impl AsyncStdRt {
-    pub(crate) fn new(num_workers: usize) -> AsyncStdRt {
-        // println!("New TokioRT with {} workers", num_workers);
+    /// `num_threads` is the requested thread count for the PE and includes the main thread
+    /// (as with the work stealing executor). `block_on` does not run pool tasks on the main
+    /// thread, so the pool gets one thread fewer, and at least one.
+    pub(crate) fn new(num_threads: usize) -> AsyncStdRt {
+        let num_workers = num_threads.saturating_sub(1).max(1);
         async_global_executor::init_with_config(
             async_global_executor::GlobalExecutorConfig::default()
                 .with_min_threads(num_workers)
@@ -122,7 +129,7 @@ impl AsyncStdRt {
                 .with_thread_name_fn(Box::new(|| "lamellar_worker".to_string())),
         );
         Self {
-            max_num_threads: num_workers,
+            max_num_threads: num_threads,
         }
     }
 }
