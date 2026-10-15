@@ -1485,25 +1485,30 @@ struct GenericAtomicRemoteGetBufferPeAm {
 #[lamellar_impl::rt_am]
 impl LamellarAm for GenericAtomicRemoteGetBufferPeAm {
     async fn exec(self) {
-        let mut locks = Vec::new();
-        let full_offset = self
-            .array
-            .array
-            .inner
-            .pe_full_offset_for_local_index(self.array.array.inner.data.my_pe, self.offset)
-            .expect("invalid local index");
-        for i in full_offset..full_offset + self.num_elems {
-            locks.push(self.array.locks[i].lock());
-        }
-        // let mut data = vec![0u8; self.num_elems * orig_t_size];
-        let local_ptr = unsafe { self.array.array.ptr_for_local_index(self.offset) };
-        let data = unsafe {
-            std::slice::from_raw_parts(
-                local_ptr as *const u8,
-                self.num_elems * self.array.array.inner.elem_size,
-            )
-            .to_vec()
-        };
+        // The element locks are blocking mutexes, so they must be released before the `.await` below: a task that
+        // is suspended while holding one makes every other task that wants the element block its worker thread, and
+        // with few workers there is none left to resume the holder.
+        let data = {
+            let mut locks = Vec::new();
+            let full_offset = self
+                .array
+                .array
+                .inner
+                .pe_full_offset_for_local_index(self.array.array.inner.data.my_pe, self.offset)
+                .expect("invalid local index");
+            for i in full_offset..full_offset + self.num_elems {
+                locks.push(self.array.locks[i].lock());
+            }
+            // let mut data = vec![0u8; self.num_elems * orig_t_size];
+            let local_ptr = unsafe { self.array.array.ptr_for_local_index(self.offset) };
+            unsafe {
+                std::slice::from_raw_parts(
+                    local_ptr as *const u8,
+                    self.num_elems * self.array.array.inner.elem_size,
+                )
+                .to_vec()
+            }
+        }; //locks dropped
         unsafe { self.buf.put_buffer(0, data).await };
     }
 }
