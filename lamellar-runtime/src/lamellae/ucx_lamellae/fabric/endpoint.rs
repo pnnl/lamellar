@@ -54,14 +54,14 @@ impl UcxRequest {
         }
         if UCS_PTR_IS_PTR(self.request) {
             let _ = self.worker.progress();
-            if unsafe { ucp_request_check_status(self.request as _) }
-                == ucs_status_t::UCS_INPROGRESS
-            {
+            let status = unsafe { ucp_request_check_status(self.request as _) };
+            if status == ucs_status_t::UCS_INPROGRESS {
                 return Poll::Pending;
             }
             unsafe { ucp_request_free(self.request as _) };
             self.request = std::ptr::null_mut();
-            Poll::Ready(Ok(()))
+            // A request that finished with an error status must report it, not look like success.
+            Poll::Ready(Error::from_status(status))
         } else {
             Poll::Ready(Error::from_ptr(self.request))
         }
@@ -80,17 +80,17 @@ impl UcxRequest {
             }
             if UCS_PTR_IS_PTR(self.request) {
                 // println!("Request is not null");
-                loop {
+                let status = loop {
                     let _ = self.worker.progress();
-                    if unsafe { ucp_request_check_status(self.request as _) }
-                        != ucs_status_t::UCS_INPROGRESS
-                    {
-                        break;
+                    let status = unsafe { ucp_request_check_status(self.request as _) };
+                    if status != ucs_status_t::UCS_INPROGRESS {
+                        break status;
                     }
-                }
+                };
                 unsafe { ucp_request_free(self.request as _) };
                 self.request = std::ptr::null_mut();
-                Ok(())
+                // A request that finished with an error status must report it, not look like success.
+                Error::from_status(status)
             } else {
                 // println!("Request is not valid");
                 Error::from_ptr(self.request)
