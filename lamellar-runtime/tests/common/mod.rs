@@ -42,7 +42,6 @@ fn active_features() -> Vec<&'static str> {
         "enable-rofi-rust",
         "enable-libfabric",
         "enable-libfabric-sys",
-        "enable-libfabric-async",
         "enable-ucx",
         "enable-ucx-opt",
         "enable-libfabric-sys-opt",

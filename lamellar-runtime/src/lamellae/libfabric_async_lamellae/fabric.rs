@@ -127,6 +127,12 @@ type SpinCq = libfabric::async_cq_caps_type!();
 type SpinEq = libfabric::async_eq_caps_type!();
 type WaitableCntr = libfabric::cntr_caps_type!(CntrCaps::WAIT);
 
+use crate::lamellae::comm::staging_rt::{RtStaging, RtStagingPool};
+use std::sync::OnceLock;
+
+/// A staging block for one RDMA operation.
+pub(crate) type LibfabricAsyncStaging = RtStaging<LibfabricAsyncAlloc>;
+
 pub(crate) struct OfiAsync {
     pub(crate) num_pes: usize,
     pub(crate) my_pe: usize,
@@ -160,11 +166,9 @@ pub(crate) struct OfiAsync {
     /// which have no other path back to LibfabricAsyncComm -- can still reach an
     /// already-registered scratch pool (e.g. from inside `get_buffer`).
     pub(crate) runtime_allocs: RwLock<Vec<(LibfabricAsyncAlloc, BTreeAlloc)>>,
-    /// `LAMELLAR_RDMA_STAGING` (default on): heap-backed RDMA local buffers are
-    /// staged through `runtime_allocs` so rxm never registers them on the fly.
-    staging_enabled: bool,
-    staging_fallbacks: AtomicUsize,
-    staging_warned: AtomicBool,
+    /// Registered scratch memory for RDMA ops whose local buffer is plain heap/stack memory, so the provider never
+    /// registers such a buffer on the fly (see `comm::staging_rt`). Created on first use; released in teardown.
+    staging: OnceLock<RtStagingPool<LibfabricAsyncAlloc>>,
     /// Guards `final_teardown` so it runs exactly once no matter who calls
     /// it: LibfabricAsyncComm::drop calls it explicitly (on a known-good
     /// thread), and Drop::drop below calls it too as a fallback. The
@@ -349,9 +353,7 @@ impl OfiAsync {
             get_cnt: AtomicU64::new(0),
             completion_lock: RwLock::new(()),
             runtime_allocs: RwLock::new(Vec::new()),
-            staging_enabled: crate::config().rdma_staging.unwrap_or(true),
-            staging_fallbacks: AtomicUsize::new(0),
-            staging_warned: AtomicBool::new(false),
+            staging: OnceLock::new(),
             teardown_done: AtomicBool::new(false),
         });
 
@@ -1355,31 +1357,29 @@ impl OfiAsync {
         self: &Arc<OfiAsync>,
         bytes: usize,
         align: usize,
-    ) -> Option<LibfabricAsyncAlloc> {
-        if !self.staging_enabled || bytes == 0 {
-            return None;
-        }
-        for attempt in 0..3 {
-            match self.rt_alloc(bytes, align) {
-                Ok(alloc) => return Some(alloc),
-                Err(AllocError::OutOfMemoryError(_)) if attempt < 2 => {
-                    let _ = self.progress();
-                }
-                Err(_) => break,
-            }
-        }
-        self.staging_fallbacks.fetch_add(1, Ordering::Relaxed);
-        if !self.staging_warned.swap(true, Ordering::Relaxed) {
-            eprintln!(
-                "[LAMELLAR WARNING][{}] registered staging pool exhausted (needed {} bytes); RDMA op falling back to unregistered heap memory, results may be affected by libfabric MR-cache staleness. Remedies: increase LAMELLAR_HEAP_SIZE, verify your results, or set FI_MR_CACHE_MAX_COUNT=0 (slow).",
-                self.my_pe, bytes
-            );
-        }
-        None
+    ) -> Option<LibfabricAsyncStaging> {
+        let pool = self.staging.get_or_init(|| {
+            let ofi = Arc::downgrade(self);
+            RtStagingPool::new("libfabric_async", move |len, align| {
+                let alloc = ofi.upgrade()?.rt_alloc(len, align).ok()?;
+                Some((alloc.start(), alloc))
+            })
+        });
+        pool.alloc(bytes, align, || {
+            let _ = self.progress();
+        })
     }
 
     pub(crate) fn staging_fallbacks(&self) -> usize {
-        self.staging_fallbacks.load(Ordering::Relaxed)
+        self.staging.get().map_or(0, |pool| pool.fallbacks())
+    }
+
+    /// Give the staging slabs back to the runtime heap. They hold references to this backend, so this has to happen
+    /// before `runtime_allocs` is cleared.
+    pub(crate) fn staging_release(&self) {
+        if let Some(pool) = self.staging.get() {
+            pool.release_all();
+        }
     }
 
     pub(crate) fn inject_size(&self) -> usize {
@@ -2478,18 +2478,24 @@ impl LibfabricAsyncAlloc {
         };
         let src = op.src() as *const OFI;
         let buf = std::slice::from_raw_parts(src, 1);
-        // self.ofi.post_put(|| {
+        // Not an inject: an injected atomic is finished, as far as this future is concerned, as soon as it is posted,
+        // and nothing tracks it after that (it never reaches `put_cnt`, so `wait_all` does not wait for it, and the
+        // issuing tasks are usually still running when it is called). A caller that waits for the array to be
+        // quiescent and then reads would see updates that have not been applied yet. Waiting for the completion makes
+        // the future finish when the target has applied the atomic.
+        let mut ctx = self.ofi.info_entry.allocate_context();
         self.ofi
             .ep
-            .atomic_inject_to_async(
+            .atomic_to_async(
                 buf,
+                None,
                 &self.ofi.mapped_addresses[pe],
                 remote_dst_addr,
                 &remote_key,
+                &mut ctx,
                 op.into(),
             )
             .await?;
-        // })?;
         Ok(())
     }
 

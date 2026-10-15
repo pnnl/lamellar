@@ -54,7 +54,7 @@ Currently the following Lamellae exist:
 - `shmem` -  used for multi-PE (single system, multi-process) development, useful for emulating distributed environments (communicates through shared memory)
 - `rofi_c` - used for multi-PE (multi system, multi-process) distributed development, based on the Rust OpenFabrics Interface Transport Layer (ROFI) (<https://github.com/pnnl/rofi>).
     - Enabled by adding ```features = ["enable-rofi-c"]``` (or `enable-rofi-c-shared` / `enable-rofi-rust`) to the lamellar entry in your `Cargo.toml` file. This builds against ROFI's default PMI-1 backend; add `enable-rofi-c-pmix` (or `enable-rofi-c-shared-pmix`) instead to use ROFI's PMIx backend (ROFI has no PMI-2 client, so PMI-1/PMIx are the only choices).
-- `libfabric` / `libfabric-sys` / `libfabric-async` - used for multi-PE distributed development directly against libfabric.
+- `libfabric` / `libfabric-sys` - used for multi-PE distributed development directly against libfabric.
     - Enabled by adding ```features = ["enable-libfabric"]``` (see Cargo.toml for the `-sys`/`-async` variants) to the lamellar entry in your `Cargo.toml` file
 - `ucx` - used for multi-PE distributed development based on [UCX](https://github.com/openucx/ucx).
     - Enabled by adding ```features = ["enable-ucx"]``` to the lamellar entry in your `Cargo.toml` file
@@ -221,7 +221,7 @@ cargo run --profile release-dev --example load_store_test -- AtomicArray Block f
 
 ### Other launch flags
 
-- `--lamellae <name>` — sets `LAMELLAR_BACKEND` for the launched job (same values as the `LAMELLAR_BACKEND` env var: `local`, `shmem`, `rofi_c`, `libfabric`, `libfabric-sys`, `libfabric-async`, `ucx`). `--help` lists which of these are actually available in the build (backend features that weren't enabled at compile time aren't offered) and which one is the compiled-in default.
+- `--lamellae <name>` — sets `LAMELLAR_BACKEND` for the launched job (same values as the `LAMELLAR_BACKEND` env var: `local`, `shmem`, `rofi_c`, `libfabric`, `libfabric-sys`, `ucx`). `--help` lists which of these are actually available in the build (backend features that weren't enabled at compile time aren't offered) and which one is the compiled-in default.
 - `--cmd-queue <variant>` — sets `LAMELLAR_CMD_QUEUE` for the launched job (`batched`, `get` (default), `geteager`, `getslots`, `put`, `putslots`, `puteager`).
 - `--batcher <variant>` — sets `LAMELLAR_BATCHER` for the launched job (`auto` (default: `stream` on shmem-opt, else `adaptive`), `simple`, `adaptive`, `stream`, `direct`, `team_am`, `vec_simple` (experimental), `vec_team_am` (experimental)).
 - `--help` / `-h` — print all launch flags recognized after the second `--` and exit, without launching anything.
@@ -259,7 +259,7 @@ You can select which backend/lamellae to use by specifing the --lamellae <backen
 ```cargo run --release -- <app args> -- --lamellae <backend>```
 
 or by setting the following envrionment variable:
-```LAMELLAR_BACKEND="backend"``` where backend is one of `local`, `shmem`, `rofi_c`, `libfabric-sys`, `libfabric`, `libfabric-async`, or `ucx`.
+```LAMELLAR_BACKEND="backend"``` where backend is one of `local`, `shmem`, `rofi_c`, `libfabric-sys`, `libfabric`, or `ucx`.
 
 or by setting the backend programmatically:
 ```
@@ -380,7 +380,7 @@ Commonly used variables include:
          - `local` -- default
          - `shmem`
          - `rofi_c`  -- only available with the `enable-rofi-c` (or related `enable-rofi-*`) feature
-         - `libfabric-sys` / `libfabric` / `libfabric-async` -- only available with the corresponding `enable-libfabric*` feature
+         - `libfabric-sys` / `libfabric` -- only available with the corresponding `enable-libfabric*` feature
          - `ucx` -- only available with the `enable-ucx` feature
  - `LAMELLAR_EXECUTOR` - the executor used during execution. Note that if a executor is explicitly set in the world builder, this variable is ignored.
      - possible values

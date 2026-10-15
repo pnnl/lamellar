@@ -11,7 +11,6 @@ pub(crate) enum AllocError {
         feature = "enable-libfabric",
         feature = "enable-libfabric-sys",
         feature = "enable-libfabric-sys-opt",
-        feature = "enable-libfabric-async",
         feature = "enable-rofi-c"
     ))]
     UnexpectedAllocationType(crate::lamellae::AllocationType),
@@ -19,7 +18,6 @@ pub(crate) enum AllocError {
         feature = "enable-libfabric",
         feature = "enable-libfabric-sys",
         feature = "enable-libfabric-sys-opt",
-        feature = "enable-libfabric-async",
         feature = "enable-rofi-c"
     ))]
     FabricAllocationError(i32),
@@ -58,7 +56,6 @@ impl std::fmt::Display for AllocError {
                 feature = "enable-libfabric",
                 feature = "enable-libfabric-sys",
                 feature = "enable-libfabric-sys-opt",
-                feature = "enable-libfabric-async",
                 feature = "enable-rofi-c"
             ))]
             AllocError::UnexpectedAllocationType(alloc_type) => {
@@ -68,7 +65,6 @@ impl std::fmt::Display for AllocError {
                 feature = "enable-libfabric",
                 feature = "enable-libfabric-sys",
                 feature = "enable-libfabric-sys-opt",
-                feature = "enable-libfabric-async",
                 feature = "enable-rofi-c"
             ))]
             AllocError::FabricAllocationError(err_no) => {
@@ -95,7 +91,6 @@ pub(crate) type AllocResult<T> = Result<T, AllocError>;
     feature = "enable-libfabric",
     feature = "enable-libfabric-sys",
     feature = "enable-libfabric-sys-opt",
-    feature = "enable-libfabric-async",
     feature = "enable-rofi-c",
     feature = "enable-ucx",
     feature = "enable-ucx-opt"
@@ -104,7 +99,6 @@ pub(crate) type AllocResult<T> = Result<T, AllocError>;
 pub(crate) enum FabricError {
     InitError(u32),
     #[cfg(any(
-        feature = "enable-libfabric-async",
         feature = "enable-libfabric-sys",
         feature = "enable-libfabric-sys-opt"
     ))]
@@ -116,7 +110,6 @@ pub(crate) enum FabricError {
     feature = "enable-libfabric",
     feature = "enable-libfabric-sys",
     feature = "enable-libfabric-sys-opt",
-    feature = "enable-libfabric-async",
     feature = "enable-rofi-c",
     feature = "enable-ucx",
     feature = "enable-ucx-opt"
@@ -128,7 +121,6 @@ impl std::fmt::Display for FabricError {
                 write!(f, "Fabric initialization error: {}", err_no)
             }
             #[cfg(any(
-                feature = "enable-libfabric-async",
                 feature = "enable-libfabric-sys",
                 feature = "enable-libfabric-sys-opt"
             ))]
@@ -145,7 +137,6 @@ impl std::fmt::Display for FabricError {
     feature = "enable-libfabric",
     feature = "enable-libfabric-sys",
     feature = "enable-libfabric-sys-opt",
-    feature = "enable-libfabric-async",
     feature = "enable-rofi-c",
     feature = "enable-ucx",
     feature = "enable-ucx-opt"
@@ -156,7 +147,6 @@ impl std::error::Error for FabricError {}
     feature = "enable-libfabric",
     feature = "enable-libfabric-sys",
     feature = "enable-libfabric-sys-opt",
-    feature = "enable-libfabric-async",
     feature = "enable-rofi-c"
 ))]
 pub(crate) type FabricResult<T> = Result<T, FabricError>;

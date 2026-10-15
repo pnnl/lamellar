@@ -210,7 +210,6 @@ enable-libfabric = ["libfabric", "pmi", "dep:libc"]
 enable-libfabric-sys = ["libfabric-sys", "pmi", "dep:libc"]
 enable-libfabric-sys-opt = ["libfabric-sys", "pmi", "dep:libc"]
 enable-shmem-opt = ["dep:libc"]
-enable-libfabric-async = ["libfabric/use-async-std", "pmi"]
 enable-ucx = [
     "dep:lamellar-ucx-sys",
     "dep:lamellar-ucc-sys",

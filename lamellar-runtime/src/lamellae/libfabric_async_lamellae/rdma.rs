@@ -115,7 +115,7 @@ impl<T: Remote> PutFutureData<T> {
         // points into: the staging pool allocation when staging kicked in,
         // otherwise this array's own allocation.
         let local_desc = match &staging {
-            Some(stage) => stage.descriptor(),
+            Some(stage) => stage.handle().descriptor(),
             None => self.alloc.descriptor(),
         };
         let src: &[T] = match &staging {
@@ -203,7 +203,7 @@ impl<T: Remote> GetFutureData<T> {
                             self.pe,
                             self.offset,
                             stage.as_mut_slice::<T>(),
-                            stage.descriptor(),
+                            stage.handle().descriptor(),
                         )
                         .await
                         .expect("error in get");
@@ -320,7 +320,7 @@ impl<T: Remote> GetBufferFutureData<T> {
                             self.pe,
                             self.offset,
                             stage.as_mut_slice::<T>(),
-                            stage.descriptor(),
+                            stage.handle().descriptor(),
                         )
                         .await
                         .expect("error in get_buffer");
@@ -437,7 +437,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> GetIntoBufferFutureData<T, B> {
                         self.pe,
                         self.offset,
                         stage.as_mut_slice::<T>(),
-                        stage.descriptor(),
+                        stage.handle().descriptor(),
                     )
                     .await
                     .expect("error in get_into_buffer");
@@ -644,7 +644,7 @@ fn put_buffer_unmanaged_impl<T: Remote>(
         Some(staging) => {
             unsafe { staging.as_mut_slice::<T>().copy_from_slice(slice) };
             let staged = unsafe { staging.as_slice::<T>() };
-            let local_desc = staging.descriptor();
+            let local_desc = staging.handle().descriptor();
             for pe in pes {
                 unsafe {
                     LibfabricAsyncAlloc::inner_put_unmanaged(
@@ -779,7 +779,8 @@ impl CommAllocRdma for LibfabricAsyncAlloc {
                     .expect("error in put_all_unmanaged")
                 };
             } else {
-                let dst = CommAllocAddr(self.start() + offset);
+                // `offset` counts elements of `T`, not bytes
+                let dst = CommAllocAddr(self.start() + offset * std::mem::size_of::<T>());
                 unsafe { dst.as_mut_ptr::<T>().write(src) };
             }
         }
@@ -842,7 +843,7 @@ impl CommAllocRdma for LibfabricAsyncAlloc {
             .staging_alloc(std::mem::size_of::<T>(), std::mem::align_of::<T>());
         match &staging {
             Some(stage) => {
-                let local_desc = stage.descriptor();
+                let local_desc = stage.handle().descriptor();
                 _scheduler.clone().block_on(async {
                     unsafe {
                         LibfabricAsyncAlloc::inner_get(
@@ -932,7 +933,7 @@ impl CommAllocRdma for LibfabricAsyncAlloc {
             .staging_alloc(len * std::mem::size_of::<T>(), std::mem::align_of::<T>());
         match &staging {
             Some(stage) => {
-                let local_desc = stage.descriptor();
+                let local_desc = stage.handle().descriptor();
                 _scheduler.clone().block_on(async {
                     unsafe {
                         LibfabricAsyncAlloc::inner_get(
@@ -1005,7 +1006,7 @@ impl CommAllocRdma for LibfabricAsyncAlloc {
             );
             match &staging {
                 Some(stage) => {
-                    let local_desc = stage.descriptor();
+                    let local_desc = stage.handle().descriptor();
                     _scheduler.clone().block_on(async {
                         unsafe {
                             LibfabricAsyncAlloc::inner_get(
@@ -1070,7 +1071,7 @@ impl CommAllocRdma for LibfabricAsyncAlloc {
         );
         match &staging {
             Some(stage) => {
-                let local_desc = stage.descriptor();
+                let local_desc = stage.handle().descriptor();
                 async_std::task::block_on(async {
                     unsafe {
                         LibfabricAsyncAlloc::inner_get_unmanaged(
@@ -1282,7 +1283,7 @@ impl CommAllocRdma for OneSidedLibfabricAsyncAlloc {
             .staging_alloc(std::mem::size_of::<T>(), std::mem::align_of::<T>());
         match &staging {
             Some(stage) => {
-                let local_desc = stage.descriptor();
+                let local_desc = stage.handle().descriptor();
                 _scheduler.clone().block_on(async {
                     unsafe {
                         LibfabricAsyncAlloc::inner_get(
@@ -1356,7 +1357,7 @@ impl CommAllocRdma for OneSidedLibfabricAsyncAlloc {
             .staging_alloc(len * std::mem::size_of::<T>(), std::mem::align_of::<T>());
         let dst = match &staging {
             Some(stage) => {
-                let local_desc = stage.descriptor();
+                let local_desc = stage.handle().descriptor();
                 _scheduler.clone().block_on(async {
                     unsafe {
                         LibfabricAsyncAlloc::inner_get(
@@ -1432,7 +1433,7 @@ impl CommAllocRdma for OneSidedLibfabricAsyncAlloc {
             std::mem::size_of_val(dst.as_slice()),
             std::mem::align_of::<T>(),
         ) {
-            let local_desc = stage.descriptor();
+            let local_desc = stage.handle().descriptor();
             _scheduler.clone().block_on(async {
                 unsafe {
                     LibfabricAsyncAlloc::inner_get(
@@ -1484,7 +1485,7 @@ impl CommAllocRdma for OneSidedLibfabricAsyncAlloc {
             std::mem::size_of_val(dst.as_slice()),
             std::mem::align_of::<T>(),
         ) {
-            let local_desc = stage.descriptor();
+            let local_desc = stage.handle().descriptor();
             async_std::task::block_on(async {
                 unsafe {
                     LibfabricAsyncAlloc::inner_get_unmanaged(

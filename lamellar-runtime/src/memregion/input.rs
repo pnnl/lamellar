@@ -160,7 +160,6 @@ impl<T: Remote> MemregionRdmaInputInner<T> {
 
     #[cfg(any(
         feature = "enable-libfabric",
-        feature = "enable-libfabric-async",
         feature = "enable-libfabric-sys",
         feature = "enable-libfabric-sys-opt",
         feature = "enable-ucx",

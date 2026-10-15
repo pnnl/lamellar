@@ -636,7 +636,6 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LamellarBuffer<T, B> {
 
     #[cfg(any(
         feature = "enable-libfabric",
-        feature = "enable-libfabric-async",
         feature = "enable-libfabric-sys",
         feature = "enable-libfabric-sys-opt",
         feature = "enable-ucx",

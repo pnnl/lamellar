@@ -61,7 +61,7 @@ regenerating or refreshing a vendored source archive.
 | Lamellar feature | Native transport libraries | Process-management layer | Bundled when a system prefix is not provided |
 | --- | --- | --- | --- |
 | `local`, `shmem` | None | None | N/A |
-| `enable-libfabric`, `enable-libfabric-sys`, `enable-libfabric-async` | libfabric / OFI | PMI-1, PMI-2, or PMIx (PMIx by default) | libfabric and the selected PMI implementation |
+| `enable-libfabric`, `enable-libfabric-sys` | libfabric / OFI | PMI-1, PMI-2, or PMIx (PMIx by default) | libfabric and the selected PMI implementation |
 | `enable-ucx` | UCX and UCC | PMI-1, PMI-2, or PMIx (PMIx by default) | UCX, UCC, and the selected PMI implementation |
 | `enable-rofi-c`, `enable-rofi-c-shared` | ROFI and libfabric / OFI | ROFI's own PMI-1 client (`simple_pmi.c`); no PMIx | ROFI and libfabric |
 | `enable-rofi-c-pmix`, `enable-rofi-c-shared-pmix` | ROFI and libfabric / OFI | PMIx (only; not selectable) | ROFI, libfabric, and PMIx |
