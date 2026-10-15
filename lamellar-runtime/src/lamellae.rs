@@ -496,6 +496,24 @@ pub(crate) trait LamellaeUtil: Send {
     fn available_to_send(&self, pe: usize) -> bool;
 }
 
+/// The value the get-based command queues put in `CmdMsg::msg_hash`: a per-process sequence number.
+///
+/// It only has to be some value: it is part of the command's own integrity hash (`cmd_hash`, which catches a
+/// torn write of the command), and the receiver does not check the message data against it. The receiver
+/// knows the data has arrived because it awaits the GET, which resolves once the bytes are placed in its
+/// buffer, and the sender keeps the source until the receiver sends `Free`, which happens after that await.
+/// (It used to be a checksum of the message that the receiver spun on before awaiting the GET, from when the
+/// GET was fire-and-forget; with an awaited GET that only delayed the await and cost O(length) per poll.)
+pub(crate) fn next_msg_hash() -> usize {
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+    loop {
+        let hash = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if hash != 0 {
+            return hash;
+        }
+    }
+}
+
 //#[tracing::instrument(skip_all, level = "debug")]
 pub(crate) fn create_lamellae(backend: Backend, _num_threads: usize) -> LamellaeBuilder {
     match backend {
