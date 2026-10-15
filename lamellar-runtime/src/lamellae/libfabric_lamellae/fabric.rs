@@ -27,7 +27,6 @@ use libfabric::{
 };
 
 use crate::{
-    config,
     lamellae::{
         collective::{
             AllReduceOp, ReduceOp as LamellarReduceOp, RootOrSliceMut, RootSrcOrSliceMut,
@@ -196,6 +195,12 @@ impl LibfabricMem {
     }
 }
 
+use crate::lamellae::comm::staging_rt::{RtStaging, RtStagingPool};
+use std::sync::OnceLock;
+
+/// A staging block for one RDMA operation.
+pub(crate) type LibfabricStaging = RtStaging<LibfabricAlloc>;
+
 pub(crate) struct Ofi {
     pub(crate) num_pes: usize,
     pub(crate) my_pe: usize,
@@ -233,11 +238,9 @@ pub(crate) struct Ofi {
     /// cycle broken via `clear_allocs()`). It MUST be `.clear()`-ed during
     /// teardown (see `Drop for LibfabricComm`) or `Ofi` will never be freed.
     pub(crate) runtime_allocs: RwLock<Vec<(LibfabricAlloc, BTreeAlloc)>>,
-    /// `LAMELLAR_RDMA_STAGING` (default on): heap-backed RDMA local buffers are
-    /// staged through `runtime_allocs` so rxm never registers them on the fly.
-    staging_enabled: bool,
-    staging_fallbacks: AtomicUsize,
-    staging_warned: AtomicBool,
+    /// Registered scratch memory for RDMA ops whose local buffer is plain heap/stack memory, so the provider never
+    /// registers such a buffer on the fly (see `comm::staging_rt`). Created on first use; released in teardown.
+    staging: OnceLock<RtStagingPool<LibfabricAlloc>>,
     /// Guards `final_teardown` so it runs exactly once no matter who calls
     /// it: LibfabricComm::drop calls it explicitly (on a known-good thread),
     /// and Drop::drop below calls it too as a fallback. PMI barrier calls
@@ -874,9 +877,7 @@ impl Ofi {
             mc_groups: Mutex::new(HashMap::new()),
             comm_group,
             runtime_allocs: RwLock::new(Vec::new()),
-            staging_enabled: config().rdma_staging.unwrap_or(true),
-            staging_fallbacks: AtomicUsize::new(0),
-            staging_warned: AtomicBool::new(false),
+            staging: OnceLock::new(),
             teardown_done: AtomicBool::new(false),
         });
 
@@ -1374,31 +1375,29 @@ impl Ofi {
         self: &Arc<Ofi>,
         bytes: usize,
         align: usize,
-    ) -> Option<LibfabricAlloc> {
-        if !self.staging_enabled || bytes == 0 {
-            return None;
-        }
-        for attempt in 0..3 {
-            match self.rt_alloc(bytes, align) {
-                Ok(alloc) => return Some(alloc),
-                Err(AllocError::OutOfMemoryError(_)) if attempt < 2 => {
-                    let _ = self.progress_all();
-                }
-                Err(_) => break,
-            }
-        }
-        self.staging_fallbacks.fetch_add(1, Ordering::Relaxed);
-        if !self.staging_warned.swap(true, Ordering::Relaxed) {
-            eprintln!(
-                "[LAMELLAR WARNING][{}] registered staging pool exhausted (needed {} bytes); RDMA op falling back to unregistered heap memory, results may be affected by libfabric MR-cache staleness. Remedies: increase LAMELLAR_HEAP_SIZE, verify your results, or set FI_MR_CACHE_MAX_COUNT=0 (slow).",
-                self.my_pe, bytes
-            );
-        }
-        None
+    ) -> Option<LibfabricStaging> {
+        let pool = self.staging.get_or_init(|| {
+            let ofi = Arc::downgrade(self);
+            RtStagingPool::new("libfabric", move |len, align| {
+                let alloc = ofi.upgrade()?.rt_alloc(len, align).ok()?;
+                Some((alloc.start(), alloc))
+            })
+        });
+        pool.alloc(bytes, align, || {
+            let _ = self.progress_all();
+        })
     }
 
     pub(crate) fn staging_fallbacks(&self) -> usize {
-        self.staging_fallbacks.load(Ordering::Relaxed)
+        self.staging.get().map_or(0, |pool| pool.fallbacks())
+    }
+
+    /// Give the staging slabs back to the runtime heap. They hold references to this backend, so this has to happen
+    /// before `runtime_allocs` is cleared.
+    pub(crate) fn staging_release(&self) {
+        if let Some(pool) = self.staging.get() {
+            pool.release_all();
+        }
     }
 
     pub(crate) fn inject_size(&self) -> usize {

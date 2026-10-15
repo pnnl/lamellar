@@ -29,7 +29,6 @@ fn node_total_memory_bytes() -> Option<u64> {
 }
 
 use crate::{
-    config,
     lamellae::{
         calc_alloc_padding_size_align,
         collective::{
@@ -725,44 +724,12 @@ impl LibfabricSysOptMem {
     }
 }
 
-/// Staging blocks are power-of-two sized from 64 B up to this, and recycled (see `OptOfi::staging_cache`).
-const STAGING_MIN_LOG2: u32 = 6;
-const STAGING_CLASS_MAX: usize = 16 << 20;
-const STAGING_ALIGN: usize = 64;
-/// Most bytes of idle staging blocks kept for reuse.
-const STAGING_CACHE_MAX_BYTES: usize = 64 << 20;
+use crate::lamellae::comm::staging_rt::{RtStaging, RtStagingPool};
+use std::sync::OnceLock;
 
-/// A registered scratch buffer of `bytes` bytes for one RDMA operation; the block returns to the recycle cache (or the
-/// pool) when this is dropped. The backing allocation may be larger than `bytes`.
-pub(crate) struct Staging {
-    alloc: Option<LibfabricSysOptAlloc>,
-    ofi: Arc<OptOfi>,
-    bytes: usize,
-    class: Option<usize>,
-}
-
-impl Staging {
-    fn start(&self) -> usize {
-        self.alloc.as_ref().expect("staging block").start()
-    }
-
-    /// The `bytes` requested, as a slice of `T`.
-    pub(crate) unsafe fn as_slice<T>(&self) -> &[T] {
-        std::slice::from_raw_parts(self.start() as *const T, self.bytes / std::mem::size_of::<T>())
-    }
-
-    pub(crate) unsafe fn as_mut_slice<T>(&self) -> &mut [T] {
-        std::slice::from_raw_parts_mut(self.start() as *mut T, self.bytes / std::mem::size_of::<T>())
-    }
-}
-
-impl Drop for Staging {
-    fn drop(&mut self) {
-        if let (Some(alloc), Some(class)) = (self.alloc.take(), self.class) {
-            self.ofi.staging_recycle(class, alloc);
-        }
-    }
-}
+/// A registered scratch buffer of some bytes for one RDMA operation; the block returns to the staging pool when this is
+/// dropped (see `comm::staging_rt`).
+pub(crate) type Staging = RtStaging<LibfabricSysOptAlloc>;
 
 /// See `OptOfi::staging_parked`.
 struct ParkedStaging {
@@ -810,20 +777,9 @@ pub(crate) struct OptOfi {
     /// id 256, and marking it writes one byte past the 32-byte mask). Cleared in
     /// `clear_barrier` (before the endpoint is closed).
     mr_exchange_groups: Mutex<HashMap<Vec<usize>, Arc<RawMcGroup>>>,
-    /// `LAMELLAR_RDMA_STAGING` (default on): heap-backed RDMA local buffers are
-    /// staged through `runtime_allocs` so rxm never registers them on the fly.
-    staging_enabled: bool,
-    staging_fallbacks: AtomicUsize,
-    staging_warned: AtomicBool,
-    /// Recycled staging blocks, one list per power-of-two size class (index = log2(bytes) - `STAGING_MIN_LOG2`).
-    /// A block is an ordinary `runtime_allocs` allocation, so reusing one skips building a new allocation object
-    /// (per-PE address maps, table entries) for every transfer. Capped at `STAGING_CACHE_MAX_BYTES`; flushed when
-    /// the pool runs dry. Like `runtime_allocs` the blocks hold an `Arc<OptOfi>`: cleared in `final_teardown`.
-    staging_cache: Mutex<Vec<Vec<LibfabricSysOptAlloc>>>,
-    staging_cached_bytes: AtomicUsize,
-    /// Set by `staging_teardown`: later releases drop their block instead of caching it (a cached block would keep
-    /// this `OptOfi` alive through its `Arc` forever).
-    staging_closed: AtomicBool,
+    /// Registered scratch memory for RDMA ops whose local buffer is plain heap/stack memory, so rxm never registers
+    /// such a buffer on the fly (see `comm::staging_rt`). Created on first use; released in `staging_teardown`.
+    staging: OnceLock<RtStagingPool<LibfabricSysOptAlloc>>,
     /// Staging blocks of unmanaged operations whose transfer may still be in flight, with the copy-out of an
     /// unmanaged get. Released (and the copy-outs run) by `wait_all` once every issued operation has completed.
     staging_parked: Mutex<Vec<ParkedStaging>>,
@@ -1318,12 +1274,7 @@ impl OptOfi {
             runtime_allocs: RwLock::new(Vec::new()),
             mr_exchange_via_collective,
             mr_exchange_groups: Mutex::new(HashMap::new()),
-            staging_enabled: config().rdma_staging.unwrap_or(true),
-            staging_fallbacks: AtomicUsize::new(0),
-            staging_warned: AtomicBool::new(false),
-            staging_cache: Mutex::new(Vec::new()),
-            staging_cached_bytes: AtomicUsize::new(0),
-            staging_closed: AtomicBool::new(false),
+            staging: OnceLock::new(),
             staging_parked: Mutex::new(Vec::new()),
             teardown_done: AtomicBool::new(false),
             blocked_count: AtomicUsize::new(0),
@@ -1955,7 +1906,7 @@ impl OptOfi {
     /// pure cache hit, so staging removes both the staleness and the per-op
     /// registration cost.
     ///
-    /// Blocks are recycled (see `staging_cache`); the returned [`Staging`] goes back to the cache when dropped.
+    /// Blocks are recycled by the shared staging pool; the returned [`Staging`] goes back to it when dropped.
     ///
     /// `None` means "use the caller's own buffer" (staging disabled, empty
     /// op, or pool exhausted after letting in-flight ops drain).
@@ -1964,81 +1915,21 @@ impl OptOfi {
         bytes: usize,
         align: usize,
     ) -> Option<Staging> {
-        if !self.staging_enabled || bytes == 0 {
-            return None;
-        }
-        // power-of-two classes (recyclable) up to STAGING_CLASS_MAX; larger or over-aligned requests get an exact block
-        let class = (bytes <= STAGING_CLASS_MAX && align <= STAGING_ALIGN)
-            .then(|| (bytes.next_power_of_two().trailing_zeros()).max(STAGING_MIN_LOG2) as usize);
-        let (size, align) = match class {
-            Some(c) => (1usize << c, STAGING_ALIGN),
-            None => (bytes, align.max(STAGING_ALIGN)),
-        };
-        if let Some(c) = class {
-            let recycled = self
-                .staging_cache
-                .lock()
-                .get_mut(c - STAGING_MIN_LOG2 as usize)
-                .and_then(|list| list.pop());
-            if let Some(alloc) = recycled {
-                self.staging_cached_bytes.fetch_sub(size, Ordering::Relaxed);
-                return Some(Staging { alloc: Some(alloc), ofi: self.clone(), bytes, class });
+        let pool = self.staging.get_or_init(|| {
+            let ofi = Arc::downgrade(self);
+            RtStagingPool::new("libfabric_sys_opt", move |len, align| {
+                let alloc = ofi.upgrade()?.rt_alloc(len, align).ok()?;
+                Some((alloc.start(), alloc))
+            })
+        });
+        pool.alloc(bytes, align, || {
+            // let unmanaged operations in flight finish (their staging blocks are released by `wait_all`), then retry
+            if self.staging_parked.lock().is_empty() {
+                self.progress_all();
+            } else {
+                self.wait_all();
             }
-        }
-        for attempt in 0..3 {
-            match self.rt_alloc(size, align) {
-                Ok(alloc) => {
-                    return Some(Staging { alloc: Some(alloc), ofi: self.clone(), bytes, class });
-                }
-                Err(AllocError::OutOfMemoryError(_)) if attempt < 2 => {
-                    // give back what we are holding for reuse, let unmanaged operations in flight finish
-                    // (their staging blocks are released by `wait_all`), then retry
-                    self.staging_flush_cache();
-                    if self.staging_parked.lock().is_empty() {
-                        self.progress_all();
-                    } else {
-                        self.wait_all();
-                        self.staging_flush_cache();
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        self.staging_fallbacks.fetch_add(1, Ordering::Relaxed);
-        if !self.staging_warned.swap(true, Ordering::Relaxed) {
-            eprintln!(
-                "[LAMELLAR WARNING][{}] registered staging pool exhausted (needed {} bytes); RDMA op falling back to unregistered heap memory, results may be affected by libfabric MR-cache staleness. Remedies: increase LAMELLAR_HEAP_SIZE, verify your results, or set FI_MR_CACHE_MAX_COUNT=0 (slow).",
-                self.my_pe, bytes
-            );
-        }
-        None
-    }
-
-    /// Take a block back from a dropped [`Staging`]: keep it for reuse while the cache is under its cap.
-    fn staging_recycle(&self, class: usize, alloc: LibfabricSysOptAlloc) {
-        let size = 1usize << class;
-        if self.staging_closed.load(Ordering::Acquire)
-            || self.staging_cached_bytes.load(Ordering::Relaxed) + size > STAGING_CACHE_MAX_BYTES
-        {
-            return; // drop: back to the pool
-        }
-        let mut cache = self.staging_cache.lock();
-        if self.staging_closed.load(Ordering::Acquire) {
-            return; // closed while we waited for the lock
-        }
-        let idx = class - STAGING_MIN_LOG2 as usize;
-        if cache.len() <= idx {
-            cache.resize_with(idx + 1, Vec::new);
-        }
-        cache[idx].push(alloc);
-        self.staging_cached_bytes.fetch_add(size, Ordering::Relaxed);
-    }
-
-    /// Return every cached block to the pool.
-    pub(crate) fn staging_flush_cache(&self) {
-        let drained: Vec<Vec<LibfabricSysOptAlloc>> = std::mem::take(&mut *self.staging_cache.lock());
-        self.staging_cached_bytes.store(0, Ordering::Relaxed);
-        drop(drained);
+        })
     }
 
     /// Keep `staging` (and run `copy_out` on it afterwards, if given) until every operation issued so far has
@@ -2053,16 +1944,17 @@ impl OptOfi {
     }
 
     /// Final teardown: every operation has completed (the caller has just drained), so run the pending copy-outs and
-    /// give every staging block back. The blocks hold an `Arc<OptOfi>`, which would otherwise keep it alive forever.
+    /// give the staging slabs back. They hold an `Arc<OptOfi>`, which would otherwise keep it alive forever.
     pub(crate) fn staging_teardown(&self) {
-        self.staging_closed.store(true, Ordering::Release);
         let parked = std::mem::take(&mut *self.staging_parked.lock());
         for ParkedStaging { staging, copy_out } in parked {
             if let Some(copy_out) = copy_out {
                 copy_out(&staging);
             }
         }
-        self.staging_flush_cache();
+        if let Some(pool) = self.staging.get() {
+            pool.release_all();
+        }
     }
 
     /// Release the parked staging blocks if no operation is in flight. The blocks were all parked after their
@@ -2086,7 +1978,7 @@ impl OptOfi {
     }
 
     pub(crate) fn staging_fallbacks(&self) -> usize {
-        self.staging_fallbacks.load(Ordering::Relaxed)
+        self.staging.get().map_or(0, |pool| pool.fallbacks())
     }
 
     pub(crate) fn inject_size(&self) -> usize {
