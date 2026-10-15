@@ -164,6 +164,20 @@ static void rxm_finish_recv(struct rxm_rx_buf *rx_buf, size_t done_len)
 		goto release;
 	}
 
+	/* A receive posted by the collective provider (FI_PEER_TRANSFER) completes through its callback whether or not
+	 * FI_COMPLETION was requested: rxm_handle_coll_eager does this for eager messages, and SAR and rendezvous
+	 * receives, which finish here, must do the same or the collective never sees the data arrive. */
+	if (rx_buf->ep->util_coll_peer_xfer_ops &&
+	    (rx_buf->pkt.hdr.tag & RXM_PEER_XFER_TAG_FLAG)) {
+		struct fi_cq_tagged_entry cqe = {
+			.tag = rx_buf->pkt.hdr.tag,
+			.op_context = recv_entry->context,
+		};
+		rx_buf->ep->util_coll_peer_xfer_ops->
+			complete(rx_buf->ep->util_coll_ep, &cqe, 0);
+		goto release;
+	}
+
 	if (rx_buf->recv_entry->flags & FI_COMPLETION ||
 	    rx_buf->ep->rxm_info->mode & FI_BUFFERED_RECV) {
 		rxm_cq_write_recv_comp(rx_buf, rx_buf->recv_entry->context,
@@ -222,6 +236,24 @@ void rxm_finish_eager_send(struct rxm_ep *rxm_ep, struct rxm_tx_buf *tx_buf)
 	ofi_ep_cntr_inc(&rxm_ep->util_ep, CNTR_TX);
 }
 
+/* A send issued by the collective provider (FI_PEER_TRANSFER) completes through its callback, not the tx CQ.
+ * rxm_finish_coll_eager_send does this for eager sends; SAR and rendezvous sends must do the same, otherwise the
+ * collective never sees them finish and stalls on any message larger than the eager limit. */
+static bool rxm_complete_coll_send(struct rxm_ep *rxm_ep, uint64_t tag,
+				   void *app_context)
+{
+	if (rxm_ep->util_coll_ep && (tag & RXM_PEER_XFER_TAG_FLAG)) {
+		struct fi_cq_tagged_entry cqe = {
+			.tag = tag,
+			.op_context = app_context,
+		};
+		rxm_ep->util_coll_peer_xfer_ops->
+			complete(rxm_ep->util_coll_ep, &cqe, 0);
+		return true;
+	}
+	return false;
+}
+
 static bool rxm_complete_sar(struct rxm_ep *rxm_ep,
 			     struct rxm_tx_buf *tx_buf)
 {
@@ -249,13 +281,17 @@ static void rxm_handle_sar_comp(struct rxm_ep *rxm_ep,
 				struct rxm_tx_buf *tx_buf)
 {
 	void *app_context;
-	uint64_t comp_flags, tx_flags;
+	uint64_t comp_flags, tx_flags, tag;
 
 	app_context = tx_buf->app_context;
 	comp_flags = ofi_tx_cq_flags(tx_buf->pkt.hdr.op);
 	tx_flags = tx_buf->flags;
+	tag = tx_buf->pkt.hdr.tag;
 
 	if (!rxm_complete_sar(rxm_ep, tx_buf))
+		return;
+
+	if (rxm_complete_coll_send(rxm_ep, tag, app_context))
 		return;
 
 	rxm_cq_write_tx_comp(rxm_ep, comp_flags, app_context, tx_flags);
@@ -281,21 +317,27 @@ static void rxm_rndv_rx_finish(struct rxm_rx_buf *rx_buf)
 static void rxm_rndv_tx_finish(struct rxm_ep *rxm_ep,
 			       struct rxm_tx_buf *tx_buf)
 {
+	bool coll;
+
 	assert(ofi_tx_cq_flags(tx_buf->pkt.hdr.op) & FI_SEND);
 
 	RXM_UPDATE_STATE(FI_LOG_CQ, tx_buf, RXM_RNDV_FINISH);
 	if (!rxm_ep->rdm_mr_local)
 		rxm_msg_mr_closev(tx_buf->rma.mr, tx_buf->rma.count);
 
-	rxm_cq_write_tx_comp(rxm_ep, ofi_tx_cq_flags(tx_buf->pkt.hdr.op),
-			     tx_buf->app_context, tx_buf->flags);
+	coll = rxm_complete_coll_send(rxm_ep, tx_buf->pkt.hdr.tag,
+				      tx_buf->app_context);
+	if (!coll)
+		rxm_cq_write_tx_comp(rxm_ep, ofi_tx_cq_flags(tx_buf->pkt.hdr.op),
+				     tx_buf->app_context, tx_buf->flags);
 
 	if (rxm_ep->rndv_ops == &rxm_rndv_ops_write &&
 	    tx_buf->write_rndv.done_buf) {
 		ofi_buf_free(tx_buf->write_rndv.done_buf);
 		tx_buf->write_rndv.done_buf = NULL;
 	}
-	ofi_ep_cntr_inc(&rxm_ep->util_ep, CNTR_TX);
+	if (!coll)
+		ofi_ep_cntr_inc(&rxm_ep->util_ep, CNTR_TX);
 	rxm_free_tx_buf(rxm_ep, tx_buf);
 }
 
