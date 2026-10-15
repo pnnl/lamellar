@@ -9,7 +9,7 @@ use std::{
 use lamellar_ucx_sys::{
     ucp_atomic_op_nbx, ucp_atomic_op_t, ucp_dt_make_contig, ucp_ep_close_nbx, ucp_ep_create,
     ucp_ep_flush_nbx, ucp_ep_h, ucp_ep_params, ucp_ep_params_field, ucp_err_handler,
-    ucp_err_handling_mode_t, ucp_get_nbx, ucp_op_attr_t, ucp_put_nbx, ucp_request_check_status,
+    ucp_err_handling_mode_t, ucp_get_nbx, ucp_mem_h, ucp_op_attr_t, ucp_put_nbx, ucp_request_check_status,
     ucp_request_free, ucp_request_param_t, ucp_request_param_t__bindgen_ty_1,
     ucp_request_param_t__bindgen_ty_2, ucs_memory_type, ucs_sock_addr, ucs_status_ptr_t,
     ucs_status_t, UCS_PTR_IS_PTR,
@@ -243,10 +243,27 @@ impl Endpoint {
         remote_addr: usize,
         rkey: &RKey,
     ) -> UcxRequest {
-        // unsafe extern "C" fn callback(request: *mut c_void, status: ucs_status_t) {
-        //     let request = &mut *(request as *mut Request);
-        //     request.waker.wake();
-        // }
+        self.get_with_memh(buf, size, remote_addr, rkey, std::ptr::null_mut())
+    }
+
+    /// A get into `buf`, which lies inside the memory registered as `memh` (null: not registered, UCX will register or
+    /// copy it itself). With a handle UCX can use the buffer zero-copy straight away, so the fast-completion hint (which
+    /// steers it to the copying protocols) is left off.
+    pub(crate) fn get_with_memh(
+        &self,
+        buf: *const u8,
+        size: usize,
+        remote_addr: usize,
+        rkey: &RKey,
+        memh: ucp_mem_h,
+    ) -> UcxRequest {
+        let attr_mask = if memh.is_null() {
+            ucp_op_attr_t::UCP_OP_ATTR_FLAG_FAST_CMPL as u32
+                | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
+        } else {
+            ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
+                | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMH as u32
+        };
         let request = unsafe {
             ucp_get_nbx(
                 self.handle,
@@ -255,8 +272,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FLAG_FAST_CMPL as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32,
+                    op_attr_mask: attr_mask,
                     flags: 0,
                     request: std::ptr::null_mut(),
                     cb: ucp_request_param_t__bindgen_ty_1 { send: None },
@@ -267,7 +283,7 @@ impl Endpoint {
                     recv_info: ucp_request_param_t__bindgen_ty_2 {
                         length: std::ptr::null_mut(),
                     },
-                    memh: std::ptr::null_mut(),
+                    memh,
                 } as _,
             )
         };

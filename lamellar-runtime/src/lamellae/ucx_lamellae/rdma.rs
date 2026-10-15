@@ -23,7 +23,9 @@ use crate::{
 };
 
 use super::{
-    fabric::{AllocFlushState, OneSidedUcxAlloc, UcxAlloc, UcxRequest},
+    fabric::{
+        AllocFlushState, GetWait, OneSidedUcxAlloc, StagedGet, UcxAlloc, UcxRequest, UcxStagingWait,
+    },
     Scheduler,
 };
 
@@ -272,31 +274,51 @@ pub(crate) struct UcxGetBufferFuture<T> {
     spawned: bool,
     result: Vec<T>,
     request: Option<UcxRequest>,
+    /// The get is landing in a staging block; `result` is filled from it when the get completes.
+    staged: Option<StagedGet<T>>,
+    /// The get has been issued (it is deferred while the staging pool is empty).
+    issued: bool,
+    /// Our place in the queue for a staging block, while waiting for one.
+    staging_wait: Option<UcxStagingWait>,
     flush_state: AllocFlushState,
 }
 
 impl<T: Remote> UcxGetBufferFuture<T> {
     //#[tracing::instrument(skip_all, level = "debug")]
-    fn exec_get(&mut self) {
-        unsafe {
-            self.request = self
-                .alloc
-                .inner_get(self.pe, self.offset, false, &mut self.result);
+    /// Issue the get; `false` if it could not be issued yet (the staging pool was empty and `wait` said not to fall back).
+    fn issue(&mut self, wait: GetWait<'_, '_>) -> bool {
+        // `result` is a fresh `Vec`: never registered memory, so it may be staged.
+        let issued = unsafe {
+            self.alloc
+                .inner_get_staged(self.pe, self.offset, false, &mut self.result, false, wait)
+        };
+        match issued {
+            Some((request, staged)) => {
+                self.request = request;
+                self.staged = staged;
+                self.issued = true;
+                true
+            }
+            None => false,
         }
     }
 
     pub(crate) fn block(mut self) -> Vec<T> {
-        self.exec_get();
+        self.issue(GetWait::Fallback);
         self.spawned = true;
         if let Some(request) = self.request.take() {
             request.wait().expect("ucx get buffer failed");
         } else if !self.local_op {
             self.alloc.wait_all();
         }
+        if let Some(staged) = self.staged.take() {
+            staged.finish();
+        }
         std::mem::take(&mut self.result)
     }
     pub(crate) fn spawn(mut self) -> LamellarTask<Vec<T>> {
-        self.exec_get();
+        // If the staging pool is empty the get is issued from `poll`, which can wait for a block.
+        self.issue(GetWait::TryOnly);
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -322,8 +344,13 @@ impl<T: Remote> From<UcxGetBufferFuture<T>> for RdmaGetBufferHandle<T> {
 impl<T: Remote> Future for UcxGetBufferFuture<T> {
     type Output = Vec<T>;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if !self.spawned {
-            self.exec_get();
+        if !self.issued {
+            let mut slot = self.staging_wait.take();
+            let issued = self.issue(GetWait::Wait(cx, &mut slot));
+            self.staging_wait = slot;
+            if !issued {
+                return Poll::Pending;
+            }
         }
         let this = self.project();
         *this.spawned = true;
@@ -347,6 +374,9 @@ impl<T: Remote> Future for UcxGetBufferFuture<T> {
             }
         }
 
+        if let Some(staged) = this.staged.take() {
+            staged.finish();
+        }
         Poll::Ready(std::mem::take(this.result))
     }
 }
@@ -362,32 +392,55 @@ pub(crate) struct UcxGetIntoBufferFuture<T: Remote, B: AsLamellarBuffer<T>> {
     counters: Option<Arc<[Arc<AMCounters>]>>,
     spawned: bool,
     request: Option<UcxRequest>,
+    /// The get is landing in a staging block (`dst` is not registered); `dst` is filled from it when the get completes.
+    staged: Option<StagedGet<T>>,
+    /// The get has been issued (it is deferred while the staging pool is empty).
+    issued: bool,
+    /// Our place in the queue for a staging block, while waiting for one.
+    staging_wait: Option<UcxStagingWait>,
     flush_state: AllocFlushState,
 }
 
 impl<T: Remote, B: AsLamellarBuffer<T>> UcxGetIntoBufferFuture<T, B> {
-    fn exec_op(&mut self) {
-        self.request = unsafe {
-            UcxAlloc::inner_get(
+    /// Issue the get; `false` if it could not be issued yet (the staging pool was empty and `wait` said not to fall back).
+    fn issue(&mut self, wait: GetWait<'_, '_>) -> bool {
+        let registered = self.dst.is_registered();
+        let issued = unsafe {
+            UcxAlloc::inner_get_staged(
                 &self.alloc,
                 self.pe,
                 self.offset,
                 false,
                 self.dst.as_mut_slice(),
+                registered,
+                wait,
             )
         };
+        match issued {
+            Some((request, staged)) => {
+                self.request = request;
+                self.staged = staged;
+                self.issued = true;
+                true
+            }
+            None => false,
+        }
     }
     pub(crate) fn block(mut self) {
-        self.exec_op();
+        self.issue(GetWait::Fallback);
         if let Some(request) = self.request.take() {
             request.wait().expect("ucx get into buffer failed");
         } else if !self.local_op {
             self.alloc.wait_all();
         }
+        if let Some(staged) = self.staged.take() {
+            staged.finish();
+        }
         self.spawned = true;
     }
     pub(crate) fn spawn(mut self) -> LamellarTask<()> {
-        self.exec_op();
+        // If the staging pool is empty the get is issued from `poll`, which can wait for a block.
+        self.issue(GetWait::TryOnly);
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -415,8 +468,13 @@ impl<T: Remote, B: AsLamellarBuffer<T>> From<UcxGetIntoBufferFuture<T, B>>
 impl<T: Remote, B: AsLamellarBuffer<T>> Future for UcxGetIntoBufferFuture<T, B> {
     type Output = ();
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if !self.spawned {
-            self.exec_op();
+        if !self.issued {
+            let mut slot = self.staging_wait.take();
+            let issued = self.issue(GetWait::Wait(cx, &mut slot));
+            self.staging_wait = slot;
+            if !issued {
+                return Poll::Pending;
+            }
         }
         let this = self.project();
         *this.spawned = true;
@@ -440,6 +498,9 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for UcxGetIntoBufferFuture<T, B> 
             }
         }
 
+        if let Some(staged) = this.staged.take() {
+            staged.finish();
+        }
         Poll::Ready(())
     }
 }
@@ -673,6 +734,9 @@ impl CommAllocRdma for UcxAlloc {
             counters,
             result: (0..len).map(|_| unsafe { std::mem::zeroed() }).collect(),
             request: None,
+            staged: None,
+            issued: false,
+            staging_wait: None,
             flush_state: AllocFlushState::default(),
         }
         .into()
@@ -686,7 +750,7 @@ impl CommAllocRdma for UcxAlloc {
         len: usize,
     ) -> Vec<T> {
         let mut buf: Vec<T> = (0..len).map(|_| unsafe { std::mem::zeroed() }).collect();
-        let _ = unsafe { self.inner_get(pe, offset, true, buf.as_mut_slice()) };
+        let _ = unsafe { self.inner_get_staged(pe, offset, true, buf.as_mut_slice(), false, GetWait::Fallback) };
         buf
     }
 
@@ -709,6 +773,9 @@ impl CommAllocRdma for UcxAlloc {
             scheduler: scheduler.clone(),
             counters,
             request: None,
+            staged: None,
+            issued: false,
+            staging_wait: None,
             flush_state: AllocFlushState::default(),
         }
         .into()
@@ -720,7 +787,8 @@ impl CommAllocRdma for UcxAlloc {
         offset: usize,
         mut dst: LamellarBuffer<T, B>,
     ) {
-        let _ = unsafe { self.inner_get(pe, offset, true, dst.as_mut_slice()) };
+        let registered = dst.is_registered();
+        let _ = unsafe { self.inner_get_staged(pe, offset, true, dst.as_mut_slice(), registered, GetWait::Fallback) };
     }
     fn get_into_buffer_unmanaged<T: Remote, B: AsLamellarBuffer<T>>(
         &self,
@@ -937,6 +1005,9 @@ impl CommAllocRdma for OneSidedUcxAlloc {
             counters,
             result: (0..len).map(|_| unsafe { std::mem::zeroed() }).collect(),
             request: None,
+            staged: None,
+            issued: false,
+            staging_wait: None,
             flush_state: AllocFlushState::default(),
         }
         .into()
@@ -955,7 +1026,7 @@ impl CommAllocRdma for OneSidedUcxAlloc {
             pe, self.remote_pe
         );
         let mut dst: Vec<T> = (0..len).map(|_| unsafe { std::mem::zeroed() }).collect();
-        let _ = unsafe { self.alloc.inner_get(pe, offset, true, dst.as_mut_slice()) };
+        let _ = unsafe { self.alloc.inner_get_staged(pe, offset, true, dst.as_mut_slice(), false, GetWait::Fallback) };
         dst
     }
 
@@ -982,6 +1053,9 @@ impl CommAllocRdma for OneSidedUcxAlloc {
             scheduler: scheduler.clone(),
             counters,
             request: None,
+            staged: None,
+            issued: false,
+            staging_wait: None,
             flush_state: AllocFlushState::default(),
         }
         .into()
@@ -998,7 +1072,8 @@ impl CommAllocRdma for OneSidedUcxAlloc {
             "blocking_get_into_buffer called on OneSidedUcxAlloc with incorrect pe: {} expected pe: {}",
             pe, self.remote_pe
         );
-        let _ = unsafe { UcxAlloc::inner_get(&self.alloc, pe, offset, true, dst.as_mut_slice()) };
+        let registered = dst.is_registered();
+        let _ = unsafe { UcxAlloc::inner_get_staged(&self.alloc, pe, offset, true, dst.as_mut_slice(), registered, GetWait::Fallback) };
     }
     fn get_into_buffer_unmanaged<T: Remote, B: AsLamellarBuffer<T>>(
         &self,

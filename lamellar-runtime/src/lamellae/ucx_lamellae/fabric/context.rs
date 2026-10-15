@@ -1,4 +1,7 @@
-use std::{mem::MaybeUninit, sync::Arc};
+use std::{
+    mem::MaybeUninit,
+    sync::{Arc, OnceLock},
+};
 
 use lamellar_ucx_sys::*;
 
@@ -6,6 +9,10 @@ use pmi::pmi::Pmi;
 use tracing::{debug, trace};
 
 use super::{error::Error, worker::Worker};
+use crate::lamellae::comm::{
+    staging::StagingPool,
+    ucx_staging::{UcxSlabBacking, UcxStagingPool},
+};
 
 /// The configuration for UCP application context.
 #[derive(Debug)]
@@ -54,6 +61,9 @@ impl Drop for Config {
 #[derive(Debug)]
 pub(crate) struct Context {
     pub(crate) handle: ucp_context_h,
+    /// Registered memory for operations whose local buffer is not registered (see `comm::ucx_staging`). Created on
+    /// first use, and released in `Drop` before the context itself is cleaned up.
+    staging: OnceLock<Arc<UcxStagingPool>>,
 }
 
 // Context is thread safe.
@@ -104,8 +114,25 @@ impl Context {
 
         Ok(Arc::new(Context {
             handle: unsafe { handle.assume_init() },
+            staging: OnceLock::new(),
             // pmi: pmi.clone(),
         }))
+    }
+
+    /// The staging pool for this context (see `comm::ucx_staging`). Its limits come from `LAMELLAR_RDMA_STAGING`,
+    /// `_MIN`, `_MAX` and `_POOL`.
+    pub(crate) fn staging(&self) -> &Arc<UcxStagingPool> {
+        self.staging.get_or_init(|| {
+            let cfg = crate::config();
+            let pool_bytes = cfg.rdma_staging_pool.unwrap_or(256 << 20);
+            StagingPool::new(
+                "ucx",
+                UcxSlabBacking::new(self.handle, pool_bytes),
+                cfg.rdma_staging.unwrap_or(true),
+                cfg.rdma_staging_min.unwrap_or(512),
+                cfg.rdma_staging_max.unwrap_or(1 << 20),
+            )
+        })
     }
 
     /// Create a `Worker` object.
@@ -145,6 +172,10 @@ impl Drop for Context {
     fn drop(&mut self) {
         trace!(target: "drop", "begin drop Context");
         debug!("Dropping UCP Context");
+        // The staging slabs were mapped on this context, so they go before it does.
+        if let Some(pool) = self.staging.get() {
+            pool.backing().release_all();
+        }
         unsafe { ucp_cleanup(self.handle) };
         trace!(target: "drop", "end drop Context");
     }

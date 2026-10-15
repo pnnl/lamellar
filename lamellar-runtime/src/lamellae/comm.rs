@@ -5,6 +5,8 @@ pub(crate) mod error;
 pub(crate) mod rdma;
 pub(crate) mod slice;
 pub(crate) mod staging;
+#[cfg(any(feature = "enable-ucx", feature = "enable-ucx-opt"))]
+pub(crate) mod ucx_staging;
 
 pub(crate) use alloc::*;
 pub(crate) use atomic::*;

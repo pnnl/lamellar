@@ -990,6 +990,10 @@ name = "rdma_get"
 path = "examples/rdma_examples/rdma_get.rs"
 
 [[example]]
+name = "get_staging_check"
+path = "examples/rdma_examples/get_staging_check.rs"
+
+[[example]]
 name = "rdma_am"
 path = "examples/rdma_examples/rdma_am.rs"
 

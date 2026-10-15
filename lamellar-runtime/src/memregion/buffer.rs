@@ -638,7 +638,9 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LamellarBuffer<T, B> {
         feature = "enable-libfabric",
         feature = "enable-libfabric-async",
         feature = "enable-libfabric-sys",
-        feature = "enable-libfabric-sys-opt"
+        feature = "enable-libfabric-sys-opt",
+        feature = "enable-ucx",
+        feature = "enable-ucx-opt"
     ))]
     pub(crate) fn is_registered(&self) -> bool {
         unsafe { self.data.as_ref().data.is_registered() }
