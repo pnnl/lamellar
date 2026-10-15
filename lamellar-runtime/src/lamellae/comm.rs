@@ -4,6 +4,7 @@ pub(crate) mod collective;
 pub(crate) mod error;
 pub(crate) mod rdma;
 pub(crate) mod slice;
+pub(crate) mod staging;
 
 pub(crate) use alloc::*;
 pub(crate) use atomic::*;
