@@ -656,6 +656,10 @@ impl Ofi {
             }
         }
 
+        // libfabric's default memory monitor misses reused buffers, which makes the registration cache serve stale
+        // entries (see comm::ofi_mr_cache)
+        crate::lamellae::comm::ofi_mr_cache::configure_mr_cache_monitor(my_pmi.rank());
+
         #[cfg(feature = "enable-on-node-shmem")]
         let disable_on_node_shmem = config().disable_on_node_shmem.unwrap_or(false);
         #[cfg(feature = "enable-on-node-shmem")]
