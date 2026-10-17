@@ -6,6 +6,7 @@ use syn::{parse_macro_input, ItemFn};
 
 #[cfg(any(feature = "use-prterun", feature = "use-srun"))]
 fn create_launch_block(
+    explicit_libfabric: Option<bool>,
     launcher_info: (impl ToTokens, impl ToTokens),
     ret: Option<impl ToTokens>,
     launcher_type: &str,
@@ -138,6 +139,12 @@ fn create_launch_block(
     };
 
     let binary_update_block = ::hpc_launch::binary_update_block_tokens();
+    // What the program's own `with_lamellae(Backend::..)` call picks, if main contains one with a literal backend.
+    // It takes precedence over `--lamellae` and `LAMELLAR_BACKEND`.
+    let explicit_libfabric = match explicit_libfabric {
+        Some(b) => quote! { Some(#b) },
+        None => quote! { None::<bool> },
+    };
     quote! {
         let prte_launched = std::env::var(#env_var).is_ok();
         if !prte_launched {
@@ -288,6 +295,9 @@ fn create_launch_block(
 
             let threads_per_pe: u32 = threads_per_pe_flag
                 .or_else(|| std::env::var("LAMELLAR_THREADS").ok().and_then(|s| s.parse().ok()))
+                // a PE bound explicitly (e.g. `--map-by node:PE=4`) should run that many threads,
+                // not one per core of the whole node
+                .or_else(|| ::lamellar::explicit_cores_per_pe(&prterun_args))
                 .unwrap_or_else(|| {
                     let cores = std::thread::available_parallelism()
                         .map(|n| n.get() as u32)
@@ -333,6 +343,16 @@ fn create_launch_block(
             if let Some(ref backend) = lamellae {
                 launcher_cmd.env("LAMELLAR_BACKEND", backend);
             }
+            // UCX's memory hooks (installed when the program starts, if UCX is compiled in) break libfabric's memory
+            // registration cache, so a libfabric run has them switched off. They can only be switched off before the
+            // process starts, which is why it is done here. Left alone if the user has set it.
+            let __explicit_libfabric: Option<bool> = #explicit_libfabric;
+            let __uses_libfabric = __explicit_libfabric.unwrap_or_else(|| {
+                lamellae.clone().unwrap_or_else(|| ::lamellar::config().backend.clone()).starts_with("libfabric")
+            });
+            if __uses_libfabric && std::env::var_os("UCX_MEM_EVENTS").is_none() {
+                launcher_cmd.env("UCX_MEM_EVENTS", "no");
+            }
             if let Some(ref cq) = cmd_queue {
                 launcher_cmd.env("LAMELLAR_CMD_QUEUE", cq);
             }
@@ -364,6 +384,32 @@ fn create_launch_block(
     }
 }
 
+/// Whether the `with_lamellae(Backend::X)` call in this function selects a libfabric backend: `Some(true/false)` for a
+/// literal `Backend::X` argument, `None` if there is no such call or its argument is not a literal variant.
+#[cfg(any(feature = "use-prterun", feature = "use-srun"))]
+fn explicit_backend_is_libfabric(func: &ItemFn) -> Option<bool> {
+    let text = quote!(#func).to_string();
+    let call = text.find("with_lamellae")?;
+    let rest = &text[call + "with_lamellae".len()..];
+    let rest = rest.trim_start().strip_prefix('(')?.trim_start();
+    // only the call's own argument: a variable there is not a literal backend
+    let rest = &rest[..rest.find(')')?];
+    // "Backend :: X" or "lamellar :: Backend :: X" -- tokens are stringified with spaces around "::"
+    let mut parts = rest.split("::").map(str::trim);
+    let mut prev = parts.next()?;
+    for part in parts {
+        if prev.ends_with("Backend") {
+            let variant: String = part
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            return Some(variant.starts_with("Libfabric"));
+        }
+        prev = part;
+    }
+    None
+}
+
 #[proc_macro_attribute]
 pub fn main(_args: TokenStream, item: TokenStream) -> TokenStream {
     #[cfg(not(any(feature = "use-prterun", feature = "use-srun")))]
@@ -381,6 +427,9 @@ pub fn main(_args: TokenStream, item: TokenStream) -> TokenStream {
     );
     assert!(func.sig.variadic.is_none(), "variadics not supported");
     assert!(func.sig.inputs.is_empty(), "inputs not supported");
+
+    #[cfg(any(feature = "use-prterun", feature = "use-srun"))]
+    let explicit_libfabric = explicit_backend_is_libfabric(&func);
 
     #[cfg(any(feature = "use-prterun", feature = "use-srun"))]
     let ret_result = match func.sig.output {
@@ -492,6 +541,7 @@ pub fn main(_args: TokenStream, item: TokenStream) -> TokenStream {
 
     #[cfg(feature = "use-prterun")]
     let launch_block = create_launch_block(
+        explicit_libfabric,
         (
             quote! {"PRTE_LAUNCHED"},
             quote! {::lamellar::prrte_sys::prterun_path()},
@@ -501,8 +551,12 @@ pub fn main(_args: TokenStream, item: TokenStream) -> TokenStream {
     );
 
     #[cfg(feature = "use-srun")]
-    let launch_block =
-        create_launch_block((quote! {"SLURM_LOCALID"}, quote! {"srun"}), ret, "srun");
+    let launch_block = create_launch_block(
+        explicit_libfabric,
+        (quote! {"SLURM_LOCALID"}, quote! {"srun"}),
+        ret,
+        "srun",
+    );
 
     let res = quote! {
         fn main() #ret_type {

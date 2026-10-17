@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    fabric::{LibfabricSysAlloc, OneSidedLibfabricSysAlloc},
+    fabric::{LibfabricSysAlloc, LibfabricSysStaging, OneSidedLibfabricSysAlloc},
     Scheduler,
 };
 
@@ -46,7 +46,7 @@ pub(crate) struct LibfabricSysPutFuture<T: Remote> {
     /// Registered copy of an unregistered source that is too large for the
     /// inject path (see `Ofi::staging_alloc`); must outlive the DMA, so it is
     /// held until the future completes.
-    staging: Option<LibfabricSysAlloc>,
+    staging: Option<LibfabricSysStaging>,
     local_op: bool,
     wait_cnt: Option<usize>,
 }
@@ -163,7 +163,7 @@ pub(crate) struct LibfabricSysGetFuture<T> {
     result: Box<T>,
     /// Registered copy of an unregistered GET destination (see
     /// `Ofi::staging_alloc`); copied into `result` only after completion.
-    staging: Option<LibfabricSysAlloc>,
+    staging: Option<LibfabricSysStaging>,
     local_op: bool,
     wait_cnt: Option<usize>,
 }
@@ -282,7 +282,7 @@ pub(crate) struct LibfabricSysGetBufferFuture<T> {
     result: Vec<T>,
     /// Registered scratch destination (see `Ofi::staging_alloc`). None =>
     /// GET straight into `result`.
-    staging: Option<LibfabricSysAlloc>,
+    staging: Option<LibfabricSysStaging>,
     local_op: bool,
     wait_cnt: Option<usize>,
 }
@@ -412,7 +412,7 @@ pub(crate) struct LibfabricSysGetIntoBufferFuture<T: Remote, B: AsLamellarBuffer
     spawned: bool,
     /// Registered scratch destination, only when `dst`'s backing store is
     /// not itself registered memory (see `Ofi::staging_alloc`).
-    staging: Option<LibfabricSysAlloc>,
+    staging: Option<LibfabricSysStaging>,
     local_op: bool,
     wait_cnt: Option<usize>,
 }

@@ -448,6 +448,46 @@ pub fn cores_per_package() -> Option<u32> {
     Some((cores / packages).max(1))
 }
 
+/// Cores per PE requested by an explicit binding among `args`, the raw launcher
+/// arguments (headed for prterun/srun), if there is one: the `PE=<n>` modifier of a
+/// `--map-by` value (`--map-by node:PE=4` or `--map-by=node:PE=4`), or
+/// `--cpus-per-task <n>` / `--cpus-per-task=<n>`. `-c` is not recognised since
+/// prterun/mpirun read it as `-np`.
+///
+/// The launcher sizes a PE's worker threads from this so the thread count matches the
+/// cores the PE is bound to; otherwise an unbound default (all the node's cores) runs
+/// many busy-polling threads on a few cores.
+pub fn explicit_cores_per_pe(args: &[String]) -> Option<u32> {
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        let map_by = if arg == "--map-by" {
+            it.next().map(String::as_str)
+        } else {
+            arg.strip_prefix("--map-by=")
+        };
+        if let Some(value) = map_by {
+            let cores = value
+                .split(|c| c == ':' || c == ',')
+                .find_map(|part| part.strip_prefix("PE="))
+                .and_then(|n| n.parse::<u32>().ok())
+                .filter(|&n| n > 0);
+            if cores.is_some() {
+                return cores;
+            }
+            continue;
+        }
+        let cpus_per_task = if arg == "--cpus-per-task" {
+            it.next().map(String::as_str)
+        } else {
+            arg.strip_prefix("--cpus-per-task=")
+        };
+        if let Some(n) = cpus_per_task.and_then(|n| n.parse::<u32>().ok()).filter(|&n| n > 0) {
+            return Some(n);
+        }
+    }
+    None
+}
+
 /// Best-effort count of processing units (logical CPUs, including SMT
 /// siblings) on the current host, via a `/sys` scan.
 pub fn pu_count() -> Option<u32> {
@@ -471,5 +511,45 @@ fn pu_count_fs() -> Option<u32> {
         None
     } else {
         Some(count)
+    }
+}
+
+#[cfg(test)]
+mod explicit_cores_per_pe_tests {
+    use super::explicit_cores_per_pe;
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn map_by_pe_modifier() {
+        assert_eq!(explicit_cores_per_pe(&args(&["--map-by", "node:PE=4", "-np", "2"])), Some(4));
+        assert_eq!(explicit_cores_per_pe(&args(&["--map-by=node:PE=8"])), Some(8));
+        assert_eq!(explicit_cores_per_pe(&args(&["--map-by", "ppr:2:node:PE=16:HWTCPUS"])), Some(16));
+    }
+
+    #[test]
+    fn cpus_per_task() {
+        assert_eq!(explicit_cores_per_pe(&args(&["--cpus-per-task", "6"])), Some(6));
+        assert_eq!(explicit_cores_per_pe(&args(&["--cpus-per-task=12"])), Some(12));
+    }
+
+    #[test]
+    fn no_binding_or_unusable_values() {
+        assert_eq!(explicit_cores_per_pe(&args(&[])), None);
+        assert_eq!(explicit_cores_per_pe(&args(&["--map-by", "node", "--bind-to", "none"])), None);
+        assert_eq!(explicit_cores_per_pe(&args(&["--map-by", "node:PE=0"])), None);
+        assert_eq!(explicit_cores_per_pe(&args(&["--map-by", "node:PE=x"])), None);
+        // `-c` is `-np` for prterun/mpirun, not a core count
+        assert_eq!(explicit_cores_per_pe(&args(&["-c", "4"])), None);
+    }
+
+    #[test]
+    fn map_by_without_pe_does_not_hide_a_later_binding() {
+        assert_eq!(
+            explicit_cores_per_pe(&args(&["--map-by", "node", "--cpus-per-task", "3"])),
+            Some(3)
+        );
     }
 }

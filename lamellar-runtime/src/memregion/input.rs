@@ -160,9 +160,9 @@ impl<T: Remote> MemregionRdmaInputInner<T> {
 
     #[cfg(any(
         feature = "enable-libfabric",
-        feature = "enable-libfabric-async",
         feature = "enable-libfabric-sys",
         feature = "enable-libfabric-sys-opt",
+        feature = "enable-ucx",
         feature = "enable-ucx-opt"
     ))]
     pub(crate) fn is_registered(&self) -> bool {

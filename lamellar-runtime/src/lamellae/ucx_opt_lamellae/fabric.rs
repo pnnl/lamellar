@@ -10,6 +10,8 @@ use crate::lamellae::CollectiveOpKind;
 use context::Context;
 use endpoint::Endpoint;
 pub(crate) use endpoint::UcxOptRequest;
+pub(crate) use crate::lamellae::comm::ucx_staging::{GetWait, StagedGet, UcxSlabBacking, UcxStagingWait};
+use crate::lamellae::comm::staging::Try as StagingTry;
 use memory_region::{MemoryHandle, MemoryHandleInner, RKey, RemoteAddressInfo};
 pub(crate) use worker::Worker;
 use worker::FlushState;
@@ -1924,6 +1926,75 @@ impl UcxOptAlloc {
             None
         } else {
             Some(req)
+        }
+    }
+
+    /// Like [`inner_get`](Self::inner_get), for a destination that may not be registered memory.
+    ///
+    /// When `dst_registered` is false and the transfer falls in the staging range, the data is fetched into a block of
+    /// the context's staging pool (registered once, so UCX neither registers `dst_addr` for every operation nor copies
+    /// through its own bounce buffers) and the returned [`StagedGet`] must be `finish`ed once the returned request has
+    /// completed. With `blocking` the whole get, including the copy out, is done before this returns.
+    ///
+    /// `wait` says what to do if the pool has no block: see [`GetWait`]. `None` is returned (and nothing issued) only
+    /// for `TryOnly` and `Wait`, when the operation has to be tried again.
+    pub(crate) unsafe fn inner_get_staged<T: Copy>(
+        &self,
+        pe: usize,
+        offset: usize,
+        blocking: bool,
+        dst_addr: &mut [T],
+        dst_registered: bool,
+        wait: GetWait<'_, '_>,
+    ) -> Option<(Option<UcxOptRequest>, Option<StagedGet<T>>)> {
+        let bytes = dst_addr.len() * std::mem::size_of::<T>();
+        let pool = self.context.staging();
+        if dst_registered || !pool.wants(bytes) {
+            return Some((self.inner_get(pe, offset, blocking, dst_addr), None));
+        }
+        // A local or same-node get is a plain copy and needs no staging.
+        let Some((shard, remote_addr, rkey)) = self.prepare_get(pe, offset, dst_addr) else {
+            return Some((None, None));
+        };
+        let acquired = match wait {
+            GetWait::Fallback => pool.acquire(bytes),
+            GetWait::TryOnly => match pool.try_acquire(bytes) {
+                StagingTry::Got(staging) => Some(staging),
+                StagingTry::NotWanted => None,
+                StagingTry::Exhausted => return None,
+            },
+            GetWait::Wait(cx, slot) => match pool.poll_acquire(cx, bytes, slot) {
+                std::task::Poll::Ready(staging) => staging,
+                std::task::Poll::Pending => return None,
+            },
+        };
+        match acquired {
+            Some(staging) => {
+                let memh = UcxSlabBacking::memh(staging.token());
+                let req = self
+                    .ep(shard, pe)
+                    .get_with_memh(staging.ptr(), bytes, remote_addr, rkey, memh);
+                let staged = StagedGet::new(staging, dst_addr.as_mut_ptr(), dst_addr.len());
+                if blocking {
+                    req.wait().expect("blocking_get failed");
+                    staged.finish();
+                    Some((None, None))
+                } else {
+                    Some((Some(req), Some(staged)))
+                }
+            }
+            // No staging block (not applicable, or the pool could not provide one): the caller's buffer, as `inner_get` does.
+            None => {
+                let req = self
+                    .ep(shard, pe)
+                    .get(dst_addr.as_mut_ptr() as _, bytes, remote_addr, rkey);
+                if blocking {
+                    req.wait().expect("blocking_get failed");
+                    Some((None, None))
+                } else {
+                    Some((Some(req), None))
+                }
+            }
         }
     }
 

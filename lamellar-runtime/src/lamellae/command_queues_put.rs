@@ -1,3 +1,28 @@
+//! Command queue where the sender PUTs each message into a buffer the receiver allocated.
+//!
+//! Done-flag protocol (the same rules apply to `command_queues_put_slots` and
+//! `command_queues_put_eager`, including the eager ring's size word):
+//!
+//! * The receiver decides "this message has fully arrived" by seeing a flag word (the last 8 bytes
+//!   after the data) equal to the message's `msg_hash`. Everything it reads afterwards depends on
+//!   that being true, so the flag must never become visible before the data.
+//! * The sender therefore puts the data, waits for that put to complete (an awaited `put_buffer` is
+//!   flushed, i.e. remotely complete), and only then puts the flag as a SEPARATE write. Do NOT put the
+//!   flag in the same buffer as the data: a single write can be split across fragments, queue pairs or
+//!   (with ucx-opt) workers, and nothing orders the pieces. Do not rely on "RDMA write ordering"
+//!   between separate writes either, for the same reason; the flush is what orders them.
+//! * `msg_hash` (the flag value) is a sentinel, not an integrity check: the receiver never verifies the data
+//!   against it. Completeness comes from the flush-then-flag ordering above. It is a per-sender sequence
+//!   number (`next_msg_hash`) so a stale flag in a recycled buffer can never match a later message.
+//!   (The get-based queues have no flag: their receiver issues a GET and awaits it, which resolves once the
+//!   bytes have been placed in its buffer. Their `msg_hash` is a sequence number too, `lamellae::next_msg_hash`.)
+//! * The receiver zeroes the flag before telling the sender the buffer is ready, and issues an
+//!   `Acquire` fence once it sees the flag, before it reads the data.
+//!
+//! A response is routed to its request by turning the id it carries back into an `Arc`
+//! (`ActiveMessageEngine::send_data_to_user_handle`), so a message delivered with the wrong contents
+//! (or twice) is undefined behaviour there, not just a wrong answer.
+
 use super::{
     Comm, Lamellae, SerializedData,
     comm::{CmdQStatus, CommAlloc, CommInfo, CommMem, CommProgress, CommSlice},
@@ -6,13 +31,13 @@ use crate::{env_var::config, lamellae::CommAllocRdma, print_stats, scheduler::Sc
 use async_lock::Mutex;
 use core::panic;
 use parking_lot::RwLock;
-use std::num::Wrapping;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use tracing::{debug, info, trace, warn};
 
 static MSG_ID: AtomicUsize = AtomicUsize::new(1);
+static SEND_SEQ: AtomicUsize = AtomicUsize::new(1);
 
 fn new_pe_counters() -> Vec<Vec<AtomicUsize>> {
     let mut v = Vec::with_capacity(2);
@@ -72,24 +97,19 @@ impl Default for Cmd {
     }
 }
 
-//#[tracing::instrument(skip_all, level = "debug")]
-fn calc_hash(addr: usize, num_bytes: usize) -> usize {
-    let num_usizes = num_bytes / std::mem::size_of::<usize>();
-    let num_u8s = num_bytes % std::mem::size_of::<usize>();
-    let u8_slice = unsafe {
-        std::slice::from_raw_parts(
-            (addr + num_usizes * std::mem::size_of::<usize>()) as *const u8,
-            num_u8s,
-        )
-    };
-    ((0..num_usizes)
-        .map(|x| unsafe { Wrapping((addr as *const usize).offset(x as isize).read_unaligned()) })
-        .sum::<Wrapping<usize>>()
-        + u8_slice
-            .iter()
-            .map(|x| Wrapping(*x as usize))
-            .sum::<Wrapping<usize>>())
-    .0
+/// The value a sender puts in the done flag of one message (and in its `Tx` command). It is only a
+/// sentinel: the receiver compares the flag word to it and never checks the data against it, so it is
+/// NOT an integrity check. That the data is complete when the flag is seen rests on the sender putting
+/// the data, waiting for that put to complete (flush), and only then putting the flag. A per-sender
+/// sequence number is used so the value is also different for every message, which means a stale
+/// flag left in a recycled buffer can never be mistaken for a later message's.
+fn next_msg_hash() -> usize {
+    loop {
+        let hash = SEND_SEQ.fetch_add(1, Ordering::Relaxed);
+        if hash != 0 {
+            return hash;
+        }
+    }
 }
 
 #[lamellar_prof::prof]
@@ -469,7 +489,7 @@ impl InnerCQ {
     // Phase 2: poll send_buffer[dst] for Ready (written by dst after allocating a receive buffer),
     //          then PUT data via put_buffer().await, free source, PUT magic terminator, reset slot.
     //#[tracing::instrument(skip_all, level = "debug")]
-    async fn send_vec(&self, mut data: Vec<u8>, dst: usize, hash: usize) {
+    async fn send_vec(&self, data: Vec<u8>, dst: usize, hash: usize) {
         stats!(PE_SENDS[0][dst].fetch_add(1, Ordering::SeqCst));
         debug!("want to send data {:?} {:x}", dst, hash);
         let mut printed = false;
@@ -539,27 +559,36 @@ impl InnerCQ {
                 if let Some(ready) = maybe_ready {
                     send_buffer[dst].write()[0] = **clear_cmd;
                     debug!("got ready from dst({dst}) {:?}", ready);
-                    data.extend_from_slice(&ready.msg_hash.to_ne_bytes());
 
-                    let dst_data_full =
-                        comm.one_sided_alloc_from_remote_pe_and_addr(dst, ready.daddr, data.len());
-                    // let dst_data = dst_data_full.comm_slice_at_byte_offset::<u8>(0, data.len());
-                    // let magic_data = dst_data_full.comm_slice_at_byte_offset::<u64>(data.len(), 1);
+                    // The receiver treats the done flag as "the whole message has arrived", so the
+                    // flag must never become visible before the data. Putting the flag in the same
+                    // write as the data does not guarantee that (a write can be split across
+                    // fragments/queue pairs/workers, which are not ordered with each other). So:
+                    // put the data, wait for it to complete (the awaited put is flushed, i.e.
+                    // remotely complete), and only then put the flag as its own write.
+                    let data_len = data.len();
+                    let dst_data_full = comm.one_sided_alloc_from_remote_pe_and_addr(
+                        dst,
+                        ready.daddr,
+                        data_len + std::mem::size_of::<u64>(),
+                    );
+                    let dst_data = dst_data_full.comm_slice_at_byte_offset::<u8>(0, data_len);
+                    let magic_data = dst_data_full.comm_slice_at_byte_offset::<u64>(data_len, 1);
 
-                    if let Ok(rt_data) = comm.rt_alloc_uninit(data.len(), std::mem::align_of::<u8>()) {
+                    if let Ok(rt_data) = comm.rt_alloc_uninit(data_len, std::mem::align_of::<u8>()) {
                         let mut data_slice = rt_data.as_comm_slice::<u8>();
                         data_slice.copy_from_slice(&data);
-                        put_amt.fetch_add(data.len(), Ordering::Relaxed);
-                        dst_data_full
+                        put_amt.fetch_add(data_len, Ordering::Relaxed);
+                        dst_data
                             .put_buffer::<u8>(&scheduler, None, data_slice, dst, 0)
                             .await;
                     } else {
-                        dst_data_full
+                        dst_data
                             .put_buffer::<u8>(&scheduler, None, data, dst, 0)
                             .await;
                     }
 
-                    // magic_data.put_unmanaged::<u64>(ready.msg_hash as u64, dst, 0);
+                    magic_data.put_unmanaged::<u64>(ready.msg_hash as u64, dst, 0);
 
                     stats!(sent_cnt.fetch_add(1, Ordering::SeqCst));
                     return;
@@ -880,10 +909,7 @@ impl CQPut {
     // Leak alloc before send so memory stays registered during PUT; cq.send() frees it.
     //#[tracing::instrument(skip_all, level = "debug")]
     pub(crate) async fn send_data(&self, data: SerializedData, dst: usize) {
-        let mut hash = calc_hash(data.ser_data_bytes.usize_addr(), data.len());
-        if hash == 0 {
-            hash = 1;
-        }
+        let hash = next_msg_hash();
         let data_slice = data.ser_data_bytes.clone();
         self.cq.send(data_slice, dst, hash).await;
     }
@@ -895,11 +921,7 @@ impl CQPut {
             dst
         );
 
-        let vec_data_addr = vec_data.as_ptr() as usize;
-        let mut hash = calc_hash(vec_data_addr, vec_data.len());
-        if hash == 0 {
-            hash = 1;
-        }
+        let hash = next_msg_hash();
         self.cq.send_vec(vec_data, dst, hash).await;
     }
 
@@ -1089,6 +1111,10 @@ impl CQPut {
                                         cq.comm.thread_flush();
                                         async_std::task::yield_now().await;
                                     }
+
+                                    // The flag is written after the data has been flushed (see the protocol at the
+                                    // top of this file); the fence orders our reads of the message after seeing it.
+                                    std::sync::atomic::fence(Ordering::Acquire);
 
                                     stats!(PE_RECVS[0][src].fetch_add(1, Ordering::SeqCst));
                                     debug!(

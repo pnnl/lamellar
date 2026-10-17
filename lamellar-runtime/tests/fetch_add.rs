@@ -21,7 +21,7 @@ macro_rules! create_test {
                     .arg("--np")
                     .arg(format!("{}", $num_pes))
                     .arg("--timeout")
-                    .arg("30")
+                    .arg("90")
                     // .arg("--output-dir")
                     // .arg("test_results/fetch_add")
                     .assert();

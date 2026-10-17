@@ -3,15 +3,14 @@
 //!
 //! - `LAMELLAR_BACKEND` - the backend used during execution. Note that if a backend is explicitly set in the world builder, this variable is ignored.
 //!     - possible values
-//!         - `local` -- default (if none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric`, `enable-libfabric-async`, or `enable-ucx` features are active)
+//!         - `local` -- default (if none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric`, or `enable-ucx` features are active)
 //!         - `shmem`
-//!         - `rofi_c`  -- only available with the `enable-rofi-c` feature; default if active, checked first
-//!         - `libfabric-sys` -- only available with the `enable-libfabric-sys` feature; default if active and `enable-rofi-c` is not
-//!         - `libfabric-sys-opt` -- only available with the `enable-libfabric-sys-opt` feature; default if active and neither `enable-rofi-c` nor `enable-libfabric-sys` are
-//!         - `libfabric` -- only available with the `enable-libfabric` feature; default if active and none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt` are
-//!         - `libfabric-async` -- only available with the `enable-libfabric-async` feature; default if active and none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric` are
-//!         - `ucx` -- only available with the `enable-ucx` feature; default if active and none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric`, `enable-libfabric-async` are
-//!         - `ucx-opt` -- only available with the `enable-ucx-opt` feature; default if active and none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric`, `enable-libfabric-async`, `enable-ucx` are
+//!         - `libfabric-sys-opt` -- only available with the `enable-libfabric-sys-opt` feature; default if active, checked first
+//!         - `rofi_c`  -- only available with the `enable-rofi-c` feature; default if active and `enable-libfabric-sys-opt` is not
+//!         - `libfabric-sys` -- only available with the `enable-libfabric-sys` feature; default if active and neither `enable-libfabric-sys-opt` nor `enable-rofi-c` are
+//!         - `libfabric` -- only available with the `enable-libfabric` feature; default if active and none of `enable-libfabric-sys-opt`, `enable-rofi-c`, `enable-libfabric-sys` are
+//!         - `ucx` -- only available with the `enable-ucx` feature; default if active and none of `enable-libfabric-sys-opt`, `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric` are
+//!         - `ucx-opt` -- only available with the `enable-ucx-opt` feature; default if active and none of `enable-libfabric-sys-opt`, `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric`, `enable-ucx` are
 //! - `LAMELLAR_EXECUTOR` - the executor used during execution. Note that if a executor is explicitly set in the world builder, this variable is ignored.
 //!     - possible values
 //!         - `lamellar` -- default, work stealing backend
@@ -37,9 +36,16 @@
 //!           This can be a fairly expensive operation (as the operation is synchronous across all PEs) so the runtime
 //!           will print a message at the end of execution with how many additional pools were allocated.
 //!              - if you find you are dynamically allocating new memory pools, try setting `LAMELLAR_HEAP_SIZE` to a larger value
-//! - `LAMELLAR_RDMA_STAGING` - (libfabric backend) stage heap-backed RDMA local buffers through the pre-registered
-//!   runtime memory pool so the provider never registers them on the fly. Default: true. Setting it to false restores
-//!   the provider's on-the-fly registration (subject to MR-cache staleness with reused heap memory).
+//! - `LAMELLAR_RDMA_STAGING` - (libfabric, libfabric-sys, libfabric-sys-opt, ucx and ucx-opt backends)
+//!   stage heap-backed RDMA local buffers through pre-registered memory so the provider never registers them on the
+//!   fly. Default: true. Setting it to false restores the provider's on-the-fly registration (slow for UCX, and subject
+//!   to MR-cache staleness with reused heap memory for libfabric).
+//!     - `LAMELLAR_RDMA_STAGING_MIN` / `LAMELLAR_RDMA_STAGING_MAX` - the range of buffer sizes in bytes that are staged
+//!       through the shared pool. Defaults: ucx and ucx-opt 512 B and 1 MiB (smaller buffers are copied by UCX itself;
+//!       larger ones are registered by UCX for the transfer because the extra copy costs more than the registration);
+//!       libfabric backends 1 B and 16 MiB (larger buffers are staged in an exact-size block of the runtime heap).
+//!     - `LAMELLAR_RDMA_STAGING_POOL` - the most registered memory in bytes the staging pool may hold. Default: ucx and
+//!       ucx-opt 256 MiB; libfabric backends half of `LAMELLAR_HEAP_SIZE`
 //! - `LAMELLAR_DEADLOCK_WARNING_TIMEOUT` - the timeout in seconds before a deadlock warning is printed. Defaults to 600, set to 0 to disable. Note this does not cause your application to terminate
 //! - `LAMELLAR_AM_GROUP_BATCH_SIZE` - The maximum number of sub messages that will be sent in a single AMGroup Active Message, default: 10000
 //! - `LAMELLAR_BLOCKING_CALL_WARNING` - flag used to print warnings when users call barriers on worker threads. Default: true
@@ -109,16 +115,15 @@ fn default_ucx_shard_bulk_bytes() -> usize {
 }
 
 fn default_backend() -> String {
-    if cfg!(feature = "enable-rofi-c") {
+    // Several backends can be compiled in at once; this is the order in which the default is picked.
+    if cfg!(feature = "enable-libfabric-sys-opt") {
+        return "libfabric-sys-opt".to_owned();
+    } else if cfg!(feature = "enable-rofi-c") {
         return "rofi_c".to_owned();
     } else if cfg!(feature = "enable-libfabric-sys") {
         return "libfabric-sys".to_owned();
-    } else if cfg!(feature = "enable-libfabric-sys-opt") {
-        return "libfabric-sys-opt".to_owned();
     } else if cfg!(feature = "enable-libfabric") {
         return "libfabric".to_owned();
-    } else if cfg!(feature = "enable-libfabric-async") {
-        return "libfabric-async".to_owned();
     } else if cfg!(feature = "enable-ucx") {
         return "ucx".to_owned();
     } else if cfg!(feature = "enable-ucx-opt") {
@@ -149,9 +154,6 @@ pub fn available_backends() -> Vec<&'static str> {
     }
     if cfg!(feature = "enable-libfabric") {
         backends.push("libfabric");
-    }
-    if cfg!(feature = "enable-libfabric-async") {
-        backends.push("libfabric-async");
     }
     if cfg!(feature = "enable-ucx") {
         backends.push("ucx");
@@ -392,6 +394,21 @@ pub struct Config {
     /// runtime memory pool instead of letting the provider register them on the fly, default: true
     #[serde(deserialize_with = "deserialize_bool_or_int_to_bool", default)]
     pub rdma_staging: Option<bool>,
+    /// The smallest RDMA local buffer, in bytes, that is staged through registered memory when `LAMELLAR_RDMA_STAGING`
+    /// is on. For UCX, below it UCX copies through its own internal buffers, which is cheap. Default: 512 (ucx,
+    /// ucx-opt), 1 (libfabric backends)
+    #[serde(default)]
+    pub rdma_staging_min: Option<usize>,
+    /// The largest RDMA local buffer, in bytes, that is staged through the pool. For UCX, above it the extra copy costs
+    /// more than letting UCX register the buffer once for the transfer. Default: 1 MiB (ucx, ucx-opt), 16 MiB
+    /// (libfabric backends; larger buffers get an exact-size block of the runtime heap)
+    #[serde(default)]
+    pub rdma_staging_max: Option<usize>,
+    /// The most registered memory, in bytes, the staging pool may hold. When it is exhausted the operation falls back to
+    /// the caller's own (unregistered) buffer. Default: 256 MiB (ucx, ucx-opt), half of the heap size (libfabric
+    /// backends)
+    #[serde(default)]
+    pub rdma_staging_pool: Option<usize>,
     #[serde(default = "default_ucc_oob_init_buffer_size")]
     pub ucc_oob_init_buffer_size: usize,
 }

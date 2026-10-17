@@ -27,7 +27,6 @@ use libfabric::{
 };
 
 use crate::{
-    config,
     lamellae::{
         collective::{
             AllReduceOp, ReduceOp as LamellarReduceOp, RootOrSliceMut, RootSrcOrSliceMut,
@@ -111,6 +110,16 @@ pub(crate) struct CommGroup {
     get_cnt: AtomicU64,
     coll_cnt_issued: AtomicU64,
     coll_cnt_completed: AtomicU64,
+    // Collective completion is matched by count (`coll_cnt_completed >= cnt`), which is only exact with one
+    // collective in flight: another thread's collective completing could release a waiter early. So a collective
+    // issuer holds this until its collective has been issued (non-blocking) or has completed (blocking). Separate
+    // from `lock` so a blocking waiter never holds the lock that other threads need to put, get and flush: those
+    // threads can be what another PE is waiting on before it joins the collective.
+    coll_lock: Mutex<()>,
+    // One `fi_join_collective` in flight per PE, held across issue and the wait for its FI_JOIN_COMPLETE. Separate from
+    // `lock` so a join waiter never holds the CQ lock across its whole wait. Without it, concurrent joins on one PE
+    // drain the shared EQ and one waiter can consume another's join completion.
+    join_lock: Mutex<()>,
     lock: Mutex<()>,
     // rofi_c-style wait ticketing (mirrors rofi_c_lamellae/fabric.rs
     // wait_cnt_cur / wait_cnt_fin / wait_flag). A future takes one ticket on
@@ -196,6 +205,12 @@ impl LibfabricMem {
     }
 }
 
+use crate::lamellae::comm::staging_rt::{RtStaging, RtStagingPool};
+use std::sync::OnceLock;
+
+/// A staging block for one RDMA operation.
+pub(crate) type LibfabricStaging = RtStaging<LibfabricAlloc>;
+
 pub(crate) struct Ofi {
     pub(crate) num_pes: usize,
     pub(crate) my_pe: usize,
@@ -233,11 +248,9 @@ pub(crate) struct Ofi {
     /// cycle broken via `clear_allocs()`). It MUST be `.clear()`-ed during
     /// teardown (see `Drop for LibfabricComm`) or `Ofi` will never be freed.
     pub(crate) runtime_allocs: RwLock<Vec<(LibfabricAlloc, BTreeAlloc)>>,
-    /// `LAMELLAR_RDMA_STAGING` (default on): heap-backed RDMA local buffers are
-    /// staged through `runtime_allocs` so rxm never registers them on the fly.
-    staging_enabled: bool,
-    staging_fallbacks: AtomicUsize,
-    staging_warned: AtomicBool,
+    /// Registered scratch memory for RDMA ops whose local buffer is plain heap/stack memory, so the provider never
+    /// registers such a buffer on the fly (see `comm::staging_rt`). Created on first use; released in teardown.
+    staging: OnceLock<RtStagingPool<LibfabricAlloc>>,
     /// Guards `final_teardown` so it runs exactly once no matter who calls
     /// it: LibfabricComm::drop calls it explicitly (on a known-good thread),
     /// and Drop::drop below calls it too as a fallback. PMI barrier calls
@@ -269,7 +282,8 @@ impl CommGroup {
         &self,
         ctx: &Context,
     ) -> Result<JoinCompleteEvent, libfabric::error::Error> {
-        let _lock = self.lock.lock();
+        // The caller holds `join_lock`. `lock` is not held across the wait: joining completes once every PE has joined,
+        // and that can depend on other threads of this PE taking `lock`. It is only taken, without blocking, to progress.
         loop {
             let eq_res = self.eq.read();
 
@@ -287,7 +301,10 @@ impl CommGroup {
                     }
                 }
             }
-            self.progress()?;
+            if let Some(_lock) = self.lock.try_lock() {
+                self.progress()?;
+            }
+            std::thread::yield_now();
         }
     }
 
@@ -387,7 +404,9 @@ impl CommGroup {
     }
 
     fn wait_for_collectives(&self) -> Result<(), libfabric::error::Error> {
-        let _lock = self.lock.lock();
+        // The lock is only held around each progress() call, never across the wait: a collective completes once every PE
+        // has joined it, and joining can depend on another thread of this PE taking the lock (to put or flush), so
+        // holding it here deadlocks with a PE that is still waiting on such a thread.
         let mut prev_expected_cnt = self.coll_cnt_issued.load(Ordering::SeqCst);
         let mut old_cnt = self.coll_cnt_completed.load(Ordering::SeqCst);
         let mut expected_cnt = self.coll_cnt_issued.load(Ordering::SeqCst);
@@ -402,11 +421,18 @@ impl CommGroup {
         while cur_cnt < expected_cnt || prev_expected_cnt < expected_cnt || cur_cnt != old_cnt {
             prev_expected_cnt = expected_cnt;
             old_cnt = cur_cnt;
-            let _ = self.progress();
+            let _ = {
+                let _lock = self.lock.lock();
+                self.progress()
+            };
             while self.coll_cnt_completed.load(Ordering::SeqCst)
                 < self.coll_cnt_issued.load(Ordering::SeqCst)
             {
-                if let Err(err) = self.progress() {
+                let progressed = {
+                    let _lock = self.lock.lock();
+                    self.progress()
+                };
+                if let Err(err) = progressed {
                     match err.kind {
                         libfabric::error::ErrorKind::TryAgain => {}
                         _ => return Err(err),
@@ -533,27 +559,43 @@ impl CommGroup {
         blocking: bool,
         mut fun: impl FnMut() -> Result<(), libfabric::error::Error>,
     ) -> Result<(), libfabric::error::Error> {
-        let _lock = self.lock.lock();
-
+        // `lock` is only held to post and around each progress(), never across the wait for the collective: it
+        // completes once every PE has joined, and joining can depend on another thread of this PE taking `lock`.
+        let mut coll_guard = Some(self.coll_lock.lock());
         let cnt = self.coll_cnt_issued.fetch_add(1, Ordering::SeqCst) + 1;
         loop {
-            match fun() {
-                Ok(_) => break,
-                Err(error) => {
-                    if matches!(error.kind, libfabric::error::ErrorKind::TryAgain) {
-                        self.progress()?;
-                    } else {
-                        return Err(error);
+            let posted = {
+                let _lock = self.lock.lock();
+                match fun() {
+                    Ok(_) => true,
+                    Err(error) => {
+                        if matches!(error.kind, libfabric::error::ErrorKind::TryAgain) {
+                            self.progress()?;
+                            false
+                        } else {
+                            return Err(error);
+                        }
                     }
                 }
+            };
+            if posted {
+                break;
             }
+            std::thread::yield_now();
+        }
+        if !blocking {
+            coll_guard.take();
         }
         if blocking {
             loop {
                 if self.coll_cnt_completed.load(Ordering::SeqCst) >= cnt {
                     break;
                 }
-                self.progress()?;
+                {
+                    let _lock = self.lock.lock();
+                    self.progress()?;
+                }
+                std::thread::yield_now();
             }
         }
         Ok(())
@@ -652,6 +694,10 @@ impl Ofi {
                 );
             }
         }
+
+        // libfabric's default memory monitor misses reused buffers, which makes the registration cache serve stale
+        // entries (see comm::ofi_mr_cache)
+        crate::lamellae::comm::ofi_mr_cache::configure_mr_cache_monitor(my_pmi.rank());
 
         #[cfg(feature = "enable-on-node-shmem")]
         let disable_on_node_shmem = config().disable_on_node_shmem.unwrap_or(false);
@@ -844,6 +890,8 @@ impl Ofi {
             put_cnt: AtomicU64::new(0),
             get_cnt: AtomicU64::new(0),
             lock: Mutex::new(()),
+            coll_lock: Mutex::new(()),
+            join_lock: Mutex::new(()),
             // Starts at 1, not 0: try_wait's elect-one-waiter check is `my_cnt > fin`. If both
             // started at 0, ticket #0 would see 0 > 0 == false and skip the real cntr wait,
             // returning as already-covered before anything had actually drained.
@@ -874,9 +922,7 @@ impl Ofi {
             mc_groups: Mutex::new(HashMap::new()),
             comm_group,
             runtime_allocs: RwLock::new(Vec::new()),
-            staging_enabled: config().rdma_staging.unwrap_or(true),
-            staging_fallbacks: AtomicUsize::new(0),
-            staging_warned: AtomicBool::new(false),
+            staging: OnceLock::new(),
             teardown_done: AtomicBool::new(false),
         });
 
@@ -1221,10 +1267,15 @@ impl Ofi {
 
         let mut cached_ctx = cg.allocate_context();
         let ctx = cached_ctx.context.as_mut().unwrap();
-        let mc = MulticastGroupBuilder::from_av_set(&av_set)
-            .build()
-            .join_collective_with_context(&cg.ep, JoinOptions::new(), ctx)
-            .unwrap();
+        // One join in flight per PE: held across issue and the wait.
+        let _join_guard = cg.join_lock.lock();
+        let mc = {
+            let _lock = cg.lock.lock();
+            MulticastGroupBuilder::from_av_set(&av_set)
+                .build()
+                .join_collective_with_context(&cg.ep, JoinOptions::new(), ctx)
+                .unwrap()
+        };
         let join_event = cg.wait_for_join_event(&ctx).unwrap();
         let mc = mc.join_complete(join_event);
         // trace!("Done Creating MC group");
@@ -1374,31 +1425,29 @@ impl Ofi {
         self: &Arc<Ofi>,
         bytes: usize,
         align: usize,
-    ) -> Option<LibfabricAlloc> {
-        if !self.staging_enabled || bytes == 0 {
-            return None;
-        }
-        for attempt in 0..3 {
-            match self.rt_alloc(bytes, align) {
-                Ok(alloc) => return Some(alloc),
-                Err(AllocError::OutOfMemoryError(_)) if attempt < 2 => {
-                    let _ = self.progress_all();
-                }
-                Err(_) => break,
-            }
-        }
-        self.staging_fallbacks.fetch_add(1, Ordering::Relaxed);
-        if !self.staging_warned.swap(true, Ordering::Relaxed) {
-            eprintln!(
-                "[LAMELLAR WARNING][{}] registered staging pool exhausted (needed {} bytes); RDMA op falling back to unregistered heap memory, results may be affected by libfabric MR-cache staleness. Remedies: increase LAMELLAR_HEAP_SIZE, verify your results, or set FI_MR_CACHE_MAX_COUNT=0 (slow).",
-                self.my_pe, bytes
-            );
-        }
-        None
+    ) -> Option<LibfabricStaging> {
+        let pool = self.staging.get_or_init(|| {
+            let ofi = Arc::downgrade(self);
+            RtStagingPool::new("libfabric", move |len, align| {
+                let alloc = ofi.upgrade()?.rt_alloc(len, align).ok()?;
+                Some((alloc.start(), alloc))
+            })
+        });
+        pool.alloc(bytes, align, || {
+            let _ = self.progress_all();
+        })
     }
 
     pub(crate) fn staging_fallbacks(&self) -> usize {
-        self.staging_fallbacks.load(Ordering::Relaxed)
+        self.staging.get().map_or(0, |pool| pool.fallbacks())
+    }
+
+    /// Give the staging slabs back to the runtime heap. They hold references to this backend, so this has to happen
+    /// before `runtime_allocs` is cleared.
+    pub(crate) fn staging_release(&self) {
+        if let Some(pool) = self.staging.get() {
+            pool.release_all();
+        }
     }
 
     pub(crate) fn inject_size(&self) -> usize {
@@ -3410,11 +3459,40 @@ impl LibfabricAlloc {
             .mcast_group
             .as_ref()
             .expect("No multicast group for collective reduce");
-        let (result, root_pe) = match slice_or_pe {
-            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe),
-            RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe),
+        let (result, root_pe, is_root) = match slice_or_pe {
+            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe, true),
+            RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe, false),
         };
         let res = unsafe { std::mem::transmute::<&mut [T], &mut [OFI]>(result) };
+        // libfabric's coll provider (libfabric 1.22, prov/coll `coll_ep_broadcast`) scatters and then allgathers
+        // `ceil(len / ranks)` elements per rank through the caller's buffer, i.e. it reads and writes
+        // `ceil(len / ranks) * ranks` elements. When `len` is not a multiple of the group size that overruns the
+        // buffer and corrupts the heap (which shows up as hangs and wrong data). Go through a zero-padded bounce
+        // buffer in that case. The result is copied back after completion, so this path waits for the collective here
+        // instead of returning with it in flight.
+        let ranks = self.num_pes();
+        if ranks > 1 && !res.is_empty() && res.len() % ranks != 0 {
+            let len = res.len();
+            let padded_len = len.div_ceil(ranks) * ranks;
+            let mut padded: Vec<std::mem::MaybeUninit<OFI>> = (0..padded_len)
+                .map(|_| std::mem::MaybeUninit::<OFI>::zeroed())
+                .collect();
+            std::ptr::copy_nonoverlapping(res.as_ptr(), padded.as_mut_ptr() as *mut OFI, len);
+            let padded_slice = std::slice::from_raw_parts_mut(padded.as_mut_ptr() as *mut OFI, padded_len);
+            cg.post_collective(true, || {
+                cg.ep.broadcast(
+                    padded_slice,
+                    None,
+                    mc,
+                    &cg.mapped_addresses[root_pe],
+                    CollectiveOptions::default(),
+                )
+            })?;
+            if !is_root {
+                std::ptr::copy_nonoverlapping(padded.as_ptr() as *const OFI, res.as_mut_ptr(), len);
+            }
+            return Ok(());
+        }
         cg.post_collective(blocking, || {
             cg.ep.broadcast(
                 res,

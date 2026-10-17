@@ -724,9 +724,13 @@ impl Scheduler {
             ExecutorType::LamellarWorkStealing
             | ExecutorType::LamellarWorkStealing2
             | ExecutorType::LamellarWorkStealing3 => std::cmp::max(2, num_workers), // at least one worker + main thread, for more than one worker, the main thread is considered a worker.
-            ExecutorType::AsyncStd => num_workers + 1, // the main thread + workers
+            // `num_workers` is the requested thread count, which includes the main thread (see
+            // `LamellarWorldBuilder::set_num_threads`). These executors run the main thread
+            // separately from their pool (it can't execute pool tasks), so the pool gets
+            // `num_workers - 1` threads, and at least one.
+            ExecutorType::AsyncStd => std::cmp::max(2, num_workers),
             #[cfg(feature = "tokio-executor")]
-            ExecutorType::Tokio => num_workers + 1, //the main thread + workers
+            ExecutorType::Tokio => std::cmp::max(2, num_workers),
             ExecutorType::SingleThread => 1,
         }
     }

@@ -83,7 +83,11 @@ impl LamellarExecutor for TokioRt {
 
     // //#[tracing::instrument(skip_all)]
     fn exec_task(&self) {
-        // I dont think tokio has a way to do this
+        // Tokio has no way to run a queued task on the calling thread. Callers sit in a
+        // spin loop (barrier, wait_all, blocking_wait, ...) around this call, so yield the
+        // core to the workers instead of burning it: with a busy-spinning main thread plus
+        // the worker threads, a PE bound to few cores starves its own workers.
+        std::thread::yield_now();
     }
 
     // block_in_place tells tokio's multi-thread runtime this worker thread is about
@@ -115,12 +119,14 @@ impl LamellarExecutor for TokioRt {
 }
 
 impl TokioRt {
-    pub(crate) fn new(num_workers: usize) -> TokioRt {
-        // println!("New TokioRT with {} workers", num_workers);
+    /// `num_threads` is the requested thread count for the PE and includes the main thread
+    /// (as with the work stealing executor). `block_on` does not run pool tasks on the main
+    /// thread, so the pool gets one thread fewer, and at least one.
+    pub(crate) fn new(num_threads: usize) -> TokioRt {
         TokioRt {
-            max_num_threads: num_workers, //LAMELLAR_THREADS = num_workers + 1,so for tokio runtime, we actually want num_workers + 1 worker threads as block_on will not do anywork on the main thread (i think)...
+            max_num_threads: num_threads,
             rt: tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(num_workers)
+                .worker_threads(num_threads.saturating_sub(1).max(1))
                 .enable_all()
                 .build()
                 .unwrap(),

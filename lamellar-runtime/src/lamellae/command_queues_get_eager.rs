@@ -10,7 +10,6 @@ use async_lock::Mutex;
 use core::panic;
 use parking_lot::RwLock;
 use std::mem::offset_of;
-use std::num::Wrapping;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
@@ -80,25 +79,6 @@ impl Default for Cmd {
     fn default() -> Self {
         Cmd::Clear
     }
-}
-
-fn calc_hash(addr: usize, num_bytes: usize) -> usize {
-    let num_usizes = num_bytes / std::mem::size_of::<usize>();
-    let num_u8s = num_bytes % std::mem::size_of::<usize>();
-    let u8_slice = unsafe {
-        std::slice::from_raw_parts(
-            (addr + num_usizes * std::mem::size_of::<usize>()) as *const u8,
-            num_u8s,
-        )
-    };
-    ((0..num_usizes)
-        .map(|x| unsafe { Wrapping((addr as *const usize).offset(x as isize).read_unaligned()) })
-        .sum::<Wrapping<usize>>()
-        + u8_slice
-            .iter()
-            .map(|x| Wrapping(*x as usize))
-            .sum::<Wrapping<usize>>())
-    .0
 }
 
 #[lamellar_prof::prof]
@@ -661,10 +641,9 @@ impl InnerCQ {
         src: usize,
         cmd: CmdMsg,
         ser_data: &mut SerializedData,
-        msg_id: usize,
+        _msg_id: usize,
         lamellae: &Arc<Lamellae>,
     ) {
-        let len = ser_data.len();
         let mut buffer = unsafe {
             LamellarBuffer::<u8, CommSlice<u8>>::from_comm_slice(
                 ser_data.header_and_data_as_bytes_mut(),
@@ -678,45 +657,9 @@ impl InnerCQ {
         let task = local_daddr_alloc
             .get_into_buffer(&self.scheduler, None, src, offset, buffer.split_off(0))
             .spawn();
-        let data_slice = ser_data.header_and_data_as_bytes_mut();
-
-        let mut timer = std::time::Instant::now();
-        trace!(
-            "msg_id: {msg_id} tmp_data_addr: {:?} calced hash: {:x} cmd msg hash {:x} {:?} {:?}",
-            data_slice.as_ptr(),
-            calc_hash(data_slice.as_ptr() as usize, len),
-            cmd.msg_hash,
-            &data_slice.as_slice()[0..std::cmp::min(32, len)],
-            &data_slice.as_slice()[len.saturating_sub(32)..len],
-        );
-
-        while calc_hash(data_slice.as_ptr() as usize, len) != cmd.msg_hash
-            && self.active.load(Ordering::SeqCst) != CmdQStatus::Panic as u8
-        {
-            if timer.elapsed().as_secs_f64() > 10.0 {
-                println!(
-                    "msg_id: {msg_id} data hash mismatch from {:?}!!! cmd: {:?} l: {:?} l(): {:?} -- calced hash {:x} expected {:x} [{:?}..{:?}] cur_thread: {:?}",
-                    src,
-                    cmd,
-                    len,
-                    data_slice.len(),
-                    calc_hash(data_slice.as_ptr() as usize, len),
-                    cmd.msg_hash,
-                    &data_slice.as_slice()[0..32],
-                    &data_slice.as_slice()[len.saturating_sub(32)..len],
-                    std::thread::current().id(),
-                );
-                timer = std::time::Instant::now();
-            }
-            self.comm.thread_flush();
-            async_std::task::yield_now().await;
-        }
+        // The GET is complete when this future resolves: the fetched bytes are in `ser_data`. (There used to be a
+        // spin here on a checksum of the buffer; see `crate::lamellae::next_msg_hash`.)
         task.await;
-        trace!(
-            "after msg_id: {msg_id} calced hash: {:x} cmd msg hash {:x}",
-            calc_hash(data_slice.as_ptr() as usize, len),
-            cmd.msg_hash,
-        );
         stats!(PE_RECVS[0][src].fetch_add(1, Ordering::SeqCst));
         debug!(
             "got serialized data from {src} {:x} -- {} bytes",
@@ -788,7 +731,9 @@ impl InnerCQ {
         dst_data
             .put_buffer::<u8>(&self.scheduler, None, data, dst, 0)
             .await;
-        // PUT magic after data; RDMA ordering ensures data arrives before magic.
+        // The awaited put above is flushed (remotely complete) before this flag write is issued; that, not
+        // RDMA write ordering, is what guarantees the data is in place before the receiver can see the flag.
+        // Separate writes may travel on different queue pairs/workers and are not ordered with each other.
         dst_magic.put_unmanaged::<u64>(size as u64, dst, 0);
 
         stats!(PE_SENDS[1][dst].fetch_add(1, Ordering::SeqCst));
@@ -1003,7 +948,7 @@ impl CQGetEager {
                 return;
             }
         }
-        let hash = calc_hash(data.ser_data_bytes.usize_addr(), data.len());
+        let hash = crate::lamellae::next_msg_hash();
         let data_slice = data.ser_data_bytes.clone();
         data.leak_alloc()
             .leak()
@@ -1040,7 +985,7 @@ impl CQGetEager {
             std::ptr::copy_nonoverlapping(vec_data.as_ptr(), data.as_mut_ptr(), vec_data.len());
         }
         let data_slice = data.as_comm_slice::<u8>().clone();
-        let hash = calc_hash(data_slice.usize_addr(), data_slice.len());
+        let hash = crate::lamellae::next_msg_hash();
         data.leak().expect("failed to leak alloc in send_vec");
         self.cq.send(data_slice, dst, hash).await;
     }
@@ -1161,6 +1106,9 @@ impl CQGetEager {
                             self.cq.eager_recv_alloc_addr + byte_offset + EAGER_DATA_SIZE;
                         let magic = unsafe { (magic_addr as *const u64).read_volatile() };
                         if magic != 0 {
+                            // The flag is the sender's last write, so the slot data is in place; the fence
+                            // keeps the reads of that data from being ordered before this read.
+                            std::sync::atomic::fence(Ordering::Acquire);
                             let size = magic as usize;
                             let data_addr = self.cq.eager_recv_alloc_addr + byte_offset;
 

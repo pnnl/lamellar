@@ -2,8 +2,23 @@ pub(crate) mod alloc;
 pub(crate) mod atomic;
 pub(crate) mod collective;
 pub(crate) mod error;
+#[cfg(any(
+    feature = "enable-libfabric",
+    feature = "enable-libfabric-sys",
+    feature = "enable-libfabric-sys-opt"
+))]
+pub(crate) mod ofi_mr_cache;
 pub(crate) mod rdma;
 pub(crate) mod slice;
+pub(crate) mod staging;
+#[cfg(any(
+    feature = "enable-libfabric",
+    feature = "enable-libfabric-sys",
+    feature = "enable-libfabric-sys-opt"
+))]
+pub(crate) mod staging_rt;
+#[cfg(any(feature = "enable-ucx", feature = "enable-ucx-opt"))]
+pub(crate) mod ucx_staging;
 
 pub(crate) use alloc::*;
 pub(crate) use atomic::*;
@@ -23,8 +38,6 @@ use crate::lamellae::libfabric_sys_opt_lamellae::comm::LibfabricSysOptComm;
 #[cfg(feature = "enable-libfabric")]
 use crate::lamellae::libfabric_lamellae::comm::LibfabricComm;
 
-#[cfg(feature = "enable-libfabric-async")]
-use crate::lamellae::libfabric_async_lamellae::comm::LibfabricAsyncComm;
 
 #[cfg(feature = "enable-rofi-c")]
 use crate::lamellae::rofi_c_lamellae::comm::RofiCComm;
@@ -78,8 +91,6 @@ pub(crate) enum Comm {
     LibfabricSysOpt(LibfabricSysOptComm),
     #[cfg(feature = "enable-libfabric")]
     Libfabric(LibfabricComm),
-    #[cfg(feature = "enable-libfabric-async")]
-    LibfabricAsync(LibfabricAsyncComm),
     #[cfg(feature = "enable-ucx")]
     Ucx(UcxComm),
     #[cfg(feature = "enable-ucx-opt")]

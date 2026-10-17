@@ -57,7 +57,6 @@
 //! - `rofi-c` - used for multi-PE (multi system, multi-process) distributed development, based on the Rust OpenFabrics Interface Transport Layer (ROFI) (<https://github.com/pnnl/rofi>).
 //!     - Requires the Rofi C-library and libfabrics; enable with `features = ["enable-rofi-c"]` in your `Cargo.toml`
 //! - `libfabric` - multi-PE distributed backend using libfabrics directly; enable with `features = ["enable-libfabric"]`
-//! - `libfabric-async` - async variant of the libfabric backend; enable with `features = ["enable-libfabric-async"]`
 //! - `ucx` - multi-PE distributed backend using UCX; enable with `features = ["enable-ucx"]`
 //!
 //! The long term goal for lamellar is that you can develop using the `local` backend and then when you are ready to run distributed switch to the `rofi` backend with no changes to your code.
@@ -332,8 +331,8 @@ pub use lamellar_main::prrte_sys;
 pub use lamellar_main::test;
 #[cfg(feature = "enable-lamellar-main")]
 pub use lamellar_main::{
-    cores_per_package, generic_help_text, init_tracing_from_env, numa_domain_count, package_count,
-    pe_id, resolve_pe_defaults,
+    cores_per_package, explicit_cores_per_pe, generic_help_text, init_tracing_from_env,
+    numa_domain_count, package_count, pe_id, resolve_pe_defaults,
 };
 
 //#[doc(hidden)]

@@ -80,7 +80,11 @@ impl<T: Remote> LibfabricSysOptCollectiveAllReduceFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Vec<T>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Vec<T>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -167,7 +171,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveAllReduceIntoBu
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -255,7 +263,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveAllReduceInPlac
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -350,7 +362,11 @@ impl<T: Remote> LibfabricSysOptCollectiveReduceFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Option<Vec<T>>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Option<Vec<T>>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -434,7 +450,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveReduceIntoBuffe
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -735,7 +755,11 @@ impl<T: Remote> LibfabricSysOptCollectiveAllGatherFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Vec<T>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Vec<T>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -814,7 +838,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveAllGatherIntoBu
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -903,7 +931,11 @@ impl<T: Remote> LibfabricSysOptCollectiveGatherFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Option<Vec<T>>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Option<Vec<T>>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -980,7 +1012,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveGatherIntoBuffe
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1066,7 +1102,11 @@ impl<T: Remote> LibfabricSysOptCollectiveAllToAllFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Vec<T>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Vec<T>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1142,7 +1182,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveAllToAllIntoBuf
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1237,7 +1281,11 @@ impl<T: Remote> LibfabricSysOptCollectiveBroadcastFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Option<Vec<T>>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Option<Vec<T>>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1323,7 +1371,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveBroadcastIntoBu
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1415,7 +1467,11 @@ impl<T: Remote> LibfabricSysOptCollectiveScatterFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Vec<T>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Vec<T>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1497,7 +1553,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysOptCollectiveScatterIntoBuff
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1593,7 +1653,11 @@ impl<T: Remote> LibfabricSysOptCollectiveReduceScatterFuture<T> {
         })
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<Vec<T>> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<Vec<T>> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }
@@ -1685,7 +1749,11 @@ impl<T: Remote, B: AsLamellarBuffer<T>>
         scheduler.block_in_place(move || self.alloc.ofi.wait_all())
     }
 
-    pub(crate) fn spawn(self) -> LamellarTask<()> {
+    pub(crate) fn spawn(mut self) -> LamellarTask<()> {
+        // Issue the collective now, from the calling thread: collectives match across PEs by the order they are issued,
+        // so leaving this to the task's first poll lets concurrently spawned collectives reach the fabric in a
+        // different order on each PE (which hangs or mismatches them).
+        self.exec_op();
         let counters = self.counters.clone();
         self.scheduler.clone().spawn_task(self, counters)
     }

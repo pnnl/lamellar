@@ -11,7 +11,6 @@ use core::panic;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::mem::offset_of;
-use std::num::Wrapping;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
@@ -76,40 +75,6 @@ impl Default for Cmd {
     fn default() -> Self {
         Cmd::Clear
     }
-}
-
-//#[tracing::instrument(skip_all, level = "debug")]
-fn calc_hash(addr: usize, num_bytes: usize) -> usize {
-    //we split into a u64 slice and a u8 slice as u64 seems to compute faster.
-    let num_usizes = num_bytes / std::mem::size_of::<usize>();
-    //let u64_slice = unsafe { std::slice::from_raw_parts(addr as *const u64, num_u64s) };
-    let num_u8s = num_bytes % std::mem::size_of::<usize>();
-    let u8_slice = unsafe {
-        std::slice::from_raw_parts(
-            (addr + num_usizes * std::mem::size_of::<usize>()) as *const u8,
-            num_u8s,
-        )
-    };
-    ((0..num_usizes)
-        .map(|x| unsafe { Wrapping((addr as *const usize).offset(x as isize).read_unaligned()) })
-        .sum::<Wrapping<usize>>()
-        + u8_slice
-            .iter()
-            .map(|x| Wrapping(*x as usize))
-            .sum::<Wrapping<usize>>())
-    .0
-
-    // let u8_slice = unsafe {
-    //     std::slice::from_raw_parts(
-    //         (addr) as *const u8,
-    //         num_u8s,
-    //     )
-    // };
-    // u8_slice
-    //     .iter()
-    //     .map(|x| Wrapping(*x as usize))
-    //     .sum::<Wrapping<usize>>()
-    //     .0
 }
 
 #[lamellar_prof::prof]
@@ -220,10 +185,9 @@ impl std::fmt::Debug for CmdBuf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "addr {:#x}({:?}) hash {:?} index {:?} a_cnt {:?}",
+            "addr {:#x}({:?}) index {:?} a_cnt {:?}",
             self.addr,
             self.addr,
-            calc_hash(self.addr, self.size()),
             self.index,
             self.allocated_cnt
         )
@@ -287,7 +251,7 @@ impl CmdMsgBuffer {
             cmd.daddr = buf.addr();
             cmd.dsize = buf.size();
             cmd.cmd = Cmd::Tx;
-            cmd.msg_hash = calc_hash(cmd.daddr, cmd.dsize);
+            cmd.msg_hash = crate::lamellae::next_msg_hash();
 
             cmd.calc_hash();
             self.tx_bufs.insert(buf.addr(), buf);
@@ -295,7 +259,7 @@ impl CmdMsgBuffer {
             cmd.daddr = buf.addr();
             cmd.dsize = buf.size(); // + std::mem::size_of::<usize>();
             cmd.cmd = Cmd::Tx;
-            cmd.msg_hash = calc_hash(cmd.daddr, cmd.dsize);
+            cmd.msg_hash = crate::lamellae::next_msg_hash();
             cmd.calc_hash();
             self.tx_bufs.insert(buf.addr(), buf);
         }
@@ -1217,11 +1181,10 @@ impl InnerCQ {
         src: usize,
         cmd: CmdMsg,
         ser_data: &mut SerializedData,
-        msg_id: usize,
+        _msg_id: usize,
         lamellae: &Arc<Lamellae>,
     ) {
         trace!(target: "lamellae_debug", "entering get_serialized_data lamellae cnt: {:?}", Arc::strong_count(lamellae));
-        let len = ser_data.len();
         // let vec = vec![0u8; len];
         let mut buffer = unsafe {
             LamellarBuffer::<u8, CommSlice<u8>>::from_comm_slice(
@@ -1242,54 +1205,9 @@ impl InnerCQ {
         // let data_slice = buffer.try_unwrap().unwrap();
         // let data_slice = &tmp_data;
         // let orig_thread = std::thread::current().id();
-        let data_slice = ser_data.header_and_data_as_bytes_mut();
-
-        let mut timer = std::time::Instant::now();
-        trace!(
-            "msg_id: {msg_id} tmp_data_addr: {:?} calced hash: {:x} cmd msg hash {:x} {:?} {:?}",
-            data_slice.as_ptr(),
-            calc_hash(data_slice.as_ptr() as usize, len),
-            cmd.msg_hash,
-            &data_slice.as_slice()[0..std::cmp::min(32, len)],
-            &data_slice.as_slice()[len.saturating_sub(32)..len],
-        );
-
-        while calc_hash(data_slice.as_ptr() as usize, len) != cmd.msg_hash
-            && self.active.load(Ordering::SeqCst) != CmdQStatus::Panic as u8
-        {
-            if timer.elapsed().as_secs_f64() > 10.0 {
-                //config().deadlock_warning_timeout {
-                println!(
-                    "msg_id: {msg_id} data hash mismatch from {:?}!!! cmd: {:?} l: {:?} l(): {:?} -- calced hash {:x} expected {:x} [{:?}..{:?}] cur_thread: {:?}",
-                    src,
-                    cmd,
-                    len,
-                    data_slice.len(),
-                    calc_hash(data_slice.as_ptr() as usize, len),
-                    cmd.msg_hash,
-                    &data_slice.as_slice()[0..32],
-                    &data_slice.as_slice()[len.saturating_sub(32)..len],
-                    std::thread::current().id(),
-                    // orig_thread,
-                );
-                timer = std::time::Instant::now();
-            }
-            self.comm.thread_flush();
-            async_std::task::yield_now().await;
-        }
+        // The GET is complete when this future resolves: the fetched bytes are in `ser_data`. (There used to be a
+        // spin here on a checksum of the buffer; see `crate::lamellae::next_msg_hash`.)
         task.await;
-        // unsafe {
-        //     std::ptr::copy_nonoverlapping(
-        //         data_slice.as_ptr(),
-        //         ser_data.header_and_data_as_bytes_mut().as_mut_ptr(),
-        //         len,
-        //     );
-        // }
-        trace!(
-            "after msg_id: {msg_id} calced hash: {:x} cmd msg hash {:x} ",
-            calc_hash(data_slice.as_ptr() as usize, len),
-            cmd.msg_hash,
-        );
         stats!(PE_RECVS[0][src].fetch_add(1, Ordering::SeqCst));
         debug!(
             "got serialized data from {src} {:x} -- {} bytes",
@@ -1537,7 +1455,7 @@ impl CQBatched {
 
     //#[tracing::instrument(skip_all, level = "debug")]
     pub(crate) async fn send_data(&self, data: SerializedData, dst: usize) {
-        let hash = calc_hash(data.ser_data_bytes.usize_addr(), data.len());
+        let hash = crate::lamellae::next_msg_hash();
         // debug!(
         //     "sending data: {:?} {:?} {} {:x} {:?}..{:?}",
         //     data,
@@ -1578,7 +1496,7 @@ impl CQBatched {
             std::ptr::copy_nonoverlapping(vec_data.as_ptr(), data.as_mut_ptr(), vec_data.len());
         }
         let data_slice = data.as_comm_slice().clone();
-        let hash = calc_hash(data_slice.usize_addr(), data_slice.len());
+        let hash = crate::lamellae::next_msg_hash();
         data.leak().expect("failed to leak alloc in send_vec");
         self.cq.send(data_slice, dst, hash).await;
     }
@@ -1636,9 +1554,8 @@ impl CQBatched {
                     println!("tx cmd: {:?} {:?}", cmd, cmd.dsize);
                     if cmd.dsize > 0 {
                         println!(
-                            "active cmd: {:?} new calced hash: {:x} {:?} {:?}",
+                            "active cmd: {:?} {:?} {:?}",
                             cmd,
-                            calc_hash(cmd.daddr, cmd.dsize),
                             unsafe {
                                 std::slice::from_raw_parts(
                                     cmd.daddr as *const u8,
@@ -1660,9 +1577,8 @@ impl CQBatched {
                 for cmd in buf.iter() {
                     if cmd.dsize > 0 {
                         debug!(
-                            "waiting cmd: {:?} new calced hash: {:x}",
-                            cmd,
-                            calc_hash(cmd.daddr, cmd.dsize)
+                            "waiting cmd: {:?}",
+                            cmd
                         );
                     }
                 }

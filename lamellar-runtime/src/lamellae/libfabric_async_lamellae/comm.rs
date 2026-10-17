@@ -154,6 +154,14 @@ impl Drop for LibfabricAsyncComm {
             println!("[LAMELLAR INFO] {:?} additional rt memory pools were allocated, performance may be increased using a larger initial pool, set using the LAMELLAR_HEAP_SIZE envrionment variable. Current initial size = {:?}",self.ofi.runtime_allocs.read().len()-1, HEAP_SIZE.load(Ordering::SeqCst));
             self.print_pools();
         }
+        let fallbacks = self.ofi.staging_fallbacks();
+        if fallbacks > 0 {
+            println!(
+                "[LAMELLAR INFO][{}] {} RDMA ops fell back to unregistered heap buffers because the registered memory pool was exhausted; consider increasing LAMELLAR_HEAP_SIZE",
+                self.my_pe, fallbacks
+            );
+        }
+        self.ofi.staging_release();
         self.ofi.runtime_allocs.write().clear();
         //maybe we want to implement an ofi finit function which will free all resources or something
         // for (addr, _alloc) in self.fabric_allocs.write().drain(..) {

@@ -24,7 +24,6 @@ use crate::{env_var::config, lamellae::CommAllocRdma, print_stats, scheduler::Sc
 use async_lock::Mutex;
 use core::panic;
 use parking_lot::RwLock;
-use std::num::Wrapping;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
@@ -36,6 +35,7 @@ const EAGER_RING_SIZE: usize = 8;
 const EAGER_SLOT_SIZE: usize = EAGER_DATA_SIZE + std::mem::size_of::<u64>();
 
 static MSG_ID: AtomicUsize = AtomicUsize::new(1);
+static SEND_SEQ: AtomicUsize = AtomicUsize::new(1);
 
 fn new_pe_counters() -> Vec<Vec<AtomicUsize>> {
     let mut v = Vec::with_capacity(2);
@@ -93,23 +93,19 @@ impl Default for Cmd {
     }
 }
 
-fn calc_hash(addr: usize, num_bytes: usize) -> usize {
-    let num_usizes = num_bytes / std::mem::size_of::<usize>();
-    let num_u8s = num_bytes % std::mem::size_of::<usize>();
-    let u8_slice = unsafe {
-        std::slice::from_raw_parts(
-            (addr + num_usizes * std::mem::size_of::<usize>()) as *const u8,
-            num_u8s,
-        )
-    };
-    ((0..num_usizes)
-        .map(|x| unsafe { Wrapping((addr as *const usize).offset(x as isize).read_unaligned()) })
-        .sum::<Wrapping<usize>>()
-        + u8_slice
-            .iter()
-            .map(|x| Wrapping(*x as usize))
-            .sum::<Wrapping<usize>>())
-    .0
+/// The value a sender puts in the done flag of one message (and in its `Tx` command). It is only a
+/// sentinel: the receiver compares the flag word to it and never checks the data against it, so it is
+/// NOT an integrity check. That the data is complete when the flag is seen rests on the sender putting
+/// the data, waiting for that put to complete (flush), and only then putting the flag. A per-sender
+/// sequence number is used so the value is also different for every message, which means a stale
+/// flag left in a recycled buffer can never be mistaken for a later message's.
+fn next_msg_hash() -> usize {
+    loop {
+        let hash = SEND_SEQ.fetch_add(1, Ordering::Relaxed);
+        if hash != 0 {
+            return hash;
+        }
+    }
 }
 
 #[lamellar_prof::prof]
@@ -461,7 +457,9 @@ impl InnerCQ {
         dst_data
             .put_buffer::<u8>(&self.scheduler, None, data, dst, 0)
             .await;
-        // PUT magic after data so RDMA ordering ensures data arrives first.
+        // The awaited put above is flushed (remotely complete) before this flag write is issued; that, not
+        // RDMA write ordering, is what guarantees the data is in place before the receiver can see the flag.
+        // Separate writes may travel on different queue pairs/workers and are not ordered with each other.
         dst_magic.put_unmanaged::<u64>(size as u64, dst, 0);
 
         stats!(PE_SENDS[1][dst].fetch_add(1, Ordering::SeqCst));
@@ -608,7 +606,7 @@ impl InnerCQ {
         });
     }
 
-    async fn send_vec(&self, mut data: Vec<u8>, dst: usize, hash: usize) {
+    async fn send_vec(&self, data: Vec<u8>, dst: usize, hash: usize) {
         stats!(PE_SENDS[0][dst].fetch_add(1, Ordering::SeqCst));
         debug!("want to send vec data {:?} {:x}", dst, hash);
 
@@ -691,23 +689,36 @@ impl InnerCQ {
                 if let Some(ready) = maybe_ready {
                     send_buffer[dst].write()[0] = **clear_cmd;
                     debug!("got ready from dst({dst}) {:?}", ready);
-                    data.extend_from_slice(&ready.msg_hash.to_ne_bytes());
 
-                    let dst_data_full =
-                        comm.one_sided_alloc_from_remote_pe_and_addr(dst, ready.daddr, data.len());
+                    // The receiver takes the done flag to mean "the whole message has arrived", so the
+                    // flag must not become visible before the data. Sending the flag in the same write
+                    // as the data does not guarantee that (one write can be split across fragments, queue
+                    // pairs or workers, which are not ordered with each other). So: put the data, wait for
+                    // that put to complete (the awaited put is flushed, i.e. remotely complete), and only
+                    // then put the flag as its own write.
+                    let data_len = data.len();
+                    let dst_data_full = comm.one_sided_alloc_from_remote_pe_and_addr(
+                        dst,
+                        ready.daddr,
+                        data_len + std::mem::size_of::<u64>(),
+                    );
+                    let dst_data = dst_data_full.comm_slice_at_byte_offset::<u8>(0, data_len);
+                    let magic_data = dst_data_full.comm_slice_at_byte_offset::<u64>(data_len, 1);
 
-                    if let Ok(rt_data) = comm.rt_alloc_uninit(data.len(), std::mem::align_of::<u8>()) {
+                    if let Ok(rt_data) = comm.rt_alloc_uninit(data_len, std::mem::align_of::<u8>()) {
                         let mut data_slice = rt_data.as_comm_slice::<u8>();
                         data_slice.copy_from_slice(&data);
-                        put_amt.fetch_add(data.len(), Ordering::Relaxed);
-                        dst_data_full
+                        put_amt.fetch_add(data_len, Ordering::Relaxed);
+                        dst_data
                             .put_buffer::<u8>(&scheduler, None, data_slice, dst, 0)
                             .await;
                     } else {
-                        dst_data_full
+                        dst_data
                             .put_buffer::<u8>(&scheduler, None, data, dst, 0)
                             .await;
                     }
+
+                    magic_data.put_unmanaged::<u64>(ready.msg_hash as u64, dst, 0);
 
                     stats!(sent_cnt.fetch_add(1, Ordering::SeqCst));
                     break;
@@ -1038,10 +1049,7 @@ impl CQPutEager {
     }
 
     pub(crate) async fn send_data(&self, data: SerializedData, dst: usize) {
-        let mut hash = calc_hash(data.ser_data_bytes.usize_addr(), data.len());
-        if hash == 0 {
-            hash = 1;
-        }
+        let hash = next_msg_hash();
         let data_slice = data.ser_data_bytes.clone();
         self.cq.send(data_slice, dst, hash).await;
     }
@@ -1052,11 +1060,7 @@ impl CQPutEager {
             vec_data.len(),
             dst
         );
-        let vec_data_addr = vec_data.as_ptr() as usize;
-        let mut hash = calc_hash(vec_data_addr, vec_data.len());
-        if hash == 0 {
-            hash = 1;
-        }
+        let hash = next_msg_hash();
         self.cq.send_vec(vec_data, dst, hash).await;
     }
 
@@ -1232,6 +1236,9 @@ impl CQPutEager {
                                     let val =
                                         unsafe { (done_flag_addr as *mut u64).read_unaligned() };
                                     if val == magic {
+                                        // The flag is the sender's last write, so seeing it means the data is in place;
+                                        // the fence keeps the reads of that data from being ordered before this read.
+                                        std::sync::atomic::fence(Ordering::Acquire);
                                         break;
                                     }
                                     if timer.elapsed().as_secs_f64() > 10.0 {
@@ -1270,6 +1277,9 @@ impl CQPutEager {
                     let magic = unsafe { (magic_addr as *const u64).read_volatile() };
 
                     if magic != 0 {
+                        // The flag is the sender's last write, so the slot data is in place; the fence keeps
+                        // the reads of that data from being ordered before this read.
+                        std::sync::atomic::fence(Ordering::Acquire);
                         let size = magic as usize;
                         debug!("eager recv from src={src} slot={slot_idx} size={size}");
 

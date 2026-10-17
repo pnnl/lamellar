@@ -36,8 +36,6 @@ use rofi_c_lamellae::{RofiC, RofiCBuilder};
 #[cfg(feature = "enable-libfabric")]
 pub(crate) mod libfabric_lamellae;
 
-#[cfg(feature = "enable-libfabric-async")]
-pub(crate) mod libfabric_async_lamellae;
 #[cfg(feature = "enable-libfabric-sys")]
 pub(crate) mod libfabric_sys_lamellae;
 #[cfg(feature = "enable-libfabric-sys-opt")]
@@ -51,8 +49,6 @@ pub(crate) mod ucx_opt_lamellae;
 use crate::lamellae::libfabric_sys_lamellae::LibfabricSysBuilder;
 #[cfg(feature = "enable-libfabric-sys-opt")]
 use crate::lamellae::libfabric_sys_opt_lamellae::LibfabricSysOptBuilder;
-#[cfg(feature = "enable-libfabric-async")]
-use libfabric_async_lamellae::{LibfabricAsync, LibfabricAsyncBuilder};
 #[cfg(feature = "enable-libfabric")]
 use libfabric_lamellae::{Libfabric, LibfabricBuilder};
 #[cfg(feature = "enable-ucx")]
@@ -88,10 +84,6 @@ pub enum Backend {
     #[cfg_attr(docsrs, doc(cfg(feature = "enable-libfabric")))]
     /// The Libfabric backend for communication
     Libfabric,
-    #[cfg(feature = "enable-libfabric-async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "enable-libfabric-async")))]
-    /// The async Libfabric backend for communication
-    LibfabricAsync,
     #[cfg(feature = "enable-ucx")]
     #[cfg_attr(docsrs, doc(cfg(feature = "enable-ucx")))]
     /// The UCX backend for communication
@@ -147,10 +139,7 @@ impl Default for Backend {
             }
 
             "libfabric-async" => {
-                #[cfg(feature = "enable-libfabric-async")]
-                return Backend::LibfabricAsync;
-                #[cfg(not(feature = "enable-libfabric-async"))]
-                panic!("unable to set libfabric-async backend, recompile with 'enable-libfabric-async' feature")
+                panic!("the libfabric-async backend is deprecated and is no longer built")
             }
             "ucx" => {
                 #[cfg(feature = "enable-ucx")]
@@ -340,8 +329,6 @@ pub(crate) enum LamellaeBuilder {
     LibfabricSysOptBuilder,
     #[cfg(feature = "enable-libfabric")]
     LibfabricBuilder,
-    #[cfg(feature = "enable-libfabric-async")]
-    LibfabricAsyncBuilder,
     #[cfg(feature = "enable-ucx")]
     UcxBuilder,
     #[cfg(feature = "enable-ucx-opt")]
@@ -387,8 +374,6 @@ pub(crate) enum Lamellae {
     LibfabricSysOpt,
     #[cfg(feature = "enable-libfabric")]
     Libfabric,
-    #[cfg(feature = "enable-libfabric-async")]
-    LibfabricAsync,
     #[cfg(feature = "enable-ucx")]
     Ucx,
     #[cfg(feature = "enable-ucx-opt")]
@@ -413,8 +398,6 @@ impl Lamellae {
             Lamellae::LibfabricSysOpt(libfabric_sys_opt) => libfabric_sys_opt.comm(),
             #[cfg(feature = "enable-libfabric")]
             Lamellae::Libfabric(libfabric) => libfabric.comm(),
-            #[cfg(feature = "enable-libfabric-async")]
-            Lamellae::LibfabricAsync(libfabric_async) => libfabric_async.comm(),
             #[cfg(feature = "enable-ucx")]
             Lamellae::Ucx(ucx) => ucx.comm(),
             #[cfg(feature = "enable-ucx-opt")]
@@ -436,8 +419,6 @@ impl Lamellae {
             Lamellae::LibfabricSysOpt(libfabric_sys_opt) => libfabric_sys_opt.wait_all_print(),
             #[cfg(feature = "enable-libfabric")]
             Lamellae::Libfabric(libfabric) => libfabric.wait_all_print(),
-            #[cfg(feature = "enable-libfabric-async")]
-            Lamellae::LibfabricAsync(libfabric_async) => libfabric_async.wait_all_print(),
             #[cfg(feature = "enable-ucx")]
             Lamellae::Ucx(ucx) => ucx.wait_all_print(),
             #[cfg(feature = "enable-ucx-opt")]
@@ -496,6 +477,24 @@ pub(crate) trait LamellaeUtil: Send {
     fn available_to_send(&self, pe: usize) -> bool;
 }
 
+/// The value the get-based command queues put in `CmdMsg::msg_hash`: a per-process sequence number.
+///
+/// It only has to be some value: it is part of the command's own integrity hash (`cmd_hash`, which catches a
+/// torn write of the command), and the receiver does not check the message data against it. The receiver
+/// knows the data has arrived because it awaits the GET, which resolves once the bytes are placed in its
+/// buffer, and the sender keeps the source until the receiver sends `Free`, which happens after that await.
+/// (It used to be a checksum of the message that the receiver spun on before awaiting the GET, from when the
+/// GET was fire-and-forget; with an awaited GET that only delayed the await and cost O(length) per poll.)
+pub(crate) fn next_msg_hash() -> usize {
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+    loop {
+        let hash = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if hash != 0 {
+            return hash;
+        }
+    }
+}
+
 //#[tracing::instrument(skip_all, level = "debug")]
 pub(crate) fn create_lamellae(backend: Backend, _num_threads: usize) -> LamellaeBuilder {
     match backend {
@@ -522,12 +521,6 @@ pub(crate) fn create_lamellae(backend: Backend, _num_threads: usize) -> Lamellae
             let provider = config().rofi_provider.clone();
             let domain = config().rofi_domain.clone();
             LamellaeBuilder::LibfabricBuilder(LibfabricBuilder::new(&provider, &domain))
-        }
-        #[cfg(feature = "enable-libfabric-async")]
-        Backend::LibfabricAsync => {
-            let provider = config().rofi_provider.clone();
-            let domain = config().rofi_domain.clone();
-            LamellaeBuilder::LibfabricAsyncBuilder(LibfabricAsyncBuilder::new(&provider, &domain))
         }
         #[cfg(feature = "enable-ucx")]
         Backend::Ucx => LamellaeBuilder::UcxBuilder(UcxBuilder::new()),
