@@ -2380,7 +2380,8 @@ impl OptOfi {
                         }
                     }
 
-                    let _lock = self.comm_group.lock.lock();
+                    // The lock is only held around each progress() call: this waits for other PEs to reach the barrier, and
+                    // they may be waiting on something this PE's other threads need the lock for (e.g. an AM response put).
                     for i in 1..=n {
                         let recv_pe = (self.my_pe as i64
                             - i as i64 * (n as i64 + 1).pow(round as u32))
@@ -2390,7 +2391,10 @@ impl OptOfi {
                         // };
                         let barrier_vec = unsafe { barrier_alloc.as_mut_slice::<usize>() };
                         while my_barrier > barrier_vec[recv_pe as usize] {
-                            self.comm_group.progress();
+                            {
+                                let _lock = self.comm_group.lock.lock();
+                                self.comm_group.progress();
+                            }
                             std::thread::yield_now();
                         }
                     }

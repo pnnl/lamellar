@@ -107,6 +107,16 @@ pub(crate) struct CommGroup {
     get_cnt: AtomicU64,
     coll_cnt_issued: AtomicU64,
     coll_cnt_completed: AtomicU64,
+    // Collective completion is matched by count (`coll_cnt_completed >= cnt`), which is only exact with one
+    // collective in flight: another thread's collective completing could release a waiter early. So a collective
+    // issuer holds this until its collective has been issued (non-blocking) or has completed (blocking). Separate
+    // from `lock` so a blocking waiter never holds the lock that other threads need to put, get and flush: those
+    // threads can be what another PE is waiting on before it joins the collective.
+    coll_lock: Mutex<()>,
+    // One `fi_join_collective` in flight per PE, held across issue and the wait for its FI_JOIN_COMPLETE. Separate from
+    // `lock` so a join waiter never holds the CQ lock across its whole wait. Without it, concurrent joins on one PE
+    // drain the shared EQ and one waiter can consume another's join completion.
+    join_lock: Mutex<()>,
     barrier_impl: RwLock<BarrierImpl>,
     lock: Mutex<()>,
     // rofi_c-style wait ticketing (mirrors rofi_c_lamellae/fabric.rs
@@ -124,7 +134,8 @@ unsafe impl Sync for CommGroup {}
 
 impl CommGroup {
     fn wait_for_join_event(&self, ctx: *mut std::ffi::c_void) {
-        let _lock = self.lock.lock();
+        // The caller holds `join_lock`. `lock` is not held across the wait: joining completes once every PE has joined,
+        // and that can depend on other threads of this PE taking `lock`. It is only taken, without blocking, to progress.
         loop {
             let mut event_entry = MaybeUninit::<libfabric_sys::fi_eq_entry>::uninit();
             let mut event_type = 0;
@@ -147,7 +158,10 @@ impl CommGroup {
                 panic!("Error reading EQ: {}", ret);
             }
 
-            self.progress();
+            if let Some(_lock) = self.lock.try_lock() {
+                self.progress();
+            }
+            std::thread::yield_now();
         }
     }
 
@@ -220,7 +234,9 @@ impl CommGroup {
     }
 
     fn wait_for_collectives(&self) {
-        let _lock = self.lock.lock();
+        // The lock is only held around each progress() call, never across the wait: a collective completes once every PE
+        // has joined it, and joining can depend on another thread of this PE taking the lock (to put or flush), so
+        // holding it here deadlocks with a PE that is still waiting on such a thread.
         let mut prev_expected_cnt = self.coll_cnt_issued.load(Ordering::SeqCst);
         let mut old_cnt = self.coll_cnt_completed.load(Ordering::SeqCst);
         let mut expected_cnt = self.coll_cnt_issued.load(Ordering::SeqCst);
@@ -229,11 +245,17 @@ impl CommGroup {
         while cur_cnt < expected_cnt || prev_expected_cnt < expected_cnt || cur_cnt != old_cnt {
             prev_expected_cnt = expected_cnt;
             old_cnt = cur_cnt;
-            self.progress();
+            {
+                let _lock = self.lock.lock();
+                self.progress();
+            }
             while self.coll_cnt_completed.load(Ordering::SeqCst)
                 < self.coll_cnt_issued.load(Ordering::SeqCst)
             {
-                self.progress();
+                {
+                    let _lock = self.lock.lock();
+                    self.progress();
+                }
                 std::thread::yield_now();
             }
 
@@ -321,24 +343,40 @@ impl CommGroup {
     where
         F: FnMut() -> isize,
     {
-        let _lock = self.lock.lock();
+        // `lock` is only held to post and around each progress(), never across the wait for the collective: it
+        // completes once every PE has joined, and joining can depend on another thread of this PE taking `lock`.
+        let mut coll_guard = Some(self.coll_lock.lock());
         let cnt = self.coll_cnt_issued.fetch_add(1, Ordering::SeqCst) + 1;
         loop {
-            let ret = fun();
+            let ret = {
+                let _lock = self.lock.lock();
+                let ret = fun();
+                if ret == -(libfabric_sys::FI_EAGAIN as isize) {
+                    self.progress();
+                }
+                ret
+            };
             if ret >= 0 {
                 break;
             } else if ret == -(libfabric_sys::FI_EAGAIN as isize) {
-                self.progress();
+                std::thread::yield_now();
             } else {
                 panic!("Error posting collective: {}", ret);
             }
+        }
+        if !blocking {
+            coll_guard.take();
         }
         if blocking {
             loop {
                 if self.coll_cnt_completed.load(Ordering::SeqCst) >= cnt {
                     break;
                 }
-                self.progress();
+                {
+                    let _lock = self.lock.lock();
+                    self.progress();
+                }
+                std::thread::yield_now();
             }
         }
     }
@@ -938,6 +976,8 @@ impl Ofi {
             cq,
             put_cntr,
             get_cntr,
+            coll_lock: Mutex::new(()),
+            join_lock: Mutex::new(()),
             coll_cnt_completed: AtomicU64::new(0),
             coll_cnt_issued: AtomicU64::new(0),
             av,
@@ -1272,16 +1312,21 @@ impl Ofi {
             }
             addr
         };
+        // One join in flight per PE: held across issue and the wait.
+        let _join_guard = cg.join_lock.lock();
         let mc = unsafe {
             let mut mc = MaybeUninit::<*mut libfabric_sys::fid_mc>::uninit();
-            let ret = libfabric_sys::inlined_fi_join_collective(
-                cg.ep,
-                av_set_addr,
-                av_set,
-                0,
-                mc.as_mut_ptr(),
-                (&mut ctx) as *mut libfabric_sys::fi_context2 as *mut libc::c_void,
-            );
+            let ret = {
+                let _lock = cg.lock.lock();
+                libfabric_sys::inlined_fi_join_collective(
+                    cg.ep,
+                    av_set_addr,
+                    av_set,
+                    0,
+                    mc.as_mut_ptr(),
+                    (&mut ctx) as *mut libfabric_sys::fi_context2 as *mut libc::c_void,
+                )
+            };
             if ret != 0 {
                 panic!("Error registering memory for MC group: {}", ret);
             }
@@ -1973,7 +2018,8 @@ impl Ofi {
                         }
                     }
 
-                    let _lock = self.comm_group.lock.lock();
+                    // The lock is only held around each progress() call: this waits for other PEs to reach the barrier, and
+                    // they may be waiting on something this PE's other threads need the lock for (e.g. an AM response put).
                     for i in 1..=n {
                         let recv_pe = (self.my_pe as i64
                             - i as i64 * (n as i64 + 1).pow(round as u32))
@@ -1984,7 +2030,10 @@ impl Ofi {
                         let barrier_vec = unsafe { barrier_alloc.as_mut_slice::<usize>() };
 
                         while my_barrier > barrier_vec[recv_pe as usize] {
-                            self.comm_group.progress();
+                            {
+                                let _lock = self.comm_group.lock.lock();
+                                self.comm_group.progress();
+                            }
                             std::thread::yield_now();
                         }
                     }

@@ -110,6 +110,16 @@ pub(crate) struct CommGroup {
     get_cnt: AtomicU64,
     coll_cnt_issued: AtomicU64,
     coll_cnt_completed: AtomicU64,
+    // Collective completion is matched by count (`coll_cnt_completed >= cnt`), which is only exact with one
+    // collective in flight: another thread's collective completing could release a waiter early. So a collective
+    // issuer holds this until its collective has been issued (non-blocking) or has completed (blocking). Separate
+    // from `lock` so a blocking waiter never holds the lock that other threads need to put, get and flush: those
+    // threads can be what another PE is waiting on before it joins the collective.
+    coll_lock: Mutex<()>,
+    // One `fi_join_collective` in flight per PE, held across issue and the wait for its FI_JOIN_COMPLETE. Separate from
+    // `lock` so a join waiter never holds the CQ lock across its whole wait. Without it, concurrent joins on one PE
+    // drain the shared EQ and one waiter can consume another's join completion.
+    join_lock: Mutex<()>,
     lock: Mutex<()>,
     // rofi_c-style wait ticketing (mirrors rofi_c_lamellae/fabric.rs
     // wait_cnt_cur / wait_cnt_fin / wait_flag). A future takes one ticket on
@@ -272,7 +282,8 @@ impl CommGroup {
         &self,
         ctx: &Context,
     ) -> Result<JoinCompleteEvent, libfabric::error::Error> {
-        let _lock = self.lock.lock();
+        // The caller holds `join_lock`. `lock` is not held across the wait: joining completes once every PE has joined,
+        // and that can depend on other threads of this PE taking `lock`. It is only taken, without blocking, to progress.
         loop {
             let eq_res = self.eq.read();
 
@@ -290,7 +301,10 @@ impl CommGroup {
                     }
                 }
             }
-            self.progress()?;
+            if let Some(_lock) = self.lock.try_lock() {
+                self.progress()?;
+            }
+            std::thread::yield_now();
         }
     }
 
@@ -390,7 +404,9 @@ impl CommGroup {
     }
 
     fn wait_for_collectives(&self) -> Result<(), libfabric::error::Error> {
-        let _lock = self.lock.lock();
+        // The lock is only held around each progress() call, never across the wait: a collective completes once every PE
+        // has joined it, and joining can depend on another thread of this PE taking the lock (to put or flush), so
+        // holding it here deadlocks with a PE that is still waiting on such a thread.
         let mut prev_expected_cnt = self.coll_cnt_issued.load(Ordering::SeqCst);
         let mut old_cnt = self.coll_cnt_completed.load(Ordering::SeqCst);
         let mut expected_cnt = self.coll_cnt_issued.load(Ordering::SeqCst);
@@ -405,11 +421,18 @@ impl CommGroup {
         while cur_cnt < expected_cnt || prev_expected_cnt < expected_cnt || cur_cnt != old_cnt {
             prev_expected_cnt = expected_cnt;
             old_cnt = cur_cnt;
-            let _ = self.progress();
+            let _ = {
+                let _lock = self.lock.lock();
+                self.progress()
+            };
             while self.coll_cnt_completed.load(Ordering::SeqCst)
                 < self.coll_cnt_issued.load(Ordering::SeqCst)
             {
-                if let Err(err) = self.progress() {
+                let progressed = {
+                    let _lock = self.lock.lock();
+                    self.progress()
+                };
+                if let Err(err) = progressed {
                     match err.kind {
                         libfabric::error::ErrorKind::TryAgain => {}
                         _ => return Err(err),
@@ -536,27 +559,43 @@ impl CommGroup {
         blocking: bool,
         mut fun: impl FnMut() -> Result<(), libfabric::error::Error>,
     ) -> Result<(), libfabric::error::Error> {
-        let _lock = self.lock.lock();
-
+        // `lock` is only held to post and around each progress(), never across the wait for the collective: it
+        // completes once every PE has joined, and joining can depend on another thread of this PE taking `lock`.
+        let mut coll_guard = Some(self.coll_lock.lock());
         let cnt = self.coll_cnt_issued.fetch_add(1, Ordering::SeqCst) + 1;
         loop {
-            match fun() {
-                Ok(_) => break,
-                Err(error) => {
-                    if matches!(error.kind, libfabric::error::ErrorKind::TryAgain) {
-                        self.progress()?;
-                    } else {
-                        return Err(error);
+            let posted = {
+                let _lock = self.lock.lock();
+                match fun() {
+                    Ok(_) => true,
+                    Err(error) => {
+                        if matches!(error.kind, libfabric::error::ErrorKind::TryAgain) {
+                            self.progress()?;
+                            false
+                        } else {
+                            return Err(error);
+                        }
                     }
                 }
+            };
+            if posted {
+                break;
             }
+            std::thread::yield_now();
+        }
+        if !blocking {
+            coll_guard.take();
         }
         if blocking {
             loop {
                 if self.coll_cnt_completed.load(Ordering::SeqCst) >= cnt {
                     break;
                 }
-                self.progress()?;
+                {
+                    let _lock = self.lock.lock();
+                    self.progress()?;
+                }
+                std::thread::yield_now();
             }
         }
         Ok(())
@@ -851,6 +890,8 @@ impl Ofi {
             put_cnt: AtomicU64::new(0),
             get_cnt: AtomicU64::new(0),
             lock: Mutex::new(()),
+            coll_lock: Mutex::new(()),
+            join_lock: Mutex::new(()),
             // Starts at 1, not 0: try_wait's elect-one-waiter check is `my_cnt > fin`. If both
             // started at 0, ticket #0 would see 0 > 0 == false and skip the real cntr wait,
             // returning as already-covered before anything had actually drained.
@@ -1226,10 +1267,15 @@ impl Ofi {
 
         let mut cached_ctx = cg.allocate_context();
         let ctx = cached_ctx.context.as_mut().unwrap();
-        let mc = MulticastGroupBuilder::from_av_set(&av_set)
-            .build()
-            .join_collective_with_context(&cg.ep, JoinOptions::new(), ctx)
-            .unwrap();
+        // One join in flight per PE: held across issue and the wait.
+        let _join_guard = cg.join_lock.lock();
+        let mc = {
+            let _lock = cg.lock.lock();
+            MulticastGroupBuilder::from_av_set(&av_set)
+                .build()
+                .join_collective_with_context(&cg.ep, JoinOptions::new(), ctx)
+                .unwrap()
+        };
         let join_event = cg.wait_for_join_event(&ctx).unwrap();
         let mc = mc.join_complete(join_event);
         // trace!("Done Creating MC group");
