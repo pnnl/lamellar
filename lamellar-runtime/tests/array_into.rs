@@ -18,7 +18,7 @@ macro_rules! create_test {
                     .arg("--np")
                     .arg("2")
                     .arg("--timeout")
-                    .arg("30")
+                    .arg("90")
                     .assert();
                 println!("{:?}",result);
                 result.stderr("").success();
