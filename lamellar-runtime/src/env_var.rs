@@ -5,12 +5,12 @@
 //!     - possible values
 //!         - `local` -- default (if none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric`, or `enable-ucx` features are active)
 //!         - `shmem`
-//!         - `rofi_c`  -- only available with the `enable-rofi-c` feature; default if active, checked first
-//!         - `libfabric-sys` -- only available with the `enable-libfabric-sys` feature; default if active and `enable-rofi-c` is not
-//!         - `libfabric-sys-opt` -- only available with the `enable-libfabric-sys-opt` feature; default if active and neither `enable-rofi-c` nor `enable-libfabric-sys` are
-//!         - `libfabric` -- only available with the `enable-libfabric` feature; default if active and none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt` are
-//!         - `ucx` -- only available with the `enable-ucx` feature; default if active and none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric` are
-//!         - `ucx-opt` -- only available with the `enable-ucx-opt` feature; default if active and none of `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric-sys-opt`, `enable-libfabric`, `enable-ucx` are
+//!         - `libfabric-sys-opt` -- only available with the `enable-libfabric-sys-opt` feature; default if active, checked first
+//!         - `rofi_c`  -- only available with the `enable-rofi-c` feature; default if active and `enable-libfabric-sys-opt` is not
+//!         - `libfabric-sys` -- only available with the `enable-libfabric-sys` feature; default if active and neither `enable-libfabric-sys-opt` nor `enable-rofi-c` are
+//!         - `libfabric` -- only available with the `enable-libfabric` feature; default if active and none of `enable-libfabric-sys-opt`, `enable-rofi-c`, `enable-libfabric-sys` are
+//!         - `ucx` -- only available with the `enable-ucx` feature; default if active and none of `enable-libfabric-sys-opt`, `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric` are
+//!         - `ucx-opt` -- only available with the `enable-ucx-opt` feature; default if active and none of `enable-libfabric-sys-opt`, `enable-rofi-c`, `enable-libfabric-sys`, `enable-libfabric`, `enable-ucx` are
 //! - `LAMELLAR_EXECUTOR` - the executor used during execution. Note that if a executor is explicitly set in the world builder, this variable is ignored.
 //!     - possible values
 //!         - `lamellar` -- default, work stealing backend
@@ -115,12 +115,13 @@ fn default_ucx_shard_bulk_bytes() -> usize {
 }
 
 fn default_backend() -> String {
-    if cfg!(feature = "enable-rofi-c") {
+    // Several backends can be compiled in at once; this is the order in which the default is picked.
+    if cfg!(feature = "enable-libfabric-sys-opt") {
+        return "libfabric-sys-opt".to_owned();
+    } else if cfg!(feature = "enable-rofi-c") {
         return "rofi_c".to_owned();
     } else if cfg!(feature = "enable-libfabric-sys") {
         return "libfabric-sys".to_owned();
-    } else if cfg!(feature = "enable-libfabric-sys-opt") {
-        return "libfabric-sys-opt".to_owned();
     } else if cfg!(feature = "enable-libfabric") {
         return "libfabric".to_owned();
     } else if cfg!(feature = "enable-ucx") {
