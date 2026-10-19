@@ -4,13 +4,14 @@
 #
 #   tools/build-static.sh <backend> [prefix]       prefix defaults to target/stage/<backend>-static
 #
-#   backend             cargo features
-#   shmem               (none)
-#   shmem-opt           shmem-opt
-#   ucx                 ucx
-#   ucx-opt             ucx-opt
-#   libfabric           libfabric
-#   libfabric-sys-opt   libfabric-sys-opt
+#   backend    cargo features                           LAMELLAR_BACKEND values the library offers
+#   shmem      shmem-opt                                shmem, shmem-opt
+#   ucx        ucx ucx-opt shmem-opt                    ucx, ucx-opt, shmem, shmem-opt
+#   libfabric  libfabric libfabric-sys-opt shmem-opt    libfabric, libfabric-sys-opt, shmem, shmem-opt
+#
+# A backend names a family: the plain lamellae and their -opt version are always built together, and so is shmem-opt, so
+# one library serves every choice of LAMELLAR_BACKEND at run time (single-node shmem and shmem-opt only run on one node).
+# The old names ucx-opt, ucx-all, libfabric-sys-opt and shmem-opt are accepted as aliases for their family.
 #
 # The result needs only system libraries at link time (verbs, rdmacm, numa, libc, ...), listed in <prefix>/lib/shmem.libs
 # and in Libs.private of shmem.pc. A program links it with
@@ -30,12 +31,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 name="${1:?usage: tools/build-static.sh <backend> [prefix]}"
 prefix="${2:-$root/target/stage/$name-static}"
 case "$name" in
-  shmem)             features="" ;;
-  shmem-opt)         features="shmem-opt" ;;
-  ucx)               features="ucx" ;;
-  ucx-opt)           features="ucx-opt" ;;
-  libfabric)         features="libfabric" ;;
-  libfabric-sys-opt) features="libfabric-sys-opt" ;;
+  shmem|shmem-opt)                  family=shmem;     features="shmem-opt" ;;
+  ucx|ucx-opt|ucx-all)              family=ucx;       features="ucx ucx-opt shmem-opt" ;;
+  libfabric|libfabric-sys-opt)      family=libfabric; features="libfabric libfabric-sys-opt shmem-opt" ;;
   *) echo "tools/build-static.sh: unknown backend '$name' (see the header of this script)" >&2; exit 2 ;;
 esac
 cargo cinstall --help >/dev/null 2>&1 || { echo "tools/build-static.sh needs cargo-c: cargo install cargo-c" >&2; exit 2; }
@@ -50,8 +48,8 @@ python3 "$root/include/gen_shmem_h.py" "$root/include/shmem.h"
     --target-dir "$tdir" ${features:+--features "$features"} ${CARGOFLAGS:-} )
 cargo install --path "$root/wrappers" --root "$prefix" --force ${CARGOFLAGS:-}
 
-case "$name" in
-  ucx|ucx-opt)
+case "$family" in
+  ucx)
     echo "== merge the vendored UCX and UCC archives into libshmem.a"
     bdir="$tdir/$triple/release/build"
     # the newest build-script output directory that holds the archives (older ones can linger in a reused target dir)
@@ -69,8 +67,8 @@ esac
 
 # libraries that are now inside libshmem.a and must not appear on the link line
 is_inside() {
-  case "$name" in
-    ucx|ucx-opt) case "$1" in -lucc*|-lucp|-luct*|-lucs|-lucm) return 0 ;; esac ;;
+  case "$family" in
+    ucx) case "$1" in -lucc*|-lucp|-luct*|-lucs|-lucm) return 0 ;; esac ;;
   esac
   return 1
 }

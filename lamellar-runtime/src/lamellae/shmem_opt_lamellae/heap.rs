@@ -226,7 +226,14 @@ impl ShmemOptHeap {
                 libc::O_CREAT | libc::O_EXCL | libc::O_RDWR,
                 0o600,
             );
-            assert!(fd >= 0, "shm_open({name:?}) failed: {}", errno_str());
+            assert!(
+                fd >= 0,
+                "shm_open({name:?}) failed: {} (if this is 'File exists', several processes claim to be PE 0 of job {job_id}: \
+                 the single-node lamellae take their rank from PMIx (when built with the pmi feature and LAMELLAR_NUM_PES is unset) or \
+                 from LAMELLAR_PE_ID / LAMELLAR_NUM_PES / LAMELLAR_JOB_ID - start the program with a launcher that provides one of \
+                 them: prterun with PMIx support, oshrun, or srun with those variables)",
+                errno_str()
+            );
             assert!(
                 libc::ftruncate(fd, len as libc::off_t) == 0,
                 "ftruncate ctl failed: {}",

@@ -80,11 +80,14 @@ Notes:
 ### A static `libshmem.a`
 
 `tools/build-static.sh <backend> [prefix]` (prefix defaults to `target/stage/<backend>-static`) builds a self-contained static
-library for one backend, with the backends named as in the first column of the table above, and installs it with the
-header, `shmem.pc`, the CMake package and the wrappers. It builds the backend without the `*-shared` features:
+library and installs it with the header, `shmem.pc`, the CMake package and the wrappers. `<backend>` is `shmem`, `ucx` or
+`libfabric`, and names a family: the plain lamellae, their `-opt` version and `shmem-opt` are always built together (`ucx` gives
+`ucx`, `ucx-opt`, `shmem` and `shmem-opt`; `libfabric` gives `libfabric`, `libfabric-sys-opt`, `shmem`, `shmem-opt`), and
+`LAMELLAR_BACKEND` picks one at run time. The old names `ucx-opt`, `libfabric-sys-opt` and `shmem-opt` are accepted as aliases. It
+builds without the `*-shared` features:
 
 ```bash
-tools/build-static.sh ucx-opt /opt/lamellar-shmem
+tools/build-static.sh ucx /opt/lamellar-shmem
 shmemcc --shmem-static prog.c -o prog               # /opt/lamellar-shmem/bin/shmemcc
 cc prog.c $(pkg-config --static --cflags --libs shmem) -o prog     # PKG_CONFIG_PATH=/opt/lamellar-shmem/lib/pkgconfig
 ```
@@ -138,6 +141,11 @@ oshrun [-np N] [-N|--nodes M] [--pes-per-node P] prog [args...]
 
 * **Inside a Slurm allocation** the processes are placed on the allocated nodes with `srun`: the single-node backends
   (`shmem`, `shmem-opt`) directly, the network backends with `srun --mpi=pmix` where Slurm has PMIx, otherwise `prterun`.
+* The single-node backends (`shmem`, `shmem-opt`) take their rank, size and job id from PMIx when the library was built with a PMIx
+  client (the `shmem-opt` feature, and so every prefix from `tools/build-static.sh`, enables it) and `LAMELLAR_NUM_PES` is not set, so
+  `prterun` works. Otherwise, or when `LAMELLAR_NUM_PES` is set, they read `LAMELLAR_PE_ID`, `LAMELLAR_NUM_PES` and `LAMELLAR_JOB_ID`,
+  which `oshrun` sets (or set them yourself under `srun`). A launcher that provides neither makes every process PE 0 of a 1-PE job;
+  they then fight over the same `/dev/shm/lamellar_<job>_*` names (`shm_open ... File exists`).
 * **Outside an allocation** the single-node backends start N local processes; other backends use `prterun` if it is on
   `PATH`. Set `SHMEM_REQUIRE_ALLOCATION=1` to make `oshrun` refuse to run outside an allocation instead.
 * Each PE gets its own cores with `prterun` (`OSHRUN_CORES_PER_PE`, default 1, or 2 when the progress thread is on).
@@ -182,7 +190,8 @@ legacy.
 | `SHMEM_LOCAL_AMO` | backend dependent | `net` / `cpu`: whether a PE's atomics on its own memory go through the network path. |
 | `SHMEM_WARN_DATA` | off | Print why the data segment could not be registered. |
 | `SHMEM_PUT_LOCAL_COMPLETE`, `SHMEM_QUIET=region` | off | Experimental UCX switches. |
-| `LAMELLAR_SHMEM_OPT_EXTERNAL` | set to `1` by the shim for `shmem-opt` | Enables the runtime's `.data/.bss` remap on `shmem-opt`. |
+| `SHMEM_SYMMETRIC_VA` | off | `1` (or a hex address) maps the symmetric heap at one virtual address that is the same on every PE (default `0x300000000000`) and registers it with the runtime, so raw pointer values can be compared or shipped between PEs. Works on `ucx`, `ucx-opt`, `libfabric-sys-opt`, `shmem-opt` and (with the shmem-opt code compiled in) `shmem`. The runtime pool shrinks to its own headroom in this mode. |
+| `LAMELLAR_SHMEM_OPT_EXTERNAL` | set to `1` by the shim for `shmem-opt`, and for `shmem` when `SHMEM_SYMMETRIC_VA` is set | Enables the runtime's registration of caller memory on the single-node lamellae (the `.data/.bss` remap, the canonical heap). |
 | `SHMEM_REQUIRE_ALLOCATION` | off | `oshrun` refuses to run outside a Slurm allocation. |
 | `OSHRUN_LAUNCHER`, `OSHRUN_CORES_PER_PE`, `OSHRUN_MAP_BY`, `OSHRUN_BIND`, `OSHRUN_CPUS` | | Launcher controls for the `srun-pmix` / `prterun` paths (see `wrappers/src/launch.rs`). |
 | `SHMEM_PREFIX`, `SHMEM_INCDIR`, `SHMEM_LIBDIR`, `OSHCC_*` | | Where the compiler wrappers look for the library, and which compiler they drive. |

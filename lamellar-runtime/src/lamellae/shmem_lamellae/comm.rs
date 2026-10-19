@@ -43,7 +43,13 @@ impl ShmemComm {
     //#[tracing::instrument(skip_all, level = "debug")]
     pub(crate) fn new() -> ShmemComm {
         #[cfg(feature = "pmi")]
-        let pmi_info = PmiBuilder::init().ok();
+        // An explicit LAMELLAR_NUM_PES (set by oshrun/srun launches) wins: PMIx can come up in singleton mode outside a
+        // PMIx launcher and would then report a 1-PE job.
+        let pmi_info = if env::var_os("LAMELLAR_NUM_PES").is_some() {
+            None
+        } else {
+            PmiBuilder::init().ok()
+        };
 
         #[cfg(feature = "pmi")]
         let (num_pes, my_pe, job_id) = if let Some(ref pmi) = pmi_info {

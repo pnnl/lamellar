@@ -44,7 +44,9 @@ ucx-shared = ["ucx", "dep:ucx-sys-shared"]
 ucx-opt = ["lamellar/enable-ucx-opt", "lamellar/with-pmix", "lamellar/vendored-pmi"]
 # The runtime's optimized shared-memory lamellae (single node). Select it at run time with LAMELLAR_BACKEND=shmem-opt;
 # the shim turns on the runtime's external-memory registration for it (globals as remote targets).
-shmem-opt = ["lamellar/enable-shmem-opt"]
+# with-pmix/vendored-pmi give the single-node lamellae a PMIx client, so under prterun they get their rank, size and job id
+# from it (without it every process would be PE 0); oshrun/srun launches still work through LAMELLAR_PE_ID/NUM_PES/JOB_ID.
+shmem-opt = ["lamellar/enable-shmem-opt", "lamellar/with-pmix", "lamellar/vendored-pmi"]
 # The runtime's optimized libfabric lamellae (raw libfabric-sys calls). Select it at run time with
 # LAMELLAR_BACKEND=libfabric-sys-opt. The -shared form builds libfabric as libfabric.so, which the libshmem.so cdylib needs.
 libfabric-sys-opt = ["lamellar/enable-libfabric-sys-opt", "lamellar/with-pmix", "lamellar/vendored-pmi"]

@@ -52,6 +52,24 @@ impl CommMem for ShmemComm {
         })
     }
 
+    /// Collective registration of caller-owned memory (see `shmem_opt_lamellae/external.rs`: the range is turned into
+    /// shared memory in place and every PE maps every peer's copy). Needs the shmem-opt code in the build and the
+    /// opt-in `LAMELLAR_SHMEM_OPT_EXTERNAL=1`, because it remaps the caller's memory.
+    #[cfg(feature = "enable-shmem-opt")]
+    fn register_external(&self, ptr: *mut u8, len: usize) -> AllocResult<CommAlloc> {
+        let inner_alloc = crate::lamellae::shmem_opt_lamellae::external::register_with(
+            &|| unsafe { self.allocator.barrier() },
+            self.my_pe,
+            self.num_pes,
+            self.allocator.job_id(),
+            ptr,
+            len,
+        )?;
+        Ok(CommAlloc {
+            inner_alloc: Arc::new(CommAllocInner::ShmemOptExternAlloc(inner_alloc)),
+        })
+    }
+
     // //#[tracing::instrument(skip(self), level = "debug")]
     // fn free(&self, alloc: CommAlloc) {
     //     //maybe need to do something more intelligent on the drop of the shmem_alloc

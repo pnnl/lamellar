@@ -198,7 +198,11 @@ fn init_inner(requested: c_int) -> c_int {
     // The shmem-opt lamellae can make the program's data segment remotely accessible by turning it into shared memory
     // (see the runtime's shmem_opt_lamellae/external.rs). That is invasive, so the runtime keeps it off by default;
     // the shim exists to give C programs working globals, so it asks for it unless the user said otherwise.
-    if std::env::var("LAMELLAR_BACKEND").map(|b| b == "shmem-opt").unwrap_or(false)
+    // The original `shmem` lamellae register external memory through the same code (it needs the shmem-opt feature compiled
+    // in), but only when SHMEM_SYMMETRIC_VA asks for the canonical heap: that heap is registered as external memory, and
+    // with the switch on a program's globals become remote targets as well.
+    let backend = std::env::var("LAMELLAR_BACKEND").unwrap_or_default();
+    if (backend == "shmem-opt" || (backend == "shmem" && canonical_heap_address().is_some()))
         && std::env::var_os("LAMELLAR_SHMEM_OPT_EXTERNAL").is_none()
     {
         std::env::set_var("LAMELLAR_SHMEM_OPT_EXTERNAL", "1");
@@ -207,9 +211,17 @@ fn init_inner(requested: c_int) -> c_int {
     // The symmetric region is carved from Lamellar's RDMAable pool, so the pool
     // (LAMELLAR_HEAP_SIZE, default 4GB) must be larger than the region plus headroom
     // for the runtime's own allocations. Must be set before the world is built.
-    let needed = user_len + RUNTIME_HEADROOM + (1 << 20);
+    // With SHMEM_SYMMETRIC_VA the symmetric heap is mapped and registered by the shim itself (see canonical_region), so the
+    // pool only has to hold the runtime's own allocations.
+    let canonical = canonical_heap_address().is_some();
+    let needed = if canonical { RUNTIME_HEADROOM } else { user_len + RUNTIME_HEADROOM + (1 << 20) };
     if env_bytes("LAMELLAR_HEAP_SIZE", DEFAULT_LAMELLAR_HEAP_SIZE) < needed {
         std::env::set_var("LAMELLAR_HEAP_SIZE", needed.to_string());
+    }
+    // The canonical range is claimed before the runtime picks its own mappings: the single-node lamellae place a window of
+    // all PEs' regions at an address the PEs agree on, and at 32 PEs that window can cover the canonical address.
+    if let Some(va) = canonical_heap_address() {
+        unsafe { canonical_premap(va, user_len + CANONICAL_META_RESERVE) };
     }
     let world = LamellarWorldBuilder::new().build();
     // Collective: every PE requests the identical size.
@@ -217,11 +229,17 @@ fn init_inner(requested: c_int) -> c_int {
     let meta_off = user_len;
     let meta_len = 8 * num_pes + 8;
     // Allocated as u64 words so that the whole region is aligned for the 4- and 8-byte atomics, then viewed as bytes.
-    let words = world
-        .alloc_shared_mem_region::<u64>((meta_off + meta_len).div_ceil(8))
-        .block();
-    let region: SharedMemoryRegion<u8> = unsafe { words.cast() };
-    drop(words);
+    let region: SharedMemoryRegion<u8> = match canonical_heap_address() {
+        Some(va) => unsafe { canonical_region(&world.team(), va, meta_off + meta_len) },
+        None => {
+            let words = world
+                .alloc_shared_mem_region::<u64>((meta_off + meta_len).div_ceil(8))
+                .block();
+            let region: SharedMemoryRegion<u8> = unsafe { words.cast() };
+            drop(words);
+            region
+        }
+    };
     let base = unsafe { region.as_mut_ptr().expect("local symmetric region") } as usize;
     // Peers only write into this after the barrier below, so zeroing it here is race free.
     unsafe { std::ptr::write_bytes((base + meta_off) as *mut u8, 0, meta_len) };
@@ -471,6 +489,77 @@ fn data_segment_range() -> Option<(usize, usize)> {
     let mut out = Out(None);
     unsafe { libc::dl_iterate_phdr(Some(cb), &mut out as *mut Out as *mut libc::c_void) };
     out.0
+}
+
+/// Default virtual address of the canonical symmetric heap (48 TiB: far above where the kernel places a program, its
+/// libraries and its mmaps, and far below the stack).
+const DEFAULT_CANONICAL_HEAP_ADDRESS: usize = 0x3000_0000_0000;
+
+/// `SHMEM_SYMMETRIC_VA` asks for the symmetric heap to live at one virtual address that is the same on every PE:
+/// `1` (or `on`) uses the default address, a hex number (`0x...`) names one. Off by default.
+///
+/// The runtime's own pool is mapped wherever the kernel puts it, per PE, and the shim translates every pointer to an offset
+/// from the local base, so a program never needs equal addresses to be correct. Some programs still compare or ship raw
+/// pointer values (the original C HAMR checks that `shmem_malloc` returned the same pointer on every PE); this makes that
+/// true, with ASLR and PIE as they are.
+fn canonical_heap_address() -> Option<usize> {
+    let v = std::env::var("SHMEM_SYMMETRIC_VA").ok()?;
+    let v = v.trim();
+    match v {
+        "" | "0" | "off" | "no" => None,
+        "1" | "on" | "yes" => Some(DEFAULT_CANONICAL_HEAP_ADDRESS),
+        _ => usize::from_str_radix(v.trim_start_matches("0x"), 16).ok(),
+    }
+}
+
+/// Room reserved after the user's part of the canonical heap for the shim's per-PE metadata (`8 * num_pes + 8` bytes, known
+/// only once the world exists).
+const CANONICAL_META_RESERVE: usize = 1 << 20;
+
+/// Whether `canonical_premap` already mapped the range, and where/how long.
+static CANONICAL_MAP: std::sync::Mutex<Option<(usize, usize)>> = std::sync::Mutex::new(None);
+
+/// Map `len` bytes at `va` (anonymous, lazily committed). Aborts if the address is taken on this PE, because a PE that fell
+/// back to the runtime's pool would give a different pointer and would also leave the collective registration half done.
+unsafe fn canonical_premap(va: usize, len: usize) {
+    let len = len.next_multiple_of(4096);
+    let p = libc::mmap(
+        va as *mut std::os::raw::c_void,
+        len,
+        libc::PROT_READ | libc::PROT_WRITE,
+        libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE | libc::MAP_FIXED_NOREPLACE,
+        -1,
+        0,
+    );
+    if p == libc::MAP_FAILED || p as usize != va {
+        eprintln!(
+            "shmem: cannot map the symmetric heap ({len} bytes) at {va:#x}: {}. Unset SHMEM_SYMMETRIC_VA or choose another address.",
+            std::io::Error::last_os_error()
+        );
+        std::process::abort();
+    }
+    *CANONICAL_MAP.lock().unwrap() = Some((va, len));
+}
+
+/// Register the premapped canonical range (its first `len` bytes) with the runtime as the symmetric region (the same
+/// external registration the data segment uses). Collective.
+unsafe fn canonical_region(team: &std::sync::Arc<LamellarTeam>, va: usize, len: usize) -> SharedMemoryRegion<u8> {
+    let len = len.next_multiple_of(4096);
+    match *CANONICAL_MAP.lock().unwrap() {
+        Some((mva, mlen)) if mva == va && len <= mlen => {}
+        _ => {
+            eprintln!("shmem: the canonical heap at {va:#x} is not mapped or is too small for {len} bytes");
+            std::process::abort();
+        }
+    }
+    let p = va as *mut u8;
+    match team.try_register_external_shared_mem_region::<u8>(p, len).block() {
+        Ok(region) => region,
+        Err(e) => {
+            eprintln!("shmem: the symmetric heap at {va:#x} could not be registered with the runtime: {e}");
+            std::process::abort();
+        }
+    }
 }
 
 /// Collectively register the data segment (every PE runs the same binary, so all PEs attempt the

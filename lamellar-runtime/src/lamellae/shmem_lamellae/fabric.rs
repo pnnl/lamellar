@@ -695,6 +695,10 @@ impl std::fmt::Debug for ShmemAllocator {
 
 impl ShmemAllocator {
     //#[tracing::instrument(skip_all, level = "debug")]
+    pub(crate) fn job_id(&self) -> usize {
+        self.job_id
+    }
+
     pub(crate) fn new(num_pes: usize, pe: usize, job_id: usize) -> Self {
         let size = std::mem::size_of::<AtomicUsize>()
             + std::mem::size_of::<usize>()

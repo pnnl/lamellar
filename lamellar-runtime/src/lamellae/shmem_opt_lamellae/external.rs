@@ -165,6 +165,20 @@ pub(super) fn register(
     ptr: *mut u8,
     len: usize,
 ) -> AllocResult<ShmemOptExternAlloc> {
+    register_with(&|| heap.barrier(), my_pe, num_pes, job_id, ptr, len)
+}
+
+/// Same as `register`, with the barrier over all PEs supplied by the caller. The original `shmem` lamellae use this: all
+/// the registration needs from its backend is a barrier, shared-memory files, and the fact that every PE is a process on
+/// this node. (The allocation it returns is the same type, so the RMA/atomic dispatch is shared.)
+pub(crate) fn register_with(
+    barrier: &dyn Fn(),
+    my_pe: usize,
+    num_pes: usize,
+    job_id: usize,
+    ptr: *mut u8,
+    len: usize,
+) -> AllocResult<ShmemOptExternAlloc> {
     if !enabled() {
         return Err(AllocError::Unsupported(
             "shmem-opt external registration is off (set LAMELLAR_SHMEM_OPT_EXTERNAL=1: it turns the range into shared memory)",
@@ -218,7 +232,25 @@ pub(super) fn register(
     // Copy the live range into the shared file and map the file over it. Only locals are touched in between, because
     // anything written to the range after the copy would be lost.
     unsafe {
-        std::ptr::copy_nonoverlapping(start as *const u8, staging as *mut u8, map_len);
+        // The file is fresh (all zero), so all-zero pages need not be copied. This keeps a large, mostly untouched range
+        // (for example a symmetric heap mapped anonymously) sparse instead of filling tmpfs with zeros. Only locals here.
+        let mut off = 0usize;
+        while off < map_len {
+            let src = (start + off) as *const u64;
+            let mut nonzero = false;
+            let mut i = 0usize;
+            while i < page / 8 {
+                if *src.add(i) != 0 {
+                    nonzero = true;
+                    break;
+                }
+                i += 1;
+            }
+            if nonzero {
+                std::ptr::copy_nonoverlapping(src as *const u8, (staging as usize + off) as *mut u8, page);
+            }
+            off += page;
+        }
         let r = libc::mmap(
             start as *mut libc::c_void,
             map_len,
@@ -233,7 +265,7 @@ pub(super) fn register(
         libc::munmap(staging, map_len);
     }
 
-    heap.barrier(); // every PE has created, filled and remapped its file
+    barrier(); // every PE has created, filled and remapped its file
 
     let mut peer_base = vec![0usize; num_pes];
     let mut peer_maps = Vec::with_capacity(num_pes.saturating_sub(1));
@@ -252,7 +284,7 @@ pub(super) fn register(
         peer_maps.push((m as usize, map_len));
     }
 
-    heap.barrier(); // every PE has mapped every other: the names can go
+    barrier(); // every PE has mapped every other: the names can go
     unsafe {
         libc::shm_unlink(my_name.as_ptr());
         libc::close(fd);
