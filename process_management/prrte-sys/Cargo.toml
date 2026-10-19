@@ -22,7 +22,7 @@ vendored = [
     "vendored-libevent",
     "vendored-pmix",
 ]
-vendored-libevent = ["libevent-sys/bundled", "libevent-sys/openssl_bundled", "pmix-sys?/vendored-libevent"]
+vendored-libevent = ["libevent-sys/bundled", "pmix-sys?/vendored-libevent"]
 vendored-pmix = ["pmix-sys/openpmix-src"]
 # PRRTE's own ./configure hard-requires external PMIx headers (prte_setup_pmix.m4:
 # "Cannot continue" if none found) -- there is no way to build PRRTE without PMIx.
@@ -37,7 +37,7 @@ vendored-prrte = [
 
 [dependencies]
 pmix-sys = { version = "0.1.0", optional = true }
-libevent-sys = { version = "0.4.0", features = ["threading"], optional = true }
+libevent-sys = { version = "0.4.0", default-features = false, features = ["threading", "pkgconfig", "buildtime_bindgen"], optional = true }
 
 [build-dependencies]
 prrte-src = { version = "0.1.0", optional = true }
