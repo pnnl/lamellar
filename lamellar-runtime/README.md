@@ -119,6 +119,32 @@ autotools are linked against a stale perl — fix with `brew reinstall autoconf 
 
 See each `-sys`/`-src` crate's README (`pmix-sys`, `prrte-sys`, `openpmix-src`, `prrte-src`, `lamellar-ucx-sys`, `lamellar-ucc-sys`, `rofi-sys`) for further detail on that crate's own vendoring sub-features.
 
+### Shared libraries and your own build.rs
+
+**In the default configuration you do not need this.** The vendored native libraries (PMIx, PRRTE, libevent, hwloc, libfabric, UCX, UCC) are built as static archives and linked into your binary, so there is nothing to locate at run time.
+
+You only need to act when your binary links **shared** native libraries, for example:
+- `enable-rofi-c-shared` / `enable-rofi-c-shared-pmix`, or the `shared` feature of `libfabric-sys` or `lamellar-ucx-sys`
+- system installs found through `OFI_DIR`, `UCX_DIR`, `UCC_DIR`, `ROFI_DIR`, `PMIX_LIB_DIR`, etc. whose `.so` files are not in a default linker path
+
+Cargo does not pass a dependency's `rustc-link-arg` (where the rpaths are set) on to your crate's binary, so such a binary will fail to start with `error while loading shared libraries` unless the library directories are found some other way. You have two options:
+
+1. Set `LD_LIBRARY_PATH` (or source the `lamellar_env.sh` that lamellar's build script writes at the project root) before running.
+2. Bake the rpaths into your binary. `lamellar` exports the directories it adds to its own rpath as build metadata, `DEP_LAMELLAR_RPATH_DIRS` (a `:`-separated list), which your own `build.rs` can re-emit:
+
+```rust
+// build.rs  (add `build = "build.rs"` to [package] if it is not picked up automatically)
+fn main() {
+    println!("cargo:rerun-if-env-changed=DEP_LAMELLAR_RPATH_DIRS");
+    let dirs = std::env::var("DEP_LAMELLAR_RPATH_DIRS").unwrap_or_default();
+    for dir in dirs.split(':').filter(|d| !d.is_empty()) {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+    }
+}
+```
+
+`DEP_LAMELLAR_*` is only visible to crates that depend on `lamellar` directly. The rpaths are absolute paths into your `target/` directory, so a binary built this way is not relocatable; copy the libraries and set your own rpath (for example `$ORIGIN/lib`) if you need to deploy it elsewhere.
+
 # Using Lamellar 
 Lamellar is capable of running on single node workstations as well as distributed HPC systems.
 For a workstation, simply copy the following to the dependency section of you Cargo.toml file:

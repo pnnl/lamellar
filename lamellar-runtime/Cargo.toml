@@ -10,6 +10,9 @@ authors = [
     "Erdal Mutlu <erdal.mutlu@pnnl.gov>",
 ]
 edition = "2021"
+# Lets downstream build scripts read DEP_LAMELLAR_RPATH_DIRS (see README, "Shared
+# libraries and your own build.rs"). The native libs themselves are linked by the -sys crates.
+links = "lamellar"
 description = "Lamellar is an asynchronous tasking runtime for HPC systems developed in RUST."
 readme = "README.md"
 repository = "https://github.com/pnnl/lamellar"

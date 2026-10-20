@@ -82,6 +82,16 @@ fn main() {
     let profile_output_dir = determine_profile_output_dir(&out_path);
     copy_dependency_libs(&lib_paths, &profile_output_dir);
 
+    // Re-export, as `links` metadata, every directory this crate adds to its own
+    // rpath. `rustc-link-arg` only applies to this package's own targets, so a
+    // downstream crate that needs the same rpaths has to re-emit them from its
+    // build.rs via DEP_LAMELLAR_RPATH_DIRS (see README).
+    let mut rpath_dirs = lib_paths.clone();
+    if !lib_paths.is_empty() {
+        rpath_dirs.push(profile_output_dir.join("deps").display().to_string());
+    }
+    println!("cargo:rpath_dirs={}", rpath_dirs.join(":"));
+
     // if let Ok(origin) = env::var("ORIGIN") {
     //     println!("cargo:warning=rpath for sharedlibs: {}/shared_libs", origin);
     // }
