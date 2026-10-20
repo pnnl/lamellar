@@ -79,16 +79,17 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap_or_else(|_| ".".to_string());
     // println!("cargo:warning=outdir: {out_dir:?}");
     let out_path = PathBuf::from(&out_dir);
-    let profile_output_dir = determine_profile_output_dir(&out_path);
-    copy_dependency_libs(&lib_paths, &profile_output_dir);
+    // Everything this script writes lives under OUT_DIR (the only place a build
+    // script may write); nothing is placed in the source tree or Cargo's target dirs.
+    let shared_libs_dir = copy_dependency_libs(&lib_paths, &out_path);
 
     // Re-export, as `links` metadata, every directory this crate adds to its own
     // rpath. `rustc-link-arg` only applies to this package's own targets, so a
     // downstream crate that needs the same rpaths has to re-emit them from its
     // build.rs via DEP_LAMELLAR_RPATH_DIRS (see README).
     let mut rpath_dirs = lib_paths.clone();
-    if !lib_paths.is_empty() {
-        rpath_dirs.push(profile_output_dir.join("deps").display().to_string());
+    if let Some(dir) = &shared_libs_dir {
+        rpath_dirs.push(dir.display().to_string());
     }
     println!("cargo:rpath_dirs={}", rpath_dirs.join(":"));
 
@@ -110,24 +111,11 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=uuid");
     }
 
-    // Generate bash script with library paths
-    // Navigate from OUT_DIR to the workspace root (where cargo was invoked)
-
-    // OUT_DIR is typically target/debug/build/<crate>/out
-    // Navigate up to find the project root (where target/ is)
-    let mut script_dir = out_path.clone();
-    while script_dir.file_name().is_some() {
-        if script_dir.join("Cargo.toml").exists() || script_dir.join("target").exists() {
-            break;
-        }
-        if !script_dir.pop() {
-            // Fallback to current directory if we can't find project root
-            script_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            break;
-        }
-    }
-
-    let script_path = script_dir.join("lamellar_env.sh");
+    // Generate a bash script with the library paths. It is written to OUT_DIR and
+    // its location is exported as `cargo:env_script` metadata. Set
+    // LAMELLAR_ENV_SCRIPT_DIR to also get a copy in a directory of your choosing.
+    println!("cargo:rerun-if-env-changed=LAMELLAR_ENV_SCRIPT_DIR");
+    let script_path = out_path.join("lamellar_env.sh");
 
     if let Ok(mut file) = File::create(&script_path) {
         writeln!(file, "#!/bin/bash").ok();
@@ -150,48 +138,44 @@ fn main() {
             }
             writeln!(file, ":$LD_LIBRARY_PATH").ok();
         }
+        drop(file);
 
-        // println!(
-        //     "cargo:warning=Generated library path script: {}",
-        //     script_path.display()
-        // );
+        println!("cargo:env_script={}", script_path.display());
+
+        if let Some(dir) = env::var_os("LAMELLAR_ENV_SCRIPT_DIR").filter(|d| !d.is_empty()) {
+            let dest = PathBuf::from(dir).join("lamellar_env.sh");
+            if let Err(err) = fs::copy(&script_path, &dest) {
+                println!(
+                    "cargo:warning=Unable to copy lamellar_env.sh to {}: {}",
+                    dest.display(),
+                    err
+                );
+            }
+        }
     } else {
         println!(
-            "cargo:warning=Failed to create lamellar_env.sh at {}; skipping (build environment may be read-only)",
+            "cargo:warning=Failed to create lamellar_env.sh at {}; skipping",
             script_path.display()
         );
     }
 }
 
-fn determine_profile_output_dir(out_dir: &Path) -> PathBuf {
-    let mut cursor = out_dir;
-    loop {
-        if cursor.file_name().and_then(|name| name.to_str()) == Some("build") {
-            return cursor
-                .parent()
-                .expect("build directory should have a parent")
-                .to_path_buf();
-        }
-
-        cursor = cursor
-            .parent()
-            .expect("OUT_DIR should contain a build directory");
-    }
-}
-
-fn copy_dependency_libs(lib_paths: &[String], output_dir: &Path) {
+/// Symlink the shared objects found in `lib_paths` into `<out_dir>/shared_libs`
+/// (deduplicated by library base name) and add that directory to the rpath.
+/// Returns the directory, or `None` if there was nothing to link.
+fn copy_dependency_libs(lib_paths: &[String], out_dir: &Path) -> Option<PathBuf> {
     if lib_paths.is_empty() {
-        return;
+        return None;
     }
 
-    let shared_libs_dir = output_dir.join("deps");
+    let shared_libs_dir = out_dir.join("shared_libs");
     if let Err(err) = fs::create_dir_all(&shared_libs_dir) {
         println!(
             "cargo:warning=Unable to create shared libs directory {}: {}",
             shared_libs_dir.display(),
             err
         );
-        return;
+        return None;
     }
 
     println!(
@@ -289,6 +273,8 @@ fn copy_dependency_libs(lib_paths: &[String], output_dir: &Path) {
     //         shared_libs_dir.display()
     //     );
     // }
+
+    Some(shared_libs_dir)
 }
 
 fn is_shared_object(file_name: &str) -> bool {

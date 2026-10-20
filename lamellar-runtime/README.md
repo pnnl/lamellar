@@ -129,7 +129,7 @@ You only need to act when your binary links **shared** native libraries, for exa
 
 Cargo does not pass a dependency's `rustc-link-arg` (where the rpaths are set) on to your crate's binary, so such a binary will fail to start with `error while loading shared libraries` unless the library directories are found some other way. You have two options:
 
-1. Set `LD_LIBRARY_PATH` (or source the `lamellar_env.sh` that lamellar's build script writes at the project root) before running.
+1. Set `LD_LIBRARY_PATH` (or source the `lamellar_env.sh` that lamellar's build script writes to its `OUT_DIR`; set `LAMELLAR_ENV_SCRIPT_DIR=<dir>` at build time to also get a copy in `<dir>`, or read its path from the `DEP_LAMELLAR_ENV_SCRIPT` build metadata) before running.
 2. Bake the rpaths into your binary. `lamellar` exports the directories it adds to its own rpath as build metadata, `DEP_LAMELLAR_RPATH_DIRS` (a `:`-separated list), which your own `build.rs` can re-emit:
 
 ```rust
@@ -202,7 +202,7 @@ A Lamellar application's `main` function must be annotated with `#[lamellar::mai
 
 The generated `main` detects whether it's already running as a launched PE (e.g. under PRRTE/srun); if not, it re-executes itself under a launcher (`prterun` by default, or `srun` with the `use-srun` feature) using the arguments given after the launcher-args separator described below. This means a single `cargo run`/binary invocation transparently becomes a multi-PE job — you no long need to invoke launcher commands manually
 
-Before launching, `#[lamellar::main]` also patches the binary's `RPATH`/`RUNPATH` (via `readelf`/`patchelf`) with the build-output library directories found on `LD_LIBRARY_PATH`, so launched PEs can find dependencies like libfabric/UCX/rofi without you having to export `LD_LIBRARY_PATH` yourself. If this patching fails for some reason (e.g. `patchelf`/`readelf` unavailable), fall back to sourcing the generated `lamellar_env.sh` (built by `build.rs`) before running:
+Before launching, `#[lamellar::main]` also patches the binary's `RPATH`/`RUNPATH` (via `readelf`/`patchelf`) with the build-output library directories found on `LD_LIBRARY_PATH`, so launched PEs can find dependencies like libfabric/UCX/rofi without you having to export `LD_LIBRARY_PATH` yourself. If this patching fails for some reason (e.g. `patchelf`/`readelf` unavailable), fall back to sourcing the generated `lamellar_env.sh` before running. `build.rs` writes it to the `out/` directory of the `lamellar` build script (`target/<profile>/build/lamellar-*/out/`, nothing is written to your source tree); build with `LAMELLAR_ENV_SCRIPT_DIR=<dir>` set to also get a copy in `<dir>`:
 ```
 source lamellar_env.sh
 ```
