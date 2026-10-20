@@ -209,6 +209,14 @@ fn create_launch_block(
 ) -> impl ToTokens {
     let (env_var, launcher_path) = launcher_info;
 
+    // Point a prterun launcher at the install tree it lives in, so a copied or
+    // deployed PRRTE tree doesn't fall back to its compiled-in build prefix.
+    let prefix_env_block = if launcher_type == "prterun" {
+        quote! { ::hpc_launch::prrte_sys::apply_prefix_env(&mut launcher_cmd); }
+    } else {
+        quote! {}
+    };
+
     let output_dir_block = if launcher_type == "srun" {
         quote! {
             if !output_dir.is_empty() {
@@ -560,6 +568,7 @@ fn create_launch_block(
             // }
             // ld_library_path.push_str(&#shared_libs_dir);
             let mut launcher_cmd = std::process::Command::new(#launcher_path);
+            #prefix_env_block
             if time {
                 launcher_cmd.env("LAMELLAR_MAIN_TIME", "1");
             }
@@ -678,6 +687,11 @@ fn create_launch_test_block(
     name: &syn::Ident,
 ) -> impl ToTokens {
     let (env_var, launcher_path) = launcher_info;
+    // Only prterun needs its install prefix exported; srun does not.
+    #[cfg(feature = "use-prterun")]
+    let prefix_env_block = quote! { ::hpc_launch::prrte_sys::apply_prefix_env(&mut launcher_cmd); };
+    #[cfg(not(feature = "use-prterun"))]
+    let prefix_env_block = quote! {};
     quote! {
         #test_attr #vis #sig {
         fn type_name_of_val<T: ?Sized>(_val: &T) -> &'static str {
@@ -723,7 +737,9 @@ fn create_launch_test_block(
             // prterun_args.iter().for_each(|x| {
             //     println!("prterun arg: {}", x);
             // });
-            std::process::Command::new(#launcher_path)
+            let mut launcher_cmd = std::process::Command::new(#launcher_path);
+            #prefix_env_block
+            launcher_cmd
                 .args(prterun_args)
                 .status()
                 .expect("failed to launch process");

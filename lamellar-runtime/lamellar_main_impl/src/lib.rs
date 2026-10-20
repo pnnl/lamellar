@@ -13,6 +13,14 @@ fn create_launch_block(
 ) -> impl ToTokens {
     let (env_var, launcher_path) = launcher_info;
 
+    // Point a prterun launcher at the install tree it lives in, so a copied or
+    // deployed PRRTE tree doesn't fall back to its compiled-in build prefix.
+    let prefix_env_block = if launcher_type == "prterun" {
+        quote! { ::lamellar::prrte_sys::apply_prefix_env(&mut launcher_cmd); }
+    } else {
+        quote! {}
+    };
+
     let output_dir_block = if launcher_type == "srun" {
         quote! {
             if !output_dir.is_empty() {
@@ -337,6 +345,7 @@ fn create_launch_block(
             prterun_args.extend(args.into_iter());
 
             let mut launcher_cmd = std::process::Command::new(#launcher_path);
+            #prefix_env_block
             if time {
                 launcher_cmd.env("LAMELLAR_MAIN_TIME", "1");
             }
