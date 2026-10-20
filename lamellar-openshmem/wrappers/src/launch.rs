@@ -9,8 +9,9 @@
 //! Where the PEs start:
 //! * **Inside a Slurm allocation** (`SLURM_JOB_ID` set): `srun` for the single-node backends (`shmem`, `shmem-opt`,
 //!   `local`), and `srun --mpi=pmix` or PRRTE's `prterun` for the others.
-//! * **Outside one:** the single-node backends are started directly as N local processes; other backends use `prterun`
-//!   if it is on `PATH`. Set `SHMEM_REQUIRE_ALLOCATION=1` to refuse to run outside an allocation instead (useful where
+//! * **Outside one:** the single-node backends are started directly as N local processes; other backends use `prterun`.
+//!   That is the PRRTE bundled at `<prefix>/prrte` (next to `<prefix>/bin/oshrun`) when the library was installed with
+//!   one, otherwise a `prterun` on `PATH`. Set `SHMEM_REQUIRE_ALLOCATION=1` to refuse to run outside an allocation instead (useful where
 //!   programs must only run on compute nodes).
 //!
 //! Environment: `LAMELLAR_BACKEND` / `SHMEM_BACKEND` (backend), `OSHRUN_LAUNCHER` (`srun-pmix` or `prterun`),
@@ -19,6 +20,7 @@
 use std::env;
 use std::ffi::OsString;
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::process::Command;
 
 const USAGE: &str = "usage: oshrun [-np N] [--nodes M] [--pes-per-node P] prog [args]";
@@ -90,6 +92,23 @@ fn in_path(prog: &str) -> bool {
     env::var_os("PATH")
         .map(|p| env::split_paths(&p).any(|d| d.join(prog).is_file()))
         .unwrap_or(false)
+}
+
+/// The PRRTE installed next to this launcher (`<prefix>/prrte`, with `<prefix>/bin/oshrun`), if there is one.
+/// `tools/build-static.sh` installs it; it is built from the same PMIx as the library, which a `prterun` found on
+/// `PATH` is not guaranteed to be.
+fn bundled_prrte() -> Option<PathBuf> {
+    let dir = env::current_exe().ok()?.parent()?.parent()?.join("prrte");
+    dir.join("bin").join("prterun").is_file().then_some(dir)
+}
+
+/// The `prterun` to run and the arguments that go before the job's own: the bundled one with `--prefix` pointing at its
+/// tree, otherwise a `prterun` found on `PATH`, otherwise none.
+fn prterun() -> Option<(OsString, Vec<OsString>)> {
+    if let Some(dir) = bundled_prrte() {
+        return Some((dir.join("bin").join("prterun").into(), vec!["--prefix".into(), dir.into()]));
+    }
+    in_path("prterun").then(|| ("prterun".into(), Vec::new()))
 }
 
 /// An id that differs between launches (so sequential runs never share shared-memory segments).
@@ -191,12 +210,12 @@ pub fn main() -> i32 {
         if single {
             return spawn_local(&o, &backend);
         }
-        if !in_path("prterun") {
+        let Some((prog, pre)) = prterun() else {
             eprintln!("oshrun: no launcher found (backend '{backend}' needs prterun or a Slurm allocation)");
             return 1;
-        }
-        let mut c = Command::new("prterun");
-        c.args(["-n", &o.n.to_string(), "--oversubscribe"]).args(&o.prog);
+        };
+        let mut c = Command::new(prog);
+        c.args(pre).args(["-n", &o.n.to_string(), "--oversubscribe"]).args(&o.prog);
         return exec(c, "prterun");
     };
 
@@ -227,7 +246,7 @@ pub fn main() -> i32 {
             .unwrap_or(false);
         if pmix {
             "srun-pmix".into()
-        } else if in_path("prterun") {
+        } else if prterun().is_some() {
             "prterun".into()
         } else {
             String::new()
@@ -257,8 +276,12 @@ pub fn main() -> i32 {
                     None => format!("slot:PE={cpp}"),
                 });
                 let bind = env_nonempty("OSHRUN_BIND").unwrap_or_else(|| "core".into());
-                let mut c = Command::new("prterun");
-                c.args(["-n", &o.n.to_string(), "--map-by", &mapby, "--bind-to", &bind]).args(&o.prog);
+                let Some((prog, pre)) = prterun() else {
+                    eprintln!("oshrun: no prterun found (neither bundled next to oshrun nor on PATH)");
+                    return 1;
+                };
+                let mut c = Command::new(prog);
+                c.args(pre).args(["-n", &o.n.to_string(), "--map-by", &mapby, "--bind-to", &bind]).args(&o.prog);
                 return exec(c, "prterun");
             }
             // Only a job id is known (no node list): run prterun as one srun task on a compute node, which forks
@@ -272,9 +295,15 @@ pub fn main() -> i32 {
                 return 2;
             }
             let cpus = env_nonempty("OSHRUN_CPUS").or_else(|| env_nonempty("SLURM_CPUS_ON_NODE")).unwrap_or_else(|| "1".into());
+            let Some((prog, pre)) = prterun() else {
+                eprintln!("oshrun: no prterun found (neither bundled next to oshrun nor on PATH)");
+                return 1;
+            };
             let mut c = Command::new("srun");
             c.args(["--nodes=1", "--ntasks=1", &format!("--cpus-per-task={cpus}")])
-                .args(["prterun", "-n", &o.n.to_string(), "--oversubscribe"])
+                .arg(prog)
+                .args(pre)
+                .args(["-n", &o.n.to_string(), "--oversubscribe"])
                 .args(&o.prog);
             exec(c, "srun")
         }

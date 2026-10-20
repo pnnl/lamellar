@@ -237,6 +237,20 @@ impl Build {
         }
         let prrte_build = prrte_config.build();
 
+        // The show-help files (`help-*.txt`: the text of PRRTE's error and warning messages) are installed by the docs
+        // step of `make install`, which is skipped here (see the note on PRRTE_VERSION). Without them every message
+        // prterun would print is replaced by "couldn't open the help file", which hides the actual error.
+        let help_src = src.join("src").join("docs").join("show-help-files");
+        let help_dst = prrte_build.join("share").join("prte");
+        if help_src.is_dir() {
+            std::fs::create_dir_all(&help_dst).expect("create share/prte");
+            for entry in std::fs::read_dir(&help_src).expect("read show-help-files") {
+                let path = entry.expect("show-help-files entry").path();
+                if path.extension().map_or(false, |e| e == "txt") {
+                    std::fs::copy(&path, help_dst.join(path.file_name().unwrap())).expect("install help file");
+                }
+            }
+        }
 
         let include_dir = prrte_build.join("include");
         let lib_dir = prrte_build.join("lib");

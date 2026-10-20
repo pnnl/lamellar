@@ -80,7 +80,8 @@ Notes:
 ### A static `libshmem.a`
 
 `tools/build-static.sh <backend> [prefix]` (prefix defaults to `target/stage/<backend>-static`) builds a self-contained static
-library and installs it with the header, `shmem.pc`, the CMake package and the wrappers. `<backend>` is `shmem`, `ucx` or
+library and installs it with the header, `shmem.pc`, the CMake package and the wrappers, and a PRRTE (`<prefix>/prrte`, built against the same vendored PMIx)
+that `oshrun` uses in place of a `prterun` from `PATH`. `<backend>` is `shmem`, `ucx` or
 `libfabric`, and names a family: the plain lamellae, their `-opt` version and `shmem-opt` are always built together (`ucx` gives
 `ucx`, `ucx-opt`, `shmem` and `shmem-opt`; `libfabric` gives `libfabric`, `libfabric-sys-opt`, `shmem`, `shmem-opt`), and
 `LAMELLAR_BACKEND` picks one at run time. The old names `ucx-opt`, `libfabric-sys-opt` and `shmem-opt` are accepted as aliases. It
@@ -146,8 +147,9 @@ oshrun [-np N] [-N|--nodes M] [--pes-per-node P] prog [args...]
   `prterun` works. Otherwise, or when `LAMELLAR_NUM_PES` is set, they read `LAMELLAR_PE_ID`, `LAMELLAR_NUM_PES` and `LAMELLAR_JOB_ID`,
   which `oshrun` sets (or set them yourself under `srun`). A launcher that provides neither makes every process PE 0 of a 1-PE job;
   they then fight over the same `/dev/shm/lamellar_<job>_*` names (`shm_open ... File exists`).
-* **Outside an allocation** the single-node backends start N local processes; other backends use `prterun` if it is on
-  `PATH`. Set `SHMEM_REQUIRE_ALLOCATION=1` to make `oshrun` refuse to run outside an allocation instead.
+* **Outside an allocation** the single-node backends start N local processes; other backends use `prterun`: the PRRTE
+  bundled at `<prefix>/prrte` (next to `<prefix>/bin/oshrun`) when the library was installed with one (every prefix from
+  `tools/build-static.sh`), otherwise one on `PATH`. Set `SHMEM_REQUIRE_ALLOCATION=1` to make `oshrun` refuse to run outside an allocation instead.
 * Each PE gets its own cores with `prterun` (`OSHRUN_CORES_PER_PE`, default 1, or 2 when the progress thread is on).
 * `-np N` is `nodes * pes-per-node` when both are given; an inconsistent combination is rejected.
 

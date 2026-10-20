@@ -5,6 +5,22 @@ edition = "2021"
 description = "Compiler wrappers (shmemcc, oshcc, shmemcxx, oshcxx) and launcher (oshrun, shmemrun) for the Lamellar OpenSHMEM library"
 license-file = "../../lamellar-runtime/LICENSE"
 
+[features]
+default = []
+# Build PRRTE from source (against the vendored PMIx) and make its prterun available to oshrun: tools/build-static.sh finds the install
+# tree in the build directory and copies it to <prefix>/prrte, and oshrun prefers <its own prefix>/prrte/bin/prterun over PATH.
+bundled-prrte = ["dep:prrte-sys"]
+
+[build-dependencies]
+prrte-sys = { version = "0.1.0", features = ["prrte-src", "vendored-libevent", "vendored-pmix"], optional = true }
+
+# Resolve the PRRTE/PMIx crates from this monorepo, as the shim does (only used with bundled-prrte).
+[patch.crates-io]
+prrte-sys = { path = "../../process_management/prrte-sys" }
+prrte-src = { path = "../../process_management/prrte-src" }
+pmix-sys = { path = "../../process_management/pmix-sys" }
+openpmix-src = { path = "../../process_management/openpmix-src" }
+
 [lib]
 name = "shmem_wrappers"
 path = "src/lib.rs"

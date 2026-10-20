@@ -46,7 +46,22 @@ echo "== build the static library for $name -> $prefix"
 python3 "$root/include/gen_shmem_h.py" "$root/include/shmem.h"
 ( cd "$root" && cargo cinstall --release --library-type staticlib --prefix "$prefix" --libdir "$prefix/lib" \
     --target-dir "$tdir" ${features:+--features "$features"} ${CARGOFLAGS:-} )
-cargo install --path "$root/wrappers" --root "$prefix" --force ${CARGOFLAGS:-}
+# the wrappers carry PRRTE (built against the vendored PMIx), so oshrun does not depend on whatever prterun is on PATH
+cargo install --path "$root/wrappers" --root "$prefix" --force --features bundled-prrte \
+    --target-dir "$tdir/wrappers" ${CARGOFLAGS:-}
+
+echo "== install the bundled PRRTE -> $prefix/prrte"
+# prrte-sys installs PRRTE into its build-script output directory; the newest one is this build's
+prrte_src="$(ls -dt "$tdir"/wrappers/release/build/prrte-sys-*/out 2>/dev/null | while read -r d; do [ -x "$d/bin/prterun" ] && { echo "$d"; break; }; done)"
+[ -n "$prrte_src" ] || { echo "tools/build-static.sh: the wrappers build did not install PRRTE under $tdir/wrappers" >&2; exit 1; }
+[ -x "$prrte_src/bin/prterun" ] || { echo "tools/build-static.sh: no prterun in $prrte_src/bin" >&2; exit 1; }
+rm -rf "$prefix/prrte"
+mkdir -p "$prefix/prrte"
+# prte and its tools are static (system libraries only), so bin/ and share/ are the whole runtime tree
+cp -a "$prrte_src/bin" "$prrte_src/share" "$prefix/prrte/"
+# the help text of PMIx (prterun embeds it): prterun --prefix <dir> makes PMIx look in <dir>/share/pmix
+pmix_share="$(ls -dt "$tdir"/wrappers/release/build/pmix-sys-*/out/share/pmix 2>/dev/null | while read -r d; do [ -f "$d/help-cli.txt" ] && { echo "$d"; break; }; done)"
+if [ -n "$pmix_share" ]; then cp -a "$pmix_share" "$prefix/prrte/share/"; else echo "tools/build-static.sh: warning: no PMIx help files found; PMIx messages will not be readable" >&2; fi
 
 case "$family" in
   ucx)

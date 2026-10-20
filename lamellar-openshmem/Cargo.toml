@@ -60,15 +60,12 @@ codegen-units = 1
 # Resolve lamellar's sibling crates from this monorepo (same crates the
 # lamellar-runtime "Variant B" patch block uses, paths relative to this crate).
 [patch.crates-io]
-ring = { git = "https://github.com/briansmith/ring", rev = "840167e18e4fa837eb48de46500454a616a15a6e" }
 pmi = { path = "../process_management/pmi" }
 pmi-sys = { path = "../process_management/pmi-sys" }
 pmi2-sys = { path = "../process_management/pmi2-sys" }
 pmi-mpich-src = { path = "../process_management/pmi-mpich-src" }
 pmix-sys = { path = "../process_management/pmix-sys" }
-prrte-sys = { path = "../process_management/prrte-sys" }
 openpmix-src = { path = "../process_management/openpmix-src" }
-prrte-src = { path = "../process_management/prrte-src" }
 rofisys = { path = "../communication_frameworks/rofi-sys" }
 lamellar-libfabric = { path = "../communication_frameworks/libfabric" }
 lamellar-libfabric-sys = { path = "../communication_frameworks/libfabric-sys" }
