@@ -9,8 +9,35 @@ use std::{env, fs};
 /// Lamellar-added `AM_MAINTAINER_MODE` guard -- see `libpmi/configure.ac`.
 const MPICH_PMI_VERSION: &str = "5.0.0";
 
+/// Resolve a vendored source tree. The environment variable `env_var` overrides the default location
+/// (the tree shipped next to this crate's manifest, whose absolute path is
+/// baked in at compile time). The result is checked for `configure` so a
+/// missing or wrong tree fails with an actionable message instead of a bare
+/// "No such file or directory".
+fn resolve_source_dir(env_var: &str, subdir: &str, version: &str) -> PathBuf {
+    println!("cargo:rerun-if-env-changed={}", env_var);
+    let (dir, origin) = match env::var_os(env_var) {
+        Some(v) if !v.is_empty() => (PathBuf::from(v), format!("{} environment variable", env_var)),
+        _ => (
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(subdir),
+            "default location baked in when pmi-mpich-src was compiled".to_string(),
+        ),
+    };
+    if !dir.join("configure").is_file() {
+        panic!(
+            "pmi-mpich-src v{version}: vendored source tree not found or incomplete at {} ({}; no `configure` script there).\n\
+             Likely causes:\n\
+             \x20 - pmi-mpich-src was resolved from crates.io or a stale/moved registry copy instead of the Lamellar repo checkout; add the [patch.crates-io] block from lamellar-runtime/Cargo.toml to your top-level Cargo.toml and run `cargo update`.\n\
+             \x20 - the source directory was moved or deleted after pmi-mpich-src was compiled; run `cargo clean -p pmi-mpich-src`.\n\
+             To use a tree elsewhere, set {} to its path.",
+            dir.display(), origin, env_var
+        );
+    }
+    dir
+}
+
 pub fn source_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("libpmi")
+    resolve_source_dir("LAMELLAR_PMI_MPICH_SRC_DIR", "libpmi", MPICH_PMI_VERSION)
 }
 
 pub fn version() -> &'static str {
