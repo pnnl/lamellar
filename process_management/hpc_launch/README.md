@@ -13,7 +13,22 @@ Before launching, it also patches the binary's `RPATH`/`RUNPATH` (via `readelf`/
 
 It also exposes standalone helper functions usable outside the macros:
 - `numa_domain_count()`, `package_count()`, `core_count()`, `pu_count()` — best-effort hardware topology detection via a `/sys` scan
-- `init_tracing_from_env()` — initializes a [`tracing-subscriber`](https://crates.io/crates/tracing-subscriber) global subscriber from the `LAMELLAR_LOG` environment variable
+- `init_tracing_from_env()` — initializes a [`tracing-subscriber`](https://crates.io/crates/tracing-subscriber) global subscriber from the `HPC_LAUNCH_LOG` environment variable (`init_tracing_from_env_var(name)` reads a variable of your choosing)
+
+# Environment variables
+
+Launch settings can also come from the environment, with the command-line flag taking precedence:
+
+| Variable | Flag | Meaning |
+|---|---|---|
+| `HPC_LAUNCH_NODES` | `--nodes` | number of nodes |
+| `HPC_LAUNCH_PES` | `--pes` | total number of processes (PEs) |
+| `HPC_LAUNCH_PES_PER_NODE` | `--pes-per-node` | processes per node |
+| `HPC_LAUNCH_THREADS` | `--threads-per-pe` | worker threads per process; also exported to the launched job |
+| `HPC_LAUNCH_LOG` | `--log` | tracing filter (`RUST_LOG` syntax) for the launched job |
+| `HPC_LAUNCH_MAIN_TIME` | `--time` | when set, the launched job reports its wall-clock application time |
+
+The prefix is a parameter of the shared code generator (`hpc_launch_codegen`): this crate uses `HPC_LAUNCH`, and `lamellar_main` uses `LAMELLAR` for the same variables.
 
 # Using standalone
 
@@ -47,11 +62,13 @@ cargo run --release -- <app args> -- <launcher args>
 
 See `--help` after the second `--` for the full set of recognized launch flags (`--pes`, `--pes-per-node`, `--threads-per-pe`, `--nodes` with `with-salloc`, `--output-dir`, `--gdb`, `--time`, etc.).
 
+With `prterun`, `--pes` without `--pes-per-node` (or `--nodes`) means the PEs fill the nodes at hand: all of them on this node, or spread evenly over the nodes of the current SLURM allocation (`SLURM_JOB_NUM_NODES`). The default thread count and the `--map-by node:PE=<threads>` binding are sized for that layout. Pass `--pes-per-node` (or `--nodes`) to say otherwise.
+
 # Features
 
 - `use-prterun` — launch via `prterun` (PRRTE). Mutually exclusive with `use-srun`. Pulls in and reexports `prrte_sys`.
 - `use-srun` — launch via `srun` (SLURM). Mutually exclusive with `use-prterun`.
-- `with-salloc` — enables `--nodes`/`LAMELLAR_NODES` to request a SLURM allocation via `salloc` and re-invoke the binary inside it, rather than just being parsed and left for the launcher to interpret.
+- `with-salloc` — enables `--nodes`/`HPC_LAUNCH_NODES` to request a SLURM allocation via `salloc` and re-invoke the binary inside it, rather than just being parsed and left for the launcher to interpret.
 
 ## License
 

@@ -19,12 +19,39 @@ const PMIX_VERSION: &str = "5.0.9";
 /// (PMIx directly, PRRTE transitively via pmix-sys's DEP_PMIX_HWLOC_ROOT).
 const HWLOC_VERSION: &str = "2.11.2";
 
+/// Resolve a vendored source tree. The environment variable `env_var` overrides the default location
+/// (the tree shipped next to this crate's manifest, whose absolute path is
+/// baked in at compile time). The result is checked for `configure` so a
+/// missing or wrong tree fails with an actionable message instead of a bare
+/// "No such file or directory".
+fn resolve_source_dir(env_var: &str, subdir: &str, version: &str) -> PathBuf {
+    println!("cargo:rerun-if-env-changed={}", env_var);
+    let (dir, origin) = match env::var_os(env_var) {
+        Some(v) if !v.is_empty() => (PathBuf::from(v), format!("{} environment variable", env_var)),
+        _ => (
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(subdir),
+            "default location baked in when openpmix-src was compiled".to_string(),
+        ),
+    };
+    if !dir.join("configure").is_file() {
+        panic!(
+            "openpmix-src v{version}: vendored source tree not found or incomplete at {} ({}; no `configure` script there).\n\
+             Likely causes:\n\
+             \x20 - openpmix-src was resolved from crates.io or a stale/moved registry copy instead of the Lamellar repo checkout; add the [patch.crates-io] block from lamellar-runtime/Cargo.toml to your top-level Cargo.toml and run `cargo update`.\n\
+             \x20 - the source directory was moved or deleted after openpmix-src was compiled; run `cargo clean -p openpmix-src`.\n\
+             To use a tree elsewhere, set {} to its path.",
+            dir.display(), origin, env_var
+        );
+    }
+    dir
+}
+
 pub fn source_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("openpmix")
+    resolve_source_dir("LAMELLAR_OPENPMIX_SRC_DIR", "openpmix", PMIX_VERSION)
 }
 
 pub fn hwloc_source_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("hwloc")
+    resolve_source_dir("LAMELLAR_HWLOC_SRC_DIR", "hwloc", HWLOC_VERSION)
 }
 
 pub fn version() -> &'static str {
@@ -396,11 +423,10 @@ mod tests {
 
         assert!(dest.join("configure").is_file());
         assert!(dest.join("src").join("mca").is_dir());
-        assert!(!dest.join("docs").join("_build").exists());
-        assert!(!dest.join("docs").join("images").exists());
-        assert!(dest.join("docs").join("Makefile.in").is_file());
+        // docs/ and test/ are trimmed from the vendored tree
+        assert!(!dest.join("docs").exists());
+        assert!(!dest.join("test").exists());
         assert!(dest.join("contrib").join("Makefile.in").is_file());
-        assert!(dest.join("test").join("Makefile.in").is_file());
         assert!(dest.join("bindings").join("python").join("Makefile.in").is_file());
 
         let _ = std::fs::remove_dir_all(&tmp);

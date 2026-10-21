@@ -1,0 +1,17 @@
+[package]
+name = "hpc_launch_codegen"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
+description = "Shared code generator behind #[hpc_launch::main] and #[lamellar::main]; not intended to be used directly."
+readme = "README.md"
+repository = "https://github.com/pnnl/lamellar"
+homepage = "https://github.com/pnnl/lamellar"
+license-file = "LICENSE"
+keywords = ["hpc", "runtime", "launcher", "distributed", "prterun"]
+categories = ["asynchronous", "concurrency", "network-programming", "science"]
+
+[dependencies]
+syn = { version = "2.0", features = ["full"] }
+quote = { version = "1.0" }
+proc-macro2 = { version = "1.0.101" }

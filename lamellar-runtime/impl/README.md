@@ -226,7 +226,7 @@ A Lamellar application's `main` function must be annotated with `#[lamellar::mai
 
 The generated `main` detects whether it's already running as a launched PE (e.g. under PRRTE/srun); if not, it re-executes itself under a launcher (`prterun` by default, or `srun` with the `use-srun` feature) using the arguments given after the launcher-args separator described below. This means a single `cargo run`/binary invocation transparently becomes a multi-PE job — you no longer need a separate `lamellar_run.sh` step.
 
-Before launching, `#[lamellar::main]` also patches the binary's `RPATH`/`RUNPATH` (via `readelf`/`patchelf`) with the build-output library directories found on `LD_LIBRARY_PATH`, so launched PEs can find dependencies like libfabric/UCX/rofi without you having to export `LD_LIBRARY_PATH` yourself. If this patching fails for some reason (e.g. `patchelf`/`readelf` unavailable), fall back to sourcing the generated `lamellar_env.sh` (built by `build.rs`) before running:
+Before launching, `#[lamellar::main]` also patches the binary's `RPATH`/`RUNPATH` (via `readelf`/`patchelf`) with the build-output library directories found on `LD_LIBRARY_PATH`, so launched PEs can find dependencies like libfabric/UCX/rofi without you having to export `LD_LIBRARY_PATH` yourself. If this patching fails for some reason (e.g. `patchelf`/`readelf` unavailable), fall back to sourcing the generated `lamellar_env.sh` before running. `build.rs` writes it to the `out/` directory of the `lamellar` build script (`target/<profile>/build/lamellar-*/out/`, nothing is written to your source tree); build with `LAMELLAR_ENV_SCRIPT_DIR=<dir>` set to also get a copy in `<dir>`:
 ```
 source lamellar_env.sh
 ```

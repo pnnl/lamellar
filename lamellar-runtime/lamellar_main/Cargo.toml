@@ -13,7 +13,7 @@ categories = ["asynchronous", "concurrency", "network-programming", "science"]
 
 [dependencies]
 lamellar_main_impl = { version = "0.1.0", path = "../lamellar_main_impl" }
-hpc_launch = { version = "0.1.0", path = "../hpc_launch", default-features = false }
+hpc_launch = { version = "0.1.0", default-features = false }
 
 [features]
 use-srun = ["lamellar_main_impl/use-srun", "hpc_launch/use-srun"]

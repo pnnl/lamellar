@@ -10,6 +10,9 @@ authors = [
     "Erdal Mutlu <erdal.mutlu@pnnl.gov>",
 ]
 edition = "2021"
+# Lets downstream build scripts read DEP_LAMELLAR_RPATH_DIRS (see README, "Shared
+# libraries and your own build.rs"). The native libs themselves are linked by the -sys crates.
+links = "lamellar"
 description = "Lamellar is an asynchronous tasking runtime for HPC systems developed in RUST."
 readme = "README.md"
 repository = "https://github.com/pnnl/lamellar"
@@ -84,7 +87,6 @@ thiserror = { version = "2.0.16", optional = true }
 
 # --- codegen / reflection / diagnostics ---
 backtrace = { version = "0.3", optional = true }
-crabtime = "1.1.4"
 inventory = "0.3.21"
 libc = { version = "0.2.175", optional = true }
 tracing = "0.1.41"
@@ -111,8 +113,6 @@ trybuild = "1.0.71"
 [workspace]
 members = [
     "impl",
-    "hpc_launch_impl",
-    "hpc_launch",
     "lamellar_main_impl",
     "lamellar_main",
 ]
@@ -278,6 +278,8 @@ path = "src/lib.rs"
 # pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # prrte-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# hpc_launch = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# hpc_launch_codegen = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # openpmix-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # rofisys = { git = "https://github.com/pnnl/rofi-sys", branch = "master" }
@@ -295,6 +297,8 @@ pmi2-sys = { path = "../process_management/pmi2-sys" }
 pmi-mpich-src = { path = "../process_management/pmi-mpich-src" }
 pmix-sys = { path = "../process_management/pmix-sys" }
 prrte-sys = { path = "../process_management/prrte-sys" }
+hpc_launch = { path = "../process_management/hpc_launch" }
+hpc_launch_codegen = { path = "../process_management/hpc_launch_codegen" }
 openpmix-src = { path = "../process_management/openpmix-src" }
 prrte-src = { path = "../process_management/prrte-src" }
 rofisys = { path = "../communication_frameworks/rofi-sys" }

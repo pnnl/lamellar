@@ -119,6 +119,32 @@ autotools are linked against a stale perl — fix with `brew reinstall autoconf 
 
 See each `-sys`/`-src` crate's README (`pmix-sys`, `prrte-sys`, `openpmix-src`, `prrte-src`, `lamellar-ucx-sys`, `lamellar-ucc-sys`, `rofi-sys`) for further detail on that crate's own vendoring sub-features.
 
+### Shared libraries and your own build.rs
+
+**In the default configuration you do not need this.** The vendored native libraries (PMIx, PRRTE, libevent, hwloc, libfabric, UCX, UCC) are built as static archives and linked into your binary, so there is nothing to locate at run time.
+
+You only need to act when your binary links **shared** native libraries, for example:
+- `enable-rofi-c-shared` / `enable-rofi-c-shared-pmix`, or the `shared` feature of `libfabric-sys` or `lamellar-ucx-sys`
+- system installs found through `OFI_DIR`, `UCX_DIR`, `UCC_DIR`, `ROFI_DIR`, `PMIX_LIB_DIR`, etc. whose `.so` files are not in a default linker path
+
+Cargo does not pass a dependency's `rustc-link-arg` (where the rpaths are set) on to your crate's binary, so such a binary will fail to start with `error while loading shared libraries` unless the library directories are found some other way. You have two options:
+
+1. Set `LD_LIBRARY_PATH` (or source the `lamellar_env.sh` that lamellar's build script writes to its `OUT_DIR`; set `LAMELLAR_ENV_SCRIPT_DIR=<dir>` at build time to also get a copy in `<dir>`, or read its path from the `DEP_LAMELLAR_ENV_SCRIPT` build metadata) before running.
+2. Bake the rpaths into your binary. `lamellar` exports the directories it adds to its own rpath as build metadata, `DEP_LAMELLAR_RPATH_DIRS` (a `:`-separated list), which your own `build.rs` can re-emit:
+
+```rust
+// build.rs  (add `build = "build.rs"` to [package] if it is not picked up automatically)
+fn main() {
+    println!("cargo:rerun-if-env-changed=DEP_LAMELLAR_RPATH_DIRS");
+    let dirs = std::env::var("DEP_LAMELLAR_RPATH_DIRS").unwrap_or_default();
+    for dir in dirs.split(':').filter(|d| !d.is_empty()) {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+    }
+}
+```
+
+`DEP_LAMELLAR_*` is only visible to crates that depend on `lamellar` directly. The rpaths are absolute paths into your `target/` directory, so a binary built this way is not relocatable; copy the libraries and set your own rpath (for example `$ORIGIN/lib`) if you need to deploy it elsewhere.
+
 # Using Lamellar 
 Lamellar is capable of running on single node workstations as well as distributed HPC systems.
 For a workstation, simply copy the following to the dependency section of you Cargo.toml file:
@@ -176,7 +202,7 @@ A Lamellar application's `main` function must be annotated with `#[lamellar::mai
 
 The generated `main` detects whether it's already running as a launched PE (e.g. under PRRTE/srun); if not, it re-executes itself under a launcher (`prterun` by default, or `srun` with the `use-srun` feature) using the arguments given after the launcher-args separator described below. This means a single `cargo run`/binary invocation transparently becomes a multi-PE job — you no long need to invoke launcher commands manually
 
-Before launching, `#[lamellar::main]` also patches the binary's `RPATH`/`RUNPATH` (via `readelf`/`patchelf`) with the build-output library directories found on `LD_LIBRARY_PATH`, so launched PEs can find dependencies like libfabric/UCX/rofi without you having to export `LD_LIBRARY_PATH` yourself. If this patching fails for some reason (e.g. `patchelf`/`readelf` unavailable), fall back to sourcing the generated `lamellar_env.sh` (built by `build.rs`) before running:
+Before launching, `#[lamellar::main]` also patches the binary's `RPATH`/`RUNPATH` (via `readelf`/`patchelf`) with the build-output library directories found on `LD_LIBRARY_PATH`, so launched PEs can find dependencies like libfabric/UCX/rofi without you having to export `LD_LIBRARY_PATH` yourself. If this patching fails for some reason (e.g. `patchelf`/`readelf` unavailable), fall back to sourcing the generated `lamellar_env.sh` before running. `build.rs` writes it to the `out/` directory of the `lamellar` build script (`target/<profile>/build/lamellar-*/out/`, nothing is written to your source tree); build with `LAMELLAR_ENV_SCRIPT_DIR=<dir>` set to also get a copy in `<dir>`:
 ```
 source lamellar_env.sh
 ```
@@ -214,6 +240,8 @@ Instead of hand-writing launcher-native flags (`--map-by node:PE=<N> --np <N>` f
 - `--threads-per-pe <N>` - Threads per pe
 
 Give any or all (`LAMELLAR_PES`/`LAMELLAR_PES_PER_NODE,LAMELLAR_THREADS` env vars work as fallbacks too). If neither `--pes` or `--pes-per-node` is given (and `--nodes` wasn't either): with the `local` backend (the default when no other backend feature is enabled, or set explicitly via `LAMELLAR_BACKEND=local` or `--lamellae shmem`), defaults to a single PE using all available threads; every other backend (e.g. `shmem`) defaults to one PE per NUMA domain on the host. Cores bound per PE come from `--threads-per-pe <N>` (or `LAMELLAR_THREADS` if the flag isn't given); if neither is set, it defaults to `available cores / --pes-per-node` (or just available cores, if `--pes-per-node` wasn't given). For prterun, this is injected as `--map-by node:PE=<N>` — PRRTE's `PE=<N>` already binds each rank to N cpus, so on a host with more than one NUMA domain (detected via a `/sys` scan) NUMA-awareness comes from sizing `<N>` correctly rather than an explicit `--bind-to` (PRRTE rejects combining `PE=` with any `--bind-to` other than `core`/`hwt`). If `--pes-per-node` is smaller than the NUMA domain count, a single PE's cores would have to span more than one domain/package, which PRRTE always refuses — in that case `PE=` is dropped entirely and `--map-by node` is used instead, letting the rank float across the whole node. For srun, `--cpu-bind=ldoms` is added when multiple NUMA domains are detected. If you already pass a native flag (`--np`, `--map-by`, `--ntasks[-per-node]`, `--cpus-per-task`, `--cpu-bind`) yourself, it's left alone and nothing is injected on top of it.
+
+With `prterun`, giving `--pes` without `--pes-per-node` (or `--nodes`) means the PEs fill the nodes at hand: all of them on this node, or spread evenly over the nodes of the current SLURM allocation (`SLURM_JOB_NUM_NODES`). The default thread count and the `--map-by node:PE=<threads>` binding are sized for that layout, so `--pes 4` on one node gives each PE a quarter of the cores instead of four PEs competing for one. Pass `--pes-per-node` (or `--nodes`) to say otherwise.
 
 ```
 cargo run --profile release-dev --example load_store_test -- AtomicArray Block f32 128 -- --pes 8 --pes-per-node 4 --threads-per-pe 4 --lamellae shmem

@@ -15,9 +15,9 @@ categories = ["asynchronous", "concurrency", "network-programming", "science"]
 proc-macro = true
 
 [dependencies]
+hpc_launch_codegen = { version = "0.1.0", path = "../hpc_launch_codegen" }
 syn = { version = "2.0", features = ["full"] }
 quote = { version = "1.0" }
-proc-macro2 = { version = "1.0.101" }
 
 [features]
 use-srun = []
