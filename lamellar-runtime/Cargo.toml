@@ -87,7 +87,6 @@ thiserror = { version = "2.0.16", optional = true }
 
 # --- codegen / reflection / diagnostics ---
 backtrace = { version = "0.3", optional = true }
-crabtime = "1.1.4"
 inventory = "0.3.21"
 libc = { version = "0.2.175", optional = true }
 tracing = "0.1.41"

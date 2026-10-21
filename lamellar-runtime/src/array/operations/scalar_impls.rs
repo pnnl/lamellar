@@ -45,254 +45,213 @@ impl ScalarValBuf {
     }
 }
 
-// crabtime expands these by running a scratch `cargo run` at macro-expansion time,
-// which needs network/registry access - unavailable in docs.rs's sandboxed build.
-// Both generated methods are pub(crate) and never invoked during doc generation, so
-// under `docsrs` we skip the crabtime expansion entirely and stub them out instead.
-macro_rules! bare_type_stub {
-    ($bytes_type:ty, false) => {
-        #[cfg(docsrs)]
-        async fn bare_type(&self, bytes: $bytes_type, array: LamellarByteArray) {
-            let _ = (bytes, array);
-            unimplemented!("stubbed out for docs.rs build")
+// Op groups used by `impl_ops_scalar_type_match!` / `impl_ops_option_scalar_type_match!`.
+//
+// `macro_rules!` cannot expand to individual match arms, so each group expands to a
+// complete `match $op { <group arms>, $op => $next }` expression whose fallback arm
+// (`$next`) is the next group in the chain. `$op` is re-bound (shadowed) by the
+// fallback arm, so a type class's op set is simply a chain of groups ending in the
+// `invalid op cmd` panic. The first token selects the group, the second whether the
+// generated fn returns the fetched values (`true`) or nothing (`false`).
+// The bracketed list is `[op array idx_vals self]`: the identifiers are passed in so
+// that they share hygiene with the fn that declares them.
+macro_rules! scalar_op_group {
+    (arith false, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::Add => {$array.mut_local_data().await.local_add($iv);},
+            ArrayOpCmd::Sub => {$array.mut_local_data().await.local_sub($iv);},
+            ArrayOpCmd::Mul => {$array.mut_local_data().await.local_mul($iv);},
+            ArrayOpCmd::Div => {$array.mut_local_data().await.local_div($iv);},
+            ArrayOpCmd::Rem => {$array.mut_local_data().await.local_rem($iv);},
+            $op => $next,
         }
     };
-    ($bytes_type:ty, true) => {
-        #[cfg(docsrs)]
-        async fn bare_type(
-            &self,
-            bytes: $bytes_type,
-            array: LamellarByteArray,
-        ) -> OneSidedMemoryRegion<u8> {
-            let _ = (bytes, array);
-            unimplemented!("stubbed out for docs.rs build")
+    (arith true, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::FetchAdd => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_add($iv,true).unwrap()).await},
+            ArrayOpCmd::FetchSub => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_sub($iv,true).unwrap()).await},
+            ArrayOpCmd::FetchMul => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_mul($iv,true).unwrap()).await},
+            ArrayOpCmd::FetchDiv => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_div($iv,true).unwrap()).await},
+            ArrayOpCmd::FetchRem => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_rem($iv,true).unwrap()).await},
+            $op => $next,
+        }
+    };
+    (bitwise false, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::And => {$array.mut_local_data().await.local_bit_and($iv);},
+            ArrayOpCmd::Or => {$array.mut_local_data().await.local_bit_or($iv);},
+            ArrayOpCmd::Xor => {$array.mut_local_data().await.local_bit_xor($iv);},
+            $op => $next,
+        }
+    };
+    (bitwise true, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::FetchAnd => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_bit_and($iv,true).unwrap()).await},
+            ArrayOpCmd::FetchOr => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_bit_or($iv,true).unwrap()).await},
+            ArrayOpCmd::FetchXor => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_bit_xor($iv,true).unwrap()).await},
+            $op => $next,
+        }
+    };
+    (shift false, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::Shl => {$array.mut_local_data().await.local_shl($iv);},
+            ArrayOpCmd::Shr => {$array.mut_local_data().await.local_shr($iv);},
+            $op => $next,
+        }
+    };
+    (shift true, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::FetchShl => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_shl($iv,true).unwrap()).await},
+            ArrayOpCmd::FetchShr => {$this.vec_to_bytes($array.mut_local_data().await.local_fetch_shr($iv,true).unwrap()).await},
+            $op => $next,
+        }
+    };
+    // loads only exist for the fetching variants
+    (read false, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => { $next };
+    (read true, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::Load => {$this.vec_to_bytes($array.local_data().await.local_load($iv)).await},
+            ArrayOpCmd::Get => {$this.vec_to_bytes($array.local_data().await.local_load($iv)).await},
+            $op => $next,
+        }
+    };
+    (write false, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::Store => {$array.mut_local_data().await.local_store($iv);},
+            ArrayOpCmd::Put => {$array.mut_local_data().await.local_store($iv);},
+            $op => $next,
+        }
+    };
+    (write true, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::Swap => {$this.vec_to_bytes($array.mut_local_data().await.local_swap($iv)).await},
+            $op => $next,
+        }
+    };
+    (cmpxchg false, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => { $next };
+    (cmpxchg true, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::CompareExchange(old) => {$this.vec_to_bytes($array.mut_local_data().await.local_compare_exchange($iv, old)).await},
+            $op => $next,
+        }
+    };
+    (cmpxchg_eps false, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => { $next };
+    (cmpxchg_eps true, [$op:ident $array:ident $iv:ident $this:ident], $next:expr) => {
+        match $op {
+            ArrayOpCmd::CompareExchangeEps(old, eps) => {$this.vec_to_bytes($array.mut_local_data().await.local_compare_exchange_epsilon($iv, old, eps)).await},
+            $op => $next,
         }
     };
 }
-macro_rules! option_type_stub {
-    ($bytes_type:ty, false) => {
-        #[cfg(docsrs)]
-        async fn option_type(&self, bytes: $bytes_type, array: LamellarByteArray) {
-            let _ = (bytes, array);
-            unimplemented!("stubbed out for docs.rs build")
-        }
+
+/// The op set for each class of scalar type, as a chain of `scalar_op_group!`s.
+macro_rules! scalar_op_match {
+    (ints $r:tt $ctx:tt) => {
+        scalar_op_group!(arith $r, $ctx,
+        scalar_op_group!(bitwise $r, $ctx,
+        scalar_op_group!(shift $r, $ctx,
+        scalar_op_group!(read $r, $ctx,
+        scalar_op_group!(write $r, $ctx,
+        scalar_op_group!(cmpxchg $r, $ctx,
+        scalar_op_group!(cmpxchg_eps $r, $ctx,
+        panic!("invalid op cmd"))))))))
     };
-    ($bytes_type:ty, true) => {
-        #[cfg(docsrs)]
-        async fn option_type(
-            &self,
-            bytes: $bytes_type,
-            array: LamellarByteArray,
-        ) -> OneSidedMemoryRegion<u8> {
-            let _ = (bytes, array);
-            unimplemented!("stubbed out for docs.rs build")
-        }
+    (floats $r:tt $ctx:tt) => {
+        scalar_op_group!(arith $r, $ctx,
+        scalar_op_group!(read $r, $ctx,
+        scalar_op_group!(write $r, $ctx,
+        scalar_op_group!(cmpxchg_eps $r, $ctx,
+        panic!("invalid op cmd")))))
+    };
+    (bools $r:tt $ctx:tt) => {
+        scalar_op_group!(bitwise $r, $ctx,
+        scalar_op_group!(read $r, $ctx,
+        scalar_op_group!(write $r, $ctx,
+        scalar_op_group!(cmpxchg $r, $ctx,
+        panic!("invalid op cmd")))))
+    };
+    // `Option<T>` elements only support stores/swaps and (for non-floats) compare-exchange
+    (option_ints $r:tt $ctx:tt) => {
+        scalar_op_group!(write $r, $ctx,
+        scalar_op_group!(cmpxchg $r, $ctx,
+        panic!("invalid op cmd")))
+    };
+    (option_floats $r:tt $ctx:tt) => {
+        scalar_op_group!(write $r, $ctx,
+        panic!("invalid op cmd"))
     };
 }
 
-#[cfg(not(docsrs))]
-#[crabtime::function]
-fn impl_ops_scalar_type_match(crabtime::pattern!($bytes:expr, $bytes_type:ty,$result:expr): _) {
-    let mut match_arms = Vec::new();
-    let bytes = stringify!($bytes);
-    let bytes_type = stringify!($bytes_type);
-    let result = stringify!($result);
+// `false` means the generated fn returns nothing, `true` that it returns a
+// `OneSidedMemoryRegion<u8>`.
+macro_rules! scalar_op_ret {
+    (false) => { () };
+    (true) => { OneSidedMemoryRegion<u8> };
+}
 
-    let (
-        aritmetic_ops,
-        bitwise_ops,
-        shift_ops,
-        read_ops,
-        write_ops,
-        comp_ex_op,
-        comp_ex_eps_op,
-        return_type,
-    ) = if result == "false" {
-        //false means not returning anything, true means returning a OneSidedMemoryRegion<u8>
-        let aritmetic_ops = crabtime::quote! {
-            ArrayOpCmd::Add => {array.mut_local_data().await.local_add(idx_vals);},
-            ArrayOpCmd::Sub => {array.mut_local_data().await.local_sub(idx_vals);},
-            ArrayOpCmd::Mul => {array.mut_local_data().await.local_mul(idx_vals);},
-            ArrayOpCmd::Div => {array.mut_local_data().await.local_div(idx_vals);},
-            ArrayOpCmd::Rem => {array.mut_local_data().await.local_rem(idx_vals);},
-        };
-        let bitwise_ops = crabtime::quote! {
-            ArrayOpCmd::And => {array.mut_local_data().await.local_bit_and(idx_vals);},
-            ArrayOpCmd::Or => {array.mut_local_data().await.local_bit_or(idx_vals);},
-            ArrayOpCmd::Xor => {array.mut_local_data().await.local_bit_xor(idx_vals);},
-        };
-        let shift_ops = crabtime::quote! {
-            ArrayOpCmd::Shl => {array.mut_local_data().await.local_shl(idx_vals);},
-            ArrayOpCmd::Shr => {array.mut_local_data().await.local_shr(idx_vals);},
-        };
-        let read_ops = crabtime::quote! {};
-        let write_ops = crabtime::quote! {
-            ArrayOpCmd::Store => {array.mut_local_data().await.local_store(idx_vals);},
-            ArrayOpCmd::Put => {array.mut_local_data().await.local_store(idx_vals);},
-        };
-        let comp_ex_op = crabtime::quote! {};
-        let comp_ex_eps_op = crabtime::quote! {};
-        let return_type = crabtime::quote! {};
-        (
-            aritmetic_ops,
-            bitwise_ops,
-            shift_ops,
-            read_ops,
-            write_ops,
-            comp_ex_op,
-            comp_ex_eps_op,
-            return_type,
-        )
-    } else {
-        let aritmetic_ops = crabtime::quote! {
-            ArrayOpCmd::FetchAdd => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_add(idx_vals,true).unwrap()).await},
-            ArrayOpCmd::FetchSub => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_sub(idx_vals,true).unwrap()).await},
-            ArrayOpCmd::FetchMul => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_mul(idx_vals,true).unwrap()).await},
-            ArrayOpCmd::FetchDiv => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_div(idx_vals,true).unwrap()).await},
-            ArrayOpCmd::FetchRem => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_rem(idx_vals,true).unwrap()).await},
-        };
-        let bitwise_ops = crabtime::quote! {
-            ArrayOpCmd::FetchAnd => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_bit_and(idx_vals,true).unwrap()).await},
-            ArrayOpCmd::FetchOr => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_bit_or(idx_vals,true).unwrap()).await},
-            ArrayOpCmd::FetchXor => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_bit_xor(idx_vals,true).unwrap()).await},
-        };
-        let shift_ops = crabtime::quote! {
-            ArrayOpCmd::FetchShl => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_shl(idx_vals,true).unwrap()).await},
-            ArrayOpCmd::FetchShr => {self.vec_to_bytes(array.mut_local_data().await.local_fetch_shr(idx_vals,true).unwrap()).await},
-        };
-        let read_ops = crabtime::quote! {
-            ArrayOpCmd::Load => {self.vec_to_bytes(array.local_data().await.local_load(idx_vals)).await},
-            ArrayOpCmd::Get => {self.vec_to_bytes(array.local_data().await.local_load(idx_vals)).await},
-        };
-        let write_ops = crabtime::quote! {
-            ArrayOpCmd::Swap => {self.vec_to_bytes(array.mut_local_data().await.local_swap(idx_vals)).await},
-        };
-        let comp_ex_op = crabtime::quote! {ArrayOpCmd::CompareExchange(old)         => {self.vec_to_bytes(array.mut_local_data().await.local_compare_exchange(idx_vals, old)).await}};
-        let comp_ex_eps_op = crabtime::quote! {ArrayOpCmd::CompareExchangeEps(old, eps) => {self.vec_to_bytes(array.mut_local_data().await.local_compare_exchange_epsilon(idx_vals , old, eps)).await}};
-        let return_type = crabtime::quote! { -> OneSidedMemoryRegion<u8>};
-        (
-            aritmetic_ops,
-            bitwise_ops,
-            shift_ops,
-            read_ops,
-            write_ops,
-            comp_ex_op,
-            comp_ex_eps_op,
-            return_type,
-        )
+/// Generates `async fn bare_type(&self, bytes, array)`, dispatching on
+/// `self.scalar_type`. `$bytes` is the name of the bytes parameter and `$bytes_expr`
+/// the expression passed to `self.idx_vals` (it must refer to that parameter).
+macro_rules! impl_ops_scalar_type_match {
+    ($bytes:ident : $bytes_type:ty, $bytes_expr:expr, $result:tt) => {
+        impl_ops_scalar_type_match! {@gen $bytes, $bytes_type, $bytes_expr, $result,
+            ints: [u8, u16, u32, u64, usize, u128, i8, i16, i32, i64, isize, i128],
+            floats: [f32, f64],
+            bools: [bool]}
     };
-
-    for ty in [
-        "u8", "u16", "u32", "u64", "usize", "u128", "i8", "i16", "i32", "i64", "isize", "i128",
-        "bool", "f32", "f64",
-    ]
-    .iter()
-    {
-        let mut op_arms = crabtime::quote! {};
-        if *ty == "bool" {
-            op_arms = crabtime::quote! {
-                {{bitwise_ops}}
-                {{read_ops}}
-                {{write_ops}}
-                {{comp_ex_op}}
-            };
-        } else if *ty == "f32" || *ty == "f64" {
-            op_arms = crabtime::quote! {
-                {{aritmetic_ops}}
-                {{read_ops}}
-                {{write_ops}}
-                {{comp_ex_eps_op}}
-            };
-        } else {
-            op_arms = crabtime::quote! {
-                {{aritmetic_ops}}
-                {{bitwise_ops}}
-                {{shift_ops}}
-                {{read_ops}}
-                {{write_ops}}
-                {{comp_ex_op}}
-                {{comp_ex_eps_op}}
-            };
-        }
-        match_arms.push(crabtime::quote! {
-            ScalarType::{{ty}} => {
-                let idx_vals = self.idx_vals::<{{ty}}>({{bytes}});
-                let op: ArrayOpCmd<{{ty}}> = self.op.clone().into();
-                match op {
-                    {{op_arms}}
-                    _ => panic!("invalid op cmd"),
-                }
-            }
-        });
-    }
-
-    let match_arms = match_arms.join("\n");
-    crabtime::output! {
-        async fn bare_type(&self, mut bytes: {{bytes_type}}, mut array: LamellarByteArray) {{return_type}} {
+    (@gen $bytes:ident, $bytes_type:ty, $bytes_expr:expr, $result:tt,
+     ints: [$($int:ident),*], floats: [$($float:ident),*], bools: [$($bool:ident),*]) => {
+        #[allow(unused_variables, unused_mut, unreachable_patterns)] // fallback arms / `_` arm may be dead depending on the type class
+        async fn bare_type(&self, mut $bytes: $bytes_type, mut array: LamellarByteArray) -> scalar_op_ret!($result) {
             match self.scalar_type {
-                {{match_arms}}
-                _ => panic!("invalid type for bare array")
+                $( ScalarType::$int => {
+                    let idx_vals = self.idx_vals::<$int>($bytes_expr);
+                    let op: ArrayOpCmd<$int> = self.op.clone().into();
+                    scalar_op_match!(ints $result [op array idx_vals self])
+                } )*
+                $( ScalarType::$float => {
+                    let idx_vals = self.idx_vals::<$float>($bytes_expr);
+                    let op: ArrayOpCmd<$float> = self.op.clone().into();
+                    scalar_op_match!(floats $result [op array idx_vals self])
+                } )*
+                $( ScalarType::$bool => {
+                    let idx_vals = self.idx_vals::<$bool>($bytes_expr);
+                    let op: ArrayOpCmd<$bool> = self.op.clone().into();
+                    scalar_op_match!(bools $result [op array idx_vals self])
+                } )*
+                _ => panic!("invalid type for bare array"),
             }
         }
-    }
+    };
 }
 
-#[cfg(not(docsrs))]
-#[crabtime::function]
-fn impl_ops_option_scalar_type_match(
-    crabtime::pattern!($bytes:expr, $bytes_type:ty, $result:expr): _,
-) {
-    let mut match_arms = Vec::new();
-    let bytes = stringify!($bytes);
-    let bytes_type = stringify!($bytes_type);
-    let result = stringify!($result);
-    let (write_ops, comp_ex_ops, return_type) = if result == "false" {
-        let write_ops = crabtime::quote! {
-            ArrayOpCmd::Store => {array.mut_local_data().await.local_store(idx_vals);},
-            ArrayOpCmd::Put => {array.mut_local_data().await.local_store(idx_vals);},
-        };
-        let comp_ex_ops = crabtime::quote! {};
-        let return_type = crabtime::quote! {};
-        (write_ops, comp_ex_ops, return_type)
-    } else {
-        let write_ops = crabtime::quote! {
-            ArrayOpCmd::Swap => {self.vec_to_bytes(array.mut_local_data().await.local_swap(idx_vals)).await},
-        };
-        let comp_ex_ops = crabtime::quote! {ArrayOpCmd::CompareExchange(old) => {self.vec_to_bytes(array.mut_local_data().await.local_compare_exchange(idx_vals, old)).await}};
-        let return_type = crabtime::quote! { -> OneSidedMemoryRegion<u8>};
-        (write_ops, comp_ex_ops, return_type)
+/// Same as `impl_ops_scalar_type_match!` but for arrays of `Option<T>`; generates
+/// `async fn option_type(&self, bytes, array)`.
+macro_rules! impl_ops_option_scalar_type_match {
+    ($bytes:ident : $bytes_type:ty, $bytes_expr:expr, $result:tt) => {
+        impl_ops_option_scalar_type_match! {@gen $bytes, $bytes_type, $bytes_expr, $result,
+            ints: [u8, u16, u32, u64, usize, u128, i8, i16, i32, i64, isize, i128, bool],
+            floats: [f32, f64]}
     };
-    for ty in [
-        "u8", "u16", "u32", "u64", "usize", "u128", "i8", "i16", "i32", "i64", "isize", "i128",
-        "f32", "f64", "bool",
-    ]
-    .iter()
-    {
-        let mut comp_ex_arm = crabtime::quote! {};
-        if *ty != "f32" && *ty != "f64" {
-            comp_ex_arm = comp_ex_ops.clone();
-        }
-        match_arms.push(crabtime::quote! {
-            ScalarType::{{ty}} => {
-                let idx_vals = self.idx_vals::<Option<{{ty}}>>({{bytes}});
-                let op: ArrayOpCmd<Option<{{ty}}>> = self.op.clone().into();
-                match op {
-                    {{write_ops}}
-                    {{comp_ex_arm}}
-                    _ => panic!("invalid op cmd"),
-                }
-            }
-        });
-    }
-    let match_arms = match_arms.join("\n");
-    crabtime::output! {
-        async fn option_type(&self, mut bytes: {{bytes_type}}, mut array: LamellarByteArray) {{return_type}} {
+    (@gen $bytes:ident, $bytes_type:ty, $bytes_expr:expr, $result:tt,
+     ints: [$($int:ident),*], floats: [$($float:ident),*]) => {
+        #[allow(unused_variables, unused_mut, unreachable_patterns)]
+        async fn option_type(&self, mut $bytes: $bytes_type, mut array: LamellarByteArray) -> scalar_op_ret!($result) {
             match self.scalar_type {
-                {{match_arms}}
-                _ => panic!("invalid type for option array")
+                $( ScalarType::$int => {
+                    let idx_vals = self.idx_vals::<Option<$int>>($bytes_expr);
+                    let op: ArrayOpCmd<Option<$int>> = self.op.clone().into();
+                    scalar_op_match!(option_ints $result [op array idx_vals self])
+                } )*
+                $( ScalarType::$float => {
+                    let idx_vals = self.idx_vals::<Option<$float>>($bytes_expr);
+                    let op: ArrayOpCmd<Option<$float>> = self.op.clone().into();
+                    scalar_op_match!(option_floats $result [op array idx_vals self])
+                } )*
+                _ => panic!("invalid type for option array"),
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_vec_to_bytes {
@@ -443,12 +402,8 @@ impl ScalarSingleIdxMultiValAm {
             .map(|chunk| unsafe { std::ptr::read_unaligned(chunk.as_ptr() as *const T) });
         std::iter::repeat(self.index).zip(vals)
     }
-    #[cfg(not(docsrs))]
-    impl_ops_option_scalar_type_match!(&bytes, Vec<u8>, false);
-    #[cfg(not(docsrs))]
-    impl_ops_scalar_type_match!(&bytes, Vec<u8>, false);
-    option_type_stub!(Vec<u8>, false);
-    bare_type_stub!(Vec<u8>, false);
+    impl_ops_option_scalar_type_match!(bytes: Vec<u8>, &bytes, false);
+    impl_ops_scalar_type_match!(bytes: Vec<u8>, &bytes, false);
 }
 
 #[lamellar_impl::rt_am]
@@ -486,12 +441,8 @@ impl ScalarSingleIdxMultiValAmReturn {
         std::iter::repeat(self.index).zip(vals)
     }
     impl_vec_to_bytes!();
-    #[cfg(not(docsrs))]
-    impl_ops_option_scalar_type_match!(&bytes, Vec<u8>, true);
-    #[cfg(not(docsrs))]
-    impl_ops_scalar_type_match!(&bytes, Vec<u8>, true);
-    option_type_stub!(Vec<u8>, true);
-    bare_type_stub!(Vec<u8>, true);
+    impl_ops_option_scalar_type_match!(bytes: Vec<u8>, &bytes, true);
+    impl_ops_scalar_type_match!(bytes: Vec<u8>, &bytes, true);
 }
 
 #[lamellar_impl::rt_am]
@@ -527,12 +478,8 @@ impl ScalarMultiIdxSingleValAm {
         let val = unsafe { std::ptr::read_unaligned(self.val.as_ptr() as *const T) };
         indices.zip(std::iter::repeat(val))
     }
-    #[cfg(not(docsrs))]
-    impl_ops_option_scalar_type_match!(bytes, impl Iterator<Item = usize>, false);
-    #[cfg(not(docsrs))]
-    impl_ops_scalar_type_match!(bytes, impl Iterator<Item = usize>, false);
-    option_type_stub!(impl Iterator<Item = usize>, false);
-    bare_type_stub!(impl Iterator<Item = usize>, false);
+    impl_ops_option_scalar_type_match!(bytes: impl Iterator<Item = usize>, bytes, false);
+    impl_ops_scalar_type_match!(bytes: impl Iterator<Item = usize>, bytes, false);
 }
 
 #[lamellar_impl::rt_am]
@@ -591,12 +538,8 @@ impl ScalarMultiIdxSingleValAmReturn {
         indices.zip(std::iter::repeat(val))
     }
     impl_vec_to_bytes!();
-    #[cfg(not(docsrs))]
-    impl_ops_option_scalar_type_match!(bytes, impl Iterator<Item = usize>, true);
-    #[cfg(not(docsrs))]
-    impl_ops_scalar_type_match!(bytes, impl Iterator<Item = usize>, true);
-    option_type_stub!(impl Iterator<Item = usize>, true);
-    bare_type_stub!(impl Iterator<Item = usize>, true);
+    impl_ops_option_scalar_type_match!(bytes: impl Iterator<Item = usize>, bytes, true);
+    impl_ops_scalar_type_match!(bytes: impl Iterator<Item = usize>, bytes, true);
 }
 
 #[lamellar_impl::rt_am]
@@ -653,12 +596,8 @@ impl ScalarMultiIdxMultiValAm {
         PackedIdxVal::slice_as_iter::<T>(self.idx_size, bytes)
     }
 
-    #[cfg(not(docsrs))]
-    impl_ops_option_scalar_type_match!(&bytes, Vec<u8>, false);
-    #[cfg(not(docsrs))]
-    impl_ops_scalar_type_match!(&bytes, Vec<u8>, false);
-    option_type_stub!(Vec<u8>, false);
-    bare_type_stub!(Vec<u8>, false);
+    impl_ops_option_scalar_type_match!(bytes: Vec<u8>, &bytes, false);
+    impl_ops_scalar_type_match!(bytes: Vec<u8>, &bytes, false);
 }
 
 #[lamellar_impl::rt_am]
@@ -694,12 +633,8 @@ impl ScalarMultiIdxMultiValAmReturn {
     }
 
     impl_vec_to_bytes!();
-    #[cfg(not(docsrs))]
-    impl_ops_option_scalar_type_match!(&bytes, Vec<u8>, true);
-    #[cfg(not(docsrs))]
-    impl_ops_scalar_type_match!(&bytes, Vec<u8>, true);
-    option_type_stub!(Vec<u8>, true);
-    bare_type_stub!(Vec<u8>, true);
+    impl_ops_option_scalar_type_match!(bytes: Vec<u8>, &bytes, true);
+    impl_ops_scalar_type_match!(bytes: Vec<u8>, &bytes, true);
 }
 
 #[lamellar_impl::rt_am]
