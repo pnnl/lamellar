@@ -269,6 +269,31 @@ pub fn launch_block(cfg: &LaunchConfig, ret: Option<TokenStream>) -> TokenStream
         },
     };
 
+    // `--pes N` on its own says nothing about how the PEs spread over nodes. Left
+    // unset, the thread count below assumes one PE per node (every PE gets all
+    // the cores' worth of threads) while prterun's default binding gives each
+    // rank a single core, so the PEs oversubscribe that core and can hang. Assume
+    // the PEs fill the nodes at hand instead -- the allocation's node count when
+    // inside SLURM, else just this node -- so threads and `--map-by node:PE=`
+    // are sized for that layout. Not done for srun: its `--ntasks-per-node`
+    // would launch more than N tasks when N isn't a multiple of the node count.
+    let pes_per_node_default_block = match cfg.launcher {
+        Launcher::Prterun => quote! {
+            let pes_per_node = match (pes, pes_per_node, nodes) {
+                (Some(p), None, None) => {
+                    let alloc_nodes: u32 = ["SLURM_JOB_NUM_NODES", "SLURM_NNODES"]
+                        .iter()
+                        .find_map(|v| std::env::var(v).ok().and_then(|s| s.parse().ok()))
+                        .unwrap_or(1)
+                        .max(1);
+                    Some((p + alloc_nodes - 1) / alloc_nodes)
+                }
+                _ => pes_per_node,
+            };
+        },
+        Launcher::Srun => quote! {},
+    };
+
     let salloc_block = if cfg.with_salloc {
         quote! {
             // If we're not already inside a SLURM allocation and a node count was
@@ -453,6 +478,8 @@ pub fn launch_block(cfg: &LaunchConfig, ret: Option<TokenStream>) -> TokenStream
             };
 
             #salloc_block
+
+            #pes_per_node_default_block
 
             // Best-effort NUMA domain count on the current host, used to decide
             // whether to bind PEs by NUMA domain instead of plain node. Absence of
@@ -943,6 +970,16 @@ mod tests {
             let ts = expand_test(&cfg, &t);
             syn::parse2::<syn::File>(ts).expect("expanded test should be items");
         }
+    }
+
+    #[test]
+    fn pes_only_defaults_pes_per_node_for_prterun_only() {
+        let prterun = LaunchConfig::new("hpc_launch", "HPC_LAUNCH", quote! {::hpc_launch}, Launcher::Prterun, false);
+        let srun = LaunchConfig::new("hpc_launch", "HPC_LAUNCH", quote! {::hpc_launch}, Launcher::Srun, false);
+        let p = launch_block(&prterun, None).to_string();
+        assert!(p.contains("SLURM_JOB_NUM_NODES"));
+        assert!(p.contains("(Some (p) , None , None)"));
+        assert!(!launch_block(&srun, None).to_string().contains("SLURM_JOB_NUM_NODES"));
     }
 
     #[test]

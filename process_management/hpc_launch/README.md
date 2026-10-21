@@ -62,6 +62,8 @@ cargo run --release -- <app args> -- <launcher args>
 
 See `--help` after the second `--` for the full set of recognized launch flags (`--pes`, `--pes-per-node`, `--threads-per-pe`, `--nodes` with `with-salloc`, `--output-dir`, `--gdb`, `--time`, etc.).
 
+With `prterun`, `--pes` without `--pes-per-node` (or `--nodes`) means the PEs fill the nodes at hand: all of them on this node, or spread evenly over the nodes of the current SLURM allocation (`SLURM_JOB_NUM_NODES`). The default thread count and the `--map-by node:PE=<threads>` binding are sized for that layout. Pass `--pes-per-node` (or `--nodes`) to say otherwise.
+
 # Features
 
 - `use-prterun` — launch via `prterun` (PRRTE). Mutually exclusive with `use-srun`. Pulls in and reexports `prrte_sys`.
