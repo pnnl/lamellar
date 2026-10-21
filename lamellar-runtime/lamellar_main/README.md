@@ -1,7 +1,7 @@
 lamellar_main
 =============
 
-`lamellar_main` provides `#[lamellar_main::main]` and `#[lamellar_main::test]` — a thin, lamellar-specific wrapper around [`hpc_launch`](../hpc_launch/README.md) that adds:
+`lamellar_main` provides `#[lamellar_main::main]` and `#[lamellar_main::test]` — a thin, lamellar-specific wrapper around [`hpc_launch`](../../process_management/hpc_launch/README.md) that adds:
 
 - `--lamellae <name>`, `--cmd-queue <variant>`, `--batcher <variant>` launch flags (setting `LAMELLAR_BACKEND`/`LAMELLAR_CMD_QUEUE`/`LAMELLAR_BATCHER` on the launched process)
 - Lamellar's available-backend list in `--help`
