@@ -15,13 +15,13 @@ categories = ["asynchronous", "concurrency", "network-programming", "science"]
 proc-macro = true
 
 [dependencies]
-hpc_launch = { version = "0.1.0", default-features = false }
+hpc_launch_codegen = { version = "0.1.0" }
 syn = { version = "2.0", features = ["full"] }
 quote = { version = "1.0" }
 proc-macro2 = { version = "1.0.101" }
 
 [features]
-use-srun = ["hpc_launch/use-srun"]
-use-prterun = ["hpc_launch/prterun-codegen"]
-with-salloc = ["hpc_launch/with-salloc"]
+use-srun = []
+use-prterun = []
+with-salloc = []
 enable-prof = []

@@ -3,7 +3,8 @@
 //! This crate can be used standalone (without depending on the `lamellar`
 //! runtime crate) to get a self-launching binary via `prterun`/`srun`. It
 //! also reexports [`prrte_sys`] and provides best-effort hardware-topology
-//! and tracing-init helpers used by the generated launch code.
+//! and tracing-init helpers used by the generated launch code. The generated
+//! code itself comes from `hpc_launch_codegen`, via `hpc_launch_impl`.
 
 pub use hpc_launch_impl::main;
 pub use hpc_launch_impl::test;
@@ -12,15 +13,22 @@ pub use hpc_launch_impl::test;
 pub use prrte_sys;
 
 /// Initializes a `tracing-subscriber` global subscriber from the
-/// `LAMELLAR_LOG` environment variable, if set. Mirrors `RUST_LOG` syntax.
-/// A no-op if `LAMELLAR_LOG` is unset or empty, or if a global subscriber is
-/// already installed.
+/// `HPC_LAUNCH_LOG` environment variable, if set. Mirrors `RUST_LOG` syntax.
+/// See [`init_tracing_from_env_var`] to read a differently named variable.
 pub fn init_tracing_from_env() {
+    init_tracing_from_env_var("HPC_LAUNCH_LOG");
+}
+
+/// Initializes a `tracing-subscriber` global subscriber from the environment
+/// variable `var`, if set (for example `LAMELLAR_LOG`). Mirrors `RUST_LOG`
+/// syntax. A no-op if `var` is unset or empty, or if a global subscriber is
+/// already installed.
+pub fn init_tracing_from_env_var(var: &str) {
     use tracing_subscriber::prelude::*;
 
-    if let Ok(lamellar_log) = std::env::var("LAMELLAR_LOG") {
-        if !lamellar_log.trim().is_empty() {
-            std::env::set_var("RUST_LOG", &lamellar_log);
+    if let Ok(filter) = std::env::var(var) {
+        if !filter.trim().is_empty() {
+            std::env::set_var("RUST_LOG", &filter);
             let _ = tracing_subscriber::registry()
                 .with(tracing_subscriber::EnvFilter::from_default_env())
                 .with(
@@ -36,21 +44,28 @@ pub fn init_tracing_from_env() {
 }
 
 /// Base `--help` body text (generic launch flags only, no header/footer) for
-/// binaries built with `#[hpc_launch::main]`. Callers wrap this with their
-/// own header line, `--help`/`-h` line, and trailing "passed through"
-/// line, and may append their own additional flag lines after it.
+/// binaries built with `#[hpc_launch::main]`, naming the `HPC_LAUNCH_*`
+/// environment variables. Callers wrap this with their own header line,
+/// `--help`/`-h` line, and trailing "passed through" line, and may append
+/// their own additional flag lines after it.
 pub fn generic_help_text() -> String {
+    generic_help_text_with_prefix("HPC_LAUNCH")
+}
+
+/// Like [`generic_help_text`], naming `{prefix}_NODES`, `{prefix}_PES`, ...
+/// as the environment variables behind each flag.
+pub fn generic_help_text_with_prefix(prefix: &str) -> String {
     let mut s = String::new();
-    s.push_str("  --nodes <n>            number of nodes to allocate/launch across [env: LAMELLAR_NODES]\n");
-    s.push_str("  --pes <n>              total number of PEs to launch [env: LAMELLAR_PES]\n");
-    s.push_str("  --pes-per-node <n>     PEs to launch per node [env: LAMELLAR_PES_PER_NODE]\n");
-    s.push_str("  --threads-per-pe <n>   worker threads per PE [env: LAMELLAR_THREADS]\n");
-    s.push_str("  --log <filter>         tracing filter for the launched job (RUST_LOG syntax) [env: LAMELLAR_LOG]\n");
+    s.push_str(&format!("  --nodes <n>            number of nodes to allocate/launch across [env: {prefix}_NODES]\n"));
+    s.push_str(&format!("  --pes <n>              total number of PEs to launch [env: {prefix}_PES]\n"));
+    s.push_str(&format!("  --pes-per-node <n>     PEs to launch per node [env: {prefix}_PES_PER_NODE]\n"));
+    s.push_str(&format!("  --threads-per-pe <n>   worker threads per PE [env: {prefix}_THREADS]\n"));
+    s.push_str(&format!("  --log <filter>         tracing filter for the launched job (RUST_LOG syntax) [env: {prefix}_LOG]\n"));
     if cfg!(feature = "with-salloc") {
         s.push_str("  --salloc-opts <opts>   extra options passed to `salloc` when requesting an allocation\n");
     }
     s.push_str("  --output-dir <dir>     directory to write per-PE stdout/stderr into\n");
-    s.push_str("  --time                 report wall-clock launch time\n");
+    s.push_str(&format!("  --time                 report wall-clock application time [env: {prefix}_MAIN_TIME]\n"));
     s.push_str("  --gdb [bt]             launch each PE under `rust-gdb` (with `bt`: auto backtrace on crash)\n");
     s
 }
@@ -72,250 +87,6 @@ pub fn resolve_pe_defaults(
     } else {
         let ppn = numa_domains.unwrap_or(1).max(1);
         (Some(ppn), Some(ppn))
-    }
-}
-
-/// Codegen for patching the launched binary's RPATH/RUNPATH so build-script
-/// output shared libraries (found via `LD_LIBRARY_PATH`) are resolvable at
-/// runtime, even after the binary has been re-invoked under
-/// `prterun`/`srun`.
-#[cfg(any(feature = "prterun-codegen", feature = "use-srun"))]
-pub fn binary_update_block_tokens() -> proc_macro2::TokenStream {
-    quote::quote! {
-        {
-            let ld_library_path = std::env::var("LD_LIBRARY_PATH").unwrap_or_else(|_| String::new());
-            let mut shared_libs_dirs = Vec::new();
-            for p in ld_library_path.split(':') {
-                // Collect all build output library directories matching the pattern .../target/<profile>/build/.../out/lib
-                if p.contains("/target/") && p.contains("/build/") && p.contains("/out/lib") {
-                    shared_libs_dirs.push(p.to_string());
-                }
-            }
-            let shared_libs_dir = shared_libs_dirs.join(":");
-            // Only touch RPATH if the binary actually has unresolved shared
-            // libraries right now. LD_LIBRARY_PATH's build/out/lib entries carry
-            // cargo's per-build hash suffix, so string-comparing them against the
-            // already-embedded RPATH is unreliable across separate builds
-            // (a stale hash never matches, even when the binary already resolves
-            // fine via $ORIGIN/shared_libs or another baked-in dir).
-            let has_missing_libs = std::env::current_exe()
-                .ok()
-                .and_then(|p| std::process::Command::new("ldd").arg(p).output().ok())
-                .map(|out| {
-                    String::from_utf8_lossy(&out.stdout).contains("=> not found")
-                })
-                .unwrap_or(false);
-            if !shared_libs_dir.is_empty() && has_missing_libs {
-                if let Ok(exe_path) = std::env::current_exe() {
-                    let readelf_out = std::process::Command::new("readelf")
-                        .arg("-d")
-                        .arg(&exe_path)
-                        .output();
-                    match readelf_out {
-                        Ok(readelf_out) if readelf_out.status.success() => {
-                            let readelf_stdout = String::from_utf8_lossy(&readelf_out.stdout);
-                            let mut missing_lib_dirs: Vec<String> = Vec::new();
-                            let mut existing_rpath = String::new();
-
-                            for line in readelf_stdout.lines() {
-                                if line.contains("(RPATH)") || line.contains("(RUNPATH)") {
-                                    if let (Some(start), Some(end)) = (line.find('['), line.rfind(']')) {
-                                        let cur = line[start + 1..end].trim();
-                                        if !cur.is_empty() {
-                                            existing_rpath = cur.to_string();
-                                            missing_lib_dirs = shared_libs_dir
-                                                .split(':')
-                                                .filter(|lib_dir| !existing_rpath.contains(lib_dir))
-                                                .map(|lib_dir| lib_dir.to_string())
-                                                .collect();
-                                        }
-                                    }
-                                }
-                            }
-                            if existing_rpath.is_empty() {
-                                missing_lib_dirs = shared_libs_dir
-                                    .split(':')
-                                    .map(|lib_dir| lib_dir.to_string())
-                                    .collect();
-                            }
-
-                            if !missing_lib_dirs.is_empty() {
-                                let new_rpath = if existing_rpath.is_empty() {
-                                    shared_libs_dir.to_string()
-                                } else {
-                                    format!("{}:{}", existing_rpath, shared_libs_dir)
-                                };
-
-                                let exe_dir = exe_path.parent().unwrap_or(std::path::Path::new("."));
-                                let temp_exe = exe_dir.join(format!("hpc_launch_exe_{}.tmp", std::process::id()));
-                                let temp_exe_str = temp_exe.to_string_lossy().to_string();
-
-                                if let Err(err) = std::fs::copy(&exe_path, &temp_exe) {
-                                    eprintln!(
-                                        "hpc_launch: failed to copy binary from {:?} to {}: {}",
-                                        exe_path,
-                                        temp_exe_str,
-                                        err
-                                    );
-                                    eprintln!(
-                                        "hpc_launch: unable to add missing RPATH entries {:?}; manually setting LD_LIBRARY_PATH may be needed.",
-                                        missing_lib_dirs
-                                    );
-                                } else {
-                                    let timer = std::time::Instant::now();
-                                    while let Ok(false) = std::fs::exists(&temp_exe) {
-                                        std::thread::sleep(std::time::Duration::from_millis(100));
-                                        if timer.elapsed() > std::time::Duration::from_secs(1) {
-                                            eprintln!(
-                                                "hpc_launch: timeout waiting for temp binary {:?} to appear after copying: {}",
-                                                temp_exe,
-                                                temp_exe_str
-                                            );
-                                            break;
-                                        }
-                                    }
-                                    let chmod_status = std::process::Command::new("chmod")
-                                        .arg("+x")
-                                        .arg(&temp_exe_str)
-                                        .status();
-
-                                    println!("chmod status: {:?}", chmod_status);
-
-                                    let patch_status = std::process::Command::new("patchelf")
-                                        .arg("--set-rpath")
-                                        .arg(&new_rpath)
-                                        .arg(&temp_exe_str)
-                                        .status();
-
-                                    match patch_status {
-                                        Ok(status) if status.success() => {
-                                            if let Err(err) = std::fs::rename(&temp_exe, &exe_path) {
-                                                eprintln!(
-                                                    "hpc_launch: failed to replace original binary {:?} with patched copy: {}",
-                                                    exe_path,
-                                                    err
-                                                );
-                                                eprintln!(
-                                                    "hpc_launch: unable to add missing RPATH entries {:?}; manually setting LD_LIBRARY_PATH may be needed.",
-                                                    missing_lib_dirs
-                                                );
-                                                let _ = std::fs::remove_file(&temp_exe);
-                                            }
-                                        }
-                                        Ok(status) => {
-                                            eprintln!(
-                                                "hpc_launch: patchelf failed with status {} for {:?}",
-                                                status,
-                                                temp_exe_str
-                                            );
-                                            eprintln!(
-                                                "hpc_launch: unable to add missing RPATH entries {:?}; manually setting LD_LIBRARY_PATH may be needed.",
-                                                missing_lib_dirs
-                                            );
-                                            let _ = std::fs::remove_file(&temp_exe);
-                                        }
-                                        Err(err) => {
-                                            eprintln!(
-                                                "hpc_launch: failed to run patchelf for {:?}: {}",
-                                                temp_exe_str,
-                                                err
-                                            );
-                                            eprintln!(
-                                                "hpc_launch: unable to add missing RPATH entries {:?}; manually setting LD_LIBRARY_PATH may be needed.",
-                                                missing_lib_dirs
-                                            );
-                                            let _ = std::fs::remove_file(&temp_exe);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Ok(status_out) => {
-                            eprintln!(
-                                "hpc_launch: readelf -d failed for {:?} with status {}",
-                                exe_path,
-                                status_out.status
-                            );
-                            eprintln!(
-                                "hpc_launch: unable to check/update RPATH; candidate library dirs {:?} may need to be added manually via LD_LIBRARY_PATH.",
-                                shared_libs_dir
-                            );
-                        }
-                        Err(err) => {
-                            eprintln!(
-                                "hpc_launch: failed to run readelf for {:?}: {}",
-                                exe_path,
-                                err
-                            );
-                            eprintln!(
-                                "hpc_launch: unable to check/update RPATH; candidate library dirs {:?} may need to be added manually via LD_LIBRARY_PATH.",
-                                shared_libs_dir
-                            );
-                        }
-                    }
-                } else {
-                    eprintln!(
-                        "hpc_launch: unable to determine current executable path; unable to update RPATH. Candidate library dirs {:?} may need to be added manually via LD_LIBRARY_PATH.",
-                        shared_libs_dir
-                    );
-                }
-            }
-        }
-    }
-}
-
-/// Codegen for the `#[test]`-launched sibling function generated by
-/// `#[hpc_launch::test]` — re-invokes the compiled test binary under
-/// `prterun`/`srun`, filtered down to just the single launched test.
-#[cfg(any(feature = "use-prterun", feature = "use-srun"))]
-pub fn launch_test_block_tokens(
-    launcher_info: (impl quote::ToTokens, impl quote::ToTokens),
-    test_attr: syn::Attribute,
-    vis: &syn::Visibility,
-    sig: &syn::Signature,
-    name: &syn::Ident,
-) -> proc_macro2::TokenStream {
-    let (env_var, launcher_path) = launcher_info;
-    quote::quote! {
-        #test_attr #vis #sig {
-        fn type_name_of_val<T: ?Sized>(_val: &T) -> &'static str {
-            std::any::type_name::<T>()
-        }
-
-        let full_func_name = type_name_of_val(&#name);
-        let func_name = full_func_name
-            .split("::")
-            .into_iter()
-            .skip(1)
-            .collect::<Vec<&str>>()
-            .join("::");
-
-        let prte_launched = std::env::var(#env_var).is_ok();
-        if !prte_launched {
-            let mut args: Vec<String> = std::env::args().collect();
-            let exec = args.remove(0);
-            let mut prterun_args = Vec::<String>::new();
-
-            let pos = args.iter().position(|x| x == "--");
-            if let Some(pos) = pos {
-                args.split_off(pos).into_iter().skip(1).for_each(|x| {
-                    prterun_args.push(x.to_string());
-                });
-            }
-            let end = args.len();
-
-            prterun_args.push(exec);
-            prterun_args.push(func_name);
-
-            prterun_args.extend(args.into_iter());
-            prterun_args.push("--ignored".to_string());
-            prterun_args.push("--exact".to_string());
-            std::process::Command::new(#launcher_path)
-                .args(prterun_args)
-                .status()
-                .expect("failed to launch process");
-        }
-        }
     }
 }
 

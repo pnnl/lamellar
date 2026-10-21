@@ -280,6 +280,7 @@ path = "src/lib.rs"
 # pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # prrte-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # hpc_launch = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+# hpc_launch_codegen = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # openpmix-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # rofisys = { git = "https://github.com/pnnl/rofi-sys", branch = "master" }
@@ -298,6 +299,7 @@ pmi-mpich-src = { path = "../process_management/pmi-mpich-src" }
 pmix-sys = { path = "../process_management/pmix-sys" }
 prrte-sys = { path = "../process_management/prrte-sys" }
 hpc_launch = { path = "../process_management/hpc_launch" }
+hpc_launch_codegen = { path = "../process_management/hpc_launch_codegen" }
 openpmix-src = { path = "../process_management/openpmix-src" }
 prrte-src = { path = "../process_management/prrte-src" }
 rofisys = { path = "../communication_frameworks/rofi-sys" }
