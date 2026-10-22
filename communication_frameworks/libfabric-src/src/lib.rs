@@ -177,13 +177,30 @@ impl Build {
                 // AM_MAINTAINER_MODE guard (see libfabric/configure.ac), so
                 // Automake's timestamp-triggered regen rules stay off by default
                 // regardless of mtimes lost during copy_rec/git checkout.
+                // Static build: --enable-embedded turns off ELF symbol versioning (the `@@FABRIC_x.y` tags that
+                // `.symver` puts on fi_getinfo etc.). With the tags, the objects cannot be linked into a cdylib: the
+                // version script rustc generates for a cdylib has no FABRIC_* nodes and the linker reports
+                // "symbol fi_getinfo@@FABRIC_1.7 has undefined version". Embedded mode builds the library as an
+                // uninstalled convenience archive, so `make install` does not provide libfabric.a; it is copied from
+                // the build tree below.
                 #[cfg(not(feature = "shared"))]
-                let install_dest = autotools::Config::new(ofi_src_path)
-                    .disable_shared()
-                    .enable_static()
-                    .cflag("-O3")
-                    .cxxflag("-O3")
-                    .build();
+                let install_dest = {
+                    let dest = autotools::Config::new(ofi_src_path)
+                        .disable_shared()
+                        .enable_static()
+                        .enable("embedded", None)
+                        .cflag("-O3")
+                        .cxxflag("-O3")
+                        .build();
+                    let lib_dir = dest.join("lib");
+                    std::fs::create_dir_all(&lib_dir).unwrap();
+                    std::fs::copy(
+                        dest.join("build/src/.libs/libfabric.a"),
+                        lib_dir.join("libfabric.a"),
+                    )
+                    .expect("embedded libfabric.a not found in the build tree");
+                    dest
+                };
 
                 #[cfg(feature = "shared")]
                 let install_dest = autotools::Config::new(ofi_src_path)
