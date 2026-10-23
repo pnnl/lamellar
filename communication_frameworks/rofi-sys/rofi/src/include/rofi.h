@@ -46,6 +46,7 @@ int rofi_init(char *, char *);
 int rofi_finit(void);
 unsigned int rofi_get_size(void);
 unsigned int rofi_get_id(void);
+size_t rofi_get_inject_size(void);
 int rofi_flush(void);
 int rofi_put(void *, void *, size_t, unsigned int, unsigned long);
 int rofi_iput(void *, void *, size_t, unsigned int, unsigned long);
