@@ -21,6 +21,10 @@ use crate::sync::{barrier_locked, ActiveSet};
 /// whole team in PE order and the data is in the symmetric heap. Every PE must reach the same answer; that
 /// holds for conforming programs, where `source` is a symmetric object (same location class on all PEs).
 fn runtime_path(set: &ActiveSet, source: *const c_void) -> Option<usize> {
+    // rofi_c's allocations have no memory-region collectives (broadcast, gather_all, allreduce): take the pull-based paths below.
+    if lamellar::config().backend == "rofi_c" {
+        return None;
+    }
     let world = set.size == state().num_pes && set.pe(0) == 0 && (set.size == 1 || set.pe(1) == 1);
     if world {
         offset_of(source as *const u8)
