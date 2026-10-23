@@ -140,6 +140,10 @@ impl Drop for LibfabricSysComm {
     #[tracing::instrument(skip_all, level = "debug")]
     fn drop(&mut self) {
         trace!("dropping libfabric-sys comm");
+        // the staging slabs still count as allocated: complete the operations in flight and give them back (before
+        // `runtime_allocs` is cleared, since they hold references to this backend) ahead of the leak check
+        self.ofi.wait_all();
+        self.ofi.staging_release();
         if self.mem_occupied() > 0 {
             println!(
                 "dropping libfabric-sys -- memory in use {:?}",
@@ -161,7 +165,6 @@ impl Drop for LibfabricSysComm {
         // storing rt-pool allocs on Ofi itself (mirrors clear_allocs() below
         // for the analogous alloc_manager cycle) -- without this, Ofi would
         // never be freed.
-        self.ofi.staging_release();
         self.ofi.runtime_allocs.write().clear();
         //maybe we want to implement an ofi finit function which will free all resources or something
         // for (addr, _alloc) in self.fabric_allocs.write().drain(..) {

@@ -2612,8 +2612,12 @@ impl CommAllocCollectiveAllReduce for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.reduce_all(scheduler, counters, index, len, op)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.reduce_all(scheduler, counters, index, len, op)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.reduce_all(scheduler, counters, index, len, op)
@@ -2675,8 +2679,16 @@ impl CommAllocCollectiveAllReduce for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_into_buffer(scheduler, counters, index, len, op, buffer)
+            }
             _ => {
-                panic!("Collective reduce_all not supported for this CommAlloc type")
+                panic!("memory region collective `reduce_all` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -2736,8 +2748,16 @@ impl CommAllocCollectiveAllReduce for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.reduce_all_in_place(scheduler, counters, src_and_dst, op)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric-mt")]
               // CommAllocInner::LibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -2814,8 +2834,12 @@ impl CommAllocCollectiveReduce for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.reduce(scheduler, counters, op, index, len, root_pe)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -2876,8 +2900,16 @@ impl CommAllocCollectiveReduce for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.reduce_into_buffer(scheduler, counters, op, index, len, root_or_buffer)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3001,8 +3033,12 @@ impl CommAllocCollectiveAllGather for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.gather_all(scheduler, counters, index, len)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.gather_all(scheduler, counters, index, len)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3062,8 +3098,16 @@ impl CommAllocCollectiveAllGather for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.gather_all_into_buffer(scheduler, counters, index, len, buffer)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3130,8 +3174,12 @@ impl CommAllocCollectiveGather for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.gather(scheduler, counters, index, len, root_pe)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.gather(scheduler, counters, index, len, root_pe)
+            }
             _ => {
-                panic!("Collective gather not supported for this CommAlloc type")
+                panic!("memory region collective `gather` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3191,8 +3239,16 @@ impl CommAllocCollectiveGather for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.gather_into_buffer(scheduler, counters, index, len, root_or_buffer)
+            }
             _ => {
-                panic!("Collective gather not supported for this CommAlloc type")
+                panic!("memory region collective `gather` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3259,8 +3315,12 @@ impl CommAllocCollectiveAllToAll for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.alltoall(scheduler, counters, index, len)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.alltoall(scheduler, counters, index, len)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3321,8 +3381,16 @@ impl CommAllocCollectiveAllToAll for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.alltoall_into_buffer(scheduler, counters, index, len, buffer)
+            }
             _ => {
-                panic!("Collective reduce not supported for this CommAlloc type")
+                panic!("this memory region collective is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             }
         }
     }
@@ -3373,8 +3441,12 @@ impl CommAllocCollectiveBroadcast for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.broadcast(scheduler, counters, src_or_root_pe, len)
+            }
             _ => {
-                panic!("Collective broadcast not supported for this CommAlloc type")
+                panic!("memory region collective `broadcast` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3433,8 +3505,16 @@ impl CommAllocCollectiveBroadcast for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.broadcast_into_buffer(scheduler, counters, root_or_buffer, len)
+            }
             _ => {
-                panic!("Collective broadcast not supported for this CommAlloc type")
+                panic!("memory region collective `broadcast` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3500,8 +3580,12 @@ impl CommAllocCollectiveScatter for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.scatter(scheduler, counters, src_or_root_pe, len)
+            }
             _ => {
-                panic!("Collective scatter not supported for this CommAlloc type")
+                panic!("memory region collective `scatter` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3562,8 +3646,16 @@ impl CommAllocCollectiveScatter for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.scatter_into_buffer(scheduler, counters, buf, src_or_root_pe, len)
+            }
             _ => {
-                panic!("Collective scatter not supported for this CommAlloc type")
+                panic!("memory region collective `scatter` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3630,8 +3722,12 @@ impl CommAllocCollectiveReduceScatter for CommAllocInner {
             CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
                 inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
             }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter(scheduler, counters, op, index, len)
+            }
             _ => {
-                panic!("Collective reduce_scatter not supported for this CommAlloc type")
+                panic!("memory region collective `reduce_scatter` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
@@ -3692,8 +3788,16 @@ impl CommAllocCollectiveReduceScatter for CommAllocInner {
             CommAllocInner::UcxOptAlloc(inner_alloc) => {
                 inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
             }
+            #[cfg(feature = "enable-libfabric-sys-opt")]
+            CommAllocInner::LibfabricSysOptAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
+            #[cfg(feature = "enable-libfabric-sys")]
+            CommAllocInner::LibfabricSysAlloc(inner_alloc) => {
+                inner_alloc.reduce_scatter_into_buffer(scheduler, counters, op, index, len, buffer)
+            }
             _ => {
-                panic!("Collective reduce_scatter not supported for this CommAlloc type")
+                panic!("memory region collective `reduce_scatter` is not supported by this lamellae's allocations (e.g. rofi_c); use the array collectives, which fall back to a put/get implementation")
             } // #[cfg(feature = "enable-libfabric")]
               // CommAllocInner::OneSidedLibfabricMtAlloc(inner_alloc) => {
               //     inner_alloc.atomic_fetch_op(scheduler, counters, op, pe, offset)
