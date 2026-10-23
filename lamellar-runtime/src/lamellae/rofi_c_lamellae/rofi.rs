@@ -3,8 +3,10 @@ extern crate libc;
 use crate::lamellae::comm::atomic::AtomicOp;
 use crate::lamellae::{AllocError, AllocResult, AllocationType, RdmaError, RdmaResult};
 
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::ffi::CString;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use tracing::{error, trace};
 
 pub(crate) fn rofi_c_init(provider: &str, domain: &str) -> Result<(), &'static str> {
@@ -118,7 +120,73 @@ pub(crate) fn rofi_c_flush() -> i32 {
 }
 
 pub(crate) fn rofi_c_wait() -> i32 {
-    unsafe { rofisys::rofi_wait() }
+    // Buffers parked by `rofi_c_park` were parked after their put was posted. Taking them out *before* the wait starts means the wait
+    // covers every put they belong to (rofi_wait completes everything posted so far), so they can be freed once it returns. Buffers
+    // parked while the wait runs stay parked for the next one.
+    let completed = {
+        let mut parked = PARKED.lock().unwrap();
+        parked.bytes = 0;
+        std::mem::take(&mut parked.bufs)
+    };
+    let ret = unsafe { rofisys::rofi_wait() };
+    drop(completed);
+    ret
+}
+
+// ---- source buffers of asynchronous puts
+//
+// `rofi_put` is asynchronous. A payload smaller than the transport's inject size is copied while the call runs, so the caller's buffer
+// is free on return. A payload of that size or larger is read from the buffer *after* the call returns, until a `rofi_wait` completes
+// it, so a buffer that is owned by the call (an unmanaged put) must be kept alive until then. The owner is handed to `rofi_c_park`
+// right after the put is posted and is freed by the next `rofi_c_wait` (a barrier, `wait_all`, or the cap below).
+
+/// Heap bytes of parked buffers after which `rofi_c_park` waits for the puts in flight, so memory stays bounded. Off by default (0): the
+/// parked buffers are then freed by the next `rofi_c_wait` (a barrier or `wait_all`) only. Set `LAMELLAR_ROFI_PARK_MB` to enable it.
+fn park_cap_bytes() -> usize {
+    static CAP: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *CAP.get_or_init(|| {
+        std::env::var("LAMELLAR_ROFI_PARK_MB")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .map_or(0, |mb| mb << 20)
+    })
+}
+
+struct Parked {
+    bufs: Vec<Box<dyn Any + Send>>,
+    bytes: usize,
+}
+
+static PARKED: Mutex<Parked> = Mutex::new(Parked { bufs: Vec::new(), bytes: 0 });
+
+/// The transport's inject size: puts smaller than this are copied while they are posted. Read once from rofi.
+pub(crate) fn rofi_c_inject_size() -> usize {
+    static CACHED: AtomicUsize = AtomicUsize::new(usize::MAX);
+    let cached = CACHED.load(Ordering::Relaxed);
+    if cached != usize::MAX {
+        return cached;
+    }
+    let size = unsafe { rofisys::rofi_get_inject_size() } as usize;
+    CACHED.store(size, Ordering::Relaxed);
+    size
+}
+
+/// Keep `owner` (the buffer a put reads from) alive until a later `rofi_c_wait` has completed the put. Call it after posting the put,
+/// never before. `heap_bytes` is the Rust heap memory the owner holds (0 when it only refers to a registered memory region); it counts
+/// towards the optional cap (`LAMELLAR_ROFI_PARK_MB`).
+pub(crate) fn rofi_c_park(owner: Box<dyn Any + Send>, heap_bytes: usize) {
+    let cap = park_cap_bytes();
+    let over_cap = {
+        let mut parked = PARKED.lock().unwrap();
+        parked.bufs.push(owner);
+        if cap > 0 {
+            parked.bytes += heap_bytes;
+        }
+        cap > 0 && parked.bytes > cap
+    };
+    if over_cap {
+        rofi_c_wait();
+    }
 }
 
 fn get_rofi_c_dt<T: 'static>() -> Option<rofisys::rofi_datatype_t> {

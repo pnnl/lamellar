@@ -72,6 +72,24 @@ unsigned int rofi_get_size(void) {
 }
 
 /**
+ * @brief Size, in bytes, from which a PUT is no longer copied while it is posted.
+ *
+ * `rofi_put()` is asynchronous. A payload smaller than this size is injected: the provider copies it while the call runs and the source
+ * buffer may be reused or freed on return. A payload of this size or larger is read from the source buffer after the call has returned
+ * (until `rofi_wait()` / `rofi_flush()` completes it), so the buffer must stay valid, or `rofi_iput()` must be used.
+ *
+ * @return the inject size of the transport's transmit endpoint
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
+size_t rofi_get_inject_size(void) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return (size_t)rofi.desc.inject_size;
+}
+
+/**
  * @brief ROFI Get process ID
  *
  * This function return the ID of the calling process within the job.

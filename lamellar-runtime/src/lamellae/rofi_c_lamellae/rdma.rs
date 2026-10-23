@@ -504,7 +504,18 @@ impl CommAllocRdma for crate::lamellae::rofi_c_lamellae::fabric::RofiCAlloc {
         let src = src.into();
         let dst = (self.start() + offset * std::mem::size_of::<T>()) as usize;
         if pe != self.my_pe {
-            unsafe { rofi_c_put(src.as_slice(), dst, pe).expect("rofi_c_put failed") }
+            let bytes = src.len() * std::mem::size_of::<T>();
+            if bytes < rofi_c_inject_size() {
+                // injected: rofi copies the payload while it posts the put, so `src` may be dropped on return
+                unsafe { rofi_c_put(src.as_slice(), dst, pe).expect("rofi_c_put failed") }
+            } else {
+                // not injected: the transfer reads `src` after rofi_put returns. Box it first (an `Owned` input holds its value inline, so
+                // moving the enum would move the bytes being read), then keep it until a wait has completed the put.
+                let src = Box::new(src);
+                unsafe { rofi_c_put(src.as_slice(), dst, pe).expect("rofi_c_put failed") }
+                let heap = matches!(&*src, MemregionRdmaInputInner::ArcVec(_) | MemregionRdmaInputInner::Owned(_));
+                rofi_c_park(src, if heap { bytes } else { 0 });
+            }
         } else {
             unsafe { std::ptr::copy(src.as_ptr(), dst as *mut T, src.len()) }
         }
@@ -573,6 +584,11 @@ impl CommAllocRdma for crate::lamellae::rofi_c_lamellae::fabric::RofiCAlloc {
         offset: usize,
     ) {
         let src = src.into();
+        let bytes = src.len() * std::mem::size_of::<T>();
+        // see `put_buffer_unmanaged`: a payload of at least the inject size is read after rofi_put returns, so the (boxed) input is kept
+        // until a wait has completed every put that reads it
+        let large = bytes >= rofi_c_inject_size();
+        let src = Box::new(src);
         for pe in 0..self.num_pes {
             let dst = (self.start() + offset * std::mem::size_of::<T>()) as usize;
             if pe != self.my_pe {
@@ -580,6 +596,10 @@ impl CommAllocRdma for crate::lamellae::rofi_c_lamellae::fabric::RofiCAlloc {
             } else {
                 unsafe { std::ptr::copy(src.as_ptr(), dst as *mut T, src.len()) }
             }
+        }
+        if large {
+            let heap = matches!(&*src, MemregionRdmaInputInner::ArcVec(_) | MemregionRdmaInputInner::Owned(_));
+            rofi_c_park(src, if heap { bytes } else { 0 });
         }
     }
 
