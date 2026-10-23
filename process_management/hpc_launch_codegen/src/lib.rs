@@ -565,10 +565,24 @@ pub fn launch_block(cfg: &LaunchConfig, ret: Option<TokenStream>) -> TokenStream
             }
             #output_dir_block
             println!("Launching with {:?}: {:?} {:?}", #env_var, #launcher_path, prterun_args.join(" "));
-            launcher_cmd
+            let launcher_status = launcher_cmd
                 .args(prterun_args)
                 .status()
                 .expect("failed to launch process");
+            if !launcher_status.success() {
+                // propagate the failure (128 + signal for a signalled child)
+                #[cfg(unix)]
+                let code = {
+                    use std::os::unix::process::ExitStatusExt;
+                    launcher_status
+                        .code()
+                        .or_else(|| launcher_status.signal().map(|s| 128 + s))
+                        .unwrap_or(1)
+                };
+                #[cfg(not(unix))]
+                let code = launcher_status.code().unwrap_or(1);
+                std::process::exit(code);
+            }
             #ret
         }
     }
@@ -681,10 +695,15 @@ fn test_block(
             prterun_args.push("--exact".to_string());
             let mut launcher_cmd = std::process::Command::new(#launcher_path);
             #prefix_env_block
-            launcher_cmd
+            let launcher_status = launcher_cmd
                 .args(prterun_args)
                 .status()
                 .expect("failed to launch process");
+            assert!(
+                launcher_status.success(),
+                "launched test failed: {}",
+                launcher_status
+            );
         }
         }
     }
