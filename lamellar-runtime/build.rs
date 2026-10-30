@@ -39,6 +39,10 @@ fn main() {
     }
     println!("cargo:rerun-if-env-changed=DEP_UCX_ROOT");
     println!("cargo:rerun-if-env-changed=DEP_UCC_ROOT");
+    println!("cargo:rerun-if-env-changed=DEP_UCC_SHARP_LIBDIR");
+    // libsharp_coll's directory, when the vendored UCC was built with SHARP.
+    #[allow(unused_mut)]
+    let mut sharp_libdir: Option<String> = None;
     #[cfg(feature = "enable-ucx")]
     {
         if let Ok(lamellar_ucx_lib_dir) = env::var("DEP_UCX_ROOT") {
@@ -58,6 +62,11 @@ fn main() {
             println!("cargo:rustc-link-search=native={}", lib_path.display());
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_path.display());
             lib_paths.push(lib_path.display().to_string());
+        }
+
+        if let Ok(dir) = env::var("DEP_UCC_SHARP_LIBDIR") {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir);
+            sharp_libdir = Some(dir);
         }
     }
 
@@ -88,6 +97,7 @@ fn main() {
     // downstream crate that needs the same rpaths has to re-emit them from its
     // build.rs via DEP_LAMELLAR_RPATH_DIRS (see README).
     let mut rpath_dirs = lib_paths.clone();
+    rpath_dirs.extend(sharp_libdir);
     if let Some(dir) = &shared_libs_dir {
         rpath_dirs.push(dir.display().to_string());
     }

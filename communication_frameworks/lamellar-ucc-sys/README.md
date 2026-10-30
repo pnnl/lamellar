@@ -45,6 +45,8 @@ Downstream crates consume `lamellar_ucc_sys` for low-level collective calls on a
 
 - `UCC_DIR`: optional path to an existing UCC installation; the build script uses it when the required symbols are present.
 
+- `UCC_SHARP_DIR`: optional SHARP install root (`include/sharp/api/sharp_coll.h`, `lib[64]/libsharp_coll`). The vendored UCC is built **without SHARP by default** (`--with-sharp=no`), so a SHARP install that happens to be visible (HPC-X, MOFED) is never picked up. Set this to build `tl_sharp` against that install; `libsharp_coll` is then linked and its directory added to the rpath of the final binary. Two things to know: an HPC-X SHARP also loads HPC-X's own `libucp`/`libuct`/`libucs` (a second UCX next to the vendored one), and it is only useful where a SHARP aggregation manager is reachable. After changing this variable, run `cargo clean -p lamellar-ucc-sys` so the cached UCC build is not reused. Ignored when `UCC_DIR` is set, since a system UCC brings its own SHARP support.
+
 If you unset `UCC_DIR`, the crate automatically builds UCC from source using the vendored copy so that Lamellar can still compile on systems without UCC preinstalled.
 
 STATUS

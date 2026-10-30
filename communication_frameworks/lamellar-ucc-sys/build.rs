@@ -66,6 +66,19 @@ fn build_ucc(out_path: &PathBuf) -> PathBuf {
 
     let src_path = std::fs::canonicalize(&dest).unwrap();
 
+    // OUT_DIR is the install prefix and survives between builds. Without SHARP,
+    // drop a tl_sharp archive left by an earlier UCC_SHARP_DIR build so it is
+    // not linked (and does not demand libsharp_coll) by mistake.
+    if sharp_dir().is_none() {
+        if let Ok(entries) = std::fs::read_dir(out_path.join("lib").join("ucc")) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with("libucc_tl_sharp") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
     // No autogen.sh / autoreconf here: the vendored tree already ships a
     // pre-generated `configure` (see the provenance note on UCC_VERSION above).
     //
@@ -123,7 +136,8 @@ fn build_ucc(out_path: &PathBuf) -> PathBuf {
     // produces correctly (confirmed working in the log above this point).
     // Scope `make install` to that subdir with `-C src` to skip the
     // ucc_info link entirely.
-    let path = autotools::Config::new(&src_path)
+    let mut config = autotools::Config::new(&src_path);
+    config
         .env(
             "LIBS",
             "-Wl,--start-group -lucp -luct -lucs -lucm -Wl,--end-group -libverbs -lrdmacm -lpthread -lm -ldl -lrt",
@@ -139,15 +153,81 @@ fn build_ucc(out_path: &PathBuf) -> PathBuf {
         .with("cuda", Some("no"))
         .enable("optimizations", None)
         .with("ucx", Some(&ucx_root_path))
-        .make_args(vec!["-C".to_string(), "src".to_string()])
-        .build();
-    path
+        .make_args(vec!["-C".to_string(), "src".to_string()]);
+    // SHARP is off unless asked for. UCC's configure defaults to
+    // --with-sharp=guess, which would build tl_sharp into libucc.a whenever a
+    // SHARP install happens to be visible (HPC-X, MOFED). Vendor builds stay
+    // independent of that: pass UCC_SHARP_DIR to opt in (see link_sharp_coll()).
+    let sharp_dir = sharp_dir();
+    match &sharp_dir {
+        Some(dir) => {
+            let dir = dir.display().to_string();
+            config.with("sharp", Some(dir.as_str()));
+        }
+        None => {
+            config.with("sharp", Some("no"));
+        }
+    }
+    // autotools panics on a failed configure/make; add a hint when SHARP was requested.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| config.build())) {
+        Ok(path) => path,
+        Err(err) => {
+            if sharp_dir.is_some() {
+                eprintln!("{}", SHARP_RETRY_HINT);
+            }
+            std::panic::resume_unwind(err)
+        }
+    }
+}
+
+const SHARP_RETRY_HINT: &str = "\n\
+lamellar-ucc-sys: building the vendored UCC with SHARP (UCC_SHARP_DIR) failed. If the errors \
+above mention sharp / tl_sharp / libsharp_coll, retry without SHARP by unsetting UCC_SHARP_DIR \
+(run `cargo clean -p lamellar-ucc-sys` first so the cached UCC build is not reused).\n";
+
+/// `UCC_SHARP_DIR=<root>`: opt in to building the vendored UCC with SHARP
+/// (`include/sharp/api/sharp_coll.h`, `lib[64]/libsharp_coll`).
+fn sharp_dir() -> Option<PathBuf> {
+    env::var_os("UCC_SHARP_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// libucc_tl_sharp.a is a static archive: it carries no link flags, so when
+/// SHARP was enabled the final link must add libsharp_coll itself.
+fn link_sharp_coll() {
+    let Some(root) = sharp_dir() else {
+        panic!(
+            "lamellar-ucc-sys: libucc_tl_sharp.a is present but UCC_SHARP_DIR is not set; \
+             run `cargo clean -p lamellar-ucc-sys` to drop the stale UCC build."
+        );
+    };
+    let libdir = if root.join("lib64").is_dir() {
+        root.join("lib64")
+    } else {
+        root.join("lib")
+    };
+    println!(
+        "cargo:warning=vendored UCC built with SHARP (tl_sharp); linking libsharp_coll from {}. \
+         Note: an HPC-X SHARP also loads HPC-X's own libucp/libuct/libucs, a second UCX next to \
+         the vendored one. Unset UCC_SHARP_DIR to build without SHARP.",
+        libdir.display()
+    );
+    println!("cargo:rustc-link-search=native={}", libdir.display());
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libdir.display());
+    println!("cargo:rustc-link-lib=dylib=sharp_coll");
+    // `rustc-link-arg` only reaches this package's own targets; downstream
+    // crates (lamellar) re-emit the rpath from this metadata (DEP_UCC_SHARP_LIBDIR).
+    // Without it the loader can pick a different libsharp_coll.so.5 from the
+    // system cache (e.g. MOFED's, which lacks symbols HPC-X's has).
+    println!("cargo:sharp_libdir={}", libdir.display());
 }
 
 fn build_bindings() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     println!("cargo:rerun-if-env-changed=UCC_DIR");
+    println!("cargo:rerun-if-env-changed=UCC_SHARP_DIR");
     let ucc_path = match env::var("UCC_DIR") {
         Ok(val) => std::path::PathBuf::from(val),
         Err(_) => {
@@ -220,6 +300,11 @@ fn build_bindings() {
         components.sort();
         for component in components {
             println!("cargo:rustc-link-lib=static:+whole-archive,-bundle={component}");
+        }
+        // tl_sharp (built when UCC's configure found SHARP) needs libsharp_coll
+        // at link and run time.
+        if ucc_component_dir.join("libucc_tl_sharp.a").exists() {
+            link_sharp_coll();
         }
     } else {
         println!("cargo:rustc-link-lib=dylib=ucc");
