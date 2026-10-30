@@ -40,6 +40,8 @@ pub(crate) mod libfabric_lamellae;
 pub(crate) mod libfabric_sys_lamellae;
 #[cfg(feature = "enable-libfabric-sys-opt")]
 pub(crate) mod libfabric_sys_opt_lamellae;
+#[cfg(any(feature = "enable-ucx", feature = "enable-ucx-opt"))]
+pub(crate) mod ucc;
 #[cfg(feature = "enable-ucx")]
 pub(crate) mod ucx_lamellae;
 #[cfg(feature = "enable-ucx-opt")]
