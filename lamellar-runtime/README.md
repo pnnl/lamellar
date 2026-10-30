@@ -52,7 +52,7 @@ Lamellar relies on network providers called Lamellae to perform the transfer of 
 Currently the following Lamellae exist:
 - `local` -  used for single-PE (single system, single process) development (this is the default),
 - `shmem` -  used for multi-PE (single system, multi-process) development, useful for emulating distributed environments (communicates through shared memory)
-- `rofi_c` - used for multi-PE (multi system, multi-process) distributed development, based on the Rust OpenFabrics Interface Transport Layer (ROFI) (<https://github.com/pnnl/rofi>).
+- `rofi_c` - used for multi-PE (multi system, multi-process) distributed development, based on the Rust OpenFabrics Interface Transport Layer (ROFI) (<https://github.com/pnnl/lamellar/tree/master/communication_frameworks/rofi>).
     - Enabled by adding ```features = ["enable-rofi-c"]``` (or `enable-rofi-c-shared` / `enable-rofi-rust`) to the lamellar entry in your `Cargo.toml` file. This builds against ROFI's default PMI-1 backend; add `enable-rofi-c-pmix` (or `enable-rofi-c-shared-pmix`) instead to use ROFI's PMIx backend (ROFI has no PMI-2 client, so PMI-1/PMIx are the only choices).
 - `libfabric` / `libfabric-sys` - used for multi-PE distributed development directly against libfabric.
     - Enabled by adding ```features = ["enable-libfabric"]``` (see Cargo.toml for the `-sys`/`-async` variants) to the lamellar entry in your `Cargo.toml` file
@@ -277,7 +277,7 @@ Examples
 --------
 All of the examples in the [documentation](https://docs.rs/lamellar/latest/lamellar) should also be valid Lamellar programs (please open an issue if you encounter an issue).
 
-Our repository also provides numerous examples highlighting various features of the runtime: <https://github.com/pnnl/lamellar-runtime/tree/master/examples>
+Our repository also provides numerous examples highlighting various features of the runtime: <https://github.com/pnnl/lamellar/tree/master/lamellar-runtime/examples>
 
 Additionally, we are compiling a set of benchmarks (some with multiple implementations) that may be helpful to look at as well: <https://github.com/pnnl/lamellar-benchmarks/>
 
@@ -450,8 +450,8 @@ Rofi can either be built from source and then setting the ROFI_DIR environment v
 
 * [libfabric](https://github.com/ofiwg/libfabric) 
 * [UCX](https://github.com/openucx/ucx)
-* [ROFI](https://github.com/pnnl/rofi)
-* [rofi-sys](https://github.com/pnnl/rofi-sys) -- available in [crates.io](https://crates.io/crates/rofisys)
+* [ROFI](https://github.com/pnnl/lamellar/tree/master/communication_frameworks/rofi)
+* [rofi-sys](https://github.com/pnnl/lamellar/tree/master/communication_frameworks/rofi-sys) -- available in [crates.io](https://crates.io/crates/rofisys)
 
 
 At the time of release, Lamellar has been tested with the following external packages:
@@ -465,9 +465,9 @@ BUILDING PACKAGE
 ----------------
 In the following, assume a root directory ${ROOT}
 
-0. download Lamellar to ${ROOT}/lamellar-runtime
+0. download Lamellar to ${ROOT}/lamellar (the runtime crate lives in ${ROOT}/lamellar/lamellar-runtime)
 
- `cd ${ROOT} && git clone https://github.com/pnnl/lamellar-runtime`
+ `cd ${ROOT} && git clone https://github.com/pnnl/lamellar`
 
 1. Select Lamellae to use:
     * In Cargo.toml add "enable-rofi-c" (or "enable-ucx", "enable-libfabric") feature if wanting to use a distributed backend (or pass --features enable-rofi-c to your cargo build command), otherwise only support for local and shmem backends will be built.

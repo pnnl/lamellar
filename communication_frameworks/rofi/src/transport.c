@@ -63,8 +63,28 @@ static inline void atomic_max_u64(_Atomic uint64_t *p, uint64_t v) {
 }
 
 
+static void rofi_transport_close_coll_groups(rofi_transport_t *rofi) {
+    struct rofi_coll_group *grp = rofi->coll_groups;
+    rofi->coll_groups = NULL;
+    while (grp != NULL) {
+        struct rofi_coll_group *next = grp->next;
+        if (fi_close(&grp->mc->fid)) {
+            ROFI_TRANSPORT_ERR_MSG("fi_close", -1);
+        }
+        if (fi_close(&grp->av_set->fid)) {
+            ROFI_TRANSPORT_ERR_MSG("fi_close", -1);
+        }
+        free(grp->pes);
+        free(grp);
+        grp = next;
+    }
+}
+
 int rofi_transport_fini(rofi_transport_t *rofi) {
     DEBUG_MSG("Fini");
+
+    // the groups hold the endpoint's collective state, so they go first
+    rofi_transport_close_coll_groups(rofi);
 
     int ret = fi_close(&rofi->ep->fid);
     if (ret) {
@@ -1244,6 +1264,83 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
     return ret;
 }
 
+// Returns the joined collective group over `pes`, joining it the first time. Called with rofi->lock held.
+static int rofi_transport_get_coll_group(rofi_transport_t *rofi, uint64_t *pes, uint64_t num_pes, struct fid_mc **mc_out) {
+    for (struct rofi_coll_group *grp = rofi->coll_groups; grp != NULL; grp = grp->next) {
+        if (grp->num_pes == num_pes && memcmp(grp->pes, pes, num_pes * sizeof(uint64_t)) == 0) {
+            *mc_out = grp->mc;
+            return 0;
+        }
+    }
+
+    struct fi_av_set_attr av_set_attr = {0};
+    av_set_attr.count = num_pes;
+    av_set_attr.start_addr = rofi->remote_addrs[pes[0]];
+    av_set_attr.end_addr = rofi->remote_addrs[pes[0]];
+    av_set_attr.stride = 1;
+    av_set_attr.flags = 0;
+
+    struct fid_av_set *av_set;
+    int ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_av_st", ret);
+        return ret;
+    }
+    DEBUG_MSG("CREATED AV_SET: 0x%p", av_set);
+
+    for (uint64_t i = 1; i < num_pes; i++) {
+        ret = fi_av_set_insert(av_set, rofi->remote_addrs[pes[i]]);
+        if (ret) {
+            ROFI_TRANSPORT_ERR_MSG("fi_av_set_insert", ret);
+            fi_close(&av_set->fid);
+            return ret;
+        }
+        DEBUG_MSG("Inserted PE %d into AV_SET: 0x%p", pes[i], av_set);
+    }
+    fi_addr_t coll_addr = 0;
+    ret = fi_av_set_addr(av_set, &coll_addr);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_av_set_addr", ret);
+        fi_close(&av_set->fid);
+        return ret;
+    }
+    DEBUG_MSG("COLL_ADDR: 0x%p", coll_addr);
+
+    uint64_t done_flag;
+    struct fid_mc *mc;
+    ret = fi_join_collective(rofi->ep, coll_addr, av_set, 0, &mc, &done_flag);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_join_collective", ret);
+        fi_close(&av_set->fid);
+        return ret;
+    }
+    DEBUG_MSG("Initiated collective join...");
+    ret = rofi_transport_wait_on_event(rofi, FI_JOIN_COMPLETE, &done_flag);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("rofi_transport_wait_on_event", ret);
+        return ret;
+    }
+    DEBUG_MSG("Joined collective");
+
+    struct rofi_coll_group *grp = malloc(sizeof(*grp));
+    uint64_t *pes_copy = malloc(num_pes * sizeof(uint64_t));
+    if (grp == NULL || pes_copy == NULL) {
+        free(grp);
+        free(pes_copy);
+        ERR_MSG("malloc failed");
+        return -1;
+    }
+    memcpy(pes_copy, pes, num_pes * sizeof(uint64_t));
+    grp->num_pes = num_pes;
+    grp->pes = pes_copy;
+    grp->av_set = av_set;
+    grp->mc = mc;
+    grp->next = rofi->coll_groups;
+    rofi->coll_groups = grp;
+    *mc_out = mc;
+    return 0;
+}
+
 int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr, uint64_t *pes, uint64_t num_pes) {
     if (rofi->desc.nodes == 1) {
         return 0;
@@ -1263,60 +1360,13 @@ int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr
     }
 
     DEBUG_MSG("Broadcasting MR Info (key: 0x%lx, 0x%lx, addr: 0x%lx) to %d PEs....", mr->mr_key, fi_mr_key(mr->fid), mr->start, num_pes);
-    struct fi_av_set_attr av_set_attr = {0};
-    av_set_attr.count = num_pes;
-    av_set_attr.start_addr = rofi->remote_addrs[pes[0]];
-    av_set_attr.end_addr = rofi->remote_addrs[pes[0]];
-    av_set_attr.stride = 1;
-    // av_set_attr.comm_key_size = 0; // need to look into comm keys more
-    // av_set_attr.comm_key = 0;
-    av_set_attr.flags = 0;
-
-    struct fid_av_set *av_set;
     pthread_mutex_lock(&rofi->lock);
-    int ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
-    if (ret) {
-        ROFI_TRANSPORT_ERR_MSG("fi_av_st", ret);
-        pthread_mutex_unlock(&rofi->lock);
-        return ret;
-    }
-    DEBUG_MSG("CREATED AV_SET: 0x%p", av_set);
-
-    for (int i = 1; i < num_pes; i++) {
-        ret = fi_av_set_insert(av_set, rofi->remote_addrs[pes[i]]);
-        if (ret) {
-            ROFI_TRANSPORT_ERR_MSG("fi_av_set_insert", ret);
-            pthread_mutex_unlock(&rofi->lock);
-            return ret;
-        }
-        DEBUG_MSG("Inserted PE %d into AV_SET: 0x%p", pes[i], av_set);
-    }
-    fi_addr_t coll_addr = 0;
-    ret = fi_av_set_addr(av_set, &coll_addr);
-    if (ret) {
-        ROFI_TRANSPORT_ERR_MSG("fi_av_set_addr", ret);
-        pthread_mutex_unlock(&rofi->lock);
-        return ret;
-    }
-
-    DEBUG_MSG("COLL_ADDR: 0x%p", coll_addr);
-
-    uint64_t done_flag;
     struct fid_mc *mc;
-    ret = fi_join_collective(rofi->ep, coll_addr, av_set, 0, &mc, &done_flag);
+    int ret = rofi_transport_get_coll_group(rofi, pes, num_pes, &mc);
     if (ret) {
-        ROFI_TRANSPORT_ERR_MSG("fi_join_collective", ret);
         pthread_mutex_unlock(&rofi->lock);
         return ret;
     }
-    DEBUG_MSG("Initiated collective join...");
-    ret = rofi_transport_wait_on_event(rofi, FI_JOIN_COMPLETE, &done_flag);
-    if (ret) {
-        ROFI_TRANSPORT_ERR_MSG("rofi_transport_wait_on_event", ret);
-        pthread_mutex_unlock(&rofi->lock);
-        return ret;
-    }
-    DEBUG_MSG("Joined collective");
 
     // __OFI_PFOV_CXI__
     // NOTE: Currently CXI does not provide allgather as an OFI collective, so this code path is not followed
@@ -1332,6 +1382,7 @@ int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr
         return -1;
     }
 
+    uint64_t done_flag;
     fi_addr_t coll_addr2 = fi_mc_addr(mc);
     ret = fi_allgather(rofi->ep, &rma_iov, sizeof(rma_iov), NULL, results, NULL, coll_addr2, FI_UINT8, 0, &done_flag);
     if (ret) {
@@ -1353,28 +1404,9 @@ int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr
         DEBUG_MSG("i: %d(pe: %d), addr: 0x%lx, key: 0x%lx  ", i, pes[i], results[i].addr, results[i].key);
     }
     free(results);
-    // for now we will immediately close down the collective group as we are currently only using them to do the addr+key transfer
-    // in the future we probably want the collective group to persist as long as the memory region?
-    DEBUG_MSG("Closing collective group");
-    ret = fi_close(&mc->fid);
-    if (ret) {
-        ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
-        DEBUG_MSG("CLOSING AV SET");
-        fi_close(&av_set->fid);
-        if (ret) {
-            ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
-        }
-    }
-    else {
-        DEBUG_MSG("CLOSING AV SET");
-        ret = fi_close(&av_set->fid);
-        if (ret) {
-            ROFI_TRANSPORT_ERR_MSG("fi_close", ret);
-        }
-    }
-
+    // the group stays joined and is reused by every later exchange over the same PEs (see rofi_coll_group)
     pthread_mutex_unlock(&rofi->lock);
-    return ret;
+    return 0;
 }
 
 int euclid_rem(int a, int b) {
