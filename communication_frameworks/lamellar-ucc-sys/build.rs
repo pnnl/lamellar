@@ -1,5 +1,7 @@
 
 use std::{env, path::PathBuf};
+
+mod compiler_probe;
 use std::path::Path;
 
 /// Vendored UCC release: unlike UCX/libfabric/MPICH-PMI, upstream has never
@@ -51,6 +53,27 @@ fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
         std::fs::copy(src, dst)?;
     }
     Ok(())
+}
+
+/// Use the compiler underneath a wrapper (Cray `cc`, `mpicc`, ...) when the wrapper fails a test link; see
+/// `compiler_probe.rs`. `LAMELLAR_NO_COMPILER_FALLBACK=1` disables it.
+fn compiler_fallback(
+    scratch: &Path,
+    lib_dirs: Vec<PathBuf>,
+    link_args: &[&str],
+) -> Option<compiler_probe::Fallback> {
+    for var in compiler_probe::ENV_VARS {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
+    let cc = cc::Build::new().get_compiler();
+    let cxx = cc::Build::new().cpp(true).get_compiler();
+    let link = compiler_probe::ProbeLink {
+        lib_dirs,
+        link_args: link_args.iter().map(|a| a.to_string()).collect(),
+    };
+    let fallback = compiler_probe::resolve(cc.path(), cxx.path(), &link, scratch)?;
+    println!("cargo:warning={}", fallback.message());
+    Some(fallback)
 }
 
 fn build_ucc(out_path: &PathBuf) -> PathBuf {
@@ -137,6 +160,21 @@ fn build_ucc(out_path: &PathBuf) -> PathBuf {
     // Scope `make install` to that subdir with `-C src` to skip the
     // ucc_info link entirely.
     let mut config = autotools::Config::new(&src_path);
+    // The same libraries UCC's configure probe links (config/m4/ucx.m4), so a wrapper that breaks that probe is
+    // caught here, before configure runs.
+    if let Some(fb) = compiler_fallback(
+        &out_path.join("compiler_probe"),
+        vec![PathBuf::from(&ucx_root_path).join("lib")],
+        &[
+            "-Wl,--start-group", "-lucp", "-luct", "-lucs", "-lucm", "-Wl,--end-group",
+            "-libverbs", "-lrdmacm", "-lpthread", "-lm", "-ldl", "-lrt",
+        ],
+    ) {
+        config.env("CC", &fb.cc);
+        if let Some(cxx) = &fb.cxx {
+            config.env("CXX", cxx);
+        }
+    }
     config
         .env(
             "LIBS",

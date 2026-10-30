@@ -1,16 +1,39 @@
 use std::{
     env,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio, exit},
 };
 
 use glob::glob;
+
+mod compiler_probe;
 
 /// Vendored UCX release: the official "make dist" tarball from a UCX GitHub
 /// release (v1.20.0), NOT a git checkout. It ships with `configure` already
 /// generated, so no Flex/Autoconf/Automake/Libtool/autogen.sh is required to
 /// build it.
 const UCX_VERSION: &str = "1.20.0";
+
+/// Use the compiler underneath a wrapper (Cray `cc`, `mpicc`, ...) when the wrapper fails a test link; see
+/// `compiler_probe.rs`. `LAMELLAR_NO_COMPILER_FALLBACK=1` disables it.
+fn compiler_fallback(
+    scratch: &Path,
+    lib_dirs: Vec<PathBuf>,
+    link_args: &[&str],
+) -> Option<compiler_probe::Fallback> {
+    for var in compiler_probe::ENV_VARS {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
+    let cc = cc::Build::new().get_compiler();
+    let cxx = cc::Build::new().cpp(true).get_compiler();
+    let link = compiler_probe::ProbeLink {
+        lib_dirs,
+        link_args: link_args.iter().map(|a| a.to_string()).collect(),
+    };
+    let fallback = compiler_probe::resolve(cc.path(), cxx.path(), &link, scratch)?;
+    println!("cargo:warning={}", fallback.message());
+    Some(fallback)
+}
 
 fn build_ucx(out_path: &PathBuf) -> PathBuf {
     println!("cargo:warning=building vendored UCX {}", UCX_VERSION);
@@ -37,6 +60,13 @@ fn build_ucx(out_path: &PathBuf) -> PathBuf {
     // instead of static archives. The link section below already picks dylibs when no libucp.a exists.
     let shared = env::var_os("CARGO_FEATURE_SHARED").is_some();
     let mut config = autotools::Config::new(dest.clone());
+    // A plain link test: UCX is built from source here, so there are no UCX libraries to link yet.
+    if let Some(fb) = compiler_fallback(&out_path.join("compiler_probe"), Vec::new(), &[]) {
+        config.env("CC", &fb.cc);
+        if let Some(cxx) = &fb.cxx {
+            config.env("CXX", cxx);
+        }
+    }
     if shared {
         config.enable("shared", None).disable("static", None);
     } else {
