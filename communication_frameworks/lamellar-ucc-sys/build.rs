@@ -272,7 +272,19 @@ fn build_bindings() {
     // system-provided (UCC_DIR) shared install. lamellar-ucx-sys's own
     // build script already emits the ucp/uct/ucs/ucm/ibverbs/rdmacm link
     // directives needed to satisfy libucc.a's transitive symbols.
-    if ucc_lib_path.join("libucc.a").exists() {
+    //
+    // A user-supplied UCC_DIR is linked statically only if it has no shared
+    // library: such installs (e.g. HPC-X) often ship both, and the static path
+    // would whole-archive every component archive (tl_mlx5, tl_sharp, tl_cuda,
+    // ...) and drag in their dependencies. It also cannot work for a stock UCC,
+    // which lacks the Lamellar component-loader patch that static linking relies on.
+    let system_ucc = env::var_os("UCC_DIR").is_some();
+    let static_ucc = ucc_lib_path.join("libucc.a").exists()
+        && !(system_ucc && ucc_lib_path.join("libucc.so").exists());
+    if system_ucc && ucc_lib_path.join("libucc.a").exists() && !static_ucc {
+        println!("cargo:warning=UCC_DIR has both libucc.a and libucc.so; linking the shared library.");
+    }
+    if static_ucc {
         // UCC's CL/TL/MC/EC/sysinfo components are dlopen()ed plugins in a
         // shared build (lib/ucc/libucc_<fw>_<name>.so). The vendored
         // ucc/src/utils/ucc_component.c carries a Lamellar patch that also

@@ -172,7 +172,18 @@ fn build_bindings() {
     // Prefer static if static archives were produced (vendored build now
     // defaults to enable_static/disable_shared); fall back to dylib for a
     // system-provided (UCX_DIR) shared install.
-    if ucx_lib_dir_base.join("libucp.a").exists() {
+    //
+    // A user-supplied UCX_DIR is linked statically only if it has no shared
+    // libucp: such installs (e.g. HPC-X) often ship both, and the static path
+    // whole-archives every transport module (xpmem, cuda, rocm, sharp-capable
+    // ib, ...) and their dependencies.
+    let system_ucx = env::var_os("UCX_DIR").is_some();
+    let static_ucx = ucx_lib_dir_base.join("libucp.a").exists()
+        && !(system_ucx && ucx_lib_dir_base.join("libucp.so").exists());
+    if system_ucx && ucx_lib_dir_base.join("libucp.a").exists() && !static_ucx {
+        println!("cargo:warning=UCX_DIR has both libucp.a and libucp.so; linking the shared libraries.");
+    }
+    if static_ucx {
         // UCX initializes itself entirely from constructors: ucs_init()
         // (ucs/sys/init.c) sets up the global topo/async/config state, and
         // every UCT component/transport (UCT_COMPONENT_REGISTER,
