@@ -544,49 +544,39 @@ fn generate_coll_args<T: 'static>(
     } else {
         0
     };
-    ucc_coll_args_t {
-        mask: 0,
-        flags: 0,
-        coll_type,
-        src: ucc_coll_args__bindgen_ty_1 {
-            info: ucc_coll_buffer_info_t {
-                buffer: buff.as_ptr() as *const ::std::os::raw::c_void
-                    as *mut ::std::os::raw::c_void,
-                datatype: rust_type_to_ucc_dtype::<T>(),
-                mem_type: ucc_memory_type_UCC_MEMORY_TYPE_HOST,
-                count: buff.len() as u64,
-            },
-        },
-        dst: ucc_coll_args__bindgen_ty_2 {
-            info: ucc_coll_buffer_info_t {
-                buffer: res.as_mut_ptr().cast(),
-                datatype: rust_type_to_ucc_dtype::<T>(),
-                mem_type: ucc_memory_type_UCC_MEMORY_TYPE_HOST,
-                count: res.len() as u64,
-            },
-        },
-        op,
-        tag: 0,
-        root: root.unwrap_or(0) as u64,
-        error_type: 0,
-        global_work_buffer: std::ptr::null_mut(),
-        cb: ucc_coll_callback {
-            cb: None,
-            data: std::ptr::null_mut(),
-        },
-        timeout: 0.0,
-        active_set: ucc_coll_args__bindgen_ty_3 {
-            start: 0,
-            stride: 0,
-            size: 0,
-        },
-        src_memh: ucc_coll_args__bindgen_ty_4 {
-            local_memh: std::ptr::null_mut(),
-        },
-        dst_memh: ucc_coll_args__bindgen_ty_5 {
-            local_memh: std::ptr::null_mut(),
-        },
-    }
+    // Zero-initialise and assign by field instead of a struct literal: bindgen numbers the anonymous
+    // unions (`ucc_coll_args__bindgen_ty_N`) by header order, so naming them breaks against any UCC
+    // whose `ucc_coll_args_t` differs from the vendored 1.8.0. The memh fields stay null (zeroed).
+    let mut args: ucc_coll_args_t = unsafe { std::mem::zeroed() };
+    args.mask = 0;
+    args.flags = 0;
+    args.coll_type = coll_type;
+    args.src.info = ucc_coll_buffer_info_t {
+        buffer: buff.as_ptr() as *const ::std::os::raw::c_void as *mut ::std::os::raw::c_void,
+        datatype: rust_type_to_ucc_dtype::<T>(),
+        mem_type: ucc_memory_type_UCC_MEMORY_TYPE_HOST,
+        count: buff.len() as u64,
+    };
+    args.dst.info = ucc_coll_buffer_info_t {
+        buffer: res.as_mut_ptr().cast(),
+        datatype: rust_type_to_ucc_dtype::<T>(),
+        mem_type: ucc_memory_type_UCC_MEMORY_TYPE_HOST,
+        count: res.len() as u64,
+    };
+    args.op = op;
+    args.tag = 0;
+    args.root = root.unwrap_or(0) as u64;
+    args.error_type = 0;
+    args.global_work_buffer = std::ptr::null_mut();
+    args.cb = ucc_coll_callback {
+        cb: None,
+        data: std::ptr::null_mut(),
+    };
+    args.timeout = 0.0;
+    args.active_set.start = 0;
+    args.active_set.stride = 0;
+    args.active_set.size = 0;
+    args
 }
 
 impl UccTeam {
@@ -721,15 +711,13 @@ impl UccTeam {
         scatterv_args.flags = (ucc_coll_args_flags_t_UCC_COLL_ARGS_FLAG_COUNT_64BIT
             | ucc_coll_args_flags_t_UCC_COLL_ARGS_FLAG_DISPLACEMENTS_64BIT)
             as u64;
-        scatterv_args.src = ucc_coll_args__bindgen_ty_1 {
-            info_v: ucc_coll_buffer_info_v_t {
+        scatterv_args.src.info_v = ucc_coll_buffer_info_v_t {
                 buffer: buff.as_ptr() as *mut ::std::os::raw::c_void,
                 counts: counts.as_ptr() as *mut ucc_count_t,
                 displacements: displacements.as_ptr() as *mut ucc_aint_t,
                 datatype: rust_type_to_ucc_dtype::<T>(),
                 mem_type: ucc_memory_type_UCC_MEMORY_TYPE_HOST,
-            },
-        };
+            };
         self.post_coll_req_keeping(scatterv_args, vec![counts, displacements])
     }
 
