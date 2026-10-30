@@ -20,7 +20,7 @@
 //!
 //! # Examples
 //!
-//! Lamellar provides a variety of [examples](https://github.com/pnnl/lamellar-runtime/tree/master/examples/array_examples) for common tasks, e.g. distributed iteration.
+//! Lamellar provides a variety of [examples](https://github.com/pnnl/lamellar/tree/master/lamellar-runtime/examples/array_examples) for common tasks, e.g. distributed iteration.
 //!
 //! # Safety
 //! Array Data Lifetimes: LamellarArrays are built upon [Darcs][crate::darc::Darc] (Distributed Atomic Reference Counting Pointers) and as such have distributed lifetime management.

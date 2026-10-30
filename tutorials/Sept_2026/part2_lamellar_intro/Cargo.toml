@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-lamellar = { git = "https://github.com/pnnl/lamellar-runtime", rev = "8b1e8b3930edd3f569d1fa8d1cc4e724adfc7546", features = [
+lamellar = { git = "https://github.com/pnnl/lamellar", rev = "8b1e8b3930edd3f569d1fa8d1cc4e724adfc7546", features = [
     "runtime-warnings-panic",
     "enable-ucx",
 ] }
