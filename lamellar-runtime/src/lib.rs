@@ -54,7 +54,7 @@
 //! Currently several such Lamellae exist (some require feature flags to enable):
 //! - `local` -  used for single-PE (single system, single process) development (this is the default),
 //! - `shmem` -  used for multi-PE (single system, multi-process) development, useful for emulating distributed environments (communicates through shared memory)
-//! - `rofi-c` - used for multi-PE (multi system, multi-process) distributed development, based on the Rust OpenFabrics Interface Transport Layer (ROFI) (<https://github.com/pnnl/rofi>).
+//! - `rofi-c` - used for multi-PE (multi system, multi-process) distributed development, based on the Rust OpenFabrics Interface Transport Layer (ROFI) (<https://github.com/pnnl/lamellar/tree/master/communication_frameworks/rofi>).
 //!     - Requires the Rofi C-library and libfabrics; enable with `features = ["enable-rofi-c"]` in your `Cargo.toml`
 //! - `libfabric` - multi-PE distributed backend using libfabrics directly; enable with `features = ["enable-libfabric"]`
 //! - `ucx` - multi-PE distributed backend using UCX; enable with `features = ["enable-ucx"]`
@@ -71,7 +71,7 @@
 //!
 //! Examples
 //! --------
-//! Our repository also provides numerous examples highlighting various features of the runtime: <https://github.com/pnnl/lamellar-runtime/tree/master/examples>
+//! Our repository also provides numerous examples highlighting various features of the runtime: <https://github.com/pnnl/lamellar/tree/master/lamellar-runtime/examples>
 //!
 //! Additionally, we are compiling a set of benchmarks (some with multiple implementations) that may be helpful to look at as well: <https://github.com/pnnl/lamellar-benchmarks/>
 //!
@@ -214,7 +214,7 @@
 //! 2. run your application the same way as above -- `#[lamellar::main]` handles invoking `prterun`/`srun` across the allocated nodes; select the distributed backend via `LAMELLAR_BACKEND` (e.g. `rofi_c`, `libfabric`, `ucx`) or the corresponding `Backend::*` variant in the world builder:
 //!     - ```cargo run --release -- <app args> -- --pes 8 --pes-per-node 4```
 //!
-//! See the [README](https://github.com/pnnl/lamellar-runtime#running-lamellar-applications) for the full set of launch flags (`--nodes`, `--lamellae`, `--cmd-queue`, etc.).
+//! See the [README](https://github.com/pnnl/lamellar/tree/master/lamellar-runtime#running-lamellar-applications) for the full set of launch flags (`--nodes`, `--lamellae`, `--cmd-queue`, etc.).
 //!
 
 extern crate self as lamellar;

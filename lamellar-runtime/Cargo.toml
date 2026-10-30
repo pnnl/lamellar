@@ -282,7 +282,7 @@ path = "src/lib.rs"
 # hpc_launch_codegen = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # openpmix-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-# rofisys = { git = "https://github.com/pnnl/rofi-sys", branch = "master" }
+# rofisys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # lamellar-libfabric = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # lamellar-libfabric-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 # lamellar-libfabric-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }

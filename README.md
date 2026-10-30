@@ -3,7 +3,7 @@ Lamellar - Rust HPC runtime
 
 Lamellar is an asynchronous tasking runtime for HPC systems developed in RUST  
 (Crates.io: https://crates.io/crates/lamellar)  
-(Main runtime repository: https://github.com/pnnl/lamellar-runtime)  
+(Repository: https://github.com/pnnl/lamellar)  
 
 SUMMARY
 -------
@@ -24,7 +24,7 @@ For native build prerequisites and backend-specific system dependencies, see
 
 Runtime
 -------
-The `lamellar-runtime/` crate (see [lamellar-runtime/README.md](https://github.com/pnnl/lamellar-runtime/blob/master/README.md)) implements the core asynchronous tasking runtime, the distributed arrays and Darcs interfaces, and the `local`, `shmem`, and optional `rofi` Lamellae backends. Its README documents the API, executors, and how to configure backends via features or runtime builders.
+The `lamellar-runtime/` crate (see [lamellar-runtime/README.md](https://github.com/pnnl/lamellar/blob/master/lamellar-runtime/README.md)) implements the core asynchronous tasking runtime, the distributed arrays and Darcs interfaces, and the `local`, `shmem`, and optional `rofi` Lamellae backends. Its README documents the API, executors, and how to configure backends via features or runtime builders.
 
 Communication frameworks
 ------------------------

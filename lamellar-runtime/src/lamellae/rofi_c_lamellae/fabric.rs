@@ -29,6 +29,11 @@ impl RofiC {
     pub(crate) fn new(provider: Option<&str>, domain: Option<&str>) -> FabricResult<Arc<Self>> {
         let prov = provider.unwrap_or("");
         let dom = domain.unwrap_or("");
+        // rofi opens its own libfabric endpoint, so it needs the same guard against stale registrations as the
+        // libfabric lamellae (see comm::ofi_mr_cache); it has to run before rofi_init opens the fabric
+        crate::lamellae::comm::ofi_mr_cache::configure_mr_cache_monitor(
+            crate::lamellae::comm::ofi_mr_cache::launcher_rank(),
+        );
         if let Err(_) = crate::lamellae::rofi_c_lamellae::rofi::rofi_c_init(prov, dom) {
             return Err(FabricError::InitError(1));
         }

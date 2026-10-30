@@ -66,6 +66,18 @@ typedef struct rofi_prov_names_t {
     int num;
 } rofi_names_t;
 
+// A collective group (address-vector set + multicast group) joined over `pes`, kept until the transport is torn down.
+// libfabric's coll provider hands out group ids from a fixed 256-entry per-endpoint mask on fi_join_collective and
+// never returns them on fi_close, so joining (and closing) a group for every MR exchange exhausts the ids after ~254
+// allocations; later joins then share id 256 and mark it one byte past the end of the 32-byte mask.
+struct rofi_coll_group {
+    struct rofi_coll_group *next;
+    uint64_t num_pes;
+    uint64_t *pes;
+    struct fid_av_set *av_set;
+    struct fid_mc *mc;
+};
+
 struct rofi_transport_t {
     struct fi_info *info;
     struct fid_fabric *fabric;
@@ -95,6 +107,7 @@ struct rofi_transport_t {
     pthread_mutex_t sub_alloc_lock; // serializes rofi_transport_sub_exchange_mr_info_manual against the shared sub_alloc_buf/sub_alloc_barrier_* scratch fields above
     pthread_rwlock_t mr_lock;
     uint64_t fi_collective;
+    struct rofi_coll_group *coll_groups; // protected by `lock`
 };
 
 extern rofi_transport_t rofi;

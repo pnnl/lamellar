@@ -25,6 +25,15 @@
 
 use std::env;
 
+/// This process's rank as the launcher reports it, for backends that learn their rank only after the fabric is open
+/// (rofi). Only used to pick the PE that prints the warning, so an unset or unparsable variable just means rank 0.
+pub(crate) fn launcher_rank() -> usize {
+    ["PMIX_RANK", "PMI_RANK", "SLURM_PROCID"]
+        .iter()
+        .find_map(|name| env::var(name).ok()?.trim().parse().ok())
+        .unwrap_or(0)
+}
+
 /// Disable libfabric's registration cache before the fabric is opened if UCX's memory hooks would break it. `my_pe`
 /// only decides who prints the warning.
 pub(crate) fn configure_mr_cache_monitor(my_pe: usize) {

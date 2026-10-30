@@ -8,7 +8,7 @@
 //!
 //! # Examples
 //!
-//! Examples can be found under [lamellar-runtime/examples/array_examples/](https://github.com/pnnl/lamellar-runtime/tree/master/examples/array_examples)
+//! Examples can be found under [lamellar-runtime/examples/array_examples/](https://github.com/pnnl/lamellar/tree/master/lamellar-runtime/examples/array_examples)
 mod chunks;
 use chunks::*;
 
