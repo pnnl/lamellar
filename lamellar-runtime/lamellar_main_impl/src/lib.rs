@@ -68,6 +68,25 @@ fn config(explicit_libfabric: Option<bool>) -> LaunchConfig {
         if __uses_libfabric && std::env::var_os("UCX_MEM_EVENTS").is_none() {
             launcher_cmd.env("UCX_MEM_EVENTS", "no");
         }
+
+        // The `local` backend has no communication: every process it launches is its own 1-PE world. It is only
+        // the default when no other backend was compiled in, so more than one PE on it is never what was meant.
+        // A default `local` becomes `shmem` on a single node; an explicit `local` (flag or environment) is only warned about.
+        {
+            let total_pes = pes.or_else(|| pes_per_node.map(|p| p * nodes.unwrap_or(1))).unwrap_or(1);
+            let backend = lamellae.clone().unwrap_or_else(|| ::lamellar::config().backend.clone());
+            if __explicit_libfabric.is_none() && total_pes > 1 && backend == "local" {
+                let backend_chosen = lamellae.is_some() || std::env::var_os("LAMELLAR_BACKEND").is_some();
+                if backend_chosen {
+                    eprintln!("lamellar_main: warning: the `local` backend does not connect PEs, so {} PEs will each run as an independent 1-PE world; pass --lamellae shmem (single node) or a network backend", total_pes);
+                } else if nodes.unwrap_or(1) <= 1 {
+                    eprintln!("lamellar_main: no network backend is compiled in; using `shmem` for {} PEs (pass --lamellae to choose another)", total_pes);
+                    launcher_cmd.env("LAMELLAR_BACKEND", "shmem");
+                } else {
+                    eprintln!("lamellar_main: warning: no network backend is compiled in, so the default `local` backend cannot connect {} PEs across {} nodes; build with a network backend", total_pes, nodes.unwrap_or(1));
+                }
+            }
+        }
     };
     cfg
 }
