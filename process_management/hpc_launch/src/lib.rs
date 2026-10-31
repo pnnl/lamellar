@@ -62,7 +62,8 @@ pub fn generic_help_text_with_prefix(prefix: &str) -> String {
     s.push_str(&format!("  --threads-per-pe <n>   worker threads per PE [env: {prefix}_THREADS]\n"));
     s.push_str(&format!("  --log <filter>         tracing filter for the launched job (RUST_LOG syntax) [env: {prefix}_LOG]\n"));
     if cfg!(feature = "with-salloc") {
-        s.push_str("  --salloc-opts <opts>   extra options passed to `salloc` when requesting an allocation\n");
+        s.push_str("  --salloc-opts <opts>   extra options passed to `salloc` when requesting an allocation; takes every\n");
+        s.push_str("                         following argument up to a `--` terminator, and splits quoted values on whitespace\n");
     }
     s.push_str("  --output-dir <dir>     directory to write per-PE stdout/stderr into\n");
     s.push_str(&format!("  --time                 report wall-clock application time [env: {prefix}_MAIN_TIME]\n"));
