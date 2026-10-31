@@ -1,7 +1,5 @@
 use std::marker::PhantomData;
 
-use libfabric_sys::{fi_trigger_var__bindgen_ty_1, fi_trigger_xpu__bindgen_ty_1};
-
 use crate::{
     cntr::Counter,
     enums::{HmemIface, TriggerEvent},
@@ -16,14 +14,10 @@ pub(crate) struct TriggeredContext1<'a, 'b> {
 
 impl<'a, 'b> TriggeredContext1<'a, 'b> {
     pub fn new(event: &'a mut TriggerEvent<'b>) -> Self {
-        let (event_type, trigger) = event.as_raw();
+        let mut c_val: libfabric_sys::fi_triggered_context = unsafe { std::mem::zeroed() };
+        event.fill_context(&mut c_val);
         Self {
-            c_val: {
-                libfabric_sys::fi_triggered_context {
-                    event_type,
-                    trigger,
-                }
-            },
+            c_val,
             phantom: PhantomData,
         }
     }
@@ -53,14 +47,10 @@ pub(crate) struct TriggeredContext2<'a, 'b> {
 
 impl<'a, 'b> TriggeredContext2<'a, 'b> {
     pub fn new(event: &'a mut TriggerEvent<'b>) -> Self {
-        let (event_type, trigger) = event.as_raw2();
+        let mut c_val: libfabric_sys::fi_triggered_context2 = unsafe { std::mem::zeroed() };
+        event.fill_context2(&mut c_val);
         Self {
-            c_val: {
-                libfabric_sys::fi_triggered_context2 {
-                    event_type,
-                    trigger,
-                }
-            },
+            c_val,
             phantom: PhantomData,
         }
     }
@@ -215,9 +205,7 @@ impl TriggerXpu {
         let mut i = 0;
         for var in res.trigger_vars.iter_mut() {
             if var.count > 1 {
-                var.value = fi_trigger_var__bindgen_ty_1 {
-                    data: res.trigger_vars_data[i].as_mut_ptr(),
-                };
+                var.value.data = res.trigger_vars_data[i].as_mut_ptr();
                 i += 1;
             }
         }
@@ -289,25 +277,20 @@ impl TriggerXpu {
     }
 
     pub(crate) fn as_raw(&mut self) -> libfabric_sys::fi_trigger_xpu {
-        let (dev_id, dev_type) = match self.hmem_iface {
-            HmemIface::Cuda(id) => (
-                fi_trigger_xpu__bindgen_ty_1 { cuda: id },
-                libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA,
-            ),
-            HmemIface::Ze(drv_id, dev_id) => (
-                fi_trigger_xpu__bindgen_ty_1 {
-                    ze: unsafe { libfabric_sys::inlined_fi_hmem_ze_device(drv_id, dev_id) },
-                },
-                libfabric_sys::fi_hmem_iface_FI_HMEM_ZE,
-            ),
+        let mut xpu: libfabric_sys::fi_trigger_xpu = unsafe { std::mem::zeroed() };
+        xpu.count = self.trigger_vars.len() as i32;
+        xpu.var = self.trigger_vars.as_mut_ptr().cast();
+        match self.hmem_iface {
+            HmemIface::Cuda(id) => {
+                xpu.iface = libfabric_sys::fi_hmem_iface_FI_HMEM_CUDA;
+                xpu.device.cuda = id;
+            }
+            HmemIface::Ze(drv_id, dev_id) => {
+                xpu.iface = libfabric_sys::fi_hmem_iface_FI_HMEM_ZE;
+                xpu.device.ze = unsafe { libfabric_sys::inlined_fi_hmem_ze_device(drv_id, dev_id) };
+            }
             _ => panic!("Device type not supported"),
-        };
-
-        libfabric_sys::fi_trigger_xpu {
-            count: self.trigger_vars.len() as i32,
-            iface: dev_type,
-            device: dev_id,
-            var: self.trigger_vars.as_mut_ptr().cast(),
         }
+        xpu
     }
 }
