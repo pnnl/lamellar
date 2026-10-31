@@ -280,12 +280,9 @@ impl Pmi for PmiX {
                 rank: *rank as u32,
             };
             let mut recv_val: *mut pmix_sys::pmix_value = std::ptr::null_mut();
-            let mut val: pmix_sys::pmix_value = pmix_sys::pmix_value {
-                type_: 0,
-                data: pmix_sys::pmix_value__bindgen_ty_1 {
-                    string: std::ptr::null_mut(),
-                },
-            };
+            // Zero-initialise rather than naming the anonymous `data` union type
+            // (`pmix_value__bindgen_ty_N`), whose number changes between PMIx releases.
+            let mut val: pmix_sys::pmix_value = unsafe { std::mem::zeroed() };
 
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}", rank, key))
                 .unwrap()
@@ -307,12 +304,9 @@ impl Pmi for PmiX {
     /// Publish `value` under `key` for this rank using PMIx put/commit.
     fn put(&self, key: &str, value: &[u8]) -> Result<(), PmiError> {
         if self.ranks.len() > 1 {
-            let mut val: pmix_sys::pmix_value = pmix_sys::pmix_value {
-                type_: 0,
-                data: pmix_sys::pmix_value__bindgen_ty_1 {
-                    string: std::ptr::null_mut(),
-                },
-            };
+            // Zero-initialise rather than naming the anonymous `data` union type
+            // (`pmix_value__bindgen_ty_N`), whose number changes between PMIx releases.
+            let mut val: pmix_sys::pmix_value = unsafe { std::mem::zeroed() };
             let kvs_key = std::ffi::CString::new(format!("rlibfab-{}-{}", self.my_rank, key))
                 .unwrap()
                 .into_raw();
