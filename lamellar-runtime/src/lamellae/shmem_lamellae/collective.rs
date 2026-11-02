@@ -1218,7 +1218,9 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for ShmemCollectiveBroadcastIntoB
 
 fn scatter_root_side<T: Remote>(alloc: &ShmemAlloc, index: usize, len: usize, res: &mut [T]) {
     let alloc_slice = unsafe { alloc.as_mut_slice() };
-    let my_slice = &mut alloc_slice[index..index + len];
+    // the root is a receiver too: it takes the chunk for its own rank, like the other PEs
+    let own = index + alloc.my_alloc_pe * len;
+    let my_slice = &mut alloc_slice[own..own + len];
     res.copy_from_slice(my_slice);
     alloc.coll_set_index(alloc.my_alloc_pe, index);
     alloc.coll_inc_barrier();
