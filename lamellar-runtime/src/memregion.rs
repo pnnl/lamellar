@@ -47,6 +47,7 @@ use std::{
 /// Prelude for using the [LamellarMemoryRegion] module
 pub mod prelude;
 
+pub(crate) mod collective_manual;
 pub(crate) mod shared;
 pub use shared::SharedMemoryRegion;
 

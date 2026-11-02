@@ -502,6 +502,10 @@ name = "shared_mem_region_subregion_test"
 path = "tests/memregion/collective/shared_mem_region_subregion_test.rs"
 
 [[example]]
+name = "shared_mem_region_collectives_test"
+path = "tests/memregion/collective/shared_mem_region_collectives_test.rs"
+
+[[example]]
 name = "sum_all_test"
 path = "tests/array/collective/sum_all_test.rs"
 

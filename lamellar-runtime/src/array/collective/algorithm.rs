@@ -7,14 +7,21 @@ use crate::{
     array::NetworkAtomicArray,
     lamellae::{
         collective::{ReduceOp, RootOrLamellarBuffer, RootSrcOrLamellarBuffer},
-        CommAlloc, CommAllocRdma,
+        CommAlloc, CommAllocRdma, Remote,
     },
     ActiveMessaging, AsLamellarBuffer, Dist, ElementArithmeticOps, ElementBitWiseOps,
     ElementComparePartialEqOps, GenericAtomicArray, GlobalLockArray, LamellarArray, LamellarBuffer,
-    NativeAtomicArray, ReadOnlyOps,
+    LamellarEnv, NativeAtomicArray, ReadOnlyOps,
 };
 use async_std::task::yield_now;
 use tracing::debug;
+
+// Scratch buffers for the Manual algorithms below. `Remote` types are plain data (`Copy`, no destructor), and every
+// element is overwritten by a remote get or a local copy before it is read, so a zeroed value stands in for
+// `T::default()`, which a memory region's `T: Remote` does not provide.
+fn zeroed_vec<T: Remote>(len: usize) -> Vec<T> {
+    vec![unsafe { std::mem::zeroed() }; len]
+}
 
 pub(crate) trait AtomicArrayOpsForCollectiveOps<T: Dist>:
     LamellarArray<T> + ActiveMessaging + ReadOnlyOps<T>
@@ -45,6 +52,77 @@ pub(crate) trait AtomicArrayOpsForCollectiveOpsUpdateComparison<T: ElementCompar
     AtomicArrayOpsForCollectiveOps<T>
 {
     fn update_local_data_comparison(&self, index: usize, count: usize, data: &[T], op: ReduceOp);
+}
+
+// What the put/get "Manual" collective algorithms below need from the object they run on: the position in the
+// team, a barrier, a remote read, and access to the local window. They are written against these traits and not
+// against arrays, so memory regions (which are `Remote` only, with no global indexing) can use them too. Arrays
+// get the traits through the blanket impls below, from the `AtomicArrayOpsForCollectiveOps*` traits above.
+pub(crate) trait ManualCollectiveSource<T: Remote>: Clone {
+    fn my_pe(&self) -> usize;
+    fn num_pes(&self) -> usize;
+    async fn async_barrier(&self);
+    fn copy_local_data(&self, index: usize, count: usize, buffer: &mut [T]);
+    fn store_to_local_data(&self, index: usize, count: usize, data: &[T]);
+    async fn batch_load(&self, pe: usize, num_pes: usize, start: usize, count: usize) -> Vec<T>;
+}
+
+// Folds `data` into the local window with a sum/product, bitwise, or min/max reduction respectively.
+pub(crate) trait ManualCollectiveUpdate<T: Remote>: ManualCollectiveSource<T> {
+    fn update_local_data(&self, index: usize, count: usize, data: &[T], op: ReduceOp);
+}
+pub(crate) trait ManualCollectiveUpdateBitwise<T: Remote>: ManualCollectiveSource<T> {
+    fn update_local_data_bitwise(&self, index: usize, count: usize, data: &[T], op: ReduceOp);
+}
+pub(crate) trait ManualCollectiveUpdateComparison<T: Remote>: ManualCollectiveSource<T> {
+    fn update_local_data_comparison(&self, index: usize, count: usize, data: &[T], op: ReduceOp);
+}
+
+impl<T: Dist, A: AtomicArrayOpsForCollectiveOps<T> + Clone> ManualCollectiveSource<T> for A {
+    fn my_pe(&self) -> usize {
+        LamellarEnv::my_pe(self)
+    }
+    fn num_pes(&self) -> usize {
+        LamellarEnv::num_pes(self)
+    }
+    async fn async_barrier(&self) {
+        ActiveMessaging::async_barrier(self).await
+    }
+    fn copy_local_data(&self, index: usize, count: usize, buffer: &mut [T]) {
+        AtomicArrayOpsForCollectiveOps::copy_local_data(self, index, count, buffer)
+    }
+    fn store_to_local_data(&self, index: usize, count: usize, data: &[T]) {
+        AtomicArrayOpsForCollectiveOps::store_to_local_data(self, index, count, data)
+    }
+    async fn batch_load(&self, pe: usize, num_pes: usize, start: usize, count: usize) -> Vec<T> {
+        AtomicArrayOpsForCollectiveOps::batch_load(self, pe, num_pes, start, count).await
+    }
+}
+
+impl<T: ElementArithmeticOps, A: AtomicArrayOpsForCollectiveOpsUpdate<T> + Clone>
+    ManualCollectiveUpdate<T> for A
+{
+    fn update_local_data(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        AtomicArrayOpsForCollectiveOpsUpdate::update_local_data(self, index, count, data, op)
+    }
+}
+impl<T: ElementBitWiseOps, A: AtomicArrayOpsForCollectiveOpsUpdateBitwise<T> + Clone>
+    ManualCollectiveUpdateBitwise<T> for A
+{
+    fn update_local_data_bitwise(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        AtomicArrayOpsForCollectiveOpsUpdateBitwise::update_local_data_bitwise(
+            self, index, count, data, op,
+        )
+    }
+}
+impl<T: ElementComparePartialEqOps, A: AtomicArrayOpsForCollectiveOpsUpdateComparison<T> + Clone>
+    ManualCollectiveUpdateComparison<T> for A
+{
+    fn update_local_data_comparison(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        AtomicArrayOpsForCollectiveOpsUpdateComparison::update_local_data_comparison(
+            self, index, count, data, op,
+        )
+    }
 }
 
 impl<T: Dist> AtomicArrayOpsForCollectiveOps<T> for GlobalLockArray<T> {
@@ -441,7 +519,7 @@ impl<T: Dist + ElementArithmeticOps> AtomicArrayOpsForCollectiveOpsUpdate<T>
     }
 }
 
-pub(crate) async fn do_scatter<A: AtomicArrayOpsForCollectiveOps<T> + Clone, T: Dist>(
+pub(crate) async fn do_scatter<A: ManualCollectiveSource<T>, T: Remote>(
     array: A,
     scheduler: Arc<Scheduler>,
     sync_alloc: Arc<CommAlloc>,
@@ -461,8 +539,8 @@ pub(crate) async fn do_scatter<A: AtomicArrayOpsForCollectiveOps<T> + Clone, T: 
 }
 
 pub(crate) async fn do_scatter_in_buffer<
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -503,8 +581,8 @@ pub(crate) async fn do_scatter_impl<A, T>(
     root: usize,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 {
     let local = array.my_pe();
     let num_pes = array.num_pes();
@@ -521,7 +599,8 @@ where
         .for_each(|elem| elem.store(0, std::sync::atomic::Ordering::SeqCst)); // initialize sync array to 0
     array.async_barrier().await; // ensure all PEs have initialized their sync array
 
-    let local_offset = (local + root) % num_pes * count;
+    // PE `p` receives the `p`-th chunk of the root's data, whichever PE is the root (as in UCC's scatterv)
+    let local_offset = local * count;
     let start = if local == root {
         index + local_offset
     } else {
@@ -529,14 +608,14 @@ where
         remote_index + local_offset
     };
     // let indices = array.get_global_indices(root, num_pes, start, count);
-    let res = AtomicArrayOpsForCollectiveOps::batch_load(&array, root, num_pes, start, count).await;
+    let res = ManualCollectiveSource::batch_load(&array, root, num_pes, start, count).await;
     array.async_barrier().await; // ensure all PEs have received their data before returning
     res
 }
 
 pub(crate) async fn do_gather_in_buffer<
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -566,7 +645,7 @@ pub(crate) async fn do_gather_in_buffer<
             .await;
         }
         RootOrLamellarBuffer::NotRoot(root) => {
-            // Some(vec![T::default(); array.num_pes() * local_length]) // allocate temporary buffer for gather
+            // Some(zeroed_vec::<T>(array.num_pes() * local_length)) // allocate temporary buffer for gather
             let mut buf = Vec::new(); // non-root PEs don't need to allocate a result buffer
             do_gather_impl(
                 array,
@@ -584,7 +663,7 @@ pub(crate) async fn do_gather_in_buffer<
     debug!(target: "collective::ticket", func = "do_gather_in_buffer", my_ticket, "released next ticket holder");
 }
 
-pub(crate) async fn do_gather<A: AtomicArrayOpsForCollectiveOps<T> + Clone, T: Dist + Default>(
+pub(crate) async fn do_gather<A: ManualCollectiveSource<T>, T: Remote>(
     array: A,
     scheduler: Arc<Scheduler>,
     sync_alloc: Arc<CommAlloc>,
@@ -600,7 +679,7 @@ pub(crate) async fn do_gather<A: AtomicArrayOpsForCollectiveOps<T> + Clone, T: D
     let my_pe = array.my_pe();
     let num_pes = array.num_pes();
     let mut res = if my_pe == root {
-        vec![T::default(); num_pes * local_length] // allocate result buffer on root PE
+        zeroed_vec::<T>(num_pes * local_length) // allocate result buffer on root PE
     } else {
         Vec::new() // non-root PEs don't need to allocate a result buffer
     };
@@ -633,8 +712,8 @@ pub(crate) async fn do_gather_impl<A, T>(
     root: usize,
     res: &mut [T],
 ) where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 {
     let local = array.my_pe();
     let num_pes = array.num_pes();
@@ -647,14 +726,14 @@ pub(crate) async fn do_gather_impl<A, T>(
         .skip(2)
         .for_each(|elem| elem.store(0, std::sync::atomic::Ordering::SeqCst)); // initialize sync array to 0
     array.async_barrier().await; // ensure all PEs have initialized their sync array
-                                 // let mut result = vec![T::default(); num_pes*count];
+                                 // let mut result = zeroed_vec::<T>(num_pes*count);
 
     if local == root {
         for i in 0..num_pes {
             let remote_index: usize = sync_alloc.blocking_get(scheduler, i, 0);
             // let indices = array.get_global_indices(i, num_pes, remote_index, count);
             let tmp =
-                AtomicArrayOpsForCollectiveOps::batch_load(&array, i, num_pes, remote_index, count)
+                ManualCollectiveSource::batch_load(&array, i, num_pes, remote_index, count)
                     .await;
             // let tmp = array.batch_load(indices).await;
             res[i * count..i * count + count]
@@ -676,8 +755,8 @@ pub(crate) async fn do_all_to_all_impl<A, T>(
     local_length: usize,
     res: &mut [T],
 ) where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 {
     let num_pes = array.num_pes();
     let count = local_length; // number of elements in the array each PE is responsible for
@@ -694,7 +773,7 @@ pub(crate) async fn do_all_to_all_impl<A, T>(
         let remote_index: usize = sync_alloc.blocking_get(scheduler, i, 0);
         // let indices = array.get_global_indices(i, num_pes, remote_index, count);
         let tmp =
-            AtomicArrayOpsForCollectiveOps::batch_load(&array, i, num_pes, remote_index, count)
+            ManualCollectiveSource::batch_load(&array, i, num_pes, remote_index, count)
                 .await;
 
         // let tmp = array.batch_load(indices).await;
@@ -709,8 +788,8 @@ pub(crate) async fn do_all_to_all_impl<A, T>(
 }
 
 pub(crate) async fn do_all_to_all<
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 >(
     array: A,
     scheduler: Arc<Scheduler>,
@@ -724,7 +803,7 @@ pub(crate) async fn do_all_to_all<
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_all_to_all", my_ticket, "ticket served, proceeding");
     let num_pes = array.num_pes();
-    let mut res = vec![T::default(); num_pes * local_length]; // allocate result buffer
+    let mut res = zeroed_vec::<T>(num_pes * local_length); // allocate result buffer
     do_all_to_all_impl(array, &scheduler, sync_alloc, index, local_length, &mut res).await;
     now_serving.release(); // release the next ticket holder
     debug!(target: "collective::ticket", func = "do_all_to_all", my_ticket, "released next ticket holder");
@@ -732,8 +811,8 @@ pub(crate) async fn do_all_to_all<
 }
 
 pub(crate) async fn do_all_to_all_in_buffer<
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -770,8 +849,8 @@ pub(crate) async fn do_broadcast_impl<A, T>(
     root: usize,
 ) -> Option<Vec<T>>
 where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 {
     let local = array.my_pe();
     let count = local_length; // number of elements in the array each PE is responsible for
@@ -788,7 +867,7 @@ where
         let remote_index: usize = sync_alloc.blocking_get(scheduler, root, 0);
         // let indices = array.get_global_indices(root, array.num_pes(), remote_index, count);
         Some(
-            AtomicArrayOpsForCollectiveOps::batch_load(
+            ManualCollectiveSource::batch_load(
                 &array,
                 root,
                 array.num_pes(),
@@ -805,8 +884,8 @@ where
 }
 
 pub(crate) async fn do_broadcast<
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 >(
     array: A,
     scheduler: Arc<Scheduler>,
@@ -827,8 +906,8 @@ pub(crate) async fn do_broadcast<
 }
 
 pub(crate) async fn do_broadcast_in_buffer<
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -875,13 +954,13 @@ pub(crate) async fn do_all_gather<A, T>(
     local_length: usize,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_all_gather", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_all_gather", my_ticket, "ticket served, proceeding");
-    let mut result = vec![T::default(); array.num_pes() * local_length];
+    let mut result = zeroed_vec::<T>(array.num_pes() * local_length);
     do_all_gather_impl(
         array,
         &scheduler,
@@ -906,8 +985,8 @@ pub(crate) async fn do_all_gather_in_buffer<A, T, B: AsLamellarBuffer<T>>(
     local_length: usize,
     mut result: LamellarBuffer<T, B>,
 ) where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_all_gather_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -933,8 +1012,8 @@ pub(crate) async fn do_all_gather_impl<A, T>(
     local_length: usize,
     res: &mut [T],
 ) where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
 {
     let num_pes = array.num_pes();
     let count = local_length; // number of elements in the array each PE is responsible for
@@ -951,13 +1030,13 @@ pub(crate) async fn do_all_gather_impl<A, T>(
         .for_each(|elem| elem.store(0, std::sync::atomic::Ordering::SeqCst)); // initialize sync array to 0
     array.async_barrier().await; // ensure all PEs have written the index before starting the gather
 
-    // let mut result = vec![T::default(); num_pes*count];
+    // let mut result = zeroed_vec::<T>(num_pes*count);
     array.async_barrier().await; // ensure all PEs have published their offsets before starting the gather
 
     for i in 0..num_pes {
         let remote_index: usize = sync_alloc.blocking_get(scheduler, i, 0);
         let tmp =
-            AtomicArrayOpsForCollectiveOps::batch_load(&array, i, num_pes, remote_index, count)
+            ManualCollectiveSource::batch_load(&array, i, num_pes, remote_index, count)
                 .await;
 
         res[i * count..i * count + count]
@@ -1004,8 +1083,8 @@ async fn do_all_reduce_impl<A, T, F>(
     apply_op: F,
     res: &mut [T],
 ) where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
     F: Fn(&A, &[T]),
 {
     let my_pe = array.my_pe();
@@ -1031,7 +1110,7 @@ async fn do_all_reduce_impl<A, T, F>(
     debug!(target: "collective::all_reduce", pe = my_pe, index, "passed initial barrier");
     let my_new_id;
 
-    let mut replace = vec![T::default(); count];
+    let mut replace = zeroed_vec::<T>(count);
     array.copy_local_data(index, count, &mut replace);
 
     let mut round = 1;
@@ -1055,7 +1134,7 @@ async fn do_all_reduce_impl<A, T, F>(
             // let first_global_index = array.first_global_index_for_pe(local - 1).unwrap();
             // let indices = ((remote_index+first_global_index)..(remote_index+first_global_index+count)).collect::<Vec<_>>();
             // let indices = array.get_global_indices(local - 1, num_pes, remote_index, count);
-            let tmp = AtomicArrayOpsForCollectiveOps::batch_load(
+            let tmp = ManualCollectiveSource::batch_load(
                 &array,
                 local - 1,
                 num_pes,
@@ -1107,7 +1186,7 @@ async fn do_all_reduce_impl<A, T, F>(
 
             // receive data from partner
             let remote_index: usize = sync_alloc.blocking_get(scheduler, partner_pe, 0);
-            let tmp = AtomicArrayOpsForCollectiveOps::batch_load(
+            let tmp = ManualCollectiveSource::batch_load(
                 &array,
                 partner_pe,
                 num_pes,
@@ -1155,7 +1234,7 @@ async fn do_all_reduce_impl<A, T, F>(
             // let indices = ((remote_index+first_global_index)..(remote_index+first_global_index+count)).collect::<Vec<_>>();
             // let indices = array.get_global_indices(local + 1, array.num_pes(), remote_index, count);
             // let tmp = array.batch_load(indices).await;
-            let tmp = AtomicArrayOpsForCollectiveOps::batch_load(
+            let tmp = ManualCollectiveSource::batch_load(
                 &array,
                 local + 1,
                 array.num_pes(),
@@ -1181,8 +1260,8 @@ async fn do_all_reduce_impl<A, T, F>(
 }
 
 pub(crate) async fn do_all_reduce<
-    A: AtomicArrayOpsForCollectiveOpsUpdate<T> + Clone,
-    T: Dist + ElementArithmeticOps + Default,
+    A: ManualCollectiveUpdate<T>,
+    T: Remote,
 >(
     array: A,
     scheduler: Arc<Scheduler>,
@@ -1196,7 +1275,7 @@ pub(crate) async fn do_all_reduce<
     debug!(target: "collective::ticket", func = "do_all_reduce", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_all_reduce", my_ticket, "ticket served, proceeding");
-    let mut result = vec![T::default(); local_length];
+    let mut result = zeroed_vec::<T>(local_length);
     do_all_reduce_impl(
         array,
         &scheduler,
@@ -1226,13 +1305,13 @@ pub(crate) async fn do_all_reduce_bitwise<A, T>(
     op: ReduceOp,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOpsUpdateBitwise<T> + Clone,
-    T: Dist + ElementBitWiseOps + Default,
+    A: ManualCollectiveUpdateBitwise<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_all_reduce_bitwise", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_all_reduce_bitwise", my_ticket, "ticket served, proceeding");
-    let mut result = vec![T::default(); local_length];
+    let mut result = zeroed_vec::<T>(local_length);
     do_all_reduce_impl(
         array,
         &scheduler,
@@ -1252,8 +1331,8 @@ where
 }
 
 pub(crate) async fn do_all_reduce_in_buffer<
-    A: AtomicArrayOpsForCollectiveOpsUpdate<T> + Clone,
-    T: Dist + ElementArithmeticOps + Default,
+    A: ManualCollectiveUpdate<T>,
+    T: Remote,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -1296,8 +1375,8 @@ pub(crate) async fn do_all_reduce_bitwise_in_buffer<A, T, B: AsLamellarBuffer<T>
     op: ReduceOp,
     mut result: LamellarBuffer<T, B>,
 ) where
-    A: AtomicArrayOpsForCollectiveOpsUpdateBitwise<T> + Clone,
-    T: Dist + ElementBitWiseOps + Default,
+    A: ManualCollectiveUpdateBitwise<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_all_reduce_bitwise_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -1329,13 +1408,13 @@ pub(crate) async fn do_all_reduce_comparison<A, T>(
     op: ReduceOp,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOpsUpdateComparison<T> + Clone,
-    T: Dist + ElementComparePartialEqOps + Default,
+    A: ManualCollectiveUpdateComparison<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_all_reduce_comparison", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_all_reduce_comparison", my_ticket, "ticket served, proceeding");
-    let mut result = vec![T::default(); local_length];
+    let mut result = zeroed_vec::<T>(local_length);
     do_all_reduce_impl(
         array,
         &scheduler,
@@ -1365,8 +1444,8 @@ pub(crate) async fn do_all_reduce_comparison_in_buffer<A, T, B: AsLamellarBuffer
     op: ReduceOp,
     mut result: LamellarBuffer<T, B>,
 ) where
-    A: AtomicArrayOpsForCollectiveOpsUpdateComparison<T> + Clone,
-    T: Dist + ElementComparePartialEqOps + Default,
+    A: ManualCollectiveUpdateComparison<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_all_reduce_comparison_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -1397,8 +1476,8 @@ async fn do_reduce_impl<A, T, F>(
     apply_op: F,
     res: &mut [T],
 ) where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
     F: Copy + Fn(&A, &[T]),
 {
     let my_pe = array.my_pe();
@@ -1418,7 +1497,7 @@ async fn do_reduce_impl<A, T, F>(
     debug!(target: "collective::reduce", pe = my_pe, index, "passed initial barrier");
 
     let mut step = 1;
-    let mut replace = vec![T::default(); count];
+    let mut replace = zeroed_vec::<T>(count);
     array.copy_local_data(index, count, &mut replace);
     let virtual_id = (local + num_pes - root) % num_pes;
 
@@ -1432,7 +1511,7 @@ async fn do_reduce_impl<A, T, F>(
                     yield_now().await; // wait for remote PE to signal that data is ready to move on to the next round
                 }
                 let remote_index: usize = sync_alloc.blocking_get(&scheduler, partner, 0);
-                let tmp = AtomicArrayOpsForCollectiveOps::batch_load(
+                let tmp = ManualCollectiveSource::batch_load(
                     &array,
                     partner,
                     num_pes,
@@ -1470,8 +1549,8 @@ async fn do_reduce_impl<A, T, F>(
 }
 
 pub(crate) async fn do_reduce<
-    T: ElementArithmeticOps + Default,
-    A: AtomicArrayOpsForCollectiveOpsUpdate<T> + Clone,
+    T: Remote,
+    A: ManualCollectiveUpdate<T>,
 >(
     array: A,
     scheduler: Arc<Scheduler>,
@@ -1488,7 +1567,7 @@ pub(crate) async fn do_reduce<
     debug!(target: "collective::ticket", func = "do_reduce", my_ticket, "ticket served, proceeding");
     let my_pe = array.my_pe();
     let mut res = if my_pe == root {
-        vec![T::default(); local_length] // allocate result buffer on root PE
+        zeroed_vec::<T>(local_length) // allocate result buffer on root PE
     } else {
         Vec::new() // non-root PEs don't need to allocate a result buffer
     };
@@ -1516,8 +1595,8 @@ pub(crate) async fn do_reduce<
 }
 
 pub(crate) async fn do_reduce_bitwise<
-    T: ElementBitWiseOps + Default,
-    A: AtomicArrayOpsForCollectiveOpsUpdateBitwise<T> + Clone,
+    T: Remote,
+    A: ManualCollectiveUpdateBitwise<T>,
 >(
     array: A,
     scheduler: Arc<Scheduler>,
@@ -1534,7 +1613,7 @@ pub(crate) async fn do_reduce_bitwise<
     debug!(target: "collective::ticket", func = "do_reduce_bitwise", my_ticket, "ticket served, proceeding");
     let my_pe = array.my_pe();
     let mut res = if my_pe == root {
-        vec![T::default(); local_length] // allocate result buffer on root PE
+        zeroed_vec::<T>(local_length) // allocate result buffer on root PE
     } else {
         Vec::new() // non-root PEs don't need to allocate a result buffer
     };
@@ -1562,8 +1641,8 @@ pub(crate) async fn do_reduce_bitwise<
 }
 
 pub(crate) async fn do_reduce_in_buffer<
-    T: ElementArithmeticOps + Default,
-    A: AtomicArrayOpsForCollectiveOpsUpdate<T> + Clone,
+    T: Remote,
+    A: ManualCollectiveUpdate<T>,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -1617,8 +1696,8 @@ pub(crate) async fn do_reduce_in_buffer<
 }
 
 pub(crate) async fn do_reduce_bitwise_in_buffer<
-    T: ElementBitWiseOps + Default,
-    A: AtomicArrayOpsForCollectiveOpsUpdateBitwise<T> + Clone,
+    T: Remote,
+    A: ManualCollectiveUpdateBitwise<T>,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -1676,8 +1755,8 @@ pub(crate) async fn do_reduce_bitwise_in_buffer<
 }
 
 pub(crate) async fn do_reduce_comparison<
-    T: ElementComparePartialEqOps + Default,
-    A: AtomicArrayOpsForCollectiveOpsUpdateComparison<T> + Clone,
+    T: Remote,
+    A: ManualCollectiveUpdateComparison<T>,
 >(
     array: A,
     scheduler: Arc<Scheduler>,
@@ -1694,7 +1773,7 @@ pub(crate) async fn do_reduce_comparison<
     debug!(target: "collective::ticket", func = "do_reduce_comparison", my_ticket, "ticket served, proceeding");
     let my_pe = array.my_pe();
     let mut res = if my_pe == root {
-        vec![T::default(); local_length] // allocate result buffer on root PE
+        zeroed_vec::<T>(local_length) // allocate result buffer on root PE
     } else {
         Vec::new() // non-root PEs don't need to allocate a result buffer
     };
@@ -1722,8 +1801,8 @@ pub(crate) async fn do_reduce_comparison<
 }
 
 pub(crate) async fn do_reduce_comparison_in_buffer<
-    T: ElementComparePartialEqOps + Default,
-    A: AtomicArrayOpsForCollectiveOpsUpdateComparison<T> + Clone,
+    T: Remote,
+    A: ManualCollectiveUpdateComparison<T>,
     B: AsLamellarBuffer<T>,
 >(
     array: A,
@@ -1789,8 +1868,8 @@ async fn do_reduce_scatter_impl<T, A, F>(
     apply_op: F,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOps<T> + Clone,
-    T: Dist + Default,
+    A: ManualCollectiveSource<T>,
+    T: Remote,
     F: Fn(&A, &[T]),
 {
     let local = array.my_pe();
@@ -1798,7 +1877,7 @@ where
     let count = local_length; // number of elements in the array each PE is responsible for
 
     let mut step = 1;
-    let mut replace = vec![T::default(); count];
+    let mut replace = zeroed_vec::<T>(count);
     array.copy_local_data(index, count, &mut replace);
     // let replace = src.iter().map(|v| v.load()).collect::<Vec<_>>();
     let root = 0;
@@ -1829,7 +1908,7 @@ where
                 // let indices = array.get_global_indices(partner, num_pes, remote_index, count);
 
                 // let tmp = array.batch_load(indices).await; // copy data from partner into result
-                let tmp = AtomicArrayOpsForCollectiveOps::batch_load(
+                let tmp = ManualCollectiveSource::batch_load(
                     &array,
                     partner,
                     num_pes,
@@ -1891,8 +1970,8 @@ pub(crate) async fn do_reduce_scatter<T, A>(
     op: ReduceOp,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOpsUpdate<T> + Clone,
-    T: Dist + ElementArithmeticOps + Default,
+    A: ManualCollectiveUpdate<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_reduce_scatter", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -1924,8 +2003,8 @@ pub(crate) async fn do_reduce_scatter_bitwise<T, A>(
     op: ReduceOp,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOpsUpdateBitwise<T> + Clone,
-    T: Dist + ElementBitWiseOps + Default,
+    A: ManualCollectiveUpdateBitwise<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_reduce_scatter_bitwise", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -1957,8 +2036,8 @@ pub(crate) async fn do_reduce_scatter_in_buffer<T, A, B: AsLamellarBuffer<T>>(
     op: ReduceOp,
     mut result: LamellarBuffer<T, B>,
 ) where
-    A: AtomicArrayOpsForCollectiveOpsUpdate<T> + Clone,
-    T: Dist + ElementArithmeticOps + Default,
+    A: ManualCollectiveUpdate<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_reduce_scatter_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -1997,8 +2076,8 @@ pub(crate) async fn do_reduce_scatter_comparison<T, A>(
     op: ReduceOp,
 ) -> Vec<T>
 where
-    A: AtomicArrayOpsForCollectiveOpsUpdateComparison<T> + Clone,
-    T: Dist + ElementComparePartialEqOps + Default,
+    A: ManualCollectiveUpdateComparison<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_reduce_scatter_comparison", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -2030,8 +2109,8 @@ pub(crate) async fn do_reduce_scatter_comparison_in_buffer<T, A, B: AsLamellarBu
     op: ReduceOp,
     mut result: LamellarBuffer<T, B>,
 ) where
-    A: AtomicArrayOpsForCollectiveOpsUpdateComparison<T> + Clone,
-    T: Dist + ElementComparePartialEqOps + Default,
+    A: ManualCollectiveUpdateComparison<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_reduce_scatter_comparison_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
@@ -2071,8 +2150,8 @@ pub(crate) async fn do_reduce_scatter_bitwise_in_buffer<T, A, B: AsLamellarBuffe
     op: ReduceOp,
     mut result: LamellarBuffer<T, B>,
 ) where
-    A: AtomicArrayOpsForCollectiveOpsUpdateBitwise<T> + Clone,
-    T: Dist + ElementBitWiseOps + Default,
+    A: ManualCollectiveUpdateBitwise<T>,
+    T: Remote,
 {
     debug!(target: "collective::ticket", func = "do_reduce_scatter_bitwise_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
