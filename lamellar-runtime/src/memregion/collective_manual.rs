@@ -15,8 +15,10 @@ use std::{future::Future, pin::Pin, sync::atomic::Ordering, sync::Arc};
 use crate::{
     array::collective::algorithm::{
         do_all_gather, do_all_gather_in_buffer, do_all_reduce, do_all_reduce_bitwise,
-        do_all_reduce_bitwise_in_buffer, do_all_reduce_comparison,
-        do_all_reduce_comparison_in_buffer, do_all_reduce_in_buffer, do_all_to_all,
+        do_all_reduce_bitwise_in_buffer, do_all_reduce_bitwise_in_place,
+        do_all_reduce_comparison, do_all_reduce_comparison_in_buffer,
+        do_all_reduce_comparison_in_place, do_all_reduce_in_buffer, do_all_reduce_in_place,
+        do_all_to_all,
         do_all_to_all_in_buffer, do_broadcast, do_broadcast_in_buffer, do_gather,
         do_gather_in_buffer, do_reduce, do_reduce_bitwise, do_reduce_bitwise_in_buffer,
         do_reduce_comparison, do_reduce_comparison_in_buffer, do_reduce_in_buffer,
@@ -30,6 +32,7 @@ use crate::{
             local_reduce, BroadcastInput, CollectiveAllGatherIntoBufferOpFuture,
             CollectiveAllGatherIntoBufferOpHandle, CollectiveAllGatherOpFuture,
             CollectiveAllGatherOpHandle, CollectiveAllReduceIntoBufferOpFuture,
+            CollectiveAllReduceInPlaceOpFuture, CollectiveAllReduceInPlaceOpHandle,
             CollectiveAllReduceIntoBufferOpHandle, CollectiveAllReduceOpFuture,
             CollectiveAllReduceOpHandle, CollectiveAllToAllIntoBufferOpFuture,
             CollectiveAllToAllIntoBufferOpHandle, CollectiveAllToAllOpFuture,
@@ -241,14 +244,33 @@ impl<T: Remote> RegionCollective<T> {
         )
     }
 
-    // The in-place form reduces a caller buffer that is not in the region, so the algorithms (which read their peers'
-    // data from the region) cannot run it: it stays native.
+    // The caller's buffer is not memory peers can read, so the algorithms stage it in the first `len` elements of the
+    // region for the duration of the call and put the region's contents back afterwards (as the native ones do).
     pub(crate) fn reduce_all_in_place<B: AsLamellarBuffer<T>>(
         &self,
         src_and_dst: LamellarBuffer<T, B>,
         op: ReduceOp,
-    ) -> crate::lamellae::collective::CollectiveAllReduceInPlaceOpHandle<T, B> {
-        self.base.reduce_all_in_place(src_and_dst, op)
+    ) -> CollectiveAllReduceInPlaceOpHandle<T, B> {
+        let Some(c) = self.manual_ctx(CollectiveOpKind::AllReduce(op.clone())) else {
+            return self.base.reduce_all_in_place(src_and_dst, op);
+        };
+        let fut = run_family!(
+            self,
+            c,
+            op,
+            (
+                do_all_reduce_in_place,
+                do_all_reduce_bitwise_in_place,
+                do_all_reduce_comparison_in_place
+            ),
+            (op.clone(), src_and_dst)
+        );
+        handle!(
+            self,
+            CollectiveAllReduceInPlaceOpHandle,
+            CollectiveAllReduceInPlaceOpFuture,
+            fut
+        )
     }
 
     pub(crate) fn reduce(

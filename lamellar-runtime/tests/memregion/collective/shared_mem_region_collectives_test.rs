@@ -185,6 +185,37 @@ macro_rules! collectives_test {
                 .sum_scatter_into_buffer(0, len, LamellarBuffer::from_shared_memory_region(dst.clone()))
                 .block();
             record!("sum_scatter_into_buffer", dst.as_slice());
+
+            // the in-place forms: the buffer holds this PE's values going in and the reduction coming out, and the
+            // region itself must be left as it was
+            let fill = |dst: &SharedMemoryRegion<$t>| {
+                dst.as_mut_slice().iter_mut().enumerate().for_each(|(i, e)| *e = value(i, my_pe));
+            };
+            let dst = new_out(len);
+            fill(&dst);
+            region
+                .sum_all_in_place(LamellarBuffer::from_shared_memory_region(dst.clone()))
+                .block();
+            if dst.as_slice() != expect(&|v| v.iter().copied().sum(), 0).as_slice() {
+                eprintln!("sum_all_in_place wrong on pe {}: {:?}", my_pe, dst.as_slice());
+                success = false;
+            }
+            record!("sum_all_in_place", dst.as_slice());
+            let dst = new_out(len);
+            fill(&dst);
+            region
+                .max_all_in_place(LamellarBuffer::from_shared_memory_region(dst.clone()))
+                .block();
+            record!("max_all_in_place", dst.as_slice());
+            if $int {
+                let dst = new_out(len);
+                fill(&dst);
+                region
+                    .bit_or_all_in_place(LamellarBuffer::from_shared_memory_region(dst.clone()))
+                    .block();
+                record!("bit_or_all_in_place", dst.as_slice());
+            }
+            record!("region_after_in_place", &region.as_slice()[..len]);
         }
 
         world.barrier();

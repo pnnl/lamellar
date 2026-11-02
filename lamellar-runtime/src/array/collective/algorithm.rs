@@ -1364,6 +1364,55 @@ pub(crate) async fn do_all_reduce_in_buffer<
     debug!(target: "collective::ticket", func = "do_all_reduce_in_buffer", my_ticket, "released next ticket holder");
 }
 
+// The in-place all-reduce reduces a caller's buffer, which peers cannot read. As the native implementations do, it stages
+// the buffer in the first `len` elements of the window the algorithm runs on (the only memory peers can read), reduces
+// there, and puts the window's contents back once every PE is done (the algorithm ends with a barrier).
+macro_rules! all_reduce_in_place {
+    ($name:ident, $bound:ident, $update:ident) => {
+        pub(crate) async fn $name<A: $bound<T>, T: Remote, B: AsLamellarBuffer<T>>(
+            array: A,
+            scheduler: Arc<Scheduler>,
+            sync_alloc: Arc<CommAlloc>,
+            my_ticket: usize,
+            now_serving: Arc<CollTicketGate>,
+            op: ReduceOp,
+            mut buffer: LamellarBuffer<T, B>,
+        ) {
+            now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
+            let len = buffer.len();
+            let mut saved = zeroed_vec::<T>(len);
+            array.copy_local_data(0, len, &mut saved);
+            array.store_to_local_data(0, len, buffer.as_slice());
+            do_all_reduce_impl(
+                array.clone(),
+                &scheduler,
+                sync_alloc,
+                0,
+                len,
+                |dst, val| {
+                    dst.$update(0, len, val, op.clone());
+                },
+                buffer.as_mut_slice(),
+            )
+            .await;
+            array.store_to_local_data(0, len, &saved);
+            now_serving.release(); // release the next ticket holder
+        }
+    };
+}
+
+all_reduce_in_place!(do_all_reduce_in_place, ManualCollectiveUpdate, update_local_data);
+all_reduce_in_place!(
+    do_all_reduce_bitwise_in_place,
+    ManualCollectiveUpdateBitwise,
+    update_local_data_bitwise
+);
+all_reduce_in_place!(
+    do_all_reduce_comparison_in_place,
+    ManualCollectiveUpdateComparison,
+    update_local_data_comparison
+);
+
 pub(crate) async fn do_all_reduce_bitwise_in_buffer<A, T, B: AsLamellarBuffer<T>>(
     array: A,
     scheduler: Arc<Scheduler>,
