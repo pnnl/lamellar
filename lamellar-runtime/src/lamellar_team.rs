@@ -989,7 +989,9 @@ impl Darc<LamellarTeamRT> {
             // self.print_cnt();
             self.clone()
         };
-        let world = LamellarTeam::new(None, world, false);
+        // A secondary view of the world (made for `LamellarEnv::world()` on a Darc), not the handle the user got when the
+        // world was built: flagged `am_team` so dropping it does not run the team teardown in `Drop for LamellarTeam`.
+        let world = LamellarTeam::new(None, world, true);
         // self.print_cnt();
         world
     }
@@ -1001,7 +1003,12 @@ impl Darc<LamellarTeamRT> {
         } else {
             None
         };
-        let team = LamellarTeam::new(world, self.clone(), false);
+        // A secondary view of the team (made for `LamellarEnv::team()` on a Darc), not the handle the user got from
+        // `create_team_from_arch` / `create_subteam_from_arch`. It is flagged `am_team` so that dropping it does not run the
+        // team teardown in `Drop for LamellarTeam` (`wait_all`, a barrier, `put_dropped`, `drop_barrier`, removal from the
+        // parent), which on a sub-team is collective: one PE asking a region for its team and dropping the answer would
+        // block in a barrier the rest of the team never enters.
+        let team = LamellarTeam::new(world, self.clone(), true);
         // self.print_cnt();
         team
     }

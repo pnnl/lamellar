@@ -124,6 +124,22 @@ fn main() {
                 success = false;
             }
             record!("sum_scatter", rs);
+
+            // asking a region for its team or world builds a throwaway handle on the caller only. Dropping it must not
+            // tear the sub-team down (a barrier and a removal from the parent that only this rank would perform): the
+            // other rank carries on, so the team has to keep working afterwards.
+            step!("throwaway team handles");
+            if rank == 0 {
+                let _team = LamellarEnv::team(&region);
+                let _world = LamellarEnv::world(&region);
+            }
+            team.barrier();
+            let after = region.sum_all(0, len).block();
+            if after.as_slice() != reduce_expected(&|v| v.iter().sum()).as_slice() {
+                eprintln!("sum_all after a throwaway team handle wrong on rank {}: {:?}", rank, after);
+                success = false;
+            }
+            record!("sum_all_after_throwaway_handles", after);
         }
         team.barrier();
     }
