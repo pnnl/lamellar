@@ -51,21 +51,36 @@ use crate::{
         CollectiveOpKind, CommAlloc, CommInfo, Remote,
     },
     memregion::{CollTicketGate, MemoryRegion, SharedMemoryRegion},
-    AsLamellarBuffer, LamellarBuffer, LamellarEnv,
+    AsLamellarBuffer, LamellarBuffer,
 };
 
 // A region is a valid source for the Manual algorithms: they only need the position in the team, a barrier, a remote
 // read and the local window, all of which the region has. The region handed to them is the whole allocation (see
 // `SharedMemoryRegion::collective_ops`), so the indices they use are the absolute ones the native path also takes.
 impl<T: Remote> ManualCollectiveSource<T> for SharedMemoryRegion<T> {
+    // These use the runtime team directly (`rt_team`) and not `self.mr.team()`: that builds a user-facing team handle,
+    // and dropping the handle of a sub-team tears the team down (a barrier and its removal from the parent), so
+    // calling it from inside a collective hangs.
     fn my_pe(&self) -> usize {
-        LamellarEnv::my_pe(self)
+        self.mr
+            .inner()
+            .rt_team()
+            .team_pe_id()
+            .expect("the PE is in the region's team")
     }
     fn num_pes(&self) -> usize {
-        LamellarEnv::num_pes(self)
+        self.mr.inner().rt_team().num_pes()
+    }
+    fn world_pe(&self, team_pe: usize) -> usize {
+        self.mr
+            .inner()
+            .rt_team()
+            .arch
+            .world_pe(team_pe)
+            .expect("the PE is in the region's team")
     }
     async fn async_barrier(&self) {
-        self.mr.team().async_barrier().await
+        self.mr.inner().rt_team().async_barrier().await
     }
     fn copy_local_data(&self, index: usize, count: usize, buffer: &mut [T]) {
         let window = unsafe { self.as_slice() };
@@ -76,7 +91,8 @@ impl<T: Remote> ManualCollectiveSource<T> for SharedMemoryRegion<T> {
         window[index..index + count].copy_from_slice(data);
     }
     async fn batch_load(&self, pe: usize, _num_pes: usize, start: usize, count: usize) -> Vec<T> {
-        unsafe { self.get_buffer(pe, start, count).await }
+        // `pe` is a rank in the region's team and the region's get addresses a world PE
+        unsafe { self.get_buffer(self.world_pe(pe), start, count).await }
     }
 }
 
@@ -415,7 +431,7 @@ impl<T: Remote> RegionCollective<T> {
         };
         // the root passes the index of its data and is its own root; the others only name the root
         let (index, root) = match src_or_root_pe {
-            BroadcastInput::Root(index) => (index, LamellarEnv::my_pe(&self.region)),
+            BroadcastInput::Root(index) => (index, ManualCollectiveSource::my_pe(&self.region)),
             BroadcastInput::NotRoot(root) => (0, root),
         };
         let fut = boxed(run!(self, c, do_broadcast, (index, len, root)));
@@ -448,7 +464,7 @@ impl<T: Remote> RegionCollective<T> {
             return self.base.scatter(src_or_pe, len);
         };
         let (index, root) = match src_or_pe {
-            ScatterInput::Root(index) => (index, LamellarEnv::my_pe(&self.region)),
+            ScatterInput::Root(index) => (index, ManualCollectiveSource::my_pe(&self.region)),
             ScatterInput::NotRoot(root) => (0, root),
         };
         let fut = boxed(run!(self, c, do_scatter, (index, len, root)));
@@ -465,7 +481,7 @@ impl<T: Remote> RegionCollective<T> {
             return self.base.scatter_into_buffer(result, src_or_pe, len);
         };
         let (index, root) = match src_or_pe {
-            ScatterInput::Root(index) => (index, LamellarEnv::my_pe(&self.region)),
+            ScatterInput::Root(index) => (index, ManualCollectiveSource::my_pe(&self.region)),
             ScatterInput::NotRoot(root) => (0, root),
         };
         let fut = boxed(run!(self, c, do_scatter_in_buffer, (index, len, root, result)));

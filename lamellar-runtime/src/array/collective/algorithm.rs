@@ -1,5 +1,6 @@
 use std::sync::{atomic::AtomicUsize, Arc};
 
+use crate::array::private::ArrayExecAm;
 use crate::memregion::CollTicketGate;
 use crate::scheduler::Scheduler;
 use crate::Distribution;
@@ -24,7 +25,7 @@ fn zeroed_vec<T: Remote>(len: usize) -> Vec<T> {
 }
 
 pub(crate) trait AtomicArrayOpsForCollectiveOps<T: Dist>:
-    LamellarArray<T> + ActiveMessaging + ReadOnlyOps<T>
+    LamellarArray<T> + ActiveMessaging + ReadOnlyOps<T> + ArrayExecAm<T>
 {
     fn copy_local_data(&self, index: usize, count: usize, buffer: &mut [T]);
     fn store_to_local_data(&self, index: usize, count: usize, data: &[T]);
@@ -61,6 +62,9 @@ pub(crate) trait AtomicArrayOpsForCollectiveOpsUpdateComparison<T: ElementCompar
 pub(crate) trait ManualCollectiveSource<T: Remote>: Clone {
     fn my_pe(&self) -> usize;
     fn num_pes(&self) -> usize;
+    // The algorithms talk about PEs by their rank in the team, but the allocation-level calls they make (the puts and
+    // gets on the sync allocation) address world PEs; this is the translation.
+    fn world_pe(&self, team_pe: usize) -> usize;
     async fn async_barrier(&self);
     fn copy_local_data(&self, index: usize, count: usize, buffer: &mut [T]);
     fn store_to_local_data(&self, index: usize, count: usize, data: &[T]);
@@ -84,6 +88,12 @@ impl<T: Dist, A: AtomicArrayOpsForCollectiveOps<T> + Clone> ManualCollectiveSour
     }
     fn num_pes(&self) -> usize {
         LamellarEnv::num_pes(self)
+    }
+    fn world_pe(&self, team_pe: usize) -> usize {
+        <A as ArrayExecAm<T>>::team_rt(self)
+            .arch
+            .world_pe(team_pe)
+            .expect("the PE is in the array's team")
     }
     async fn async_barrier(&self) {
         ActiveMessaging::async_barrier(self).await
@@ -604,7 +614,7 @@ where
     let start = if local == root {
         index + local_offset
     } else {
-        let remote_index: usize = sync_alloc.blocking_get(scheduler, root, 0);
+        let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(root), 0);
         remote_index + local_offset
     };
     // let indices = array.get_global_indices(root, num_pes, start, count);
@@ -730,7 +740,7 @@ pub(crate) async fn do_gather_impl<A, T>(
 
     if local == root {
         for i in 0..num_pes {
-            let remote_index: usize = sync_alloc.blocking_get(scheduler, i, 0);
+            let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(i), 0);
             // let indices = array.get_global_indices(i, num_pes, remote_index, count);
             let tmp =
                 ManualCollectiveSource::batch_load(&array, i, num_pes, remote_index, count)
@@ -770,7 +780,7 @@ pub(crate) async fn do_all_to_all_impl<A, T>(
     array.async_barrier().await; // ensure all PEs have initialized their sync array
 
     for i in 0..num_pes {
-        let remote_index: usize = sync_alloc.blocking_get(scheduler, i, 0);
+        let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(i), 0);
         // let indices = array.get_global_indices(i, num_pes, remote_index, count);
         let tmp =
             ManualCollectiveSource::batch_load(&array, i, num_pes, remote_index, count)
@@ -864,7 +874,7 @@ where
     array.async_barrier().await; // ensure all PEs have initialized their sync array
 
     let res = if local != root {
-        let remote_index: usize = sync_alloc.blocking_get(scheduler, root, 0);
+        let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(root), 0);
         // let indices = array.get_global_indices(root, array.num_pes(), remote_index, count);
         Some(
             ManualCollectiveSource::batch_load(
@@ -1034,7 +1044,7 @@ pub(crate) async fn do_all_gather_impl<A, T>(
     array.async_barrier().await; // ensure all PEs have published their offsets before starting the gather
 
     for i in 0..num_pes {
-        let remote_index: usize = sync_alloc.blocking_get(scheduler, i, 0);
+        let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(i), 0);
         let tmp =
             ManualCollectiveSource::batch_load(&array, i, num_pes, remote_index, count)
                 .await;
@@ -1117,7 +1127,7 @@ async fn do_all_reduce_impl<A, T, F>(
 
     if local < 2 * rem {
         if local % 2 == 0 {
-            sync_alloc.put_unmanaged(round, local + 1, 2 + my_pe);
+            sync_alloc.put_unmanaged(round, array.world_pe(local + 1), 2 + my_pe);
             debug!(target: "collective::all_reduce", pe = my_pe, index, round, partner = local + 1, "signaled partner (even leaf), waiting for ack");
             while sync_slice[2 + local + 1].load(std::sync::atomic::Ordering::SeqCst) < round {
                 yield_now().await; // wait for remote PE to signal that data is ready to move on to the next round
@@ -1130,7 +1140,7 @@ async fn do_all_reduce_impl<A, T, F>(
             while sync_slice[2 + local - 1].load(std::sync::atomic::Ordering::SeqCst) < round {
                 yield_now().await; // wait for data to arrive
             }
-            let remote_index: usize = sync_alloc.blocking_get(scheduler, local - 1, 0);
+            let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(local - 1), 0);
             // let first_global_index = array.first_global_index_for_pe(local - 1).unwrap();
             // let indices = ((remote_index+first_global_index)..(remote_index+first_global_index+count)).collect::<Vec<_>>();
             // let indices = array.get_global_indices(local - 1, num_pes, remote_index, count);
@@ -1151,7 +1161,7 @@ async fn do_all_reduce_impl<A, T, F>(
             // for i in 0..count {
             //     result.fetch_add(i, tmp[i]).await; // reduce data from local - 1 with local data
             // }
-            sync_alloc.put_unmanaged(round, local - 1, 2 + my_pe); // signal local - 1 that reduction is complete and they can move on to the next round
+            sync_alloc.put_unmanaged(round, array.world_pe(local - 1), 2 + my_pe); // signal local - 1 that reduction is complete and they can move on to the next round
             debug!(target: "collective::all_reduce", pe = my_pe, index, round, partner = local - 1, "merged leaf data, my_new_id set");
             my_new_id = local / 2;
         }
@@ -1172,7 +1182,7 @@ async fn do_all_reduce_impl<A, T, F>(
                 partner + rem
             };
 
-            sync_alloc.put_unmanaged(round, partner_pe, 2 + my_pe); // signal partner PE that data is ready
+            sync_alloc.put_unmanaged(round, array.world_pe(partner_pe), 2 + my_pe); // signal partner PE that data is ready
             debug!(target: "collective::all_reduce", pe = my_pe, index, round, my_new_id, partner, partner_pe, "signaled partner ready, waiting for partner ready signal");
             let mut spin_count: u64 = 0;
             while sync_slice[2 + partner_pe].load(std::sync::atomic::Ordering::SeqCst) < round {
@@ -1185,7 +1195,7 @@ async fn do_all_reduce_impl<A, T, F>(
             round += 1;
 
             // receive data from partner
-            let remote_index: usize = sync_alloc.blocking_get(scheduler, partner_pe, 0);
+            let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(partner_pe), 0);
             let tmp = ManualCollectiveSource::batch_load(
                 &array,
                 partner_pe,
@@ -1195,7 +1205,7 @@ async fn do_all_reduce_impl<A, T, F>(
             )
             .await;
 
-            sync_alloc.put_unmanaged(round, partner_pe, 2 + my_pe); // signal partner PE that I'm done processing their data
+            sync_alloc.put_unmanaged(round, array.world_pe(partner_pe), 2 + my_pe); // signal partner PE that I'm done processing their data
             debug!(target: "collective::all_reduce", pe = my_pe, index, round, partner_pe, "fetched partner data, signaled done-processing, waiting for partner done-processing");
 
             let mut spin_count2: u64 = 0;
@@ -1222,14 +1232,14 @@ async fn do_all_reduce_impl<A, T, F>(
     if local < 2 * rem {
         if local % 2 != 0 {
             // send reduced data to local - 1
-            sync_alloc.put_unmanaged(round, local - 1, 2 + my_pe); // signal local - 1 that reduction is complete and they can move on to the next round
+            sync_alloc.put_unmanaged(round, array.world_pe(local - 1), 2 + my_pe); // signal local - 1 that reduction is complete and they can move on to the next round
             debug!(target: "collective::all_reduce", pe = my_pe, index, round, partner = local - 1, "final: signaled odd->leaf partner with reduced data");
         } else {
             debug!(target: "collective::all_reduce", pe = my_pe, index, round, partner = local + 1, "final: leaf waiting for reduced data from partner");
             while sync_slice[2 + local + 1].load(std::sync::atomic::Ordering::SeqCst) < round {
                 yield_now().await; // wait for reduced data to arrive
             }
-            let remote_index: usize = sync_alloc.blocking_get(scheduler, local + 1, 0);
+            let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(local + 1), 0);
             // let first_global_index = array.first_global_index_for_pe(local + 1).unwrap();
             // let indices = ((remote_index+first_global_index)..(remote_index+first_global_index+count)).collect::<Vec<_>>();
             // let indices = array.get_global_indices(local + 1, array.num_pes(), remote_index, count);
@@ -1559,7 +1569,7 @@ async fn do_reduce_impl<A, T, F>(
                 while sync_slice[2 + partner].load(std::sync::atomic::Ordering::SeqCst) != step {
                     yield_now().await; // wait for remote PE to signal that data is ready to move on to the next round
                 }
-                let remote_index: usize = sync_alloc.blocking_get(&scheduler, partner, 0);
+                let remote_index: usize = sync_alloc.blocking_get(&scheduler, array.world_pe(partner), 0);
                 let tmp = ManualCollectiveSource::batch_load(
                     &array,
                     partner,
@@ -1575,7 +1585,7 @@ async fn do_reduce_impl<A, T, F>(
         } else {
             let virtual_parent = virtual_id - step;
             let partner = (virtual_parent + root) % num_pes;
-            sync_alloc.put_unmanaged(step, partner, 2 + my_pe); // signal partner PE that data is ready
+            sync_alloc.put_unmanaged(step, array.world_pe(partner), 2 + my_pe); // signal partner PE that data is ready
             debug!(target: "collective::reduce", pe = my_pe, index, step, virtual_id, partner, "sent data to parent, exiting tree");
             break; // this PE is done after sending its data to the partner
         }
@@ -1951,7 +1961,7 @@ where
                 while sync_slice[2 + partner].load(std::sync::atomic::Ordering::SeqCst) != step {
                     yield_now().await; // wait for remote PE to signal that data is ready to move on to the next round
                 }
-                let remote_index: usize = sync_alloc.blocking_get(scheduler, partner, 0);
+                let remote_index: usize = sync_alloc.blocking_get(scheduler, array.world_pe(partner), 0);
                 // let first_global_index = array.first_global_index_for_pe(partner).unwrap();
                 // let indices = ((remote_index+first_global_index)..(remote_index+first_global_index+count)).collect::<Vec<_>>();
                 // let indices = array.get_global_indices(partner, num_pes, remote_index, count);
@@ -1973,7 +1983,7 @@ where
         } else {
             let virtual_parent = virtual_id - step;
             let partner = (virtual_parent + root) % num_pes;
-            sync_alloc.put_unmanaged(step, partner, 2 + local); // signal partner PE that data is ready
+            sync_alloc.put_unmanaged(step, array.world_pe(partner), 2 + local); // signal partner PE that data is ready
             debug!(target: "collective::reduce_scatter", pe = local, index, step, virtual_id, partner, "sent data to parent, exiting reduce tree");
             break; // this PE is done after sending its data to the partner
         }

@@ -55,11 +55,18 @@ pub struct SharedMemoryRegion<T: Remote> {
 }
 
 impl<T: Remote> LamellarEnv for SharedMemoryRegion<T> {
+    // `my_pe` and `num_pes` read the runtime team and do not go through `self.mr.team()`: that builds a user-facing
+    // team handle each call, and dropping the handle of a sub-team tears the team down (a barrier, and its removal
+    // from the parent), so asking a sub-team region for its PE would hang the team.
     fn my_pe(&self) -> usize {
-        self.mr.team().my_pe()
+        self.mr
+            .inner()
+            .rt_team()
+            .team_pe_id()
+            .expect("PE is apart of team")
     }
     fn num_pes(&self) -> usize {
-        self.mr.team().num_pes()
+        self.mr.inner().rt_team().num_pes()
     }
     fn num_threads_per_pe(&self) -> usize {
         self.mr.team().num_threads_per_pe()
