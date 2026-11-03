@@ -3595,23 +3595,26 @@ impl LibfabricSysAlloc {
             .mcast_group
             .as_ref()
             .expect("No multicast group for collective reduce");
-        let (result, root_pe) = match root_src {
-            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe),
-            RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe),
+        let (result, root_pe, is_root) = match root_src {
+            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe, true),
+            RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe, false),
         };
-        // let res = unsafe {std::mem::transmute::<&mut [T], &mut [OFI]>(result)};
-        cg.post_collective(blocking, || unsafe {
-            libfabric_sys::inlined_fi_broadcast(
-                cg.ep,
-                result.as_mut_ptr().cast(),
-                result.len(),
-                std::ptr::null_mut(),
-                mcast_group.coll_addr,
-                cg.mapped_addresses[root_pe],
-                rust_type_to_fi_type::<T>().expect("Unsupported type for broadcast operation"),
-                0,
-                std::ptr::null_mut(),
-            )
+        // libfabric's collective provider overruns the buffer when its length is not a multiple of the group size;
+        // `broadcast_padded` goes through a padded copy in that case (see it)
+        crate::lamellae::collective::broadcast_padded(result, self.num_pes(), is_root, blocking, |buf, blocking| {
+            cg.post_collective(blocking, || unsafe {
+                libfabric_sys::inlined_fi_broadcast(
+                    cg.ep,
+                    buf.as_mut_ptr().cast(),
+                    buf.len(),
+                    std::ptr::null_mut(),
+                    mcast_group.coll_addr,
+                    cg.mapped_addresses[root_pe],
+                    rust_type_to_fi_type::<T>().expect("Unsupported type for broadcast operation"),
+                    0,
+                    std::ptr::null_mut(),
+                )
+            })
         });
     }
 

@@ -4463,27 +4463,14 @@ impl LibfabricSysOptAlloc {
             RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe, true),
             RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe, false),
         };
-        // libfabric's coll provider (libfabric 1.22 and current main, prov/coll `coll_ep_broadcast`) scatters and then
-        // allgathers `ceil(len / ranks)` elements per rank through the caller's buffer, i.e. it reads and writes
-        // `ceil(len / ranks) * ranks` elements. When `len` is not a multiple of the group size that overruns the buffer
-        // (8 bytes on 64 PEs wrote 64 bytes: heap corruption). Go through a zero-padded bounce buffer in that case. The
-        // result must be copied back after completion, so this path waits for the collective here instead of
-        // returning with it in flight.
-        let ranks = self.num_pes();
-        if ranks > 1 && !result.is_empty() && result.len() % ranks != 0 {
-            let len = result.len();
-            let padded_len = len.div_ceil(ranks) * ranks;
-            let mut padded: Vec<std::mem::MaybeUninit<T>> = (0..padded_len)
-                .map(|_| std::mem::MaybeUninit::<T>::zeroed())
-                .collect();
-            unsafe {
-                std::ptr::copy_nonoverlapping(result.as_ptr(), padded.as_mut_ptr() as *mut T, len);
-            }
-            cg.post_collective(true, || unsafe {
+        // libfabric's collective provider overruns the buffer when its length is not a multiple of the group size;
+        // `broadcast_padded` goes through a padded copy in that case (see it)
+        crate::lamellae::collective::broadcast_padded(result, self.num_pes(), is_root, blocking, |buf, blocking| {
+            cg.post_collective(blocking, || unsafe {
                 libfabric_sys::inlined_fi_broadcast(
                     cg.ep,
-                    padded.as_mut_ptr().cast(),
-                    padded_len,
+                    buf.as_mut_ptr().cast(),
+                    buf.len(),
                     std::ptr::null_mut(),
                     mcast_group.coll_addr,
                     cg.mapped_addresses[root_pe],
@@ -4491,27 +4478,7 @@ impl LibfabricSysOptAlloc {
                     0,
                     std::ptr::null_mut(),
                 )
-            });
-            if !is_root {
-                unsafe {
-                    std::ptr::copy_nonoverlapping(padded.as_ptr() as *const T, result.as_mut_ptr(), len);
-                }
-            }
-            return;
-        }
-        // let res = unsafe {std::mem::transmute::<&mut [T], &mut [OFI]>(result)};
-        cg.post_collective(blocking, || unsafe {
-            libfabric_sys::inlined_fi_broadcast(
-                cg.ep,
-                result.as_mut_ptr().cast(),
-                result.len(),
-                std::ptr::null_mut(),
-                mcast_group.coll_addr,
-                cg.mapped_addresses[root_pe],
-                rust_type_to_fi_type::<T>().expect("Unsupported type for broadcast operation"),
-                0,
-                std::ptr::null_mut(),
-            )
+            })
         });
     }
 

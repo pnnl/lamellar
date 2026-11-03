@@ -2168,6 +2168,126 @@ pub(crate) fn reduce_scatter_dst<T>(result: &mut [T], len: usize, num_pes: usize
     &mut result[..per_pe]
 }
 
+/// Broadcasts `buf` with `post`, working around an overrun in libfabric's collective provider. `prov/coll`'s
+/// `coll_ep_broadcast` (libfabric 1.22, and by the account of an earlier comment in the sys-opt lamellae current main as
+/// well) scatters and then allgathers `ceil(len / ranks)` elements per rank through the caller's buffer, so it reads and
+/// writes `ceil(len / ranks) * ranks` elements. When `len` is not a multiple of `ranks` that is past the end of `buf`
+/// (8 bytes on 64 PEs wrote 64 bytes): heap corruption that shows up as hangs, wrong data or errors closing the domain.
+///
+/// In that case the broadcast runs on a zero-padded copy of `buf` of `ceil(len / ranks) * ranks` elements, and on a
+/// non-root PE the first `len` elements are copied back into `buf` once it completes; the copy can only be read after the
+/// collective, so that path waits for it (`post` is called with `blocking == true`). Otherwise `post` gets `buf` and the
+/// `blocking` flag unchanged. `post` is called exactly once and gets the slice to broadcast: it posts the collective on it
+/// (retrying as needed) and, when `blocking`, waits. The elements are only ever copied bitwise (they are what the
+/// collective moves as bytes), so `T` needs no bound beyond being the plain data of the buffer.
+pub(crate) fn broadcast_padded<T, R>(
+    buf: &mut [T],
+    ranks: usize,
+    is_root: bool,
+    blocking: bool,
+    post: impl FnOnce(&mut [T], bool) -> R,
+) -> R {
+    let len = buf.len();
+    if ranks > 1 && len != 0 && len % ranks != 0 {
+        let padded_len = len.div_ceil(ranks) * ranks;
+        // zero-filled: the padding is never read back
+        let mut padded: Vec<std::mem::MaybeUninit<T>> = (0..padded_len)
+            .map(|_| std::mem::MaybeUninit::<T>::zeroed())
+            .collect();
+        unsafe {
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), padded.as_mut_ptr() as *mut T, len);
+        }
+        let padded_slice =
+            unsafe { std::slice::from_raw_parts_mut(padded.as_mut_ptr() as *mut T, padded_len) };
+        let result = post(padded_slice, true);
+        if !is_root {
+            unsafe {
+                std::ptr::copy_nonoverlapping(padded.as_ptr() as *const T, buf.as_mut_ptr(), len);
+            }
+        }
+        return result;
+    }
+    post(buf, blocking)
+}
+
+#[cfg(test)]
+mod broadcast_padded_tests {
+    use super::broadcast_padded;
+
+    // the way libfabric's broadcast behaves: the root's `ceil(len / ranks) * ranks` elements reach everyone
+    fn fake_broadcast(root: &[i32], dst: &mut [i32]) {
+        assert_eq!(root.len(), dst.len());
+        dst.copy_from_slice(root);
+    }
+
+    #[test]
+    fn a_multiple_of_the_group_size_is_passed_through() {
+        let mut buf = [1, 2, 3, 4, 5, 6];
+        let mut seen = (0, false);
+        broadcast_padded(&mut buf, 3, true, false, |b, blocking| {
+            seen = (b.len(), blocking);
+        });
+        assert_eq!(seen, (6, false));
+        // and the blocking flag is the caller's
+        broadcast_padded(&mut buf, 3, false, true, |_, blocking| assert!(blocking));
+    }
+
+    #[test]
+    fn a_single_pe_or_an_empty_buffer_is_passed_through() {
+        let mut buf = [1, 2, 3, 4, 5];
+        broadcast_padded(&mut buf, 1, true, false, |b, blocking| {
+            assert_eq!((b.len(), blocking), (5, false));
+        });
+        let mut empty: [i32; 0] = [];
+        broadcast_padded(&mut empty, 4, false, false, |b, blocking| {
+            assert_eq!((b.len(), blocking), (0, false));
+        });
+    }
+
+    #[test]
+    fn anything_else_is_padded_to_a_multiple_and_waited_for() {
+        let mut buf = [1, 2, 3, 4, 5, 6, 7];
+        let mut padded_len = 0;
+        broadcast_padded(&mut buf, 3, true, false, |b, blocking| {
+            padded_len = b.len();
+            assert!(blocking, "a padded broadcast has to complete before the copy back");
+            assert_eq!(&b[..7], &[1, 2, 3, 4, 5, 6, 7], "the root's data goes out first");
+            assert!(b[7..].iter().all(|e| *e == 0), "the padding is zeroed");
+        });
+        assert_eq!(padded_len, 9);
+        assert_eq!(buf, [1, 2, 3, 4, 5, 6, 7], "the root's buffer is left as it was");
+    }
+
+    #[test]
+    fn a_non_root_gets_the_first_len_elements_back() {
+        let root = [10, 20, 30, 40, 50, 60, 70, 80, 90, 0, 0, 0, 0, 0]; // 14 elements on 4 ranks pad to 16
+        let mut buf = [0; 14];
+        let r = broadcast_padded(&mut buf, 4, false, false, |b, _| {
+            assert_eq!(b.len(), 16);
+            let mut data = vec![0; 16];
+            data[..14].copy_from_slice(&root);
+            fake_broadcast(&data, b);
+            "done"
+        });
+        assert_eq!(r, "done", "the closure's result is returned");
+        assert_eq!(buf, root, "the broadcast data reaches the caller's buffer");
+    }
+
+    #[test]
+    fn only_len_elements_come_back_from_the_padded_copy() {
+        // the buffer sits in a larger array: a copy back of the padded length (8) instead of `len` (5) would overwrite
+        // the guard bytes after it
+        let mut backing = [0u8; 8];
+        let (buf, guard) = backing.split_at_mut(5);
+        guard.fill(7);
+        broadcast_padded(buf, 4, false, false, |b, _| {
+            assert_eq!(b.len(), 8);
+            b.iter_mut().for_each(|e| *e = 9);
+        });
+        assert_eq!(backing, [9, 9, 9, 9, 9, 7, 7, 7]);
+    }
+}
+
 /// Elementwise `acc[i] = acc[i] op src[i]` on the host, for the shared-memory lamellae that reduce by reading their peers'
 /// data. Integers wrap, like the atomic ops they replace; floats use the ordinary operators (no bitwise ops on floats).
 pub(crate) fn local_reduce<T: crate::Remote>(op: &ReduceOp, acc: &mut [T], src: &[T]) {
