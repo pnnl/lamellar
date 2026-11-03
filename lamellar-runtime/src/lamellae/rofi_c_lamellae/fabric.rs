@@ -74,6 +74,11 @@ impl RofiC {
         // compute padding and adjusted data size
         let (padding, data_size, _align) = calc_alloc_padding_size_align(size, align);
 
+        let team = match &alloc {
+            AllocationType::Sub(pes) => Some(Arc::new(pes.clone())),
+            _ => None,
+        };
+
         // call into the rofi C allocator (allocate total bytes including refcount/padding)
         let base_ptr = crate::lamellae::rofi_c_lamellae::rofi::rofi_c_alloc(data_size, alloc)?;
 
@@ -88,6 +93,7 @@ impl RofiC {
             self.wait_flag.clone(),
             self.wait_cnt_cur.clone(),
             self.wait_cnt_fin.clone(),
+            team,
         )?;
 
         // register in mem_regions
@@ -234,6 +240,8 @@ pub(crate) struct RofiCAlloc {
     wait_flag: Arc<AtomicBool>,
     wait_cnt_cur: Arc<AtomicUsize>,
     wait_cnt_fin: Arc<AtomicUsize>,
+    /// The PEs (world ids, in team order) the allocation spans, `None` when it spans all of them. Collectives run over this.
+    team: Option<Arc<Vec<usize>>>,
 }
 
 impl std::fmt::Debug for RofiCAlloc {
@@ -321,6 +329,7 @@ impl Clone for RofiCAlloc {
             wait_flag: self.wait_flag.clone(),
             wait_cnt_cur: self.wait_cnt_cur.clone(),
             wait_cnt_fin: self.wait_cnt_fin.clone(),
+            team: self.team.clone(),
         }
     }
 }
@@ -344,6 +353,7 @@ impl RofiCAlloc {
         wait_flag: Arc<AtomicBool>,
         wait_cnt_cur: Arc<AtomicUsize>,
         wait_cnt_fin: Arc<AtomicUsize>,
+        team: Option<Arc<Vec<usize>>>,
     ) -> AllocResult<RofiCAlloc> {
         // data_num_bytes here is the user-requested data size (without refcount/padding)
         let fabric_ref_cnt_offset = data_num_bytes + padding; // offset within base where refcount stored
@@ -367,6 +377,7 @@ impl RofiCAlloc {
             wait_flag,
             wait_cnt_cur,
             wait_cnt_fin,
+            team,
         };
 
         // initialize ref count: 1 with padding
@@ -382,6 +393,27 @@ impl RofiCAlloc {
 
     pub(crate) fn num_bytes(&self) -> usize {
         self.sub_data_num_bytes
+    }
+
+    /// The PEs collectives on this allocation run over (`None`: all of them).
+    pub(crate) fn team_pes(&self) -> Option<&[usize]> {
+        self.team.as_ref().map(|team| team.as_slice())
+    }
+
+    /// Number of PEs the allocation spans.
+    pub(crate) fn team_size(&self) -> usize {
+        self.team.as_ref().map_or(self.num_pes, |team| team.len())
+    }
+
+    /// This PE's rank within the allocation's PEs.
+    pub(crate) fn team_rank(&self) -> usize {
+        match &self.team {
+            Some(team) => team
+                .iter()
+                .position(|pe| *pe == self.my_pe)
+                .expect("this PE is not part of the allocation's team"),
+            None => self.my_pe,
+        }
     }
 
     pub(crate) fn sub_alloc(&self, offset: usize, len: usize) -> AllocResult<RofiCAlloc> {
@@ -415,6 +447,7 @@ impl RofiCAlloc {
             wait_flag: self.wait_flag.clone(),
             wait_cnt_cur: self.wait_cnt_cur.clone(),
             wait_cnt_fin: self.wait_cnt_fin.clone(),
+            team: self.team.clone(),
         };
         trace!(target: "rofi", "RofiCAlloc::sub_alloc created sub base={:p} sub={:p} bytes={}", alloc.base_data, alloc.sub_data, alloc.sub_data_num_bytes);
         Ok(alloc)
@@ -464,6 +497,7 @@ impl RofiCAlloc {
             wait_flag: self.wait_flag.clone(),
             wait_cnt_cur: self.wait_cnt_cur.clone(),
             wait_cnt_fin: self.wait_cnt_fin.clone(),
+            team: self.team.clone(),
         };
         unsafe {
             (&*(alloc.base_data.add(alloc.rt_ref_cnt_offset) as *mut AtomicUsize))
@@ -500,6 +534,7 @@ impl RofiCAlloc {
             wait_flag: self.wait_flag.clone(),
             wait_cnt_cur: self.wait_cnt_cur.clone(),
             wait_cnt_fin: self.wait_cnt_fin.clone(),
+            team: self.team.clone(),
         };
 
         trace!(target: "rofi", "RofiCAlloc::as_rt_alloc base={:p} sub={:p} new_sub_bytes={} rt_ref_offset={}", alloc.base_data, alloc.sub_data, alloc.sub_data_num_bytes, alloc.rt_ref_cnt_offset);

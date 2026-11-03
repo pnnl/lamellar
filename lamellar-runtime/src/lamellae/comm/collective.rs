@@ -1,3 +1,5 @@
+#[cfg(feature = "enable-rofi-c")]
+use crate::lamellae::rofi_c_lamellae::collective::RofiCCollectiveFuture;
 #[cfg(feature = "enable-libfabric")]
 use crate::lamellae::libfabric_lamellae::collective::{
     LibfabricCollectiveAllGatherFuture, LibfabricCollectiveAllGatherIntoBufferFuture,
@@ -174,6 +176,8 @@ pub(crate) enum CollectiveAllReduceOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveAllReduceFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Vec<T>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Vec<T>>),
     Local(#[pin] LocalCollectiveAllReduceFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -197,6 +201,8 @@ impl<T: Remote> CollectiveAllReduceOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceOpFuture::ShmemOpt(f) => f.block(),
             CollectiveAllReduceOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceOpFuture::RofiC(f) => f.block(),
             CollectiveAllReduceOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -223,6 +229,8 @@ impl<T: Remote> CollectiveAllReduceOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveAllReduceOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceOpFuture::RofiC(f) => f.spawn(),
             CollectiveAllReduceOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -249,6 +257,8 @@ impl<T: Remote> Future for CollectiveAllReduceOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveAllReduceOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveAllReduceOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -278,6 +288,8 @@ pub(crate) enum CollectiveAllReduceIntoBufferOpFuture<T: Remote, B: AsLamellarBu
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveAllReduceIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveAllReduceIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -301,6 +313,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllReduceIntoBufferOpHandle<T,
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveAllReduceIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveAllReduceIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -327,6 +341,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllReduceIntoBufferOpHandle<T,
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveAllReduceIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveAllReduceIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -353,6 +369,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveAllReduceIntoBuffer
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveAllReduceIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveAllReduceIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -382,6 +400,8 @@ pub(crate) enum CollectiveAllReduceInPlaceOpFuture<T: Remote, B: AsLamellarBuffe
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveAllReduceInPlaceFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveAllReduceInPlaceFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -405,6 +425,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllReduceInPlaceOpHandle<T, B>
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceInPlaceOpFuture::ShmemOpt(f) => f.block(),
             CollectiveAllReduceInPlaceOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceInPlaceOpFuture::RofiC(f) => f.block(),
             CollectiveAllReduceInPlaceOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -431,6 +453,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllReduceInPlaceOpHandle<T, B>
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceInPlaceOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveAllReduceInPlaceOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceInPlaceOpFuture::RofiC(f) => f.spawn(),
             CollectiveAllReduceInPlaceOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -457,6 +481,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveAllReduceInPlaceOpH
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllReduceInPlaceOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveAllReduceInPlaceOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllReduceInPlaceOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveAllReduceInPlaceOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -486,6 +512,8 @@ pub(crate) enum CollectiveReduceOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveReduceFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Option<Vec<T>>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Option<Vec<T>>>),
     Local(#[pin] LocalCollectiveReduceFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -509,6 +537,8 @@ impl<T: Remote> CollectiveReduceOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceOpFuture::ShmemOpt(f) => f.block(),
             CollectiveReduceOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceOpFuture::RofiC(f) => f.block(),
             CollectiveReduceOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -535,6 +565,8 @@ impl<T: Remote> CollectiveReduceOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveReduceOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceOpFuture::RofiC(f) => f.spawn(),
             CollectiveReduceOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -561,6 +593,8 @@ impl<T: Remote> Future for CollectiveReduceOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveReduceOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveReduceOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -590,6 +624,8 @@ pub(crate) enum CollectiveReduceIntoBufferOpFuture<T: Remote, B: AsLamellarBuffe
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveReduceIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveReduceIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -613,6 +649,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveReduceIntoBufferOpHandle<T, B>
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveReduceIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveReduceIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -639,6 +677,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveReduceIntoBufferOpHandle<T, B>
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveReduceIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveReduceIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -665,6 +705,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveReduceIntoBufferOpH
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveReduceIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveReduceIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -785,6 +827,8 @@ pub(crate) enum CollectiveAllGatherOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveAllGatherFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Vec<T>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Vec<T>>),
     Local(#[pin] LocalCollectiveAllGatherFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -808,6 +852,8 @@ impl<T: Remote> CollectiveAllGatherOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllGatherOpFuture::ShmemOpt(f) => f.block(),
             CollectiveAllGatherOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllGatherOpFuture::RofiC(f) => f.block(),
             CollectiveAllGatherOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -834,6 +880,8 @@ impl<T: Remote> CollectiveAllGatherOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllGatherOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveAllGatherOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllGatherOpFuture::RofiC(f) => f.spawn(),
             CollectiveAllGatherOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -860,6 +908,8 @@ impl<T: Remote> Future for CollectiveAllGatherOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllGatherOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveAllGatherOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllGatherOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveAllGatherOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -889,6 +939,8 @@ pub(crate) enum CollectiveAllGatherIntoBufferOpFuture<T: Remote, B: AsLamellarBu
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveAllGatherIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveAllGatherIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -912,6 +964,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllGatherIntoBufferOpHandle<T,
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllGatherIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveAllGatherIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllGatherIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveAllGatherIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -938,6 +992,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllGatherIntoBufferOpHandle<T,
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllGatherIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveAllGatherIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllGatherIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveAllGatherIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -964,6 +1020,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveAllGatherIntoBuffer
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllGatherIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveAllGatherIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllGatherIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveAllGatherIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -993,6 +1051,8 @@ pub(crate) enum CollectiveGatherOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveGatherFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Option<Vec<T>>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Option<Vec<T>>>),
     Local(#[pin] LocalCollectiveGatherFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -1016,6 +1076,8 @@ impl<T: Remote> CollectiveGatherOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveGatherOpFuture::ShmemOpt(f) => f.block(),
             CollectiveGatherOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveGatherOpFuture::RofiC(f) => f.block(),
             CollectiveGatherOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1042,6 +1104,8 @@ impl<T: Remote> CollectiveGatherOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveGatherOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveGatherOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveGatherOpFuture::RofiC(f) => f.spawn(),
             CollectiveGatherOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1068,6 +1132,8 @@ impl<T: Remote> Future for CollectiveGatherOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveGatherOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveGatherOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveGatherOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveGatherOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1097,6 +1163,8 @@ pub(crate) enum CollectiveGatherIntoBufferOpFuture<T: Remote, B: AsLamellarBuffe
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveGatherIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveGatherIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -1120,6 +1188,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveGatherIntoBufferOpHandle<T, B>
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveGatherIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveGatherIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveGatherIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveGatherIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1146,6 +1216,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveGatherIntoBufferOpHandle<T, B>
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveGatherIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveGatherIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveGatherIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveGatherIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1172,6 +1244,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveGatherIntoBufferOpH
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveGatherIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveGatherIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveGatherIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveGatherIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1201,6 +1275,8 @@ pub(crate) enum CollectiveAllToAllOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveAllToAllFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Vec<T>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Vec<T>>),
     Local(#[pin] LocalCollectiveAllToAllFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -1224,6 +1300,8 @@ impl<T: Remote> CollectiveAllToAllOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllToAllOpFuture::ShmemOpt(f) => f.block(),
             CollectiveAllToAllOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllToAllOpFuture::RofiC(f) => f.block(),
             CollectiveAllToAllOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1250,6 +1328,8 @@ impl<T: Remote> CollectiveAllToAllOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllToAllOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveAllToAllOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllToAllOpFuture::RofiC(f) => f.spawn(),
             CollectiveAllToAllOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1276,6 +1356,8 @@ impl<T: Remote> Future for CollectiveAllToAllOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllToAllOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveAllToAllOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllToAllOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveAllToAllOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1305,6 +1387,8 @@ pub(crate) enum CollectiveAllToAllIntoBufferOpFuture<T: Remote, B: AsLamellarBuf
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveAllToAllIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveAllToAllIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -1328,6 +1412,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllToAllIntoBufferOpHandle<T, 
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllToAllIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveAllToAllIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllToAllIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveAllToAllIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1354,6 +1440,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveAllToAllIntoBufferOpHandle<T, 
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllToAllIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveAllToAllIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllToAllIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveAllToAllIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1380,6 +1468,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveAllToAllIntoBufferO
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveAllToAllIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveAllToAllIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveAllToAllIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveAllToAllIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1409,6 +1499,8 @@ pub(crate) enum CollectiveBroadcastOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveBroadcastFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Option<Vec<T>>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Option<Vec<T>>>),
     Local(#[pin] LocalCollectiveBroadcastFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -1432,6 +1524,8 @@ impl<T: Remote> CollectiveBroadcastOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveBroadcastOpFuture::ShmemOpt(f) => f.block(),
             CollectiveBroadcastOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveBroadcastOpFuture::RofiC(f) => f.block(),
             CollectiveBroadcastOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1458,6 +1552,8 @@ impl<T: Remote> CollectiveBroadcastOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveBroadcastOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveBroadcastOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveBroadcastOpFuture::RofiC(f) => f.spawn(),
             CollectiveBroadcastOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1484,6 +1580,8 @@ impl<T: Remote> Future for CollectiveBroadcastOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveBroadcastOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveBroadcastOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveBroadcastOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveBroadcastOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1513,6 +1611,8 @@ pub(crate) enum CollectiveBroadcastIntoBufferOpFuture<T: Remote, B: AsLamellarBu
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveBroadcastIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveBroadcastIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -1536,6 +1636,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveBroadcastIntoBufferOpHandle<T,
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveBroadcastIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveBroadcastIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveBroadcastIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveBroadcastIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1562,6 +1664,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveBroadcastIntoBufferOpHandle<T,
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveBroadcastIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveBroadcastIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveBroadcastIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveBroadcastIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1588,6 +1692,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveBroadcastIntoBuffer
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveBroadcastIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveBroadcastIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveBroadcastIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveBroadcastIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1617,6 +1723,8 @@ pub(crate) enum CollectiveScatterOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveScatterFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Vec<T>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Vec<T>>),
     Local(#[pin] LocalCollectiveScatterFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -1640,6 +1748,8 @@ impl<T: Remote> CollectiveScatterOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveScatterOpFuture::ShmemOpt(f) => f.block(),
             CollectiveScatterOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveScatterOpFuture::RofiC(f) => f.block(),
             CollectiveScatterOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1666,6 +1776,8 @@ impl<T: Remote> CollectiveScatterOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveScatterOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveScatterOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveScatterOpFuture::RofiC(f) => f.spawn(),
             CollectiveScatterOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1692,6 +1804,8 @@ impl<T: Remote> Future for CollectiveScatterOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveScatterOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveScatterOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveScatterOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveScatterOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1721,6 +1835,8 @@ pub(crate) enum CollectiveScatterIntoBufferOpFuture<T: Remote, B: AsLamellarBuff
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveScatterIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveScatterIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -1744,6 +1860,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveScatterIntoBufferOpHandle<T, B
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveScatterIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveScatterIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveScatterIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveScatterIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1770,6 +1888,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveScatterIntoBufferOpHandle<T, B
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveScatterIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveScatterIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveScatterIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveScatterIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1796,6 +1916,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveScatterIntoBufferOp
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveScatterIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveScatterIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveScatterIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveScatterIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1825,6 +1947,8 @@ pub(crate) enum CollectiveReduceScatterOpFuture<T: Remote> {
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveReduceScatterFuture<T>),
     Manual(#[pin] ManualCollectiveFuture<Vec<T>>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<Vec<T>>),
     Local(#[pin] LocalCollectiveReduceScatterFuture<T>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<T>),
@@ -1848,6 +1972,8 @@ impl<T: Remote> CollectiveReduceScatterOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceScatterOpFuture::ShmemOpt(f) => f.block(),
             CollectiveReduceScatterOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceScatterOpFuture::RofiC(f) => f.block(),
             CollectiveReduceScatterOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1874,6 +2000,8 @@ impl<T: Remote> CollectiveReduceScatterOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceScatterOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveReduceScatterOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceScatterOpFuture::RofiC(f) => f.spawn(),
             CollectiveReduceScatterOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -1900,6 +2028,8 @@ impl<T: Remote> Future for CollectiveReduceScatterOpHandle<T> {
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceScatterOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveReduceScatterOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceScatterOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveReduceScatterOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
@@ -1929,6 +2059,8 @@ pub(crate) enum CollectiveReduceScatterIntoBufferOpFuture<T: Remote, B: AsLamell
     #[cfg(feature = "enable-shmem-opt")]
     ShmemOpt(#[pin] ShmemOptCollectiveReduceScatterIntoBufferFuture<T, B>),
     Manual(#[pin] ManualCollectiveFuture<()>),
+    #[cfg(feature = "enable-rofi-c")]
+    RofiC(#[pin] RofiCCollectiveFuture<()>),
     Local(#[pin] LocalCollectiveReduceScatterIntoBufferFuture<T, B>),
     #[allow(dead_code)]
     _Phantom(std::marker::PhantomData<(T, B)>),
@@ -1952,6 +2084,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveReduceScatterIntoBufferOpHandl
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceScatterIntoBufferOpFuture::ShmemOpt(f) => f.block(),
             CollectiveReduceScatterIntoBufferOpFuture::Manual(f) => f.block(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceScatterIntoBufferOpFuture::RofiC(f) => f.block(),
             CollectiveReduceScatterIntoBufferOpFuture::Local(f) => f.block(),
             _ => unreachable!(),
         }
@@ -1978,6 +2112,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> CollectiveReduceScatterIntoBufferOpHandl
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceScatterIntoBufferOpFuture::ShmemOpt(f) => f.spawn(),
             CollectiveReduceScatterIntoBufferOpFuture::Manual(f) => f.spawn(),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceScatterIntoBufferOpFuture::RofiC(f) => f.spawn(),
             CollectiveReduceScatterIntoBufferOpFuture::Local(f) => f.spawn(),
             _ => unreachable!(),
         }
@@ -2004,6 +2140,8 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveReduceScatterIntoBu
             #[cfg(feature = "enable-shmem-opt")]
             CollectiveReduceScatterIntoBufferOpFutureProj::ShmemOpt(f) => f.poll(cx),
             CollectiveReduceScatterIntoBufferOpFutureProj::Manual(f) => f.poll(cx),
+            #[cfg(feature = "enable-rofi-c")]
+            CollectiveReduceScatterIntoBufferOpFutureProj::RofiC(f) => f.poll(cx),
             CollectiveReduceScatterIntoBufferOpFutureProj::Local(f) => f.poll(cx),
             _ => unreachable!(),
         }
