@@ -41,6 +41,22 @@ lamellar-ucc-sys = 0.1.1
 
 Downstream crates consume `lamellar_ucc_sys` for low-level collective calls on and rely on the `build.rs` output to know where the headers and libraries live.
 
+## Tested library versions
+
+The bindings are generated from the headers of the UCC being used, and `bindgen` names anonymous C unions and structs by their position
+(`ucc_coll_args__bindgen_ty_4`). A UCC release other than those below can renumber them, and the failure is then a compile error in the
+crate that uses the bindings (`cannot find struct, variant or union type ucc_coll_args__bindgen_ty_4`), not in this one.
+
+| UCC | Status |
+|-----|--------|
+| 1.8 (API 1.8) | vendored, the default |
+| 1.4.4 | checked, through `UCC_DIR` |
+| anything else | untested |
+
+The build script reads `UCC_API_MAJOR`/`UCC_API_MINOR` from the header and prints a `cargo:warning` when the version is outside the range
+above. Cargo shows build-script warnings only for path and workspace dependencies, so a crate that depends on the published
+`lamellar-ucc-sys` will not see it; check this table before pointing `UCC_DIR` at another release.
+
 ## Environment variables
 
 - `UCC_DIR`: optional path to an existing UCC installation; the build script uses it when the required symbols are present.
