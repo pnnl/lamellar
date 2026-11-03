@@ -70,12 +70,31 @@ typedef struct rofi_prov_names_t {
 // libfabric's coll provider hands out group ids from a fixed 256-entry per-endpoint mask on fi_join_collective and
 // never returns them on fi_close, so joining (and closing) a group for every MR exchange exhausts the ids after ~254
 // allocations; later joins then share id 256 and mark it one byte past the end of the 32-byte mask.
+//
+// `purpose` keeps the groups of unrelated users apart: libfabric matches the collectives of a group by the order they are
+// issued, so the memory-region exchange (purpose 0, issued under the transport lock) must not share a group with the
+// collectives the application issues (purpose 1), or the two orders would interleave differently on different PEs.
+#define ROFI_COLL_GROUP_MR_EXCHANGE 0
+#define ROFI_COLL_GROUP_USER 1
 struct rofi_coll_group {
     struct rofi_coll_group *next;
+    int purpose;
     uint64_t num_pes;
     uint64_t *pes;
     struct fid_av_set *av_set;
     struct fid_mc *mc;
+};
+
+// An in-flight collective issued through rofi_collective_post. The libfabric completion for it carries a pointer to this
+// as its context; `done` is set (under the transport lock) when that completion is read from the completion queue.
+struct rofi_coll_req {
+    struct rofi_coll_req *next;
+    _Atomic int done;
+    int err;
+    // broadcast only, see rofi_transport_collective_post: the padded copy libfabric works on, and what to copy back to the caller
+    void *bounce;
+    void *user_dst;
+    size_t user_bytes;
 };
 
 struct rofi_transport_t {
@@ -108,6 +127,8 @@ struct rofi_transport_t {
     pthread_rwlock_t mr_lock;
     uint64_t fi_collective;
     struct rofi_coll_group *coll_groups; // protected by `lock`
+    struct rofi_coll_req *coll_pending;  // protected by `lock`
+    pthread_mutex_t coll_join_lock;      // serializes the joins of application collective groups (see rofi_transport_get_user_coll_group)
 };
 
 extern rofi_transport_t rofi;
@@ -131,6 +152,9 @@ void *rofi_get_remote_addr_internal(void *, unsigned int);
 void *rofi_get_local_addr_from_remote_addr_internal(void *, unsigned int);
 int rofi_has_atomics_internal(void);
 int rofi_query_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
+int rofi_query_collective_internal(rofi_collective_op_t, rofi_datatype_t, rofi_atomic_op_t);
+int rofi_collective_post_internal(rofi_collective_op_t, const uint64_t *, uint64_t, uint64_t, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, void **);
+int rofi_collective_progress_internal(void *);
 int rofi_query_fetch_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
 int rofi_query_compare_atomic_internal(rofi_datatype_t, rofi_atomic_op_t);
 ssize_t rofi_atomic_op_internal(void *, const void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
