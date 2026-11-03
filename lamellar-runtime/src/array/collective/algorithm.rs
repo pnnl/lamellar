@@ -2098,6 +2098,8 @@ pub(crate) async fn do_reduce_scatter_in_buffer<T, A, B: AsLamellarBuffer<T>>(
     A: ManualCollectiveUpdate<T>,
     T: Remote,
 {
+    // the buffer must hold each PE's share (`local_length / num_pes`); this fails with a message if it does not
+    crate::lamellae::collective::reduce_scatter_dst(result.as_mut_slice(), local_length, array.num_pes());
     debug!(target: "collective::ticket", func = "do_reduce_scatter_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_reduce_scatter_in_buffer", my_ticket, "ticket served, proceeding");
@@ -2171,6 +2173,8 @@ pub(crate) async fn do_reduce_scatter_comparison_in_buffer<T, A, B: AsLamellarBu
     A: ManualCollectiveUpdateComparison<T>,
     T: Remote,
 {
+    // the buffer must hold each PE's share (`local_length / num_pes`); this fails with a message if it does not
+    crate::lamellae::collective::reduce_scatter_dst(result.as_mut_slice(), local_length, array.num_pes());
     debug!(target: "collective::ticket", func = "do_reduce_scatter_comparison_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_reduce_scatter_comparison_in_buffer", my_ticket, "ticket served, proceeding");
@@ -2212,6 +2216,8 @@ pub(crate) async fn do_reduce_scatter_bitwise_in_buffer<T, A, B: AsLamellarBuffe
     A: ManualCollectiveUpdateBitwise<T>,
     T: Remote,
 {
+    // the buffer must hold each PE's share (`local_length / num_pes`); this fails with a message if it does not
+    crate::lamellae::collective::reduce_scatter_dst(result.as_mut_slice(), local_length, array.num_pes());
     debug!(target: "collective::ticket", func = "do_reduce_scatter_bitwise_in_buffer", my_ticket, "waiting for ticket");
     now_serving.wait(my_ticket).await; // wait for this call's ticket to be served
     debug!(target: "collective::ticket", func = "do_reduce_scatter_bitwise_in_buffer", my_ticket, "ticket served, proceeding");

@@ -1528,7 +1528,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> ShmemCollectiveReduceScatterIntoBufferFu
         let remote_dst_address =
             reduce_to_root::<T>(0, &self.alloc, None, self.index, self.len, &self.op);
         if self.alloc.my_alloc_pe == 0 {
-            self.result.as_mut_slice().copy_from_slice(
+            crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes()).copy_from_slice(
                 &my_slice[self.alloc.my_alloc_pe * chunk_size
                     ..(self.alloc.my_alloc_pe + 1) * chunk_size],
             );
@@ -1548,7 +1548,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> ShmemCollectiveReduceScatterIntoBufferFu
             let remote_dst_slice = unsafe {
                 std::slice::from_raw_parts(remote_dst_address.unwrap() as *const T, self.len)
             };
-            self.result.as_mut_slice().copy_from_slice(
+            crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes()).copy_from_slice(
                 &remote_dst_slice[self.alloc.my_alloc_pe * chunk_size
                     ..(self.alloc.my_alloc_pe + 1) * chunk_size],
             );

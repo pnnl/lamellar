@@ -1483,7 +1483,7 @@ pub(crate) struct ShmemOptCollectiveReduceScatterIntoBufferFuture<T: Remote, B: 
 
 impl<T: Remote, B: AsLamellarBuffer<T>> ShmemOptCollectiveReduceScatterIntoBufferFuture<T, B> {
     fn exec_op(&mut self) {
-        reduce_scatter(&self.alloc, self.index, self.len, &self.op, self.result.as_mut_slice());
+        reduce_scatter(&self.alloc, self.index, self.len, &self.op, crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes()));
         self.spawned = true;
     }
 

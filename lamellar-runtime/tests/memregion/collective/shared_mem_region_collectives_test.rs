@@ -186,6 +186,18 @@ macro_rules! collectives_test {
                 .block();
             record!("sum_scatter_into_buffer", dst.as_slice());
 
+            // a buffer longer than the share: the first len / num_pes elements are written, the rest is left as it was
+            let dst = new_out(len);
+            region
+                .sum_scatter_into_buffer(0, len, LamellarBuffer::from_shared_memory_region(dst.clone()))
+                .block();
+            let share = len / num_pes;
+            if dst.as_slice()[share..].iter().any(|e| *e != 0 as $t) {
+                eprintln!("sum_scatter_into_buffer wrote beyond its share on pe {}: {:?}", my_pe, dst.as_slice());
+                success = false;
+            }
+            record!("sum_scatter_into_buffer_longer", dst.as_slice());
+
             // the in-place forms: the buffer holds this PE's values going in and the reduction coming out, and the
             // region itself must be left as it was
             let fill = |dst: &SharedMemoryRegion<$t>| {

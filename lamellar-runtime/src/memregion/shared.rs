@@ -3753,6 +3753,10 @@ impl<T: Remote> SharedMemoryRegion<T> {
     }
     /// Performs a collective reduce-scatter minimum, storing results into `buffer`.
     ///
+    /// `len` elements starting at `index` are reduced and each PE in the team receives `len / num_pes` of the result: the first
+    /// `len / num_pes` elements of `buffer`, which must hold at least that many (it is the share of this PE, not the whole
+    /// reduction, that its length has to cover).
+    ///
     /// # Safety
     /// `index + len` must not exceed the local segment length. Concurrent mutation of the same elements is undefined behavior.
     ///
@@ -3785,6 +3789,10 @@ impl<T: Remote> SharedMemoryRegion<T> {
         self.collective_ops().reduce_scatter_into_buffer(ReduceOp::Min, index, len, buffer)
     }
     /// Performs a collective reduce-scatter maximum, storing results into `buffer`.
+    ///
+    /// `len` elements starting at `index` are reduced and each PE in the team receives `len / num_pes` of the result: the first
+    /// `len / num_pes` elements of `buffer`, which must hold at least that many (it is the share of this PE, not the whole
+    /// reduction, that its length has to cover).
     ///
     /// # Safety
     /// `index + len` must not exceed the local segment length. Concurrent mutation of the same elements is undefined behavior.
@@ -3819,6 +3827,10 @@ impl<T: Remote> SharedMemoryRegion<T> {
     }
     /// Performs a collective reduce-scatter sum, storing results into `buffer`.
     ///
+    /// `len` elements starting at `index` are reduced and each PE in the team receives `len / num_pes` of the result: the first
+    /// `len / num_pes` elements of `buffer`, which must hold at least that many (it is the share of this PE, not the whole
+    /// reduction, that its length has to cover).
+    ///
     /// # Safety
     /// `index + len` must not exceed the local segment length. Concurrent mutation of the same elements is undefined behavior.
     ///
@@ -3851,6 +3863,10 @@ impl<T: Remote> SharedMemoryRegion<T> {
         self.collective_ops().reduce_scatter_into_buffer(ReduceOp::Sum, index, len, buffer)
     }
     /// Performs a collective reduce-scatter product, storing results into `buffer`.
+    ///
+    /// `len` elements starting at `index` are reduced and each PE in the team receives `len / num_pes` of the result: the first
+    /// `len / num_pes` elements of `buffer`, which must hold at least that many (it is the share of this PE, not the whole
+    /// reduction, that its length has to cover).
     ///
     /// # Safety
     /// `index + len` must not exceed the local segment length. Concurrent mutation of the same elements is undefined behavior.
@@ -3885,6 +3901,10 @@ impl<T: Remote> SharedMemoryRegion<T> {
     }
     /// Performs a collective reduce-scatter bitwise OR, storing results into `buffer`.
     ///
+    /// `len` elements starting at `index` are reduced and each PE in the team receives `len / num_pes` of the result: the first
+    /// `len / num_pes` elements of `buffer`, which must hold at least that many (it is the share of this PE, not the whole
+    /// reduction, that its length has to cover).
+    ///
     /// # Safety
     /// `index + len` must not exceed the local segment length. Concurrent mutation of the same elements is undefined behavior.
     ///
@@ -3918,6 +3938,10 @@ impl<T: Remote> SharedMemoryRegion<T> {
     }
     /// Performs a collective reduce-scatter bitwise XOR, storing results into `buffer`.
     ///
+    /// `len` elements starting at `index` are reduced and each PE in the team receives `len / num_pes` of the result: the first
+    /// `len / num_pes` elements of `buffer`, which must hold at least that many (it is the share of this PE, not the whole
+    /// reduction, that its length has to cover).
+    ///
     /// # Safety
     /// `index + len` must not exceed the local segment length. Concurrent mutation of the same elements is undefined behavior.
     ///
@@ -3950,6 +3974,10 @@ impl<T: Remote> SharedMemoryRegion<T> {
         self.collective_ops().reduce_scatter_into_buffer(ReduceOp::BitXor, index, len, buffer)
     }
     /// Performs a collective reduce-scatter bitwise AND, storing results into `buffer`.
+    ///
+    /// `len` elements starting at `index` are reduced and each PE in the team receives `len / num_pes` of the result: the first
+    /// `len / num_pes` elements of `buffer`, which must hold at least that many (it is the share of this PE, not the whole
+    /// reduction, that its length has to cover).
     ///
     /// # Safety
     /// `index + len` must not exceed the local segment length. Concurrent mutation of the same elements is undefined behavior.

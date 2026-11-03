@@ -1231,7 +1231,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> UcxCollectiveReduceScatterIntoBufferFutu
         let src = &alloc_slice[self.index..self.index + self.len];
         let req = self
             .alloc
-            .reduce_scatter_inner(&self.op, src, self.result.as_mut_slice(), false)
+            .reduce_scatter_inner(&self.op, src, crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes), false)
             .unwrap();
         self.req = req;
         self.spawned = true;

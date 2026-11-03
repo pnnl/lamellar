@@ -2148,6 +2148,26 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for CollectiveReduceScatterIntoBu
     }
 }
 
+/// The part of a reduce-scatter's destination buffer that is written. A reduce-scatter of `len` elements reduces them
+/// and gives each of the `num_pes` PEs `len / num_pes` of the result, so `result` must hold at least that many
+/// elements and the first `len / num_pes` are written; a longer buffer is left alone beyond that. Every backend slices
+/// its destination with this, so they agree about what the buffer length means (the length of the buffer is never the
+/// per-PE count) and a buffer that is too short fails with a message.
+pub(crate) fn reduce_scatter_dst<T>(result: &mut [T], len: usize, num_pes: usize) -> &mut [T] {
+    let per_pe = len / num_pes;
+    assert!(
+        result.len() >= per_pe,
+        "reduce_scatter into a buffer: each of the {} PEs receives len / num_pes = {} / {} = {} elements, \
+         but the buffer holds only {}",
+        num_pes,
+        len,
+        num_pes,
+        per_pe,
+        result.len()
+    );
+    &mut result[..per_pe]
+}
+
 /// Elementwise `acc[i] = acc[i] op src[i]` on the host, for the shared-memory lamellae that reduce by reading their peers'
 /// data. Integers wrap, like the atomic ops they replace; floats use the ordinary operators (no bitwise ops on floats).
 pub(crate) fn local_reduce<T: crate::Remote>(op: &ReduceOp, acc: &mut [T], src: &[T]) {

@@ -1702,7 +1702,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LibfabricSysCollectiveReduceScatterIntoB
             &self.alloc,
             &self.op,
             src,
-            self.result.as_mut_slice(),
+            crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes()),
             false,
         );
 

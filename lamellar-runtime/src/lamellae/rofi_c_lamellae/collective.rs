@@ -761,6 +761,15 @@ impl CommAllocCollectiveReduceScatter for RofiCAlloc {
         len: usize,
         dst: LamellarBuffer<T, B>,
     ) -> CollectiveReduceScatterIntoBufferOpHandle<T, B> {
+        // each PE receives `len / team_size` elements and the buffer must hold them (a longer one is written only up to that)
+        assert!(
+            dst.len() >= len / self.team_size(),
+            "reduce_scatter into a buffer: each PE receives len / team size = {} / {} = {} elements, but the buffer holds only {}",
+            len,
+            self.team_size(),
+            len / self.team_size(),
+            dst.len()
+        );
         CollectiveReduceScatterIntoBufferOpHandle {
             future: CollectiveReduceScatterIntoBufferOpFuture::RofiC(collective(
                 self,
