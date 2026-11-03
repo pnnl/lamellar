@@ -262,6 +262,16 @@ fn build_bindings() {
     println!("cargo:rustc-link-lib=rdmacm");
     // println!("cargo:rustc-link-lib=pmi_simple");
 
+    // tested: UCP 1.17 (UCX 1.17.0) to the vendored 1.20
+    check_api_version(
+        "UCX (UCP API)",
+        &ucx_inc_dir.join("ucp/api/ucp_version.h"),
+        "UCP_API_MAJOR",
+        "UCP_API_MINOR",
+        "1.17 to 1.20",
+        |major, minor| major == 1 && (17..=20).contains(&minor),
+    );
+
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         .clang_arg(format!("-I{}", ucx_inc_dir.display()))
@@ -283,4 +293,48 @@ fn build_bindings() {
 
 fn main() {
     build_bindings();
+}
+
+// Warns, and never fails, when the library whose headers are about to be bound is outside the versions this crate was
+// tested with: bindgen names anonymous C unions and structs by position (`..__bindgen_ty_N`), so a different release can
+// move the names the Rust code uses and the build then fails far from here, in the code that uses the bindings. The same
+// function is in lamellar-ucc-sys, lamellar-ucx-sys and libfabric-sys (their build scripts are standalone).
+// Reads `#define <major_name> <n>` and `#define <minor_name> <n>` from `header`; a header or macro that cannot be read
+// is skipped without a word.
+fn check_api_version(
+    library: &str,
+    header: &std::path::Path,
+    major_name: &str,
+    minor_name: &str,
+    tested: &str,
+    in_range: impl Fn(u32, u32) -> bool,
+) {
+    println!("cargo:rerun-if-changed={}", header.display());
+    let text = match std::fs::read_to_string(header) {
+        Ok(text) => text,
+        Err(_) => return,
+    };
+    let define = |name: &str| -> Option<u32> {
+        text.lines().find_map(|line| {
+            let mut words = line.split_whitespace();
+            if words.next()? != "#define" || words.next()? != name {
+                return None;
+            }
+            words.next()?.parse().ok()
+        })
+    };
+    if let (Some(major), Some(minor)) = (define(major_name), define(minor_name)) {
+        if !in_range(major, minor) {
+            println!(
+                "cargo:warning={} {}.{} ({}) is outside the versions {} was tested with ({}); if the build fails on a name \
+                 like `..__bindgen_ty_N` the bindings do not match this version",
+                library,
+                major,
+                minor,
+                header.display(),
+                std::env::var("CARGO_PKG_NAME").unwrap_or_default(),
+                tested
+            );
+        }
+    }
 }
