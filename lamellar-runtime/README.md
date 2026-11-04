@@ -145,6 +145,69 @@ fn main() {
 
 `DEP_LAMELLAR_*` is only visible to crates that depend on `lamellar` directly. The rpaths are absolute paths into your `target/` directory, so a binary built this way is not relocatable; copy the libraries and set your own rpath (for example `$ORIGIN/lib`) if you need to deploy it elsewhere.
 
+# Building from a clone (new to Rust? start here)
+
+If you come from C/C++/MPI, the mapping is roughly: `Cargo.toml` is the Makefile/CMakeLists, `cargo` is `make` + a package manager, a *feature* is a `--enable-xxx` configure flag, and an *environment variable* like `OFI_DIR` is the same idea as autotools' `--with-libfabric=<prefix>`.
+
+**Install Rust** (once, no root needed): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`, then restart your shell. You also need a C compiler, `make`, `cmake`, `perl`, and clang/libclang (see [NATIVE_DEPENDENCIES.md](NATIVE_DEPENDENCIES.md)).
+
+**You do not edit any `Cargo.toml` to build the examples in a clone.** The snippets like `lamellar = { version = "...", features = [...] }` elsewhere in this README are for *your own application's* `Cargo.toml`, when you depend on Lamellar from your own project. Inside `lamellar-runtime/`, the same choices are made on the command line:
+
+| In your app's `Cargo.toml` | On the command line in `lamellar-runtime/` |
+|---|---|
+| `features = ["enable-libfabric"]` | `--features enable-libfabric` |
+| `default-features = false` | `--no-default-features` |
+
+Cargo will not fetch a different Lamellar: this repo's `Cargo.toml` has a `[patch.crates-io]` section (Variant B) that already points the supporting crates (`pmi`, `rofisys`, the libfabric and UCX crates, ...) at the sibling directories of this checkout. The only things downloaded are third-party Rust crates (`bindgen`, `tokio`, ...), cached under `~/.cargo`. On a machine without outbound network, run `cargo fetch` on a login node first, then build with `--offline`.
+
+**Using your clone from your own application.** A `[patch]` section only takes effect in the top-level crate being built, so the one in this repo is *not* inherited by an application that depends on Lamellar. If you want your app to use the local clone instead of the versions on crates.io (otherwise Cargo downloads the published crates), point the dependency at the clone and repeat the patch section in your app's `Cargo.toml`:
+
+```toml
+[dependencies]
+lamellar = { path = "/path/to/lamellar-repo/lamellar-runtime", features = ["enable-libfabric"] }
+
+# Make the supporting crates come from the clone too, not crates.io.
+[patch.crates-io]
+pmi                    = { path = "/path/to/lamellar-repo/process_management/pmi" }
+pmi-sys                = { path = "/path/to/lamellar-repo/process_management/pmi-sys" }
+# ... and so on
+```
+
+Copy the full list from the `[patch.crates-io]` section at the bottom of `lamellar-runtime/Cargo.toml` (Variant B), replacing the `../` prefix with the absolute path of your clone. Variant A in the same file does the same thing using the GitHub repository instead of a local path. Skipping the patch section is not an error: the build still works, but with the published crate versions rather than your clone's code.
+
+### Build and run an example
+
+Pick a backend feature (`enable-libfabric`, `enable-ucx`, `enable-rofi-c`, ...; see "Network Backends") and an example name (anything under `examples/`, or a `[[example]]` entry in `Cargo.toml`):
+
+```
+cd lamellar-runtime
+cargo build --profile release-dev --features <backend-feature> --example <example-name>
+cargo run   --profile release-dev --features <backend-feature> --example <example-name> -- -- --pes 2 --lamellae <backend>
+```
+
+For instance `--features enable-libfabric --example hello_world_am` with `--lamellae libfabric`. The executable lands in `target/release-dev/examples/<example-name>`. Distributed runs need an allocation first (see "Running Lamellar Applications"). The first build is slow because it compiles the bundled native libraries; later builds are incremental.
+
+### Using a system install of a native library (example: libfabric)
+
+Each native library (libfabric, UCX, UCC, ROFI, PMIx, ...) is either built from bundled source (the default) or taken from an existing install. For most of them, pointing an environment variable at the install prefix (the directory containing `lib/` and `include/`) is all it takes; the table in "Using a system install per dependency" lists the variable for each. For libfabric:
+
+```
+export OFI_DIR=/path/to/libfabric/prefix                 # contains lib/libfabric.so, include/rdma/fabric.h
+export LD_LIBRARY_PATH=$OFI_DIR/lib:$LD_LIBRARY_PATH     # shared libs must be findable at run time
+cargo build --profile release-dev --features enable-libfabric --example hello_world_am
+```
+
+The same pattern works for the other backends, e.g. `UCX_DIR`/`UCC_DIR` with `enable-ucx`, or `ROFI_DIR` (plus `OFI_DIR`, since ROFI is built on libfabric) with `enable-rofi-c`.
+
+Caveats:
+- Lamellar's bindings are only tested against specific library versions (for libfabric, see [libfabric-sys' README](../communication_frameworks/libfabric-sys/README.md)); other releases may mismatch.
+- After changing a `*_DIR` variable, run `cargo clean -p <crate>` (or just `cargo clean`) so the build script reruns.
+- These variables are read by the crates' build scripts, not by `Cargo.toml`, so there is nothing to edit.
+
+### "Vendored" libraries are a separate question
+
+The default features also build PMIx, PRRTE, libevent and hwloc from source. These provide the `#[lamellar::main]` launcher, not the network transport. If your cluster already has version-matched PMIx/PRRTE, you can skip building them with `--no-default-features --features system-pmix-launcher,<backend-feature>` (see "Vendored Dependencies"). If unsure, keep the defaults: slower to build but self-contained. `--no-default-features` *alone* removes the launcher, which is not what you want for running the examples.
+
 # Using Lamellar 
 Lamellar is capable of running on single node workstations as well as distributed HPC systems.
 For a workstation, simply copy the following to the dependency section of you Cargo.toml file:
