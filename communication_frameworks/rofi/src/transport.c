@@ -858,18 +858,48 @@ int rofi_transport_wait_on_cntr(rofi_transport_t *rofi, _Atomic uint64_t *pendin
     return 0;
 }
 
+// Collective joins complete through the endpoint's single event queue, and two joins can be in flight at once (the
+// memory-region exchange and an application group), so a waiter can read the completion of the other one. It parks that
+// completion here, by context, and each waiter checks here before reading the queue; otherwise the other join would
+// never see its event (and this one would fail). Both are called with rofi->lock held.
+static void rofi_transport_park_join(rofi_transport_t *rofi, void *context) {
+    for (int i = 0; i < ROFI_JOIN_DONE_SLOTS; i++) {
+        if (rofi->join_done[i] == NULL) {
+            rofi->join_done[i] = context;
+            return;
+        }
+    }
+    ERR_MSG("no room to park a join completion for context %p", context);
+}
+
+static int rofi_transport_take_join(rofi_transport_t *rofi, void *context) {
+    for (int i = 0; i < ROFI_JOIN_DONE_SLOTS; i++) {
+        if (rofi->join_done[i] == context) {
+            rofi->join_done[i] = NULL;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int rofi_transport_wait_on_event(rofi_transport_t *rofi, uint32_t event, void *context) {
     uint32_t ev;
     struct fi_eq_entry entry;
 
     while (true) {
+        if (event == FI_JOIN_COMPLETE && context && rofi_transport_take_join(rofi, context)) {
+            return 0;
+        }
         int ret = fi_eq_read(rofi->eq, &ev, &entry, sizeof(entry), 0);
         if (ret >= 0) { // we got an event
             if (ev == event) {
                 if (!context || (context == entry.context)) {
                     return 0;
                 }
-                else if (context) {
+                else if (ev == FI_JOIN_COMPLETE) {
+                    rofi_transport_park_join(rofi, entry.context); // another join's completion: keep it for its waiter
+                }
+                else {
                     return -FI_EOTHER;
                 }
             }
@@ -1514,10 +1544,20 @@ static int rofi_transport_get_user_coll_group(rofi_transport_t *rofi, const uint
         uint32_t ev;
         struct fi_eq_entry entry;
         pthread_mutex_lock(&rofi->lock);
+        if (rofi_transport_take_join(rofi, &done_flag)) { // a memory-region exchange read our completion
+            joined = 1;
+            pthread_mutex_unlock(&rofi->lock);
+            break;
+        }
         ret = fi_eq_read(rofi->eq, &ev, &entry, sizeof(entry), 0);
         if (ret >= 0) {
-            if (ev == FI_JOIN_COMPLETE && entry.context == &done_flag) {
-                joined = 1;
+            if (ev == FI_JOIN_COMPLETE) {
+                if (entry.context == &done_flag) {
+                    joined = 1;
+                }
+                else {
+                    rofi_transport_park_join(rofi, entry.context); // the memory-region exchange's completion
+                }
             }
             ret = 0;
         }

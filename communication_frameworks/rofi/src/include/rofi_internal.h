@@ -38,6 +38,10 @@ typedef struct rofi_transport_t rofi_transport_t;
 #define ROFI_SERVER 1
 #define ROFI_CLIENT 2
 
+// Room for join completions read by a waiter other than their own. Joins in flight are at most two (the memory-region
+// exchange, which holds the transport lock, and one application join, serialized by coll_join_lock).
+#define ROFI_JOIN_DONE_SLOTS 8
+
 #define MAX_HOSTNAME_LEN 256
 #define KILO 1024UL
 #define MEGA 1024UL * KILO
@@ -129,6 +133,9 @@ struct rofi_transport_t {
     struct rofi_coll_group *coll_groups; // protected by `lock`
     struct rofi_coll_req *coll_pending;  // protected by `lock`
     pthread_mutex_t coll_join_lock;      // serializes the joins of application collective groups (see rofi_transport_get_user_coll_group)
+    // contexts of FI_JOIN_COMPLETE events that a waiter read off the shared event queue but that belong to another join
+    // (see rofi_transport_park_join); protected by `lock`
+    void *join_done[ROFI_JOIN_DONE_SLOTS];
 };
 
 extern rofi_transport_t rofi;
