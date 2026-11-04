@@ -624,7 +624,8 @@ impl<T: 'static> DarcInner<T> {
 
         inner.await_all().await;
 
-        if team.num_pes() == 1 {
+        // the field: `team.num_pes()` on a `Darc<LamellarTeamRT>` is `Darc`'s own, the PE count of the team it was created over
+        if team.num_pes == 1 {
             trace!(
                 "[{:?}] single pe block_on_outstanding {:?} {:?}",
                 std::thread::current().id(),

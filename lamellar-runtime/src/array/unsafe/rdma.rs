@@ -204,7 +204,7 @@ impl<T: Dist> UnsafeArray<T> {
     ) -> Vec<RdmaHandle<T>> {
         let global_index = index + self.inner.offset;
         let buf = buf.into();
-        let num_pes = self.inner.data.team.num_pes();
+        let num_pes = self.inner.data.num_pes;
         let num_elems_pe = buf.len() / num_pes + 1; //we add plus one to ensure we allocate enough space
         let start_pe = global_index % num_pes;
         let mut rdma_requests = Vec::new();
@@ -242,7 +242,7 @@ impl<T: Dist> UnsafeArray<T> {
         num_elems: usize,
     ) -> FuturesOrdered<RdmaGetBufferHandle<T>> {
         let global_index = index + self.inner.offset;
-        let num_pes = self.inner.data.team.num_pes();
+        let num_pes = self.inner.data.num_pes;
         let start_pe = global_index % num_pes;
         let num_elems_pe = num_elems / num_pes; //we add plus one to ensure we allocate enough space
         let pe_start_index = global_index / num_pes;

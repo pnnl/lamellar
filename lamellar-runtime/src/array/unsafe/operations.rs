@@ -555,7 +555,7 @@ impl<T: AmDist + Dist + 'static> UnsafeArray<T> {
     ) -> VecDeque<(AmHandle<R>, Vec<usize>)> {
         let num_per_batch = (config().am_size_threshold as f32 / index_size as f32).ceil() as usize;
 
-        let num_pes = self.inner.data.team.num_pes();
+        let num_pes = self.inner.data.num_pes;
         // let my_pe = self.inner.data.team.my_pe();
         let num_tasks = indices.len();
         let tasks_done = Arc::new(AtomicUsize::new(0));
@@ -756,7 +756,7 @@ impl<T: AmDist + Dist + 'static> UnsafeArray<T> {
             (config().am_size_threshold as f32 / idx_val_bytes as f32).ceil() as usize;
         let bytes_per_batch = num_per_batch * idx_val_bytes;
 
-        let num_pes = self.inner.data.team.num_pes();
+        let num_pes = self.inner.data.num_pes;
 
         // println!("num_reqs {:?}", vals.len());
         let mut start_i = 0;

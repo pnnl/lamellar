@@ -349,7 +349,7 @@ impl<T: 'static> Drop for GlobalRwDarcReadGuard<T> {
             let inner = self.darc.inner();
             let team = inner.darc_rt_team();
             let remote_rwlock_addr = team.lamellae.comm().remote_addr(
-                0,
+                team.arch.world_pe(0).expect("team rank 0 exists"), // world PE of the lock holder (team rank 0)
                 inner as *const DarcInner<DistRwLock<T>> as *const () as usize,
             );
             let _am = team.spawn_am_pe_tg(
@@ -405,7 +405,7 @@ impl<T: 'static> Drop for GlobalRwDarcWriteGuard<T> {
         let inner = self.darc.inner();
         let team = inner.darc_rt_team();
         let remote_rwlock_addr = team.lamellae.comm().remote_addr(
-            0,
+            team.arch.world_pe(0).expect("team rank 0 exists"), // world PE of the lock holder (team rank 0)
             inner as *const DarcInner<DistRwLock<T>> as *const () as usize,
         );
         let _am = team.spawn_am_pe_tg(
@@ -458,7 +458,7 @@ impl<T: 'static> Drop for GlobalRwDarcCollectiveWriteGuard<T> {
         let inner = self.darc.inner();
         let team = inner.darc_rt_team();
         let remote_rwlock_addr = team.lamellae.comm().remote_addr(
-            0,
+            team.arch.world_pe(0).expect("team rank 0 exists"), // world PE of the lock holder (team rank 0)
             inner as *const DarcInner<DistRwLock<T>> as *const () as usize,
         );
         let _am = team.spawn_am_pe_tg(
@@ -636,7 +636,7 @@ impl<T> GlobalRwDarc<T> {
         let inner = self.inner();
         let team = inner.darc_rt_team();
         let remote_rwlock_addr = team.lamellae.comm().remote_addr(
-            0,
+            team.arch.world_pe(0).expect("team rank 0 exists"), // world PE of the lock holder (team rank 0)
             inner as *const DarcInner<DistRwLock<T>> as *const () as usize,
         );
         let am = team.exec_am_pe_tg(
@@ -701,7 +701,7 @@ impl<T> GlobalRwDarc<T> {
         let inner = self.inner();
         let team = inner.darc_rt_team();
         let remote_rwlock_addr = team.lamellae.comm().remote_addr(
-            0,
+            team.arch.world_pe(0).expect("team rank 0 exists"), // world PE of the lock holder (team rank 0)
             inner as *const DarcInner<DistRwLock<T>> as *const () as usize,
         );
 
@@ -747,7 +747,7 @@ impl<T> GlobalRwDarc<T> {
         let inner = self.inner();
         let team = inner.darc_rt_team();
         let remote_rwlock_addr = team.lamellae.comm().remote_addr(
-            0,
+            team.arch.world_pe(0).expect("team rank 0 exists"), // world PE of the lock holder (team rank 0)
             inner as *const DarcInner<DistRwLock<T>> as *const () as usize,
         );
         let collective_cnt = inner.item().collective_cnt.fetch_add(1, Ordering::SeqCst);

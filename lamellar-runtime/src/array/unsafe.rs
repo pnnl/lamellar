@@ -297,7 +297,9 @@ impl<T: Dist + ArrayOps + Default + 'static> UnsafeArray<T> {
         team.async_barrier().await;
         let task_group = LamellarTaskGroup::new(team.clone());
         let my_pe = team.team_pe_id().unwrap();
-        let num_pes = team.num_pes();
+        // the field, not `team.num_pes()`: on a `Darc<LamellarTeamRT>` that method call resolves to `Darc`'s own
+        // `LamellarEnv::num_pes`, the PE count of the team the Darc was created over (the parent of a sub-team)
+        let num_pes = team.num_pes;
         let full_array_size = std::cmp::max(array_size, num_pes);
 
         let elem_per_pe = full_array_size / num_pes;
@@ -1498,7 +1500,7 @@ impl<T: Dist + std::fmt::Debug> UnsafeArray<T> {
 impl<T: Dist + std::fmt::Debug> ArrayPrint<T> for UnsafeArray<T> {
     fn print(&self) {
         self.inner.data.team.tasking_barrier(); //TODO: have barrier accept a string so we can print where we are stalling.
-        for pe in 0..self.inner.data.team.num_pes() {
+        for pe in 0..self.inner.data.num_pes {
             self.inner.data.team.tasking_barrier();
             if self.inner.data.my_pe == pe {
                 println!("[pe {:?} data] {:?}", pe, unsafe { self.local_as_slice() });
@@ -1517,7 +1519,7 @@ impl<T: Dist + AmDist + 'static> UnsafeArray<T> {
     ) -> LamellarArcAm {
         REDUCE_OPS
             .get(&(std::any::TypeId::of::<T>(), op))
-            .expect("unexpected reduction type")(byte_array, self.inner.data.team.num_pes())
+            .expect("unexpected reduction type")(byte_array, self.inner.data.num_pes)
     }
     pub(crate) fn reduce_data_user(
         &self,
