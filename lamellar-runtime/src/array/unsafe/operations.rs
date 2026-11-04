@@ -1207,7 +1207,7 @@ impl<T: ElementOps + 'static> UnsafeReadOnlyOps<T> for UnsafeArray<T> {
         // println!("in Network atomic store");
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             unsafe {
-                let handle = self.mem_region.get(pe, offset);
+                let handle = self.mem_region.get(self.world_pe(pe), offset);
                 ArrayFetchOpHandle {
                     array: self.clone().into(),
                     state: FetchOpState::Rdma(handle, None),
@@ -1230,7 +1230,7 @@ impl<T: ElementOps + 'static> UnsafeAccessOps<T> for UnsafeArray<T> {
             //     self.array.team_rt().alloc_one_sided_mem_region(1);
             unsafe {
                 // buf.as_mut_slice()[0] = val;
-                let handle = self.mem_region.put(pe, offset, val);
+                let handle = self.mem_region.put(self.world_pe(pe), offset, val);
                 ArrayOpHandle {
                     array: self.clone().into(),
                     state: OpState::Rdma(handle),
@@ -1248,7 +1248,7 @@ impl<T: ElementOps + 'static> UnsafeAccessOps<T> for UnsafeArray<T> {
         // println!("in Network atomic blocking store");
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             unsafe {
-                self.mem_region.put_blocking(pe, offset, val);
+                self.mem_region.put_blocking(self.world_pe(pe), offset, val);
             }
         } else {
             panic!(
@@ -1261,7 +1261,7 @@ impl<T: ElementOps + 'static> UnsafeAccessOps<T> for UnsafeArray<T> {
     unsafe fn store_unmanaged(&self, index: usize, val: T) {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             unsafe {
-                self.mem_region.put_unmanaged(pe, offset, val);
+                self.mem_region.put_unmanaged(self.world_pe(pe), offset, val);
             }
         } else {
             panic!(
@@ -1277,7 +1277,7 @@ impl<T: ElementOps + 'static> UnsafeAccessOps<T> for UnsafeArray<T> {
             if self.atomic_support.swap {
                 let handle =
                     self.mem_region
-                        .atomic_fetch_op(pe, offset, AtomicOp::Write(Box::pin(val)));
+                        .atomic_fetch_op(self.world_pe(pe), offset, AtomicOp::Write(Box::pin(val)));
                 ArrayFetchOpHandle {
                     array: self.clone().into(),
                     state: FetchOpState::Network(handle),
@@ -1298,7 +1298,7 @@ impl<T: ElementOps + 'static> UnsafeAccessOps<T> for UnsafeArray<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             if self.atomic_support.swap {
                 self.mem_region
-                    .atomic_fetch_op_blocking(pe, offset, AtomicOp::Write(Box::pin(val)))
+                    .atomic_fetch_op_blocking(self.world_pe(pe), offset, AtomicOp::Write(Box::pin(val)))
             } else {
                 self.initiate_batch_fetch_op_2(val, index, ArrayOpCmd::Swap, self.clone().into())
                     .block()[0]
@@ -1320,7 +1320,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle = self
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::Sum(Box::pin(val)));
+                .atomic_op(self.world_pe(pe), offset, AtomicOp::Sum(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -1341,7 +1341,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::Sum(Box::pin(val)));
+                .atomic_op_blocking(self.world_pe(pe), offset, AtomicOp::Sum(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1359,7 +1359,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::Sum(Box::pin(val)));
+                .atomic_op_unmanaged(self.world_pe(pe), offset, AtomicOp::Sum(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1375,7 +1375,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle = self
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::Sub(Box::pin(val)));
+                .atomic_op(self.world_pe(pe), offset, AtomicOp::Sub(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -1397,7 +1397,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::Sub(Box::pin(val)));
+                .atomic_op_unmanaged(self.world_pe(pe), offset, AtomicOp::Sub(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1414,7 +1414,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::Sub(Box::pin(val)));
+                .atomic_op_blocking(self.world_pe(pe), offset, AtomicOp::Sub(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1432,7 +1432,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle =
                 self.mem_region
-                    .atomic_fetch_op(pe, offset, AtomicOp::FetchSum(Box::pin(val)));
+                    .atomic_fetch_op(self.world_pe(pe), offset, AtomicOp::FetchSum(Box::pin(val)));
             ArrayFetchOpHandle {
                 array: self.clone().into(),
                 state: FetchOpState::Network(handle),
@@ -1453,7 +1453,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_fetch_op_blocking(pe, offset, AtomicOp::FetchSum(Box::pin(val)))
+                .atomic_fetch_op_blocking(self.world_pe(pe), offset, AtomicOp::FetchSum(Box::pin(val)))
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1471,7 +1471,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle =
                 self.mem_region
-                    .atomic_fetch_op(pe, offset, AtomicOp::FetchSub(Box::pin(val)));
+                    .atomic_fetch_op(self.world_pe(pe), offset, AtomicOp::FetchSub(Box::pin(val)));
             ArrayFetchOpHandle {
                 array: self.clone().into(),
                 state: FetchOpState::Network(handle),
@@ -1492,7 +1492,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_fetch_op_blocking(pe, offset, AtomicOp::FetchSub(Box::pin(val)))
+                .atomic_fetch_op_blocking(self.world_pe(pe), offset, AtomicOp::FetchSub(Box::pin(val)))
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1508,7 +1508,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle = self
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::Prod(Box::pin(val)));
+                .atomic_op(self.world_pe(pe), offset, AtomicOp::Prod(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -1529,7 +1529,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::Prod(Box::pin(val)));
+                .atomic_op_blocking(self.world_pe(pe), offset, AtomicOp::Prod(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1547,7 +1547,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::Prod(Box::pin(val)));
+                .atomic_op_unmanaged(self.world_pe(pe), offset, AtomicOp::Prod(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1565,7 +1565,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle =
                 self.mem_region
-                    .atomic_fetch_op(pe, offset, AtomicOp::FetchProd(Box::pin(val)));
+                    .atomic_fetch_op(self.world_pe(pe), offset, AtomicOp::FetchProd(Box::pin(val)));
             ArrayFetchOpHandle {
                 array: self.clone().into(),
                 state: FetchOpState::Network(handle),
@@ -1586,7 +1586,7 @@ impl<T: ElementArithmeticOps + 'static> UnsafeArithmeticOps<T> for UnsafeArray<T
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_fetch_op_blocking(pe, offset, AtomicOp::FetchProd(Box::pin(val)))
+                .atomic_fetch_op_blocking(self.world_pe(pe), offset, AtomicOp::FetchProd(Box::pin(val)))
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1604,7 +1604,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle = self
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::BitAnd(Box::pin(val)));
+                .atomic_op(self.world_pe(pe), offset, AtomicOp::BitAnd(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -1625,7 +1625,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::BitAnd(Box::pin(val)));
+                .atomic_op_blocking(self.world_pe(pe), offset, AtomicOp::BitAnd(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1643,7 +1643,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::BitAnd(Box::pin(val)));
+                .atomic_op_unmanaged(self.world_pe(pe), offset, AtomicOp::BitAnd(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1660,7 +1660,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitAnd(Box::pin(val)),
             )
@@ -1681,7 +1681,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle =
                 self.mem_region
-                    .atomic_fetch_op(pe, offset, AtomicOp::FetchBitAnd(Box::pin(val)));
+                    .atomic_fetch_op(self.world_pe(pe), offset, AtomicOp::FetchBitAnd(Box::pin(val)));
             ArrayFetchOpHandle {
                 array: self.clone().into(),
                 state: FetchOpState::Network(handle),
@@ -1701,7 +1701,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle = self
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::BitOr(Box::pin(val)));
+                .atomic_op(self.world_pe(pe), offset, AtomicOp::BitOr(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -1722,7 +1722,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::BitOr(Box::pin(val)));
+                .atomic_op_blocking(self.world_pe(pe), offset, AtomicOp::BitOr(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1740,7 +1740,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::BitOr(Box::pin(val)));
+                .atomic_op_unmanaged(self.world_pe(pe), offset, AtomicOp::BitOr(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1757,7 +1757,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitOr(Box::pin(val)),
             )
@@ -1778,7 +1778,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle =
                 self.mem_region
-                    .atomic_fetch_op(pe, offset, AtomicOp::FetchBitOr(Box::pin(val)));
+                    .atomic_fetch_op(self.world_pe(pe), offset, AtomicOp::FetchBitOr(Box::pin(val)));
             ArrayFetchOpHandle {
                 array: self.clone().into(),
                 state: FetchOpState::Network(handle),
@@ -1798,7 +1798,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle = self
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::BitXor(Box::pin(val)));
+                .atomic_op(self.world_pe(pe), offset, AtomicOp::BitXor(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -1819,7 +1819,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::BitXor(Box::pin(val)));
+                .atomic_op_blocking(self.world_pe(pe), offset, AtomicOp::BitXor(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1837,7 +1837,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::BitXor(Box::pin(val)));
+                .atomic_op_unmanaged(self.world_pe(pe), offset, AtomicOp::BitXor(Box::pin(val)));
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
@@ -1855,7 +1855,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle =
                 self.mem_region
-                    .atomic_fetch_op(pe, offset, AtomicOp::FetchBitXor(Box::pin(val)));
+                    .atomic_fetch_op(self.world_pe(pe), offset, AtomicOp::FetchBitXor(Box::pin(val)));
             ArrayFetchOpHandle {
                 array: self.clone().into(),
                 state: FetchOpState::Network(handle),
@@ -1876,7 +1876,7 @@ impl<T: ElementBitWiseOps + 'static> UnsafeBitWiseOps<T> for UnsafeArray<T> {
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitXor(Box::pin(val)),
             )
@@ -1911,7 +1911,7 @@ impl<T: ElementCompareEqOps + 'static> UnsafeCompareExchangeOps<T> for UnsafeArr
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             let handle = self
                 .mem_region
-                .atomic_compare_exchange(pe, offset, current, new);
+                .atomic_compare_exchange(self.world_pe(pe), offset, current, new);
             ArrayResultOpHandle {
                 array: self.clone().into(),
                 state: ResultOpState::Network(handle),
@@ -1937,7 +1937,7 @@ impl<T: ElementCompareEqOps + 'static> UnsafeCompareExchangeOps<T> for UnsafeArr
         }
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
             self.mem_region
-                .atomic_compare_exchange_blocking(pe, offset, current, new)
+                .atomic_compare_exchange_blocking(self.world_pe(pe), offset, current, new)
         } else {
             panic!(
                 "Index: {index} out of bounds for array of len: {:?}",
