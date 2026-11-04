@@ -532,7 +532,7 @@ impl CommAllocRdma for crate::lamellae::rofi_c_lamellae::fabric::RofiCAlloc {
             my_pe: self.my_pe,
             addr: CommAllocAddr(self.start()),
             offset,
-            op: AllocOp::PutAll((0..self.num_pes).collect(), src),
+            op: AllocOp::PutAll(self.all_pes(), src),
             scheduler: scheduler.clone(),
             counters,
             spawned: false,
@@ -543,7 +543,7 @@ impl CommAllocRdma for crate::lamellae::rofi_c_lamellae::fabric::RofiCAlloc {
     }
 
     fn put_all_unmanaged<T: Remote>(&self, src: T, offset: usize) {
-        for pe in 0..self.num_pes {
+        for pe in self.all_pes() {
             let dst = (self.start() + offset * std::mem::size_of::<T>()) as usize;
             if pe != self.my_pe {
                 unsafe {
@@ -568,7 +568,7 @@ impl CommAllocRdma for crate::lamellae::rofi_c_lamellae::fabric::RofiCAlloc {
             my_pe: self.my_pe,
             addr: CommAllocAddr(self.start()),
             offset,
-            op: AllocOp::PutAllBuf((0..self.num_pes).collect(), src.into()),
+            op: AllocOp::PutAllBuf(self.all_pes(), src.into()),
             scheduler: scheduler.clone(),
             counters,
             spawned: false,
@@ -589,7 +589,7 @@ impl CommAllocRdma for crate::lamellae::rofi_c_lamellae::fabric::RofiCAlloc {
         // until a wait has completed every put that reads it
         let large = bytes >= rofi_c_inject_size();
         let src = Box::new(src);
-        for pe in 0..self.num_pes {
+        for pe in self.all_pes() {
             let dst = (self.start() + offset * std::mem::size_of::<T>()) as usize;
             if pe != self.my_pe {
                 unsafe { rofi_c_put(src.as_slice(), dst, pe).expect("rofi_c_put failed") }

@@ -617,6 +617,17 @@ impl<T: Dist + 'static> UnsafeArray<T> {
         self.inner.data.team.clone()
     }
 
+    // The array API names PEs by their rank in the array's team, but the memory region (the allocation under it) is addressed by
+    // world PE; for the world team the two are the same.
+    pub(crate) fn world_pe(&self, team_pe: usize) -> usize {
+        let team = &self.inner.data.team;
+        if team.num_pes == team.num_world_pes {
+            team_pe
+        } else {
+            team.arch.world_pe(team_pe).expect("the PE is in the array's team")
+        }
+    }
+
     //#[tracing::instrument(skip_all, level = "debug")]
     pub(crate) async fn await_all(&self) {
         self.inner.data.team.lamellae.comm().wait_all(); //wait on operations from all threads

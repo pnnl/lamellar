@@ -400,6 +400,14 @@ impl RofiCAlloc {
         self.team.as_ref().map(|team| team.as_slice())
     }
 
+    /// The world PEs the allocation spans, in order (all of them for a world allocation, the members for a sub-team's).
+    pub(crate) fn all_pes(&self) -> Vec<usize> {
+        match &self.team {
+            Some(team) => team.as_ref().clone(),
+            None => (0..self.num_pes).collect(),
+        }
+    }
+
     /// Number of PEs the allocation spans.
     pub(crate) fn team_size(&self) -> usize {
         self.team.as_ref().map_or(self.num_pes, |team| team.len())

@@ -173,12 +173,7 @@ impl<T: Dist> AtomicArrayOpsForCollectiveOps<T> for GlobalLockArray<T> {
     }
 
     async fn batch_load(&self, pe: usize, _num_pes: usize, start: usize, count: usize) -> Vec<T> {
-        // `pe` is a rank in the array's team; the array's region is addressed by world PE
-        let world_pe = <Self as ArrayExecAm<T>>::team_rt(self)
-            .arch
-            .world_pe(pe)
-            .expect("the PE is in the array's team");
-        unsafe { self.array.get_buffer_pe(world_pe, start, count).await }
+        unsafe { self.array.get_buffer_pe(pe, start, count).await }
     }
 }
 

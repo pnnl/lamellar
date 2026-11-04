@@ -514,6 +514,10 @@ name = "array_subteam_collectives_test"
 path = "tests/array/collective/array_subteam_collectives_test.rs"
 
 [[example]]
+name = "array_subteam_rdma_test"
+path = "tests/array/rdma/array_subteam_rdma_test.rs"
+
+[[example]]
 name = "sum_all_test"
 path = "tests/array/collective/sum_all_test.rs"
 
