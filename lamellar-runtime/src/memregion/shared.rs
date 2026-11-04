@@ -32,6 +32,16 @@ use tracing::trace;
 ///
 /// Memory Regions are low-level unsafe abstraction not really intended for use in higher-level applications
 ///
+/// # Collectives
+/// The collective operations (`sum_all`, `gather_all`, `broadcast_*`, ...) need a small synchronization allocation that is
+/// made together with the region, so they are available for regions allocated through `alloc_shared_mem_region` on a team
+/// or the world. Local regions and regions built over externally registered memory have no such allocation: calling a
+/// collective on one panics. This is by design; allocate a shared region and copy the data into it instead.
+///
+/// The operations the backend has no native version of run as put/get algorithms, which build zero-filled scratch
+/// buffers, so for those the all-zero bit pattern must be a valid element (it is for the integer and float types; it is
+/// not for `NonZero*`).
+///
 /// # Warning
 /// Unless you are very confident in low level distributed memory access it is highly recommended you utilize the
 /// [LamellarArray][crate::array::LamellarArray]  interface to construct and interact with distributed memory.

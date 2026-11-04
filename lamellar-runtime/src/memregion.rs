@@ -841,6 +841,8 @@ impl CollTicketGate {
 // for local we would probably need to develop something like a one-sided initiated darc...
 pub(crate) struct MemoryRegion<T: Remote> {
     pub(crate) alloc: CommAlloc,
+    // the synchronization allocation the Manual collectives (and the ticket gate below) run on; made only for shared
+    // (Global/Sub) regions. `None` for local and externally registered regions, whose collectives panic by design.
     pub(crate) coll_sync_alloc: Option<Arc<CommAlloc>>,
     // local (never remotely visible) ticket lock guarding the Manual collective path's
     // shared sync region -- ensures PEs agree on which logical call "owns" the region even
