@@ -50,6 +50,8 @@ use crate::{
         },
         CollectiveOpKind, CommAlloc, CommInfo, Remote,
     },
+    darc::Darc,
+    lamellar_team::LamellarTeamRT,
     memregion::{CollTicketGate, MemoryRegion, SharedMemoryRegion},
     AsLamellarBuffer, LamellarBuffer,
 };
@@ -109,6 +111,165 @@ impl<T: Remote> ManualCollectiveUpdateBitwise<T> for SharedMemoryRegion<T> {
     }
 }
 impl<T: Remote> ManualCollectiveUpdateComparison<T> for SharedMemoryRegion<T> {
+    fn update_local_data_comparison(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        self.update_local_data(index, count, data, op)
+    }
+}
+
+/// The source of the put/get algorithms for an `UnsafeArray`: its memory region (the whole allocation, so the indices are
+/// the absolute ones the native path takes) and the runtime team it is distributed over. An array is not behind a `Darc`
+/// the way a [`SharedMemoryRegion`] is, so it cannot be turned into one without a collective call; this has the same
+/// handful of operations over the pieces the array does have.
+pub(crate) struct ArrayRegionSource<T: Remote> {
+    mr: MemoryRegion<T>,
+    team: Darc<LamellarTeamRT>,
+}
+
+impl<T: Remote> Clone for ArrayRegionSource<T> {
+    fn clone(&self) -> Self {
+        Self {
+            mr: unsafe { self.mr.as_base::<T>() },
+            team: self.team.clone(),
+        }
+    }
+}
+
+impl<T: Remote> ArrayRegionSource<T> {
+    pub(crate) fn new(mr: MemoryRegion<T>, team: Darc<LamellarTeamRT>) -> Self {
+        Self { mr, team }
+    }
+    // the runtime team, not the `Darc` around it: a method call on the `Darc` finds its own `LamellarEnv` and
+    // `ActiveMessaging` methods before it dereferences to the team
+    fn rt_team(&self) -> &LamellarTeamRT {
+        &self.team
+    }
+}
+
+impl<T: Remote> ManualCollectiveSource<T> for ArrayRegionSource<T> {
+    fn my_pe(&self) -> usize {
+        self.rt_team()
+            .team_pe_id()
+            .expect("the PE is in the array's team")
+    }
+    fn num_pes(&self) -> usize {
+        self.rt_team().num_pes
+    }
+    fn world_pe(&self, team_pe: usize) -> usize {
+        self.rt_team()
+            .arch
+            .world_pe(team_pe)
+            .expect("the PE is in the array's team")
+    }
+    async fn async_barrier(&self) {
+        self.rt_team().async_barrier().await
+    }
+    fn copy_local_data(&self, index: usize, count: usize, buffer: &mut [T]) {
+        let window = self.mr.as_slice();
+        buffer.copy_from_slice(&window[index..index + count]);
+    }
+    fn store_to_local_data(&self, index: usize, count: usize, data: &[T]) {
+        let window = unsafe { self.mr.as_mut_slice() };
+        window[index..index + count].copy_from_slice(data);
+    }
+    async fn batch_load(&self, pe: usize, _num_pes: usize, start: usize, count: usize) -> Vec<T> {
+        // `pe` is a team PE of the array and the region's get addresses a world PE
+        unsafe { self.mr.get_buffer::<T>(self.world_pe(pe), start, count).await }
+    }
+}
+
+impl<T: Remote> ManualCollectiveUpdate<T> for ArrayRegionSource<T> {
+    fn update_local_data(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        let window = unsafe { self.mr.as_mut_slice() };
+        local_reduce(&op, &mut window[index..index + count], data);
+    }
+}
+impl<T: Remote> ManualCollectiveUpdateBitwise<T> for ArrayRegionSource<T> {
+    fn update_local_data_bitwise(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        self.update_local_data(index, count, data, op)
+    }
+}
+impl<T: Remote> ManualCollectiveUpdateComparison<T> for ArrayRegionSource<T> {
+    fn update_local_data_comparison(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        self.update_local_data(index, count, data, op)
+    }
+}
+
+/// What a [`RegionCollective`] runs the put/get algorithms over: a shared memory region or an array's region. A concrete
+/// enum and not a type parameter, so the compiler can see that the algorithms' futures are `Send` (the trait's `async fn`s
+/// say nothing about that for an unknown type).
+pub(crate) enum CollSource<T: Remote> {
+    Region(SharedMemoryRegion<T>),
+    Array(ArrayRegionSource<T>),
+}
+
+impl<T: Remote> Clone for CollSource<T> {
+    fn clone(&self) -> Self {
+        match self {
+            CollSource::Region(r) => CollSource::Region(r.clone()),
+            CollSource::Array(a) => CollSource::Array(a.clone()),
+        }
+    }
+}
+
+impl<T: Remote> ManualCollectiveSource<T> for CollSource<T> {
+    fn my_pe(&self) -> usize {
+        match self {
+            CollSource::Region(s) => ManualCollectiveSource::my_pe(s),
+            CollSource::Array(s) => ManualCollectiveSource::my_pe(s),
+        }
+    }
+    fn num_pes(&self) -> usize {
+        match self {
+            CollSource::Region(s) => ManualCollectiveSource::num_pes(s),
+            CollSource::Array(s) => ManualCollectiveSource::num_pes(s),
+        }
+    }
+    fn world_pe(&self, team_pe: usize) -> usize {
+        match self {
+            CollSource::Region(s) => ManualCollectiveSource::world_pe(s, team_pe),
+            CollSource::Array(s) => ManualCollectiveSource::world_pe(s, team_pe),
+        }
+    }
+    async fn async_barrier(&self) {
+        match self {
+            CollSource::Region(s) => ManualCollectiveSource::async_barrier(s).await,
+            CollSource::Array(s) => ManualCollectiveSource::async_barrier(s).await,
+        }
+    }
+    fn copy_local_data(&self, index: usize, count: usize, buffer: &mut [T]) {
+        match self {
+            CollSource::Region(s) => ManualCollectiveSource::copy_local_data(s, index, count, buffer),
+            CollSource::Array(s) => ManualCollectiveSource::copy_local_data(s, index, count, buffer),
+        }
+    }
+    fn store_to_local_data(&self, index: usize, count: usize, data: &[T]) {
+        match self {
+            CollSource::Region(s) => ManualCollectiveSource::store_to_local_data(s, index, count, data),
+            CollSource::Array(s) => ManualCollectiveSource::store_to_local_data(s, index, count, data),
+        }
+    }
+    async fn batch_load(&self, pe: usize, num_pes: usize, start: usize, count: usize) -> Vec<T> {
+        match self {
+            CollSource::Region(s) => ManualCollectiveSource::batch_load(s, pe, num_pes, start, count).await,
+            CollSource::Array(s) => ManualCollectiveSource::batch_load(s, pe, num_pes, start, count).await,
+        }
+    }
+}
+
+impl<T: Remote> ManualCollectiveUpdate<T> for CollSource<T> {
+    fn update_local_data(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        match self {
+            CollSource::Region(s) => ManualCollectiveUpdate::update_local_data(s, index, count, data, op),
+            CollSource::Array(s) => ManualCollectiveUpdate::update_local_data(s, index, count, data, op),
+        }
+    }
+}
+impl<T: Remote> ManualCollectiveUpdateBitwise<T> for CollSource<T> {
+    fn update_local_data_bitwise(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
+        self.update_local_data(index, count, data, op)
+    }
+}
+impl<T: Remote> ManualCollectiveUpdateComparison<T> for CollSource<T> {
     fn update_local_data_comparison(&self, index: usize, count: usize, data: &[T], op: ReduceOp) {
         self.update_local_data(index, count, data, op)
     }
@@ -181,13 +342,24 @@ macro_rules! handle {
 pub(crate) struct RegionCollective<T: Remote> {
     // the region in the element type of the collective, for the native calls
     base: MemoryRegion<T>,
-    // the whole allocation, with no sub-region offset
-    region: SharedMemoryRegion<T>,
+    // what the put/get algorithms read and write through; the whole allocation, with no sub-region offset
+    region: CollSource<T>,
 }
 
 impl<T: Remote> RegionCollective<T> {
     pub(crate) fn new(base: MemoryRegion<T>, region: SharedMemoryRegion<T>) -> Self {
-        Self { base, region }
+        Self {
+            base,
+            region: CollSource::Region(region),
+        }
+    }
+
+    /// The collectives of an `UnsafeArray`, over the array's region and team.
+    pub(crate) fn for_array(base: MemoryRegion<T>, source: ArrayRegionSource<T>) -> Self {
+        Self {
+            base,
+            region: CollSource::Array(source),
+        }
     }
 
     // `Some` when this operation should run as the put/get algorithms: the backend has no native implementation of

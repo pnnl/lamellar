@@ -619,6 +619,20 @@ impl<T: Dist + 'static> UnsafeArray<T> {
 
     // The array API names PEs by their rank in the array's team, but the memory region (the allocation under it) is addressed by
     // world PE; for the world team the two are the same.
+    // The collectives of this array: each runs the backend's native implementation when it has one for the element type and
+    // the put/get algorithms (`array/collective/algorithm.rs`) when it does not, over the array's own region and sync
+    // allocation (the same choice the region collectives make).
+    pub(crate) fn region_collective(
+        &self,
+    ) -> crate::memregion::collective_manual::RegionCollective<T> {
+        use crate::memregion::collective_manual::{ArrayRegionSource, RegionCollective};
+        let data = &self.inner.data;
+        RegionCollective::for_array(
+            unsafe { data.mem_region.as_base::<T>() },
+            ArrayRegionSource::new(unsafe { data.mem_region.as_base::<T>() }, data.team.clone()),
+        )
+    }
+
     pub(crate) fn world_pe(&self, team_pe: usize) -> usize {
         let team = &self.inner.data.team;
         if team.num_pes == team.num_world_pes {
