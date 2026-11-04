@@ -976,6 +976,20 @@ pub(crate) struct LamellarTeamRT {
 
 unsafe impl Send for LamellarTeamRT {}
 
+// A team is itself held in a `Darc`, created over the team it was split from (the parent for a sub-team). `Darc`'s
+// `LamellarEnv::my_pe`/`num_pes` report that Darc's own PE set, and a method call on a `Darc<LamellarTeamRT>` finds the trait
+// method (on `Darc`) before it auto-derefs to the team, so `team.num_pes()` would silently give the parent's size. These
+// inherent methods win over the trait ones at the same receiver and give the team's own values.
+impl Darc<LamellarTeamRT> {
+    pub(crate) fn num_pes(&self) -> usize {
+        self.num_pes
+    }
+    #[allow(dead_code)] // no caller today; here so a future `team.my_pe()` does not hit the `Darc` one
+    pub(crate) fn my_pe(&self) -> usize {
+        self.team_pe.expect("pe not part of team")
+    }
+}
+
 impl Darc<LamellarTeamRT> {
     pub(crate) fn rt_num_threads_per_pe(&self) -> usize {
         self.num_threads()
