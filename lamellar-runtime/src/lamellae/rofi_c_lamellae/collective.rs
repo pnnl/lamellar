@@ -382,7 +382,7 @@ impl CommAllocCollectiveReduce for RofiCAlloc {
         len: usize,
         root_pe: usize,
     ) -> CollectiveReduceOpHandle<T> {
-        let is_root = root_pe == self.team_rank();
+        let is_root = root_pe == self.team_pe();
         CollectiveReduceOpHandle {
             future: CollectiveReduceOpFuture::RofiC(collective(
                 self,
@@ -410,7 +410,7 @@ impl CommAllocCollectiveReduce for RofiCAlloc {
         root_or_buffer: RootOrLamellarBuffer<T, B>,
     ) -> CollectiveReduceIntoBufferOpHandle<T, B> {
         let (dst, root) = match root_or_buffer {
-            RootOrLamellarBuffer::Root(buffer) => (RootBuf::Buf(buffer), self.team_rank()),
+            RootOrLamellarBuffer::Root(buffer) => (RootBuf::Buf(buffer), self.team_pe()),
             RootOrLamellarBuffer::NotRoot(root_pe) => {
                 (RootBuf::Scratch(zeroed_vec::<T>(len)), root_pe)
             }
@@ -494,7 +494,7 @@ impl CommAllocCollectiveGather for RofiCAlloc {
         len: usize,
         root_pe: usize,
     ) -> CollectiveGatherOpHandle<T> {
-        let is_root = root_pe == self.team_rank();
+        let is_root = root_pe == self.team_pe();
         // only the root's destination holds the result
         let total = if is_root { len * self.team_size() } else { len };
         CollectiveGatherOpHandle {
@@ -524,7 +524,7 @@ impl CommAllocCollectiveGather for RofiCAlloc {
     ) -> CollectiveGatherIntoBufferOpHandle<T, B> {
         let (dst, root, dst_min) = match root_or_buffer {
             RootOrLamellarBuffer::Root(buffer) => {
-                (RootBuf::Buf(buffer), self.team_rank(), len * self.team_size())
+                (RootBuf::Buf(buffer), self.team_pe(), len * self.team_size())
             }
             RootOrLamellarBuffer::NotRoot(root_pe) => {
                 (RootBuf::Scratch(zeroed_vec::<T>(len)), root_pe, len)
@@ -611,7 +611,7 @@ impl CommAllocCollectiveBroadcast for RofiCAlloc {
         len: usize,
     ) -> CollectiveBroadcastOpHandle<T> {
         let (root, fill, is_root) = match src_or_root_pe {
-            BroadcastInput::Root(index) => (self.team_rank(), Some(index), true),
+            BroadcastInput::Root(index) => (self.team_pe(), Some(index), true),
             BroadcastInput::NotRoot(root_pe) => (root_pe, None, false),
         };
         CollectiveBroadcastOpHandle {
@@ -641,7 +641,7 @@ impl CommAllocCollectiveBroadcast for RofiCAlloc {
         let (dst, root, fill) = match dst {
             RootSrcOrLamellarBuffer::Root(index) => (
                 RootBuf::Scratch(zeroed_vec::<T>(len)),
-                self.team_rank(),
+                self.team_pe(),
                 Some(index),
             ),
             RootSrcOrLamellarBuffer::NotRoot(buffer, root_pe) => {
@@ -675,7 +675,7 @@ impl CommAllocCollectiveScatter for RofiCAlloc {
         len: usize,
     ) -> CollectiveScatterOpHandle<T> {
         let (root, src) = match src_or_root_pe {
-            ScatterInput::Root(index) => (self.team_rank(), Source::Alloc(index)),
+            ScatterInput::Root(index) => (self.team_pe(), Source::Alloc(index)),
             ScatterInput::NotRoot(root_pe) => (root_pe, Source::None),
         };
         CollectiveScatterOpHandle {
@@ -704,7 +704,7 @@ impl CommAllocCollectiveScatter for RofiCAlloc {
         len: usize,
     ) -> CollectiveScatterIntoBufferOpHandle<T, B> {
         let (root, src) = match src_or_root_pe {
-            ScatterInput::Root(index) => (self.team_rank(), Source::Alloc(index)),
+            ScatterInput::Root(index) => (self.team_pe(), Source::Alloc(index)),
             ScatterInput::NotRoot(root_pe) => (root_pe, Source::None),
         };
         CollectiveScatterIntoBufferOpHandle {

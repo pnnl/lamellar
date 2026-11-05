@@ -413,8 +413,8 @@ impl RofiCAlloc {
         self.team.as_ref().map_or(self.num_pes, |team| team.len())
     }
 
-    /// This PE's rank within the allocation's PEs.
-    pub(crate) fn team_rank(&self) -> usize {
+    /// This PE's team PE within the allocation's PEs.
+    pub(crate) fn team_pe(&self) -> usize {
         match &self.team {
             Some(team) => team
                 .iter()
