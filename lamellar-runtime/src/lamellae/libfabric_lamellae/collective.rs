@@ -652,7 +652,7 @@ impl CommAllocCollectiveReduce for LibfabricAlloc {
         len: usize,
         root_pe: usize,
     ) -> CollectiveReduceOpHandle<T> {
-        let target = if root_pe != self.ofi.my_pe {
+        let target = if root_pe != self.team_pe() {
             RootOrBuffer::NotRoot(root_pe)
         } else {
             RootOrBuffer::Root((0..len).map(|_| unsafe { std::mem::zeroed() }).collect())
@@ -1832,7 +1832,7 @@ impl CommAllocCollectiveGather for LibfabricAlloc {
         len: usize,
         root_pe: usize,
     ) -> CollectiveGatherOpHandle<T> {
-        let target = if root_pe != self.ofi.my_pe {
+        let target = if root_pe != self.team_pe() {
             RootOrBuffer::NotRoot(root_pe)
         } else {
             RootOrBuffer::Root(

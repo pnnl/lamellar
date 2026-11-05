@@ -2672,6 +2672,23 @@ impl LibfabricSysAlloc {
         self.remote_allocs.len()
     }
 
+    /// The world PEs the allocation spans, in order (`remote_allocs` is keyed by them: all PEs for a world allocation, the
+    /// members for a sub-team's). `0..num_pes()` is only those PEs for a world allocation.
+    pub(crate) fn all_pes(&self) -> Vec<usize> {
+        let mut pes: Vec<usize> = self.remote_allocs.keys().copied().collect();
+        pes.sort_unstable();
+        pes
+    }
+
+    /// This PE's team PE (its position in `all_pes`; team PEs follow ascending world PE order). libfabric's
+    /// collective provider takes a collective's root as this team PE, which equals the fabric address of the PE only in the world group.
+    pub(crate) fn team_pe(&self) -> usize {
+        self.all_pes()
+            .iter()
+            .position(|pe| *pe == self.ofi.my_pe)
+            .expect("this PE is in the allocation")
+    }
+
     // we call this function to create a sub-allocation that is tracked as part of a runtime allocation
     // 'len' should already contain the approriate padding and space for the ref count
     pub(crate) fn rt_alloc(
@@ -3514,7 +3531,7 @@ impl LibfabricSysAlloc {
             .as_ref()
             .expect("No multicast group for collective reduce");
         let (result, root_pe) = match slice_or_pe {
-            RootOrSliceMut::Root(result) => (Some(result), self.ofi.my_pe),
+            RootOrSliceMut::Root(result) => (Some(result), self.team_pe()),
             RootOrSliceMut::NotRoot(root_pe) => (None, root_pe),
         };
 
@@ -3557,7 +3574,7 @@ impl LibfabricSysAlloc {
             .as_ref()
             .expect("No multicast group for collective reduce");
         let (result, root_pe) = match slice_or_pe {
-            RootOrSliceMut::Root(result) => (Some(result), self.ofi.my_pe),
+            RootOrSliceMut::Root(result) => (Some(result), self.team_pe()),
             RootOrSliceMut::NotRoot(root_pe) => (None, root_pe),
         };
         let res = match result {
@@ -3596,7 +3613,7 @@ impl LibfabricSysAlloc {
             .as_ref()
             .expect("No multicast group for collective reduce");
         let (result, root_pe, is_root) = match root_src {
-            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe, true),
+            RootSrcOrSliceMut::Root(src) => (src, self.team_pe(), true),
             RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe, false),
         };
         // libfabric's collective provider overruns the buffer when its length is not a multiple of the group size;
@@ -3631,7 +3648,7 @@ impl LibfabricSysAlloc {
             .expect("No multicast group for collective reduce");
 
         let (src, root_pe) = match src_or_root_pe {
-            RootSrcSliceOrNone::Root(src) => (src, self.ofi.my_pe),
+            RootSrcSliceOrNone::Root(src) => (src, self.team_pe()),
             RootSrcSliceOrNone::NotRoot(root_pe) => (
                 unsafe { std::slice::from_raw_parts(res.as_ptr(), res.len()) },
                 root_pe,
