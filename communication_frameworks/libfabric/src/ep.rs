@@ -326,25 +326,19 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
 
     /// Retrieves the trigger settings for a specific heterogeneous memory interface.
     fn xpu_trigger(&self, iface: &HmemIface) -> Result<TriggerXpu, crate::error::Error> {
-        let (dev_type, device) = match iface {
-            HmemIface::Cuda(dev_id) => (
-                fi_hmem_iface_FI_HMEM_CUDA,
-                libfabric_sys::fi_trigger_xpu__bindgen_ty_1 { cuda: *dev_id },
-            ),
-            HmemIface::Ze(drv_id, dev_id) => (
-                fi_hmem_iface_FI_HMEM_ZE,
-                libfabric_sys::fi_trigger_xpu__bindgen_ty_1 {
-                    ze: unsafe { libfabric_sys::inlined_fi_hmem_ze_device(*drv_id, *dev_id) },
-                },
-            ),
+        // Zero-initialised and assigned rather than built from a literal: see `MemoryRegionAttr::new`.
+        let mut res: libfabric_sys::fi_trigger_xpu = unsafe { std::mem::zeroed() };
+        match iface {
+            HmemIface::Cuda(dev_id) => {
+                res.iface = fi_hmem_iface_FI_HMEM_CUDA;
+                res.device.cuda = *dev_id;
+            }
+            HmemIface::Ze(drv_id, dev_id) => {
+                res.iface = fi_hmem_iface_FI_HMEM_ZE;
+                res.device.ze = unsafe { libfabric_sys::inlined_fi_hmem_ze_device(*drv_id, *dev_id) };
+            }
             _ => panic!("Device type not supported"),
-        };
-        let mut res = libfabric_sys::fi_trigger_xpu {
-            count: 0,
-            iface: dev_type,
-            device,
-            var: std::ptr::null_mut(),
-        };
+        }
         let mut len = std::mem::size_of::<libfabric_sys::fi_trigger_xpu>();
 
         let err = unsafe {
@@ -356,12 +350,7 @@ pub trait BaseEndpoint<FID: AsRawFid>: AsTypedFid<FID> + SyncSend {
                 &mut len,
             )
         };
-        let var = libfabric_sys::fi_trigger_var {
-            datatype: 0,
-            count: 0,
-            addr: std::ptr::null_mut(),
-            value: libfabric_sys::fi_trigger_var__bindgen_ty_1 { val64: 0 },
-        };
+        let var: libfabric_sys::fi_trigger_var = unsafe { std::mem::zeroed() };
         let mut trigger_vars = vec![var; res.count as usize];
         res.var = trigger_vars.as_mut_ptr();
 

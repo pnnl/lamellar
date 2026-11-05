@@ -35,6 +35,22 @@ lamellar-ucx-sys = 0.1.1
 
 Downstream crates consume `lamellar_ucx_sys` for low-level fabric configuration (PE initialization, tag matching, etc.) and rely on the `build.rs` output to know where the headers and libraries live.
 
+## Tested library versions
+
+The bindings are generated from the headers of the UCX being used, and `bindgen` names anonymous C unions and structs by their position
+(`ucp_request_param_t__bindgen_ty_1`). A UCX release other than those below can renumber them, and the failure is then a compile error
+in the crate that uses the bindings, not in this one.
+
+| UCX | Status |
+|-----|--------|
+| 1.20.0 (UCP API 1.20) | vendored, the default |
+| 1.17.0 | checked, through `UCX_DIR` |
+| anything else | untested |
+
+The build script reads `UCP_API_MAJOR`/`UCP_API_MINOR` from the header and prints a `cargo:warning` when the version is outside the range
+above. Cargo shows build-script warnings only for path and workspace dependencies, so a crate that depends on the published
+`lamellar-ucx-sys` will not see it; check this table before pointing `UCX_DIR` at another release.
+
 ## Environment variables
 
 - `UCX_DIR`: optional path to an existing UCX installation; the build script uses it when the required symbols are present.

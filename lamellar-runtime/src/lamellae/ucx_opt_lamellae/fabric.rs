@@ -1441,6 +1441,18 @@ impl UcxOptAlloc {
     pub(crate) fn start(&self) -> usize {
         self.mem.addr.into()
     }
+    /// This PE's team PE among the allocation's PEs (its UCC team PE), which is what the collectives' roots are in terms of.
+    /// Equal to the world PE for a world allocation.
+    pub(crate) fn team_pe(&self) -> usize {
+        self.ucc_team.as_ref().map_or(self.my_pe, |team| team.team_pe())
+    }
+    /// The world PEs the allocation spans, in order: those with a remote key (a sub-team's allocation only has its own
+    /// members') and the local PE, which is handled without one.
+    pub(crate) fn all_pes(&self) -> Vec<usize> {
+        (0..self.remote_keys.len().max(self.my_pe + 1))
+            .filter(|&pe| pe == self.my_pe || self.remote_keys.get(pe).map_or(false, |k| k.is_some()))
+            .collect()
+    }
     pub(crate) fn num_bytes(&self) -> usize {
         self.data_num_bytes
     }
@@ -2265,7 +2277,7 @@ impl UcxOptAlloc {
     ) -> Result<Option<UccRequest>, ucc::Error> {
         if let Some(ucc_team) = &self.ucc_team {
             let (result, root_pe) = match slice_or_pe {
-                RootOrSliceMut::Root(result) => (Some(result), self.my_pe),
+                RootOrSliceMut::Root(result) => (Some(result), ucc_team.team_pe()),
                 RootOrSliceMut::NotRoot(root_pe) => (None, root_pe),
             };
             let res = match result {
@@ -2295,7 +2307,7 @@ impl UcxOptAlloc {
     ) -> Result<Option<UccRequest>, ucc::Error> {
         if let Some(ucc_team) = &self.ucc_team {
             let (result, root_pe) = match slice_or_pe {
-                RootOrSliceMut::Root(result) => (Some(result), self.my_pe),
+                RootOrSliceMut::Root(result) => (Some(result), ucc_team.team_pe()),
                 RootOrSliceMut::NotRoot(root_pe) => (None, root_pe),
             };
             let res = match result {
@@ -2326,7 +2338,7 @@ impl UcxOptAlloc {
             let (res, root_pe) = match root_src {
                 RootSrcOrSliceMut::Root(src) => (
                     unsafe { std::slice::from_raw_parts_mut(src.as_ptr() as *mut T, src.len()) },
-                    self.my_pe,
+                    ucc_team.team_pe(),
                 ),
                 RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe),
             };
@@ -2352,7 +2364,7 @@ impl UcxOptAlloc {
     ) -> Result<Option<UccRequest>, ucc::Error> {
         if let Some(ucc_team) = &self.ucc_team {
             let (src, root_pe) = match src_or_root_pe {
-                RootSrcSliceOrNone::Root(src) => (src, self.my_pe),
+                RootSrcSliceOrNone::Root(src) => (src, ucc_team.team_pe()),
                 RootSrcSliceOrNone::NotRoot(root_pe) => (
                     unsafe { std::slice::from_raw_parts(res.as_ptr(), res.len()) },
                     root_pe,

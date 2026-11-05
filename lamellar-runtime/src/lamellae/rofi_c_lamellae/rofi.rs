@@ -1,6 +1,8 @@
 extern crate libc;
 
 use crate::lamellae::comm::atomic::AtomicOp;
+use crate::lamellae::comm::collective::ReduceOp;
+use crate::lamellae::comm::CollectiveOpKind;
 use crate::lamellae::{AllocError, AllocResult, AllocationType, RdmaError, RdmaResult};
 
 use std::any::{Any, TypeId};
@@ -948,3 +950,152 @@ pub(crate) fn rofi_c_blocking_get<T>(src: usize, dst: &mut [T], pe: usize) -> Rd
 //         Err(ret)
 //     }
 // }
+
+// ---- collectives ------------------------------------------------------------------------------------------------
+//
+// ROFI runs collectives on libfabric's collective support (see `rofi_collective_post` in rofi.h). Only the reductions
+// look at the element type; everything else moves bytes, so those are posted as `count * size_of::<T>()` bytes and work
+// for every `T`.
+
+fn rofi_c_reduce_op(op: &ReduceOp) -> rofisys::rofi_atomic_op_t {
+    match op {
+        ReduceOp::Min => rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_MIN,
+        ReduceOp::Max => rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_MAX,
+        ReduceOp::Sum => rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_SUM,
+        ReduceOp::Prod => rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_PROD,
+        ReduceOp::BitOr => rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_BOR,
+        ReduceOp::BitXor => rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_BXOR,
+        ReduceOp::BitAnd => rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_BAND,
+    }
+}
+
+/// The ROFI collective `kind` runs as, and its reduction if it has one. Barriers are not offered: `comm.barrier()` already
+/// has ROFI's own barrier, and nothing asks the allocation for one.
+fn rofi_c_collective_op(
+    kind: &CollectiveOpKind,
+) -> Option<(rofisys::rofi_collective_op_t, Option<&ReduceOp>)> {
+    match kind {
+        CollectiveOpKind::Barrier => None,
+        CollectiveOpKind::Broadcast => Some((rofisys::rofi_collective_op_t_ROFI_COLLECTIVE_BROADCAST, None)),
+        // the region/array `alltoall` is an all-gather on every lamellae that implements it natively (see
+        // `CommAllocCollectiveAllToAll`), so it is asked of, and run as, ROFI's all-gather
+        CollectiveOpKind::AllToAll | CollectiveOpKind::AllGather => {
+            Some((rofisys::rofi_collective_op_t_ROFI_COLLECTIVE_ALLGATHER, None))
+        }
+        CollectiveOpKind::AllReduce(op) => {
+            Some((rofisys::rofi_collective_op_t_ROFI_COLLECTIVE_ALLREDUCE, Some(op)))
+        }
+        CollectiveOpKind::ReduceScatter(op) => {
+            Some((rofisys::rofi_collective_op_t_ROFI_COLLECTIVE_REDUCE_SCATTER, Some(op)))
+        }
+        CollectiveOpKind::Reduce(op) => {
+            Some((rofisys::rofi_collective_op_t_ROFI_COLLECTIVE_REDUCE, Some(op)))
+        }
+        CollectiveOpKind::Scatter => Some((rofisys::rofi_collective_op_t_ROFI_COLLECTIVE_SCATTER, None)),
+        CollectiveOpKind::Gather => Some((rofisys::rofi_collective_op_t_ROFI_COLLECTIVE_GATHER, None)),
+    }
+}
+
+/// Datatype and element-count scale a collective on `T` is posted with.
+fn rofi_c_collective_type<T: 'static>(
+    reduce: Option<&ReduceOp>,
+) -> Option<(rofisys::rofi_datatype_t, usize)> {
+    if reduce.is_some() {
+        get_rofi_c_dt::<T>().map(|dt| (dt, 1))
+    } else if std::mem::size_of::<T>() == 0 {
+        None
+    } else {
+        Some((
+            rofisys::rofi_datatype_t_ROFI_DATATYPE_UINT8,
+            std::mem::size_of::<T>(),
+        ))
+    }
+}
+
+static COLLECTIVE_AVAIL: std::sync::LazyLock<Mutex<std::collections::HashMap<(TypeId, u32, u32), bool>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Whether the provider implements `kind` for `T` (and the reduction in `kind`). Asked of libfabric once per combination.
+pub(crate) fn rofi_c_collective_avail<T: 'static>(kind: &CollectiveOpKind) -> bool {
+    let Some((op, reduce)) = rofi_c_collective_op(kind) else {
+        return false;
+    };
+    let Some((dt, _)) = rofi_c_collective_type::<T>(reduce) else {
+        return false;
+    };
+    let reduce_op = reduce.map(rofi_c_reduce_op);
+    let key = (
+        TypeId::of::<T>(),
+        op as u32,
+        reduce_op.map(|r| r as u32 + 1).unwrap_or(0),
+    );
+    if let Some(avail) = COLLECTIVE_AVAIL.lock().unwrap().get(&key) {
+        return *avail;
+    }
+    let avail = unsafe {
+        rofisys::rofi_query_collective(
+            op,
+            dt,
+            reduce_op.unwrap_or(rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_MIN),
+        ) == 0
+    };
+    COLLECTIVE_AVAIL.lock().unwrap().insert(key, avail);
+    avail
+}
+
+/// A collective that has been handed to ROFI and not yet seen to complete.
+pub(crate) struct RofiCCollectiveReq(*mut std::ffi::c_void);
+unsafe impl Send for RofiCCollectiveReq {}
+
+impl RofiCCollectiveReq {
+    /// Makes progress and returns whether the collective has completed. After `true` the request is released: do not
+    /// call this on it again.
+    pub(crate) fn progress(&self) -> bool {
+        let ret = unsafe { rofisys::rofi_collective_progress(self.0) };
+        if ret < 0 {
+            panic!("rofi_c collective failed with error code {ret}");
+        }
+        ret == 1
+    }
+}
+
+/// Starts collective `kind` over `team` (every PE when `None`) without waiting for it. `count` is in elements of `T`: per PE
+/// for gather-like and scatter, the whole buffer otherwise (libfabric's convention). `root` is the root's rank in the team.
+///
+/// # Safety
+/// `src` and `dst` must be valid for what the collective reads and writes, and stay valid until the returned request
+/// has completed (`progress` returned `true`). Every PE of the team must start the same collectives in the same order.
+pub(crate) unsafe fn rofi_c_collective_post<T: 'static>(
+    kind: &CollectiveOpKind,
+    team: Option<&[usize]>,
+    root: usize,
+    src: *const T,
+    dst: *mut T,
+    count: usize,
+) -> RofiCCollectiveReq {
+    let (op, reduce) = rofi_c_collective_op(kind).expect("rofi_c collective kind has no ROFI collective");
+    let (dt, scale) = rofi_c_collective_type::<T>(reduce).expect("rofi_c collective on an unsupported type");
+    let (pes, num_pes) = match team {
+        Some(team) => (team.as_ptr() as *const u64, team.len() as u64),
+        None => (std::ptr::null(), 0),
+    };
+    let mut req: *mut std::ffi::c_void = std::ptr::null_mut();
+    let ret = rofisys::rofi_collective_post(
+        op,
+        pes,
+        num_pes,
+        root as u64,
+        src as *const std::ffi::c_void,
+        dst as *mut std::ffi::c_void,
+        count * scale,
+        dt,
+        reduce
+            .map(rofi_c_reduce_op)
+            .unwrap_or(rofisys::rofi_atomic_op_t_ROFI_ATOMIC_OP_MIN),
+        &mut req,
+    );
+    if ret != 0 {
+        panic!("rofi_c collective (ROFI op {op}) could not be started: error code {ret}");
+    }
+    RofiCCollectiveReq(req)
+}

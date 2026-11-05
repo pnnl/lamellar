@@ -26,7 +26,7 @@ impl<T: ElementOps + 'static> ReadOnlyOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             let handle = self.array.mem_region.atomic_fetch_op(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::Read(unsafe { Box::pin(std::mem::zeroed()) }),
             );
@@ -54,7 +54,7 @@ impl<T: ElementOps + 'static> ReadOnlyOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::Read(unsafe { Box::pin(std::mem::zeroed()) }),
             )
@@ -79,7 +79,7 @@ impl<T: ElementOps + 'static> AccessOps<T> for NetworkAtomicArray<T> {
             let handle =
                 self.array
                     .mem_region
-                    .atomic_op(pe, offset, AtomicOp::Write(Box::pin(val)));
+                    .atomic_op(self.array.world_pe(pe), offset, AtomicOp::Write(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -99,7 +99,7 @@ impl<T: ElementOps + 'static> AccessOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::Write(Box::pin(val)));
+                .atomic_op_blocking(self.array.world_pe(pe), offset, AtomicOp::Write(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -116,7 +116,7 @@ impl<T: ElementOps + 'static> AccessOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::Write(Box::pin(val)));
+                .atomic_op_unmanaged(self.array.world_pe(pe), offset, AtomicOp::Write(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -138,7 +138,7 @@ impl<T: ElementOps + 'static> AccessOps<T> for NetworkAtomicArray<T> {
             let handle =
                 self.array
                     .mem_region
-                    .atomic_fetch_op(pe, offset, AtomicOp::Write(Box::pin(val)));
+                    .atomic_fetch_op(self.array.world_pe(pe), offset, AtomicOp::Write(Box::pin(val)));
             ArrayFetchOpHandle {
                 array: self.clone().into(),
                 state: FetchOpState::Network(handle),
@@ -161,7 +161,7 @@ impl<T: ElementOps + 'static> AccessOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::Write(Box::pin(val)),
             )
@@ -185,7 +185,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
             let handle = self
                 .array
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::Sum(Box::pin(val)));
+                .atomic_op(self.array.world_pe(pe), offset, AtomicOp::Sum(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -206,7 +206,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::Sum(Box::pin(val)));
+                .atomic_op_unmanaged(self.array.world_pe(pe), offset, AtomicOp::Sum(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -225,7 +225,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
             let handle = self
                 .array
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::Sub(Box::pin(val)));
+                .atomic_op(self.array.world_pe(pe), offset, AtomicOp::Sub(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -246,7 +246,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::Sub(Box::pin(val)));
+                .atomic_op_unmanaged(self.array.world_pe(pe), offset, AtomicOp::Sub(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -262,7 +262,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::Sub(Box::pin(val)));
+                .atomic_op_blocking(self.array.world_pe(pe), offset, AtomicOp::Sub(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -277,7 +277,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::Sum(Box::pin(val)));
+                .atomic_op_blocking(self.array.world_pe(pe), offset, AtomicOp::Sum(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -294,7 +294,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::Prod(Box::pin(val)));
+                .atomic_op_unmanaged(self.array.world_pe(pe), offset, AtomicOp::Prod(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -314,7 +314,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             let handle = self.array.mem_region.atomic_fetch_op(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchSum(Box::pin(val)),
             );
@@ -339,7 +339,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
             let handle = self
                 .array
                 .mem_region
-                .atomic_op(pe, offset, AtomicOp::Prod(Box::pin(val)));
+                .atomic_op(self.array.world_pe(pe), offset, AtomicOp::Prod(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -359,7 +359,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::Prod(Box::pin(val)));
+                .atomic_op_blocking(self.array.world_pe(pe), offset, AtomicOp::Prod(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -379,7 +379,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             let handle = self.array.mem_region.atomic_fetch_op(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchProd(Box::pin(val)),
             );
@@ -406,7 +406,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchProd(Box::pin(val)),
             )
@@ -428,7 +428,7 @@ impl<T: ElementArithmeticOps + 'static> ArithmeticOps<T> for NetworkAtomicArray<
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             let handle = self.array.mem_region.atomic_fetch_op(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchSub(Box::pin(val)),
             );
@@ -456,7 +456,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
             let handle =
                 self.array
                     .mem_region
-                    .atomic_op(pe, offset, AtomicOp::BitAnd(Box::pin(val)));
+                    .atomic_op(self.array.world_pe(pe), offset, AtomicOp::BitAnd(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -476,7 +476,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::BitAnd(Box::pin(val)));
+                .atomic_op_blocking(self.array.world_pe(pe), offset, AtomicOp::BitAnd(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -493,7 +493,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::BitAnd(Box::pin(val)));
+                .atomic_op_unmanaged(self.array.world_pe(pe), offset, AtomicOp::BitAnd(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -513,7 +513,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitAnd(Box::pin(val)),
             )
@@ -536,7 +536,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             let handle = self.array.mem_region.atomic_fetch_op(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitAnd(Box::pin(val)),
             );
@@ -562,7 +562,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
             let handle =
                 self.array
                     .mem_region
-                    .atomic_op(pe, offset, AtomicOp::BitOr(Box::pin(val)));
+                    .atomic_op(self.array.world_pe(pe), offset, AtomicOp::BitOr(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -582,7 +582,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::BitOr(Box::pin(val)));
+                .atomic_op_blocking(self.array.world_pe(pe), offset, AtomicOp::BitOr(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -599,7 +599,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::BitOr(Box::pin(val)));
+                .atomic_op_unmanaged(self.array.world_pe(pe), offset, AtomicOp::BitOr(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -619,7 +619,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitOr(Box::pin(val)),
             )
@@ -642,7 +642,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             let handle = self.array.mem_region.atomic_fetch_op(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitOr(Box::pin(val)),
             );
@@ -668,7 +668,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
             let handle =
                 self.array
                     .mem_region
-                    .atomic_op(pe, offset, AtomicOp::BitXor(Box::pin(val)));
+                    .atomic_op(self.array.world_pe(pe), offset, AtomicOp::BitXor(Box::pin(val)));
             ArrayOpHandle {
                 array: self.clone().into(),
                 state: OpState::Network(handle),
@@ -688,7 +688,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_blocking(pe, offset, AtomicOp::BitXor(Box::pin(val)));
+                .atomic_op_blocking(self.array.world_pe(pe), offset, AtomicOp::BitXor(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -705,7 +705,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_op_unmanaged(pe, offset, AtomicOp::BitXor(Box::pin(val)));
+                .atomic_op_unmanaged(self.array.world_pe(pe), offset, AtomicOp::BitXor(Box::pin(val)));
         } else {
             panic!("invalid index");
         }
@@ -725,7 +725,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             let handle = self.array.mem_region.atomic_fetch_op(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitXor(Box::pin(val)),
             );
@@ -752,7 +752,7 @@ impl<T: ElementBitWiseOps + 'static> BitWiseOps<T> for NetworkAtomicArray<T> {
         }
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array.mem_region.atomic_fetch_op_blocking(
-                pe,
+                self.array.world_pe(pe),
                 offset,
                 AtomicOp::FetchBitXor(Box::pin(val)),
             )
@@ -781,7 +781,7 @@ impl<T: ElementCompareEqOps + 'static> CompareExchangeOps<T> for NetworkAtomicAr
             let handle = self
                 .array
                 .mem_region
-                .atomic_compare_exchange(pe, offset, current, new);
+                .atomic_compare_exchange(self.array.world_pe(pe), offset, current, new);
             ArrayResultOpHandle {
                 array: self.clone().into(),
                 state: ResultOpState::Network(handle),
@@ -806,7 +806,7 @@ impl<T: ElementCompareEqOps + 'static> CompareExchangeOps<T> for NetworkAtomicAr
         if let Some((pe, offset)) = self.array.pe_and_rdma_offset_for_global_index(index) {
             self.array
                 .mem_region
-                .atomic_compare_exchange_blocking(pe, offset, current, new)
+                .atomic_compare_exchange_blocking(self.array.world_pe(pe), offset, current, new)
         } else {
             panic!("invalid index");
         }

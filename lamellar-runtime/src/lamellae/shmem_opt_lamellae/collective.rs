@@ -1230,7 +1230,9 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for ShmemOptCollectiveBroadcastIn
 
 fn scatter_root_side<T: Remote>(alloc: &ShmemOptAlloc, index: usize, len: usize, res: &mut [T]) {
     let alloc_slice = unsafe { alloc.as_mut_slice() };
-    res.copy_from_slice(&alloc_slice[index..index + len]);
+    // the root is a receiver too: it takes the chunk for its own rank, like the other PEs
+    let own = index + alloc.my_alloc_pe * len;
+    res.copy_from_slice(&alloc_slice[own..own + len]);
     if eager::<T>(len * alloc.num_pes()) {
         alloc.coll_eager_arrive(my_bytes::<T>(alloc, index, len * alloc.num_pes()));
         return;
@@ -1481,7 +1483,7 @@ pub(crate) struct ShmemOptCollectiveReduceScatterIntoBufferFuture<T: Remote, B: 
 
 impl<T: Remote, B: AsLamellarBuffer<T>> ShmemOptCollectiveReduceScatterIntoBufferFuture<T, B> {
     fn exec_op(&mut self) {
-        reduce_scatter(&self.alloc, self.index, self.len, &self.op, self.result.as_mut_slice());
+        reduce_scatter(&self.alloc, self.index, self.len, &self.op, crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes()));
         self.spawned = true;
     }
 

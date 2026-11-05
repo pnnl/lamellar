@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::null};
+use std::marker::PhantomData;
 
 #[allow(unused_imports)]
 // use crate::fid::AsFid;
@@ -516,7 +516,7 @@ impl MemoryRegion {
         attr: MemoryRegionAttr,
         flags: MrRegOpt,
     ) -> Result<Self, crate::error::Error> {
-        let backing_buffer_range = (unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_base as usize, unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_len); 
+        let backing_buffer_range = attr.backing_buffer_range();
 
         // [TODO] Add context version
         Ok(Self {
@@ -826,24 +826,16 @@ pub struct MemoryRegionAttr {
 
 impl MemoryRegionAttr {
     pub fn new() -> Self {
-        Self {
-            c_attr: libfabric_sys::fi_mr_attr {
-                __bindgen_anon_1: libfabric_sys::fi_mr_attr__bindgen_ty_1 { dmabuf: null() },
-                iov_count: 0,
-                access: 0,
-                offset: 0,
-                requested_key: 0,
-                context: std::ptr::null_mut(),
-                auth_key_size: 0,
-                auth_key: std::ptr::null_mut(),
-                iface: libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM,
-                device: libfabric_sys::fi_mr_attr__bindgen_ty_2 { reserved: 0 },
-                hmem_data: std::ptr::null_mut(),
-                page_size: 0,
-            },
-        }
+        // Zero-initialise and assign instead of writing a struct literal: the literal names bindgen's
+        // anonymous union types (`fi_mr_attr__bindgen_ty_N`), whose numbers and members change between
+        // libfabric releases (OFI_DIR can point at any of them). Zero is a null pointer / 0 for every field.
+        let mut c_attr: libfabric_sys::fi_mr_attr = unsafe { std::mem::zeroed() };
+        c_attr.iface = libfabric_sys::fi_hmem_iface_FI_HMEM_SYSTEM;
+        Self { c_attr }
     }
 
+    // The `mr_iov`/`dmabuf` union has no C name, so bindgen calls it `__bindgen_anon_N`; it is named only
+    // in the three functions below.
     pub fn iov(&mut self, iov: &[crate::iovec::IoVec]) -> &mut Self {
         self.c_attr.__bindgen_anon_1.mr_iov = iov.as_ptr().cast();
         self.c_attr.iov_count = iov.len();
@@ -855,6 +847,12 @@ impl MemoryRegionAttr {
         self.c_attr.__bindgen_anon_1.dmabuf = &dmabuf.c_dmabuf;
 
         self
+    }
+
+    /// The base address and length of the first iovec given to [`iov`](Self::iov).
+    pub(crate) fn backing_buffer_range(&self) -> (usize, usize) {
+        let iov = unsafe { *self.c_attr.__bindgen_anon_1.mr_iov };
+        (iov.iov_base as usize, iov.iov_len)
     }
 
     pub fn access(&mut self, access: &MrAccess) -> &mut Self {
@@ -920,27 +918,19 @@ impl MemoryRegionAttr {
 
     pub fn iface(&mut self, iface: crate::enums::HmemIface) -> &mut Self {
         self.c_attr.iface = iface.as_raw();
-        self.c_attr.device = match iface {
+        // Clear the whole union, then set the one member, so the unused bytes are zero as with a literal.
+        self.c_attr.device = unsafe { std::mem::zeroed() };
+        match iface {
             crate::enums::HmemIface::Ze(drv_idx, dev_idx) => {
-                let ze_id = unsafe { libfabric_sys::inlined_fi_hmem_ze_device(drv_idx, dev_idx) };
-                libfabric_sys::fi_mr_attr__bindgen_ty_2 { ze: ze_id }
+                self.c_attr.device.ze =
+                    unsafe { libfabric_sys::inlined_fi_hmem_ze_device(drv_idx, dev_idx) };
             }
-            crate::enums::HmemIface::System => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_2 { reserved: 0 }
-            }
-            crate::enums::HmemIface::Cuda(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_2 { cuda: id }
-            }
-            crate::enums::HmemIface::Rocr(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_2 { cuda: id }
-            }
-            crate::enums::HmemIface::Neuron(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_2 { neuron: id }
-            }
-            crate::enums::HmemIface::SynapseAi(id) => {
-                libfabric_sys::fi_mr_attr__bindgen_ty_2 { synapseai: id }
-            }
-        };
+            crate::enums::HmemIface::System => {}
+            crate::enums::HmemIface::Cuda(id) => self.c_attr.device.cuda = id,
+            crate::enums::HmemIface::Rocr(id) => self.c_attr.device.cuda = id,
+            crate::enums::HmemIface::Neuron(id) => self.c_attr.device.neuron = id,
+            crate::enums::HmemIface::SynapseAi(id) => self.c_attr.device.synapseai = id,
+        }
         self
     }
 

@@ -1106,7 +1106,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> LocalCollectiveReduceScatterIntoBufferFu
     fn exec_op(&mut self) {
         let alloc_slice = unsafe { self.alloc.as_mut_slice::<T>() };
         let my_slice = &alloc_slice[self.index..self.index + self.len];
-        self.result.as_mut_slice().copy_from_slice(my_slice);
+        crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, 1).copy_from_slice(my_slice);
         self.spawned = true;
     }
 

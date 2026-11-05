@@ -264,7 +264,7 @@ impl CommAllocAtomic for ShmemAlloc {
         assert!(offset + std::mem::size_of::<T>() <= self.num_bytes());
         let remote_dst_addrs: Vec<CommAllocAddr> = (0..self.num_pes())
             .map(|pe| {
-                let remote_dst_base = self.pe_base_offset(pe);
+                let remote_dst_base = self.pe_base_offset_rel(pe);
                 CommAllocAddr(remote_dst_base + offset)
             })
             .collect();
@@ -281,7 +281,7 @@ impl CommAllocAtomic for ShmemAlloc {
         let offset = offset * std::mem::size_of::<T>();
         assert!(offset + std::mem::size_of::<T>() <= self.num_bytes());
         for pe in 0..self.num_pes() {
-            let remote_dst_base = self.pe_base_offset(pe);
+            let remote_dst_base = self.pe_base_offset_rel(pe);
             let remote_dst_addr = remote_dst_base + offset;
             net_atomic_op(&op, &CommAllocAddr(remote_dst_addr));
         }

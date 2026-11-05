@@ -41,9 +41,27 @@ lamellar-ucc-sys = 0.1.1
 
 Downstream crates consume `lamellar_ucc_sys` for low-level collective calls on and rely on the `build.rs` output to know where the headers and libraries live.
 
+## Tested library versions
+
+The bindings are generated from the headers of the UCC being used, and `bindgen` names anonymous C unions and structs by their position
+(`ucc_coll_args__bindgen_ty_4`). A UCC release other than those below can renumber them, and the failure is then a compile error in the
+crate that uses the bindings (`cannot find struct, variant or union type ucc_coll_args__bindgen_ty_4`), not in this one.
+
+| UCC | Status |
+|-----|--------|
+| 1.8 (API 1.8) | vendored, the default |
+| 1.4.4 | checked, through `UCC_DIR` |
+| anything else | untested |
+
+The build script reads `UCC_API_MAJOR`/`UCC_API_MINOR` from the header and prints a `cargo:warning` when the version is outside the range
+above. Cargo shows build-script warnings only for path and workspace dependencies, so a crate that depends on the published
+`lamellar-ucc-sys` will not see it; check this table before pointing `UCC_DIR` at another release.
+
 ## Environment variables
 
 - `UCC_DIR`: optional path to an existing UCC installation; the build script uses it when the required symbols are present.
+
+- `UCC_SHARP_DIR`: optional SHARP install root (`include/sharp/api/sharp_coll.h`, `lib[64]/libsharp_coll`). The vendored UCC is built **without SHARP by default** (`--with-sharp=no`), so a SHARP install that happens to be visible (HPC-X, MOFED) is never picked up. Set this to build `tl_sharp` against that install; `libsharp_coll` is then linked and its directory added to the rpath of the final binary. Two things to know: an HPC-X SHARP also loads HPC-X's own `libucp`/`libuct`/`libucs` (a second UCX next to the vendored one), and it is only useful where a SHARP aggregation manager is reachable. After changing this variable, run `cargo clean -p lamellar-ucc-sys` so the cached UCC build is not reused. Ignored when `UCC_DIR` is set, since a system UCC brings its own SHARP support.
 
 If you unset `UCC_DIR`, the crate automatically builds UCC from source using the vendored copy so that Lamellar can still compile on systems without UCC preinstalled.
 

@@ -42,6 +42,19 @@ typedef enum {
 	ROFI_ATOMIC_OP_WRITE,
 } rofi_atomic_op_t;
 
+/* Collective operations (provided by the libfabric collective support, see rofi_query_collective). */
+typedef enum {
+	ROFI_COLLECTIVE_BARRIER = 0,
+	ROFI_COLLECTIVE_BROADCAST,
+	ROFI_COLLECTIVE_ALLTOALL,
+	ROFI_COLLECTIVE_ALLREDUCE,
+	ROFI_COLLECTIVE_ALLGATHER,
+	ROFI_COLLECTIVE_REDUCE_SCATTER,
+	ROFI_COLLECTIVE_REDUCE,
+	ROFI_COLLECTIVE_SCATTER,
+	ROFI_COLLECTIVE_GATHER,
+} rofi_collective_op_t;
+
 int rofi_init(char *, char *);
 int rofi_finit(void);
 unsigned int rofi_get_size(void);
@@ -66,6 +79,9 @@ int rofi_has_atomics(void);
 int rofi_query_atomic(rofi_datatype_t, rofi_atomic_op_t);
 int rofi_query_fetch_atomic(rofi_datatype_t, rofi_atomic_op_t);
 int rofi_query_compare_atomic(rofi_datatype_t, rofi_atomic_op_t);
+int rofi_query_collective(rofi_collective_op_t, rofi_datatype_t, rofi_atomic_op_t);
+int rofi_collective_post(rofi_collective_op_t, const uint64_t *, uint64_t, uint64_t, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, void **);
+int rofi_collective_progress(void *);
 ssize_t rofi_atomic_op(void *, const void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
 ssize_t rofi_atomic_fetch(void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);
 ssize_t rofi_compare_atomic(void *, const void *, const void *, void *, size_t, rofi_datatype_t, rofi_atomic_op_t, unsigned int);

@@ -67,7 +67,7 @@ fn all_reduce_pull<T: Remote>(
         std::thread::yield_now();
     }
     for pe in 0..n {
-        let addr = alloc.pe_base_offset(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
+        let addr = alloc.pe_base_offset_rel(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
         let src = unsafe { std::slice::from_raw_parts(addr as *const T, len) };
         if pe == 0 {
             out.copy_from_slice(src);
@@ -120,7 +120,7 @@ fn reduce_to_root<T: Remote>(
         }
 
         let remote_dst_address =
-            alloc.pe_base_offset(root) + alloc.coll_index(root) * std::mem::size_of::<T>();
+            alloc.pe_base_offset_rel(root) + alloc.coll_index(root) * std::mem::size_of::<T>();
         for (i, s) in my_slice.iter().enumerate() {
             let remote_dest = CommAllocAddr(remote_dst_address + i * std::mem::size_of::<T>());
             let atomic_op = reduce_to_atomic_op::<T>(*s, op);
@@ -585,7 +585,7 @@ fn gather<T: Remote>(
     if let Some(result) = result {
         for pe in 0..alloc.num_pes() {
             let remote_src_address =
-                alloc.pe_base_offset(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
+                alloc.pe_base_offset_rel(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
             let remote_src_slice =
                 unsafe { std::slice::from_raw_parts(remote_src_address as *const T, len) };
             result[(pe * len)..((pe + 1) * len)].copy_from_slice(remote_src_slice);
@@ -1063,7 +1063,7 @@ fn broadcast_non_root_side<T: Remote>(
     }
 
     let remote_src_address =
-        alloc.pe_base_offset(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
+        alloc.pe_base_offset_rel(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
 
     let remote_src_slice =
         unsafe { std::slice::from_raw_parts(remote_src_address as *const T, len) };
@@ -1218,7 +1218,9 @@ impl<T: Remote, B: AsLamellarBuffer<T>> Future for ShmemCollectiveBroadcastIntoB
 
 fn scatter_root_side<T: Remote>(alloc: &ShmemAlloc, index: usize, len: usize, res: &mut [T]) {
     let alloc_slice = unsafe { alloc.as_mut_slice() };
-    let my_slice = &mut alloc_slice[index..index + len];
+    // the root is a receiver too: it takes the chunk for its own rank, like the other PEs
+    let own = index + alloc.my_alloc_pe * len;
+    let my_slice = &mut alloc_slice[own..own + len];
     res.copy_from_slice(my_slice);
     alloc.coll_set_index(alloc.my_alloc_pe, index);
     alloc.coll_inc_barrier();
@@ -1244,7 +1246,7 @@ fn scatter_non_root_side<T: Remote>(
     }
 
     let remote_src_address =
-        alloc.pe_base_offset(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
+        alloc.pe_base_offset_rel(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
 
     let remote_src_slice = unsafe {
         std::slice::from_raw_parts(remote_src_address as *const T, len * alloc.num_pes())
@@ -1526,7 +1528,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> ShmemCollectiveReduceScatterIntoBufferFu
         let remote_dst_address =
             reduce_to_root::<T>(0, &self.alloc, None, self.index, self.len, &self.op);
         if self.alloc.my_alloc_pe == 0 {
-            self.result.as_mut_slice().copy_from_slice(
+            crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes()).copy_from_slice(
                 &my_slice[self.alloc.my_alloc_pe * chunk_size
                     ..(self.alloc.my_alloc_pe + 1) * chunk_size],
             );
@@ -1546,7 +1548,7 @@ impl<T: Remote, B: AsLamellarBuffer<T>> ShmemCollectiveReduceScatterIntoBufferFu
             let remote_dst_slice = unsafe {
                 std::slice::from_raw_parts(remote_dst_address.unwrap() as *const T, self.len)
             };
-            self.result.as_mut_slice().copy_from_slice(
+            crate::lamellae::collective::reduce_scatter_dst(self.result.as_mut_slice(), self.len, self.alloc.num_pes()).copy_from_slice(
                 &remote_dst_slice[self.alloc.my_alloc_pe * chunk_size
                     ..(self.alloc.my_alloc_pe + 1) * chunk_size],
             );

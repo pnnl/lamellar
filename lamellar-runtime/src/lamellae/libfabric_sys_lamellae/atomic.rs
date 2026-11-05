@@ -306,7 +306,7 @@ impl CommAllocAtomic for LibfabricSysAlloc {
     ) -> AtomicOpHandle<T> {
         LibfabricSysAtomicFuture {
             alloc: self.clone(),
-            remote_pes: (0..self.num_pes()).collect(),
+            remote_pes: self.all_pes(),
             offset,
             op,
             spawned: false,
@@ -317,7 +317,7 @@ impl CommAllocAtomic for LibfabricSysAlloc {
         .into()
     }
     fn atomic_op_all_unmanaged<T: Remote + 'static>(&self, mut op: AtomicOp<T>, offset: usize) {
-        for pe in 0..self.num_pes() {
+        for pe in self.all_pes() {
             LibfabricSysAlloc::atomic_op_inner(self, pe, offset, &mut op, false);
         }
     }

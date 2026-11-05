@@ -577,6 +577,71 @@ int rofi_query_compare_atomic(rofi_datatype_t datatype, rofi_atomic_op_t op) {
 }
 
 /**
+ * @brief Query support for a ROFI collective operation
+ *
+ * This function queries whether the selected provider for the current ROFI
+ * instantiation implements a collective for the given datatype (and, for
+ * allreduce, reduce and reduce_scatter, the given reduction operation).
+ *
+ * @param op The collective to query
+ * @param datatype The ROFI datatype to query
+ * @param reduce_op The reduction (a ROFI atomic op), only used by the reducing collectives
+ * @return 0 when supported, non-zero when unsupported or invalid
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ *
+ */
+int rofi_query_collective(rofi_collective_op_t op, rofi_datatype_t datatype, rofi_atomic_op_t reduce_op) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_query_collective_internal(op, datatype, reduce_op);
+}
+
+/**
+ * @brief Start a collective operation over a group of PEs
+ *
+ * Starts the collective and returns without waiting for it; poll the returned
+ * request with rofi_collective_progress. Every PE of the group must start the same
+ * collectives in the same order. The buffers must stay valid until the request
+ * has completed.
+ *
+ * @param[in] op The collective
+ * @param[in] pes The PEs of the group in rank order (all PEs when NULL); the caller must be one of them
+ * @param[in] num_pes The number of PEs in \p pes (ignored when \p pes is NULL)
+ * @param[in] root The root's rank in the group (index into \p pes), for the rooted collectives
+ * @param[in] src Source buffer (unused by broadcast and barrier)
+ * @param[out] dst Result buffer (for broadcast, the data in/out buffer)
+ * @param[in] count Element count, as libfabric takes it: per PE for allgather, alltoall and scatter
+ * @param[in] datatype The ROFI datatype of the elements
+ * @param[in] reduce_op The reduction, only used by the reducing collectives
+ * @param[out] req Request to pass to rofi_collective_progress
+ * @return 0 on success, otherwise an error code
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+int rofi_collective_post(rofi_collective_op_t op, const uint64_t *pes, uint64_t num_pes, uint64_t root, const void *src, void *dst,
+                         size_t count, rofi_datatype_t datatype, rofi_atomic_op_t reduce_op, void **req) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_collective_post_internal(op, pes, num_pes, root, src, dst, count, datatype, reduce_op, req);
+}
+
+/**
+ * @brief Make progress on, and check, a collective started with rofi_collective_post
+ *
+ * @param[in] req The request from rofi_collective_post
+ * @return 1 when the collective has completed (the request is then released and must not be used again), 0 while it is
+ * still running, a negative error code if it failed
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+int rofi_collective_progress(void *req) {
+    assert(rofi.desc.status == ROFI_STATUS_ACTIVE);
+    return rofi_collective_progress_internal(req);
+}
+
+/**
  * @brief Query whether atomics are supported by the active provider.
  *
  * @return 1 when atomic operations are supported, 0 otherwise

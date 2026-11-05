@@ -449,7 +449,9 @@ pub fn launch_block(cfg: &LaunchConfig, ret: Option<TokenStream>) -> TokenStream
                             if y == "--" {
                                 break;
                             }
-                            salloc_opts.push(y);
+                            // A quoted string such as "--time=00:05:00 --exclusive" arrives
+                            // as one token; split it so salloc sees separate arguments.
+                            salloc_opts.extend(y.split_whitespace().map(str::to_string));
                         }
                     } else {
                         prterun_args.push(x.to_string());
@@ -514,7 +516,8 @@ pub fn launch_block(cfg: &LaunchConfig, ret: Option<TokenStream>) -> TokenStream
                     let cores = std::thread::available_parallelism()
                         .map(|n| n.get() as u32)
                         .unwrap_or(4);
-                    (cores / pes_per_node.unwrap_or(1).max(1)).max(1)
+                    // the node's cores shared by its PEs, kept from straddling a package boundary
+                    #cp::default_threads_per_pe(cores, pes_per_node.unwrap_or(1).max(1), packages)
                 });
 
             let has_flag = |args: &Vec<String>, needles: &[&str]| {

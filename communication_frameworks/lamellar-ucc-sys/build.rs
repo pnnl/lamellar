@@ -1,5 +1,7 @@
 
 use std::{env, path::PathBuf};
+
+mod compiler_probe;
 use std::path::Path;
 
 /// Vendored UCC release: unlike UCX/libfabric/MPICH-PMI, upstream has never
@@ -53,6 +55,27 @@ fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Use the compiler underneath a wrapper (Cray `cc`, `mpicc`, ...) when the wrapper fails a test link; see
+/// `compiler_probe.rs`. `LAMELLAR_NO_COMPILER_FALLBACK=1` disables it.
+fn compiler_fallback(
+    scratch: &Path,
+    lib_dirs: Vec<PathBuf>,
+    link_args: &[&str],
+) -> Option<compiler_probe::Fallback> {
+    for var in compiler_probe::ENV_VARS {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
+    let cc = cc::Build::new().get_compiler();
+    let cxx = cc::Build::new().cpp(true).get_compiler();
+    let link = compiler_probe::ProbeLink {
+        lib_dirs,
+        link_args: link_args.iter().map(|a| a.to_string()).collect(),
+    };
+    let fallback = compiler_probe::resolve(cc.path(), cxx.path(), &link, scratch)?;
+    println!("cargo:warning={}", fallback.message());
+    Some(fallback)
+}
+
 fn build_ucc(out_path: &PathBuf) -> PathBuf {
     println!("cargo:warning=building vendored UCC {}", UCC_VERSION);
 
@@ -65,6 +88,19 @@ fn build_ucc(out_path: &PathBuf) -> PathBuf {
     copy_rec(&std::path::PathBuf::from("ucc"), &dest).expect("Failed to copy UCC source files");
 
     let src_path = std::fs::canonicalize(&dest).unwrap();
+
+    // OUT_DIR is the install prefix and survives between builds. Without SHARP,
+    // drop a tl_sharp archive left by an earlier UCC_SHARP_DIR build so it is
+    // not linked (and does not demand libsharp_coll) by mistake.
+    if sharp_dir().is_none() {
+        if let Ok(entries) = std::fs::read_dir(out_path.join("lib").join("ucc")) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with("libucc_tl_sharp") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
 
     // No autogen.sh / autoreconf here: the vendored tree already ships a
     // pre-generated `configure` (see the provenance note on UCC_VERSION above).
@@ -123,7 +159,23 @@ fn build_ucc(out_path: &PathBuf) -> PathBuf {
     // produces correctly (confirmed working in the log above this point).
     // Scope `make install` to that subdir with `-C src` to skip the
     // ucc_info link entirely.
-    let path = autotools::Config::new(&src_path)
+    let mut config = autotools::Config::new(&src_path);
+    // The same libraries UCC's configure probe links (config/m4/ucx.m4), so a wrapper that breaks that probe is
+    // caught here, before configure runs.
+    if let Some(fb) = compiler_fallback(
+        &out_path.join("compiler_probe"),
+        vec![PathBuf::from(&ucx_root_path).join("lib")],
+        &[
+            "-Wl,--start-group", "-lucp", "-luct", "-lucs", "-lucm", "-Wl,--end-group",
+            "-libverbs", "-lrdmacm", "-lpthread", "-lm", "-ldl", "-lrt",
+        ],
+    ) {
+        config.env("CC", &fb.cc);
+        if let Some(cxx) = &fb.cxx {
+            config.env("CXX", cxx);
+        }
+    }
+    config
         .env(
             "LIBS",
             "-Wl,--start-group -lucp -luct -lucs -lucm -Wl,--end-group -libverbs -lrdmacm -lpthread -lm -ldl -lrt",
@@ -139,15 +191,81 @@ fn build_ucc(out_path: &PathBuf) -> PathBuf {
         .with("cuda", Some("no"))
         .enable("optimizations", None)
         .with("ucx", Some(&ucx_root_path))
-        .make_args(vec!["-C".to_string(), "src".to_string()])
-        .build();
-    path
+        .make_args(vec!["-C".to_string(), "src".to_string()]);
+    // SHARP is off unless asked for. UCC's configure defaults to
+    // --with-sharp=guess, which would build tl_sharp into libucc.a whenever a
+    // SHARP install happens to be visible (HPC-X, MOFED). Vendor builds stay
+    // independent of that: pass UCC_SHARP_DIR to opt in (see link_sharp_coll()).
+    let sharp_dir = sharp_dir();
+    match &sharp_dir {
+        Some(dir) => {
+            let dir = dir.display().to_string();
+            config.with("sharp", Some(dir.as_str()));
+        }
+        None => {
+            config.with("sharp", Some("no"));
+        }
+    }
+    // autotools panics on a failed configure/make; add a hint when SHARP was requested.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| config.build())) {
+        Ok(path) => path,
+        Err(err) => {
+            if sharp_dir.is_some() {
+                eprintln!("{}", SHARP_RETRY_HINT);
+            }
+            std::panic::resume_unwind(err)
+        }
+    }
+}
+
+const SHARP_RETRY_HINT: &str = "\n\
+lamellar-ucc-sys: building the vendored UCC with SHARP (UCC_SHARP_DIR) failed. If the errors \
+above mention sharp / tl_sharp / libsharp_coll, retry without SHARP by unsetting UCC_SHARP_DIR \
+(run `cargo clean -p lamellar-ucc-sys` first so the cached UCC build is not reused).\n";
+
+/// `UCC_SHARP_DIR=<root>`: opt in to building the vendored UCC with SHARP
+/// (`include/sharp/api/sharp_coll.h`, `lib[64]/libsharp_coll`).
+fn sharp_dir() -> Option<PathBuf> {
+    env::var_os("UCC_SHARP_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// libucc_tl_sharp.a is a static archive: it carries no link flags, so when
+/// SHARP was enabled the final link must add libsharp_coll itself.
+fn link_sharp_coll() {
+    let Some(root) = sharp_dir() else {
+        panic!(
+            "lamellar-ucc-sys: libucc_tl_sharp.a is present but UCC_SHARP_DIR is not set; \
+             run `cargo clean -p lamellar-ucc-sys` to drop the stale UCC build."
+        );
+    };
+    let libdir = if root.join("lib64").is_dir() {
+        root.join("lib64")
+    } else {
+        root.join("lib")
+    };
+    println!(
+        "cargo:warning=vendored UCC built with SHARP (tl_sharp); linking libsharp_coll from {}. \
+         Note: an HPC-X SHARP also loads HPC-X's own libucp/libuct/libucs, a second UCX next to \
+         the vendored one. Unset UCC_SHARP_DIR to build without SHARP.",
+        libdir.display()
+    );
+    println!("cargo:rustc-link-search=native={}", libdir.display());
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libdir.display());
+    println!("cargo:rustc-link-lib=dylib=sharp_coll");
+    // `rustc-link-arg` only reaches this package's own targets; downstream
+    // crates (lamellar) re-emit the rpath from this metadata (DEP_UCC_SHARP_LIBDIR).
+    // Without it the loader can pick a different libsharp_coll.so.5 from the
+    // system cache (e.g. MOFED's, which lacks symbols HPC-X's has).
+    println!("cargo:sharp_libdir={}", libdir.display());
 }
 
 fn build_bindings() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     println!("cargo:rerun-if-env-changed=UCC_DIR");
+    println!("cargo:rerun-if-env-changed=UCC_SHARP_DIR");
     let ucc_path = match env::var("UCC_DIR") {
         Ok(val) => std::path::PathBuf::from(val),
         Err(_) => {
@@ -157,6 +275,16 @@ fn build_bindings() {
         }
     };
     println!("cargo:root={}", ucc_path.display());
+
+    // tested: UCC 1.4 (1.4.4) to the vendored 1.8
+    check_api_version(
+        "UCC",
+        &ucc_path.join("include/ucc/api/ucc_version.h"),
+        "UCC_API_MAJOR",
+        "UCC_API_MINOR",
+        "1.4 to 1.8",
+        |major, minor| major == 1 && (4..=8).contains(&minor),
+    );
 
     let mut builder = cc::Build::new();
     builder.file("wrapper.c");
@@ -192,7 +320,19 @@ fn build_bindings() {
     // system-provided (UCC_DIR) shared install. lamellar-ucx-sys's own
     // build script already emits the ucp/uct/ucs/ucm/ibverbs/rdmacm link
     // directives needed to satisfy libucc.a's transitive symbols.
-    if ucc_lib_path.join("libucc.a").exists() {
+    //
+    // A user-supplied UCC_DIR is linked statically only if it has no shared
+    // library: such installs (e.g. HPC-X) often ship both, and the static path
+    // would whole-archive every component archive (tl_mlx5, tl_sharp, tl_cuda,
+    // ...) and drag in their dependencies. It also cannot work for a stock UCC,
+    // which lacks the Lamellar component-loader patch that static linking relies on.
+    let system_ucc = env::var_os("UCC_DIR").is_some();
+    let static_ucc = ucc_lib_path.join("libucc.a").exists()
+        && !(system_ucc && ucc_lib_path.join("libucc.so").exists());
+    if system_ucc && ucc_lib_path.join("libucc.a").exists() && !static_ucc {
+        println!("cargo:warning=UCC_DIR has both libucc.a and libucc.so; linking the shared library.");
+    }
+    if static_ucc {
         // UCC's CL/TL/MC/EC/sysinfo components are dlopen()ed plugins in a
         // shared build (lib/ucc/libucc_<fw>_<name>.so). The vendored
         // ucc/src/utils/ucc_component.c carries a Lamellar patch that also
@@ -221,6 +361,11 @@ fn build_bindings() {
         for component in components {
             println!("cargo:rustc-link-lib=static:+whole-archive,-bundle={component}");
         }
+        // tl_sharp (built when UCC's configure found SHARP) needs libsharp_coll
+        // at link and run time.
+        if ucc_component_dir.join("libucc_tl_sharp.a").exists() {
+            link_sharp_coll();
+        }
     } else {
         println!("cargo:rustc-link-lib=dylib=ucc");
     }
@@ -233,4 +378,48 @@ fn main() {
     println!("cargo:rerun-if-changed={}", "wrapper.c");
     println!("cargo:rerun-if-changed={}", "ucc/src/utils/ucc_component.c");
     build_bindings();
+}
+
+// Warns, and never fails, when the library whose headers are about to be bound is outside the versions this crate was
+// tested with: bindgen names anonymous C unions and structs by position (`..__bindgen_ty_N`), so a different release can
+// move the names the Rust code uses and the build then fails far from here, in the code that uses the bindings. The same
+// function is in lamellar-ucc-sys, lamellar-ucx-sys and libfabric-sys (their build scripts are standalone).
+// Reads `#define <major_name> <n>` and `#define <minor_name> <n>` from `header`; a header or macro that cannot be read
+// is skipped without a word.
+fn check_api_version(
+    library: &str,
+    header: &std::path::Path,
+    major_name: &str,
+    minor_name: &str,
+    tested: &str,
+    in_range: impl Fn(u32, u32) -> bool,
+) {
+    println!("cargo:rerun-if-changed={}", header.display());
+    let text = match std::fs::read_to_string(header) {
+        Ok(text) => text,
+        Err(_) => return,
+    };
+    let define = |name: &str| -> Option<u32> {
+        text.lines().find_map(|line| {
+            let mut words = line.split_whitespace();
+            if words.next()? != "#define" || words.next()? != name {
+                return None;
+            }
+            words.next()?.parse().ok()
+        })
+    };
+    if let (Some(major), Some(minor)) = (define(major_name), define(minor_name)) {
+        if !in_range(major, minor) {
+            println!(
+                "cargo:warning={} {}.{} ({}) is outside the versions {} was tested with ({}); if the build fails on a name \
+                 like `..__bindgen_ty_N` the bindings do not match this version",
+                library,
+                major,
+                minor,
+                header.display(),
+                std::env::var("CARGO_PKG_NAME").unwrap_or_default(),
+                tested
+            );
+        }
+    }
 }
