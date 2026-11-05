@@ -1,0 +1,12 @@
+# Triangle Count implementation notes
+
+The maintained `triangle_count` executable loads the distributed graph through
+`graph/mod.rs` and its map-backed representation in `graph/mapgraph.rs`.
+
+Use `--variants single buffered am-group` to compare the active-message
+strategies. `--buffer-size` applies to buffered and AM-group variants, and
+`--launch-threads` partitions local work. Results and build/runtime provenance
+are emitted by PE 0 for every selected configuration and iteration.
+
+The previous standalone single and buffered implementations are archived under
+`src/deprecated/`; they are not Cargo targets.

@@ -1,0 +1,24 @@
+[package]
+name = "histo"
+version = "0.4.1"
+authors = ["Ryan D. Friese"]
+edition = "2021"
+
+[dependencies]
+async-std = { workspace = true }
+benchmark_record = { path = "../benchmark_record" }
+clap = { workspace = true }
+dhat = "0.3.3"
+futures = { workspace = true }
+lamellar = { workspace = true }
+lazy_static = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+tikv-jemallocator = "0.5"
+
+[build-dependencies]
+benchmark_record = { path = "../benchmark_record" }
+
+[features]
+benchmark-record = ["benchmark_record/benchmark-record"]

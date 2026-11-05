@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+/.vscode
+Cargo.lock
+
+# mac-specific file
+.DS_Store

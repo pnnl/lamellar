@@ -1,0 +1,25 @@
+[package]
+name = "triangle_count"
+version = "0.4.1"
+authors = ["frie869 <ryan.friese@pnnl.gov>"]
+edition = "2021"
+
+[dependencies]
+async-std = { workspace = true }
+benchmark_record = { path = "../benchmark_record" }
+bincode = "1.3"
+clap = { workspace = true }
+csv = "1.3"
+futures = { workspace = true }
+lamellar = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+
+[build-dependencies]
+benchmark_record = { path = "../benchmark_record" }
+
+[features]
+benchmark-record = ["benchmark_record/benchmark-record"]
+ofi = ["lamellar/enable-libfabric"]
+ucx = ["lamellar/enable-ucx"]
+rofi-c = ["lamellar/enable-rofi-c"]

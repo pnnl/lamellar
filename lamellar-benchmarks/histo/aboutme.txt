@@ -1,0 +1,20 @@
+# Histo implementation notes
+
+Histo increments random bins in a distributed histogram and reports timing and
+communication metrics. The maintained `histo` executable selects an
+implementation with `--variants`:
+
+- `SafeAm` and `SafeBufferedAm` use atomic updates; the buffered form batches
+  indices before sending.
+- `UnsafeAM` and `UnsafeBufferedAm` trade correctness under concurrent updates
+  for lower overhead.
+- `SafeAmGroup` and `UnsafeAmGroup` use active-message groups.
+- `UnsafeArray`, `AtomicArray`, and `LocalLockArray` compare the distributed
+  Lamellar array representations.
+
+`--am-index-size` selects the AM index representation and
+`--array-distribution` selects the array layout. A PE is a Lamellar processing
+element; `--launch-threads` controls local task concurrency.
+
+The old standalone sources are archived under `src/deprecated/`. Their useful
+recording and completion behavior is integrated into the unified runner.
