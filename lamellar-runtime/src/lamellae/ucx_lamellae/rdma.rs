@@ -611,7 +611,7 @@ impl CommAllocRdma for UcxAlloc {
         src: T,
         offset: usize,
     ) -> RdmaHandle<T> {
-        let pes = (0..self.num_pes).collect();
+        let pes = self.all_pes();
         UcxPutFuture {
             alloc: self.clone(),
             offset,
@@ -626,7 +626,7 @@ impl CommAllocRdma for UcxAlloc {
         .into()
     }
     fn put_all_unmanaged<T: Remote>(&self, src: T, offset: usize) {
-        let pes = (0..self.num_pes).collect::<Vec<usize>>();
+        let pes = self.all_pes();
         for pe in pes {
             // for ucx put operation waiting on the request simply ensures the input buffer is free to reuse
             // not that the operation has completed on the remote side
@@ -642,7 +642,7 @@ impl CommAllocRdma for UcxAlloc {
         src: impl Into<MemregionRdmaInputInner<T>>,
         offset: usize,
     ) -> RdmaHandle<T> {
-        let pes = (0..self.num_pes).collect();
+        let pes = self.all_pes();
         UcxPutFuture {
             alloc: self.clone(),
             offset,
@@ -662,7 +662,7 @@ impl CommAllocRdma for UcxAlloc {
         offset: usize,
     ) {
         let src = src.into();
-        let pes = (0..self.num_pes).collect::<Vec<usize>>();
+        let pes = self.all_pes();
         for pe in pes {
             trace!(
                 "putting src: {:?} dst: {:?} len: {} num bytes {}",

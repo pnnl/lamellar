@@ -217,6 +217,13 @@ pub(crate) struct UccTeam {
     pub(crate) context: Arc<UccContext>,
     #[allow(dead_code)]
     params: Box<UccTeamParams>, // pin?
+    // The team-PE to world-PE array a sub-team was created with. UCC copies the `ucc_ep_map_t` struct, not the array it
+    // points to, and keeps using it for the team's whole life, so it has to live as long as the team (fields drop after
+    // `ucc_team_destroy` in `Drop`). Empty for the world team, which has no map.
+    _ep_map: Vec<u64>,
+    // This PE's team PE. UCC names the root of a rooted collective (and the participants) by team PE, which is
+    // not the world PE for a sub-team.
+    team_pe: usize,
     pub(crate) req_pending: Arc<AtomicUsize>,
     pub(crate) req_completed: Arc<AtomicUsize>,
 }
@@ -235,7 +242,7 @@ impl UccTeam {
         ucx_alloc: Arc<dyn UccOobAlloc>,
     ) -> Result<Self, Error> {
         let mut handle: MaybeUninit<ucc_team_h> = MaybeUninit::uninit();
-        let team_rank = pes
+        let team_pe = pes
             .iter()
             .position(|&pe| pe == my_pe)
             .ok_or(Error::InvalidParam)?;
@@ -249,7 +256,7 @@ impl UccTeam {
             req_test: Some(req_test),
             req_free: Some(req_free),
             n_oob_eps: pes.len() as u32,
-            oob_ep: team_rank as u32,
+            oob_ep: team_pe as u32,
             coll_info: &mut *params as *mut UccTeamParams as *mut c_void,
         };
 
@@ -319,6 +326,8 @@ impl UccTeam {
             handle,
             context: ctx.clone(),
             params,
+            _ep_map: Vec::new(),
+            team_pe,
             req_pending: Arc::new(AtomicUsize::new(0)),
             req_completed: Arc::new(AtomicUsize::new(0)),
         })
@@ -333,23 +342,35 @@ impl UccTeam {
     ) -> Result<Self, Error> {
         let mut handle: MaybeUninit<ucc_team_h> = MaybeUninit::uninit();
 
-        // The map must stay alive until ucc_team_create_test returns.
-        let global_ranks: Vec<u64> = pes.iter().map(|&p| p as u64).collect();
+        // The map must stay alive as long as the team does (UCC keeps the pointer), so it is stored in the UccTeam.
+        let world_pes: Vec<u64> = pes.iter().map(|&p| p as u64).collect();
 
-        let team_rank = pes
+        let team_pe = pes
             .iter()
             .position(|&p| p == my_pe)
             .ok_or(Error::InvalidParam)?;
 
-        // Stable team ID derived from sorted PE list — consistent across all team members.
+        // Team ID derived from the PE list and from how many sub-teams over this same PE list this PE has created so far, so
+        // that the several allocations (each with its own UCC team) made over one sub-team get different IDs. Allocations
+        // are collective, so every member counts the same way and agrees on the ID.
         // Avoids UCC's service-team allreduce for ID allocation (which requires all world PEs).
         // UCC_TEAM_ID_MAX = 0x7FFF; use lower 14 bits (nonzero) to avoid reserved values.
+        let creation_seq = {
+            static COUNTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Vec<usize>, u64>>> =
+                std::sync::OnceLock::new();
+            let mut counts = COUNTS.get_or_init(Default::default).lock().unwrap();
+            let count = counts.entry(pes.to_vec()).or_insert(0);
+            *count += 1;
+            *count
+        };
         let team_id: u64 = {
             let mut h: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
             for &pe in pes.iter() {
                 h ^= pe as u64;
                 h = h.wrapping_mul(0x100000001b3);
             }
+            h ^= creation_seq;
+            h = h.wrapping_mul(0x100000001b3);
             let id = h & 0x3FFF; // 14 bits
             if id == 0 {
                 1
@@ -367,9 +388,9 @@ impl UccTeam {
             flags: 0,
             ordering: 0,
             outstanding_colls: 0,
-            // CONTIG ep_range: UCC derives team_rank directly from ep (team-local rank).
+            // CONTIG ep_range: UCC derives team_pe directly from ep (team-local PE).
             // The ep_map then maps team-local rank -> global endpoint for transport.
-            ep: team_rank as u64,
+            ep: team_pe as u64,
             ep_list: std::ptr::null_mut(),
             ep_range: ucc_ep_range_type_t_UCC_COLLECTIVE_EP_RANGE_CONTIG,
             team_size: pes.len() as u64,
@@ -398,7 +419,7 @@ impl UccTeam {
                 m.type_ = ucc_ep_map_type_t_UCC_EP_MAP_ARRAY;
                 m.ep_num = pes.len() as u64;
                 m.__bindgen_anon_1.array = ucc_ep_map_array {
-                    map: global_ranks.as_ptr() as *mut c_void,
+                    map: world_pes.as_ptr() as *mut c_void,
                     elem_size: std::mem::size_of::<u64>(),
                 };
                 m
@@ -427,9 +448,6 @@ impl UccTeam {
             Error::from_status(team_status)?;
             break;
         }
-        // global_ranks kept alive through the create_test loop above; safe to drop now.
-        drop(global_ranks);
-
         let params = Box::new(UccTeamParams {
             my_pe,
             pes: pes.to_vec(),
@@ -439,6 +457,9 @@ impl UccTeam {
             handle,
             context: ctx.clone(),
             params,
+            // not dropped: UCC keeps pointing at it (see the field)
+            _ep_map: world_pes,
+            team_pe,
             req_pending: Arc::new(AtomicUsize::new(0)),
             req_completed: Arc::new(AtomicUsize::new(0)),
         })
@@ -587,6 +608,11 @@ fn generate_coll_args<T: 'static>(
 }
 
 impl UccTeam {
+    /// This PE's team PE (what UCC calls a root or an endpoint), as opposed to its world PE.
+    pub(crate) fn team_pe(&self) -> usize {
+        self.team_pe
+    }
+
     fn post_coll_req(&self, coll_args: ucc_coll_args_t) -> Result<UccRequest, Error> {
         self.post_coll_req_keeping(coll_args, Vec::new())
     }

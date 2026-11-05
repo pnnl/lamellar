@@ -349,7 +349,7 @@ impl CommAllocAtomic for UcxOptAlloc {
         op: AtomicOp<T>,
         offset: usize,
     ) -> AtomicOpHandle<T> {
-        let pes = (0..self.num_pes).collect();
+        let pes = self.all_pes();
         UcxOptAtomicFuture {
             alloc: self.clone(),
             remote_pes: pes,
@@ -364,7 +364,7 @@ impl CommAllocAtomic for UcxOptAlloc {
         .into()
     }
     fn atomic_op_all_unmanaged<T: Remote + 'static>(&self, mut op: AtomicOp<T>, offset: usize) {
-        for pe in 0..self.num_pes {
+        for pe in self.all_pes() {
             UcxOptAlloc::inner_atomic_op(self, pe, offset, false, &mut op, false);
         }
     }
