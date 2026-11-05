@@ -14,6 +14,22 @@
 |---------|-------------|
 | `shared` | Enables `libfabric-src/shared`, causing the OFI build to prefer shared libraries over static ones and propagates the `-fPIC`/`-shared` options through the Autotools configuration. |
 
+## Tested library versions
+
+The bindings are generated from the OFI headers of the libfabric being used, and `bindgen` names anonymous C unions, structs and enums by
+their position (`fi_mr_attr__bindgen_ty_1`, `_bindgen_ty_20`). A libfabric release other than the vendored one can renumber them, and the
+failure is then a compile error in the crate that uses the bindings (the `libfabric` crate and the lamellae), not in this one. A new major
+release (2.x) also changes structures and removes deprecated APIs, so expect the `libfabric` crate to need changes.
+
+| libfabric | Status |
+|-----------|--------|
+| 1.22.0 | vendored, the default |
+| anything else, including a system install through `OFI_DIR` | untested |
+
+The build script reads `FI_MAJOR_VERSION`/`FI_MINOR_VERSION` from the header and prints a `cargo:warning` when the version is outside the range
+above. Cargo shows build-script warnings only for path and workspace dependencies, so a crate that depends on the published
+`libfabric-sys` will not see it; check this table before pointing `OFI_DIR` at another release.
+
 ## Environment variables
 
 - `OFI_DIR`: If present, the build script reuses the existing installation under this path instead of rebuilding the bundled sources. `libfabric-sys` will rerun the build whenever files under `OFI_DIR/lib` or `OFI_DIR/include` change.

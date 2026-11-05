@@ -29,6 +29,8 @@
  */
 
 #include <assert.h>
+#include <errno.h>
+#include <sched.h>
 #include <math.h>
 #include <netdb.h>
 #include <poll.h>
@@ -606,6 +608,19 @@ int rofi_transport_init_av(rofi_transport_t *rofi) {
     return 0;
 }
 
+// Marks the in-flight collective whose completion carries `context` as finished (`err` is 0 or a positive errno-style code).
+// Returns 1 when `context` belongs to a collective issued through rofi_collective_post, 0 otherwise. Called with rofi->lock held.
+static int rofi_transport_coll_complete(rofi_transport_t *rofi, void *context, int err) {
+    for (struct rofi_coll_req *req = rofi->coll_pending; req != NULL; req = req->next) {
+        if ((void *)req == context) {
+            req->err = err;
+            atomic_store_explicit(&req->done, 1, memory_order_release);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // only need this if we use MANUAL_PROGRESS
 // because we are using FI_SELECTIVE_COMPLETION
 // successfull completions should increment the respective cntrs
@@ -616,14 +631,21 @@ int rofi_transport_progress(rofi_transport_t *rofi) {
     int ret = fi_cq_read(rofi->cq, &buf, 1);
     int err =ret;
     if (ret == 1) {
-        WARN_MSG("unexpected cq event"); // warnd
+        // the only completions that reach the cq are those of collectives (everything else is selective), see rofi_collective_post
+        if (!rofi_transport_coll_complete(rofi, buf.op_context, 0)) {
+            WARN_MSG("unexpected cq event"); // warnd
+        }
     }
     else if (ret < 0 && ret != -FI_EAGAIN) {
         ROFI_TRANSPORT_ERR_MSG("rofi_transport_progress", ret);
         do {
             struct fi_cq_err_entry ebuf = {0};
             int ret = fi_cq_readerr(rofi->cq, (void *)&ebuf, 0);
-            if (ret > 0) {
+            if (ret > 0 && rofi_transport_coll_complete(rofi, ebuf.op_context, ebuf.err ? ebuf.err : EIO)) {
+                // a failed collective: reported to the caller of rofi_collective_progress, not to whoever happened to make progress
+                err = 0;
+            }
+            else if (ret > 0) {
                 const char *errmsg = fi_cq_strerror(rofi->cq, ebuf.prov_errno, ebuf.err_data, NULL, 0);
                 const char *errmsg1 = fi_cq_strerror(rofi->cq, ebuf.err, ebuf.err_data, NULL, 0);
 #if __OFI_VERSION__ >= 120
@@ -836,18 +858,48 @@ int rofi_transport_wait_on_cntr(rofi_transport_t *rofi, _Atomic uint64_t *pendin
     return 0;
 }
 
+// Collective joins complete through the endpoint's single event queue, and two joins can be in flight at once (the
+// memory-region exchange and an application group), so a waiter can read the completion of the other one. It parks that
+// completion here, by context, and each waiter checks here before reading the queue; otherwise the other join would
+// never see its event (and this one would fail). Both are called with rofi->lock held.
+static void rofi_transport_park_join(rofi_transport_t *rofi, void *context) {
+    for (int i = 0; i < ROFI_JOIN_DONE_SLOTS; i++) {
+        if (rofi->join_done[i] == NULL) {
+            rofi->join_done[i] = context;
+            return;
+        }
+    }
+    ERR_MSG("no room to park a join completion for context %p", context);
+}
+
+static int rofi_transport_take_join(rofi_transport_t *rofi, void *context) {
+    for (int i = 0; i < ROFI_JOIN_DONE_SLOTS; i++) {
+        if (rofi->join_done[i] == context) {
+            rofi->join_done[i] = NULL;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int rofi_transport_wait_on_event(rofi_transport_t *rofi, uint32_t event, void *context) {
     uint32_t ev;
     struct fi_eq_entry entry;
 
     while (true) {
+        if (event == FI_JOIN_COMPLETE && context && rofi_transport_take_join(rofi, context)) {
+            return 0;
+        }
         int ret = fi_eq_read(rofi->eq, &ev, &entry, sizeof(entry), 0);
         if (ret >= 0) { // we got an event
             if (ev == event) {
                 if (!context || (context == entry.context)) {
                     return 0;
                 }
-                else if (context) {
+                else if (ev == FI_JOIN_COMPLETE) {
+                    rofi_transport_park_join(rofi, entry.context); // another join's completion: keep it for its waiter
+                }
+                else {
                     return -FI_EOTHER;
                 }
             }
@@ -890,7 +942,10 @@ int rofi_transport_wait_on_context_comp(rofi_transport_t *rofi, void *context) {
             return 0;
         }
         else if (buf.op_context) {
-            DEBUG_MSG("Unexpected context comp %p != %p", buf.op_context, context);
+            // not ours: it is the completion of a collective issued through rofi_collective_post, hand it over
+            if (!rofi_transport_coll_complete(rofi, buf.op_context, 0)) {
+                DEBUG_MSG("Unexpected context comp %p != %p", buf.op_context, context);
+            }
         }
     }
 }
@@ -1264,10 +1319,26 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
     return ret;
 }
 
+// libfabric's coll provider has 256 group ids per endpoint (see rofi_coll_group) and never gives one back, so past that a new
+// join would mark a bit beyond its mask and corrupt memory. Groups are kept per distinct PE set, so this takes more than ~250
+// different sub-teams; fail the join cleanly instead. Called with rofi->lock held.
+#define ROFI_MAX_COLL_GROUPS 250
+static int rofi_transport_coll_group_room(rofi_transport_t *rofi) {
+    int count = 0;
+    for (struct rofi_coll_group *grp = rofi->coll_groups; grp != NULL; grp = grp->next) {
+        count++;
+    }
+    if (count >= ROFI_MAX_COLL_GROUPS) {
+        ERR_MSG("cannot join another collective group: %d distinct PE sets already have one (libfabric's coll provider has 256 group ids per endpoint)", count);
+        return -FI_ENOSPC;
+    }
+    return 0;
+}
+
 // Returns the joined collective group over `pes`, joining it the first time. Called with rofi->lock held.
 static int rofi_transport_get_coll_group(rofi_transport_t *rofi, uint64_t *pes, uint64_t num_pes, struct fid_mc **mc_out) {
     for (struct rofi_coll_group *grp = rofi->coll_groups; grp != NULL; grp = grp->next) {
-        if (grp->num_pes == num_pes && memcmp(grp->pes, pes, num_pes * sizeof(uint64_t)) == 0) {
+        if (grp->purpose == ROFI_COLL_GROUP_MR_EXCHANGE && grp->num_pes == num_pes && memcmp(grp->pes, pes, num_pes * sizeof(uint64_t)) == 0) {
             *mc_out = grp->mc;
             return 0;
         }
@@ -1281,7 +1352,11 @@ static int rofi_transport_get_coll_group(rofi_transport_t *rofi, uint64_t *pes, 
     av_set_attr.flags = 0;
 
     struct fid_av_set *av_set;
-    int ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
+    int ret = rofi_transport_coll_group_room(rofi);
+    if (ret) {
+        return ret;
+    }
+    ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_av_st", ret);
         return ret;
@@ -1331,6 +1406,7 @@ static int rofi_transport_get_coll_group(rofi_transport_t *rofi, uint64_t *pes, 
         return -1;
     }
     memcpy(pes_copy, pes, num_pes * sizeof(uint64_t));
+    grp->purpose = ROFI_COLL_GROUP_MR_EXCHANGE;
     grp->num_pes = num_pes;
     grp->pes = pes_copy;
     grp->av_set = av_set;
@@ -1407,6 +1483,400 @@ int rofi_transport_sub_exchange_mr_info(rofi_transport_t *rofi, rofi_mr_desc *mr
     // the group stays joined and is reused by every later exchange over the same PEs (see rofi_coll_group)
     pthread_mutex_unlock(&rofi->lock);
     return 0;
+}
+
+// Returns the joined group of `purpose` over exactly `pes`, or NULL. Called with rofi->lock held.
+static struct fid_mc *rofi_transport_find_coll_group(rofi_transport_t *rofi, int purpose, const uint64_t *pes, uint64_t num_pes) {
+    for (struct rofi_coll_group *grp = rofi->coll_groups; grp != NULL; grp = grp->next) {
+        if (grp->purpose == purpose && grp->num_pes == num_pes && memcmp(grp->pes, pes, num_pes * sizeof(uint64_t)) == 0) {
+            return grp->mc;
+        }
+    }
+    return NULL;
+}
+
+// Returns the joined group for the application's collectives over `pes` (in group-rank order), joining it the first time.
+// Unlike the memory-region exchange this does not hold rofi->lock while the join completes: joining is itself a collective
+// that finishes only once every PE of the group has joined, and a PE can reach its join only after other threads of that PE
+// (which need rofi->lock to put, get or flush) have made the progress it is waiting for. The lock is taken around each
+// poll instead. The group is kept for later collectives over the same PEs, so group ids (see rofi_coll_group) are only used
+// once per distinct PE set.
+static int rofi_transport_get_user_coll_group(rofi_transport_t *rofi, const uint64_t *pes, uint64_t num_pes, struct fid_mc **mc_out) {
+    pthread_mutex_lock(&rofi->lock);
+    struct fid_mc *found = rofi_transport_find_coll_group(rofi, ROFI_COLL_GROUP_USER, pes, num_pes);
+    pthread_mutex_unlock(&rofi->lock);
+    if (found != NULL) {
+        *mc_out = found;
+        return 0;
+    }
+
+    pthread_mutex_lock(&rofi->coll_join_lock);
+    pthread_mutex_lock(&rofi->lock);
+    found = rofi_transport_find_coll_group(rofi, ROFI_COLL_GROUP_USER, pes, num_pes);
+    if (found != NULL) { // joined by another thread while we waited for coll_join_lock
+        pthread_mutex_unlock(&rofi->lock);
+        pthread_mutex_unlock(&rofi->coll_join_lock);
+        *mc_out = found;
+        return 0;
+    }
+
+    struct fi_av_set_attr av_set_attr = {0};
+    av_set_attr.count = num_pes;
+    av_set_attr.start_addr = rofi->remote_addrs[pes[0]];
+    av_set_attr.end_addr = rofi->remote_addrs[pes[0]];
+    av_set_attr.stride = 1;
+    av_set_attr.flags = 0;
+
+    struct fid_av_set *av_set;
+    int ret = rofi_transport_coll_group_room(rofi);
+    if (ret) {
+        goto fail_unlock;
+    }
+    ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_av_set", ret);
+        goto fail_unlock;
+    }
+    for (uint64_t i = 1; i < num_pes; i++) {
+        ret = fi_av_set_insert(av_set, rofi->remote_addrs[pes[i]]);
+        if (ret) {
+            ROFI_TRANSPORT_ERR_MSG("fi_av_set_insert", ret);
+            fi_close(&av_set->fid);
+            goto fail_unlock;
+        }
+    }
+    fi_addr_t coll_addr = 0;
+    ret = fi_av_set_addr(av_set, &coll_addr);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_av_set_addr", ret);
+        fi_close(&av_set->fid);
+        goto fail_unlock;
+    }
+
+    uint64_t done_flag = 0;
+    struct fid_mc *mc;
+    ret = fi_join_collective(rofi->ep, coll_addr, av_set, 0, &mc, &done_flag);
+    if (ret) {
+        ROFI_TRANSPORT_ERR_MSG("fi_join_collective", ret);
+        fi_close(&av_set->fid);
+        goto fail_unlock;
+    }
+    pthread_mutex_unlock(&rofi->lock);
+
+    int joined = 0;
+    while (!joined) {
+        uint32_t ev;
+        struct fi_eq_entry entry;
+        pthread_mutex_lock(&rofi->lock);
+        if (rofi_transport_take_join(rofi, &done_flag)) { // a memory-region exchange read our completion
+            joined = 1;
+            pthread_mutex_unlock(&rofi->lock);
+            break;
+        }
+        ret = fi_eq_read(rofi->eq, &ev, &entry, sizeof(entry), 0);
+        if (ret >= 0) {
+            if (ev == FI_JOIN_COMPLETE) {
+                if (entry.context == &done_flag) {
+                    joined = 1;
+                }
+                else {
+                    rofi_transport_park_join(rofi, entry.context); // the memory-region exchange's completion
+                }
+            }
+            ret = 0;
+        }
+        else if (ret == -FI_EAGAIN) {
+            ret = 0;
+        }
+        else {
+            ROFI_TRANSPORT_ERR_MSG("fi_eq_read", ret);
+        }
+        if (ret == 0 && !joined) {
+            ret = rofi_transport_progress(rofi);
+        }
+        pthread_mutex_unlock(&rofi->lock);
+        if (ret) {
+            pthread_mutex_unlock(&rofi->coll_join_lock);
+            return ret;
+        }
+        if (!joined) {
+            sched_yield();
+        }
+    }
+
+    struct rofi_coll_group *grp = malloc(sizeof(*grp));
+    uint64_t *pes_copy = malloc(num_pes * sizeof(uint64_t));
+    if (grp == NULL || pes_copy == NULL) {
+        free(grp);
+        free(pes_copy);
+        ERR_MSG("malloc failed");
+        pthread_mutex_unlock(&rofi->coll_join_lock);
+        return -ENOMEM;
+    }
+    memcpy(pes_copy, pes, num_pes * sizeof(uint64_t));
+    grp->purpose = ROFI_COLL_GROUP_USER;
+    grp->num_pes = num_pes;
+    grp->pes = pes_copy;
+    grp->av_set = av_set;
+    grp->mc = mc;
+    pthread_mutex_lock(&rofi->lock);
+    grp->next = rofi->coll_groups;
+    rofi->coll_groups = grp;
+    pthread_mutex_unlock(&rofi->lock);
+    pthread_mutex_unlock(&rofi->coll_join_lock);
+    *mc_out = mc;
+    return 0;
+
+fail_unlock:
+    pthread_mutex_unlock(&rofi->lock);
+    pthread_mutex_unlock(&rofi->coll_join_lock);
+    return ret;
+}
+
+static int rofi_transport_to_fi_collective_op(rofi_collective_op_t op, enum fi_collective_op *fi_op, int *reduces) {
+    *reduces = 0;
+    switch (op) {
+        case ROFI_COLLECTIVE_BARRIER:
+            *fi_op = FI_BARRIER;
+            return 0;
+        case ROFI_COLLECTIVE_BROADCAST:
+            *fi_op = FI_BROADCAST;
+            return 0;
+        case ROFI_COLLECTIVE_ALLTOALL:
+            *fi_op = FI_ALLTOALL;
+            return 0;
+        case ROFI_COLLECTIVE_ALLREDUCE:
+            *fi_op = FI_ALLREDUCE;
+            *reduces = 1;
+            return 0;
+        case ROFI_COLLECTIVE_ALLGATHER:
+            *fi_op = FI_ALLGATHER;
+            return 0;
+        case ROFI_COLLECTIVE_REDUCE_SCATTER:
+            *fi_op = FI_REDUCE_SCATTER;
+            *reduces = 1;
+            return 0;
+        case ROFI_COLLECTIVE_REDUCE:
+            *fi_op = FI_REDUCE;
+            *reduces = 1;
+            return 0;
+        case ROFI_COLLECTIVE_SCATTER:
+            *fi_op = FI_SCATTER;
+            return 0;
+        case ROFI_COLLECTIVE_GATHER:
+            *fi_op = FI_GATHER;
+            return 0;
+        default:
+            return -1;
+    }
+}
+
+// 0 when the provider implements `op` for `datatype` (and, for the reducing ones, `reduce_op`), otherwise a libfabric error
+int rofi_transport_query_collective(rofi_transport_t *rofi, rofi_collective_op_t op, enum fi_datatype datatype, enum fi_op reduce_op) {
+    enum fi_collective_op fi_cop;
+    int reduces;
+    if (rofi_transport_to_fi_collective_op(op, &fi_cop, &reduces) != 0) {
+        return -FI_EINVAL;
+    }
+    if (rofi->domain == NULL) {
+        return -FI_ENOSYS;
+    }
+    struct fi_collective_attr attr = {0};
+    attr.op = reduces ? reduce_op : FI_NOOP;
+    attr.datatype = datatype;
+    attr.mode = 0;
+    pthread_mutex_lock(&rofi->lock);
+    int ret = fi_query_collective(rofi->domain, fi_cop, &attr, 0);
+    pthread_mutex_unlock(&rofi->lock);
+    return ret;
+}
+
+static size_t rofi_transport_datatype_size(enum fi_datatype datatype) {
+    switch (datatype) {
+        case FI_INT8:
+        case FI_UINT8:
+            return 1;
+        case FI_INT16:
+        case FI_UINT16:
+            return 2;
+        case FI_INT32:
+        case FI_UINT32:
+        case FI_FLOAT:
+            return 4;
+        case FI_INT64:
+        case FI_UINT64:
+        case FI_DOUBLE:
+        case FI_FLOAT_COMPLEX:
+            return 8;
+        case FI_DOUBLE_COMPLEX:
+            return 16;
+        default:
+            return 0;
+    }
+}
+
+// Starts a collective over the PEs `pes` (all PEs when NULL) and returns at once; rofi_transport_collective_progress says when
+// it has completed. `root` is the root's rank within the group, i.e. its index in `pes`. `src` and `dst` must stay valid
+// until then. `count` is as libfabric takes it: per PE for allgather, alltoall and scatter, the whole buffer otherwise.
+// For broadcast the data is in/out in `dst`. The lock is held only while the operation is handed to libfabric, never while
+// waiting for it: the collective finishes once every PE has joined it, and joining can depend on another thread of this PE
+// taking the lock.
+int rofi_transport_collective_post(rofi_transport_t *rofi, rofi_collective_op_t op, const uint64_t *pes, uint64_t num_pes, uint64_t root,
+                                   const void *src, void *dst, size_t count, enum fi_datatype datatype, enum fi_op reduce_op, void **req_out) {
+    uint64_t *world = NULL;
+    if (pes == NULL) {
+        num_pes = rofi->desc.nodes;
+        world = malloc(num_pes * sizeof(uint64_t));
+        if (world == NULL) {
+            return -ENOMEM;
+        }
+        for (uint64_t i = 0; i < num_pes; i++) {
+            world[i] = i;
+        }
+        pes = world;
+    }
+    if (num_pes == 0 || root >= num_pes) {
+        free(world);
+        return -FI_EINVAL;
+    }
+
+    struct fid_mc *mc;
+    int ret = rofi_transport_get_user_coll_group(rofi, pes, num_pes, &mc);
+    free(world);
+    if (ret) {
+        return ret;
+    }
+
+    struct rofi_coll_req *req = calloc(1, sizeof(*req));
+    if (req == NULL) {
+        return -ENOMEM;
+    }
+
+    // libfabric's broadcast scatters `count` elements in chunks of ceil(count / num_pes) and then all-gathers the chunks back
+    // into the buffer, so for a count that is not a multiple of the group size it reads and writes past the end of the
+    // buffer (and, for a small count, gives some PEs a different chunk size than the others). Work on a zero-padded copy
+    // whose count is a whole number of chunks and copy the caller's part back when the broadcast completes.
+    if (op == ROFI_COLLECTIVE_BROADCAST && count % num_pes != 0) {
+        size_t elem = rofi_transport_datatype_size(datatype);
+        size_t padded = ((count + num_pes - 1) / num_pes) * num_pes;
+        if (elem == 0) {
+            free(req);
+            return -FI_EINVAL;
+        }
+        req->bounce = calloc(padded, elem);
+        if (req->bounce == NULL) {
+            free(req);
+            return -ENOMEM;
+        }
+        req->user_dst = dst;
+        req->user_bytes = count * elem;
+        memcpy(req->bounce, dst, req->user_bytes);
+        dst = req->bounce;
+        count = padded;
+    }
+
+    pthread_mutex_lock(&rofi->lock);
+    req->next = rofi->coll_pending;
+    rofi->coll_pending = req;
+    fi_addr_t coll_addr = fi_mc_addr(mc);
+    do {
+        switch (op) {
+            case ROFI_COLLECTIVE_BARRIER:
+                ret = fi_barrier(rofi->ep, coll_addr, req);
+                break;
+            case ROFI_COLLECTIVE_BROADCAST:
+                ret = fi_broadcast(rofi->ep, dst, count, NULL, coll_addr, root, datatype, 0, req);
+                break;
+            case ROFI_COLLECTIVE_ALLTOALL:
+                ret = fi_alltoall(rofi->ep, src, count, NULL, dst, NULL, coll_addr, datatype, 0, req);
+                break;
+            case ROFI_COLLECTIVE_ALLREDUCE:
+                ret = fi_allreduce(rofi->ep, src, count, NULL, dst, NULL, coll_addr, datatype, reduce_op, 0, req);
+                break;
+            case ROFI_COLLECTIVE_ALLGATHER:
+                ret = fi_allgather(rofi->ep, src, count, NULL, dst, NULL, coll_addr, datatype, 0, req);
+                break;
+            case ROFI_COLLECTIVE_REDUCE_SCATTER:
+                ret = fi_reduce_scatter(rofi->ep, src, count, NULL, dst, NULL, coll_addr, datatype, reduce_op, 0, req);
+                break;
+            case ROFI_COLLECTIVE_REDUCE:
+                ret = fi_reduce(rofi->ep, src, count, NULL, dst, NULL, coll_addr, root, datatype, reduce_op, 0, req);
+                break;
+            case ROFI_COLLECTIVE_SCATTER:
+                ret = fi_scatter(rofi->ep, src, count, NULL, dst, NULL, coll_addr, root, datatype, 0, req);
+                break;
+            case ROFI_COLLECTIVE_GATHER:
+                ret = fi_gather(rofi->ep, src, count, NULL, dst, NULL, coll_addr, root, datatype, 0, req);
+                break;
+            default:
+                ret = -FI_EINVAL;
+                break;
+        }
+        if (ret == -FI_EAGAIN) {
+            ret = rofi_transport_progress(rofi);
+            if (ret == 0) {
+                pthread_mutex_unlock(&rofi->lock);
+                sched_yield();
+                pthread_mutex_lock(&rofi->lock);
+                ret = -FI_EAGAIN;
+            }
+        }
+    } while (ret == -FI_EAGAIN);
+
+    if (ret) {
+        for (struct rofi_coll_req **cur = &rofi->coll_pending; *cur != NULL; cur = &(*cur)->next) {
+            if (*cur == req) {
+                *cur = req->next;
+                break;
+            }
+        }
+        pthread_mutex_unlock(&rofi->lock);
+        ROFI_TRANSPORT_ERR_MSG("collective post", ret);
+        free(req->bounce);
+        free(req);
+        return ret;
+    }
+    pthread_mutex_unlock(&rofi->lock);
+    *req_out = req;
+    return 0;
+}
+
+// Makes progress and checks whether the collective `req_ptr` (from rofi_transport_collective_post) has completed. Never
+// waits for the lock. Returns 1 when it has completed (the request is then released and must not be used again), 0 while
+// it is still running, and a negative error if it failed (also released) or progress failed (not released).
+int rofi_transport_collective_progress(rofi_transport_t *rofi, void *req_ptr) {
+    struct rofi_coll_req *req = (struct rofi_coll_req *)req_ptr;
+    if (!atomic_load_explicit(&req->done, memory_order_acquire)) {
+        if (pthread_mutex_trylock(&rofi->lock) != 0) {
+            return 0;
+        }
+        int ret = rofi_transport_progress(rofi);
+        pthread_mutex_unlock(&rofi->lock);
+        if (ret && !atomic_load_explicit(&req->done, memory_order_acquire)) {
+            return ret < 0 ? ret : -ret;
+        }
+        if (!atomic_load_explicit(&req->done, memory_order_acquire)) {
+            return 0;
+        }
+    }
+
+    pthread_mutex_lock(&rofi->lock);
+    for (struct rofi_coll_req **cur = &rofi->coll_pending; *cur != NULL; cur = &(*cur)->next) {
+        if (*cur == req) {
+            *cur = req->next;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&rofi->lock);
+    int err = req->err;
+    if (req->bounce != NULL) {
+        if (err == 0) {
+            memcpy(req->user_dst, req->bounce, req->user_bytes);
+        }
+        free(req->bounce);
+    }
+    free(req);
+    return err ? (err < 0 ? err : -err) : 1;
 }
 
 int euclid_rem(int a, int b) {

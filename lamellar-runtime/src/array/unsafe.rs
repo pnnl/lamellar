@@ -297,7 +297,9 @@ impl<T: Dist + ArrayOps + Default + 'static> UnsafeArray<T> {
         team.async_barrier().await;
         let task_group = LamellarTaskGroup::new(team.clone());
         let my_pe = team.team_pe_id().unwrap();
-        let num_pes = team.num_pes();
+        // the field, not `team.num_pes()`: on a `Darc<LamellarTeamRT>` that method call resolves to `Darc`'s own
+        // `LamellarEnv::num_pes`, the PE count of the team the Darc was created over (the parent of a sub-team)
+        let num_pes = team.num_pes;
         let full_array_size = std::cmp::max(array_size, num_pes);
 
         let elem_per_pe = full_array_size / num_pes;
@@ -613,6 +615,31 @@ impl<T: Dist + 'static> UnsafeArray<T> {
 
     pub(crate) fn team_rt(&self) -> Darc<LamellarTeamRT> {
         self.inner.data.team.clone()
+    }
+
+    // The array API names PEs by their rank in the array's team, but the memory region (the allocation under it) is addressed by
+    // world PE; for the world team the two are the same.
+    // The collectives of this array: each runs the backend's native implementation when it has one for the element type and
+    // the put/get algorithms (`array/collective/algorithm.rs`) when it does not, over the array's own region and sync
+    // allocation (the same choice the region collectives make).
+    pub(crate) fn region_collective(
+        &self,
+    ) -> crate::memregion::collective_manual::RegionCollective<T> {
+        use crate::memregion::collective_manual::{ArrayRegionSource, RegionCollective};
+        let data = &self.inner.data;
+        RegionCollective::for_array(
+            unsafe { data.mem_region.as_base::<T>() },
+            ArrayRegionSource::new(unsafe { data.mem_region.as_base::<T>() }, data.team.clone()),
+        )
+    }
+
+    pub(crate) fn world_pe(&self, team_pe: usize) -> usize {
+        let team = &self.inner.data.team;
+        if team.num_pes == team.num_world_pes {
+            team_pe
+        } else {
+            team.arch.world_pe(team_pe).expect("the PE is in the array's team")
+        }
     }
 
     //#[tracing::instrument(skip_all, level = "debug")]
@@ -1498,7 +1525,7 @@ impl<T: Dist + std::fmt::Debug> UnsafeArray<T> {
 impl<T: Dist + std::fmt::Debug> ArrayPrint<T> for UnsafeArray<T> {
     fn print(&self) {
         self.inner.data.team.tasking_barrier(); //TODO: have barrier accept a string so we can print where we are stalling.
-        for pe in 0..self.inner.data.team.num_pes() {
+        for pe in 0..self.inner.data.num_pes {
             self.inner.data.team.tasking_barrier();
             if self.inner.data.my_pe == pe {
                 println!("[pe {:?} data] {:?}", pe, unsafe { self.local_as_slice() });
@@ -1517,7 +1544,7 @@ impl<T: Dist + AmDist + 'static> UnsafeArray<T> {
     ) -> LamellarArcAm {
         REDUCE_OPS
             .get(&(std::any::TypeId::of::<T>(), op))
-            .expect("unexpected reduction type")(byte_array, self.inner.data.team.num_pes())
+            .expect("unexpected reduction type")(byte_array, self.inner.data.num_pes)
     }
     pub(crate) fn reduce_data_user(
         &self,

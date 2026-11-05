@@ -198,7 +198,8 @@ impl From<NetMemRegionHandle> for Arc<MemRegionHandleInner> {
                     orig_addr: net_handle.mr_addr,
                     my_id: (
                         ID_COUNTER.fetch_add(1, Ordering::Relaxed),
-                        team.team_pe.expect("pe not part of team"),
+                        // a world PE, like the creating side's `mr.pe` and the region's `pe` it is compared with
+                        team.world_pe,
                     ),
                     parent_id,
                     grand_parent_id,
@@ -384,10 +385,17 @@ impl Drop for MemRegionHandle {
                             "sending finished am {:?} pe: {:?}",
                             temp, self.inner.parent_id.1
                         );
+                        // the ids hold world PEs, the team addresses its members by rank
+                        let parent_rank = self
+                            .inner
+                            .team
+                            .arch
+                            .team_pe(self.inner.parent_id.1)
+                            .expect("parent pe not part of team");
                         let _ = self
                             .inner
                             .team
-                            .spawn_am_pe_tg(self.inner.parent_id.1, temp, None);
+                            .spawn_am_pe_tg(parent_rank, temp, None);
                     }
                 }
             } else {
@@ -503,10 +511,17 @@ impl LamellarAM for MemRegionDropWaitAm {
                                 cnt,
                                 parent_id: self.inner.grand_parent_id.into(),
                             };
+                            // the ids hold world PEs, the team addresses its members by rank
+                            let parent_rank = self
+                                .inner
+                                .team
+                                .arch
+                                .team_pe(self.inner.parent_id.1)
+                                .expect("parent pe not part of team");
                             let _ =
                                 self.inner
                                     .team
-                                    .spawn_am_pe_tg(self.inner.parent_id.1, temp, None);
+                                    .spawn_am_pe_tg(parent_rank, temp, None);
                         }
                     }
                     break;
@@ -554,10 +569,12 @@ pub struct OneSidedMemoryRegion<T: Remote> {
 
 impl<T: Remote> LamellarEnv for OneSidedMemoryRegion<T> {
     fn my_pe(&self) -> usize {
-        self.mr.inner.team.my_pe()
+        // the fields, not the methods: on a `Darc<LamellarTeamRT>` those resolve to `Darc`'s own `LamellarEnv`
+        // methods (the team the Darc was created over, the parent for a sub-team)
+        self.mr.inner.team.team_pe.expect("pe not part of team")
     }
     fn num_pes(&self) -> usize {
-        self.mr.inner.team.num_pes()
+        self.mr.inner.team.num_pes
     }
     fn num_threads_per_pe(&self) -> usize {
         self.mr.inner.team.num_threads_per_pe()

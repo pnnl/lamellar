@@ -53,13 +53,13 @@ impl<T: Dist> UnsafeArray<T> {
                 unsafe {
                     if unmanaged {
                         self.mem_region.put_buffer_unmanaged(
-                            pe,
+                            self.world_pe(pe),
                             offset,
                             buf.sub_region(buf_index..(buf_index + len)),
                         );
                     } else {
                         rdma_requests.push(self.mem_region.put_buffer(
-                            pe,
+                            self.world_pe(pe),
                             offset,
                             buf.sub_region(buf_index..(buf_index + len)),
                         ))
@@ -103,7 +103,7 @@ impl<T: Dist> UnsafeArray<T> {
             let offset = dist_index - pe_full_start_index;
             let len = std::cmp::min(full_num_elems_on_pe - offset, num_elems - buf_index);
             if len > 0 {
-                unsafe { rdma_requests.push_back(self.mem_region.get_buffer(pe, offset, len)) };
+                unsafe { rdma_requests.push_back(self.mem_region.get_buffer(self.world_pe(pe), offset, len)) };
                 buf_index += len;
                 dist_index += len;
             }
@@ -145,7 +145,7 @@ impl<T: Dist> UnsafeArray<T> {
                 let dsts = dst.split(len);
                 dst = dsts.1;
                 unsafe {
-                    rdma_requests.push_back(self.mem_region.get_into_buffer(pe, offset, dsts.0))
+                    rdma_requests.push_back(self.mem_region.get_into_buffer(self.world_pe(pe), offset, dsts.0))
                 };
                 buf_index += len;
                 dist_index += len;
@@ -188,7 +188,7 @@ impl<T: Dist> UnsafeArray<T> {
                 dst = dsts.1;
                 unsafe {
                     self.mem_region
-                        .get_into_buffer_unmanaged(pe, offset, dsts.0)
+                        .get_into_buffer_unmanaged(self.world_pe(pe), offset, dsts.0)
                 };
                 buf_index += len;
                 dist_index += len;
@@ -204,7 +204,7 @@ impl<T: Dist> UnsafeArray<T> {
     ) -> Vec<RdmaHandle<T>> {
         let global_index = index + self.inner.offset;
         let buf = buf.into();
-        let num_pes = self.inner.data.team.num_pes();
+        let num_pes = self.inner.data.num_pes;
         let num_elems_pe = buf.len() / num_pes + 1; //we add plus one to ensure we allocate enough space
         let start_pe = global_index % num_pes;
         let mut rdma_requests = Vec::new();
@@ -225,10 +225,10 @@ impl<T: Dist> UnsafeArray<T> {
                 }
                 if unmanaged {
                     unsafe {
-                        self.mem_region.put_buffer_unmanaged(pe, pe_index, data);
+                        self.mem_region.put_buffer_unmanaged(self.world_pe(pe), pe_index, data);
                     }
                 } else {
-                    unsafe { rdma_requests.push(self.mem_region.put_buffer(pe, pe_index, data)) };
+                    unsafe { rdma_requests.push(self.mem_region.put_buffer(self.world_pe(pe), pe_index, data)) };
                 }
             }
         }
@@ -242,7 +242,7 @@ impl<T: Dist> UnsafeArray<T> {
         num_elems: usize,
     ) -> FuturesOrdered<RdmaGetBufferHandle<T>> {
         let global_index = index + self.inner.offset;
-        let num_pes = self.inner.data.team.num_pes();
+        let num_pes = self.inner.data.num_pes;
         let start_pe = global_index % num_pes;
         let num_elems_pe = num_elems / num_pes; //we add plus one to ensure we allocate enough space
         let pe_start_index = global_index / num_pes;
@@ -259,7 +259,7 @@ impl<T: Dist> UnsafeArray<T> {
                 pe_num_elems += 1;
             }
             unsafe {
-                rdma_requests.push_back(self.mem_region.get_buffer(pe, pe_index, pe_num_elems))
+                rdma_requests.push_back(self.mem_region.get_buffer(self.world_pe(pe), pe_index, pe_num_elems))
             }
         }
         rdma_requests
@@ -535,7 +535,7 @@ impl<T: Dist> UnsafeArray<T> {
     //         .expect("index out of bounds in LamellarArray at");
     //     ArrayAtHandle {
     //         array: self.as_lamellar_byte_array(),
-    //         state: ArrayAtHandleState::Rdma(self.inner.data.mem_region.get(pe, offset)),
+    //         state: ArrayAtHandleState::Rdma(self.inner.data.mem_region.get(self.world_pe(pe), offset)),
     //     }
     // }
 
@@ -1129,7 +1129,7 @@ impl<T: Dist> UnsafeArray<T> {
     ///```
     pub unsafe fn blocking_get(&self, index: usize) -> T {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
-            let res = self.mem_region.blocking_get(pe, offset);
+            let res = self.mem_region.blocking_get(self.world_pe(pe), offset);
             res
         } else {
             panic!("index out of bounds in LamellarArray put");
@@ -1398,7 +1398,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// println!("PE{my_pe} read PE0[0] = {val}");
     ///```
     pub unsafe fn blocking_get_pe(&self, pe: usize, offset: usize) -> T {
-        self.mem_region.blocking_get(pe, offset)
+        self.mem_region.blocking_get(self.world_pe(pe), offset)
     }
 
     #[doc(alias("One-sided", "onesided"))]
@@ -1616,7 +1616,7 @@ impl<T: Dist> UnsafeArray<T> {
 impl<T: Dist> LamellarRdmaPut<T> for UnsafeArray<T> {
     unsafe fn put(&self, index: usize, data: T, _: Sealed) -> ArrayRdmaPutHandle<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
-            let req = self.mem_region.put(pe, offset, data);
+            let req = self.mem_region.put(self.world_pe(pe), offset, data);
             ArrayRdmaPutHandle {
                 array: self.as_lamellar_byte_array(),
                 state: ArrayRdmaPutState::RdmaPut(req),
@@ -1628,7 +1628,7 @@ impl<T: Dist> LamellarRdmaPut<T> for UnsafeArray<T> {
     }
     unsafe fn put_unmanaged(&self, index: usize, data: T, _: Sealed) {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
-            self.mem_region.put_unmanaged(pe, offset, data);
+            self.mem_region.put_unmanaged(self.world_pe(pe), offset, data);
         } else {
             panic!("index out of bounds in LamellarArray put");
         }
@@ -1665,7 +1665,7 @@ impl<T: Dist> LamellarRdmaPut<T> for UnsafeArray<T> {
         };
     }
     unsafe fn put_pe(&self, pe: usize, offset: usize, data: T, _: Sealed) -> ArrayRdmaPutHandle<T> {
-        let req = self.mem_region.put(pe, offset, data);
+        let req = self.mem_region.put(self.world_pe(pe), offset, data);
         ArrayRdmaPutHandle {
             array: self.as_lamellar_byte_array(),
             state: ArrayRdmaPutState::RdmaPut(req),
@@ -1673,7 +1673,7 @@ impl<T: Dist> LamellarRdmaPut<T> for UnsafeArray<T> {
         }
     }
     unsafe fn put_pe_unmanaged(&self, pe: usize, offset: usize, data: T, _: Sealed) {
-        self.mem_region.put_unmanaged(pe, offset, data);
+        self.mem_region.put_unmanaged(self.world_pe(pe), offset, data);
     }
     unsafe fn put_pe_buffer<U: Into<MemregionRdmaInputInner<T>>>(
         &self,
@@ -1682,7 +1682,7 @@ impl<T: Dist> LamellarRdmaPut<T> for UnsafeArray<T> {
         buf: U,
         _: Sealed,
     ) -> ArrayRdmaPutHandle<T> {
-        let req = self.mem_region.put_buffer(pe, offset, buf);
+        let req = self.mem_region.put_buffer(self.world_pe(pe), offset, buf);
         ArrayRdmaPutHandle {
             array: self.as_lamellar_byte_array(),
             state: ArrayRdmaPutState::RdmaPut(req),
@@ -1696,7 +1696,7 @@ impl<T: Dist> LamellarRdmaPut<T> for UnsafeArray<T> {
         buf: U,
         _: Sealed,
     ) {
-        self.mem_region.put_buffer_unmanaged(pe, offset, buf);
+        self.mem_region.put_buffer_unmanaged(self.world_pe(pe), offset, buf);
     }
 
     unsafe fn put_all(&self, offset: usize, data: T, _: Sealed) -> ArrayRdmaPutHandle<T> {
@@ -1736,7 +1736,7 @@ impl<T: Dist> LamellarRdmaPut<T> for UnsafeArray<T> {
 impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
     unsafe fn get(&self, index: usize, _: Sealed) -> ArrayRdmaGetHandle<T> {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
-            let req = self.mem_region.get(pe, offset);
+            let req = self.mem_region.get(self.world_pe(pe), offset);
             ArrayRdmaGetHandle {
                 array: self.as_lamellar_byte_array(),
                 state: ArrayRdmaGetState::RdmaGet(req),
@@ -1748,7 +1748,7 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
     }
     unsafe fn blocking_get(&self, index: usize, _: Sealed) -> T {
         if let Some((pe, offset)) = self.pe_and_rdma_offset_for_global_index(index) {
-            self.mem_region.blocking_get(pe, offset)
+            self.mem_region.blocking_get(self.world_pe(pe), offset)
         } else {
             panic!("index out of bounds in LamellarArray put");
         }
@@ -1840,7 +1840,7 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
     }
 
     unsafe fn get_pe(&self, pe: usize, offset: usize, _: Sealed) -> ArrayRdmaGetHandle<T> {
-        let req = self.mem_region.get(pe, offset);
+        let req = self.mem_region.get(self.world_pe(pe), offset);
         ArrayRdmaGetHandle {
             array: self.as_lamellar_byte_array(),
             state: ArrayRdmaGetState::RdmaGet(req),
@@ -1848,7 +1848,7 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
         }
     }
     unsafe fn blocking_get_pe(&self, pe: usize, offset: usize, _: Sealed) -> T {
-        self.mem_region.blocking_get(pe, offset)
+        self.mem_region.blocking_get(self.world_pe(pe), offset)
     }
     unsafe fn get_buffer_pe(
         &self,
@@ -1857,7 +1857,7 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
         num_elems: usize,
         _: Sealed,
     ) -> ArrayRdmaGetBufferHandle<T> {
-        let req = self.mem_region.get_buffer(pe, offset, num_elems);
+        let req = self.mem_region.get_buffer(self.world_pe(pe), offset, num_elems);
         ArrayRdmaGetBufferHandle {
             array: self.as_lamellar_byte_array(),
             state: ArrayRdmaGetBufferState::RdmaGet(req),
@@ -1871,7 +1871,7 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
         num_elems: usize,
         _: Sealed,
     ) -> Vec<T> {
-        self.mem_region.blocking_get_buffer(pe, offset, num_elems)
+        self.mem_region.blocking_get_buffer(self.world_pe(pe), offset, num_elems)
     }
 
     unsafe fn get_into_buffer_pe<B: AsLamellarBuffer<T>>(
@@ -1881,7 +1881,7 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
         data: LamellarBuffer<T, B>,
         _: Sealed,
     ) -> ArrayRdmaGetIntoBufferHandle<T, B> {
-        let req = self.mem_region.get_into_buffer(pe, offset, data);
+        let req = self.mem_region.get_into_buffer(self.world_pe(pe), offset, data);
         ArrayRdmaGetIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
             state: ArrayRdmaGetIntoBufferState::RdmaGet(req),
@@ -1895,7 +1895,7 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
         data: LamellarBuffer<T, B>,
         _: Sealed,
     ) {
-        self.mem_region.blocking_get_into_buffer(pe, offset, data);
+        self.mem_region.blocking_get_into_buffer(self.world_pe(pe), offset, data);
     }
     unsafe fn get_into_buffer_unmanaged_pe<B: AsLamellarBuffer<T>>(
         &self,
@@ -1904,8 +1904,8 @@ impl<T: Dist> LamellarRdmaGet<T> for UnsafeArray<T> {
         data: LamellarBuffer<T, B>,
         _: Sealed,
     ) {
-        // let _ = self.mem_region.get_into_buffer(pe, offset, data).spawn();
-        self.mem_region.get_into_buffer_unmanaged(pe, offset, data);
+        // let _ = self.mem_region.get_into_buffer(self.world_pe(pe), offset, data).spawn();
+        self.mem_region.get_into_buffer_unmanaged(self.world_pe(pe), offset, data);
     }
 }
 

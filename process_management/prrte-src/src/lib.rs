@@ -83,6 +83,44 @@ impl Artifacts {
     }
 }
 
+/// Install the `src/docs/show-help-files/help-*.txt` files into `<prefix>/share/prte`.
+///
+/// prterun looks its error texts up in `<prefix>/share/prte/help-*.txt`. The upstream rules that install
+/// the files in `src/docs/show-help-files` lived in `src/docs/Makefile.am`, which the vendored-tree trim
+/// removed, so `make install` only installs the few help files that sit next to a component. Without the
+/// rest, a PRRTE error prints "Sorry! You were supposed to get help about: <topic> ... couldn't open the
+/// help file" and the real message is lost. Existing files are left alone.
+fn install_help_files(src_tree: &Path, prefix: &Path) {
+    let from = src_tree.join("src/docs/show-help-files");
+    let to = prefix.join("share/prte");
+    let entries = match std::fs::read_dir(&from) {
+        Ok(entries) => entries,
+        Err(e) => {
+            println!(
+                "cargo:warning=prrte-src: cannot read {} ({e}); PRRTE error messages will be missing their help text",
+                from.display()
+            );
+            return;
+        }
+    };
+    if let Err(e) = std::fs::create_dir_all(&to) {
+        println!("cargo:warning=prrte-src: cannot create {} ({e})", to.display());
+        return;
+    }
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let is_help = path.extension().map_or(false, |e| e == "txt")
+            && name.to_string_lossy().starts_with("help-");
+        let dst = to.join(&name);
+        if is_help && !dst.exists() {
+            if let Err(e) = std::fs::copy(&path, &dst) {
+                println!("cargo:warning=prrte-src: cannot install {} ({e})", dst.display());
+            }
+        }
+    }
+}
+
 fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src.is_dir() {
         if dst.exists() && !dst.is_dir() {
@@ -263,7 +301,7 @@ impl Build {
             prrte_config.with("pmix", Some(dir));
         }
         let prrte_build = prrte_config.build();
-
+        install_help_files(&prrte_path, &prrte_build);
 
         let include_dir = prrte_build.join("include");
         let lib_dir = prrte_build.join("lib");

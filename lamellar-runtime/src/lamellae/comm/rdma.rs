@@ -52,9 +52,13 @@ use std::{
 
 /// Marker trait for types that can be used as the element type of an RDMA operation.
 ///
-/// A type is `Remote` if it is `Copy + Sync + Send + Default + 'static`.
+/// A type is `Remote` if it is `Copy + Sync + Send + 'static` (there is a blanket impl, and `Default` is not required).
 /// This is a blanket requirement because RDMA transfers raw bytes and the receiving
 /// PE must be able to construct a valid `T` from those bytes without any allocations.
+///
+/// Region collectives that run as put/get algorithms (the backend has no native version for the operation or element
+/// type) build their scratch buffers zero-filled, so for those the all-zero bit pattern must be a valid `T`. That holds
+/// for the integer and float types the reductions support; it does not hold for types such as `NonZeroU32`.
 pub trait Remote: Copy + Sync + Send + 'static {}
 impl<T: Copy + Sync + Send + 'static> Remote for T {}
 

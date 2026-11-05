@@ -401,7 +401,7 @@ impl CommAllocRdma for ShmemAlloc {
         assert!(offset + std::mem::size_of::<T>() <= self.num_bytes());
         let pe_addrs = (0..self.num_pes())
             .map(|pe| {
-                let real_dst_base = self.pe_base_offset(pe);
+                let real_dst_base = self.pe_base_offset_rel(pe);
                 let real_dst_addr = real_dst_base + offset;
                 CommAllocAddr(real_dst_addr)
             })
@@ -418,7 +418,7 @@ impl CommAllocRdma for ShmemAlloc {
         let offset = offset * std::mem::size_of::<T>();
         assert!(offset + std::mem::size_of::<T>() <= self.num_bytes());
         for pe in 0..self.num_pes() {
-            let real_dst_base = self.pe_base_offset(pe);
+            let real_dst_base = self.pe_base_offset_rel(pe);
             let real_dst_addr = real_dst_base + offset;
             let dst = CommAllocAddr(real_dst_addr);
             unsafe {
@@ -439,7 +439,7 @@ impl CommAllocRdma for ShmemAlloc {
         assert!(offset + src.len() * std::mem::size_of::<T>() <= self.num_bytes());
         let pe_addrs = (0..self.num_pes())
             .map(|pe| {
-                let real_dst_base = self.pe_base_offset(pe);
+                let real_dst_base = self.pe_base_offset_rel(pe);
                 let real_dst_addr = real_dst_base + offset;
                 CommAllocAddr(real_dst_addr)
             })
@@ -461,7 +461,7 @@ impl CommAllocRdma for ShmemAlloc {
         let src = src.into();
         assert!(offset + src.len() * std::mem::size_of::<T>() <= self.num_bytes());
         for pe in 0..self.num_pes() {
-            let real_dst_base = self.pe_base_offset(pe);
+            let real_dst_base = self.pe_base_offset_rel(pe);
             let real_dst_addr = real_dst_base + offset;
             let dst = CommAllocAddr(real_dst_addr);
             if !(src.contains(&dst) || src.contains(&(dst + src.num_bytes()))) {

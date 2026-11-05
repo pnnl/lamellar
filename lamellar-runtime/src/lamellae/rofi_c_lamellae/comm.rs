@@ -119,8 +119,10 @@ impl CommInfo for RofiCComm {
     fn atomic_op_avail<T: 'static>(&self, op: AtomicOp<T>) -> bool {
         self.rofi_c.atomic_op_avail(&op)
     }
-    fn collective_avail<T: 'static>(&self, _op: CollectiveOpKind) -> bool {
-        false
+    // Native collectives come from libfabric through ROFI (see `rofi_c_lamellae/collective.rs`); what the provider does not
+    // implement for `op` and `T` is false here, which sends region and array collectives to the put/get algorithms.
+    fn collective_avail<T: 'static>(&self, op: CollectiveOpKind) -> bool {
+        rofi_c_collective_avail::<T>(&op)
     }
 }
 

@@ -328,6 +328,20 @@ providers enabled.
 - **hwloc is not found:** only happens when linking a system hwloc (a system
   PMIx, or `HWLOC_DIR` set) — install its development package and point
   `HWLOC_DIR` at the install prefix.
+- **`configure: error: UCX support is requested but UCX packages cannot be found`
+  (or `xpmem_*` undefined symbols) on a Cray/HPE system:** the Cray `cc`/`CC`
+  compiler wrappers add their own link flags to every link, which breaks the
+  vendored UCC configure probe. The `lamellar-ucx-sys` and `lamellar-ucc-sys`
+  build scripts test the compiler with a small link first and, if that fails,
+  use the compiler underneath the wrapper (found with `-craype-verbose`,
+  `-show`/`-showme`, `PE_ENV`, or plain `gcc`/`g++`), printing a
+  `cargo:warning`. Set `LAMELLAR_FALLBACK_CC`/`LAMELLAR_FALLBACK_CXX` to choose
+  the compilers yourself, or `LAMELLAR_NO_COMPILER_FALLBACK=1` to turn the
+  check off. The other vendored libraries (PMIx, libfabric, ...) do not have
+  this check yet, so on such systems `export CC=gcc CXX=g++` is still the
+  reliable setting. The fallback cannot change the final Rust link, which uses
+  `cc` from `PATH`: if that step fails, set
+  `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc`.
 - **Linker errors for `ibverbs`, `rdmacm`, `numa`, or `uuid`:** install the
   matching RDMA/NUMA/UUID development packages for the enabled transport.
 - **Build still compiles PMIx/PRRTE from source despite `*_LIB_DIR` being

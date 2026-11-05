@@ -2223,6 +2223,23 @@ impl LibfabricAlloc {
     pub(crate) fn num_pes(&self) -> usize {
         self.remote_allocs.len()
     }
+
+    /// The world PEs the allocation spans, in order (`remote_allocs` is keyed by them: all PEs for a world allocation, the
+    /// members for a sub-team's). `0..num_pes()` is only those PEs for a world allocation.
+    pub(crate) fn all_pes(&self) -> Vec<usize> {
+        let mut pes: Vec<usize> = self.remote_allocs.keys().copied().collect();
+        pes.sort_unstable();
+        pes
+    }
+
+    /// This PE's team PE (its position in `all_pes`; team PEs follow ascending world PE order). libfabric's
+    /// collective provider takes a collective's root as this team PE, which equals the fabric address of the PE only in the world group.
+    pub(crate) fn team_pe(&self) -> usize {
+        self.all_pes()
+            .iter()
+            .position(|pe| *pe == self.ofi.my_pe)
+            .expect("this PE is in the allocation")
+    }
     pub(crate) fn sub_alloc(&self, offset: usize, len: usize) -> AllocResult<Self> {
         if offset + len > self.num_bytes() {
             return Err(AllocError::InvalidSubAlloc(offset, len));
@@ -3300,7 +3317,7 @@ impl LibfabricAlloc {
             .as_ref()
             .expect("No multicast group for collective reduce");
         let (result, root_pe) = match slice_or_pe {
-            RootOrSliceMut::Root(result) => (Some(result), self.ofi.my_pe),
+            RootOrSliceMut::Root(result) => (Some(result), self.team_pe()),
             RootOrSliceMut::NotRoot(root_pe) => (None, root_pe),
         };
 
@@ -3382,7 +3399,7 @@ impl LibfabricAlloc {
             .as_ref()
             .expect("No multicast group for collective reduce");
         let (result, root_pe) = match slice_or_pe {
-            RootOrSliceMut::Root(result) => (Some(result), self.ofi.my_pe),
+            RootOrSliceMut::Root(result) => (Some(result), self.team_pe()),
             RootOrSliceMut::NotRoot(root_pe) => (None, root_pe),
         };
         let res = match result {
@@ -3460,47 +3477,22 @@ impl LibfabricAlloc {
             .as_ref()
             .expect("No multicast group for collective reduce");
         let (result, root_pe, is_root) = match slice_or_pe {
-            RootSrcOrSliceMut::Root(src) => (src, self.ofi.my_pe, true),
+            RootSrcOrSliceMut::Root(src) => (src, self.team_pe(), true),
             RootSrcOrSliceMut::NotRoot(result, root_pe) => (result, root_pe, false),
         };
         let res = unsafe { std::mem::transmute::<&mut [T], &mut [OFI]>(result) };
-        // libfabric's coll provider (libfabric 1.22, prov/coll `coll_ep_broadcast`) scatters and then allgathers
-        // `ceil(len / ranks)` elements per rank through the caller's buffer, i.e. it reads and writes
-        // `ceil(len / ranks) * ranks` elements. When `len` is not a multiple of the group size that overruns the
-        // buffer and corrupts the heap (which shows up as hangs and wrong data). Go through a zero-padded bounce
-        // buffer in that case. The result is copied back after completion, so this path waits for the collective here
-        // instead of returning with it in flight.
-        let ranks = self.num_pes();
-        if ranks > 1 && !res.is_empty() && res.len() % ranks != 0 {
-            let len = res.len();
-            let padded_len = len.div_ceil(ranks) * ranks;
-            let mut padded: Vec<std::mem::MaybeUninit<OFI>> = (0..padded_len)
-                .map(|_| std::mem::MaybeUninit::<OFI>::zeroed())
-                .collect();
-            std::ptr::copy_nonoverlapping(res.as_ptr(), padded.as_mut_ptr() as *mut OFI, len);
-            let padded_slice = std::slice::from_raw_parts_mut(padded.as_mut_ptr() as *mut OFI, padded_len);
-            cg.post_collective(true, || {
+        // libfabric's collective provider overruns the buffer when its length is not a multiple of the group size;
+        // `broadcast_padded` goes through a padded copy in that case (see it)
+        crate::lamellae::collective::broadcast_padded(res, self.num_pes(), is_root, blocking, |buf, blocking| {
+            cg.post_collective(blocking, || {
                 cg.ep.broadcast(
-                    padded_slice,
+                    buf,
                     None,
                     mc,
                     &cg.mapped_addresses[root_pe],
                     CollectiveOptions::default(),
                 )
-            })?;
-            if !is_root {
-                std::ptr::copy_nonoverlapping(padded.as_ptr() as *const OFI, res.as_mut_ptr(), len);
-            }
-            return Ok(());
-        }
-        cg.post_collective(blocking, || {
-            cg.ep.broadcast(
-                res,
-                None,
-                mc,
-                &cg.mapped_addresses[root_pe],
-                CollectiveOptions::default(),
-            )
+            })
         })?;
 
         Ok(())
@@ -3564,7 +3556,7 @@ impl LibfabricAlloc {
         let (src, root_pe) = match src_or_root_pe {
             RootSrcSliceOrNone::Root(src) => (
                 unsafe { std::mem::transmute::<&[T], &[OFI]>(src) },
-                self.ofi.my_pe,
+                self.team_pe(),
             ),
             RootSrcSliceOrNone::NotRoot(root_pe) => (
                 unsafe { std::slice::from_raw_parts(res.as_ptr(), res.len()) },

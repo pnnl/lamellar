@@ -62,7 +62,8 @@ pub fn generic_help_text_with_prefix(prefix: &str) -> String {
     s.push_str(&format!("  --threads-per-pe <n>   worker threads per PE [env: {prefix}_THREADS]\n"));
     s.push_str(&format!("  --log <filter>         tracing filter for the launched job (RUST_LOG syntax) [env: {prefix}_LOG]\n"));
     if cfg!(feature = "with-salloc") {
-        s.push_str("  --salloc-opts <opts>   extra options passed to `salloc` when requesting an allocation\n");
+        s.push_str("  --salloc-opts <opts>   extra options passed to `salloc` when requesting an allocation; takes every\n");
+        s.push_str("                         following argument up to a `--` terminator, and splits quoted values on whitespace\n");
     }
     s.push_str("  --output-dir <dir>     directory to write per-PE stdout/stderr into\n");
     s.push_str(&format!("  --time                 report wall-clock application time [env: {prefix}_MAIN_TIME]\n"));
@@ -217,6 +218,89 @@ pub fn cores_per_package() -> Option<u32> {
         return None;
     }
     Some((cores / packages).max(1))
+}
+
+/// Threads per PE (and, under prterun, the cores `PE=` binds each PE to) when the user gave no count: the node's `cores` shared
+/// by the `pes_per_node` PEs on it. A bound PE must not straddle two packages (PRRTE refuses: "bound to CPUs in more than one
+/// package"), and prterun hands the cores out in order, so when the plain division leaves a PE across a package boundary (3 PEs
+/// on two 32-core packages: 21 each puts the second PE on cores 21-41) the count is lowered until every package holds a whole
+/// number of PEs and the packages together hold all of them (16 each: cores 0-15 and 16-31 in the first package, 32-47 in the
+/// second). `packages` is the number of packages (`None` when unknown, which keeps the plain division). A PE bigger than a
+/// package is returned unchanged: the caller already leaves such a PE unbound.
+pub fn default_threads_per_pe(cores: u32, pes_per_node: u32, packages: Option<u32>) -> u32 {
+    let pes = pes_per_node.max(1);
+    let mut per_pe = (cores / pes).max(1);
+    let packages = match packages {
+        Some(p) if p > 1 => p,
+        _ => return per_pe,
+    };
+    let per_package = cores / packages;
+    if per_pe > per_package {
+        return per_pe;
+    }
+    while per_pe > 1 && packages * (per_package / per_pe) < pes {
+        per_pe -= 1;
+    }
+    per_pe
+}
+
+#[cfg(test)]
+mod default_threads_per_pe_tests {
+    use super::default_threads_per_pe;
+
+    #[test]
+    fn divides_evenly_when_that_fits_the_packages() {
+        // 64 cores in 2 packages of 32
+        assert_eq!(default_threads_per_pe(64, 2, Some(2)), 32);
+        assert_eq!(default_threads_per_pe(64, 4, Some(2)), 16);
+        assert_eq!(default_threads_per_pe(64, 8, Some(2)), 8);
+        assert_eq!(default_threads_per_pe(64, 64, Some(2)), 1);
+    }
+
+    #[test]
+    fn does_not_straddle_a_package_boundary() {
+        // 64 / 3 = 21 would put the second PE on cores 21-41, across the boundary at 32
+        assert_eq!(default_threads_per_pe(64, 3, Some(2)), 16);
+        assert_eq!(default_threads_per_pe(64, 5, Some(2)), 10);
+        assert_eq!(default_threads_per_pe(64, 7, Some(2)), 8);
+        // four packages of 16: 5 PEs need 2 per package
+        assert_eq!(default_threads_per_pe(64, 5, Some(4)), 8);
+    }
+
+    #[test]
+    fn every_pe_fits_in_one_package() {
+        for packages in [2u32, 4] {
+            for cores in [32u32, 48, 64, 96, 128] {
+                if cores % packages != 0 {
+                    continue;
+                }
+                for pes in 1..=cores {
+                    let per_pe = default_threads_per_pe(cores, pes, Some(packages));
+                    let per_package = cores / packages;
+                    if cores / pes > per_package {
+                        continue; // a PE wider than a package is left to the caller
+                    }
+                    assert!(per_pe >= 1 && per_pe <= per_package, "{cores} cores, {packages} packages, {pes} PEs -> {per_pe}");
+                    assert!(
+                        packages * (per_package / per_pe) >= pes,
+                        "{cores} cores, {packages} packages, {pes} PEs -> {per_pe} leaves PEs across a boundary"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn plain_division_without_package_information() {
+        assert_eq!(default_threads_per_pe(64, 3, None), 21);
+        assert_eq!(default_threads_per_pe(64, 3, Some(1)), 21);
+        assert_eq!(default_threads_per_pe(64, 0, Some(2)), 64);
+    }
+
+    #[test]
+    fn a_pe_wider_than_a_package_is_unchanged() {
+        assert_eq!(default_threads_per_pe(64, 1, Some(2)), 64);
+    }
 }
 
 /// Cores per PE requested by an explicit binding among `args`, the raw launcher

@@ -54,12 +54,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// let _result = unsafe { array.sum_all(0, array.num_elems_local()) }.block();
     ///```
     pub unsafe fn sum_all(&self, index: usize, len: usize) -> ArrayCollectiveAllReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all(index, len, ReduceOp::Sum);
+        let req = self.region_collective().reduce_all(index, len, ReduceOp::Sum);
 
         ArrayCollectiveAllReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -91,12 +86,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// let _result = unsafe { array.max_all(0, array.num_elems_local()) }.block();
     ///```
     pub unsafe fn max_all(&self, index: usize, len: usize) -> ArrayCollectiveAllReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all(index, len, ReduceOp::Max);
+        let req = self.region_collective().reduce_all(index, len, ReduceOp::Max);
 
         ArrayCollectiveAllReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -128,12 +118,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// let _result = unsafe { array.min_all(0, array.num_elems_local()) }.block();
     ///```
     pub unsafe fn min_all(&self, index: usize, len: usize) -> ArrayCollectiveAllReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all(index, len, ReduceOp::Min);
+        let req = self.region_collective().reduce_all(index, len, ReduceOp::Min);
 
         ArrayCollectiveAllReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -165,12 +150,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// let _result = unsafe { array.prod_all(0, array.num_elems_local()) }.block();
     ///```
     pub unsafe fn prod_all(&self, index: usize, len: usize) -> ArrayCollectiveAllReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all(index, len, ReduceOp::Prod);
+        let req = self.region_collective().reduce_all(index, len, ReduceOp::Prod);
 
         ArrayCollectiveAllReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -207,11 +187,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveAllReduceHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_all(index, len, ReduceOp::BitAnd);
+            self.region_collective().reduce_all(index, len, ReduceOp::BitAnd);
 
         ArrayCollectiveAllReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -248,11 +224,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveAllReduceHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_all(index, len, ReduceOp::BitXor);
+            self.region_collective().reduce_all(index, len, ReduceOp::BitXor);
 
         ArrayCollectiveAllReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -284,12 +256,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// let _result = unsafe { array.bit_or_all(0, array.num_elems_local()) }.block();
     ///```
     pub unsafe fn bit_or_all(&self, index: usize, len: usize) -> ArrayCollectiveAllReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all(index, len, ReduceOp::BitOr);
+        let req = self.region_collective().reduce_all(index, len, ReduceOp::BitOr);
 
         ArrayCollectiveAllReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -331,12 +298,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_into_buffer(index, len, ReduceOp::Sum, buffer);
+        let req = self.region_collective().reduce_all_into_buffer(index, len, ReduceOp::Sum, buffer);
 
         ArrayCollectiveAllReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -376,12 +338,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_into_buffer(index, len, ReduceOp::Max, buffer);
+        let req = self.region_collective().reduce_all_into_buffer(index, len, ReduceOp::Max, buffer);
 
         ArrayCollectiveAllReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -421,12 +378,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_into_buffer(index, len, ReduceOp::Min, buffer);
+        let req = self.region_collective().reduce_all_into_buffer(index, len, ReduceOp::Min, buffer);
 
         ArrayCollectiveAllReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -466,12 +418,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_into_buffer(index, len, ReduceOp::Prod, buffer);
+        let req = self.region_collective().reduce_all_into_buffer(index, len, ReduceOp::Prod, buffer);
 
         ArrayCollectiveAllReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -511,12 +458,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_into_buffer(index, len, ReduceOp::BitAnd, buffer);
+        let req = self.region_collective().reduce_all_into_buffer(index, len, ReduceOp::BitAnd, buffer);
 
         ArrayCollectiveAllReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -556,12 +498,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_into_buffer(index, len, ReduceOp::BitXor, buffer);
+        let req = self.region_collective().reduce_all_into_buffer(index, len, ReduceOp::BitXor, buffer);
 
         ArrayCollectiveAllReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -601,12 +538,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_into_buffer(index, len, ReduceOp::BitOr, buffer);
+        let req = self.region_collective().reduce_all_into_buffer(index, len, ReduceOp::BitOr, buffer);
 
         ArrayCollectiveAllReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -645,12 +577,7 @@ impl<T: Dist> UnsafeArray<T> {
         &self,
         src_and_dst: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceInPlaceHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_in_place(src_and_dst, ReduceOp::Sum);
+        let req = self.region_collective().reduce_all_in_place(src_and_dst, ReduceOp::Sum);
 
         ArrayCollectiveAllReduceInPlaceHandle {
             array: self.as_lamellar_byte_array(),
@@ -687,12 +614,7 @@ impl<T: Dist> UnsafeArray<T> {
         &self,
         src_and_dst: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceInPlaceHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_in_place(src_and_dst, ReduceOp::Max);
+        let req = self.region_collective().reduce_all_in_place(src_and_dst, ReduceOp::Max);
 
         ArrayCollectiveAllReduceInPlaceHandle {
             array: self.as_lamellar_byte_array(),
@@ -729,12 +651,7 @@ impl<T: Dist> UnsafeArray<T> {
         &self,
         src_and_dst: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceInPlaceHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_in_place(src_and_dst, ReduceOp::Min);
+        let req = self.region_collective().reduce_all_in_place(src_and_dst, ReduceOp::Min);
 
         ArrayCollectiveAllReduceInPlaceHandle {
             array: self.as_lamellar_byte_array(),
@@ -771,12 +688,7 @@ impl<T: Dist> UnsafeArray<T> {
         &self,
         src_and_dst: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceInPlaceHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_in_place(src_and_dst, ReduceOp::Prod);
+        let req = self.region_collective().reduce_all_in_place(src_and_dst, ReduceOp::Prod);
 
         ArrayCollectiveAllReduceInPlaceHandle {
             array: self.as_lamellar_byte_array(),
@@ -813,12 +725,7 @@ impl<T: Dist> UnsafeArray<T> {
         &self,
         src_and_dst: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceInPlaceHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_in_place(src_and_dst, ReduceOp::BitAnd);
+        let req = self.region_collective().reduce_all_in_place(src_and_dst, ReduceOp::BitAnd);
 
         ArrayCollectiveAllReduceInPlaceHandle {
             array: self.as_lamellar_byte_array(),
@@ -855,12 +762,7 @@ impl<T: Dist> UnsafeArray<T> {
         &self,
         src_and_dst: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceInPlaceHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_in_place(src_and_dst, ReduceOp::BitXor);
+        let req = self.region_collective().reduce_all_in_place(src_and_dst, ReduceOp::BitXor);
 
         ArrayCollectiveAllReduceInPlaceHandle {
             array: self.as_lamellar_byte_array(),
@@ -897,12 +799,7 @@ impl<T: Dist> UnsafeArray<T> {
         &self,
         src_and_dst: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllReduceInPlaceHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_all_in_place(src_and_dst, ReduceOp::BitOr);
+        let req = self.region_collective().reduce_all_in_place(src_and_dst, ReduceOp::BitOr);
 
         ArrayCollectiveAllReduceInPlaceHandle {
             array: self.as_lamellar_byte_array(),
@@ -942,12 +839,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         pe: usize,
     ) -> ArrayCollectiveReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce(ReduceOp::Sum, index, len, pe);
+        let req = self.region_collective().reduce(ReduceOp::Sum, index, len, pe);
 
         ArrayCollectiveReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -985,12 +877,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         pe: usize,
     ) -> ArrayCollectiveReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce(ReduceOp::Max, index, len, pe);
+        let req = self.region_collective().reduce(ReduceOp::Max, index, len, pe);
 
         ArrayCollectiveReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -1028,12 +915,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         pe: usize,
     ) -> ArrayCollectiveReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce(ReduceOp::Min, index, len, pe);
+        let req = self.region_collective().reduce(ReduceOp::Min, index, len, pe);
 
         ArrayCollectiveReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -1071,12 +953,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         pe: usize,
     ) -> ArrayCollectiveReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce(ReduceOp::Prod, index, len, pe);
+        let req = self.region_collective().reduce(ReduceOp::Prod, index, len, pe);
 
         ArrayCollectiveReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -1114,12 +991,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         pe: usize,
     ) -> ArrayCollectiveReduceHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce(ReduceOp::BitOr, index, len, pe);
+        let req = self.region_collective().reduce(ReduceOp::BitOr, index, len, pe);
 
         ArrayCollectiveReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -1158,11 +1030,7 @@ impl<T: Dist> UnsafeArray<T> {
         pe: usize,
     ) -> ArrayCollectiveReduceHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce(ReduceOp::BitAnd, index, len, pe);
+            self.region_collective().reduce(ReduceOp::BitAnd, index, len, pe);
 
         ArrayCollectiveReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -1201,11 +1069,7 @@ impl<T: Dist> UnsafeArray<T> {
         pe: usize,
     ) -> ArrayCollectiveReduceHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce(ReduceOp::BitXor, index, len, pe);
+            self.region_collective().reduce(ReduceOp::BitXor, index, len, pe);
 
         ArrayCollectiveReduceHandle {
             array: self.as_lamellar_byte_array(),
@@ -1248,12 +1112,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_into_buffer(ReduceOp::Sum, index, len, dst);
+        let req = self.region_collective().reduce_into_buffer(ReduceOp::Sum, index, len, dst);
 
         ArrayCollectiveReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1294,12 +1153,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_into_buffer(ReduceOp::Max, index, len, dst);
+        let req = self.region_collective().reduce_into_buffer(ReduceOp::Max, index, len, dst);
 
         ArrayCollectiveReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1340,12 +1194,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_into_buffer(ReduceOp::Min, index, len, dst);
+        let req = self.region_collective().reduce_into_buffer(ReduceOp::Min, index, len, dst);
 
         ArrayCollectiveReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1386,12 +1235,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_into_buffer(ReduceOp::Prod, index, len, dst);
+        let req = self.region_collective().reduce_into_buffer(ReduceOp::Prod, index, len, dst);
 
         ArrayCollectiveReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1432,12 +1276,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_into_buffer(ReduceOp::BitOr, index, len, dst);
+        let req = self.region_collective().reduce_into_buffer(ReduceOp::BitOr, index, len, dst);
 
         ArrayCollectiveReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1478,12 +1317,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_into_buffer(ReduceOp::BitAnd, index, len, dst);
+        let req = self.region_collective().reduce_into_buffer(ReduceOp::BitAnd, index, len, dst);
 
         ArrayCollectiveReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1524,12 +1358,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_into_buffer(ReduceOp::BitXor, index, len, dst);
+        let req = self.region_collective().reduce_into_buffer(ReduceOp::BitXor, index, len, dst);
 
         ArrayCollectiveReduceIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1670,12 +1499,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// let _result = unsafe { array.gather_all(0, array.num_elems_local()) }.block();
     ///```
     pub unsafe fn gather_all(&self, index: usize, len: usize) -> ArrayCollectiveAllGatherHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .gather_all(index, len);
+        let req = self.region_collective().gather_all(index, len);
 
         ArrayCollectiveAllGatherHandle {
             array: self.as_lamellar_byte_array(),
@@ -1717,12 +1541,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllGatherIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .gather_all_into_buffer(index, len, buffer);
+        let req = self.region_collective().gather_all_into_buffer(index, len, buffer);
 
         ArrayCollectiveAllGatherIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1762,12 +1581,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         pe: usize,
     ) -> ArrayCollectiveGatherHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .gather(index, len, pe);
+        let req = self.region_collective().gather(index, len, pe);
 
         ArrayCollectiveGatherHandle {
             array: self.as_lamellar_byte_array(),
@@ -1809,12 +1623,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         dst: RootOrLamellarBuffer<T, B>,
     ) -> ArrayCollectiveGatherIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .gather_into_buffer(index, len, dst);
+        let req = self.region_collective().gather_into_buffer(index, len, dst);
 
         ArrayCollectiveGatherIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1849,12 +1658,7 @@ impl<T: Dist> UnsafeArray<T> {
     /// let _result = unsafe { array.alltoall(0, array.num_elems_local()) }.block();
     ///```
     pub unsafe fn alltoall(&self, index: usize, len: usize) -> ArrayCollectiveAllToAllHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .alltoall(index, len);
+        let req = self.region_collective().alltoall(index, len);
 
         ArrayCollectiveAllToAllHandle {
             array: self.as_lamellar_byte_array(),
@@ -1896,12 +1700,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveAllToAllIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .alltoall_into_buffer(index, len, buffer);
+        let req = self.region_collective().alltoall_into_buffer(index, len, buffer);
 
         ArrayCollectiveAllToAllIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -1939,12 +1738,7 @@ impl<T: Dist> UnsafeArray<T> {
         src_or_root_pe: BroadcastInput,
         len: usize,
     ) -> ArrayCollectiveBroadcastHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .broadcast(src_or_root_pe, len);
+        let req = self.region_collective().broadcast(src_or_root_pe, len);
 
         ArrayCollectiveBroadcastHandle {
             array: self.as_lamellar_byte_array(),
@@ -1985,12 +1779,7 @@ impl<T: Dist> UnsafeArray<T> {
         dst: RootSrcOrLamellarBuffer<T, B>,
         len: usize,
     ) -> ArrayCollectiveBroadcastIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .broadcast_into_buffer(dst, len);
+        let req = self.region_collective().broadcast_into_buffer(dst, len);
 
         ArrayCollectiveBroadcastIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2028,12 +1817,7 @@ impl<T: Dist> UnsafeArray<T> {
         src_or_root_pe: ScatterInput,
         len: usize,
     ) -> ArrayCollectiveScatterHandle<T> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .scatter(src_or_root_pe, len);
+        let req = self.region_collective().scatter(src_or_root_pe, len);
 
         ArrayCollectiveScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2076,12 +1860,7 @@ impl<T: Dist> UnsafeArray<T> {
         src_or_root_pe: ScatterInput,
         len: usize,
     ) -> ArrayCollectiveScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .scatter_into_buffer(buffer, src_or_root_pe, len);
+        let req = self.region_collective().scatter_into_buffer(buffer, src_or_root_pe, len);
 
         ArrayCollectiveScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2121,11 +1900,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveReduceScatterHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_scatter(ReduceOp::Sum, index, len);
+            self.region_collective().reduce_scatter(ReduceOp::Sum, index, len);
 
         ArrayCollectiveReduceScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2163,11 +1938,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveReduceScatterHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_scatter(ReduceOp::Max, index, len);
+            self.region_collective().reduce_scatter(ReduceOp::Max, index, len);
 
         ArrayCollectiveReduceScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2205,11 +1976,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveReduceScatterHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_scatter(ReduceOp::Min, index, len);
+            self.region_collective().reduce_scatter(ReduceOp::Min, index, len);
 
         ArrayCollectiveReduceScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2247,11 +2014,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveReduceScatterHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_scatter(ReduceOp::Prod, index, len);
+            self.region_collective().reduce_scatter(ReduceOp::Prod, index, len);
 
         ArrayCollectiveReduceScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2289,11 +2052,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveReduceScatterHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_scatter(ReduceOp::BitAnd, index, len);
+            self.region_collective().reduce_scatter(ReduceOp::BitAnd, index, len);
 
         ArrayCollectiveReduceScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2331,11 +2090,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveReduceScatterHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_scatter(ReduceOp::BitXor, index, len);
+            self.region_collective().reduce_scatter(ReduceOp::BitXor, index, len);
 
         ArrayCollectiveReduceScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2373,11 +2128,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
     ) -> ArrayCollectiveReduceScatterHandle<T> {
         let req =
-            self.inner
-                .data
-                .mem_region
-                .as_base::<T>()
-                .reduce_scatter(ReduceOp::BitOr, index, len);
+            self.region_collective().reduce_scatter(ReduceOp::BitOr, index, len);
 
         ArrayCollectiveReduceScatterHandle {
             array: self.as_lamellar_byte_array(),
@@ -2419,12 +2170,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_scatter_into_buffer(ReduceOp::Sum, index, len, buffer);
+        let req = self.region_collective().reduce_scatter_into_buffer(ReduceOp::Sum, index, len, buffer);
 
         ArrayCollectiveReduceScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2466,12 +2212,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_scatter_into_buffer(ReduceOp::Max, index, len, buffer);
+        let req = self.region_collective().reduce_scatter_into_buffer(ReduceOp::Max, index, len, buffer);
 
         ArrayCollectiveReduceScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2513,12 +2254,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_scatter_into_buffer(ReduceOp::Min, index, len, buffer);
+        let req = self.region_collective().reduce_scatter_into_buffer(ReduceOp::Min, index, len, buffer);
 
         ArrayCollectiveReduceScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2560,12 +2296,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_scatter_into_buffer(ReduceOp::Prod, index, len, buffer);
+        let req = self.region_collective().reduce_scatter_into_buffer(ReduceOp::Prod, index, len, buffer);
 
         ArrayCollectiveReduceScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2607,12 +2338,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_scatter_into_buffer(ReduceOp::BitAnd, index, len, buffer);
+        let req = self.region_collective().reduce_scatter_into_buffer(ReduceOp::BitAnd, index, len, buffer);
 
         ArrayCollectiveReduceScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2654,12 +2380,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_scatter_into_buffer(ReduceOp::BitXor, index, len, buffer);
+        let req = self.region_collective().reduce_scatter_into_buffer(ReduceOp::BitXor, index, len, buffer);
 
         ArrayCollectiveReduceScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),
@@ -2701,12 +2422,7 @@ impl<T: Dist> UnsafeArray<T> {
         len: usize,
         buffer: LamellarBuffer<T, B>,
     ) -> ArrayCollectiveReduceScatterIntoBufferHandle<T, B> {
-        let req = self
-            .inner
-            .data
-            .mem_region
-            .as_base::<T>()
-            .reduce_scatter_into_buffer(ReduceOp::BitOr, index, len, buffer);
+        let req = self.region_collective().reduce_scatter_into_buffer(ReduceOp::BitOr, index, len, buffer);
 
         ArrayCollectiveReduceScatterIntoBufferHandle {
             array: self.as_lamellar_byte_array(),

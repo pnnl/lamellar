@@ -21,6 +21,7 @@ shared = []
 
 [build-dependencies]
 autotools = "0.2.7"
+cc = "1.2.56"
 bindgen = "0.72.1"
 glob = "0.3.3"
 

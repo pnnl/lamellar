@@ -765,43 +765,35 @@ pub enum TriggerEvent<'a> {
 }
 
 impl TriggerEvent<'_> {
-    pub fn as_raw(
-        &mut self,
-    ) -> (
-        libfabric_sys::fi_trigger_event,
-        libfabric_sys::fi_triggered_context__bindgen_ty_1,
-    ) {
+    // The two functions below fill the `event_type` and `trigger` fields of an existing context instead of
+    // returning the `trigger` union: its type is anonymous, so naming it in a signature or literal would
+    // break whenever bindgen renumbers it for another libfabric release.
+
+    /// Sets `event_type` and `trigger` on `ctx`.
+    pub fn fill_context(&mut self, ctx: &mut libfabric_sys::fi_triggered_context) {
         match self {
-            Self::Threshold(thold) => (
-                libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD,
-                libfabric_sys::fi_triggered_context__bindgen_ty_1 {
-                    threshold: thold.c_thold,
-                },
-            ),
-            Self::Xpu(xpu) => (
-                libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU,
-                libfabric_sys::fi_triggered_context__bindgen_ty_1 { xpu: xpu.as_raw() },
-            ),
+            Self::Threshold(thold) => {
+                ctx.event_type = libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD;
+                ctx.trigger.threshold = thold.c_thold;
+            }
+            Self::Xpu(xpu) => {
+                ctx.event_type = libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU;
+                ctx.trigger.xpu = xpu.as_raw();
+            }
         }
     }
 
-    pub fn as_raw2(
-        &mut self,
-    ) -> (
-        libfabric_sys::fi_trigger_event,
-        libfabric_sys::fi_triggered_context2__bindgen_ty_1,
-    ) {
+    /// Sets `event_type` and `trigger` on `ctx`.
+    pub fn fill_context2(&mut self, ctx: &mut libfabric_sys::fi_triggered_context2) {
         match self {
-            Self::Threshold(thold) => (
-                libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD,
-                libfabric_sys::fi_triggered_context2__bindgen_ty_1 {
-                    threshold: thold.c_thold,
-                },
-            ),
-            Self::Xpu(xpu) => (
-                libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU,
-                libfabric_sys::fi_triggered_context2__bindgen_ty_1 { xpu: xpu.as_raw() },
-            ),
+            Self::Threshold(thold) => {
+                ctx.event_type = libfabric_sys::fi_trigger_event_FI_TRIGGER_THRESHOLD;
+                ctx.trigger.threshold = thold.c_thold;
+            }
+            Self::Xpu(xpu) => {
+                ctx.event_type = libfabric_sys::fi_trigger_event_FI_TRIGGER_XPU;
+                ctx.trigger.xpu = xpu.as_raw();
+            }
         }
     }
 }

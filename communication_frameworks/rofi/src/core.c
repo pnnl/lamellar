@@ -176,6 +176,48 @@ int rofi_query_compare_atomic_internal(rofi_datatype_t datatype, rofi_atomic_op_
     return rofi_query_atomic_internal_with_mode(datatype, op, 2);
 }
 
+// Collectives are provided by libfabric (see rofi_transport_collective_post). The reduction ops and datatypes are the
+// atomic ones.
+static int rofi_collective_args(rofi_collective_op_t op, rofi_datatype_t datatype, rofi_atomic_op_t reduce_op, enum fi_datatype *fi_datatype, enum fi_op *fi_op) {
+    *fi_op = FI_NOOP;
+    if (rofi_to_fi_datatype(datatype, fi_datatype) != 0) {
+        return -1;
+    }
+    if (op == ROFI_COLLECTIVE_ALLREDUCE || op == ROFI_COLLECTIVE_REDUCE_SCATTER || op == ROFI_COLLECTIVE_REDUCE) {
+        if (rofi_to_fi_atomic_op(reduce_op, fi_op) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int rofi_query_collective_internal(rofi_collective_op_t op, rofi_datatype_t datatype, rofi_atomic_op_t reduce_op) {
+    enum fi_datatype fi_datatype;
+    enum fi_op fi_op;
+    if (rofi.info == NULL || !(rofi.info->caps & FI_COLLECTIVE)) {
+        return -1;
+    }
+    if (rofi_collective_args(op, datatype, reduce_op, &fi_datatype, &fi_op) != 0) {
+        return -1;
+    }
+    return rofi_transport_query_collective(&rofi, op, fi_datatype, fi_op);
+}
+
+int rofi_collective_post_internal(rofi_collective_op_t op, const uint64_t *pes, uint64_t num_pes, uint64_t root, const void *src, void *dst,
+                                  size_t count, rofi_datatype_t datatype, rofi_atomic_op_t reduce_op, void **req) {
+    enum fi_datatype fi_datatype;
+    enum fi_op fi_op;
+    if (req == NULL || rofi_collective_args(op, datatype, reduce_op, &fi_datatype, &fi_op) != 0) {
+        ERR_MSG("Invalid collective arguments: op=%d datatype=%d reduce_op=%d", op, datatype, reduce_op);
+        return -1;
+    }
+    return rofi_transport_collective_post(&rofi, op, pes, num_pes, root, src, dst, count, fi_datatype, fi_op, req);
+}
+
+int rofi_collective_progress_internal(void *req) {
+    return rofi_transport_collective_progress(&rofi, req);
+}
+
 int rofi_has_atomics_internal(void) {
     if (rofi.info == NULL || rofi.domain == NULL) {
         return 0;
@@ -578,6 +620,7 @@ int rofi_init_internal(char *provs, char *domains) {
     pthread_rwlock_init(&rofi.mr_lock, NULL);
     pthread_mutex_init(&rofi.lock, NULL);
     pthread_mutex_init(&rofi.sub_alloc_lock, NULL);
+    pthread_mutex_init(&rofi.coll_join_lock, NULL);
     int ret = 0;
     rofi.desc.PageSize = sysconf(_SC_PAGESIZE);
 

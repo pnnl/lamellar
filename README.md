@@ -22,6 +22,10 @@ This repository is a staging area for various repositories and crates we have de
 For native build prerequisites and backend-specific system dependencies, see
 [Native dependencies](NATIVE_DEPENDENCIES.md).
 
+New to Rust/Cargo? To build and run the examples from a clone (no `Cargo.toml`
+editing needed, optionally against a system library, e.g. libfabric via `OFI_DIR`), see
+[Building from a clone](lamellar-runtime/README.md#building-from-a-clone-new-to-rust-start-here).
+
 Runtime
 -------
 The `lamellar-runtime/` crate (see [lamellar-runtime/README.md](https://github.com/pnnl/lamellar/blob/master/lamellar-runtime/README.md)) implements the core asynchronous tasking runtime, the distributed arrays and Darcs interfaces, and the `local`, `shmem`, and optional `rofi` Lamellae backends. Its README documents the API, executors, and how to configure backends via features or runtime builders.

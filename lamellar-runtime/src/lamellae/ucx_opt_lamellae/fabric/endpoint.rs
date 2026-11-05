@@ -20,8 +20,8 @@ use lamellar_ucx_sys::{
     ucp_atomic_op_nbx, ucp_atomic_op_t, ucp_dt_make_contig, ucp_ep_close_nbx, ucp_ep_create,
     ucp_ep_flush_nbx, ucp_ep_h, ucp_ep_params, ucp_ep_params_field, ucp_err_handler,
     ucp_err_handling_mode_t, ucp_get_nbx, ucp_mem_h, ucp_op_attr_t, ucp_put_nbx, ucp_request_check_status,
-    ucp_request_free, ucp_request_param_t, ucp_request_param_t__bindgen_ty_1,
-    ucp_request_param_t__bindgen_ty_2, ucs_memory_type, ucs_sock_addr, ucs_status_ptr_t,
+    ucp_request_free, ucp_request_param_t,
+    ucs_memory_type, ucs_sock_addr, ucs_status_ptr_t,
     ucs_status_t, UCS_PTR_IS_PTR,
 };
 
@@ -490,22 +490,14 @@ impl Endpoint {
         let local = issue_ticketed(None, |user_data| unsafe {
             ucp_ep_flush_nbx(
                 self.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: 0,
-                    user_data,
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
+                    p.cb.send = Some(completion_cb);
+                    p.user_data = user_data;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 },
             )
         });
@@ -629,20 +621,12 @@ impl Endpoint {
                 size as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FLAG_FAST_CMPL as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 { send: None },
-                    datatype: 0,
-                    user_data: std::ptr::null_mut(),
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
+                        | ucp_op_attr_t::UCP_OP_ATTR_FLAG_FAST_CMPL as u32;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 } as _,
             )
         })
@@ -695,7 +679,8 @@ impl Endpoint {
                 size as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
                     // D5 fix: no FAST_CMPL here. That flag tells UCX this op doesn't need
                     // per-request completion tracking, which is the opposite of what the
                     // callback/Ticket below relies on -- on real network transport (not the
@@ -704,22 +689,13 @@ impl Endpoint {
                     // set alongside it, hanging poll_wait/wait forever. See `get` below for the
                     // same fix; `issue_flush` and the atomic ops never set FAST_CMPL and were
                     // never affected.
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: 0,
-                    user_data,
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
+                    p.cb.send = Some(completion_cb);
+                    p.user_data = user_data;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 } as _,
             )
         });
@@ -753,22 +729,13 @@ impl Endpoint {
                 size as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(put_nowait_cb),
-                    },
-                    datatype: 0,
-                    user_data: std::ptr::null_mut(),
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32;
+                    p.cb.send = Some(put_nowait_cb);
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 } as _,
             )
         };
@@ -814,25 +781,18 @@ impl Endpoint {
                 size as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
                     // D5 fix: no FAST_CMPL -- see the matching comment in `put`'s managed path.
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32
-                        | memh_mask,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: 0,
-                    user_data,
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh,
+                        | memh_mask;
+                    p.cb.send = Some(completion_cb);
+                    p.user_data = user_data;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p.memh = memh;
+                    p
                 } as _,
             )
         });
@@ -856,22 +816,13 @@ impl Endpoint {
                 size as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(free_request_cb),
-                    },
-                    datatype: 0,
-                    user_data: std::ptr::null_mut(),
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32;
+                    p.cb.send = Some(free_request_cb);
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 } as _,
             )
         };
@@ -901,24 +852,17 @@ impl Endpoint {
                 1 as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: ucp_dt_make_contig(std::mem::size_of::<T>() as _),
-                    user_data,
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
+                    p.cb.send = Some(completion_cb);
+                    p.datatype = ucp_dt_make_contig(std::mem::size_of::<T>() as _);
+                    p.user_data = user_data;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 },
             )
         });
@@ -959,25 +903,19 @@ impl Endpoint {
                 1 as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: ucp_dt_make_contig(std::mem::size_of::<T>() as _),
-                    user_data,
-                    reply_buffer: reply_buf as *mut _,
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
+                    p.cb.send = Some(completion_cb);
+                    p.datatype = ucp_dt_make_contig(std::mem::size_of::<T>() as _);
+                    p.user_data = user_data;
+                    p.reply_buffer = reply_buf as *mut _;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 },
             )
         });
@@ -1012,25 +950,19 @@ impl Endpoint {
                 1 as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: ucp_dt_make_contig(std::mem::size_of::<T>() as _),
-                    user_data,
-                    reply_buffer: reply_buf as *mut _,
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
+                    p.cb.send = Some(completion_cb);
+                    p.datatype = ucp_dt_make_contig(std::mem::size_of::<T>() as _);
+                    p.user_data = user_data;
+                    p.reply_buffer = reply_buf as *mut _;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 },
             )
         });
@@ -1069,25 +1001,19 @@ impl Endpoint {
                 1 as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: ucp_dt_make_contig(std::mem::size_of::<T>() as _),
-                    user_data,
-                    reply_buffer: reply_buf as *mut _,
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
+                    p.cb.send = Some(completion_cb);
+                    p.datatype = ucp_dt_make_contig(std::mem::size_of::<T>() as _);
+                    p.user_data = user_data;
+                    p.reply_buffer = reply_buf as *mut _;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 },
             )
         });
@@ -1111,25 +1037,19 @@ impl Endpoint {
                 1 as _,
                 remote_addr as _,
                 rkey.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
-                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 {
-                        send: Some(completion_cb),
-                    },
-                    datatype: ucp_dt_make_contig(std::mem::size_of::<T>() as _),
-                    user_data,
-                    reply_buffer: reply_buf as *mut _,
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                        | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
+                    p.cb.send = Some(completion_cb);
+                    p.datatype = ucp_dt_make_contig(std::mem::size_of::<T>() as _);
+                    p.user_data = user_data;
+                    p.reply_buffer = reply_buf as *mut _;
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 },
             )
         });
@@ -1145,19 +1065,10 @@ impl Drop for Endpoint {
         unsafe {
             let request = ucp_ep_close_nbx(
                 self.handle,
-                &ucp_request_param_t {
-                    op_attr_mask: 0,
-                    flags: 0,
-                    request: std::ptr::null_mut(),
-                    cb: ucp_request_param_t__bindgen_ty_1 { send: None },
-                    datatype: 0,
-                    user_data: std::ptr::null_mut(),
-                    reply_buffer: std::ptr::null_mut(),
-                    memory_type: ucs_memory_type::UCS_MEMORY_TYPE_HOST,
-                    recv_info: ucp_request_param_t__bindgen_ty_2 {
-                        length: std::ptr::null_mut(),
-                    },
-                    memh: std::ptr::null_mut(),
+                &{
+                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
+                    p
                 },
             );
             if request.is_null() {

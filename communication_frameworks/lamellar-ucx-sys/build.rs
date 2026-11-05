@@ -1,16 +1,39 @@
 use std::{
     env,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio, exit},
 };
 
 use glob::glob;
+
+mod compiler_probe;
 
 /// Vendored UCX release: the official "make dist" tarball from a UCX GitHub
 /// release (v1.20.0), NOT a git checkout. It ships with `configure` already
 /// generated, so no Flex/Autoconf/Automake/Libtool/autogen.sh is required to
 /// build it.
 const UCX_VERSION: &str = "1.20.0";
+
+/// Use the compiler underneath a wrapper (Cray `cc`, `mpicc`, ...) when the wrapper fails a test link; see
+/// `compiler_probe.rs`. `LAMELLAR_NO_COMPILER_FALLBACK=1` disables it.
+fn compiler_fallback(
+    scratch: &Path,
+    lib_dirs: Vec<PathBuf>,
+    link_args: &[&str],
+) -> Option<compiler_probe::Fallback> {
+    for var in compiler_probe::ENV_VARS {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
+    let cc = cc::Build::new().get_compiler();
+    let cxx = cc::Build::new().cpp(true).get_compiler();
+    let link = compiler_probe::ProbeLink {
+        lib_dirs,
+        link_args: link_args.iter().map(|a| a.to_string()).collect(),
+    };
+    let fallback = compiler_probe::resolve(cc.path(), cxx.path(), &link, scratch)?;
+    println!("cargo:warning={}", fallback.message());
+    Some(fallback)
+}
 
 fn build_ucx(out_path: &PathBuf) -> PathBuf {
     println!("cargo:warning=building vendored UCX {}", UCX_VERSION);
@@ -37,6 +60,13 @@ fn build_ucx(out_path: &PathBuf) -> PathBuf {
     // instead of static archives. The link section below already picks dylibs when no libucp.a exists.
     let shared = env::var_os("CARGO_FEATURE_SHARED").is_some();
     let mut config = autotools::Config::new(dest.clone());
+    // A plain link test: UCX is built from source here, so there are no UCX libraries to link yet.
+    if let Some(fb) = compiler_fallback(&out_path.join("compiler_probe"), Vec::new(), &[]) {
+        config.env("CC", &fb.cc);
+        if let Some(cxx) = &fb.cxx {
+            config.env("CXX", cxx);
+        }
+    }
     if shared {
         config.enable("shared", None).disable("static", None);
     } else {
@@ -172,7 +202,18 @@ fn build_bindings() {
     // Prefer static if static archives were produced (vendored build now
     // defaults to enable_static/disable_shared); fall back to dylib for a
     // system-provided (UCX_DIR) shared install.
-    if ucx_lib_dir_base.join("libucp.a").exists() {
+    //
+    // A user-supplied UCX_DIR is linked statically only if it has no shared
+    // libucp: such installs (e.g. HPC-X) often ship both, and the static path
+    // whole-archives every transport module (xpmem, cuda, rocm, sharp-capable
+    // ib, ...) and their dependencies.
+    let system_ucx = env::var_os("UCX_DIR").is_some();
+    let static_ucx = ucx_lib_dir_base.join("libucp.a").exists()
+        && !(system_ucx && ucx_lib_dir_base.join("libucp.so").exists());
+    if system_ucx && ucx_lib_dir_base.join("libucp.a").exists() && !static_ucx {
+        println!("cargo:warning=UCX_DIR has both libucp.a and libucp.so; linking the shared libraries.");
+    }
+    if static_ucx {
         // UCX initializes itself entirely from constructors: ucs_init()
         // (ucs/sys/init.c) sets up the global topo/async/config state, and
         // every UCT component/transport (UCT_COMPONENT_REGISTER,
@@ -221,6 +262,16 @@ fn build_bindings() {
     println!("cargo:rustc-link-lib=rdmacm");
     // println!("cargo:rustc-link-lib=pmi_simple");
 
+    // tested: UCP 1.17 (UCX 1.17.0) to the vendored 1.20
+    check_api_version(
+        "UCX (UCP API)",
+        &ucx_inc_dir.join("ucp/api/ucp_version.h"),
+        "UCP_API_MAJOR",
+        "UCP_API_MINOR",
+        "1.17 to 1.20",
+        |major, minor| major == 1 && (17..=20).contains(&minor),
+    );
+
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         .clang_arg(format!("-I{}", ucx_inc_dir.display()))
@@ -242,4 +293,48 @@ fn build_bindings() {
 
 fn main() {
     build_bindings();
+}
+
+// Warns, and never fails, when the library whose headers are about to be bound is outside the versions this crate was
+// tested with: bindgen names anonymous C unions and structs by position (`..__bindgen_ty_N`), so a different release can
+// move the names the Rust code uses and the build then fails far from here, in the code that uses the bindings. The same
+// function is in lamellar-ucc-sys, lamellar-ucx-sys and libfabric-sys (their build scripts are standalone).
+// Reads `#define <major_name> <n>` and `#define <minor_name> <n>` from `header`; a header or macro that cannot be read
+// is skipped without a word.
+fn check_api_version(
+    library: &str,
+    header: &std::path::Path,
+    major_name: &str,
+    minor_name: &str,
+    tested: &str,
+    in_range: impl Fn(u32, u32) -> bool,
+) {
+    println!("cargo:rerun-if-changed={}", header.display());
+    let text = match std::fs::read_to_string(header) {
+        Ok(text) => text,
+        Err(_) => return,
+    };
+    let define = |name: &str| -> Option<u32> {
+        text.lines().find_map(|line| {
+            let mut words = line.split_whitespace();
+            if words.next()? != "#define" || words.next()? != name {
+                return None;
+            }
+            words.next()?.parse().ok()
+        })
+    };
+    if let (Some(major), Some(minor)) = (define(major_name), define(minor_name)) {
+        if !in_range(major, minor) {
+            println!(
+                "cargo:warning={} {}.{} ({}) is outside the versions {} was tested with ({}); if the build fails on a name \
+                 like `..__bindgen_ty_N` the bindings do not match this version",
+                library,
+                major,
+                minor,
+                header.display(),
+                std::env::var("CARGO_PKG_NAME").unwrap_or_default(),
+                tested
+            );
+        }
+    }
 }

@@ -239,7 +239,7 @@ impl MemoryRegion {
         ctx: &mut Context,
     ) -> Result<(Event, Self), crate::error::Error> {
         // [TODO] Add context version
-        let backing_buffer_range = (unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_base as usize, unsafe{*attr.c_attr.__bindgen_anon_1.mr_iov}.iov_len); 
+        let backing_buffer_range = attr.backing_buffer_range();
         let (event, mr) =
             MemoryRegionImpl::from_attr_async(&domain.inner, attr, flags, ctx).await?;
         

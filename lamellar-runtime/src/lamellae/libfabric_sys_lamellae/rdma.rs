@@ -690,7 +690,7 @@ impl CommAllocRdma for LibfabricSysAlloc {
         src: T,
         offset: usize,
     ) -> RdmaHandle<T> {
-        let pes = (0..self.num_pes()).collect();
+        let pes = self.all_pes();
         LibfabricSysPutFuture {
             my_pe: self.ofi.my_pe,
             alloc: self.clone(),
@@ -707,7 +707,7 @@ impl CommAllocRdma for LibfabricSysAlloc {
     }
     fn put_all_unmanaged<T: Remote>(&self, src: T, offset: usize) {
         let blocking = std::mem::size_of::<T>() >= self.ofi.inject_size(); // stack src: see put_unmanaged
-        for pe in 0..self.num_pes() {
+        for pe in self.all_pes() {
             unsafe {
                 LibfabricSysAlloc::inner_put(&self, pe, offset, std::slice::from_ref(&src), blocking);
             };
@@ -720,7 +720,7 @@ impl CommAllocRdma for LibfabricSysAlloc {
         src: impl Into<MemregionRdmaInputInner<T>>,
         offset: usize,
     ) -> RdmaHandle<T> {
-        let pes = (0..self.num_pes()).collect();
+        let pes = self.all_pes();
         LibfabricSysPutFuture {
             my_pe: self.ofi.my_pe,
             alloc: self.clone(),
@@ -741,7 +741,7 @@ impl CommAllocRdma for LibfabricSysAlloc {
         offset: usize,
     ) {
         let src = src.into();
-        unsafe { put_buffer_unmanaged_impl(self, 0..self.num_pes(), offset, &src) };
+        unsafe { put_buffer_unmanaged_impl(self, self.all_pes().into_iter(), offset, &src) };
     }
 
     fn get<T: Remote>(
