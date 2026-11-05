@@ -14,7 +14,6 @@ use std::sync::Arc;
 
 #[derive(ValueEnum, Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Variant {
-    TestAm,
     UnsafeAM,
     SafeAm,
     UnsafeBufferedAm,
@@ -86,26 +85,7 @@ fn main() {
             );
 
             match variant {
-                Variant::TestAm => {
-                    for idx_size in &am_index_size {
-                        let times = active_message::test_am::index_gather(
-                            &world,
-                            &cli,
-                            &rand_index,
-                            false,
-                            idx_size,
-                        );
-                        variant_results
-                            .entry(format!("{idx_size:?}"))
-                            .or_insert(Vec::new())
-                            .push(times);
-                        print_am_times(&cli, my_pe, num_pes, &variant, idx_size, times);
-                        benchmark_record::benchmark_report!(
-                            @update_table,
-                            &world, &cli, variant, &format!("{idx_size:?}"), iteration, times,
-                        );
-                    }
-                }
+                
                 Variant::UnsafeAM => {
                     for idx_size in &am_index_size {
                         let times = active_message::am::index_gather(
