@@ -1319,6 +1319,22 @@ int rofi_transport_sub_exchange_mr_info_manual(rofi_transport_t *rofi, rofi_mr_d
     return ret;
 }
 
+// libfabric's coll provider has 256 group ids per endpoint (see rofi_coll_group) and never gives one back, so past that a new
+// join would mark a bit beyond its mask and corrupt memory. Groups are kept per distinct PE set, so this takes more than ~250
+// different sub-teams; fail the join cleanly instead. Called with rofi->lock held.
+#define ROFI_MAX_COLL_GROUPS 250
+static int rofi_transport_coll_group_room(rofi_transport_t *rofi) {
+    int count = 0;
+    for (struct rofi_coll_group *grp = rofi->coll_groups; grp != NULL; grp = grp->next) {
+        count++;
+    }
+    if (count >= ROFI_MAX_COLL_GROUPS) {
+        ERR_MSG("cannot join another collective group: %d distinct PE sets already have one (libfabric's coll provider has 256 group ids per endpoint)", count);
+        return -FI_ENOSPC;
+    }
+    return 0;
+}
+
 // Returns the joined collective group over `pes`, joining it the first time. Called with rofi->lock held.
 static int rofi_transport_get_coll_group(rofi_transport_t *rofi, uint64_t *pes, uint64_t num_pes, struct fid_mc **mc_out) {
     for (struct rofi_coll_group *grp = rofi->coll_groups; grp != NULL; grp = grp->next) {
@@ -1336,7 +1352,11 @@ static int rofi_transport_get_coll_group(rofi_transport_t *rofi, uint64_t *pes, 
     av_set_attr.flags = 0;
 
     struct fid_av_set *av_set;
-    int ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
+    int ret = rofi_transport_coll_group_room(rofi);
+    if (ret) {
+        return ret;
+    }
+    ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_av_st", ret);
         return ret;
@@ -1508,7 +1528,11 @@ static int rofi_transport_get_user_coll_group(rofi_transport_t *rofi, const uint
     av_set_attr.flags = 0;
 
     struct fid_av_set *av_set;
-    int ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
+    int ret = rofi_transport_coll_group_room(rofi);
+    if (ret) {
+        goto fail_unlock;
+    }
+    ret = fi_av_set(rofi->av, &av_set_attr, &av_set, NULL);
     if (ret) {
         ROFI_TRANSPORT_ERR_MSG("fi_av_set", ret);
         goto fail_unlock;
