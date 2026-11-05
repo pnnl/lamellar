@@ -34,48 +34,26 @@ serde = { version = "1.0", features = ["derive"] }
 
 [patch.crates-io]
 
-# All of lamellar (runtime, process_management/*, communication_frameworks/*) comes from the
-# pnnl/lamellar monorepo, master branch.
+# lamellar and all of its sub-crates come from this repository (they are siblings of lamellar-benchmarks/).
 
-lamellar = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-pmi = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-pmi-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-pmi2-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-pmi-mpich-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-prrte-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-openpmix-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-hpc_launch = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-hpc_launch_impl = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-hpc_launch_codegen = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-rofisys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-lamellar-libfabric = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-lamellar-libfabric-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-lamellar-libfabric-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-lamellar-ucc-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-
-# Local testing against a checkout of the monorepo instead: comment out the git entries above and
-# uncomment these.
-# lamellar = { path = "../lamellar-repo/lamellar-runtime" }
-# pmi = { path = "../lamellar-repo/process_management/pmi" }
-# pmi-sys = { path = "../lamellar-repo/process_management/pmi-sys" }
-# pmi2-sys = { path = "../lamellar-repo/process_management/pmi2-sys" }
-# pmi-mpich-src = { path = "../lamellar-repo/process_management/pmi-mpich-src" }
-# pmix-sys = { path = "../lamellar-repo/process_management/pmix-sys" }
-# prrte-sys = { path = "../lamellar-repo/process_management/prrte-sys" }
-# openpmix-src = { path = "../lamellar-repo/process_management/openpmix-src" }
-# prrte-src = { path = "../lamellar-repo/process_management/prrte-src" }
-# hpc_launch = { path = "../lamellar-repo/process_management/hpc_launch" }
-# hpc_launch_impl = { path = "../lamellar-repo/process_management/hpc_launch_impl" }
-# hpc_launch_codegen = { path = "../lamellar-repo/process_management/hpc_launch_codegen" }
-# rofisys = { path = "../lamellar-repo/communication_frameworks/rofi-sys" }
-# lamellar-libfabric = { path = "../lamellar-repo/communication_frameworks/libfabric" }
-# lamellar-libfabric-sys = { path = "../lamellar-repo/communication_frameworks/libfabric-sys" }
-# lamellar-libfabric-src = { path = "../lamellar-repo/communication_frameworks/libfabric-src" }
-# lamellar-ucx-sys = { path = "../lamellar-repo/communication_frameworks/lamellar-ucx-sys" }
-# lamellar-ucc-sys = { path = "../lamellar-repo/communication_frameworks/lamellar-ucc-sys" }
+lamellar = { path = "../lamellar-runtime" }
+pmi = { path = "../process_management/pmi" }
+pmi-sys = { path = "../process_management/pmi-sys" }
+pmi2-sys = { path = "../process_management/pmi2-sys" }
+pmi-mpich-src = { path = "../process_management/pmi-mpich-src" }
+pmix-sys = { path = "../process_management/pmix-sys" }
+prrte-sys = { path = "../process_management/prrte-sys" }
+openpmix-src = { path = "../process_management/openpmix-src" }
+prrte-src = { path = "../process_management/prrte-src" }
+hpc_launch = { path = "../process_management/hpc_launch" }
+hpc_launch_impl = { path = "../process_management/hpc_launch_impl" }
+hpc_launch_codegen = { path = "../process_management/hpc_launch_codegen" }
+rofisys = { path = "../communication_frameworks/rofi-sys" }
+lamellar-libfabric = { path = "../communication_frameworks/libfabric" }
+lamellar-libfabric-sys = { path = "../communication_frameworks/libfabric-sys" }
+lamellar-libfabric-src = { path = "../communication_frameworks/libfabric-src" }
+lamellar-ucx-sys = { path = "../communication_frameworks/lamellar-ucx-sys" }
+lamellar-ucc-sys = { path = "../communication_frameworks/lamellar-ucc-sys" }
 
 
 [profile.release]
