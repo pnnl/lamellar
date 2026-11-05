@@ -1,0 +1,15 @@
+**/target
+**/target-*
+**/*.rs.bk
+**/Cargo.lock
+**/*.out
+**/benchmarking
+nohup.out
+simple_bale/
+lamellar_env.sh
+lamellar_run.sh
+*.json
+**/deprecated
+
+# mac-specific file
+.DS_Store

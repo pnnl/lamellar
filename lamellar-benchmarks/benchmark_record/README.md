@@ -1,0 +1,68 @@
+# Benchmark record utility
+
+## Setup
+To capture runtime-values:
+- Depend on this library in the `dependencies` secion of `Cargo.toml`.
+
+To accurately capture compile-time values (like feature flags):
+- Depend on this library in the `build-dependencies` section of `Cargo.toml`.
+- Each benchmark should have a `build.rs` in the same directory as `Cargo.toml`.
+- Each benchmark should call `embed_build_time_info` to embed the build-time information captured by `build.rs`. (See useage example)
+
+
+### Example build.rs file
+```rust
+use benchmark_record::build_utils;
+
+fn main() {
+    build_utils::record_build_time_info(std::env::var("CARGO_MANIFEST_PATH").unwrap());
+}
+```
+
+
+## Example (basic) use:
+- Create a record at the start of the program: `let mut result_record = benchmark_record::BenchmarkInformation::new();`
+- Ensure build-time info is property recorded `embed_build_time_info!(result_record );`
+- Record results as they become available: `result_record.with_output("result_name", "value as a string");`
+- Save to disk: `result_record.write(&result_record.default_output_path("benchmarking"))?;`
+- Print to screen: `result_record.display(Some(3));`
+
+The `result_record` gathers the contextual information at construction time.
+The record acts as an accumulator of result information using the `.with_output` method.
+If you write to same key twice, the first value with be lost!
+
+The `default_output_path` function will return a name based on the current
+executable and Slurm context (if available). Its directory defaults to the
+supplied argument, but a non-empty `BENCHMARK_RECORD_OUTPUT_DIR` environment
+variable overrides it. Relative directories are resolved from the process's
+working directory.
+It writes in a JSON lines format and appends values (so you can write multiple times from the same program).
+The `display` function prints to the screen.  The optional integer value controls the indenentation (`None` prints on one line).
+
+## Reporting a benchmark iteration
+
+Enable the `benchmark-record` Cargo feature to use `benchmark_report!` when a
+benchmark finishes one variant/subvariant/iteration. It records build/runtime
+provenance, evaluates the supplied fields only on PE 0, and appends one JSONL
+record to `benchmarking/` by default. Without the feature, the macro is a
+no-op.
+
+```rust
+benchmark_record::benchmark_report!(&world, {
+    "variant" => format!("{variant:?}"),
+    "iteration" => iteration,
+    "global_completion_secs" => elapsed.as_secs_f64(),
+});
+```
+
+With `benchmark-record` enabled, set `BENCHMARK_RECORD_OUTPUT_DIR` to write
+records elsewhere:
+
+```sh
+BENCHMARK_RECORD_OUTPUT_DIR=/scratch/benchmark-results \
+  cargo run -p <benchmark> --features benchmark-record -- ...
+```
+
+The benchmark suite also provides the `@update_table`, `@randperm`, and
+`@triangle_count` schemas for its shared metric sets. New benchmarks should use
+the generic form unless they intentionally share one of those schemas.
