@@ -67,7 +67,7 @@ fn all_reduce_pull<T: Remote>(
         std::thread::yield_now();
     }
     for pe in 0..n {
-        let addr = alloc.pe_base_offset(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
+        let addr = alloc.pe_base_offset_rel(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
         let src = unsafe { std::slice::from_raw_parts(addr as *const T, len) };
         if pe == 0 {
             out.copy_from_slice(src);
@@ -120,7 +120,7 @@ fn reduce_to_root<T: Remote>(
         }
 
         let remote_dst_address =
-            alloc.pe_base_offset(root) + alloc.coll_index(root) * std::mem::size_of::<T>();
+            alloc.pe_base_offset_rel(root) + alloc.coll_index(root) * std::mem::size_of::<T>();
         for (i, s) in my_slice.iter().enumerate() {
             let remote_dest = CommAllocAddr(remote_dst_address + i * std::mem::size_of::<T>());
             let atomic_op = reduce_to_atomic_op::<T>(*s, op);
@@ -585,7 +585,7 @@ fn gather<T: Remote>(
     if let Some(result) = result {
         for pe in 0..alloc.num_pes() {
             let remote_src_address =
-                alloc.pe_base_offset(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
+                alloc.pe_base_offset_rel(pe) + alloc.coll_index(pe) * std::mem::size_of::<T>();
             let remote_src_slice =
                 unsafe { std::slice::from_raw_parts(remote_src_address as *const T, len) };
             result[(pe * len)..((pe + 1) * len)].copy_from_slice(remote_src_slice);
@@ -1063,7 +1063,7 @@ fn broadcast_non_root_side<T: Remote>(
     }
 
     let remote_src_address =
-        alloc.pe_base_offset(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
+        alloc.pe_base_offset_rel(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
 
     let remote_src_slice =
         unsafe { std::slice::from_raw_parts(remote_src_address as *const T, len) };
@@ -1246,7 +1246,7 @@ fn scatter_non_root_side<T: Remote>(
     }
 
     let remote_src_address =
-        alloc.pe_base_offset(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
+        alloc.pe_base_offset_rel(root_index) + alloc.coll_index(root_index) * std::mem::size_of::<T>();
 
     let remote_src_slice = unsafe {
         std::slice::from_raw_parts(remote_src_address as *const T, len * alloc.num_pes())

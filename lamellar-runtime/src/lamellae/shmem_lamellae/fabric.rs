@@ -388,6 +388,18 @@ impl ShmemAlloc {
         }
     }
 
+    // Like `pe_base_offset` (which takes a world PE, the key of `pe_map`), for the `idx`-th PE of the allocation
+    // (0..num_pes), which is what the collectives use. For a world allocation the two are the same.
+    pub(crate) fn pe_base_offset_rel(&self, idx: usize) -> usize {
+        let world_pe = self
+            .pe_map
+            .iter()
+            .find(|(_, i)| **i == idx)
+            .map(|(pe, _)| *pe)
+            .expect("the index is in the allocation");
+        self.pe_base_offset(world_pe)
+    }
+
     pub(crate) unsafe fn zeroize_bytes(&self) {
         let u8_slice = std::slice::from_raw_parts_mut(self.data, self.data_num_bytes);
         u8_slice.fill(0);
