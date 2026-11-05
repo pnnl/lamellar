@@ -80,6 +80,7 @@ trait GraphOps {
     async fn get_local_neighbors(
         &self,
         neighbors: OneSidedMemoryRegion<u32>,
+        dest: OneSidedMemoryRegion<u32>,
     ) -> OneSidedMemoryRegion<u32>;
     fn add_remote_neighbors(&mut self, node: u32, neighbors: OneSidedMemoryRegion<u32>);
     fn neighbors(&self, node: &u32) -> std::slice::Iter<'_, u32>;
@@ -114,9 +115,10 @@ impl GraphOps for GraphData {
     async fn get_local_neighbors(
         &self,
         neighbors: OneSidedMemoryRegion<u32>,
+        dest: OneSidedMemoryRegion<u32>,
     ) -> OneSidedMemoryRegion<u32> {
         match self {
-            GraphData::MapGraph(graph) => graph.get_local_neighbors(neighbors).await,
+            GraphData::MapGraph(graph) => graph.get_local_neighbors(neighbors, dest).await,
         }
     }
     fn add_remote_neighbors(&mut self, node: u32, neighbors: OneSidedMemoryRegion<u32>) {
@@ -221,11 +223,20 @@ struct LocalNeighborsAM {
 impl LamellarAM for LocalNeighborsAM {
     async fn exec() {
         let graph = self.graph.read().await;
+        // One region for the whole batch; each node's neighbors land in a disjoint
+        // slice of it. Allocating a region per node meant one RDMA registration
+        // per node on every PE.
+        let total: usize = self.node_and_neighbors.iter().map(|(_, n)| n.len()).sum();
+        let batch_region = lamellar::world.alloc_one_sided_mem_region::<u32>(std::cmp::max(total, 1));
         let mut nodes = Vec::with_capacity(self.node_and_neighbors.len());
         let mut remotes = Vec::with_capacity(self.node_and_neighbors.len());
+        let mut offset = 0;
         for (node, neighbors) in &self.node_and_neighbors {
+            let len = neighbors.len();
+            let dest = batch_region.sub_region(offset..offset + len);
+            offset += len;
             nodes.push(*node);
-            remotes.push(graph.get_local_neighbors(neighbors.clone()));
+            remotes.push(graph.get_local_neighbors(neighbors.clone(), dest));
         }
         let remotes = lamellar::world.join_all(remotes).await;
         // for (node, neighbors) in nodes.iter().zip(remotes.iter()) {
@@ -418,9 +429,21 @@ impl Graph {
         println!("num_edges {} {}", num_edges, cnt);
         println!("reorder map time: {:?}", start.elapsed().as_secs_f64());
 
+        // Adjacency storage is one region with a slice per node, not one
+        // allocation per node: up to ~17M separate registered regions at scale 25
+        // pushed PE0's memory use past what the edge data itself needs. Each slot
+        // is at least one element, since RelabelAm::exec writes a sentinel into
+        // new_nodes[0] for zero-degree nodes.
+        let total_slots: usize = temp_neighbor_list
+            .iter()
+            .map(|nodes| std::cmp::max(nodes.len(), 1))
+            .sum();
+        let neigh_region = world.alloc_one_sided_mem_region::<u32>(total_slots);
+
         let mut temp_nodes = vec![];
         let mut neigh_list = vec![];
         let mut size = 0;
+        let mut offset = 0;
         for (i, nodes) in temp_neighbor_list.drain(..).enumerate() {
             if size > num_edges / 10 {
                 let _ = world
@@ -433,8 +456,10 @@ impl Graph {
                 size = 0;
             }
             let nodes_len = nodes.len();
+            let slot_len = std::cmp::max(nodes_len, 1);
             size += nodes_len;
-            let temp = world.alloc_one_sided_mem_region::<u32>(std::cmp::max(nodes_len, 1));
+            let temp = neigh_region.sub_region(offset..offset + slot_len);
+            offset += slot_len;
             neigh_list.push(temp.clone());
             temp_nodes.push((nodes, temp, i));
         }

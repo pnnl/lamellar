@@ -52,10 +52,14 @@ impl GraphOps for MapGraph {
     async fn get_local_neighbors(
         &self,
         neighbors: OneSidedMemoryRegion<u32>,
+        dest: OneSidedMemoryRegion<u32>,
     ) -> OneSidedMemoryRegion<u32> {
-        //this is safe as we are consuming the one sided memory region without any clones or other references to it.
-        let mut lmr_neighbors: LamellarBuffer<u32, _> =
-            self.team.alloc_one_sided_mem_region(neighbors.len()).into();
+        // `dest` is a slice of one batch-wide region allocated by the caller
+        // (see LocalNeighborsAM::exec), not a per-node allocation, to avoid one
+        // RDMA registration per node. Other slices of the same region exist, but
+        // they cover disjoint ranges and nothing else touches this one until it
+        // is returned, so writing into it here is safe.
+        let mut lmr_neighbors: LamellarBuffer<u32, _> = dest.into();
         unsafe {
             if neighbors.len() > 0 {
                 neighbors
