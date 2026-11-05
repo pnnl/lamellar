@@ -1,0 +1,21 @@
+[package]
+name = "randperm"
+version = "0.1.0"
+authors = ["Ryan D. Friese"]
+edition = "2021"
+
+[dependencies]
+benchmark_record = { path = "../benchmark_record" }
+clap = { workspace = true }
+futures = { workspace = true }
+lamellar = { workspace = true }
+rand = { workspace = true }
+
+[build-dependencies]
+benchmark_record = { path = "../benchmark_record" }
+
+[features]
+benchmark-record = ["benchmark_record/benchmark-record"]
+ofi = ["lamellar/enable-libfabric"]
+ucx = ["lamellar/enable-ucx"]
+rofi-c = ["lamellar/enable-rofi-c"]

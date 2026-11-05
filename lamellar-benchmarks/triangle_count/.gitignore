@@ -1,0 +1,10 @@
+/target
+**/*.rs.bk
+Cargo.lock
+
+# mac-specific file
+.DS_Store
+
+# unzipped graph files
+*.tsv
+*.tsv.bin
