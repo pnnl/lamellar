@@ -12,17 +12,20 @@ members = [
 ]
 
 [workspace.dependencies]
+lamellar = { version = "0.8.0", features = [
+    "enable-ucx",
+    "enable-ucx-opt",
+    "enable-libfabric",
+    "enable-rofi-c-pmix",
+    "enable-libfabric-sys",
+    "enable-libfabric-sys-opt",
+    "enable-shmem-opt",
+    "with-salloc",
+    "runtime-warnings-panic",
+] } #lamellar = { path = "../lamellar-runtime-junction", features = [
 async-std = "1.12.0"
 clap = { version = "4.3.4", features = ["derive", "env"] }
 futures = "0.3"
-lamellar = { version = "0.8.0", features = [
-    "enable-ucx",
-    "enable-libfabric",
-    "enable-rofi-c",
-    "with-salloc",
-    "vendored-hwloc",
-    "runtime-warnings-panic",
-] } #lamellar = { path = "../lamellar-runtime-junction", features = [
 lazy_static = "1.3.0"
 parking_lot = { version = "0.12" }
 rand = "0.6"
@@ -31,12 +34,10 @@ serde = { version = "1.0", features = ["derive"] }
 
 [patch.crates-io]
 
-# Local testing against process_management/* and communication_frameworks/*
-# from the lamellar-repo monorepo instead of the published crates.io versions.
-# Uncomment exactly one variant below.
+# All of lamellar (runtime, process_management/*, communication_frameworks/*) comes from the
+# pnnl/lamellar monorepo, master branch.
 
-# --- Variant A: GitHub-hosted lamellar-repo (works from any checkout) ---
-lamellar = { git = "https://github.com/pnnl/lamellar-runtime", branch = "master" }
+lamellar = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 pmi = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 pmi-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 pmi2-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
@@ -45,12 +46,36 @@ pmix-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 prrte-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 openpmix-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 prrte-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
-rofisys = { git = "https://github.com/pnnl/rofi-sys", branch = "master" }
+hpc_launch = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+hpc_launch_impl = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+hpc_launch_codegen = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+rofisys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 lamellar-libfabric = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 lamellar-libfabric-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 lamellar-libfabric-src = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 lamellar-ucx-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
 lamellar-ucc-sys = { git = "https://github.com/pnnl/lamellar", branch = "master" }
+
+# Local testing against a checkout of the monorepo instead: comment out the git entries above and
+# uncomment these.
+# lamellar = { path = "../lamellar-repo/lamellar-runtime" }
+# pmi = { path = "../lamellar-repo/process_management/pmi" }
+# pmi-sys = { path = "../lamellar-repo/process_management/pmi-sys" }
+# pmi2-sys = { path = "../lamellar-repo/process_management/pmi2-sys" }
+# pmi-mpich-src = { path = "../lamellar-repo/process_management/pmi-mpich-src" }
+# pmix-sys = { path = "../lamellar-repo/process_management/pmix-sys" }
+# prrte-sys = { path = "../lamellar-repo/process_management/prrte-sys" }
+# openpmix-src = { path = "../lamellar-repo/process_management/openpmix-src" }
+# prrte-src = { path = "../lamellar-repo/process_management/prrte-src" }
+# hpc_launch = { path = "../lamellar-repo/process_management/hpc_launch" }
+# hpc_launch_impl = { path = "../lamellar-repo/process_management/hpc_launch_impl" }
+# hpc_launch_codegen = { path = "../lamellar-repo/process_management/hpc_launch_codegen" }
+# rofisys = { path = "../lamellar-repo/communication_frameworks/rofi-sys" }
+# lamellar-libfabric = { path = "../lamellar-repo/communication_frameworks/libfabric" }
+# lamellar-libfabric-sys = { path = "../lamellar-repo/communication_frameworks/libfabric-sys" }
+# lamellar-libfabric-src = { path = "../lamellar-repo/communication_frameworks/libfabric-src" }
+# lamellar-ucx-sys = { path = "../lamellar-repo/communication_frameworks/lamellar-ucx-sys" }
+# lamellar-ucc-sys = { path = "../lamellar-repo/communication_frameworks/lamellar-ucc-sys" }
 
 
 [profile.release]
