@@ -1986,7 +1986,7 @@ impl EndpointAttr {
             rx_ctx_cnt: self.rx_ctx_cnt,
             auth_key: unsafe { std::mem::transmute::<*const u8, *mut u8>(auth_key) },
             auth_key_size,
-            #[cfg(ofi2)]
+            #[cfg(ofi_ep_xpu_ctx)]
             xpu_ctx: std::ptr::null_mut(),
         }
     }

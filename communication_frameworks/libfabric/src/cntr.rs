@@ -422,7 +422,7 @@ impl CounterAttr {
             wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
             wait_set: std::ptr::null_mut(),
             flags: 0,
-            #[cfg(ofi2)]
+            #[cfg(ofi_cntr_xpu_ctx)]
             xpu_ctx: std::ptr::null_mut(),
         };
 
