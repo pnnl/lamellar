@@ -1191,7 +1191,7 @@ impl TxCompOrder {
         Self { c_flags: value }
     }
 
-    crate::enums::gen_set_get_flag!(strict, is_strict, libfabric_sys::FI_ORDER_STRICT as u64);
+    crate::enums::gen_set_get_flag!(strict, is_strict, crate::compat::FI_ORDER_STRICT);
 }
 
 impl Default for TxCompOrder {
@@ -1346,8 +1346,8 @@ impl RxCompOrder {
         Self { c_flags: 0 }
     }
 
-    crate::enums::gen_set_get_flag!(strict, is_strict, libfabric_sys::FI_ORDER_STRICT as u64);
-    crate::enums::gen_set_get_flag!(data, is_data, libfabric_sys::FI_ORDER_DATA as u64);
+    crate::enums::gen_set_get_flag!(strict, is_strict, crate::compat::FI_ORDER_STRICT);
+    crate::enums::gen_set_get_flag!(data, is_data, crate::compat::FI_ORDER_DATA);
 }
 
 impl Default for RxCompOrder {

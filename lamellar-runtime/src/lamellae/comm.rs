@@ -5,7 +5,8 @@ pub(crate) mod error;
 #[cfg(any(
     feature = "enable-libfabric",
     feature = "enable-libfabric-sys",
-    feature = "enable-libfabric-sys-opt"
+    feature = "enable-libfabric-sys-opt",
+    feature = "enable-rofi-c"
 ))]
 pub(crate) mod ofi_mr_cache;
 pub(crate) mod rdma;

@@ -13,6 +13,20 @@ use std::path::Path;
 /// Lamellar patch was needed there (unlike libfabric/MPICH-PMI).
 const UCC_VERSION: &str = "1.8.0";
 
+// ---- system-library lookup helpers. The same code is in libfabric-src, pmix-sys, rofi-sys, lamellar-ucx-sys and
+// lamellar-ucc-sys (their build scripts are standalone). ----
+
+/// `<root>/lib64` instead of `<root>/lib` when only lib64 holds one of `names` (RHEL-style installs such as `/usr`).
+fn lib_dir_of(root: &std::path::Path, names: &[&str]) -> std::path::PathBuf {
+    let lib = root.join("lib");
+    let lib64 = root.join("lib64");
+    if !names.iter().any(|n| lib.join(n).exists()) && names.iter().any(|n| lib64.join(n).exists()) {
+        lib64
+    } else {
+        lib
+    }
+}
+
 fn remove_dst_forcibly(dst: &Path) {
     match std::fs::remove_file(dst) {
         Ok(_) => {}
@@ -301,7 +315,7 @@ fn build_bindings() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 
-    let ucc_lib_path = ucc_path.join("lib");
+    let ucc_lib_path = lib_dir_of(&ucc_path, &["libucc.so", "libucc.a"]);
     println!(
         "cargo:rustc-link-arg=-Wl,-rpath,{}",
         ucc_lib_path.display()

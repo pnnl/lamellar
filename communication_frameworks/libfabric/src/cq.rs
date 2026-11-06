@@ -1043,6 +1043,8 @@ impl CompletionQueueAttr {
             signaling_vector: 0,
             wait_cond: crate::enums::WaitCond::None.as_raw(),
             wait_set: std::ptr::null_mut(),
+            #[cfg(ofi2)]
+            xpu_ctx: std::ptr::null_mut(),
         };
 
         Self { c_attr }

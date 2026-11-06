@@ -216,7 +216,7 @@ gen_enum!(
         LongDoubleComplex,
         libfabric_sys::fi_datatype_FI_LONG_DOUBLE_COMPLEX
     ),
-    (DatatypeLast, libfabric_sys::fi_datatype_FI_DATATYPE_LAST),
+    (DatatypeLast, crate::compat::FI_DATATYPE_LAST),
     (Int128, libfabric_sys::fi_datatype_FI_INT128),
     (Uint28, libfabric_sys::fi_datatype_FI_UINT128),
     (Void, libfabric_sys::fi_datatype_FI_VOID)
@@ -506,7 +506,7 @@ impl Mode {
     gen_set_get_flag!(msg_prefix, is_msg_prefix, libfabric_sys::FI_MSG_PREFIX);
     gen_set_get_flag!(async_iov, is_async_iov, libfabric_sys::FI_ASYNC_IOV);
     gen_set_get_flag!(rx_cq_data, is_rx_cq_data, libfabric_sys::FI_RX_CQ_DATA);
-    gen_set_get_flag!(local_mr, is_local_mr, libfabric_sys::FI_LOCAL_MR);
+    gen_set_get_flag!(local_mr, is_local_mr, crate::compat::FI_LOCAL_MR);
     gen_set_get_flag!(
         #[deprecated]
         notify_flags_only,
@@ -525,7 +525,7 @@ impl Mode {
     gen_set_get_flag!(
         buffered_recv,
         is_buffered_recv,
-        libfabric_sys::FI_BUFFERED_RECV
+        crate::compat::FI_BUFFERED_RECV
     );
 }
 
@@ -559,7 +559,7 @@ impl MrMode {
     }
 
     pub fn is_unspec(&self) -> bool {
-        self.c_flags == libfabric_sys::fi_mr_mode_FI_MR_UNSPEC
+        self.c_flags == crate::compat::FI_MR_UNSPEC
     }
 
     pub fn inverse(mut self) -> Self {
@@ -568,11 +568,11 @@ impl MrMode {
         self
     }
 
-    gen_set_get_flag!(basic, is_basic, libfabric_sys::fi_mr_mode_FI_MR_BASIC);
+    gen_set_get_flag!(basic, is_basic, crate::compat::FI_MR_BASIC);
     gen_set_get_flag!(
         scalable,
         is_scalable,
-        libfabric_sys::fi_mr_mode_FI_MR_SCALABLE
+        crate::compat::FI_MR_SCALABLE
     );
     gen_set_get_flag!(local, is_local, libfabric_sys::FI_MR_LOCAL);
     gen_set_get_flag!(raw, is_raw, libfabric_sys::FI_MR_RAW);

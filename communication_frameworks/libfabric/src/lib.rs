@@ -87,6 +87,7 @@ use std::sync::atomic;
 use av::AddressVectorImplT;
 use av_set::AddressVectorSetImpl;
 
+pub(crate) mod compat;
 pub mod av;
 pub mod av_set;
 pub mod cntr;
