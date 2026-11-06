@@ -9,6 +9,43 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{exit, Command, Stdio};
 
+// ---- system-library lookup helpers. The same code is in libfabric-src, pmix-sys, rofi-sys, lamellar-ucx-sys and
+// lamellar-ucc-sys (their build scripts are standalone). ----
+
+/// `<root>/lib64` instead of `<root>/lib` when only lib64 holds one of `names` (RHEL-style installs such as `/usr`).
+fn lib_dir_of(root: &std::path::Path, names: &[&str]) -> std::path::PathBuf {
+    let lib = root.join("lib");
+    let lib64 = root.join("lib64");
+    if !names.iter().any(|n| lib.join(n).exists()) && names.iter().any(|n| lib64.join(n).exists()) {
+        lib64
+    } else {
+        lib
+    }
+}
+
+/// True when every member of `archive` can be linked into a position-independent object. Probes by linking the whole
+/// archive into a throwaway shared object: non-PIC code fails with "relocation ... recompile with -fPIC", while
+/// undefined symbols are fine for `-shared`, so the library's own dependencies need not be present. If the probe
+/// cannot run (no C compiler), the archive is assumed usable.
+fn archive_is_pic(archive: &std::path::Path, scratch: &std::path::Path) -> bool {
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let out = scratch.join("pic_probe.so");
+    let result = std::process::Command::new(cc)
+        .arg("-shared")
+        .arg("-o")
+        .arg(&out)
+        .arg("-Wl,--whole-archive")
+        .arg(archive)
+        .arg("-Wl,--no-whole-archive")
+        .output();
+    let _ = std::fs::remove_file(&out);
+    match result {
+        Ok(output) if output.status.success() => true,
+        Ok(output) => !String::from_utf8_lossy(&output.stderr).contains("-fPIC"),
+        Err(_) => true,
+    }
+}
+
 fn build_rofi(
     out_path: &PathBuf,
     ofi: &PathBuf,
@@ -193,13 +230,18 @@ fn build_bindings() {
         println!("cargo:warning ={}={}", var.0, var.1);
     }
     let ofi =PathBuf::from(env::var("DEP_OFI_ROOT").expect("DEP_OFI_ROOT not set"));
-    let ofi_lib_dir = ofi.join("lib");
+    // libfabric-sys reports where the library is (lib or lib64) and whether it linked it shared
+    let ofi_lib_dir = env::var("DEP_OFI_LIB_DIR").map(PathBuf::from).unwrap_or_else(|_| ofi.join("lib"));
+    let ofi_shared = match env::var("DEP_OFI_SHARED") {
+        Ok(v) => v == "1",
+        Err(_) => cfg!(feature = "shared"),
+    };
     let ofi_inc_dir = ofi.join("include");
     let pmix = pmix_root();
     println!("cargo:warning =Building Rofisys with libfabric at {:?}", ofi_lib_dir);
     println!("cargo:warning =Building Rofisys with libfabric include at {:?}", ofi_inc_dir);
     println!("cargo:rustc-link-search=native={}", ofi_lib_dir.display());
-    if cfg!(feature = "shared") {
+    if ofi_shared {
         println!("cargo:rustc-link-lib=dylib=fabric");
     } else {
         println!("cargo:rustc-link-lib=static=fabric");
@@ -221,12 +263,17 @@ fn build_bindings() {
         Ok(val) => {
             println!("cargo:warning =Trying to use Rofi at {:?}", val);
             let rofi_path = std::path::PathBuf::from(val);
-            let rofi_lib_dir = rofi_path.join("lib");
+            let rofi_lib_dir = lib_dir_of(&rofi_path, &["librofi.so", "librofi.a"]);
             let rofi_a = rofi_lib_dir.join("librofi.a");
             let rofi_so = rofi_lib_dir.join("librofi.so");
             
-            let rofi_a_valid =check_lib_for_function(rofi_a.clone(), "rofi_transport_init").is_some();
+            let mut rofi_a_valid =check_lib_for_function(rofi_a.clone(), "rofi_transport_init").is_some();
             let rofi_so_valid = check_lib_for_function(rofi_so.clone(), "rofi_transport_init").is_some();
+            // an archive built without -fPIC cannot be linked into a PIE or cdylib: use the shared library instead
+            if rofi_a_valid && rofi_so_valid && !archive_is_pic(&rofi_a, &out_path) {
+                println!("cargo:warning=librofi.a at {:?} is not position-independent; linking the shared librofi.so instead", &rofi_a);
+                rofi_a_valid = false;
+            }
 
             if rofi_a_valid || rofi_so_valid {
                 if cfg!(feature = "shared") {
@@ -262,7 +309,7 @@ fn build_bindings() {
     }
 
     let rofi_inc_dir = rofi_env.join("include");
-    let rofi_lib_dir = rofi_env.join("lib");
+    let rofi_lib_dir = lib_dir_of(&rofi_env, &["librofi.so", "librofi.a"]);
 
     println!("cargo:root={}", out_path.display());
     println!("cargo:rustc-link-search=native={}", rofi_lib_dir.display());
