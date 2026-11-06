@@ -533,12 +533,12 @@ impl DomainAttr {
         }
     }
 
-    #[cfg(not(ofi2))]
+    #[cfg(ofi_domain_data_progress_flat)]
     unsafe fn raw_data_progress(value: *const libfabric_sys::fi_domain_attr) -> libfabric_sys::fi_progress {
         (*value).data_progress
     }
 
-    #[cfg(ofi2)]
+    #[cfg(not(ofi_domain_data_progress_flat))]
     unsafe fn raw_data_progress(value: *const libfabric_sys::fi_domain_attr) -> libfabric_sys::fi_progress {
         (*value).__bindgen_anon_1.data_progress
     }
@@ -550,9 +550,9 @@ impl DomainAttr {
             name: std::mem::transmute::<*const i8, *mut i8>(self._c_name.as_ptr()),
             threading: self.threading.as_raw(),
             control_progress: self.control_progress.as_raw(),
-            #[cfg(not(ofi2))]
+            #[cfg(ofi_domain_data_progress_flat)]
             data_progress: self.data_progress.as_raw(),
-            #[cfg(ofi2)]
+            #[cfg(not(ofi_domain_data_progress_flat))]
             __bindgen_anon_1: libfabric_sys::fi_domain_attr__bindgen_ty_1 {
                 data_progress: self.data_progress.as_raw(),
             },
@@ -577,13 +577,13 @@ impl DomainAttr {
             mode: self.mode.as_raw(),
             tclass: self.traffic_class.as_raw(),
             max_ep_auth_key: self.max_ep_auth_key,
-            #[cfg(ofi2)]
+            #[cfg(ofi_domain_max_group_id)]
             max_group_id: 0,
-            #[cfg(ofi2)]
+            #[cfg(ofi_domain_max_cntr_value)]
             max_cntr_value: 0,
-            #[cfg(ofi2)]
+            #[cfg(ofi_domain_max_err_cntr_value)]
             max_err_cntr_value: 0,
-            #[cfg(ofi2)]
+            #[cfg(ofi_domain_max_xpu_ctx_cnt)]
             max_xpu_ctx_cnt: 0,
             auth_key: if let Some(auth_key) = &self.auth_key {
                 std::mem::transmute::<*const u8, *mut u8>(auth_key.as_ptr())

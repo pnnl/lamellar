@@ -980,11 +980,11 @@ impl FabricInfo {
     }
 
     fn set_domain_data_progress(&mut self, data_progress: Progress) {
-        #[cfg(not(ofi2))]
+        #[cfg(ofi_domain_data_progress_flat)]
         unsafe {
             (*(*self.0).domain_attr).data_progress = data_progress.as_raw()
         };
-        #[cfg(ofi2)]
+        #[cfg(not(ofi_domain_data_progress_flat))]
         unsafe {
             (*(*self.0).domain_attr).__bindgen_anon_1.data_progress = data_progress.as_raw()
         };

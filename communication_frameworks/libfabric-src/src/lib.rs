@@ -254,7 +254,17 @@ impl Build {
         writer_inlined: &mut BufWriter<File>,
     ) {
         for file in dir {
-            if file.as_ref().unwrap().file_type().unwrap().is_file() {
+            // Only libfabric's own headers (fabric.h, fi_*.h, providers/). A system OFI_DIR such as /usr also holds
+            // rdma-core's headers in rdma/ (rdma_cma.h, rdma_user_cm.h, *-abi.h, ...), which redefine each other when
+            // they are all included in one translation unit and are not part of the libfabric API.
+            let name = file.as_ref().unwrap().file_name().to_string_lossy().into_owned();
+            // metadata() follows symlinks (DirEntry::file_type() does not), for installs that link their headers in
+            let is_file = std::fs::metadata(file.as_ref().unwrap().path()).map_or(false, |m| m.is_file());
+            let is_libfabric_header = name == "fabric.h" || (name.starts_with("fi_") && name.ends_with(".h"));
+            if (is_file && !is_libfabric_header) || (!is_file && name != "providers") {
+                continue;
+            }
+            if is_file {
                 // Create the wrappers (prototype, definition) for all inlined functions
                 let mut funcs = crate::create_inlined_wrappers::read_file(
                     file.as_ref().unwrap().path().to_str().unwrap(),
@@ -273,7 +283,8 @@ impl Build {
                     ("#include<".to_owned() + file.as_ref().unwrap().path().to_str().unwrap() + ">\n")
                         .as_bytes(),
                 );
-            } else if file.as_ref().unwrap().file_type().unwrap().is_dir() {
+            } else {
+                // the filter above lets only the providers/ directory through
                 self.iter_dir(
                     std::fs::read_dir(file.unwrap().path()).unwrap(),
                     inlined_funcs,

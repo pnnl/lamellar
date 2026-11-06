@@ -6,14 +6,14 @@ fn main() {
 
     let artifacts = libfabric_src::Build::new().build();
     
-    // tested: only the vendored libfabric 1.22
+    // tested: the vendored libfabric 1.22, and 2.3 through 2.7 (items that differ between releases are probed below)
     check_api_version(
         "libfabric",
         &artifacts.include_dir().join("rdma/fabric.h"),
         "FI_MAJOR_VERSION",
         "FI_MINOR_VERSION",
-        "1.22",
-        |major, minor| major == 1 && minor == 22,
+        "1.22 and 2.3 to 2.7",
+        |major, minor| (major == 1 && minor == 22) || (major == 2 && (3..=7).contains(&minor)),
     );
 
     // Generate the rust bindings
@@ -36,6 +36,8 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
+    emit_api_cfgs(&out_path.join("bindings.rs"));
 
     // // Link with the libfabric and libinlined libraries to access their symbols.
     // println!("cargo:rustc-link-search={}", ofi_lib_path.display());
@@ -65,6 +67,66 @@ fn main() {
     println!("cargo:rustc-link-lib=dl");
     println!("cargo:rustc-link-lib=numa");
     println!("cargo:rustc-link-lib=uuid");
+}
+
+// libfabric's C API differs between releases: structs gain or lose fields (`xpu_ctx`, `max_group_id`, ...), fields move
+// into anonymous unions (`data_progress`), and constants are removed (`FI_REG_MR`, `FI_MR_BASIC`, ...). The C ecosystem
+// handles that with #ifdefs, and the Rust equivalent is a cfg per item, decided by looking at what bindgen actually
+// generated rather than at the version number (2.3 and 2.7, for example, disagree about `xpu_ctx`).
+//
+// Exposed to dependents (this crate has `links = "ofi"`) as DEP_OFI_API_CFGS (the names that hold) and
+// DEP_OFI_ALL_API_CFGS (every name that can be reported, for check-cfg); lamellar-libfabric's build script turns them
+// into `cfg(...)`.
+const STRUCT_FIELD_CFGS: &[(&str, &str, &str)] = &[
+    // (cfg, struct, field): holds when the struct has the field directly
+    ("ofi_ep_xpu_ctx", "fi_ep_attr", "xpu_ctx"),
+    ("ofi_cq_xpu_ctx", "fi_cq_attr", "xpu_ctx"),
+    ("ofi_cntr_xpu_ctx", "fi_cntr_attr", "xpu_ctx"),
+    ("ofi_domain_max_group_id", "fi_domain_attr", "max_group_id"),
+    ("ofi_domain_max_cntr_value", "fi_domain_attr", "max_cntr_value"),
+    ("ofi_domain_max_err_cntr_value", "fi_domain_attr", "max_err_cntr_value"),
+    ("ofi_domain_max_xpu_ctx_cnt", "fi_domain_attr", "max_xpu_ctx_cnt"),
+    // 1.x: a plain field; 2.x: inside an anonymous union (`__bindgen_anon_1.data_progress`)
+    ("ofi_domain_data_progress_flat", "fi_domain_attr", "data_progress"),
+];
+const CONST_CFGS: &[(&str, &str)] = &[
+    // (cfg, constant): holds when bindgen generated the constant
+    ("ofi_const_fi_reg_mr", "FI_REG_MR"),
+    ("ofi_const_fi_local_mr", "FI_LOCAL_MR"),
+    ("ofi_const_fi_buffered_recv", "FI_BUFFERED_RECV"),
+    ("ofi_const_fi_order_strict", "FI_ORDER_STRICT"),
+    ("ofi_const_fi_order_data", "FI_ORDER_DATA"),
+    ("ofi_const_fi_mr_unspec", "fi_mr_mode_FI_MR_UNSPEC"),
+    ("ofi_const_fi_mr_basic", "fi_mr_mode_FI_MR_BASIC"),
+    ("ofi_const_fi_mr_scalable", "fi_mr_mode_FI_MR_SCALABLE"),
+    ("ofi_const_fi_datatype_last", "fi_datatype_FI_DATATYPE_LAST"),
+];
+
+// The text of `pub struct <name> { ... }` in bindgen output, if present.
+fn struct_body<'a>(bindings: &'a str, name: &str) -> Option<&'a str> {
+    let start = bindings.find(&format!("pub struct {} {{", name))?;
+    let rest = &bindings[start..];
+    Some(&rest[..rest.find("\n}")?])
+}
+
+fn emit_api_cfgs(bindings_path: &std::path::Path) {
+    let bindings = std::fs::read_to_string(bindings_path).expect("Couldn't read the generated bindings");
+    let mut all = Vec::new();
+    let mut present = Vec::new();
+    for (cfg, struct_name, field) in STRUCT_FIELD_CFGS {
+        all.push(*cfg);
+        if struct_body(&bindings, struct_name).map_or(false, |body| body.contains(&format!("pub {}:", field))) {
+            present.push(*cfg);
+        }
+    }
+    for (cfg, constant) in CONST_CFGS {
+        all.push(*cfg);
+        if bindings.contains(&format!("pub const {}:", constant)) {
+            present.push(*cfg);
+        }
+    }
+    println!("cargo:api_cfgs={}", present.join(","));
+    println!("cargo:all_api_cfgs={}", all.join(","));
 }
 
 // Reads `#define <name> <n>` from `header`, or None if the header or macro cannot be read.
