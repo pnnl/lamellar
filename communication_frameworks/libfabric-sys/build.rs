@@ -1,5 +1,6 @@
 extern crate libfabric_src;
 
+
 fn main() {
     let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
@@ -42,9 +43,16 @@ fn main() {
 
     // println!("cargo:rustc-link-lib=fabric");
     println!("cargo:rerun-if-changed={}", "build.rs");
+    // Exposed to dependents as DEP_OFI_MAJOR (this crate has `links = "ofi"`), so lamellar-libfabric can gate on API changes.
+    if let Some(major) = header_define(&artifacts.include_dir().join("rdma/fabric.h"), "FI_MAJOR_VERSION") {
+        println!("cargo:major={}", major);
+    }
     println!("cargo:root={}", artifacts.lib_dir().parent().unwrap_or(artifacts.lib_dir()).display());
+    // The directory holding libfabric (lib or lib64) and whether it is linked shared; rofi-sys links the same way.
+    println!("cargo:lib_dir={}", artifacts.lib_dir().display());
+    println!("cargo:shared={}", if artifacts.shared() { 1 } else { 0 });
     println!("cargo:rustc-link-search={}", artifacts.lib_dir().display());
-    if cfg!(feature = "shared") {
+    if artifacts.shared() {
         println!("cargo:rustc-link-lib=dylib=fabric");
     } else {
         println!("cargo:rustc-link-lib=static=fabric");
@@ -57,6 +65,18 @@ fn main() {
     println!("cargo:rustc-link-lib=dl");
     println!("cargo:rustc-link-lib=numa");
     println!("cargo:rustc-link-lib=uuid");
+}
+
+// Reads `#define <name> <n>` from `header`, or None if the header or macro cannot be read.
+fn header_define(header: &std::path::Path, name: &str) -> Option<u32> {
+    let text = std::fs::read_to_string(header).ok()?;
+    text.lines().find_map(|line| {
+        let mut words = line.split_whitespace();
+        if words.next()? != "#define" || words.next()? != name {
+            return None;
+        }
+        words.next()?.parse().ok()
+    })
 }
 
 // Warns, and never fails, when the library whose headers are about to be bound is outside the versions this crate was
