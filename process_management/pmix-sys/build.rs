@@ -3,6 +3,43 @@ extern crate bindgen;
 extern crate openpmix_src;
 
 
+// ---- system-library lookup helpers. The same code is in libfabric-src, pmix-sys, rofi-sys, lamellar-ucx-sys and
+// lamellar-ucc-sys (their build scripts are standalone). ----
+
+/// `<root>/lib64` instead of `<root>/lib` when only lib64 holds one of `names` (RHEL-style installs such as `/usr`).
+fn lib_dir_of(root: &std::path::Path, names: &[&str]) -> std::path::PathBuf {
+    let lib = root.join("lib");
+    let lib64 = root.join("lib64");
+    if !names.iter().any(|n| lib.join(n).exists()) && names.iter().any(|n| lib64.join(n).exists()) {
+        lib64
+    } else {
+        lib
+    }
+}
+
+/// True when every member of `archive` can be linked into a position-independent object. Probes by linking the whole
+/// archive into a throwaway shared object: non-PIC code fails with "relocation ... recompile with -fPIC", while
+/// undefined symbols are fine for `-shared`, so the library's own dependencies need not be present. If the probe
+/// cannot run (no C compiler), the archive is assumed usable.
+fn archive_is_pic(archive: &std::path::Path, scratch: &std::path::Path) -> bool {
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let out = scratch.join("pic_probe.so");
+    let result = std::process::Command::new(cc)
+        .arg("-shared")
+        .arg("-o")
+        .arg(&out)
+        .arg("-Wl,--whole-archive")
+        .arg(archive)
+        .arg("-Wl,--no-whole-archive")
+        .output();
+    let _ = std::fs::remove_file(&out);
+    match result {
+        Ok(output) if output.status.success() => true,
+        Ok(output) => !String::from_utf8_lossy(&output.stderr).contains("-fPIC"),
+        Err(_) => true,
+    }
+}
+
 fn env_inner(name: &str) -> Option<String> {
     let var = std::env::var(name);
     println!("cargo:rerun-if-env-changed={name}");
@@ -78,13 +115,18 @@ fn find_pmix(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::P
             let hwloc_link_kind = if let Some(dir) = artifacts.hwloc_dir() {
                 println!("cargo:hwloc_root={}", dir.display());
                 println!("cargo:hwloc_include={}", dir.join("include").display());
-                println!("cargo:rustc-link-search={}/lib", dir.display());
-                "static"
+                let hwloc_lib = lib_dir_of(dir, &["libhwloc.so", "libhwloc.a"]);
+                println!("cargo:rustc-link-search={}", hwloc_lib.display());
+                // The vendored hwloc is static-only; an HWLOC_DIR install is typically shared (or both).
+                if hwloc_lib.join("libhwloc.so").exists() { "dylib" } else { "static" }
             } else {
                 "dylib"
             };
             if let Some(dir) = lib_event_dir.as_ref() {
-                println!("cargo:rustc-link-search={}/lib", dir);
+                println!(
+                    "cargo:rustc-link-search={}",
+                    lib_dir_of(std::path::Path::new(dir), &["libevent_core.so", "libevent_core.a"]).display()
+                );
                 // Re-export libevent's dir (mirrors hwloc_root/hwloc_include
                 // above) so rofi-sys -- which links PMIx directly but has no
                 // Cargo dependency edge to libevent-sys, hence no DEP_EVENT_*
@@ -96,7 +138,21 @@ fn find_pmix(out_path: &std::path::PathBuf) -> (std::path::PathBuf, std::path::P
             // openpmix-src's own configure via pkg-config when unset) is typically
             // only available as a shared library, unlike the vendored autotools
             // build (DEP_EVENT_ROOT case) which always produces static archives.
-            let event_link_kind = if lib_event_dir.is_some() && libevent_from_env.is_none() { "static" } else { "dylib" };
+            let event_link_kind = match lib_event_dir.as_ref() {
+                Some(dir) => {
+                    let event_lib = lib_dir_of(std::path::Path::new(dir), &["libevent_core.so", "libevent_core.a"]);
+                    if event_lib.join("libevent_core.so").exists() {
+                        "dylib"
+                    } else if event_lib.join("libevent_core.a").exists() {
+                        "static"
+                    } else if libevent_from_env.is_none() {
+                        "static"
+                    } else {
+                        "dylib"
+                    }
+                }
+                None => "dylib",
+            };
             println!("cargo:rustc-link-lib={}=event_core", event_link_kind);
             println!("cargo:rustc-link-lib={}=event_pthreads", event_link_kind);
             println!("cargo:rustc-link-lib={}=hwloc", hwloc_link_kind);
@@ -140,7 +196,18 @@ fn main(){
     // Prefer static if a static archive was produced (vendored build now
     // defaults to enable_static/disable_shared); fall back to dylib for a
     // system-provided (PMIX_LIB_DIR) shared install.
-    let pmix_link_kind = if artifacts.0.join("libpmix.a").exists() { "static" } else { "dylib" };
+    // A system install can have a libpmix.a that was not built with -fPIC (cannot be linked into a PIE or cdylib); use
+    // its shared library instead when there is one.
+    let pmix_a = artifacts.0.join("libpmix.a");
+    let pmix_so = artifacts.0.join("libpmix.so");
+    let pmix_link_kind = if pmix_a.exists() && !(pmix_so.exists() && !archive_is_pic(&pmix_a, &out_path)) {
+        "static"
+    } else {
+        if pmix_a.exists() {
+            println!("cargo:warning=libpmix.a in {} is not position-independent; linking the shared libpmix.so instead", artifacts.0.display());
+        }
+        "dylib"
+    };
     println!("cargo:rustc-link-lib={}=pmix", pmix_link_kind);
     println!("cargo:rustc-link-search=native={}", artifacts.0.display());
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}",  artifacts.0.display());

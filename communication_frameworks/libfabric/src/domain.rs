@@ -118,7 +118,7 @@ impl DomainImplBase<dyn ReadEq> {
                 self.as_typed_fid_mut().as_raw_typed_fid(),
                 eq.as_typed_fid().as_raw_fid(),
                 if async_mem_reg {
-                    libfabric_sys::FI_REG_MR
+                    crate::compat::FI_REG_MR
                 } else {
                     0
                 },
@@ -498,7 +498,7 @@ impl DomainAttr {
             _c_name: c_name,
             threading: crate::enums::Threading::from_raw(unsafe { *value }.threading),
             control_progress: crate::enums::Progress::from_raw(unsafe { *value }.control_progress),
-            data_progress: crate::enums::Progress::from_raw(unsafe { *value }.data_progress),
+            data_progress: crate::enums::Progress::from_raw(unsafe { Self::raw_data_progress(value) }),
             resource_mgmt: crate::enums::ResourceMgmt::from_raw(unsafe { *value }.resource_mgmt),
             av_type: crate::enums::AddressVectorType::from_raw(unsafe { *value }.av_type),
             mr_mode: crate::enums::MrMode::from_raw(unsafe { *value }.mr_mode as u32),
@@ -533,6 +533,16 @@ impl DomainAttr {
         }
     }
 
+    #[cfg(not(ofi2))]
+    unsafe fn raw_data_progress(value: *const libfabric_sys::fi_domain_attr) -> libfabric_sys::fi_progress {
+        (*value).data_progress
+    }
+
+    #[cfg(ofi2)]
+    unsafe fn raw_data_progress(value: *const libfabric_sys::fi_domain_attr) -> libfabric_sys::fi_progress {
+        (*value).__bindgen_anon_1.data_progress
+    }
+
     #[allow(dead_code)]
     pub(crate) unsafe fn get(&self) -> libfabric_sys::fi_domain_attr {
         libfabric_sys::fi_domain_attr {
@@ -540,7 +550,12 @@ impl DomainAttr {
             name: std::mem::transmute::<*const i8, *mut i8>(self._c_name.as_ptr()),
             threading: self.threading.as_raw(),
             control_progress: self.control_progress.as_raw(),
+            #[cfg(not(ofi2))]
             data_progress: self.data_progress.as_raw(),
+            #[cfg(ofi2)]
+            __bindgen_anon_1: libfabric_sys::fi_domain_attr__bindgen_ty_1 {
+                data_progress: self.data_progress.as_raw(),
+            },
             resource_mgmt: self.resource_mgmt.as_raw(),
             mr_key_size: self.mr_key_size,
             cq_data_size: self.cq_data_size,
@@ -562,6 +577,14 @@ impl DomainAttr {
             mode: self.mode.as_raw(),
             tclass: self.traffic_class.as_raw(),
             max_ep_auth_key: self.max_ep_auth_key,
+            #[cfg(ofi2)]
+            max_group_id: 0,
+            #[cfg(ofi2)]
+            max_cntr_value: 0,
+            #[cfg(ofi2)]
+            max_err_cntr_value: 0,
+            #[cfg(ofi2)]
+            max_xpu_ctx_cnt: 0,
             auth_key: if let Some(auth_key) = &self.auth_key {
                 std::mem::transmute::<*const u8, *mut u8>(auth_key.as_ptr())
             } else {

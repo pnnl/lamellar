@@ -16,6 +16,20 @@ const UCX_VERSION: &str = "1.20.0";
 
 /// Use the compiler underneath a wrapper (Cray `cc`, `mpicc`, ...) when the wrapper fails a test link; see
 /// `compiler_probe.rs`. `LAMELLAR_NO_COMPILER_FALLBACK=1` disables it.
+// ---- system-library lookup helpers. The same code is in libfabric-src, pmix-sys, rofi-sys, lamellar-ucx-sys and
+// lamellar-ucc-sys (their build scripts are standalone). ----
+
+/// `<root>/lib64` instead of `<root>/lib` when only lib64 holds one of `names` (RHEL-style installs such as `/usr`).
+fn lib_dir_of(root: &std::path::Path, names: &[&str]) -> std::path::PathBuf {
+    let lib = root.join("lib");
+    let lib64 = root.join("lib64");
+    if !names.iter().any(|n| lib.join(n).exists()) && names.iter().any(|n| lib64.join(n).exists()) {
+        lib64
+    } else {
+        lib
+    }
+}
+
 fn compiler_fallback(
     scratch: &Path,
     lib_dirs: Vec<PathBuf>,
@@ -143,7 +157,7 @@ fn build_bindings() {
     let ucx_env = match env::var("UCX_DIR") {
         Ok(val) => {
             let ucx_path = std::path::PathBuf::from(val);
-            let ucx_lib_dir = ucx_path.join("lib");
+            let ucx_lib_dir = lib_dir_of(&ucx_path, &["libucp.so", "libucp.a"]);
             let ucm_a = ucx_lib_dir.join("libucm.a");
             let ucm_so = ucx_lib_dir.join("libucm.so");
             let ucp_a = ucx_lib_dir.join("libucp.a");
@@ -188,7 +202,7 @@ fn build_bindings() {
     }
 
     let ucx_inc_dir = ucx_env.join("include");
-    let ucx_lib_dir_base = ucx_env.join("lib");
+    let ucx_lib_dir_base = lib_dir_of(&ucx_env, &["libucp.so", "libucp.a"]);
 
     println!("cargo:root={}", out_path.display());
     println!(

@@ -63,6 +63,7 @@ pub struct Artifacts {
     bin_dir: PathBuf,
     libs: Vec<String>,
     generated_header: PathBuf,
+    shared: bool,
     #[allow(dead_code)]
     target: String,
 }
@@ -82,6 +83,13 @@ impl Artifacts {
         &self.libs
     }
 
+    /// Whether to link `libfabric.so` rather than `libfabric.a`: the `shared` feature, or an `OFI_DIR` install that
+    /// provides only a shared library (distro and vendor packages often ship no static archive, or one that is not
+    /// built with -fPIC and cannot be linked into a PIE or cdylib).
+    pub fn shared(&self) -> bool {
+        self.shared
+    }
+
     pub fn bin_dir(&self) -> &Path {
         &self.bin_dir
     }
@@ -94,6 +102,29 @@ impl Artifacts {
     }
 }
 
+
+/// True when every member of `archive` can be linked into a position-independent object. Probes by linking the whole
+/// archive into a throwaway shared object: non-PIC code fails with "relocation ... recompile with -fPIC", while
+/// undefined symbols are fine for `-shared`, so libfabric's own dependencies need not be present. If the probe
+/// cannot run (no C compiler), the archive is assumed usable so the previous behavior is kept.
+fn archive_is_pic(archive: &Path, scratch: &Path) -> bool {
+    let cc = env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    let out = scratch.join("libfabric_pic_probe.so");
+    let result = std::process::Command::new(cc)
+        .arg("-shared")
+        .arg("-o")
+        .arg(&out)
+        .arg("-Wl,--whole-archive")
+        .arg(archive)
+        .arg("-Wl,--no-whole-archive")
+        .output();
+    let _ = std::fs::remove_file(&out);
+    match result {
+        Ok(output) if output.status.success() => true,
+        Ok(output) => !String::from_utf8_lossy(&output.stderr).contains("-fPIC"),
+        Err(_) => true,
+    }
+}
 
 fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src.is_dir() {
@@ -267,7 +298,24 @@ impl Build {
         let libfabric_build = self.build_ofi(Some(&libfabric_path));
 
         let include_dir = libfabric_build.join("include");
-        let lib_dir = libfabric_build.join("lib");
+        let mut lib_dir = libfabric_build.join("lib");
+        let has_lib = |dir: &Path| dir.join("libfabric.a").exists() || dir.join("libfabric.so").exists();
+        let using_ofi_dir = std::env::var_os("OFI_DIR").is_some();
+        // RHEL-style system installs (OFI_DIR=/usr) keep libraries in lib64
+        if using_ofi_dir && !has_lib(&lib_dir) && has_lib(&libfabric_build.join("lib64")) {
+            lib_dir = libfabric_build.join("lib64");
+        }
+        let archive = lib_dir.join("libfabric.a");
+        let so_exists = lib_dir.join("libfabric.so").exists();
+        let shared = cfg!(feature = "shared")
+            || (using_ofi_dir && so_exists && (!archive.exists() || !archive_is_pic(&archive, out_dir)));
+        if shared && !cfg!(feature = "shared") {
+            println!(
+                "cargo:warning={} in {}; linking the shared libfabric.so instead",
+                if archive.exists() { "libfabric.a is not position-independent (built without -fPIC)" } else { "no libfabric.a" },
+                lib_dir.display()
+            );
+        }
         let bin_dir = libfabric_build.join("bin");
         let ofi_include_rdma_path = libfabric_build.join("include/rdma/");
 
@@ -279,7 +327,20 @@ impl Build {
         let header_file =
             std::fs::File::create(&generated_header).unwrap();
         let mut writer = std::io::BufWriter::new(header_file);
-        
+        // Newer system libfabric (2.x, e.g. HPE Slingshot installs) has rdma/fi_profile.h use container_of()
+        // before any header in this list defines it, so provide the same fallback fabric.h uses.
+        writer
+            .write_all(
+                b"#include <stddef.h>\n\
+                  #ifndef container_of\n\
+                  #define container_of(ptr, type, field) ((type *) ((char *)(ptr) - offsetof(type, field)))\n\
+                  #endif\n\
+                  #ifndef count_of\n\
+                  #define count_of(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))\n\
+                  #endif\n",
+            )
+            .unwrap();
+
         // Another problem is that there are several static inline functions in these header files which do
         // not create symbols in the libfabric.so and thus cannot be linked from rust.
         // For this reason, we create wrapper functions for each inline one and store them in a file called inlined.c
@@ -331,6 +392,7 @@ impl Build {
             bin_dir,
             libs,
             generated_header,
+            shared,
             target: target.to_string(),
         }
 
