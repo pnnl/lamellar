@@ -49,11 +49,11 @@ Benchmarks & utilities
 ----------------------
 `lamellar-benchmarks/` ([README](lamellar-benchmarks/README.md)) aggregates multiple benchmark suites and helper crates that exercise Lamellar’s distributed and Lamellae-specific features. Each subdirectory has its own README describing the benchmark, build requirements, and how to run it on multi-node systems.
 
-- `benchmark_record/` ([README](lamellar-benchmarks/benchmark_record/README.md)) records runtime/build metadata, writes JSON lines, and prints structured summaries so benchmarks can capture context-sensitive outputs.
-- `histo/` ([README](lamellar-benchmarks/histo/README.md)) ports the Histo benchmark (DMA, buffered, safe/unsafe variants) to Lamellar, stressing remote memory updates and active messages.
-- `index_gather/` ([README](lamellar-benchmarks/index_gather/README.md)) implements the Index Gather benchmark with atomic arrays, buffered variants, and read-only modes derived from Bale.
-- `randperm/` ([README](lamellar-benchmarks/randperm/README.md)) runs the Randperm benchmark to exercise asynchronous initialization and permutation kernels on Lamellae.
-- `triangle_count/` ([README](lamellar-benchmarks/triangle_count/README.md)) runs buffered and unbuffered triangle-counting workloads on Graph500 inputs with active-message and ROFI window variants.
+- `benchmark_record/` ([README](lamellar-benchmarks/bale/benchmark_record/README.md)) records runtime/build metadata, writes JSON lines, and prints structured summaries so benchmarks can capture context-sensitive outputs.
+- `histo/` ([README](lamellar-benchmarks/bale/histo/README.md)) ports the Histo benchmark (DMA, buffered, safe/unsafe variants) to Lamellar, stressing remote memory updates and active messages.
+- `index_gather/` ([README](lamellar-benchmarks/bale/index_gather/README.md)) implements the Index Gather benchmark with atomic arrays, buffered variants, and read-only modes derived from Bale.
+- `randperm/` ([README](lamellar-benchmarks/bale/randperm/README.md)) runs the Randperm benchmark to exercise asynchronous initialization and permutation kernels on Lamellae.
+- `triangle_count/` ([README](lamellar-benchmarks/bale/triangle_count/README.md)) runs buffered and unbuffered triangle-counting workloads on Graph500 inputs with active-message and ROFI window variants.
 
 Process management
 ------------------

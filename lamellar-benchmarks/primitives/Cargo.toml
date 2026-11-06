@@ -21,3 +21,5 @@ harness = false
 [[bench]]
 name = "criterion_lamellar_benchmark"
 harness = false
+
+[workspace]
