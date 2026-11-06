@@ -1,0 +1,103 @@
+/* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
+/*
+ * Copyright (c) 2004-2007 The Trustees of Indiana University and Indiana
+ *                         University Research and Technology
+ *                         Corporation.  All rights reserved.
+ * Copyright (c) 2004-2018 The University of Tennessee and The University
+ *                         of Tennessee Research Foundation.  All rights
+ *                         reserved.
+ * Copyright (c) 2004-2006 High Performance Computing Center Stuttgart,
+ *                         University of Stuttgart.  All rights reserved.
+ * Copyright (c) 2004-2005 The Regents of the University of California.
+ *                         All rights reserved.
+ * Copyright (c) 2010      Oak Ridge National Labs.  All rights reserved.
+ * Copyright (c) 2015      Research Organization for Information Science
+ *                         and Technology (RIST). All rights reserved.
+ * Copyright (c) 2015-2018 Cisco Systems, Inc.  All rights reserved
+ * Copyright (c) 2016      Los Alamos National Security, LLC. All rights
+ *                         reserved.
+ * Copyright (c) 2024      Triad National Security, LLC. All rights
+ *                         reserved.
+ * Copyright (c) 2025      Advanced Micro Devices, Inc. All rights reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ */
+
+#include "ompi_config.h"
+
+#include "opal/util/show_help.h"
+#include "ompi/runtime/ompi_spc.h"
+#include "ompi/mpi/c/bindings.h"
+#include "ompi/runtime/params.h"
+#include "ompi/communicator/communicator.h"
+#include "ompi/errhandler/errhandler.h"
+#include "ompi/constants.h"
+#include "ompi/mca/hook/base/base.h"
+
+PROTOTYPE ERROR_CLASS init_thread(INT_OUT argc, ARGV argv, INT required,
+                                  INT_OUT provided)
+{
+    int err, safe_required = MPI_THREAD_SERIALIZED;
+    bool err_arg_required = false;
+
+    ompi_hook_base_mpi_init_thread_top(argc, argv, required, provided);
+
+    /* Detect an incorrect thread support level, but dont report until we have the minimum
+     * infrastructure setup.
+     * In the future integer MPI_ABI values for MPI_THREAD_SINGLE-MULTIPLE
+     * may have gaps between them, so just checking the range is not enough.
+     */
+    err_arg_required = (required != MPI_THREAD_SINGLE && required != MPI_THREAD_FUNNELED &&
+                        required != MPI_THREAD_SERIALIZED && required != MPI_THREAD_MULTIPLE);
+    if (!err_arg_required) {
+        safe_required = required;
+    }
+
+    /* check for environment overrides for required thread level. If
+     * there is, check to see that it is a valid/supported thread level.
+     * If valid, the environment variable always override the provided thread
+     * level (even if lower than argument `required`). A user program can
+     * check `provided != required` to check if `required` has been overruled.
+     */
+    err_arg_required |= (OMPI_SUCCESS > ompi_getenv_mpi_thread_level(&safe_required));
+
+    *provided = safe_required;
+
+    /* Call the back-end initialization function (we need to put as
+       little in this function as possible so that if it's profiled, we
+       don't lose anything) */
+
+    if (NULL != argc && NULL != argv) {
+        err = ompi_mpi_init(*argc, *argv, safe_required, provided, false);
+    } else {
+        err = ompi_mpi_init(0, NULL, safe_required, provided, false);
+    }
+
+    if (err_arg_required) {
+        /* Trigger the error handler for the incorrect argument. Keep it separate from the
+         * check on the ompi_mpi_init return and report a nice, meaningful error message to
+         * the user. */
+        return ompi_errhandler_invoke((ompi_errhandler_t*)&ompi_mpi_errors_are_fatal, NULL, OMPI_ERRHANDLER_TYPE_COMM,
+                                      MPI_ERR_ARG, FUNC_NAME);
+    }
+
+    /* Since we don't have a communicator to invoke an errorhandler on
+       here, don't use the fancy-schmancy ERRHANDLER macros; they're
+       really designed for real communicator objects.  Just use the
+       back-end function directly. */
+
+    if (MPI_SUCCESS != err) {
+        return ompi_errhandler_invoke(NULL, NULL, OMPI_ERRHANDLER_TYPE_COMM,
+                                      err < 0 ? ompi_errcode_get_mpi_code(err) :
+                                      err, FUNC_NAME);
+    }
+
+    SPC_INIT();
+
+    ompi_hook_base_mpi_init_thread_bottom(argc, argv, required, provided);
+
+    return MPI_SUCCESS;
+}

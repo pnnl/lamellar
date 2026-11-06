@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# randperf: the one command for building, running and plotting the randperf benchmarks. Run it from anywhere.
+#
+#   ./randperf build [--ucx] [--libfabric] [variant ...]   build the binaries (see tools/build-binaries.sh; release profile, RANDPERF_PROFILE=release-dev for a
+#                                                          quick smoke build); --ucx / --libfabric choose the network of the OpenSHMEM
+#                                                          variants and add up (both if neither is given)
+#   ./randperf run --fabric F --osh O --nodes N [options]  submit the sweep with sbatch (--time MIN, default 240); results go to results_dd_mm_yy/ unless --save is given
+#   ./randperf plots [DIR]                                 redraw the charts of a results directory (default: the newest results_dd_mm_yy)
+#   ./randperf stage                                       copy the PRRTE launcher and the Open MPI tree out of the node-local build directory (build does it)
+#
+# Typical session:   ./randperf build   &&   ./randperf run --fabric libfabric-sys-opt --osh sos --nodes 4   &&   ./randperf plots
+# `./randperf run --help` lists every option (it is hpc_driver.sh). Nothing here is a second implementation: this script only calls
+# tools/build-binaries.sh, hpc_driver.sh and tools/stage_runtime.py.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+unset LD_LIBRARY_PATH
+
+usage() { awk 'NR>1 && /^#/{sub(/^# ?/,""); print; next} NR>1{exit}' "$0"; }
+
+newest_results() { ls -d "$ROOT"/results_[0-9][0-9]_[0-9][0-9]_[0-9][0-9] 2>/dev/null | sort -t_ -k4,4 -k3,3 -k2,2 | tail -1; }
+
+case "${1:-help}" in
+    build)
+        shift
+        "$ROOT/tools/build-binaries.sh" "$@" ;;
+    run)
+        shift
+        save=""
+        for a in "$@"; do [ "$a" = "--save" ] && save=1; [ "$a" = "-h" ] || [ "$a" = "--help" ] && { exec "$ROOT/hpc_driver.sh" --help; }; done
+        if [ -z "$save" ]; then set -- "$@" --save "$ROOT/results_$(date +%d_%m_%y)"; fi
+        exec "$ROOT/hpc_driver.sh" "$@" ;;
+    plots)
+        shift
+        dir="${1:-$(newest_results)}"
+        [ -n "$dir" ] && [ -d "$dir" ] || { echo "./randperf plots: no results directory (pass one)" >&2; exit 1; }
+        # the driver needs a fabric/osh to name the group; the plots do not depend on them
+        exec "$ROOT/hpc_driver.sh" --fabric libfabric-sys-opt --osh none --nodes 1 --plot-dir "$dir" ;;
+    stage)
+        exec python3 "$ROOT/tools/stage_runtime.py" "$ROOT/builds/bin" ;;
+    help|-h|--help) usage ;;
+    *) echo "unknown command '$1'" >&2; usage; exit 2 ;;
+esac

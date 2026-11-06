@@ -1,0 +1,14 @@
+[submodule "prrte"]
+	path = 3rd-party/prrte
+	url = ../../open-mpi/prrte
+	branch = master
+[submodule "openpmix"]
+	path = 3rd-party/openpmix
+	url = ../../openpmix/openpmix.git
+	branch = master
+[submodule "oac"]
+	path = config/oac
+	url = ../../open-mpi/oac
+[submodule "3rd-party/pympistandard"]
+	path = 3rd-party/pympistandard
+	url = ../../mpi-forum/pympistandard

@@ -1,0 +1,19 @@
+# Copyright (c) 2010 Cisco Systems, Inc.  All rights reserved.
+# Copyright (c) 2016      IBM Corporation.  All rights reserved.
+#
+Name: Open MPI
+Description: Portable high-performance MPI implementation
+Version: @OMPI_VERSION@
+URL: https://www.open-mpi.org/
+#
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+includedir=@includedir@
+libdir=@libdir@
+pkgincludedir=@opalincludedir@
+
+Libs: @OMPI_PC_FC_LIBS@
+Libs.private: @OMPI_PC_FC_LIBS_PRIVATE@
+Cflags: @OMPI_PC_FC_CFLAGS@
+Requires: @OMPI_PC_MODULES@
+Requires.private: @OMPI_PC_MODULES_PRIVATE@

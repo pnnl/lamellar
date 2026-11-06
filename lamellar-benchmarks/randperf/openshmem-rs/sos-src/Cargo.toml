@@ -1,0 +1,19 @@
+[package]
+name = "sos-src"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+autotools = { workspace = true }
+libfabric-sys = { workspace = true, optional = true }
+lamellar-ucx-sys = { workspace = true, optional = true }
+hwlocality-sys = { workspace = true }
+libevent-sys = { workspace = true }
+pmix-sys = { workspace = true }
+
+[features]
+ofi = ["libfabric-sys"]
+ucx = ["lamellar-ucx-sys"]
+shared = []
+
+# [build-dependencies]

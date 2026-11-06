@@ -1,0 +1,137 @@
+dnl vi: set ft=m4
+/* -*- C -*-
+ *
+ * Copyright 2011 Sandia Corporation. Under the terms of Contract
+ * DE-AC04-94AL85000 with Sandia Corporation, the U.S.  Government
+ * retains certain rights in this software.
+ *
+ * Copyright (c) 2016 Intel Corporation. All rights reserved.
+ * This software is available to you under the BSD license.
+ *
+ * This file is part of the Sandia OpenSHMEM software package. For license
+ * information, see the LICENSE file in the top level directory of the
+ * distribution.
+ *
+ */
+
+include(shmem_bind_c.m4)dnl
+include(shmem_bind_c11.m4)dnl
+include(shmem_bind_cxx.m4)dnl
+#ifndef SHMEMX_H
+#define SHMEMX_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <shmem-def.h>
+#include <shmemx-def.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+define(`SHPRE', `')dnl
+include(shmemx_c_func.h4)dnl
+
+/* Option to enable bounce buffering on a given context */
+#define SHMEMX_CTX_BOUNCE_BUFFER  (1l<<31)
+
+/* SHMEMX constant(s) are included in MAX_HINTS value in shmem-def.h */
+#define SHMEMX_MALLOC_NO_BARRIER (1l<<2)
+
+/* C++ overloaded declarations */
+#ifdef __cplusplus
+} /* extern "C" */
+
+define(`SHMEM_CXX_IBPUT',
+`static inline void shmemx_ibput($2 *target, const $2 *source,
+                              ptrdiff_t tst, ptrdiff_t sst,
+                              size_t bsize, size_t nblocks, int pe) {
+    shmemx_$1_ibput(target, source, tst, sst, bsize, nblocks, pe);
+}
+static inline void shmemx_ibput(shmem_ctx_t ctx, $2 *target, const $2 *source,
+                              ptrdiff_t tst, ptrdiff_t sst,
+                              size_t bsize, size_t nblocks, int pe) {
+    shmemx_ctx_$1_ibput(ctx, target, source, tst, sst, bsize, nblocks, pe);
+}')dnl
+SHMEM_CXX_DEFINE_FOR_RMA(`SHMEM_CXX_IBPUT')
+
+define(`SHMEM_CXX_IBGET',
+`static inline void shmemx_ibget($2 *target, const $2 *source,
+                              ptrdiff_t tst, ptrdiff_t sst,
+                              size_t bsize, size_t nblocks, int pe) {
+    shmemx_$1_ibget(target, source, tst, sst, bsize, nblocks, pe);
+}
+static inline void shmemx_ibget(shmem_ctx_t ctx, $2 *target, const $2 *source,
+                              ptrdiff_t tst, ptrdiff_t sst,
+                              size_t bsize, size_t nblocks, int pe) {
+    shmemx_ctx_$1_ibget(ctx, target, source, tst, sst, bsize, nblocks, pe);
+}')dnl
+SHMEM_CXX_DEFINE_FOR_RMA(`SHMEM_CXX_IBGET')
+
+define(`SHMEM_CXX_SUM_EXSCAN',
+`static inline int shmemx_sum_exscan(shmem_team_t team, $2* dest, const $2* source,
+                                    size_t nelems) {
+    return shmemx_$1_sum_exscan(team, dest, source, nelems);
+}')dnl
+SHMEM_CXX_DEFINE_FOR_COLL_SUM_PROD(`SHMEM_CXX_SUM_EXSCAN')
+
+define(`SHMEM_CXX_SUM_INSCAN',
+`static inline int shmemx_sum_inscan(shmem_team_t team, $2* dest, const $2* source,
+                                    size_t nelems) {
+    return shmemx_$1_sum_inscan(team, dest, source, nelems);
+}')dnl
+SHMEM_CXX_DEFINE_FOR_COLL_SUM_PROD(`SHMEM_CXX_SUM_INSCAN')
+
+/* C11 Generic Macros */
+#elif (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(SHMEM_INTERNAL_INCLUDE))
+
+define(`SHMEM_C11_GEN_IBPUT', `        $2*: shmemx_$1_ibput')dnl
+define(`SHMEM_CTX_C11_GEN_IBPUT', `            $2*: shmemx_ctx_$1_ibput')dnl
+#define shmemx_ibput(...) \
+    _Generic(SHMEM_C11_TYPE_EVAL_PTR(SHMEM_C11_ARG0(__VA_ARGS__)), \
+        shmem_ctx_t: \
+        _Generic(SHMEM_C11_TYPE_EVAL_PTR(SHMEM_C11_ARG1(__VA_ARGS__)), \
+SHMEM_BIND_C11_RMA(`SHMEM_CTX_C11_GEN_IBPUT', `, \') \
+        ), \
+SHMEM_BIND_C11_RMA(`SHMEM_C11_GEN_IBPUT', `, \') \
+    )(__VA_ARGS__)
+
+define(`SHMEM_C11_GEN_IBGET', `        $2*: shmemx_$1_ibget')dnl
+define(`SHMEM_CTX_C11_GEN_IBGET', `            $2*: shmemx_ctx_$1_ibget')dnl
+#define shmemx_ibget(...) \
+    _Generic(SHMEM_C11_TYPE_EVAL_PTR(SHMEM_C11_ARG0(__VA_ARGS__)), \
+        shmem_ctx_t: \
+        _Generic(SHMEM_C11_TYPE_EVAL_PTR(SHMEM_C11_ARG1(__VA_ARGS__)), \
+SHMEM_BIND_C11_RMA(`SHMEM_CTX_C11_GEN_IBGET', `, \') \
+        ), \
+SHMEM_BIND_C11_RMA(`SHMEM_C11_GEN_IBGET', `, \') \
+    )(__VA_ARGS__)
+
+#define shmemx_signal_set(...) \
+    _Generic(SHMEM_C11_TYPE_EVAL_PTR_OR_SCALAR(SHMEM_C11_ARG0(__VA_ARGS__)), \
+        shmem_ctx_t: shmemx_ctx_signal_set, \
+        uint64_t*: shmemx_signal_set \
+    )(__VA_ARGS__)
+
+#define shmemx_signal_add(...) \
+    _Generic(SHMEM_C11_TYPE_EVAL_PTR_OR_SCALAR(SHMEM_C11_ARG0(__VA_ARGS__)), \
+        shmem_ctx_t: shmemx_ctx_signal_add, \
+        uint64_t*: shmemx_signal_add \
+    )(__VA_ARGS__)
+
+define(`SHMEM_C11_GEN_EXSCAN', `        $2*: shmemx_$1_sum_exscan')dnl
+#define shmemx_sum_exscan(...) \
+    _Generic(SHMEM_C11_TYPE_EVAL_PTR(SHMEM_C11_ARG1(__VA_ARGS__)), \
+SHMEM_BIND_C11_COLL_SUM_PROD(`SHMEM_C11_GEN_EXSCAN', `, \') \
+    )(__VA_ARGS__)
+
+define(`SHMEM_C11_GEN_INSCAN', `        $2*: shmemx_$1_sum_inscan')dnl
+#define shmemx_sum_inscan(...) \
+    _Generic(SHMEM_C11_TYPE_EVAL_PTR(SHMEM_C11_ARG1(__VA_ARGS__)), \
+SHMEM_BIND_C11_COLL_SUM_PROD(`SHMEM_C11_GEN_INSCAN', `, \') \
+    )(__VA_ARGS__)
+
+
+#endif /* C11 */
+
+#endif /* SHMEMX_H */

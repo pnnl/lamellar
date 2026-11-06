@@ -1,0 +1,6 @@
+[build]
+# Cargo's default build directory (./target) is used. To keep the large intermediates (build scripts, the vendored C builds of SOS / UCX /
+# libfabric / PMIx / Open MPI) on node-local disk instead, uncomment and adapt the next line, or set RANDPERF_BUILD_DIR when running
+# tools/build-binaries.sh. Compute nodes cannot see node-local disk, so what the runs need from the build directory (the PRRTE launcher) is
+# copied to builds/bin/runtime/ by tools/stage_runtime.py (tools/build-binaries.sh runs it).
+# build-dir = "/scratch/<user>/randperf_build/{workspace-path-hash}"

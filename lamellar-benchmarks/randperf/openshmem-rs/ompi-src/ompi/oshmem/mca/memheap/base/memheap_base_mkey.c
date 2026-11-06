@@ -1,0 +1,1302 @@
+/* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
+/*
+ * Copyright (c) 2013-2015 Mellanox Technologies, Inc.
+ *                         All rights reserved.
+ * Copyright (c) 2015-2019 Research Organization for Information Science
+ *                         and Technology (RIST).  All rights reserved.
+ * Copyright (c) 2015      Intel, Inc. All rights reserved.
+ * Copyright (c) 2015      Los Alamos National Security, LLC. All rights
+ *                         reserved.
+ * Copyright (c) 2021      Nanook Consulting.  All rights reserved.
+ * Copyright (c) 2026      NVIDIA Corporation.  All rights reserved.
+ * $COPYRIGHT$
+ *
+ * Additional copyrights may follow
+ *
+ * $HEADER$
+ * SPDX-License-Identifier: BSD-3-Clause-Open-MPI
+ */
+
+#include "oshmem_config.h"
+
+#include "oshmem/util/oshmem_util.h"
+
+#include "oshmem/proc/proc.h"
+#include "oshmem/util/oshmem_util.h"
+#include "oshmem/runtime/runtime.h"
+#include "oshmem/mca/sshmem/sshmem.h"
+#include "oshmem/mca/sshmem/base/base.h"
+#include "oshmem/mca/memheap/memheap.h"
+#include "oshmem/mca/memheap/base/base.h"
+#include "oshmem/mca/spml/spml.h"
+#include "opal/util/timings.h"
+#include "opal/mca/pmix/pmix-internal.h"
+
+#include <limits.h>
+#include <stdint.h>
+
+/* Turn ON/OFF debug output from build (default 0) */
+#ifndef MEMHEAP_BASE_DEBUG
+#define MEMHEAP_BASE_DEBUG    0
+#endif
+
+#define MEMHEAP_RKEY_REQ            0xA1
+#define MEMHEAP_RKEY_RESP           0xA2
+#define MEMHEAP_RKEY_RESP_FAIL      0xA3
+
+#define MEMHEAP_MKEY_MAXSIZE   4096
+#define MEMHEAP_RECV_REQS_MAX  16
+
+#define MEMHEAP_LAYOUT_VERSION 1U
+#define MEMHEAP_LAYOUT_TERMINATOR_VALUE 0x4d484c31U
+
+static uint8_t memheap_layout_terminator[] = {
+    0x4d, 0x48, 0x4c, 0x31};
+
+typedef struct {
+    uint32_t type;
+    uint64_t size;
+    int64_t hints;
+    uint64_t static_offset;
+} memheap_layout_descriptor_t;
+
+typedef struct oob_comm_request {
+    opal_list_item_t super;
+    MPI_Request recv_req;
+    char buf[MEMHEAP_MKEY_MAXSIZE];
+} oob_comm_request_t;
+
+struct oob_comm {
+    opal_mutex_t lck;
+    opal_condition_t cond;
+    uint32_t segno;
+    sshmem_mkey_t *mkeys;
+    int mkeys_rcvd;
+    oob_comm_request_t req_pool[MEMHEAP_RECV_REQS_MAX];
+    opal_list_t req_list;
+    int is_inited;
+    shmem_ctx_t ctx;
+};
+
+mca_memheap_map_t* memheap_map = NULL;
+
+struct oob_comm memheap_oob = {{{0}}};
+
+static int send_buffer(int pe, pmix_data_buffer_t *msg);
+
+static int oshmem_mkey_recv_cb(void);
+
+/* pickup list of rkeys and remote va */
+static int memheap_oob_get_mkeys(shmem_ctx_t ctx, int pe,
+                                 uint32_t va_seg_num,
+                                 sshmem_mkey_t *mkey);
+
+int mca_memheap_seg_cmp(const void *k, const void *v)
+{
+    uintptr_t va = (uintptr_t) k;
+    map_segment_t *s = (map_segment_t *) v;
+
+    if (va < (uintptr_t)s->super.va_base)
+        return -1;
+    if (va >= (uintptr_t)s->super.va_end)
+        return 1;
+
+    return 0;
+}
+
+static int pack_values(pmix_data_buffer_t *msg, void *value, int32_t count,
+                       pmix_data_type_t type)
+{
+    pmix_status_t rc;
+
+    if (NULL == msg || NULL == value || 0 > count) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    rc = PMIx_Data_pack(NULL, msg, value, count, type);
+    if (PMIX_SUCCESS != rc) {
+        PMIX_ERROR_LOG(rc);
+        return (int) rc;
+    }
+
+    return OSHMEM_SUCCESS;
+}
+
+static int get_layout_descriptor(int seg,
+                                 memheap_layout_descriptor_t *descriptor)
+{
+    const map_segment_t *segment;
+    int rc;
+
+    if (NULL == descriptor || NULL == memheap_map
+        || NULL == memheap_map->mem_segs || 0 > seg
+        || seg >= memheap_map->n_segments) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    segment = &memheap_map->mem_segs[seg];
+    if (UINT64_MAX < (uintmax_t) segment->seg_size
+        || (uintmax_t) MAP_SEGMENT_UNKNOWN <= (uintmax_t) segment->type) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+    if (sizeof(int64_t) < sizeof(long)
+        && ((long) INT64_MIN > segment->alloc_hints
+            || (long) INT64_MAX < segment->alloc_hints)) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    descriptor->type = (uint32_t) segment->type;
+    descriptor->size = (uint64_t) segment->seg_size;
+    descriptor->hints = (int64_t) segment->alloc_hints;
+    descriptor->static_offset = 0;
+
+    if (MAP_SEGMENT_STATIC == segment->type) {
+        rc = mca_memheap_base_static_segment_offset(
+            segment, &descriptor->static_offset);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+    }
+
+    return OSHMEM_SUCCESS;
+}
+
+static int pack_memheap_layout(pmix_data_buffer_t *msg)
+{
+    memheap_layout_descriptor_t descriptor;
+    uint32_t version = MEMHEAP_LAYOUT_VERSION;
+    uint32_t segment_count;
+    int rc;
+    int seg;
+
+    if (NULL == msg || NULL == memheap_map || 0 > memheap_map->n_segments
+        || UINT32_MAX < (uintmax_t) memheap_map->n_segments) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    segment_count = (uint32_t) memheap_map->n_segments;
+    rc = pack_values(msg, &version, 1, PMIX_UINT32);
+    if (OSHMEM_SUCCESS != rc) {
+        return rc;
+    }
+    rc = pack_values(msg, &segment_count, 1, PMIX_UINT32);
+    if (OSHMEM_SUCCESS != rc) {
+        return rc;
+    }
+
+    for (seg = 0; seg < memheap_map->n_segments; ++seg) {
+        rc = get_layout_descriptor(seg, &descriptor);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = pack_values(msg, &descriptor.type, 1, PMIX_UINT32);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = pack_values(msg, &descriptor.size, 1, PMIX_UINT64);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = pack_values(msg, &descriptor.hints, 1, PMIX_INT64);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = pack_values(msg, &descriptor.static_offset, 1, PMIX_UINT64);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+    }
+
+    /*
+     * End the variable-length descriptor stream with fixed bytes. This lets
+     * the receiver detect a truncated flex-encoded final descriptor before
+     * interpreting any following bytes as remote keys.
+     */
+    rc = pack_values(msg, memheap_layout_terminator,
+                     (int32_t) sizeof(memheap_layout_terminator), PMIX_BYTE);
+    if (OSHMEM_SUCCESS != rc) {
+        return rc;
+    }
+
+    return OSHMEM_SUCCESS;
+}
+
+static int select_peer_payload(pmix_data_buffer_t *message,
+                               size_t total_size, int offset, int size)
+{
+    size_t peer_offset;
+    size_t peer_size;
+
+    if (NULL == message || NULL == message->base_ptr || offset < 0
+        || size < 0) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    peer_offset = (size_t) offset;
+    peer_size = (size_t) size;
+    if (total_size > message->bytes_allocated || peer_size > total_size
+        || peer_offset > total_size - peer_size) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    message->unpack_ptr = message->base_ptr + peer_offset;
+    /*
+     * Bundled PMIx checks pack_ptr, rather than bytes_used, when deciding
+     * whether an unpack would cross the end of a buffer.
+     */
+    message->pack_ptr = message->base_ptr + peer_offset + peer_size;
+    message->bytes_used = peer_offset + peer_size;
+    return OSHMEM_SUCCESS;
+}
+
+static void report_layout_header_problem(int local_pe, int remote_pe,
+                                         const char *field,
+                                         uint64_t local_value,
+                                         uint64_t remote_value,
+                                         pmix_status_t decode_rc)
+{
+    if (0 != local_pe) {
+        return;
+    }
+
+    if (PMIX_SUCCESS == decode_rc) {
+        oshmem_output(oshmem_memheap_base_framework.framework_output,
+                      "Error %s:%d - %s()", __SPML_FILE__, __LINE__,
+                      __func__,
+                      "OSHMEM memheap layout mismatch: local PE %d, "
+                      "remote PE %d, field %s, local %llu, remote %llu; "
+                      "remote keys cannot be associated safely",
+                      local_pe, remote_pe, field,
+                      (unsigned long long) local_value,
+                      (unsigned long long) remote_value);
+    } else {
+        oshmem_output(oshmem_memheap_base_framework.framework_output,
+                      "Error %s:%d - %s()", __SPML_FILE__, __LINE__,
+                      __func__,
+                      "OSHMEM memheap layout mismatch: local PE %d, "
+                      "remote PE %d, field %s decode failure (%d), "
+                      "local %llu, remote %llu; remote keys cannot be "
+                      "associated safely",
+                      local_pe, remote_pe, field, (int) decode_rc,
+                      (unsigned long long) local_value,
+                      (unsigned long long) remote_value);
+    }
+}
+
+static void report_layout_descriptor_problem(
+    int local_pe, int remote_pe, uint32_t segment, const char *field,
+    const memheap_layout_descriptor_t *local,
+    const memheap_layout_descriptor_t *remote, pmix_status_t decode_rc)
+{
+    if (0 != local_pe) {
+        return;
+    }
+
+    if (PMIX_SUCCESS == decode_rc) {
+        oshmem_output(oshmem_memheap_base_framework.framework_output,
+                      "Error %s:%d - %s()", __SPML_FILE__, __LINE__,
+                      __func__,
+                      "OSHMEM memheap layout mismatch: local PE %d, "
+                      "remote PE %d, segment %u, field %s, local "
+                      "{type=%u,size=%llu,hints=%lld,static_offset=%llu}, "
+                      "remote {type=%u,size=%llu,hints=%lld,"
+                      "static_offset=%llu}; remote keys cannot be "
+                      "associated safely",
+                      local_pe, remote_pe, segment, field, local->type,
+                      (unsigned long long) local->size,
+                      (long long) local->hints,
+                      (unsigned long long) local->static_offset,
+                      remote->type, (unsigned long long) remote->size,
+                      (long long) remote->hints,
+                      (unsigned long long) remote->static_offset);
+    } else {
+        oshmem_output(oshmem_memheap_base_framework.framework_output,
+                      "Error %s:%d - %s()", __SPML_FILE__, __LINE__,
+                      __func__,
+                      "OSHMEM memheap layout mismatch: local PE %d, "
+                      "remote PE %d, segment %u, field descriptor[%u].%s "
+                      "decode failure (%d), local "
+                      "{type=%u,size=%llu,hints=%lld,static_offset=%llu}, "
+                      "remote {type=%u,size=%llu,hints=%lld,"
+                      "static_offset=%llu}; remote keys cannot be "
+                      "associated safely",
+                      local_pe, remote_pe, segment, segment, field,
+                      (int) decode_rc, local->type,
+                      (unsigned long long) local->size,
+                      (long long) local->hints,
+                      (unsigned long long) local->static_offset,
+                      remote->type, (unsigned long long) remote->size,
+                      (long long) remote->hints,
+                      (unsigned long long) remote->static_offset);
+    }
+}
+
+static int unpack_descriptor_field(
+    pmix_data_buffer_t *message, void *value, pmix_data_type_t type,
+    int remote_pe, int local_pe, uint32_t segment, const char *field,
+    const memheap_layout_descriptor_t *local,
+    const memheap_layout_descriptor_t *remote)
+{
+    int32_t count = 1;
+    pmix_status_t rc;
+
+    rc = PMIx_Data_unpack(NULL, message, value, &count, type);
+    if (PMIX_SUCCESS != rc || 1 != count) {
+        if (PMIX_SUCCESS == rc) {
+            rc = PMIX_ERR_BAD_PARAM;
+        }
+        report_layout_descriptor_problem(local_pe, remote_pe, segment, field,
+                                         local, remote, rc);
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    return OSHMEM_SUCCESS;
+}
+
+static int unpack_and_validate_layout(pmix_data_buffer_t *message,
+                                      int remote_pe, int local_pe)
+{
+    memheap_layout_descriptor_t local_descriptor;
+    memheap_layout_descriptor_t remote_descriptor;
+    uint32_t local_count;
+    uint32_t remote_count = 0;
+    uint8_t remote_terminator[sizeof(memheap_layout_terminator)] = {0};
+    uint64_t remote_terminator_value = 0;
+    uint32_t remote_version = 0;
+    uint32_t segment;
+    const char *mismatch;
+    int32_t count;
+    pmix_status_t pmix_rc;
+    int rc;
+
+    if (NULL == message || NULL == memheap_map || 0 > remote_pe
+        || 0 > local_pe || 0 > memheap_map->n_segments
+        || INT_MAX < memheap_map->n_segments
+        || UINT32_MAX < (uintmax_t) memheap_map->n_segments) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    local_count = (uint32_t) memheap_map->n_segments;
+    count = 1;
+    pmix_rc = PMIx_Data_unpack(NULL, message, &remote_version, &count,
+                              PMIX_UINT32);
+    if (PMIX_SUCCESS != pmix_rc || 1 != count) {
+        if (PMIX_SUCCESS == pmix_rc) {
+            pmix_rc = PMIX_ERR_BAD_PARAM;
+        }
+        report_layout_header_problem(local_pe, remote_pe, "version",
+                                     MEMHEAP_LAYOUT_VERSION, remote_version,
+                                     pmix_rc);
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+    if (MEMHEAP_LAYOUT_VERSION != remote_version) {
+        report_layout_header_problem(local_pe, remote_pe, "version",
+                                     MEMHEAP_LAYOUT_VERSION, remote_version,
+                                     PMIX_SUCCESS);
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    count = 1;
+    pmix_rc = PMIx_Data_unpack(NULL, message, &remote_count, &count,
+                              PMIX_UINT32);
+    if (PMIX_SUCCESS != pmix_rc || 1 != count) {
+        if (PMIX_SUCCESS == pmix_rc) {
+            pmix_rc = PMIX_ERR_BAD_PARAM;
+        }
+        report_layout_header_problem(local_pe, remote_pe, "count",
+                                     local_count, remote_count, pmix_rc);
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+    if (INT_MAX < remote_count || local_count != remote_count) {
+        report_layout_header_problem(local_pe, remote_pe, "count",
+                                     local_count, remote_count, PMIX_SUCCESS);
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    for (segment = 0; segment < remote_count; ++segment) {
+        rc = get_layout_descriptor((int) segment, &local_descriptor);
+        if (OSHMEM_SUCCESS != rc) {
+            MEMHEAP_ERROR("failed to construct local layout descriptor %u",
+                          segment);
+            return rc;
+        }
+        memset(&remote_descriptor, 0, sizeof(remote_descriptor));
+
+        rc = unpack_descriptor_field(
+            message, &remote_descriptor.type, PMIX_UINT32, remote_pe,
+            local_pe, segment, "type", &local_descriptor,
+            &remote_descriptor);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = unpack_descriptor_field(
+            message, &remote_descriptor.size, PMIX_UINT64, remote_pe,
+            local_pe, segment, "size", &local_descriptor,
+            &remote_descriptor);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = unpack_descriptor_field(
+            message, &remote_descriptor.hints, PMIX_INT64, remote_pe,
+            local_pe, segment, "hints", &local_descriptor,
+            &remote_descriptor);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = unpack_descriptor_field(
+            message, &remote_descriptor.static_offset, PMIX_UINT64,
+            remote_pe, local_pe, segment, "static_offset",
+            &local_descriptor, &remote_descriptor);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+
+        mismatch = NULL;
+        if (remote_descriptor.type >= (uint32_t) MAP_SEGMENT_UNKNOWN
+            || local_descriptor.type != remote_descriptor.type) {
+            mismatch = "type";
+        } else if (local_descriptor.size != remote_descriptor.size) {
+            mismatch = "size";
+        } else if (local_descriptor.hints != remote_descriptor.hints) {
+            mismatch = "hints";
+        } else if (local_descriptor.static_offset
+                   != remote_descriptor.static_offset) {
+            mismatch = "static_offset";
+        }
+        if (NULL != mismatch) {
+            report_layout_descriptor_problem(
+                local_pe, remote_pe, segment, mismatch, &local_descriptor,
+                &remote_descriptor, PMIX_SUCCESS);
+            return OSHMEM_ERR_BAD_PARAM;
+        }
+    }
+
+    count = (int32_t) sizeof(remote_terminator);
+    pmix_rc = PMIx_Data_unpack(NULL, message, remote_terminator, &count,
+                              PMIX_BYTE);
+    if (PMIX_SUCCESS != pmix_rc) {
+        report_layout_header_problem(
+            local_pe, remote_pe, "terminator",
+            MEMHEAP_LAYOUT_TERMINATOR_VALUE, 0, pmix_rc);
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    for (segment = 0; segment < sizeof(remote_terminator); ++segment) {
+        remote_terminator_value = (remote_terminator_value << 8)
+                                  | remote_terminator[segment];
+    }
+    if (count != (int32_t) sizeof(remote_terminator)
+        || 0 != memcmp(remote_terminator, memheap_layout_terminator,
+                       sizeof(remote_terminator))) {
+        report_layout_header_problem(
+            local_pe, remote_pe, "terminator",
+            MEMHEAP_LAYOUT_TERMINATOR_VALUE, remote_terminator_value,
+            PMIX_SUCCESS);
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+
+    return OSHMEM_SUCCESS;
+}
+
+static int pack_local_mkeys(pmix_data_buffer_t *msg, int pe, int seg)
+{
+    int i, n;
+    int rc;
+    sshmem_mkey_t *mkey;
+    uint32_t packed_value;
+
+    /* go over all transports and pack mkeys */
+    n = memheap_map->num_transports;
+    if (0 > n || UINT32_MAX < (uintmax_t) n) {
+        return OSHMEM_ERR_BAD_PARAM;
+    }
+    packed_value = (uint32_t) n;
+    rc = pack_values(msg, &packed_value, 1, PMIX_UINT32);
+    if (OSHMEM_SUCCESS != rc) {
+        return rc;
+    }
+    MEMHEAP_VERBOSE(5, "found %d transports to %d", n, pe);
+    for (i = 0; i < n; i++) {
+        mkey = mca_memheap_base_get_mkey(mca_memheap_seg2base_va(seg), i);
+        if (!mkey) {
+            MEMHEAP_ERROR("seg#%d tr_id: %d failed to find local mkey",
+                          seg, i);
+            return OSHMEM_ERROR;
+        }
+        packed_value = (uint32_t) i;
+        rc = pack_values(msg, &packed_value, 1, PMIX_UINT32);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        rc = pack_values(msg, &mkey->va_base, 1, PMIX_UINT64);
+        if (OSHMEM_SUCCESS != rc) {
+            return rc;
+        }
+        if (0 == mkey->va_base) {
+            rc = pack_values(msg, &mkey->u.key, 1, PMIX_UINT64);
+            if (OSHMEM_SUCCESS != rc) {
+                return rc;
+            }
+        } else {
+            rc = pack_values(msg, &mkey->len, 1, PMIX_UINT16);
+            if (OSHMEM_SUCCESS != rc) {
+                return rc;
+            }
+            if (0 < mkey->len) {
+                rc = pack_values(msg, mkey->u.data, mkey->len,
+                                 PMIX_BYTE);
+                if (OSHMEM_SUCCESS != rc) {
+                    return rc;
+                }
+            }
+        }
+        MEMHEAP_VERBOSE(5,
+                        "seg#%d tr_id: %d %s",
+                        seg, i, mca_spml_base_mkey2str(mkey));
+    }
+    return OSHMEM_SUCCESS;
+}
+
+static void memheap_attach_segment(sshmem_mkey_t *mkey, int tr_id)
+{
+    /* process special case when va was got using sshmem
+     * this case is notable for:
+     * - key is set as (seg_id);
+     * - va_base is set as 0;
+     * - len is set as 0;
+     */
+    assert(mkey->va_base == 0);
+    assert(mkey->len == 0);
+
+    MEMHEAP_VERBOSE(5,
+            "shared memory usage tr_id: %d va_base: 0x%p len: %d key %llx",
+            tr_id,
+            mkey->va_base, mkey->len, (unsigned long long)mkey->u.key);
+
+    mca_sshmem_segment_attach(&(memheap_map->mem_segs[HEAP_SEG_INDEX]), mkey);
+
+    if ((void *) -1 == (void *) mkey->va_base) {
+        MEMHEAP_ERROR("tr_id: %d key %llx attach failed: errno = %d",
+                tr_id, (unsigned long long)mkey->u.key, errno);
+        oshmem_shmem_abort(-1);
+    }
+}
+
+
+static void unpack_remote_mkeys(shmem_ctx_t ctx, pmix_data_buffer_t *msg, int remote_pe)
+{
+    int32_t cnt;
+    int32_t n;
+    int32_t tr_id;
+    int i;
+    cnt = 1;
+    PMIx_Data_unpack(NULL, msg, &n, &cnt, PMIX_UINT32);
+    for (i = 0; i < n; i++) {
+        cnt = 1;
+        PMIx_Data_unpack(NULL, msg, &tr_id, &cnt, PMIX_UINT32);
+        cnt = 1;
+        PMIx_Data_unpack(NULL, msg,
+                        &memheap_oob.mkeys[tr_id].va_base,
+                        &cnt,
+                        PMIX_UINT64);
+
+        if (0 == memheap_oob.mkeys[tr_id].va_base) {
+            cnt = 1;
+            PMIx_Data_unpack(NULL, msg, &memheap_oob.mkeys[tr_id].u.key, &cnt, PMIX_UINT64);
+            if (oshmem_proc_on_local_node(remote_pe)) {
+                memheap_attach_segment(&memheap_oob.mkeys[tr_id], tr_id);
+            }
+        } else {
+            cnt = 1;
+            PMIx_Data_unpack(NULL, msg, &memheap_oob.mkeys[tr_id].len, &cnt, PMIX_UINT16);
+            if (0 < memheap_oob.mkeys[tr_id].len) {
+                memheap_oob.mkeys[tr_id].u.data = malloc(memheap_oob.mkeys[tr_id].len);
+                if (NULL == memheap_oob.mkeys[tr_id].u.data) {
+                    MEMHEAP_ERROR("Failed allocate %d bytes", memheap_oob.mkeys[tr_id].len);
+                    oshmem_shmem_abort(-1);
+                }
+                cnt = memheap_oob.mkeys[tr_id].len;
+                PMIx_Data_unpack(NULL, msg, memheap_oob.mkeys[tr_id].u.data, &cnt, PMIX_BYTE);
+            } else {
+                memheap_oob.mkeys[tr_id].u.key = MAP_SEGMENT_SHM_INVALID;
+            }
+            MCA_SPML_CALL(rmkey_unpack(ctx, &memheap_oob.mkeys[tr_id], memheap_oob.segno, remote_pe, tr_id));
+        }
+
+        MEMHEAP_VERBOSE(5,
+                        "tr_id: %d %s",
+                        tr_id, mca_spml_base_mkey2str(&memheap_oob.mkeys[tr_id]));
+    }
+}
+
+static void do_recv(int source_pe, pmix_data_buffer_t* buffer)
+{
+    int32_t cnt = 1;
+    int rc;
+    pmix_data_buffer_t *msg;
+    uint8_t msg_type;
+    uint32_t seg;
+
+    MEMHEAP_VERBOSE(5, "unpacking %d of %d", cnt, PMIX_UINT8);
+    rc = PMIx_Data_unpack(NULL, buffer, &msg_type, &cnt, PMIX_UINT8);
+    if (PMIX_SUCCESS != rc) {
+        PMIX_ERROR_LOG(rc);
+        goto send_fail;
+    }
+
+    switch (msg_type) {
+    case MEMHEAP_RKEY_REQ:
+        cnt = 1;
+        rc = PMIx_Data_unpack(NULL, buffer, &seg, &cnt, PMIX_UINT32);
+        if (PMIX_SUCCESS != rc) {
+            MEMHEAP_ERROR("bad RKEY_REQ msg");
+            goto send_fail;
+        }
+
+        MEMHEAP_VERBOSE(5, "*** RKEY REQ");
+        PMIX_DATA_BUFFER_CREATE(msg);
+        if (!msg) {
+            MEMHEAP_ERROR("failed to get msg buffer");
+            OMPI_ERROR_LOG(rc);
+            return;
+        }
+
+        msg_type = MEMHEAP_RKEY_RESP;
+        PMIx_Data_pack(NULL, msg, &msg_type, 1, PMIX_UINT8);
+
+        if (OSHMEM_SUCCESS != pack_local_mkeys(msg, source_pe, seg)) {
+            PMIX_DATA_BUFFER_RELEASE(msg);
+            goto send_fail;
+        }
+
+        rc = send_buffer(source_pe, msg);
+        PMIX_DATA_BUFFER_RELEASE(msg);
+        if (MPI_SUCCESS != rc) {
+            MEMHEAP_ERROR("FAILED to send rml message %d", rc);
+            OMPI_ERROR_LOG(rc);
+            goto send_fail;
+        }
+        break;
+
+    case MEMHEAP_RKEY_RESP:
+        MEMHEAP_VERBOSE(5, "*** RKEY RESP");
+        OPAL_THREAD_LOCK(&memheap_oob.lck);
+        unpack_remote_mkeys(memheap_oob.ctx, buffer, source_pe);
+        memheap_oob.mkeys_rcvd = MEMHEAP_RKEY_RESP;
+        opal_condition_broadcast(&memheap_oob.cond);
+        OPAL_THREAD_UNLOCK(&memheap_oob.lck);
+        break;
+
+    case MEMHEAP_RKEY_RESP_FAIL:
+        MEMHEAP_VERBOSE(5, "*** RKEY RESP FAIL");
+        memheap_oob.mkeys_rcvd = MEMHEAP_RKEY_RESP_FAIL;
+        opal_condition_broadcast(&memheap_oob.cond);
+        OPAL_THREAD_UNLOCK(&memheap_oob.lck);
+        break;
+
+    default:
+        MEMHEAP_VERBOSE(5, "Unknown message type %x", msg_type);
+        goto send_fail;
+    }
+    return;
+
+    send_fail: PMIX_DATA_BUFFER_CREATE(msg);
+    if (!msg) {
+        MEMHEAP_ERROR("failed to get msg buffer");
+        OMPI_ERROR_LOG(rc);
+        return;
+    }
+    msg_type = MEMHEAP_RKEY_RESP_FAIL;
+    PMIx_Data_pack(NULL, msg, &msg_type, 1, PMIX_UINT8);
+
+    rc = send_buffer(source_pe, msg);
+    PMIX_DATA_BUFFER_RELEASE(msg);
+    if (MPI_SUCCESS != rc) {
+        MEMHEAP_ERROR("FAILED to send rml message %d", rc);
+        OMPI_ERROR_LOG(rc);
+    }
+
+}
+
+/**
+ * simple/fast version of MPI_Test that
+ * - only works with persistent request
+ * - does not do any progress
+ * - can be safely called from within opal_progress()
+ */
+static inline int my_MPI_Test(ompi_request_t ** rptr,
+                              int *completed,
+                              ompi_status_public_t * status)
+{
+    ompi_request_t *request = *rptr;
+
+    assert(request->req_persistent);
+    assert(request->req_state != OMPI_REQUEST_INACTIVE);
+
+    if (request->req_complete) {
+        int old_error;
+
+        *completed = true;
+        *status = request->req_status;
+        old_error = status->MPI_ERROR;
+        status->MPI_ERROR = old_error;
+
+        request->req_state = OMPI_REQUEST_INACTIVE;
+        return request->req_status.MPI_ERROR;
+    }
+
+    *completed = false;
+    return OMPI_SUCCESS;
+}
+
+static int oshmem_mkey_recv_cb(void)
+{
+    MPI_Status status;
+    int flag;
+    int n;
+    int rc;
+    pmix_data_buffer_t *msg;
+    int32_t size;
+    void *tmp_buf;
+    oob_comm_request_t *r;
+
+    n = 0;
+    r = (oob_comm_request_t *)opal_list_get_first(&memheap_oob.req_list);
+    assert(r);
+    while(r != (oob_comm_request_t *)opal_list_get_end(&memheap_oob.req_list)) {
+        my_MPI_Test(&r->recv_req, &flag, &status);
+        if (OPAL_LIKELY(0 == flag)) {
+            return n;
+        }
+        PMPI_Get_count(&status, MPI_BYTE, &size);
+        MEMHEAP_VERBOSE(5, "OOB request from PE: %d, size %d", status.MPI_SOURCE, size);
+        n++;
+        opal_list_remove_first(&memheap_oob.req_list);
+
+        /* to avoid deadlock we must start request
+         * before processing it. Data are copied to
+         * the tmp buffer
+         */
+        tmp_buf = malloc(size);
+        if (NULL == tmp_buf) {
+            MEMHEAP_ERROR("not enough memory");
+            OMPI_ERROR_LOG(0);
+            return n;
+        } else {
+		    memcpy(tmp_buf, (void*)&r->buf, size);
+		    PMIX_DATA_BUFFER_CREATE(msg);
+		    if (NULL == msg) {
+		        MEMHEAP_ERROR("not enough memory");
+		        OMPI_ERROR_LOG(0);
+		        free(tmp_buf);
+		        return n;
+		    }
+            PMIX_DATA_BUFFER_LOAD(msg, (void*)tmp_buf, size);
+
+            /*
+             * send reply before posting the receive request again to limit the recursion size to
+             * number of receive requests.
+             * send can call opal_progress which calls this function again. If recv req is started
+             * stack size will be proportional to number of job ranks.
+             */
+            do_recv(status.MPI_SOURCE, msg);
+            PMIX_DATA_BUFFER_RELEASE(msg);
+        }
+
+        rc = PMPI_Start(&r->recv_req);
+        if (MPI_SUCCESS != rc) {
+            MEMHEAP_ERROR("Failed to post recv request %d", rc);
+            OMPI_ERROR_LOG(rc);
+            return n;
+        }
+        opal_list_append(&memheap_oob.req_list, &r->super);
+
+
+        r = (oob_comm_request_t *)opal_list_get_first(&memheap_oob.req_list);
+        assert(r);
+    }
+
+    return 1;
+}
+
+int memheap_oob_init(mca_memheap_map_t *map)
+{
+    int rc = OSHMEM_SUCCESS;
+    int i;
+    oob_comm_request_t *r;
+
+    memheap_map = map;
+
+    OBJ_CONSTRUCT(&memheap_oob.lck, opal_mutex_t);
+    OBJ_CONSTRUCT(&memheap_oob.cond, opal_condition_t);
+    OBJ_CONSTRUCT(&memheap_oob.req_list, opal_list_t);
+
+
+    for (i = 0; i < MEMHEAP_RECV_REQS_MAX; i++) {
+        r = &memheap_oob.req_pool[i];
+        rc = PMPI_Recv_init(r->buf, sizeof(r->buf), MPI_BYTE,
+                MPI_ANY_SOURCE, 0,
+                oshmem_comm_world,
+                &r->recv_req);
+        if (MPI_SUCCESS != rc) {
+            MEMHEAP_ERROR("Failed to created recv request %d", rc);
+            return rc;
+        }
+
+        rc = PMPI_Start(&r->recv_req);
+        if (MPI_SUCCESS != rc) {
+            MEMHEAP_ERROR("Failed to post recv request %d", rc);
+            return rc;
+        }
+        opal_list_append(&memheap_oob.req_list, &r->super);
+    }
+
+    opal_progress_register(oshmem_mkey_recv_cb);
+    memheap_oob.is_inited = 1;
+
+    return rc;
+}
+
+void memheap_oob_destruct(void)
+{
+    int i;
+    oob_comm_request_t *r;
+
+    if (!memheap_oob.is_inited) {
+        return;
+    }
+
+    opal_progress_unregister(oshmem_mkey_recv_cb);
+
+    for (i = 0; i < MEMHEAP_RECV_REQS_MAX; i++) {
+        r = &memheap_oob.req_pool[i];
+        PMPI_Cancel(&r->recv_req);
+        PMPI_Request_free(&r->recv_req);
+    }
+
+    OBJ_DESTRUCT(&memheap_oob.req_list);
+    OBJ_DESTRUCT(&memheap_oob.lck);
+    OBJ_DESTRUCT(&memheap_oob.cond);
+    memheap_oob.is_inited = 0;
+}
+
+static int send_buffer(int pe, pmix_data_buffer_t *msg)
+{
+    void *buffer;
+    size_t size;
+    int rc;
+
+    PMIX_DATA_BUFFER_UNLOAD(msg, buffer, size);
+    rc = PMPI_Send(buffer, size, MPI_BYTE, pe, 0, oshmem_comm_world);
+    free(buffer);
+
+    MEMHEAP_VERBOSE(5, "message sent: dst=%d, rc=%d, %" PRIsize_t " bytes!", pe, rc, size);
+    return rc;
+}
+
+static int memheap_oob_get_mkeys(shmem_ctx_t ctx, int pe, uint32_t seg, sshmem_mkey_t *mkeys)
+{
+    pmix_data_buffer_t *msg;
+    uint8_t cmd;
+    int i;
+    int rc;
+
+    if (OSHMEM_SUCCESS == MCA_SPML_CALL(oob_get_mkeys(ctx, pe, seg, mkeys))) {
+        for (i = 0; i < memheap_map->num_transports; i++) {
+            MEMHEAP_VERBOSE(5,
+                            "MKEY CALCULATED BY LOCAL SPML: pe: %d tr_id: %d %s",
+                            pe,
+                            i,
+                            mca_spml_base_mkey2str(&mkeys[i]));
+        }
+        return OSHMEM_SUCCESS;
+    }
+
+    OPAL_THREAD_LOCK(&memheap_oob.lck);
+
+    memheap_oob.mkeys = mkeys;
+    memheap_oob.segno = seg;
+    memheap_oob.mkeys_rcvd = 0;
+    memheap_oob.ctx = ctx;
+
+    PMIX_DATA_BUFFER_CREATE(msg);
+    if (!msg) {
+        OPAL_THREAD_UNLOCK(&memheap_oob.lck);
+        MEMHEAP_ERROR("failed to get msg buffer");
+        return OSHMEM_ERROR;
+    }
+
+    cmd = MEMHEAP_RKEY_REQ;
+    PMIx_Data_pack(NULL, msg, &cmd, 1, PMIX_UINT8);
+    PMIx_Data_pack(NULL, msg, &seg, 1, PMIX_UINT32);
+
+    rc = send_buffer(pe, msg);
+    PMIX_DATA_BUFFER_RELEASE(msg);
+    if (MPI_SUCCESS != rc) {
+        OPAL_THREAD_UNLOCK(&memheap_oob.lck);
+        MEMHEAP_ERROR("FAILED to send rml message %d", rc);
+        return OSHMEM_ERROR;
+    }
+
+    while (!memheap_oob.mkeys_rcvd) {
+        opal_condition_wait(&memheap_oob.cond, &memheap_oob.lck);
+    }
+
+    if (MEMHEAP_RKEY_RESP == memheap_oob.mkeys_rcvd) {
+        rc = OSHMEM_SUCCESS;
+    } else {
+        MEMHEAP_ERROR("failed to get rkey seg#%d pe=%d", seg, pe);
+        rc = OSHMEM_ERROR;
+    }
+
+    OPAL_THREAD_UNLOCK(&memheap_oob.lck);
+    return rc;
+}
+
+void mca_memheap_modex_recv_all(void)
+{
+    int i;
+    int j;
+    int nprocs, my_pe;
+    pmix_data_buffer_t *msg = NULL;
+    void *send_buffer = NULL;
+    char *rcv_buffer = NULL;
+    size_t size;
+    int send_size;
+    int *rcv_size = NULL;
+    int *rcv_n_transports = NULL;
+    int *rcv_offsets = NULL;
+    int rc = OSHMEM_SUCCESS;
+    size_t buffer_size = 0;
+
+    OPAL_TIMING_ENV_INIT(recv_all);
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "start");
+    nprocs = oshmem_num_procs();
+    my_pe = oshmem_my_proc_id();
+    OPAL_TIMING_ENV_NEXT(recv_all, "proc position");
+
+    if (0 >= nprocs || 0 > my_pe || my_pe >= nprocs
+        || SIZE_MAX / sizeof(int) < (size_t) nprocs) {
+        rc = OSHMEM_ERR_BAD_PARAM;
+        goto exit_fatal;
+    }
+
+    /* buffer allocation for num_transports
+     * message sizes and offsets */
+
+    rcv_size = (int *)malloc(nprocs * sizeof(int));
+    if (NULL == rcv_size) {
+        MEMHEAP_ERROR("failed to get rcv_size buffer");
+        rc = OSHMEM_ERR_OUT_OF_RESOURCE;
+        goto exit_fatal;
+    }
+
+    rcv_offsets = (int *)malloc(nprocs * sizeof(int));
+    if (NULL == rcv_offsets) {
+        MEMHEAP_ERROR("failed to get rcv_offsets buffer");
+        rc = OSHMEM_ERR_OUT_OF_RESOURCE;
+        goto exit_fatal;
+    }
+
+    rcv_n_transports = (int *)malloc(nprocs * sizeof(int));
+    if (NULL == rcv_n_transports) {
+        MEMHEAP_ERROR("failed to get rcv_n_transports buffer");
+        rc = OSHMEM_ERR_OUT_OF_RESOURCE;
+        goto exit_fatal;
+    }
+    OPAL_TIMING_ENV_NEXT(recv_all, "alloc bufs");
+
+    /* serialize our own mkeys */
+    PMIX_DATA_BUFFER_CREATE(msg);
+    if (NULL == msg) {
+        MEMHEAP_ERROR("failed to get msg buffer");
+        rc = OSHMEM_ERR_OUT_OF_RESOURCE;
+        goto exit_fatal;
+    }
+
+    rc = pack_memheap_layout(msg);
+    if (OSHMEM_SUCCESS != rc) {
+        MEMHEAP_ERROR("failed to pack local memheap layout");
+        goto exit_fatal;
+    }
+    if (mca_memheap_base_key_exchange) {
+        for (j = 0; j < memheap_map->n_segments; j++) {
+            rc = pack_local_mkeys(msg, my_pe, j);
+            if (OSHMEM_SUCCESS != rc) {
+                MEMHEAP_ERROR("failed to pack local keys for segment %d", j);
+                goto exit_fatal;
+            }
+        }
+    }
+
+    /* Do allgather */
+    PMIX_DATA_BUFFER_UNLOAD(msg, send_buffer, size);
+    if (0 == size || INT_MAX < size) {
+        MEMHEAP_ERROR("invalid local key payload size: %" PRIsize_t, size);
+        rc = OSHMEM_ERR_BAD_PARAM;
+        goto exit_fatal;
+    }
+    send_size = (int) size;
+    MEMHEAP_VERBOSE(1, "local memheap payload packed into %d bytes, %d segments",
+                    send_size, memheap_map->n_segments);
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "serialize data");
+
+
+    /* we need to send num_transports and message sizes separately
+     * since message sizes depend on types of btl used */
+
+    rc = oshmem_shmem_allgather(&memheap_map->num_transports, rcv_n_transports, sizeof(int));
+    if (MPI_SUCCESS != rc) {
+        MEMHEAP_ERROR("allgather failed");
+        goto exit_fatal;
+    }
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "allgather: transport cnt");
+
+
+    rc = oshmem_shmem_allgather(&send_size, rcv_size, sizeof(int));
+    if (MPI_SUCCESS != rc) {
+        MEMHEAP_ERROR("allgather failed");
+        goto exit_fatal;
+    }
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "allgather: size info");
+
+    /* calculating offsets (displacements) for allgatherv */
+
+    for (i = 0; i < nprocs; ++i) {
+        if (0 > rcv_n_transports[i] || 0 > rcv_size[i]
+            || INT_MAX < buffer_size) {
+            MEMHEAP_ERROR("invalid receive metadata from PE %d", i);
+            rc = OSHMEM_ERR_BAD_PARAM;
+            goto exit_fatal;
+        }
+        rcv_offsets[i] = (int) buffer_size;
+        if (SIZE_MAX - buffer_size < (size_t) rcv_size[i]) {
+            MEMHEAP_ERROR("receive payload size overflows at PE %d", i);
+            rc = OSHMEM_ERR_BAD_PARAM;
+            goto exit_fatal;
+        }
+        buffer_size += (size_t) rcv_size[i];
+        if (INT_MAX < buffer_size) {
+            MEMHEAP_ERROR("receive displacement exceeds INT_MAX at PE %d",
+                          i);
+            rc = OSHMEM_ERR_BAD_PARAM;
+            goto exit_fatal;
+        }
+    }
+
+    if (0 == buffer_size) {
+        MEMHEAP_ERROR("empty collective key payload");
+        rc = OSHMEM_ERR_BAD_PARAM;
+        goto exit_fatal;
+    }
+
+    rcv_buffer = malloc (buffer_size);
+    if (NULL == rcv_buffer) {
+        MEMHEAP_ERROR("failed to allocate receive buffer");
+        rc = OSHMEM_ERR_OUT_OF_RESOURCE;
+        goto exit_fatal;
+    }
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "alloc data buf");
+
+    rc = oshmem_shmem_allgatherv(send_buffer, rcv_buffer, send_size,
+                                 rcv_size, rcv_offsets);
+    if (MPI_SUCCESS != rc) {
+        free (rcv_buffer);
+        rcv_buffer = NULL;
+        MEMHEAP_ERROR("allgatherv failed");
+        goto exit_fatal;
+    }
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "Perform mkey exchange");
+
+    PMIX_DATA_BUFFER_LOAD(msg, rcv_buffer, buffer_size);
+    rcv_buffer = NULL;
+
+    /*
+     * Pass 1 validates every peer, including self. It intentionally holds no
+     * lock and performs no remote-key allocation, unpack, or mutation.
+     */
+    for (i = 0; i < nprocs; i++) {
+        rc = select_peer_payload(msg, buffer_size, rcv_offsets[i],
+                                 rcv_size[i]);
+        if (OSHMEM_SUCCESS != rc) {
+            goto exit_fatal;
+        }
+        rc = unpack_and_validate_layout(msg, i, my_pe);
+        if (OSHMEM_SUCCESS != rc) {
+            goto exit_fatal;
+        }
+    }
+
+    /*
+     * Lazy key lookup still uses the validated receiver-local segment
+     * ordinal. Preserve the disabled eager-exchange barrier, but return only
+     * after every peer's canonical layout has passed validation.
+     */
+    if (!mca_memheap_base_key_exchange) {
+        oshmem_shmem_barrier();
+        goto exit_fatal;
+    }
+
+    /*
+     * Pass 2 reselects and revalidates each remote slice to position its
+     * cursor at the existing key records before installing them.
+     */
+    OPAL_THREAD_LOCK(&memheap_oob.lck);
+    for (i = 0; i < nprocs; i++) {
+        if (i == my_pe) {
+            continue;
+        }
+
+        rc = select_peer_payload(msg, buffer_size, rcv_offsets[i],
+                                 rcv_size[i]);
+        if (OSHMEM_SUCCESS != rc) {
+            break;
+        }
+        rc = unpack_and_validate_layout(msg, i, my_pe);
+        if (OSHMEM_SUCCESS != rc) {
+            break;
+        }
+        for (j = 0; j < memheap_map->n_segments; j++) {
+            map_segment_t *segment;
+
+            segment = &memheap_map->mem_segs[j];
+            if (NULL != segment->mkeys_cache[i]) {
+                MEMHEAP_VERBOSE(10, "PE%d: segment%d already exists, mkey will be replaced", i, j);
+            } else {
+                segment->mkeys_cache[i] = (sshmem_mkey_t *)
+                    calloc(rcv_n_transports[i], sizeof(sshmem_mkey_t));
+                if (NULL == segment->mkeys_cache[i]) {
+                    MEMHEAP_ERROR("PE%d: segment%d: Failed to allocate mkeys cache entry", i, j);
+                    rc = OSHMEM_ERR_OUT_OF_RESOURCE;
+                    break;
+                }
+            }
+            memheap_oob.mkeys = segment->mkeys_cache[i];
+            memheap_oob.segno = j;
+            unpack_remote_mkeys(oshmem_ctx_default, msg, i);
+        }
+        if (OSHMEM_SUCCESS != rc) {
+            break;
+        }
+    }
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "Unpack data");
+
+    OPAL_THREAD_UNLOCK(&memheap_oob.lck);
+    if (OSHMEM_SUCCESS != rc) {
+        goto exit_fatal;
+    }
+
+exit_fatal:
+    if (rcv_buffer) {
+        free(rcv_buffer);
+    }
+    if (rcv_size) {
+        free(rcv_size);
+    }
+    if (rcv_offsets) {
+        free(rcv_offsets);
+    }
+    if (rcv_n_transports) {
+        free(rcv_n_transports);
+    }
+    if (send_buffer) {
+        free(send_buffer);
+    }
+    if (msg) {
+        PMIX_DATA_BUFFER_RELEASE(msg);
+    }
+
+    OPAL_TIMING_ENV_NEXT(recv_all, "Cleanup");
+    /* This function requires abort in any error case */
+    if (OSHMEM_SUCCESS != rc) {
+        oshmem_shmem_abort(rc);
+    }
+}
+
+sshmem_mkey_t * mca_memheap_base_get_cached_mkey_slow(shmem_ctx_t ctx,
+                                                      map_segment_t *s,
+                                                      int pe,
+                                                      void* va,
+                                                      int btl_id,
+                                                      void** rva)
+{
+    int rc;
+    sshmem_mkey_t *mkey;
+
+    if (!memheap_oob.is_inited) {
+        return NULL;
+    }
+
+    s->mkeys_cache[pe] = (sshmem_mkey_t *) calloc(memheap_map->num_transports,
+                                                    sizeof(sshmem_mkey_t));
+    if (!s->mkeys_cache[pe])
+        return NULL ;
+
+    rc = memheap_oob_get_mkeys(ctx, pe,
+                               s - memheap_map->mem_segs,
+                               s->mkeys_cache[pe]);
+    if (OSHMEM_SUCCESS != rc)
+        return NULL ;
+
+    mkey = &s->mkeys_cache[pe][btl_id];
+    *rva = memheap_va2rva(va, s->super.va_base, mkey->va_base);
+
+    MEMHEAP_VERBOSE_FASTPATH(5, "rkey: pe=%d va=%p -> (remote lookup) %lx %p", pe, (void *)va, mkey->u.key, (void *)*rva);
+    return mkey;
+}
+
+sshmem_mkey_t *mca_memheap_base_get_mkey(void* va, int tr_id)
+{
+    map_segment_t *s;
+
+    s = memheap_find_va(va);
+
+    return ((s && MAP_SEGMENT_IS_VALID(s)) ? &s->mkeys[tr_id] : NULL );
+}
+
+
+int mca_memheap_base_is_symmetric_addr(const void* va)
+{
+    return (memheap_find_va((void *)va) ? 1 : 0);
+}
+
+int mca_memheap_base_detect_addr_type(void* va)
+{
+    int addr_type = ADDR_INVALID;
+    map_segment_t *s;
+
+    s = memheap_find_va(va);
+
+    if (s) {
+        if (s->type == MAP_SEGMENT_STATIC) {
+            addr_type = ADDR_STATIC;
+        } else if ((uintptr_t)va >= (uintptr_t) s->super.va_base
+                   && (uintptr_t)va < (uintptr_t) ((uintptr_t)s->super.va_base + mca_memheap.memheap_size)) {
+            addr_type = ADDR_USER;
+        } else {
+            assert( (uintptr_t)va >= (uintptr_t) ((uintptr_t)s->super.va_base + mca_memheap.memheap_size) && (uintptr_t)va < (uintptr_t)s->super.va_end);
+            addr_type = ADDR_PRIVATE;
+        }
+    }
+
+    return addr_type;
+}
+
+void mkey_segment_init(mkey_segment_t *seg, sshmem_mkey_t *mkey, uint32_t segno)
+{
+    map_segment_t *s;
+
+    s = memheap_find_seg(segno);
+    assert(NULL != s);
+    seg->super.va_base = s->super.va_base;
+    seg->super.va_end  = s->super.va_end;
+    seg->rva_base      = mkey->va_base;
+}
+

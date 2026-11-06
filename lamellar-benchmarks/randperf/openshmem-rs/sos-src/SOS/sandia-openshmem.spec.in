@@ -1,0 +1,105 @@
+%{!?configargs: %global configargs %{nil}}
+%{!?testdir: %global testdir %{buildroot}%{_datadir}/%{name}-%{version}/tests}
+%define debug_package %{nil}
+
+Name: sandia-openshmem
+Version: @VERSION@
+Release: 1%{?dist}
+Summary: Sandia OpenSHMEM.
+
+Group: OpenSHMEM
+License: BSD
+URL: https://github.com/Sandia-OpenSHMEM/SOS
+Source0: %{name}-%{version}.tar.gz
+
+%description
+Sandia OpenSHMEM.
+
+%package devel
+Summary: Development files for Sandia OpenSHMEM
+Group: System Environment/Libraries
+Requires: %{name} = %{version}
+
+%description devel
+Development files for Sandia OpenSHMEM.
+
+%package tests
+Summary: Tests programs for Sandia OpenSHMEM
+Group: System Environment/Libraries
+Requires: %{name} = %{version}
+
+%description tests
+Tests programs for Sandia OpenSHMEM
+
+%prep
+%setup -q -n %{name}-%{version}
+
+%build
+%configure %{configargs}
+make -j 4 %{?_smp_mflags}
+# Build tests
+make -j 4 check TESTS=
+
+%install
+rm -rf %{buildroot}
+%makeinstall
+# remove unpackaged files from the buildroot
+rm -f %{buildroot}%{_libdir}/*.la
+# Prepare tests
+# FIXME: It would be better to configure with --disable-libtool-wrapper so we
+#        can pull from the standard dirs instead of .libs
+install -d %{testdir}/unit
+install modules/tests-sos/test/unit/.libs/* %{testdir}/unit
+install -d %{testdir}/shmemx
+install modules/tests-sos/test/shmemx/.libs/* %{testdir}/shmemx
+install -d %{testdir}/spec-example
+install modules/tests-sos/test/spec-example/.libs/* %{testdir}/spec-example
+install -d %{testdir}/apps
+install modules/tests-sos/test/apps/.libs/* %{testdir}/apps
+install -d %{testdir}/performance/shmem_perf_suite
+install modules/tests-sos/test/performance/shmem_perf_suite/.libs/* %{testdir}/performance/shmem_perf_suite
+install -d %{testdir}/performance/tests
+install modules/tests-sos/test/performance/tests/.libs/* %{testdir}/performance/tests
+
+%clean
+rm -rf %{buildroot}
+
+%post -p /sbin/ldconfig
+%postun -p /sbin/ldconfig
+
+%files
+%defattr(-,root,root,-)
+@SOS_RPM_PREFIXED@%dir %{_prefix}
+@SOS_RPM_PREFIXED@%dir %{_bindir}
+@SOS_RPM_PREFIXED@%dir %{_libdir}
+@SOS_RPM_PREFIXED@%dir %{_libdir}/pkgconfig
+@SOS_RPM_PREFIXED@%dir %{_docdir}
+@SOS_RPM_PREFIXED@%dir %{_datadir}
+%{_docdir}/*
+%{_bindir}/oshrun
+%{_libdir}/lib*.so.*
+%{_libdir}/pkgconfig/*.pc
+
+%files devel
+%defattr(-,root,root)
+@SOS_RPM_PREFIXED@%dir %{_prefix}
+@SOS_RPM_PREFIXED@%dir %{_bindir}
+@SOS_RPM_PREFIXED@%dir %{_libdir}
+@SOS_RPM_PREFIXED@%dir %{_includedir}
+@SOS_RPM_PREFIXED@%dir %{_mandir}
+@SOS_RPM_PREFIXED@%dir %{_mandir}/man[1-3]
+%{_bindir}/*
+%{_libdir}/lib*.so
+%{_libdir}/*.a
+%{_libdir}/pkgconfig/*.pc
+%{_includedir}/*
+@SOS_RPM_MANPAGES@%{_mandir}/man[1-3]/*
+
+%files tests
+%defattr(-,root,root)
+@SOS_RPM_PREFIXED@%dir %{_prefix}
+@SOS_RPM_PREFIXED@%dir %{_datadir}
+@SOS_RPM_PREFIXED@%dir %{_datadir}/%{name}-%{version}
+%{_datadir}/%{name}-%{version}/tests
+
+%changelog

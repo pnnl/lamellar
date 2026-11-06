@@ -1,0 +1,49 @@
+[package]
+name = "shmem-shim"
+version = "0.1.0"
+authors = ["Ryan D. Friese <ryan.friese@pnnl.gov>"]
+edition = "2024"
+description = "Small shim exposing necessary OpenSHMEM functions for randperf"
+links = "shmem"
+
+[dependencies]
+hwlocality-sys = { workspace = true }
+libevent-sys = { workspace = true }
+libfabric-sys = { workspace = true, optional = true }
+# OpenSHMEM on Lamellar, as an ordinary dependency (lamellar-openshmem in this repository; all four lamellae compiled in statically; LAMELLAR_BACKEND picks one at run time)
+lamellar-openshmem = { path = "../../../../lamellar-openshmem", optional = true }
+# The lamellar-openshmem crate has no feature for the libfabric-sys lamellae (plain shmem needs none: it is always compiled in). Cargo unifies
+# features of the one lamellar crate, so enabling it here switches that lamellae on for lamellar-openshmem too.
+lamellar = { path = "../../../../lamellar-runtime", optional = true, default-features = false }
+lamellar-ucx-sys = { workspace = true, optional = true }
+pmix-sys = { workspace = true }
+prrte-sys = { workspace = true }
+
+[build-dependencies]
+bindgen = { workspace = true }
+subprocess = { workspace = true }
+autotools = { workspace = true }
+glob = { workspace = true }
+sos-src = { path = "../sos-src", version = "0.1.0", optional = true }
+ompi-src = { path = "../ompi-src", version = "0.1.0", optional = true }
+
+[lib]
+name = "shmem_shim"
+path = "src/lib.rs"
+
+[features]
+shared = []
+# The libfabric / UCX build crates only matter for the backends that compile their own fabric stack; lamellar-openshmem does not need them.
+fabric-deps = ["dep:libfabric-sys", "dep:lamellar-ucx-sys"]
+sos-ofi = ["fabric-deps", "sos-src/ofi"]   # libfabric links statically (EXPERIMENT: was libfabric-sys/shared)
+sos-ucx = ["fabric-deps", "sos-src/ucx"]
+ompi-ucx = ["fabric-deps", "ompi-src/ucx", "lamellar-ucx-sys/shared"]
+hpcx-ucx = ["fabric-deps"]
+# An Open MPI that is already installed (OMPI_DIR=<prefix> at build time): nothing is compiled, liboshmem is linked from there.
+ompi-system = []
+# lamellar-openshmem comes in families. A family has every lamellae of its network and, always, both single-node shared-memory lamellae
+# (shmem is part of lamellar itself, shmem-opt is a feature). The crate has no feature for the libfabric-sys lamellae, so lamellar's own
+# features enable-libfabric-sys and enable-rofi-c-pmix (the rofi_c lamellae) are switched on directly (cargo unifies the features of the one lamellar crate).
+lamellar-openshmem-ucx = ["dep:lamellar-openshmem", "lamellar-openshmem/ucx", "lamellar-openshmem/ucx-opt", "lamellar-openshmem/shmem-opt"]
+lamellar-openshmem-libfabric = ["dep:lamellar-openshmem", "dep:lamellar", "lamellar-openshmem/libfabric", "lamellar-openshmem/libfabric-sys-opt", "lamellar-openshmem/shmem-opt", "lamellar/enable-libfabric-sys", "lamellar/enable-rofi-c-pmix"]
+lamellar-openshmem = ["lamellar-openshmem-ucx", "lamellar-openshmem-libfabric"]   # both families in one binary

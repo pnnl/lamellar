@@ -1,0 +1,34 @@
+[package]
+name = "randperf-lamellar"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lamellar = { workspace = true, features = ["with-salloc", "runtime-warnings-panic"] }
+#lamellar = { version = "0.8.0", features = ["runtime-warnings-panic", "with-salloc"] }
+libfabric-sys = { workspace = true }
+lamellar-ucx-sys = { workspace = true }
+pmix-sys = { workspace = true }
+randperf-core = { path = "../randperf-core", version = "0.1.0" }
+clap = { workspace = true }
+paste = { workspace = true }
+anyhow = { workspace = true }
+rand = "0.8"
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "fmt",
+    "registry",
+] }
+
+
+
+[features]
+libfabric = ["lamellar/enable-libfabric"]
+libfabric-sys = ["lamellar/enable-libfabric-sys"]
+libfabric-sys-opt = ["lamellar/enable-libfabric-sys-opt"]
+ucx = ["lamellar/enable-ucx"]
+ucx-opt = ["lamellar/enable-ucx-opt"]
+shmem-opt = ["lamellar/enable-shmem-opt"]
+rofi-c = ["lamellar/enable-rofi-c-pmix"]
+
+

@@ -1,0 +1,242 @@
+#! @PERL@ -w
+# -*- perl -*-
+#
+# Note that we use an interpreter value ("PERL") from configure
+# because even "#!/usr/bin/env perl" to all systems (e.g., NetBSD).
+#
+# Copyright (c) 2009-2012 Cisco Systems, Inc.  All rights reserved.
+# Copyright (c) 2010      Oracle and/or its affiliates.  All rights reserved.
+# Copyright (c) 2013      Sandia National Laboratories.  All rights reserved.
+# Copyright (c) 2016      IBM Corporation.  All rights reserved.
+# Copyright (c) 2016      Research Organization for Information Science
+#                         and Technology (RIST). All rights reserved.
+# Copyright (c) 2022      Amazon.com, Inc. or its affiliates.  All Rights reserved.
+# $COPYRIGHT$
+#
+# Additional copyrights may follow
+#
+# $HEADER$
+#
+
+use File::Basename;
+use File::Spec::Functions;
+
+my $includedir = "@OMPI_WRAPPER_INCLUDEDIR@";
+my $libdir = "@OMPI_WRAPPER_LIBDIR@";
+
+# obey the OPAL_DESTDIR environment variable
+if (exists($ENV{'OPAL_DESTDIR'})
+  && defined($ENV{'OPAL_DESTDIR'})
+  && (length($ENV{'OPAL_DESTDIR'}) > 0)) {
+    my $ddir = $ENV{'OPAL_DESTDIR'};
+
+    $includedir = catdir($ddir, $includedir);
+    $libdir = catdir($ddir, $libdir);
+}
+
+my $CC = "@WRAPPER_CC@";
+my $CXX = "@CXX@";
+my $FC = "@FC@";
+my $wrapper_cppflags = "@OMPI_WRAPPER_CPPFLAGS@";
+my $wrapper_cflags = "@OMPI_WRAPPER_CFLAGS@";
+my $wrapper_cflags_prefix = "@OMPI_WRAPPER_CFLAGS_PREFIX@";
+my $wrapper_cxxflags = "@OMPI_WRAPPER_CXXFLAGS@";
+my $wrapper_cxxflags_prefix = "@OMPI_WRAPPER_CXXFLAGS_PREFIX@";
+my $wrapper_fcflags = "@OMPI_WRAPPER_FCFLAGS@";
+my $wrapper_fcflags_prefix = "@OMPI_WRAPPER_FCFLAGS_PREFIX@";
+my $wrapper_ldflags = "@OMPI_WRAPPER_LDFLAGS@";
+my $wrapper_ldflags_static = "@OMPI_WRAPPER_LDFLAGS_STATIC@";
+my $wrapper_libs = "@OMPI_WRAPPER_LIBS@";
+my $wrapper_libs_static = "@OMPI_WRAPPER_LIBS_STATIC@";
+my $wrapper_fc_ldflags = "@OMPI_WRAPPER_FC_LDFLAGS@";
+my $wrapper_fc_ldflags_static = "@OMPI_WRAPPER_FC_LDFLAGS_STATIC@";
+my $wrapper_fc_libs = "@OMPI_WRAPPER_FC_LIBS@";
+my $wrapper_fc_libs_static = "@OMPI_WRAPPER_FC_LIBS_STATIC@";
+
+my $lang = "none";
+my $comp = ""; # this is a sentinal from configure
+my $preproc_flags = "";
+my $comp_flags = "";
+my $comp_flags_prefix = "";
+my $linker_flags = "";
+my $linker_flags_static = "";
+my $libs = "";
+my $libs_static = "";
+
+# run flags through regex to fix directories...
+$wrapper_cppflags =~ s/\$\{includedir\}/$includedir/g;
+$wrapper_cflags =~ s/\$\{includedir\}/$includedir/g;
+$wrapper_cflags_prefix =~ s/\$\{includedir\}/$includedir/g;
+$wrapper_cxxflags =~ s/\$\{includedir\}/$includedir/g;
+$wrapper_cxxflags_prefix =~ s/\$\{includedir\}/$includedir/g;
+$wrapper_fcflags =~ s/\$\{includedir\}/$includedir/g;
+$wrapper_fcflags_prefix =~ s/\$\{includedir\}/$includedir/g;
+$wrapper_ldflags =~ s/\$\{libdir\}/$libdir/g;
+$wrapper_ldflags_static =~ s/\$\{libdir\}/$libdir/g;
+$wrapper_libs =~ s/\$\{libdir\}/$libdir/g;
+$wrapper_libs_static =~ s/\$\{libdir\}/$libdir/g;
+$wrapper_fc_ldflags =~ s/\$\{libdir\}/$libdir/g;
+$wrapper_fc_ldflags_static =~ s/\$\{libdir\}/$libdir/g;
+$wrapper_fc_libs =~ s/\$\{libdir\}/$libdir/g;
+$wrapper_fc_libs_static =~ s/\$\{libdir\}/$libdir/g;
+
+sub check_env {
+    my $envvar = shift;
+    my $str = shift;
+
+    foreach my $var (("OMPI_MPI", "OMPI_")) {
+        my $testvar = $var . $envvar;
+        if (exists($ENV{$testvar})) {
+            $str = $ENV{$testvar};
+            return $str;
+        }
+    }
+
+    return $str;
+}
+
+
+if (basename($0) eq "mpicc") {
+    $lang = "C";
+    $comp = check_env("CC", $CC);
+    $preproc_flags = $wrapper_cppflags;
+    $comp_flags = $wrapper_cflags;
+    $comp_flags_prefix = $wrapper_cflags_prefix;
+    $linker_flags = $wrapper_ldflags;
+    $linker_flags_static = $wrapper_ldflags_static;
+    $libs = $wrapper_libs;
+    $libs_static = $wrapper_libs_static;
+} elsif (basename($0) eq "mpic++" || basename($0) eq "mpiCC" || basename($0) eq "mpicxx") {
+    $lang = "C++";
+    $comp = check_env("CXX", $CXX);
+    $preproc_flags = $wrapper_cppflags;
+    $comp_flags = $wrapper_cxxflags;
+    $comp_flags_prefix = $wrapper_cxxflags_prefix;
+    $linker_flags = $wrapper_ldflags;
+    $linker_flags_static = $wrapper_ldflags_static;
+    $libs = $wrapper_libs;
+    $libs_static = $wrapper_libs_static;
+}
+# mpifort is now preferred; mpif77/mpif90 are legacy names
+elsif (basename($0) eq "mpifort" ||
+         basename($0) eq "mpif77" || basename($0) eq "mpif90") {
+    $lang = "Fortran";
+    $comp = check_env("FC", $FC);
+    $preproc_flags = $wrapper_cppflags;
+    $comp_flags = $wrapper_fcflags;
+    $comp_flags_prefix = $wrapper_fcflags_prefix;
+    $linker_flags = $wrapper_fc_ldflags;
+    $linker_flags_static = $wrapper_fc_ldflags_static;
+    $libs = $wrapper_fc_libs;
+    $libs_static = $wrapper_fc_libs_static;
+}
+
+if ($lang eq "none") {
+    print "Could not determine requested language\n";
+    exit 1;
+}
+if ($comp eq "") {
+    print "Unfortunately, this installation of Open MPI was not compiled with\n";
+    print $lang . " support.  As such, the " . $lang . " compiler is non-functional.\n";
+    exit 1;
+}
+
+# figure out what user wants
+my @args = @ARGV;
+my $want_preproc = 1;
+my $want_compile = 1;
+my $want_link = 1;
+my $want_pmpi = 0;
+my $dry_run = 0;
+my $disable_flags = 1;
+my $real_flag = 0;
+my @appargs = ();
+my $want_static = 0;
+
+while (scalar(@args) > 0) {
+    my $arg = shift(@args);
+
+    if ($arg eq "-showme" || $arg eq "--showme") {
+        $dry_run = 1;
+    } elsif ($arg eq "-lpmpi") {
+        $want_pmpi = 1;
+    } elsif ($arg eq "--openmpi:linkall") {
+        $libs = $libs_static;
+    } else {
+        if ($arg eq "-c") {
+            $want_link = 0;
+            $real_flag = 1;
+        } elsif ($arg eq "-E" || $arg eq "-M") {
+            $want_compile = 0;
+            $want_link = 0;
+            $real_flag = 1;
+        } elsif ($arg eq "-S") {
+            $want_link = 0;
+            $real_flag = 1;
+        } elsif ($arg eq "-static" ||
+                  $arg eq "--static" ||
+                  $arg eq "-Bstatic" ||
+                  $arg eq "-Wl,-static" ||
+                  $arg eq "-Wl,--static" ||
+                  $arg eq "-Wl,-Bstatic") {
+            $want_static = 1;
+            $real_flag = 1;
+        } elsif ($arg eq "-dynamic" ||
+                  $arg eq "--dynamic" ||
+                  $arg eq "-Bdynamic" ||
+                  $arg eq "-Wl,-dynamic" ||
+                  $arg eq "-Wl,--dynamic" ||
+                  $arg eq "-Wl,-Bdynamic") {
+            $want_static = 0;
+            $real_flag = 1;
+        } elsif ($arg =~ /^-.*/) {
+            $real_flag = 1;
+        } else {
+            $real_flag = 1;
+            $disable_flags = 0;
+        }
+        push(@appargs, $arg);
+    }
+}
+
+if ($disable_flags == 1 && !($dry_run == 1 && $real_flag == 0)) {
+    $want_preproc = $want_compile = $want_link = 0;
+}
+
+if ($want_static == 1) {
+    $libs = $libs_static;
+    $linker_flags = $linker_flags_static;
+}
+
+my @exec_argv = ();
+
+# assemble command
+push(@exec_argv, split(' ', $comp));
+# Per tickets https://svn.open-mpi.org/trac/ompi/ticket/2474, and
+# https://svn.open-mpi.org/trac/ompi/ticket/2201, construct command
+# with some system arguments before user arguments and some after.
+if ($want_compile == 1) {
+    push(@exec_argv, split(' ', $comp_flags_prefix));
+}
+push(@exec_argv, @appargs);
+if ($want_preproc == 1) {
+    push(@exec_argv, split(' ', $preproc_flags));
+}
+if ($want_compile == 1) {
+    push(@exec_argv, split(' ', $comp_flags));
+}
+if ($want_link == 1) {
+    push(@exec_argv, split(' ', $linker_flags));
+    push(@exec_argv, split(' ', $libs));
+}
+
+if ($dry_run == 1) {
+    print join(" ", @exec_argv) . "\n";
+    exit 0;
+}
+
+$cmd = shift(@exec_argv);
+if ($real_flag == 0) {
+    @exec_argv = ();
+}
+exec($cmd, (@exec_argv)) || die "Could not exec " . $exec_argv[0] . ": $!\n";

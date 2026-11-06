@@ -1,0 +1,178 @@
+/* -*- C -*-
+ *
+ * Copyright (c) 2019 Intel Corporation. All rights reserved.
+ * This software is available to you under the BSD license.
+ *
+ * This file is part of the Sandia OpenSHMEM software package. For license
+ * information, see the LICENSE file in the top level directory of the
+ * distribution.
+ *
+ */
+
+#include "config.h"
+
+#define SHMEM_INTERNAL_INCLUDE
+#include "shmem.h"
+
+#include "shmem_team.h"
+
+#ifdef ENABLE_PROFILING
+#include "pshmem.h"
+
+#pragma weak shmem_team_my_pe = pshmem_team_my_pe
+#define shmem_team_my_pe pshmem_team_my_pe
+
+#pragma weak shmem_team_n_pes = pshmem_team_n_pes
+#define shmem_team_n_pes pshmem_team_n_pes
+
+#pragma weak shmem_team_get_config = pshmem_team_get_config
+#define shmem_team_get_config pshmem_team_get_config
+
+#pragma weak shmem_team_translate_pe = pshmem_team_translate_pe
+#define shmem_team_translate_pe pshmem_team_translate_pe
+
+#pragma weak shmem_team_split_strided = pshmem_team_split_strided
+#define shmem_team_split_strided pshmem_team_split_strided
+
+#pragma weak shmem_team_split_2d = pshmem_team_split_2d
+#define shmem_team_split_2d pshmem_team_split_2d
+
+#pragma weak shmem_team_destroy = pshmem_team_destroy
+#define shmem_team_destroy pshmem_team_destroy
+
+#pragma weak shmem_team_create_ctx = pshmem_team_create_ctx
+#define shmem_team_create_ctx pshmem_team_create_ctx
+
+#pragma weak shmem_ctx_get_team = pshmem_ctx_get_team
+#define shmem_ctx_get_team pshmem_ctx_get_team
+
+#endif /* ENABLE_PROFILING */
+
+/* Team Managment Routines */
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_my_pe(shmem_team_t team)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    if (team == SHMEM_TEAM_INVALID)
+        return -1;
+    else
+        return ((shmem_internal_team_t *)team)->my_pe;
+}
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_n_pes(shmem_team_t team)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    if (team == SHMEM_TEAM_INVALID)
+        return -1;
+    else
+        return ((shmem_internal_team_t *)team)->size;
+}
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_get_config(shmem_team_t team, long config_mask, shmem_team_config_t *config)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    if (team == SHMEM_TEAM_INVALID)
+        return -1;
+
+    shmem_internal_team_t *myteam = (shmem_internal_team_t *)team;
+    if (config_mask != 0) {
+        if (config_mask != SHMEM_TEAM_NUM_CONTEXTS) {
+            RAISE_WARN_MSG("Invalid team config mask (%ld)\n", config_mask);
+            return -1;
+        }
+        if (config == NULL) {
+            RAISE_WARN_STR("NULL config pointer passed to shmem_team_get_config");
+            return -1;
+        }
+        memcpy(config, &myteam->config, sizeof(shmem_team_config_t));
+    } else if (config != NULL) {
+        RAISE_WARN_MSG("%s %s\n", "shmem_team_get_config encountered an unexpected",
+                       "non-NULL config structure passed with a config_mask of 0.");
+    }
+
+    return 0;
+}
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_translate_pe(shmem_team_t src_team, int src_pe, shmem_team_t dest_team)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    return shmem_internal_team_translate_pe((shmem_internal_team_t *)src_team,
+                                            src_pe, (shmem_internal_team_t *)dest_team);
+}
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_split_strided(shmem_team_t parent_team, int PE_start,
+                          int PE_stride, int PE_size, const shmem_team_config_t
+                          *config, long config_mask, shmem_team_t *new_team)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    return shmem_internal_team_split_strided((shmem_internal_team_t *)parent_team,
+                                             PE_start, PE_stride, PE_size, config,
+                                             config_mask, (shmem_internal_team_t **)new_team);
+}
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_split_2d(shmem_team_t parent_team, int xrange,
+                     const shmem_team_config_t *xaxis_config, long xaxis_mask,
+                     shmem_team_t *xaxis_team, const shmem_team_config_t *yaxis_config,
+                     long yaxis_mask, shmem_team_t *yaxis_team)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    return shmem_internal_team_split_2d((shmem_internal_team_t *)parent_team,
+                                        xrange, xaxis_config, xaxis_mask,
+                                        (shmem_internal_team_t **)xaxis_team,
+                                        yaxis_config, yaxis_mask,
+                                        (shmem_internal_team_t **)yaxis_team);
+}
+
+void SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_destroy(shmem_team_t team)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    if ((shmem_internal_team_t *)team == &shmem_internal_team_world ||
+        (shmem_internal_team_t *)team == &shmem_internal_team_shared)
+        RAISE_ERROR_STR("Cannot destroy a pre-defined team");
+
+    shmem_internal_team_destroy((shmem_internal_team_t *)team);
+}
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_team_create_ctx(shmem_team_t team, long options, shmem_ctx_t *ctx)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    if (team == SHMEM_TEAM_INVALID) {
+        *ctx = SHMEM_CTX_INVALID;
+        return -1;
+    }
+
+    int ret = shmem_transport_ctx_create((shmem_internal_team_t *) team,
+                                         options, (shmem_transport_ctx_t **) ctx);
+    return ret;
+}
+
+int SHMEM_FUNCTION_ATTRIBUTES
+shmem_ctx_get_team(shmem_ctx_t ctx, shmem_team_t *team)
+{
+    SHMEM_ERR_CHECK_INITIALIZED();
+
+    if (ctx == SHMEM_CTX_INVALID) {
+        *team = SHMEM_TEAM_INVALID;
+        return -1;
+    }
+
+    shmem_transport_ctx_t *ctxp = (shmem_transport_ctx_t *)ctx;
+    *team = (shmem_team_t) ctxp->team;
+    return 0;
+}

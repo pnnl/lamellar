@@ -1,0 +1,23 @@
+[package]
+name = "randperf-shmem"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+randperf-core = { path = "../randperf-core", version = "0.1.0" }
+clap = { workspace = true }
+paste = { workspace = true }
+anyhow = { workspace = true }
+shmem-shim = { workspace = true, optional = true }
+hpc_launch = { workspace = true, features = ["with-salloc"] }
+
+[features]
+# lamellar-openshmem (OpenSHMEM on the local lamellar-repo, all lamellae compiled in; LAMELLAR_BACKEND picks one at run time)
+lamellar-openshmem = ["shmem-shim/lamellar-openshmem"]
+lamellar-openshmem-ucx = ["shmem-shim/lamellar-openshmem-ucx"]
+lamellar-openshmem-libfabric = ["shmem-shim/lamellar-openshmem-libfabric"]
+sos-ofi = ["shmem-shim/sos-ofi"]
+sos-ucx = ["shmem-shim/sos-ucx"]
+ompi-ucx = ["shmem-shim/ompi-ucx"]
+hpcx-ucx = ["shmem-shim/hpcx-ucx"]
+ompi-system = ["shmem-shim/ompi-system"]   # opt-in: OMPI_DIR=<prefix> of an installed Open MPI

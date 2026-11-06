@@ -1,0 +1,22 @@
+# -*- text -*-
+#
+# Copyright (c) 2011-2014 Cisco Systems, Inc.  All rights reserved.
+# Copyright (c) 2014      Intel, Inc.  All rights reserved.
+# $COPYRIGHT$
+#
+# Additional copyrights may follow
+#
+# $HEADER$
+#
+# This is the US/English help file for Open MPI's hwloc base support
+#
+[mbind failure]
+Open MPI failed to bind internal memory to a specific NUMA node.  This
+message will only be reported at most once per process.
+
+  Local host: %s
+  PID:        %d
+  File:       %s:%d
+  Message:    %s
+  Severity:   %s
+

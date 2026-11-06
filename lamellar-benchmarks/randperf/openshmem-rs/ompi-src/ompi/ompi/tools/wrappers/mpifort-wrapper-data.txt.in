@@ -1,0 +1,26 @@
+# There can be multiple blocks of configuration data, chosen by
+# compiler flags (using the compiler_args key to chose which block
+# should be activated.  This can be useful for multilib builds.  See the
+# multilib page at:
+#    https://github.com/open-mpi/ompi/wiki/compilerwrapper3264
+# for more information.
+
+project=Open MPI
+project_short=OMPI
+version=@OMPI_VERSION@
+language=Fortran
+compiler_env=FC
+compiler_flags_env=FCFLAGS
+compiler=@FC@
+preprocessor_flags=
+compiler_flags_prefix=@OMPI_WRAPPER_FCFLAGS_PREFIX@
+compiler_flags=@OMPI_WRAPPER_FCFLAGS@
+linker_flags=@OMPI_WRAPPER_FC_LDFLAGS@
+linker_flags_static=@OMPI_WRAPPER_FC_LDFLAGS_STATIC@
+libs=@OMPI_WRAPPER_FC_LIBS@
+libs_static=@OMPI_WRAPPER_FC_LIBS_STATIC@
+dyn_lib_file=lib@OMPI_LIBMPI_NAME@.@OPAL_DYN_LIB_SUFFIX@
+static_lib_file=lib@OMPI_LIBMPI_NAME@.a
+required_file=@OMPI_WRAPPER_FORTRAN_REQUIRED_FILE@
+includedir=${includedir}
+libdir=${libdir}

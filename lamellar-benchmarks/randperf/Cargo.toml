@@ -1,0 +1,72 @@
+[workspace]
+members = [
+    "randperf-core",
+    "randperf-lamellar",
+    "randperf-shmem",
+    "openshmem-rs/ompi-src",
+    "openshmem-rs/shmem-shim",
+    "openshmem-rs/sos-src",
+]
+exclude = ["ompi-src", "shmem-shim", "sos-src"]
+resolver = "3"
+
+[workspace.dependencies]
+# Lamellar, its -sys / -src crates and lamellar-openshmem come from this repository (siblings of lamellar-benchmarks/).
+# Features are chosen per crate (randperf-lamellar/Cargo.toml).
+lamellar = { path = "../../lamellar-runtime" }
+hpc_launch = { path = "../../process_management/hpc_launch" }
+shmem-shim = { path = "openshmem-rs/shmem-shim", version = "0.1.0" }
+hwlocality-sys = { version = "0.7.1", features = ["hwloc-latest", "vendored"] }
+libevent-sys = { version = "0.4", features = [
+    "bundled",
+    "openssl_bundled",
+    "threading",
+] }
+libfabric-sys = { version = "0.1.0", package = "lamellar-libfabric-sys" }
+pmix-sys = { version = "0.1.0", features = ["vendored"] }
+prrte-sys = { version = "0.1.0", features = ["vendored"] }
+lamellar-ucx-sys = { version = "0.1.0" }
+
+bindgen = "0.72.1"
+subprocess = "0.1.18"
+autotools = "0.2.4"
+glob = "0.3.0"
+clap = { version = "4", features = ["derive"] }
+paste = { version = "1" }
+anyhow = "1"
+
+# [patch] is only honored at the workspace root, so it lives here.
+[patch.crates-io]
+pmi = { path = "../../process_management/pmi" }
+pmi-sys = { path = "../../process_management/pmi-sys" }
+pmi2-sys = { path = "../../process_management/pmi2-sys" }
+pmi-mpich-src = { path = "../../process_management/pmi-mpich-src" }
+pmix-sys = { path = "../../process_management/pmix-sys" }
+prrte-sys = { path = "../../process_management/prrte-sys" }
+hpc_launch = { path = "../../process_management/hpc_launch" }
+hpc_launch_codegen = { path = "../../process_management/hpc_launch_codegen" }
+openpmix-src = { path = "../../process_management/openpmix-src" }
+prrte-src = { path = "../../process_management/prrte-src" }
+rofisys = { path = "../../communication_frameworks/rofi-sys" }
+lamellar-libfabric = { path = "../../communication_frameworks/libfabric" }
+lamellar-libfabric-sys = { path = "../../communication_frameworks/libfabric-sys" }
+lamellar-libfabric-src = { path = "../../communication_frameworks/libfabric-src" }
+lamellar-ucx-sys = { path = "../../communication_frameworks/lamellar-ucx-sys" }
+lamellar-ucc-sys = { path = "../../communication_frameworks/lamellar-ucc-sys" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.release-dev]
+inherits = "release"
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+
+[profile.release-debug]
+inherits = "release-dev"
+debug = true
+[profile.release-debug.package."*"]
+debug = true
