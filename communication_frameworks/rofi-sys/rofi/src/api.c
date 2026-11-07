@@ -642,6 +642,26 @@ int rofi_collective_progress(void *req) {
 }
 
 /**
+ * @brief The libfabric provider this ROFI was compiled for.
+ *
+ * The provider is fixed at configure time (`--with-ofi-provider`), which selects the fi_info hints and the provider
+ * specific code paths. Build scripts that are handed a prebuilt ROFI read it from the library without running anything:
+ * exactly one of `rofi_built_for_provider_verbs` / `rofi_built_for_provider_cxi` is defined (`nm -g` shows which).
+ *
+ * @return "verbs" or "cxi"
+ *
+ * \b blocking: no
+ * \b thread-safe: yes
+ */
+#if defined(__OFI_PROV_CXI__)
+int rofi_built_for_provider_cxi(void) { return 1; }
+const char *rofi_compiled_provider(void) { return "cxi"; }
+#elif defined(__OFI_PROV_VERBS__)
+int rofi_built_for_provider_verbs(void) { return 1; }
+const char *rofi_compiled_provider(void) { return "verbs"; }
+#endif
+
+/**
  * @brief Query whether atomics are supported by the active provider.
  *
  * @return 1 when atomic operations are supported, 0 otherwise
