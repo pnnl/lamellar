@@ -60,7 +60,10 @@
 //! - `LAMELLAR_AM_SIZE_THRESHOLD` - the threshold for an activemessage (in bytes) on whether it will be sent directly or aggregated, default: 100000
 //! - `LAMELLAR_SCALAR_INLINE_THRESHOLD` - the threshold (in bytes) below which a scalar (POD) array batch-op payload is inlined
 //!   directly into its active message instead of being allocated from the RDMAable memory pool and fetched via a GET, default: 524288
-//! - `LAMELLAR_ROFI_PROVIDER` - the provider for the rofi backend (only used with the rofi backend), default: "verbs"
+//! - `LAMELLAR_ROFI_PROVIDER` - the provider for the rofi backend (only used with the rofi backend), default: the provider ROFI
+//!   was built for. That is "cxi" when libfabric has the CXI provider (rdma/fi_cxi_ext.h is installed), the `rofi-cxi` feature is
+//!   on (e.g. `enable-rofi-c-cxi-pmix`) or `ROFI_OFI_PROVIDER=cxi` was set at build time, otherwise "verbs". The build itself is
+//!   not changed by this setting
 //! - `LAMELLAR_ROFI_DOMAIN` - the domain for the rofi backend (only used with the rofi backend), default: ""
 //! - `LAMELLAR_DISABLE_ON_NODE_SHMEM` - set to true or 1 to disable same-node shared-memory fast path (UCX/libfabric), default: false
 //! - `LAMELLAR_CMD_QUEUE` - selects the command queue protocol variant
@@ -264,8 +267,17 @@ fn default_scalar_inline_threshold() -> usize {
     524288
 }
 
+// The provider the bundled ROFI was compiled for (verbs, or cxi when requested or auto-detected by rofi-sys's build
+// script); LAMELLAR_ROFI_PROVIDER overrides it at run time.
 fn default_rofi_provider() -> String {
-    "verbs".to_owned()
+    #[cfg(any(feature = "enable-rofi-c", feature = "enable-rofi-c-shared"))]
+    {
+        rofisys::OFI_PROVIDER.to_owned()
+    }
+    #[cfg(not(any(feature = "enable-rofi-c", feature = "enable-rofi-c-shared")))]
+    {
+        "verbs".to_owned()
+    }
 }
 
 fn default_rofi_domain() -> String {

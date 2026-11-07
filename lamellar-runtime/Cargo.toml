@@ -205,6 +205,15 @@ enable-rofi-c-shared = [
     "libfabric-sys/shared",
 ]
 enable-rofi-c-shared-pmix = ["enable-rofi-c-shared", "rofisys/pmix"]
+# Fabric (libfabric provider) ROFI is built for. By default it is auto-detected: cxi (HPE Slingshot) when the libfabric
+# install has rdma/fi_cxi_ext.h, otherwise verbs, and that becomes the default LAMELLAR_ROFI_PROVIDER. `rofi-cxi` forces
+# cxi (a modifier: combine it with an enable-rofi-c* feature, or use one of the aliases below), and the build-time
+# variable ROFI_OFI_PROVIDER=verbs|cxi|auto forces either. Ignored when ROFI_DIR points at a prebuilt ROFI.
+rofi-cxi = ["rofisys?/cxi"]
+enable-rofi-c-cxi = ["enable-rofi-c", "rofi-cxi"]
+enable-rofi-c-cxi-pmix = ["enable-rofi-c-pmix", "rofi-cxi"]
+enable-rofi-c-shared-cxi = ["enable-rofi-c-shared", "rofi-cxi"]
+enable-rofi-c-shared-cxi-pmix = ["enable-rofi-c-shared-pmix", "rofi-cxi"]
 enable-rofi-rust = []
 enable-libfabric = ["libfabric", "pmi", "dep:libc"]
 enable-libfabric-sys = ["libfabric-sys", "pmi", "dep:libc"]
