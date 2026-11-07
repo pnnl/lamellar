@@ -52,8 +52,20 @@ fn build_rofi(
     ofi_lib: &PathBuf,
     ofi_inc: &PathBuf,
     pmix: Option<&PathBuf>,
+    provider: &str,
+    ofi_version: Option<&str>,
 ) -> (PathBuf,bool,bool) {
     
+    // The CXI code path includes <rdma/fi_cxi_ext.h>; say so up front rather than failing inside ROFI's compile
+    if provider == "cxi" && !ofi_inc.join("rdma/fi_cxi_ext.h").exists() {
+        println!(
+            "cargo:warning=ROFI was asked to build for the CXI provider, but {} has no rdma/fi_cxi_ext.h: that libfabric \
+             was built without CXI support. Point OFI_DIR at a libfabric with the CXI provider (e.g. the system one on \
+             Slingshot), or build for verbs.",
+            ofi_inc.display()
+        );
+        exit(1);
+    }
     // let ofi_env = ofi.lib_dir().to_path_buf();
     let dest = out_path.clone().join("rofi_src");
     if dest.exists() {
@@ -89,6 +101,12 @@ fn build_rofi(
         }
 
         config.with(format!("ofi={}", ofi.display()), None);
+        // ROFI compiles a different libfabric hint set per provider (__OFI_PROV_VERBS__ / __OFI_PROV_CXI__)
+        config.with(format!("ofi-provider={}", provider), None);
+        // Without this, configure reads the version from `pkg-config libfabric`, which ignores the prefix above
+        if let Some(version) = ofi_version {
+            config.with(format!("ofi-version={}", version), None);
+        }
         // PMIx's own configure-time PMIx_Init link probe (`checking for
         // library containing PMIx_Init`) links only against -lpmix by
         // default. The vendored PMIx here is a static archive, so its own
@@ -182,6 +200,74 @@ fn build_rofi(
     }
 }
 
+/// The libfabric provider ROFI is compiled for, in order of precedence: the `cxi` feature; `ROFI_OFI_PROVIDER` (`verbs`,
+/// `cxi` or `auto`); then auto-detection, which picks cxi when the libfabric install has `rdma/fi_cxi_ext.h` (installed
+/// exactly when libfabric was built with the CXI provider) and verbs otherwise.
+fn rofi_provider(ofi_inc: &std::path::Path, announce: bool) -> &'static str {
+    println!("cargo:rerun-if-env-changed=ROFI_OFI_PROVIDER");
+    let from_env = env::var("ROFI_OFI_PROVIDER").ok();
+    if cfg!(feature = "cxi") {
+        if matches!(from_env.as_deref(), Some(p) if p != "cxi" && p != "auto" && !p.is_empty()) {
+            println!("cargo:warning=the cxi feature is enabled, so ROFI_OFI_PROVIDER={} is ignored", from_env.unwrap());
+        }
+        return "cxi";
+    }
+    match from_env.as_deref() {
+        Some("verbs") => "verbs",
+        Some("cxi") => "cxi",
+        None | Some("") | Some("auto") => {
+            if ofi_inc.join("rdma/fi_cxi_ext.h").exists() {
+                if !announce {
+                    return "cxi";
+                }
+                // verbs shows up as the InfiniBand/RoCE development headers on the build machine
+                let verbs_too = ["/usr/include/infiniband/verbs.h", "/usr/local/include/infiniband/verbs.h"]
+                    .iter()
+                    .any(|h| std::path::Path::new(h).exists());
+                println!(
+                    "cargo:warning=ROFI is being built for the CXI provider (HPE Slingshot): {} has rdma/fi_cxi_ext.h, so \
+                     this libfabric has the CXI provider.{} To build for the verbs provider instead, set \
+                     ROFI_OFI_PROVIDER=verbs for the build (e.g. `ROFI_OFI_PROVIDER=verbs cargo build ...`); to silence this \
+                     message, set ROFI_OFI_PROVIDER=cxi or enable the `rofi-cxi` feature.",
+                    ofi_inc.display(),
+                    if verbs_too { " The verbs provider also looks available here (infiniband/verbs.h is installed); cxi is the default when both are." } else { "" }
+                );
+                "cxi"
+            } else {
+                "verbs"
+            }
+        }
+        Some(other) => {
+            println!(
+                "cargo:warning=unknown ROFI_OFI_PROVIDER '{}' (valid values: verbs, cxi, auto)",
+                other
+            );
+            exit(1);
+        }
+    }
+}
+
+/// The provider an already-built ROFI library was compiled for, from the marker symbol it defines. None when the
+/// library cannot be inspected or is not a ROFI library.
+fn compiled_provider_of(lib: &PathBuf) -> Option<&'static str> {
+    // ROFI defines exactly one of these marker functions (rofi_compiled_provider() in api.c)
+    if check_lib_for_function(lib.clone(), "rofi_built_for_provider_cxi").is_some() {
+        return Some("cxi");
+    }
+    if check_lib_for_function(lib.clone(), "rofi_built_for_provider_verbs").is_some() {
+        return Some("verbs");
+    }
+    // An older ROFI without the markers: the CXI build has functions a verbs build lacks
+    const CXI_ONLY: [&str; 3] = ["rofi_barrier_p2p_internal", "rofi_transport_barrier_msg", "rofi_transport_wait_on_cq"];
+    if CXI_ONLY.iter().any(|f| check_lib_for_function(lib.clone(), f).is_some()) {
+        Some("cxi")
+    } else if check_lib_for_function(lib.clone(), "rofi_transport_init").is_some() {
+        Some("verbs")
+    } else {
+        None
+    }
+}
+
 fn check_lib_for_function(lib: PathBuf, func: &str) -> Option<()> {
     let nm_out = Command::new("nm")
         .args(&["-g", &lib.to_string_lossy()])
@@ -230,6 +316,7 @@ fn build_bindings() {
         println!("cargo:warning ={}={}", var.0, var.1);
     }
     let ofi =PathBuf::from(env::var("DEP_OFI_ROOT").expect("DEP_OFI_ROOT not set"));
+    let ofi_version = env::var("DEP_OFI_VERSION").ok();
     // libfabric-sys reports where the library is (lib or lib64) and whether it linked it shared
     let ofi_lib_dir = env::var("DEP_OFI_LIB_DIR").map(PathBuf::from).unwrap_or_else(|_| ofi.join("lib"));
     let ofi_shared = match env::var("DEP_OFI_SHARED") {
@@ -237,6 +324,10 @@ fn build_bindings() {
         Err(_) => cfg!(feature = "shared"),
     };
     let ofi_inc_dir = ofi.join("include");
+    let prebuilt_rofi = env::var_os("ROFI_DIR").is_some();
+    let provider = rofi_provider(&ofi_inc_dir, !prebuilt_rofi);
+    // What a prebuilt ROFI (ROFI_DIR) is compiled for is read from the library below; the bundled build uses `provider`.
+    let mut built_provider = provider;
     let pmix = pmix_root();
     println!("cargo:warning =Building Rofisys with libfabric at {:?}", ofi_lib_dir);
     println!("cargo:warning =Building Rofisys with libfabric include at {:?}", ofi_inc_dir);
@@ -285,6 +376,33 @@ fn build_bindings() {
                         println!("cargo:warning=Rofi static library not found at {:?}, but shared library found at {:?}. Using shared library instead. (to supress warning compile with the shared feature, or unset ROFI_DIR to use bundled version)", &rofi_a, &rofi_so);
                     }
                 }
+                // A prebuilt ROFI's provider was fixed when it was configured (--with-ofi-provider); read it from the library
+                let inspected = if rofi_a_valid { &rofi_a } else { &rofi_so };
+                let requested = if cfg!(feature = "cxi") {
+                    Some("cxi")
+                } else {
+                    match env::var("ROFI_OFI_PROVIDER").ok().as_deref() {
+                        Some("verbs") => Some("verbs"),
+                        Some("cxi") => Some("cxi"),
+                        _ => None,
+                    }
+                };
+                match compiled_provider_of(inspected) {
+                    Some(detected) => {
+                        built_provider = detected;
+                        println!("cargo:warning=the prebuilt ROFI at {:?} is compiled for the {} provider", inspected, detected);
+                        if requested.map_or(false, |r| r != detected) {
+                            println!(
+                                "cargo:warning=a {} ROFI was requested (feature/ROFI_OFI_PROVIDER) but ROFI_DIR provides one compiled for {}; using it as is. Rebuild ROFI with --with-ofi-provider={} or unset ROFI_DIR to use the bundled one.",
+                                requested.unwrap(), detected, requested.unwrap()
+                            );
+                        }
+                    }
+                    None => {
+                        built_provider = "verbs";
+                        println!("cargo:warning=could not tell which provider the prebuilt ROFI at {:?} is compiled for (nm unavailable?); assuming verbs", inspected);
+                    }
+                }
                 (rofi_path,rofi_a_valid,rofi_so_valid)
             } else {
                 println!("cargo:warning=unable to detect rofi version at root path {:?} (lib path {:?}). SUGGESTED: Rofisys includes a bundled version of Rofi it can build itself, simply unset the ROFI_DIR env variable to use the bundled version. ALTERNATIVE: update to version 0.4 of Rofi manually.",rofi_path,rofi_lib_dir);
@@ -293,8 +411,22 @@ fn build_bindings() {
 
            
         }
-        Err(_) => build_rofi(&out_path, &ofi, &ofi_lib_dir, &ofi_inc_dir, pmix.as_ref()),
+        Err(_) => build_rofi(
+            &out_path,
+            &ofi,
+            &ofi_lib_dir,
+            &ofi_inc_dir,
+            pmix.as_ref(),
+            provider,
+            ofi_version.as_deref(),
+        ),
     };
+    // Exported as `rofisys::OFI_PROVIDER` so the runtime's default LAMELLAR_ROFI_PROVIDER matches this build
+    fs::write(
+        out_path.join("provider.rs"),
+        format!("/// The libfabric provider ROFI was compiled for (`verbs` or `cxi`).\npub const OFI_PROVIDER: &str = \"{}\";\n", built_provider),
+    )
+    .expect("failed to write provider.rs");
     for entry in glob("rofi/**/*.c").expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => println!("cargo:rerun-if-changed={}", path.display()),
@@ -350,6 +482,7 @@ fn build_bindings() {
 fn main() {
     println!("cargo:rerun-if-changed={}", "build.rs");
     println!("cargo:rerun-if-env-changed=DEP_OFI_ROOT");
+    println!("cargo:rerun-if-env-changed=DEP_OFI_VERSION");
     println!("cargo:rerun-if-env-changed=DEP_PMIX_ROOT");
     build_bindings();
 }
