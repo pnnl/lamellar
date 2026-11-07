@@ -46,8 +46,17 @@ fn main() {
     // println!("cargo:rustc-link-lib=fabric");
     println!("cargo:rerun-if-changed={}", "build.rs");
     // Exposed to dependents as DEP_OFI_MAJOR (this crate has `links = "ofi"`), so lamellar-libfabric can gate on API changes.
-    if let Some(major) = header_define(&artifacts.include_dir().join("rdma/fabric.h"), "FI_MAJOR_VERSION") {
+    let fabric_h = artifacts.include_dir().join("rdma/fabric.h");
+    if let Some(major) = header_define(&fabric_h, "FI_MAJOR_VERSION") {
         println!("cargo:major={}", major);
+        // The full version of the libfabric that was bound (DEP_OFI_VERSION), for the bundled ROFI build, whose configure
+        // would otherwise ask pkg-config and read whichever libfabric that finds instead of this one.
+        if let (Some(minor), Some(revision)) = (
+            header_define(&fabric_h, "FI_MINOR_VERSION"),
+            header_define(&fabric_h, "FI_REVISION_VERSION"),
+        ) {
+            println!("cargo:version={}.{}.{}", major, minor, revision);
+        }
     }
     println!("cargo:root={}", artifacts.lib_dir().parent().unwrap_or(artifacts.lib_dir()).display());
     // The directory holding libfabric (lib or lib64) and whether it is linked shared; rofi-sys links the same way.
@@ -102,26 +111,54 @@ const CONST_CFGS: &[(&str, &str)] = &[
     ("ofi_const_fi_datatype_last", "fi_datatype_FI_DATATYPE_LAST"),
 ];
 
-// The text of `pub struct <name> { ... }` in bindgen output, if present.
-fn struct_body<'a>(bindings: &'a str, name: &str) -> Option<&'a str> {
-    let start = bindings.find(&format!("pub struct {} {{", name))?;
-    let rest = &bindings[start..];
-    Some(&rest[..rest.find("\n}")?])
+// The body of `pub struct <name> { ... }` in bindgen output, if present. `squashed` is the bindings with every
+// whitespace character removed: bindgen formats its output with rustfmt when that is installed and otherwise leaves raw
+// tokens (`pub max_group_id : u32 ,`), and the build machine may be either, so nothing here may depend on layout.
+fn struct_body<'a>(squashed: &'a str, name: &str) -> Option<&'a str> {
+    let open = format!("pubstruct{}{{", name);
+    let start = squashed.find(&open)? + open.len();
+    let mut depth = 1usize;
+    for (i, c) in squashed[start..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&squashed[start..start + i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn emit_api_cfgs(bindings_path: &std::path::Path) {
     let bindings = std::fs::read_to_string(bindings_path).expect("Couldn't read the generated bindings");
+    let squashed: String = bindings.chars().filter(|c| !c.is_whitespace()).collect();
+    // If the structs and constants cannot be found at all, the layout of the bindings is not what this parser expects;
+    // stop here instead of reporting every optional item as absent (which would silently turn flags into 0).
+    assert!(
+        struct_body(&squashed, "fi_info").is_some() && squashed.contains("pubconstFI_MAJOR_VERSION:"),
+        "could not parse the generated libfabric bindings at {} to detect optional items",
+        bindings_path.display()
+    );
     let mut all = Vec::new();
     let mut present = Vec::new();
     for (cfg, struct_name, field) in STRUCT_FIELD_CFGS {
         all.push(*cfg);
-        if struct_body(&bindings, struct_name).map_or(false, |body| body.contains(&format!("pub {}:", field))) {
-            present.push(*cfg);
+        match struct_body(&squashed, struct_name) {
+            Some(body) => {
+                if body.contains(&format!("pub{}:", field)) {
+                    present.push(*cfg);
+                }
+            }
+            None => println!("cargo:warning=struct {} not found in the generated bindings; treating {} as absent", struct_name, cfg),
         }
     }
     for (cfg, constant) in CONST_CFGS {
         all.push(*cfg);
-        if bindings.contains(&format!("pub const {}:", constant)) {
+        if squashed.contains(&format!("pubconst{}:", constant)) {
             present.push(*cfg);
         }
     }

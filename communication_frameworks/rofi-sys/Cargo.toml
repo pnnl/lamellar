@@ -38,6 +38,11 @@ path = "src/lib.rs"
 [features]
 default = []
 shared = []
+# Build ROFI for the CXI (HPE Slingshot) libfabric provider: passes --with-ofi-provider=cxi to ROFI's configure, which
+# selects the CXI fi_info hints (`__OFI_PROV_CXI__`). Without it the provider is auto-detected (cxi when the libfabric
+# install has rdma/fi_cxi_ext.h, else verbs) unless ROFI_OFI_PROVIDER=verbs|cxi|auto says otherwise; this feature
+# overrides that variable. Has no effect on a prebuilt ROFI (ROFI_DIR), whose provider is fixed by how it was configured.
+cxi = []
 # Default PMI backend (rofi's simple_pmi.c, the standard PMI-1 wire client) when
 # `pmix` is not enabled. No-op marker for discoverability — rofi has no PMI-2
 # client, so PMI-1 vs PMIx is the only choice.

@@ -48,6 +48,33 @@ cargo build --features pmix
 
 If `ROFI_DIR` is unset, `rofi-sys` also builds the bundled ROFI source tree and configures `pmi-simple` to use the vendored PMIx backend.
 
+## Provider (fabric) selection
+
+ROFI is compiled for one libfabric provider, `verbs` (default) or `cxi` (HPE Slingshot), chosen when its `configure` runs
+(`--with-ofi-provider`). `rofi-sys` makes that choice, in this order:
+
+1. the `cxi` feature (Lamellar exposes it as `rofi-cxi` and the `enable-rofi-c-*cxi*` features);
+2. the `ROFI_OFI_PROVIDER` environment variable: `verbs`, `cxi` or `auto`;
+3. auto-detection: `cxi` if the libfabric being built against installs `rdma/fi_cxi_ext.h`, else `verbs`. When both
+   providers are available, cxi is the default and the build prints how to get verbs (`ROFI_OFI_PROVIDER=verbs`).
+
+The CXI build fails early, with a message, if `rdma/fi_cxi_ext.h` is missing from that libfabric. The bundled ROFI is
+also given the libfabric version through `--with-ofi-version` (from `lamellar-libfabric-sys`) instead of asking
+`pkg-config`, so a custom `OFI_DIR` is not confused with a system libfabric.
+
+The crate exports the result as `rofisys::OFI_PROVIDER` (`"verbs"` or `"cxi"`). The C library also defines
+`rofi_compiled_provider()` and exactly one of the marker functions `rofi_built_for_provider_verbs` /
+`rofi_built_for_provider_cxi`. With a prebuilt ROFI (`ROFI_DIR`), the build reads those markers from the library with
+`nm` to learn what it was built for (older libraries without markers are recognized by their CXI-only functions); if the
+feature or variable asks for the other provider it warns and uses the prebuilt one as is.
+
+Examples:
+
+```bash
+cargo build --features cxi                        # force CXI
+ROFI_OFI_PROVIDER=verbs cargo build               # force verbs, even if the libfabric has CXI
+```
+
 ## Debug Support
 
 Building with the `debug` feature passes `--enable-debug` to the bundled ROFI `configure` step, enabling ROFI runtime debug logging and debug-friendly compile flags.
