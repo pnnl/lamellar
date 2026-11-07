@@ -65,6 +65,7 @@ regenerating or refreshing a vendored source archive.
 | `enable-ucx` | UCX and UCC | PMI-1, PMI-2, or PMIx (PMIx by default) | UCX, UCC, and the selected PMI implementation |
 | `enable-rofi-c`, `enable-rofi-c-shared` | ROFI and libfabric / OFI | ROFI's own PMI-1 client (`simple_pmi.c`); no PMIx | ROFI and libfabric |
 | `enable-rofi-c-pmix`, `enable-rofi-c-shared-pmix` | ROFI and libfabric / OFI | PMIx (only; not selectable) | ROFI, libfabric, and PMIx |
+| `enable-rofi-c-cxi`, `enable-rofi-c-cxi-pmix`, `enable-rofi-c-shared-cxi`, `enable-rofi-c-shared-cxi-pmix` | As the matching rows above, with ROFI built for the CXI provider | As the matching rows above | As the matching rows above (the libfabric must have the CXI provider) |
 
 The `enable-rofi-rust` feature currently does not activate a native dependency
 by itself.
@@ -88,6 +89,35 @@ feature (on by default, and already wired to `rofisys?/vendored-pmix`).
 Drop `vendored-pmix` and set `PMIX_LIB_DIR`/`PMIX_INCLUDE_DIR` to link a
 system PMIx for ROFI through the `lamellar` crate directly — no need to
 depend on `rofisys` yourself.
+
+## Choosing the ROFI fabric (verbs or CXI)
+
+ROFI compiles the libfabric provider it talks to into the library: `verbs` (InfiniBand/RoCE) or `cxi` (HPE
+Slingshot). Each uses different `fi_info` hints and code paths, so it is a build-time choice for the `enable-rofi-c*`
+backends. The provider is picked in this order:
+
+1. The `rofi-cxi` Cargo feature (or one of the `enable-rofi-c-*cxi*` aliases, e.g. `enable-rofi-c-cxi-pmix`) forces
+   `cxi`.
+2. The build-time variable `ROFI_OFI_PROVIDER=verbs|cxi|auto` forces that provider (`auto` is the default).
+3. Auto-detection: `cxi` if the libfabric being built against has `rdma/fi_cxi_ext.h` (libfabric installs it exactly
+   when it was built with the CXI provider), otherwise `verbs`. If that libfabric also has verbs, **cxi is still the
+   default**; the build prints a notice saying so. To get verbs instead, build with `ROFI_OFI_PROVIDER=verbs`.
+
+```bash
+# Slingshot system, libfabric in /usr (auto-detected as cxi):
+OFI_DIR=/usr cargo build --features enable-rofi-c-pmix
+# the same, stated explicitly (no notice):
+OFI_DIR=/usr cargo build --features enable-rofi-c-cxi-pmix
+# a machine with both providers, but you want verbs:
+OFI_DIR=/usr ROFI_OFI_PROVIDER=verbs cargo build --features enable-rofi-c-pmix
+```
+
+At run time `LAMELLAR_ROFI_PROVIDER` defaults to the provider ROFI was built for, so nothing needs to be set; it (and
+`LAMELLAR_ROFI_DOMAIN`) can still select a particular provider or domain among those libfabric offers. It does not
+change what ROFI was compiled for. With a prebuilt ROFI (`ROFI_DIR`) the provider was fixed when that ROFI was
+configured (`--with-ofi-provider`); the build reads it from the library, uses it, and warns if the feature or
+`ROFI_OFI_PROVIDER` asked for the other one. When building ROFI by hand, configure it with
+`--with-ofi-provider=verbs|cxi`.
 
 ## Choosing a process manager
 
@@ -189,6 +219,14 @@ will prefer these values over its bundled source where applicable.
 | UCX | `UCX_DIR=/path/to/prefix` |
 | UCC | `UCC_DIR=/path/to/prefix` |
 | ROFI | `ROFI_DIR=/path/to/prefix` |
+| ROFI provider (verbs or CXI) | `ROFI_OFI_PROVIDER=verbs\|cxi\|auto`, see [Choosing the ROFI fabric](#choosing-the-rofi-fabric-verbs-or-cxi) |
+
+For a system libfabric (`OFI_DIR`), the libraries are looked up in `lib` and `lib64`. If the install has no static
+`libfabric.a`, or one that was not built with `-fPIC`, the shared `libfabric.so` is linked instead (the build prints a
+notice; with a non-system prefix, make `libfabric.so` findable at run time with `LD_LIBRARY_PATH`). Only libfabric's own
+headers (`fabric.h`, `fi_*.h`) are bound, so the rdma-core headers that share `/usr/include/rdma` do not interfere. The
+libfabric versions the bindings are tested with are 1.22 and 2.3 through 2.7. The same `lib64` and shared-library
+fallbacks apply to `PMIX_LIB_DIR`, `ROFI_DIR`, `UCX_DIR` and `UCC_DIR` installs.
 
 `enable-rofi-c-pmix`/`enable-rofi-c-shared-pmix` vendor PMIx only through
 Lamellar's `vendored-pmix` feature (on by default) — drop it and set
