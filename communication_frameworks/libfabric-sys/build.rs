@@ -46,8 +46,17 @@ fn main() {
     // println!("cargo:rustc-link-lib=fabric");
     println!("cargo:rerun-if-changed={}", "build.rs");
     // Exposed to dependents as DEP_OFI_MAJOR (this crate has `links = "ofi"`), so lamellar-libfabric can gate on API changes.
-    if let Some(major) = header_define(&artifacts.include_dir().join("rdma/fabric.h"), "FI_MAJOR_VERSION") {
+    let fabric_h = artifacts.include_dir().join("rdma/fabric.h");
+    if let Some(major) = header_define(&fabric_h, "FI_MAJOR_VERSION") {
         println!("cargo:major={}", major);
+        // The full version of the libfabric that was bound (DEP_OFI_VERSION), for the bundled ROFI build, whose configure
+        // would otherwise ask pkg-config and read whichever libfabric that finds instead of this one.
+        if let (Some(minor), Some(revision)) = (
+            header_define(&fabric_h, "FI_MINOR_VERSION"),
+            header_define(&fabric_h, "FI_REVISION_VERSION"),
+        ) {
+            println!("cargo:version={}.{}.{}", major, minor, revision);
+        }
     }
     println!("cargo:root={}", artifacts.lib_dir().parent().unwrap_or(artifacts.lib_dir()).display());
     // The directory holding libfabric (lib or lib64) and whether it is linked shared; rofi-sys links the same way.
