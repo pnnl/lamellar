@@ -365,7 +365,7 @@ impl Batcher for VecTeamAmBatcher {
         if stall_mark == 0 {
             self.stall_mark.fetch_add(1, Ordering::Relaxed);
         }
-        let team_addr = req_data.team.darc_addr();
+        let team_addr = req_data.team.wire_key();
         let req_id = req_data.id.id as u64;
         let req_sub_id = req_data.id.sub_id as u64;
 
@@ -416,7 +416,7 @@ impl Batcher for VecTeamAmBatcher {
         if stall_mark == 0 {
             self.stall_mark.fetch_add(1, Ordering::Relaxed);
         }
-        let team_addr = req_data.team.darc_addr();
+        let team_addr = req_data.team.wire_key();
         let req_id = req_data.id.id as u64;
         let req_sub_id = req_data.id.sub_id as u64;
 

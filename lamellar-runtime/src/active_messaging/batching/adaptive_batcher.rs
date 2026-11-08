@@ -308,7 +308,7 @@ impl AdaptiveBatcher {
         }
         let mut darcs = vec![];
         am.ser(1, &mut darcs);
-        let team_addr = req_data.team.darc_addr();
+        let team_addr = req_data.team.wire_key();
         let rec_len = wire::am_rec_len(&req_data.id, size);
         let encode = |b: &mut [u8]| {
             wire::enc_am(b, false, am_id, &req_data.id, team_addr, |p| {
@@ -351,7 +351,7 @@ impl AdaptiveBatcher {
         }
         let mut darcs = vec![];
         am.ser(1, &mut darcs);
-        let team_addr = req_data.team.darc_addr();
+        let team_addr = req_data.team.wire_key();
         let rec_len = wire::am_rec_len(&req_data.id, size);
         let encode = |b: &mut [u8]| {
             wire::enc_am(b, false, am_id, &req_data.id, team_addr, |p| {
@@ -393,7 +393,7 @@ impl AdaptiveBatcher {
             let cmd = if ret { Cmd::ReturnAm } else { Cmd::Am };
             return send_am_serde(req_data, am, am_id, am_bytes, cmd).await;
         }
-        let team_addr = req_data.team.darc_addr();
+        let team_addr = req_data.team.wire_key();
         match req_data.dst {
             Some(dst) => {
                 let mut darcs = vec![];

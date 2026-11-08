@@ -181,7 +181,7 @@ impl Batcher for DirectBatcher {
             req_data.id.id,
             req_data.id.sub_id,
             req_data.dst,
-            req_data.team.darc_addr()
+            req_data.team.wire_key()
         );
         let bytes = am_bytes;
         let cmd_bytes = Cmd::Am.as_bytes();
@@ -190,7 +190,7 @@ impl Batcher for DirectBatcher {
             req_id: U64::new(req_data.id.id as u64),
             req_sub_id: U64::new(req_data.id.sub_id as u64),
             data_len: U64::new(bytes.len() as u64),
-            team_addr: U64::new(req_data.team.darc_addr() as u64),
+            team_addr: U64::new(req_data.team.wire_key() as u64),
         };
 
         let am_header_bytes = am_header.as_bytes();
@@ -256,7 +256,7 @@ impl Batcher for DirectBatcher {
             req_data.id.id,
             req_data.id.sub_id,
             req_data.dst,
-            req_data.team.darc_addr()
+            req_data.team.wire_key()
         );
         let bytes = am_bytes;
         let cmd_bytes = Cmd::ReturnAm.as_bytes();
@@ -265,7 +265,7 @@ impl Batcher for DirectBatcher {
             req_id: U64::new(req_data.id.id as u64),
             req_sub_id: U64::new(req_data.id.sub_id as u64),
             data_len: U64::new(bytes.len() as u64),
-            team_addr: U64::new(req_data.team.darc_addr() as u64),
+            team_addr: U64::new(req_data.team.wire_key() as u64),
         };
 
         let am_header_bytes = am_header.as_bytes();
@@ -329,7 +329,7 @@ impl Batcher for DirectBatcher {
             req_data.id.id,
             req_data.id.sub_id,
             req_data.dst,
-            req_data.team.darc_addr()
+            req_data.team.wire_key()
         );
         let serialized_darcs = darc_bytes;
         let bytes = data_bytes;
@@ -406,7 +406,7 @@ impl Batcher for DirectBatcher {
             req_data.id.id,
             req_data.id.sub_id,
             req_data.dst,
-            req_data.team.darc_addr()
+            req_data.team.wire_key()
         );
         let unit_header = MyUnitHeader {
             req_id: U64::new(req_data.id.id as u64),
