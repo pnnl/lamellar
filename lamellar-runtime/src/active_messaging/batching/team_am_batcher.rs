@@ -134,7 +134,7 @@ impl TeamAmBatcherInner {
         let am_size = am_bytes.len();
         let mut temp_size = 0;
         let team_batch = batch
-            .entry(req_data.team.darc_addr())
+            .entry(req_data.team.wire_key())
             // .entry(req_data.team.clone())
             .or_insert_with(|| HashMap::new());
         if team_batch.len() == 0 {

@@ -570,7 +570,7 @@ pub(crate) async fn send_am_zerocopy(
         req_id: U64::new(req_data.id.id as u64),
         req_sub_id: U64::new(req_data.id.sub_id as u64),
         data_len: U64::new(am_bytes.len() as u64),
-        team_addr: U64::new(req_data.team.darc_addr() as u64),
+        team_addr: U64::new(req_data.team.wire_key() as u64),
     };
     bytes.extend_from_slice(am_header.as_bytes());
     bytes.extend_from_slice(&am_bytes);
@@ -937,7 +937,7 @@ pub(crate) async fn send_am_serde(
     let am_header = AmHeader {
         am_id,
         req_id: req_data.id,
-        team_addr: req_data.team.darc_addr(),
+        team_addr: req_data.team.wire_key(),
         data_len: am_size,
         _pad: [0; 4],
     };

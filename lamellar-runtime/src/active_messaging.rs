@@ -1704,7 +1704,15 @@ pub(crate) trait ActiveMessageEngine {
             team_addr
         );
         trace!(target: "lamellae_debug", "get_team_and_world: pe: {:?}  lamellae_cnt: {:?}", pe, Arc::strong_count(lamellae));
-        let local_team_addr = lamellae.comm().local_addr(pe, team_addr);
+        // A sub-team is named by its (tagged) team hash, not by the sender's address: the address of a dropped sub-team's
+        // Darc can be reused by a later allocation while this PE still has the old table entry (see lamellar_team.rs).
+        let local_team_addr = if team_addr & crate::lamellar_team::TEAM_KEY_TAG != 0 {
+            crate::lamellar_team::sub_team_darc_addr(team_addr)
+                .expect("received an active message for a sub-team that is not registered on this PE")
+                .into()
+        } else {
+            lamellae.comm().local_addr(pe, team_addr)
+        };
         let team_rt = unsafe {
             let team_ptr = *local_team_addr.as_ptr::<*const DarcInner<LamellarTeamRT>>();
             trace!(

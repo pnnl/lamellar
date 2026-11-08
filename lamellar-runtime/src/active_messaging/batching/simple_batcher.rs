@@ -825,7 +825,7 @@ impl SimpleBatcher {
             am_id,
             req_id: req_data.id,
             // team_addr: req_data.team_addr.into(),
-            team_addr: req_data.team.darc_addr(),
+            team_addr: req_data.team.wire_key(),
             // team: req_data.team.clone(),
             data_len: am_bytes.len(),
             _pad: [0; 4],
