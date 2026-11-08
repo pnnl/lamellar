@@ -214,7 +214,7 @@ impl Batcher for VecSimpleBatcher {
             req_id: U64::new(req_data.id.id as u64),
             req_sub_id: U64::new(req_data.id.sub_id as u64),
             data_len: U64::new(am_bytes.len() as u64),
-            team_addr: U64::new(req_data.team.darc_addr() as u64),
+            team_addr: U64::new(req_data.team.wire_key() as u64),
         };
         let am_header_bytes = am_header.as_bytes();
         let payload_len = cmd_bytes.len() + am_header_bytes.len() + am_bytes.len();
@@ -289,7 +289,7 @@ impl Batcher for VecSimpleBatcher {
             req_id: U64::new(req_data.id.id as u64),
             req_sub_id: U64::new(req_data.id.sub_id as u64),
             data_len: U64::new(am_bytes.len() as u64),
-            team_addr: U64::new(req_data.team.darc_addr() as u64),
+            team_addr: U64::new(req_data.team.wire_key() as u64),
         };
         let am_header_bytes = am_header.as_bytes();
         let payload_len = cmd_bytes.len() + am_header_bytes.len() + am_bytes.len();

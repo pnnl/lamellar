@@ -942,6 +942,39 @@ impl From<LamellarWorld> for ArcLamellarTeam {
     }
 }
 
+// ---- identifying the team of an active message ------------------------------------------------------------------
+//
+// Every AM header carries a 64-bit "team key" that tells the receiving PE which team the AM belongs to.
+//  * world team: the key is the address of the world team's Darc on the sending PE.  That Darc lives for the whole run,
+//    so the address cannot be reused by another allocation and a lookup by address is unambiguous.
+//  * sub-team: the key is `TEAM_KEY_TAG | (team_hash & TEAM_KEY_MASK)`.  A sub-team's Darc can be dropped and its
+//    address reused by a later allocation while another PE still holds the old allocation-table entry, so an address
+//    cannot identify it; the `team_hash` (parent hash, per-parent creation counter, members) is unique per team creation
+//    and identical on all members.  The receiver resolves it through `SUB_TEAMS`.
+// User-space addresses never have bit 63 set, so the tag cannot be confused with an address.
+pub(crate) const TEAM_KEY_TAG: usize = 1usize << 63;
+const TEAM_KEY_MASK: u64 = !(1u64 << 63);
+
+// team hash -> address, on this PE, of the Darc of that live sub-team
+static SUB_TEAMS: std::sync::LazyLock<RwLock<HashMap<u64, usize>>> =
+    std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
+
+impl Darc<LamellarTeamRT> {
+    /// The team key to put in the header of an AM sent through this team (see above).
+    pub(crate) fn wire_key(&self) -> usize {
+        if self.world.is_some() {
+            TEAM_KEY_TAG | (self.team_hash & TEAM_KEY_MASK) as usize
+        } else {
+            self.darc_addr()
+        }
+    }
+}
+
+/// Address, on this PE, of the Darc of the live sub-team that the tagged team key `key` names.
+pub(crate) fn sub_team_darc_addr(key: usize) -> Option<usize> {
+    SUB_TEAMS.read().get(&(key as u64 & TEAM_KEY_MASK)).copied()
+}
+
 /// Internal Runtime handle to a lamellar team
 /// this is typically used by proc macros (hence why it is public)
 /// end users should never use this directly and should instead use the [LamellarTeam] and/or [LamellarWorld] struct
@@ -1426,6 +1459,12 @@ impl LamellarTeamRT {
                     None,
                 ))
                 .expect("Failed to create team");
+
+            // make the team resolvable from the key its AMs carry (see `Darc<LamellarTeamRT>::wire_key`); this happens
+            // before the barriers below, so no member can send an AM for this team before every member has registered it
+            SUB_TEAMS
+                .write()
+                .insert(team.team_hash & TEAM_KEY_MASK, team.darc_addr());
 
             trace!("team created in {:?}", s.elapsed());
 
@@ -2802,6 +2841,9 @@ impl Drop for LamellarTeamRT {
     //#[tracing::instrument(skip_all, level = "debug")]
     fn drop(&mut self) {
         trace!(target: "drop", "begin drop LamellarTeamRT");
+        if self.world.is_some() {
+            SUB_TEAMS.write().remove(&(self.team_hash & TEAM_KEY_MASK));
+        }
         // println!("LamellarTeamRT Drop");
         // println!("sechduler_new: {:?}", Arc::strong_count(&self.scheduler));
         // println!("lamellae: {:?}", Arc::strong_count(&self.lamellae));
