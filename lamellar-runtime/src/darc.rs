@@ -90,6 +90,17 @@ pub(crate) mod handle;
 
 static DARC_ID: AtomicUsize = AtomicUsize::new(0);
 
+// next Darc creation sequence number, per team (keyed by team hash); see `DarcInner::uid`
+static DARC_UID_SEQ: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<u64, u64>>> =
+    std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+
+// The Darcs that are alive on this PE: uid -> local address of the Darc's allocation.  A Darc handle received from another
+// PE is resolved through this map instead of translating the sender's virtual address through the lamellae's allocation
+// table: that table can hold a stale entry for an older, already finished Darc that the sender had mapped at the same
+// address (Darc teardown is asynchronous and per PE), and an address lookup would return that dead Darc.
+static LIVE_DARCS: std::sync::LazyLock<parking_lot::RwLock<std::collections::HashMap<(u64, u64), usize>>> =
+    std::sync::LazyLock::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
+
 #[repr(u64)]
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub(crate) enum DarcMode {
@@ -168,7 +179,12 @@ impl LamellarAM for FinishedAm {
 #[doc(hidden)]
 #[repr(C)]
 pub struct DarcInner<T> {
+    // `team` MUST stay the first field: `get_team_and_world` (active_messaging.rs) reads it from offset 0 of a team
+    // Darc's allocation.
     team: *const DarcInner<LamellarTeamRT>,
+    // Identity of this Darc, the same on every PE of its team: (team hash, creation sequence number within the team).
+    // Received Darc handles are resolved by it through `LIVE_DARCS`.
+    uid: (u64, u64),
     item: *const T,
     id: usize,
     my_pe: usize,           // with respect to LamellarArch used to create this object
@@ -1311,11 +1327,25 @@ impl<T: Send + Sync> Darc<T> {
         trace!("Darc::new after barrier time: {:?}", timer.elapsed());
         // timer = Instant::now();
         // println!("creating new darc after barrier");
-        let darc_alloc = team_rt
-            .lamellae
-            .comm()
-            .alloc(size, alloc, std::mem::align_of::<DarcInner<T>>())
-            .expect("out of memory");
+        // The uid is taken under a per-team lock that is held across the (collective) allocation, so the n-th Darc
+        // allocated on a team gets the same uid on every member PE: allocations pair up across PEs in call order, and
+        // the lock makes the sequence number follow the same order as the allocation calls on each PE.
+        let (darc_alloc, uid) = {
+            let mut seqs = DARC_UID_SEQ.lock();
+            let next = seqs.entry(team_rt.team_hash).or_insert(0);
+            let seq = *next;
+            *next += 1;
+            let a = team_rt
+                .lamellae
+                .comm()
+                .alloc(size, alloc, std::mem::align_of::<DarcInner<T>>())
+                .expect("out of memory");
+            let uid = (team_rt.team_hash, seq);
+            LIVE_DARCS
+                .write()
+                .insert(uid, unsafe { a.as_mut_ptr::<u8>() } as usize);
+            (a, uid)
+        };
         trace!("Darc::new after alloc time: {:?}", timer.elapsed());
         // timer = Instant::now();
         trace!(
@@ -1367,6 +1397,7 @@ impl<T: Send + Sync> Darc<T> {
             // let darc_temp = DarcInner {
             trace!("id ptr: {:?}", &(*darc_temp_ptr).id as *const usize);
             (*darc_temp_ptr).id = DARC_ID.fetch_add(1, Ordering::Relaxed);
+            (*darc_temp_ptr).uid = uid;
             trace!("my_pe ptr: {:?}", &(*darc_temp_ptr).my_pe as *const usize);
             (*darc_temp_ptr).my_pe = my_pe;
             trace!(
@@ -1996,6 +2027,8 @@ impl<T: 'static> LamellarAM for DroppedWaitAM<T> {
             //recapture the team darc so we can drop it properly
             Darc::team_from_raw(self.inner.team);
             trace!("after team from raw {:?}", &*self.inner.team);
+            // this Darc is gone on this PE: stop resolving handles to it (before its allocation is released)
+            LIVE_DARCS.write().remove(&self.inner.uid);
             // now we can free the alloc
             // self.team.lamellae.comm().free(self.inner.alloc.clone());
             // in theory this shoudl be done by the drop of CommAlloc
@@ -2020,6 +2053,8 @@ pub struct __NetworkDarc {
     backend: Backend,
     orig_world_pe: usize,
     orig_team_pe: usize,
+    // identity of the Darc (see `DarcInner::uid`); the receiving PE resolves the handle with it (see `LIVE_DARCS`)
+    uid: (u64, u64),
 }
 
 impl std::fmt::Debug for __NetworkDarc {
@@ -2038,6 +2073,7 @@ impl<T> From<Darc<T>> for __NetworkDarc {
             backend: team.lamellae.comm().backend(),
             orig_world_pe: team.world_pe,
             orig_team_pe: team.team_pe.expect("darcs only valid on team members"),
+            uid: darc.inner().uid,
         };
         // darc.print();
         ndarc
@@ -2054,6 +2090,7 @@ impl<T> From<&Darc<T>> for __NetworkDarc {
             backend: team.lamellae.comm().backend(),
             orig_world_pe: team.world_pe,
             orig_team_pe: team.team_pe.expect("darcs only valid on team members"),
+            uid: darc.inner().uid,
         };
         // darc.print();
         ndarc
@@ -2065,9 +2102,15 @@ impl<T> From<__NetworkDarc> for Darc<T> {
     fn from(ndarc: __NetworkDarc) -> Self {
         if let Some(lamellae) = LAMELLAES.read().get(&ndarc.backend) {
             trace!(target: "lamellae_debug", "creating darc from network darc lamellae cnt: {:?} ", Arc::strong_count(lamellae));
-            let local_addr = lamellae
-                .comm()
-                .local_addr(ndarc.orig_world_pe, ndarc.inner_addr.0);
+            // resolve by identity: the sender's address alone can match a stale table entry (see `LIVE_DARCS`);
+            // fall back to the address translation for a Darc that is not registered here
+            let live = LIVE_DARCS.read().get(&ndarc.uid).copied();
+            let local_addr = match live {
+                Some(addr) => CommAllocAddr(addr),
+                None => lamellae
+                    .comm()
+                    .local_addr(ndarc.orig_world_pe, ndarc.inner_addr.0),
+            };
             let alloc = lamellae
                 .comm()
                 .get_alloc_cloned(local_addr)
