@@ -26,6 +26,9 @@ use libfabric::{
     *,
 };
 
+// only the on-node shared-memory path reads the config here
+#[cfg(feature = "enable-on-node-shmem")]
+use crate::config;
 use crate::{
     lamellae::{
         collective::{

@@ -28,6 +28,9 @@ fn node_total_memory_bytes() -> Option<u64> {
     pages.checked_mul(page_size)
 }
 
+// only the on-node shared-memory path reads the config here
+#[cfg(feature = "enable-on-node-shmem")]
+use crate::config;
 use crate::{
     lamellae::{
         calc_alloc_padding_size_align,
