@@ -164,6 +164,13 @@ fn emit_api_cfgs(bindings_path: &std::path::Path) {
     }
     println!("cargo:api_cfgs={}", present.join(","));
     println!("cargo:all_api_cfgs={}", all.join(","));
+    // the same cfgs for this crate's own code (src/compat.rs)
+    for cfg in &all {
+        println!("cargo:rustc-check-cfg=cfg({})", cfg);
+    }
+    for cfg in &present {
+        println!("cargo:rustc-cfg={}", cfg);
+    }
 }
 
 // Reads `#define <name> <n>` from `header`, or None if the header or macro cannot be read.

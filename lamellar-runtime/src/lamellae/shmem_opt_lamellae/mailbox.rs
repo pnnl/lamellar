@@ -100,7 +100,6 @@ struct FreeSlot {
 
 #[derive(Clone, Copy, Debug)]
 struct Geom {
-    num_pes: usize,
     slot: usize,
     depth: u64,
     mask: u64,
@@ -159,7 +158,6 @@ impl Geom {
         let stream_stride = if stream_cap == 0 { 0 } else { 2 * LINE + stream_cap };
         let portion = off_streams + num_pes * stream_stride;
         Geom {
-            num_pes,
             slot,
             depth: depth as u64,
             mask: depth as u64 - 1,
@@ -298,6 +296,7 @@ pub(crate) enum MailboxRelease {
         addr: u64,
     },
     /// inline message copied out of its slot (slot already handed back)
+    #[allow(dead_code)] // never read: keeps the Vec alive, which the received-message view points into
     Owned(Vec<u8>),
 }
 

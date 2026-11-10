@@ -9,7 +9,7 @@ use std::{
     task::{Poll, Waker},
 };
 
-use event_listener::{Event, EventListener, Listener};
+use event_listener::{Event, EventListener};
 
 use crate::lamellae::comm::TRACKED_INFLIGHT;
 use futures_util::task::AtomicWaker;
@@ -491,7 +491,7 @@ impl Endpoint {
             ucp_ep_flush_nbx(
                 self.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_USER_DATA as u32;
                     p.cb.send = Some(completion_cb);
@@ -622,7 +622,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FLAG_FAST_CMPL as u32;
                     p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
@@ -680,7 +680,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     // D5 fix: no FAST_CMPL here. That flag tells UCX this op doesn't need
                     // per-request completion tracking, which is the opposite of what the
                     // callback/Ticket below relies on -- on real network transport (not the
@@ -730,7 +730,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32;
                     p.cb.send = Some(put_nowait_cb);
@@ -782,7 +782,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     // D5 fix: no FAST_CMPL -- see the matching comment in `put`'s managed path.
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
@@ -817,7 +817,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32;
                     p.cb.send = Some(free_request_cb);
@@ -853,7 +853,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_CALLBACK as u32
@@ -904,7 +904,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
@@ -951,7 +951,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
@@ -1002,7 +1002,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
@@ -1038,7 +1038,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
@@ -1066,7 +1066,7 @@ impl Drop for Endpoint {
             let request = ucp_ep_close_nbx(
                 self.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
                     p
                 },

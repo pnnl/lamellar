@@ -363,7 +363,7 @@ pub fn launch_block(cfg: &LaunchConfig, ret: Option<TokenStream>) -> TokenStream
     let binary_update_block = binary_update_block_tokens();
 
     quote! {
-        let prte_launched = std::env::var(#env_var).is_ok();
+        let prte_launched = #cp::already_launched(#env_var);
         if !prte_launched {
             let mut args: Vec<String> = std::env::args().collect();
             // Full original argv, preserved so we can re-invoke this same binary+args
@@ -653,6 +653,7 @@ fn test_block(
     sig: &syn::Signature,
     name: &syn::Ident,
 ) -> TokenStream {
+    let cp = &cfg.crate_path;
     let (env_var, launcher_path) = cfg.launcher_info();
     let prefix_env_block = cfg.prefix_env_block();
     quote! {
@@ -669,7 +670,7 @@ fn test_block(
             .collect::<Vec<&str>>()
             .join("::");
 
-        let prte_launched = std::env::var(#env_var).is_ok();
+        let prte_launched = #cp::already_launched(#env_var);
         if !prte_launched {
             // Collect command line arguments
             let mut args: Vec<String> = std::env::args().collect();

@@ -11,7 +11,16 @@ pub(crate) mod shmem_lamellae;
 #[cfg(feature = "enable-shmem-opt")]
 pub(crate) mod shmem_opt_lamellae;
 
-#[cfg(feature = "enable-on-node-shmem")]
+#[cfg(all(
+    feature = "enable-on-node-shmem",
+    any(
+        feature = "enable-libfabric",
+        feature = "enable-libfabric-sys",
+        feature = "enable-libfabric-sys-opt",
+        feature = "enable-ucx",
+        feature = "enable-ucx-opt"
+    )
+))]
 pub(crate) mod shmem_utils;
 
 #[cfg(feature = "enable-libfabric-sys")]

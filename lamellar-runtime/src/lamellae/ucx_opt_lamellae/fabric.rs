@@ -1294,7 +1294,7 @@ impl std::fmt::Debug for UcxOptAlloc {
             &format_args!(
                 "{} ({:?}) cnt: {}",
                 self.fabric_ref_cnt_offset,
-                unsafe {
+                {
                     self.mem.inner.ref_cnt_ptr(self.fabric_ref_cnt_offset, 0) as *const AtomicUsize
                 },
                 fabric_ref_count
@@ -1312,7 +1312,7 @@ impl std::fmt::Debug for UcxOptAlloc {
                 &format_args!(
                     "{} ({:?}) cnt: {}, padding: {}",
                     self.rt_ref_cnt_offset,
-                    unsafe {
+                    {
                         self.mem.inner.ref_cnt_ptr(self.rt_ref_cnt_offset, 1) as *const AtomicUsize
                     },
                     rt_ref_count,

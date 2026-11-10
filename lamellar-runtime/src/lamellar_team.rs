@@ -17,7 +17,7 @@ use crate::{
         handle::{FallibleSharedMemoryRegionHandle, SharedMemoryRegionHandle},
         one_sided::OneSidedMemoryRegion,
         shared::SharedMemoryRegion,
-        Dist, LamellarMemoryRegion, MemoryRegion, RemoteMemoryRegion,
+        LamellarMemoryRegion, MemoryRegion, RemoteMemoryRegion,
     },
     scheduler::{
         work_stealing::{task_finished_to_string, task_launched_to_string},
@@ -2760,47 +2760,7 @@ impl Darc<LamellarTeamRT> {
     //     mr
     // }
 
-    /// allocate a local memory region from the asymmetric heap
-    ///
-    /// # Arguments
-    ///
-    /// * `size` - number of elements of T to allocate a memory region for -- (not size in bytes)
-    ///
-    //#[tracing::instrument(skip_all, level = "debug")]
-    pub(crate) fn alloc_one_sided_mem_region<T: Dist>(
-        &self,
-        size: usize,
-    ) -> OneSidedMemoryRegion<T> {
-        let mut lmr = OneSidedMemoryRegion::try_new(size, self);
-        while let Err(_err) = lmr {
-            std::thread::yield_now();
-            // println!(
-            //     "out of Lamellar mem trying to alloc new pool {:?} {:?}",
-            //     size,
-            //     std::mem::size_of::<T>()
-            // );
-            let alloc_fut = self
-                .lamellae
-                .request_new_alloc(size * std::mem::size_of::<T>());
-            self.scheduler.block_on(alloc_fut);
-            lmr = OneSidedMemoryRegion::try_new(size, self);
-        }
-        trace!(target: "lamellae_debug", "allocated one sided mem region lamellae cnt: {:?}", Arc::strong_count(&self.lamellae));
-        lmr.expect("out of memory")
-    }
-
-    pub(crate) fn try_alloc_one_sided_mem_region<T: Remote>(
-        &self,
-        size: usize,
-    ) -> Option<OneSidedMemoryRegion<T>> {
-        let lmr = OneSidedMemoryRegion::try_new(size, self);
-        if lmr.is_ok() {
-            trace!(target: "lamellae_debug", "allocated one sided mem region lamellae cnt: {:?}", Arc::strong_count(&self.lamellae));
-        }
-        lmr.ok()
-    }
-
-    /// Like `alloc_one_sided_mem_region`, but the region's contents are left uninitialized.
+    /// Allocates a one-sided memory region from the runtime heap, leaving its contents uninitialized.
     ///
     /// # Safety
     /// The caller must write every element before anything reads it.

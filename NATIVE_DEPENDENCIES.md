@@ -221,12 +221,16 @@ will prefer these values over its bundled source where applicable.
 | ROFI | `ROFI_DIR=/path/to/prefix` |
 | ROFI provider (verbs or CXI) | `ROFI_OFI_PROVIDER=verbs\|cxi\|auto`, see [Choosing the ROFI fabric](#choosing-the-rofi-fabric-verbs-or-cxi) |
 
-For a system libfabric (`OFI_DIR`), the libraries are looked up in `lib` and `lib64`. If the install has no static
-`libfabric.a`, or one that was not built with `-fPIC`, the shared `libfabric.so` is linked instead (the build prints a
-notice; with a non-system prefix, make `libfabric.so` findable at run time with `LD_LIBRARY_PATH`). Only libfabric's own
-headers (`fabric.h`, `fi_*.h`) are bound, so the rdma-core headers that share `/usr/include/rdma` do not interfere. The
-libfabric versions the bindings are tested with are 1.22 and 2.3 through 2.7. The same `lib64` and shared-library
-fallbacks apply to `PMIX_LIB_DIR`, `ROFI_DIR`, `UCX_DIR` and `UCC_DIR` installs.
+For a system libfabric (`OFI_DIR`), the libraries are looked up in `lib` and `lib64`, and the shared `libfabric.so` is
+linked whenever the install has one (the build prints a notice; with a non-system prefix, make `libfabric.so` findable
+at run time with `LD_LIBRARY_PATH`). A distribution's `libfabric.a` has the providers compiled in (on Slingshot, `cxi`,
+and on AWS, `efa`), so linking it statically also needs every library those providers use (`libcxi`, `libefa`, ...) and
+an `-fPIC` build, while `libfabric.so` carries its dependencies itself. `OFI_LINK=static` links `libfabric.a` anyway, and
+`OFI_LINK=shared` (or the `shared` feature) forces shared; an install with only a static library is linked static. Only
+libfabric's own headers (`fabric.h`, `fi_*.h`) are bound, so the rdma-core headers that share `/usr/include/rdma` do not
+interfere. The libfabric versions the bindings are tested with are 1.22 and 2.3 through 2.7. The same `lib64` lookup
+applies to `PMIX_LIB_DIR`, `ROFI_DIR`, `UCX_DIR` and `UCC_DIR` installs, which also fall back to their shared library
+when the static archive is missing or not built with `-fPIC`.
 
 `enable-rofi-c-pmix`/`enable-rofi-c-shared-pmix` vendor PMIx only through
 Lamellar's `vendored-pmix` feature (on by default) — drop it and set

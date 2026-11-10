@@ -172,6 +172,7 @@ pub(crate) fn enc_units(dst: &mut [u8], reqs: &[ReqId]) {
 
 /// Header word of a PAD record spanning `rec_len` (>= REC_HDR_LEN) bytes.
 #[inline(always)]
+#[cfg(feature = "enable-shmem-opt")]
 pub(crate) fn pad_hdr(rec_len: usize) -> [u8; REC_HDR_LEN] {
     hdr_word(KIND_PAD, 0, rec_len - REC_HDR_LEN).to_le_bytes()
 }
