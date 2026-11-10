@@ -2,6 +2,7 @@ use shared_memory::{Shmem, ShmemConf, ShmemError};
 
 pub(crate) struct ShmemSegment {
     base_addr: *mut u8,
+    #[allow(dead_code)] // never read: holding the `Shmem` keeps the mapping alive
     shmem: Shmem,
     len: usize,
 }

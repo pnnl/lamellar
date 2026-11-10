@@ -91,6 +91,20 @@ pub fn resolve_pe_defaults(
     }
 }
 
+/// Whether this process was already started by a launcher, so the generated `main` should run the program body rather
+/// than re-execute itself under `prterun`/`srun`.
+///
+/// True when `own_env_var` (the variable the launcher this crate would use sets on its children: `PRTE_LAUNCHED` or
+/// `SLURM_LOCALID`) is set, or when a per-task rank variable of another launcher is: `FLUX_TASK_RANK` (`flux run`),
+/// `PMIX_RANK` (any PMIx launcher: `prterun`, Open MPI `mpirun`, `srun --mpi=pmix`, `flux run -o pmi=pmix`), `PMI_RANK`
+/// (PMI-1 and PMI-2: `srun`, `mpiexec`, Flux's default) or `OMPI_COMM_WORLD_RANK`. Those launchers already chose the
+/// number of processes and where they run, and provide the process-management service, so launching again from inside
+/// one would start a second, conflicting job.
+pub fn already_launched(own_env_var: &str) -> bool {
+    const OTHER_LAUNCHERS: [&str; 4] = ["FLUX_TASK_RANK", "PMIX_RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK"];
+    std::env::var_os(own_env_var).is_some() || OTHER_LAUNCHERS.iter().any(|v| std::env::var_os(v).is_some())
+}
+
 /// Returns the current process's PE (rank) id, if known, without requiring
 /// any `LamellarWorld`/team object to have been created first.
 ///
@@ -406,5 +420,26 @@ mod explicit_cores_per_pe_tests {
             explicit_cores_per_pe(&args(&["--map-by", "node", "--cpus-per-task", "3"])),
             Some(3)
         );
+    }
+}
+
+#[cfg(test)]
+mod already_launched_tests {
+    use super::already_launched;
+
+    // one test, because it changes the process environment
+    #[test]
+    fn recognizes_launchers() {
+        let vars = ["HPC_LAUNCH_TEST_OWN", "FLUX_TASK_RANK", "PMIX_RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK"];
+        for v in vars {
+            std::env::remove_var(v);
+        }
+        assert!(!already_launched("HPC_LAUNCH_TEST_OWN"));
+        for v in vars {
+            std::env::set_var(v, "0");
+            assert!(already_launched("HPC_LAUNCH_TEST_OWN"), "{v} should count as launched");
+            std::env::remove_var(v);
+        }
+        assert!(!already_launched("HPC_LAUNCH_TEST_OWN"));
     }
 }

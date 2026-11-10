@@ -29,6 +29,7 @@ enum AllocTable {
     Runtime(BTreeAlloc, usize, AllocMap),
     // received-AM view over a mailbox slot or a peer's rt buffer; not refcounted in shared
     // memory, the release runs when the last view drops the Arc
+    #[allow(dead_code)] // held only so the release runs when the last view drops
     Mailbox(Arc<MailboxRelease>),
 }
 

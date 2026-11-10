@@ -193,7 +193,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FLAG_FAST_CMPL as u32;
                     // | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32,
@@ -256,7 +256,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = attr_mask;
                     p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
                     p.memh = memh;
@@ -286,7 +286,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32;
                     p.datatype = ucp_dt_make_contig(std::mem::size_of::<T>() as _);
@@ -322,7 +322,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32;
@@ -355,7 +355,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32;
@@ -391,7 +391,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32;
@@ -423,7 +423,7 @@ impl Endpoint {
                 remote_addr as _,
                 rkey.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.op_attr_mask = ucp_op_attr_t::UCP_OP_ATTR_FIELD_DATATYPE as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_REPLY_BUFFER as u32
                         | ucp_op_attr_t::UCP_OP_ATTR_FIELD_MEMORY_TYPE as u32;
@@ -447,7 +447,7 @@ impl Drop for Endpoint {
             let request = ucp_ep_close_nbx(
                 self.handle,
                 &{
-                    let mut p: ucp_request_param_t = unsafe { std::mem::zeroed() };
+                    let mut p: ucp_request_param_t = std::mem::zeroed();
                     p.memory_type = ucs_memory_type::UCS_MEMORY_TYPE_HOST;
                     p
                 },

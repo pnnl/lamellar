@@ -16,7 +16,7 @@ use crate::{
 
 use super::comm::{LibfabricSysOptComm, HEAP_SIZE};
 
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
 impl CommMem for LibfabricSysOptComm {
     #[tracing::instrument(skip(self), level = "debug")]

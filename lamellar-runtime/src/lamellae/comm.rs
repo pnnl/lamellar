@@ -11,6 +11,7 @@ pub(crate) mod error;
 pub(crate) mod ofi_mr_cache;
 pub(crate) mod rdma;
 pub(crate) mod slice;
+#[cfg(any(feature = "enable-libfabric", feature = "enable-libfabric-sys", feature = "enable-libfabric-sys-opt", feature = "enable-ucx", feature = "enable-ucx-opt"))]
 pub(crate) mod staging;
 #[cfg(any(
     feature = "enable-libfabric",
@@ -182,11 +183,13 @@ pub(crate) trait CommMem {
 /// Ticketed operations (completed by a callback or a CQ entry) currently in flight on the active backend. A
 /// backend that overrides `CommProgress::background_flush` with [`background_progress_due`] increments this when
 /// it issues such an operation and decrements it when it completes.
+#[cfg(any(feature = "enable-libfabric-sys-opt", feature = "enable-ucx-opt"))]
 pub(crate) static TRACKED_INFLIGHT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 /// Whether the receive loop's background progress call should run now: always while a tracked operation is in
 /// flight (futures waiting on it rely on this loop), otherwise at most once per millisecond, which keeps wireup
 /// and target-side work going without contending with issuing threads for the progress lock.
+#[cfg(any(feature = "enable-libfabric-sys-opt", feature = "enable-ucx-opt"))]
 pub(crate) fn background_progress_due() -> bool {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::OnceLock;

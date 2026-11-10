@@ -161,6 +161,8 @@ impl<T> Future for LamellarTask<T> {
 #[derive(Debug)]
 pub(crate) enum LamellarTaskInner<T> {
     /// Already-complete result; no executor task behind it.
+    // only `Scheduler::ready_task` (enable-shmem-opt) creates this, but every task operation matches on it
+    #[cfg_attr(not(feature = "enable-shmem-opt"), allow(dead_code))]
     Finished(Option<T>),
     LamellarTask(Option<async_task::Task<T, usize>>),
     AsyncStdTask(async_std::task::JoinHandle<T>),
@@ -264,6 +266,8 @@ pub(crate) trait LamellarExecutor {
     }
 
     /// Install a progress hook (executors without a spin-wait loop ignore it)
+    // only the shmem-opt backend installs a hook, but the work-stealing executor's spin-wait loop always has the cell
+    #[cfg_attr(not(feature = "enable-shmem-opt"), allow(dead_code))]
     fn set_progress_hook(&self, _hook: ProgressHook) {}
 
     fn block_in_place<F, R>(&self, f: F) -> R
@@ -333,11 +337,13 @@ impl Scheduler {
     }
 
     /// Let waiting threads drive lamellae progress directly (first hook wins)
+    #[cfg_attr(not(feature = "enable-shmem-opt"), allow(dead_code))]
     pub(crate) fn set_progress_hook(&self, hook: ProgressHook) {
         self.executor.set_progress_hook(hook);
     }
 
     /// Set how many long running tasks the lamellae keeps alive (default 3)
+    #[cfg_attr(not(feature = "enable-shmem-opt"), allow(dead_code))]
     pub(crate) fn set_lamellae_tasks(&self, n: usize) {
         self.lamellae_tasks.store(n, Ordering::SeqCst);
     }
@@ -513,6 +519,7 @@ impl Scheduler {
 
     /// A task whose result is already known (e.g. a completed load/store). Skips the executor and
     /// the task/outstanding counters entirely: nothing is ever in flight.
+    #[cfg_attr(not(feature = "enable-shmem-opt"), allow(dead_code))]
     pub(crate) fn ready_task<T: Send>(&self, val: T) -> LamellarTask<T> {
         LamellarTask {
             task: LamellarTaskInner::Finished(Some(val)),

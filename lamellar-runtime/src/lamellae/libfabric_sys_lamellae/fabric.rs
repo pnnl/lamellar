@@ -28,6 +28,9 @@ fn node_total_memory_bytes() -> Option<u64> {
     pages.checked_mul(page_size)
 }
 
+// only the on-node shared-memory path reads the config here
+#[cfg(feature = "enable-on-node-shmem")]
+use crate::config;
 use crate::{
     lamellae::{
         calc_alloc_padding_size_align,
@@ -608,7 +611,7 @@ impl Ofi {
             (*(*hints).ep_attr).type_ = libfabric_sys::fi_ep_type_FI_EP_RDM;
             (*(*hints).domain_attr).threading = libfabric_sys::fi_threading_FI_THREAD_DOMAIN;
             // (*(*hints).domain_attr).control_progress = libfabric_sys::fi_progress_FI_PROGRESS_AUTO as u8;
-            (*(*hints).domain_attr).data_progress = libfabric_sys::fi_progress_FI_PROGRESS_MANUAL;
+            libfabric_sys::compat::set_domain_data_progress((*hints).domain_attr, libfabric_sys::fi_progress_FI_PROGRESS_MANUAL);
             (*(*hints).domain_attr).mr_mode = (libfabric_sys::FI_MR_PROV_KEY
                 | libfabric_sys::FI_MR_VIRT_ADDR
                 | libfabric_sys::FI_MR_ALLOCATED
@@ -761,6 +764,8 @@ impl Ofi {
                 signaling_vector: 0,
                 wait_cond: libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_NONE,
                 wait_set: std::ptr::null_mut(),
+                // fields added by newer libfabric (xpu_ctx, ...) stay null
+                ..std::mem::zeroed()
             };
             let ret = libfabric_sys::inlined_fi_cq_open(
                 domain,
@@ -806,6 +811,8 @@ impl Ofi {
                 wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
                 wait_set: std::ptr::null_mut(),
                 flags: 0,
+                // fields added by newer libfabric (xpu_ctx, ...) stay null
+                ..std::mem::zeroed()
             };
             let ret = libfabric_sys::inlined_fi_cntr_open(
                 domain,
@@ -827,6 +834,8 @@ impl Ofi {
                 wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
                 wait_set: std::ptr::null_mut(),
                 flags: 0,
+                // fields added by newer libfabric (xpu_ctx, ...) stay null
+                ..std::mem::zeroed()
             };
             let ret = libfabric_sys::inlined_fi_cntr_open(
                 domain,
@@ -1344,7 +1353,7 @@ impl Ofi {
 
     fn build_local_mr_info_bytes(&self, mem: &[u8], mr: *mut libfabric_sys::fid_mr) -> Vec<u8> {
         let addr = if unsafe { (*(*self.comm_group.info_entry).domain_attr).mr_mode }
-            & (libfabric_sys::FI_MR_VIRT_ADDR | libfabric_sys::fi_mr_mode_FI_MR_BASIC) as i32
+            & (libfabric_sys::FI_MR_VIRT_ADDR | libfabric_sys::compat::FI_MR_BASIC) as i32
             != 0
         {
             mem.as_ptr() as u64

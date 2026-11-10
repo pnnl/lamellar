@@ -103,29 +103,6 @@ impl Artifacts {
 }
 
 
-/// True when every member of `archive` can be linked into a position-independent object. Probes by linking the whole
-/// archive into a throwaway shared object: non-PIC code fails with "relocation ... recompile with -fPIC", while
-/// undefined symbols are fine for `-shared`, so libfabric's own dependencies need not be present. If the probe
-/// cannot run (no C compiler), the archive is assumed usable so the previous behavior is kept.
-fn archive_is_pic(archive: &Path, scratch: &Path) -> bool {
-    let cc = env::var("CC").unwrap_or_else(|_| "cc".to_string());
-    let out = scratch.join("libfabric_pic_probe.so");
-    let result = std::process::Command::new(cc)
-        .arg("-shared")
-        .arg("-o")
-        .arg(&out)
-        .arg("-Wl,--whole-archive")
-        .arg(archive)
-        .arg("-Wl,--no-whole-archive")
-        .output();
-    let _ = std::fs::remove_file(&out);
-    match result {
-        Ok(output) if output.status.success() => true,
-        Ok(output) => !String::from_utf8_lossy(&output.stderr).contains("-fPIC"),
-        Err(_) => true,
-    }
-}
-
 fn copy_rec(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src.is_dir() {
         if dst.exists() && !dst.is_dir() {
@@ -316,15 +293,22 @@ impl Build {
         if using_ofi_dir && !has_lib(&lib_dir) && has_lib(&libfabric_build.join("lib64")) {
             lib_dir = libfabric_build.join("lib64");
         }
+        // A system libfabric (OFI_DIR) is linked shared whenever it has libfabric.so. Its libfabric.a, if any, has the
+        // providers compiled in (verbs, and on Slingshot or AWS also cxi and efa), and a static link then needs every
+        // library those providers use (libcxi, libefa, ...) and a -fPIC build; the shared library carries those
+        // dependencies itself. This is the same policy as UCX_DIR and UCC_DIR. OFI_LINK=static|shared overrides it.
+        println!("cargo:rerun-if-env-changed=OFI_LINK");
+        let link_pref = std::env::var("OFI_LINK").ok();
         let archive = lib_dir.join("libfabric.a");
         let so_exists = lib_dir.join("libfabric.so").exists();
         let shared = cfg!(feature = "shared")
-            || (using_ofi_dir && so_exists && (!archive.exists() || !archive_is_pic(&archive, out_dir)));
-        if shared && !cfg!(feature = "shared") {
+            || link_pref.as_deref() == Some("shared")
+            || (using_ofi_dir && so_exists && link_pref.as_deref() != Some("static"));
+        if shared && !cfg!(feature = "shared") && using_ofi_dir {
             println!(
-                "cargo:warning={} in {}; linking the shared libfabric.so instead",
-                if archive.exists() { "libfabric.a is not position-independent (built without -fPIC)" } else { "no libfabric.a" },
-                lib_dir.display()
+                "cargo:warning=linking the shared libfabric.so from {}{}. Set OFI_LINK=static to link libfabric.a instead.",
+                lib_dir.display(),
+                if archive.exists() { " (a libfabric.a is there too, but a static link needs the libraries of every provider compiled into it)" } else { " (there is no libfabric.a)" }
             );
         }
         let bin_dir = libfabric_build.join("bin");

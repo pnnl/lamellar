@@ -28,6 +28,9 @@ fn node_total_memory_bytes() -> Option<u64> {
     pages.checked_mul(page_size)
 }
 
+// only the on-node shared-memory path reads the config here
+#[cfg(feature = "enable-on-node-shmem")]
+use crate::config;
 use crate::{
     lamellae::{
         calc_alloc_padding_size_align,
@@ -114,6 +117,7 @@ impl Ticket {
 
     /// A ticket for an op that never needs to touch the network (e.g. the local-copy or
     /// same-node-shmem fast paths) — already satisfied, so `block`/`poll` return immediately.
+    #[cfg(feature = "enable-on-node-shmem")]
     fn new_done() -> Arc<Self> {
         Arc::new(Ticket {
             done: AtomicBool::new(true),
@@ -455,6 +459,7 @@ impl CommGroup {
     // issued` proves every op issued as of this call (including this poll's own, since it was
     // issued before this call started) has completed — regardless of completion order. Never
     // cache/persist `pending` across polls and compare a stale target to a fresh cntr read.
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     fn poll_wait_for_cntr(
         &self,
         pending: &AtomicU64,
@@ -472,10 +477,12 @@ impl CommGroup {
         }
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     fn poll_wait_for_tx_cntr(&self) -> Poll<()> {
         self.poll_wait_for_cntr(&self.put_cnt, self.put_cntr)
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     fn poll_wait_for_rx_cntr(&self) -> Poll<()> {
         self.poll_wait_for_cntr(&self.get_cnt, self.get_cntr)
     }
@@ -857,7 +864,7 @@ impl OptOfi {
             (*(*hints).ep_attr).type_ = libfabric_sys::fi_ep_type_FI_EP_RDM;
             (*(*hints).domain_attr).threading = libfabric_sys::fi_threading_FI_THREAD_SAFE;
             // (*(*hints).domain_attr).control_progress = libfabric_sys::fi_progress_FI_PROGRESS_AUTO as u8;
-            (*(*hints).domain_attr).data_progress = libfabric_sys::fi_progress_FI_PROGRESS_MANUAL;
+            libfabric_sys::compat::set_domain_data_progress((*hints).domain_attr, libfabric_sys::fi_progress_FI_PROGRESS_MANUAL);
             // verbs doesn't need FI_MR_ENDPOINT (that's for rxd/shm-style providers);
             // bind_and_enable_mr_if_required() below stays as a no-op guard regardless.
             (*(*hints).domain_attr).mr_mode = (libfabric_sys::FI_MR_PROV_KEY
@@ -1004,6 +1011,8 @@ impl OptOfi {
                 signaling_vector: 0,
                 wait_cond: libfabric_sys::fi_cq_wait_cond_FI_CQ_COND_NONE,
                 wait_set: std::ptr::null_mut(),
+                // fields added by newer libfabric (xpu_ctx, ...) stay null
+                ..std::mem::zeroed()
             };
             let ret = libfabric_sys::inlined_fi_cq_open(
                 domain,
@@ -1049,6 +1058,8 @@ impl OptOfi {
                 wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
                 wait_set: std::ptr::null_mut(),
                 flags: 0,
+                // fields added by newer libfabric (xpu_ctx, ...) stay null
+                ..std::mem::zeroed()
             };
             let ret = libfabric_sys::inlined_fi_cntr_open(
                 domain,
@@ -1070,6 +1081,8 @@ impl OptOfi {
                 wait_obj: libfabric_sys::fi_wait_obj_FI_WAIT_UNSPEC,
                 wait_set: std::ptr::null_mut(),
                 flags: 0,
+                // fields added by newer libfabric (xpu_ctx, ...) stay null
+                ..std::mem::zeroed()
             };
             let ret = libfabric_sys::inlined_fi_cntr_open(
                 domain,
@@ -1593,7 +1606,7 @@ impl OptOfi {
 
     fn build_local_mr_info_bytes(&self, mem: &[u8], mr: *mut libfabric_sys::fid_mr) -> Vec<u8> {
         let addr = if unsafe { (*(*self.comm_group.info_entry).domain_attr).mr_mode }
-            & (libfabric_sys::FI_MR_VIRT_ADDR | libfabric_sys::fi_mr_mode_FI_MR_BASIC) as i32
+            & (libfabric_sys::FI_MR_VIRT_ADDR | libfabric_sys::compat::FI_MR_BASIC) as i32
             != 0
         {
             mem.as_ptr() as u64
@@ -2455,10 +2468,12 @@ impl OptOfi {
         self.release_parked();
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     pub(crate) fn poll_wait_for_tx_cntr(&self) -> Poll<()> {
         self.comm_group.poll_wait_for_tx_cntr()
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     pub(crate) fn poll_wait_for_rx_cntr(&self) -> Poll<()> {
         self.comm_group.poll_wait_for_rx_cntr()
     }
@@ -2890,7 +2905,7 @@ impl std::fmt::Debug for LibfabricSysOptAlloc {
             &format_args!(
                 "{} ({:?}): {}",
                 self.fabric_ref_cnt_offset,
-                unsafe { self.mem.ref_cnt_ptr(self.fabric_ref_cnt_offset, 0) as *const AtomicUsize },
+                self.mem.ref_cnt_ptr(self.fabric_ref_cnt_offset, 0) as *const AtomicUsize,
                 fabric_ref_count
             ),
         );
@@ -2906,7 +2921,7 @@ impl std::fmt::Debug for LibfabricSysOptAlloc {
                 &format_args!(
                     "{} ({:?}): {}, {}",
                     self.rt_ref_cnt_offset,
-                    unsafe { self.mem.ref_cnt_ptr(self.rt_ref_cnt_offset, 1) as *const AtomicUsize },
+                    self.mem.ref_cnt_ptr(self.rt_ref_cnt_offset, 1) as *const AtomicUsize,
                     rt_ref_count,
                     padding,
                 ),

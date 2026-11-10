@@ -26,6 +26,11 @@
 //! pool's capacity. An operation only waits if some block of its class is currently checked out (so one will come
 //! back); otherwise it falls back to the caller's own buffer, with a one-time warning.
 
+// This pool is shared by the UCX pool (`ucx_staging`) and the libfabric one (`staging_rt`), and each uses a different
+// part of this API (for example `StagingWait` and the `Try` variants other than `Granted` are UCX-only), so some items
+// are unused in a build with only one of the two families.
+#![allow(dead_code)]
+
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
