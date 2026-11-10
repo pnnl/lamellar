@@ -192,6 +192,9 @@ impl<H: Send + Sync + 'static> RtStagingPool<H> {
     }
 }
 
+// `slab` and `handle` are read only by `RtStaging::handle`, whose sole caller is libfabric_async_lamellae/, a source
+// directory that no `mod` declares
+#[allow(dead_code)]
 enum Kind<H: Send + Sync + 'static> {
     /// A block of a slab; `slab` is the runtime-heap allocation it lies in.
     Pooled { block: Staging<RtSlabBacking<H>>, slab: Arc<H> },
@@ -212,6 +215,7 @@ impl<H: Send + Sync + 'static> RtStaging<H> {
 
     /// The runtime-heap allocation this buffer lies in (its slab, for a pooled block). For backends whose operations
     /// name the registration of the local buffer (the descriptor of the allocation).
+    #[allow(dead_code)] // only libfabric_async_lamellae/ calls this, and no `mod` declares that directory
     pub(crate) fn handle(&self) -> &H {
         match &self.kind {
             Kind::Pooled { slab, .. } => slab,

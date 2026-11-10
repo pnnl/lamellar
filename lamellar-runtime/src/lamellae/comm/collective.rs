@@ -2180,6 +2180,12 @@ pub(crate) fn reduce_scatter_dst<T>(result: &mut [T], len: usize, num_pes: usize
 /// `blocking` flag unchanged. `post` is called exactly once and gets the slice to broadcast: it posts the collective on it
 /// (retrying as needed) and, when `blocking`, waits. The elements are only ever copied bitwise (they are what the
 /// collective moves as bytes), so `T` needs no bound beyond being the plain data of the buffer.
+#[cfg(any(
+    test,
+    feature = "enable-libfabric",
+    feature = "enable-libfabric-sys",
+    feature = "enable-libfabric-sys-opt"
+))]
 pub(crate) fn broadcast_padded<T, R>(
     buf: &mut [T],
     ranks: usize,

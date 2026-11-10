@@ -27,6 +27,7 @@ use std::env;
 
 /// This process's rank as the launcher reports it, for backends that learn their rank only after the fabric is open
 /// (rofi). Only used to pick the PE that prints the warning, so an unset or unparsable variable just means rank 0.
+#[cfg(feature = "enable-rofi-c")]
 pub(crate) fn launcher_rank() -> usize {
     ["PMIX_RANK", "PMI_RANK", "SLURM_PROCID"]
         .iter()

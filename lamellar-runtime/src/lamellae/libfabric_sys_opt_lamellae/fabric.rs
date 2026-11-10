@@ -117,6 +117,7 @@ impl Ticket {
 
     /// A ticket for an op that never needs to touch the network (e.g. the local-copy or
     /// same-node-shmem fast paths) — already satisfied, so `block`/`poll` return immediately.
+    #[cfg(feature = "enable-on-node-shmem")]
     fn new_done() -> Arc<Self> {
         Arc::new(Ticket {
             done: AtomicBool::new(true),
@@ -458,6 +459,7 @@ impl CommGroup {
     // issued` proves every op issued as of this call (including this poll's own, since it was
     // issued before this call started) has completed — regardless of completion order. Never
     // cache/persist `pending` across polls and compare a stale target to a fresh cntr read.
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     fn poll_wait_for_cntr(
         &self,
         pending: &AtomicU64,
@@ -475,10 +477,12 @@ impl CommGroup {
         }
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     fn poll_wait_for_tx_cntr(&self) -> Poll<()> {
         self.poll_wait_for_cntr(&self.put_cnt, self.put_cntr)
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     fn poll_wait_for_rx_cntr(&self) -> Poll<()> {
         self.poll_wait_for_cntr(&self.get_cnt, self.get_cntr)
     }
@@ -2464,10 +2468,12 @@ impl OptOfi {
         self.release_parked();
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     pub(crate) fn poll_wait_for_tx_cntr(&self) -> Poll<()> {
         self.comm_group.poll_wait_for_tx_cntr()
     }
 
+    #[allow(dead_code)] // only libfabric_lamellae_mt/ calls the counter waits, and no `mod` declares that directory
     pub(crate) fn poll_wait_for_rx_cntr(&self) -> Poll<()> {
         self.comm_group.poll_wait_for_rx_cntr()
     }
@@ -2899,7 +2905,7 @@ impl std::fmt::Debug for LibfabricSysOptAlloc {
             &format_args!(
                 "{} ({:?}): {}",
                 self.fabric_ref_cnt_offset,
-                unsafe { self.mem.ref_cnt_ptr(self.fabric_ref_cnt_offset, 0) as *const AtomicUsize },
+                self.mem.ref_cnt_ptr(self.fabric_ref_cnt_offset, 0) as *const AtomicUsize,
                 fabric_ref_count
             ),
         );
@@ -2915,7 +2921,7 @@ impl std::fmt::Debug for LibfabricSysOptAlloc {
                 &format_args!(
                     "{} ({:?}): {}, {}",
                     self.rt_ref_cnt_offset,
-                    unsafe { self.mem.ref_cnt_ptr(self.rt_ref_cnt_offset, 1) as *const AtomicUsize },
+                    self.mem.ref_cnt_ptr(self.rt_ref_cnt_offset, 1) as *const AtomicUsize,
                     rt_ref_count,
                     padding,
                 ),

@@ -1555,7 +1555,7 @@ impl Ofi {
         #[cfg(feature = "enable-on-node-shmem")]
         let (mem, mem_base_ptr, same_node_bases, same_node_segments) = if self.disable_on_node_shmem
         {
-            let mut mmap = memmap::MmapOptions::new()
+            let mmap = memmap::MmapOptions::new()
                 .len(aligned_size)
                 .map_anon()
                 .expect(&format!(

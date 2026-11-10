@@ -175,6 +175,8 @@ pub(crate) enum CommAllocInner {
 impl CommAllocInner {
     /// Address of world PE `pe`'s copy of local address `addr` of this allocation, for
     /// backends where every alloc PE can load every other's memory directly.
+    // `pe` and `addr` are only read by the backends that can load a peer's memory directly
+    #[cfg_attr(not(feature = "enable-shmem-opt"), allow(unused_variables))]
     pub(crate) fn peer_addr(&self, pe: usize, addr: usize) -> Option<usize> {
         match self {
             #[cfg(feature = "enable-shmem-opt")]
