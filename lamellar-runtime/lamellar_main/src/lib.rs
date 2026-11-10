@@ -11,7 +11,7 @@
 pub use lamellar_main_impl::{main, test};
 
 pub use hpc_launch::{
-    core_count, cores_per_package, default_threads_per_pe, explicit_cores_per_pe, numa_domain_count,
+    already_launched, core_count, cores_per_package, default_threads_per_pe, explicit_cores_per_pe, numa_domain_count,
     package_count, pe_id, pu_count, resolve_pe_defaults,
 };
 
