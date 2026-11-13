@@ -197,6 +197,13 @@ impl Build {
                         .disable_shared()
                         .enable_static()
                         .enable("embedded", None)
+                        // configure enables io_uring whenever the host has liburing >= 2.1 development files, and the
+                        // archive then needs -luring at the final link. A static archive records no dependencies and
+                        // the consumers (libfabric-sys, rofi-sys, C programs) link a fixed library list, so the same
+                        // source would link on one host and fail with undefined `io_uring_*` symbols on another.
+                        // io_uring only serves the socket-based providers, so the static build goes without it; the
+                        // shared build below keeps configure's default because libfabric.so records its own NEEDED.
+                        .without("uring", None)
                         .cflag("-O3")
                         .cxxflag("-O3")
                         .build();
