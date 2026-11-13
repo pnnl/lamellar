@@ -408,7 +408,13 @@ fn check_api_version(
     tested: &str,
     in_range: impl Fn(u32, u32) -> bool,
 ) {
-    println!("cargo:rerun-if-changed={}", header.display());
+    // A header generated inside OUT_DIR by this very build script must not be tracked: its modification time is later than the
+    // start of the run, so cargo would consider the script out of date on every build and rebuild the vendored library each time.
+    // (The library's own source files are tracked individually.)
+    let generated = std::env::var_os("OUT_DIR").map_or(false, |out| header.starts_with(out));
+    if !generated {
+        println!("cargo:rerun-if-changed={}", header.display());
+    }
     let text = match std::fs::read_to_string(header) {
         Ok(text) => text,
         Err(_) => return,
